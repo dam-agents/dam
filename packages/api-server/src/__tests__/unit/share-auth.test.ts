@@ -1,10 +1,12 @@
-// TEST_OVERVIEW: Sign-in on the artifact share host. The share host gets its own
-// Keycloak client and a server-side share session behind an HttpOnly cookie.
-// /auth/login starts an authorization-code + PKCE flow and remembers where to
-// return; /auth/callback redeems the code, verifies the ID token (issuer,
-// audience, nonce), and sets the cookie; /auth/logout drops the session and
-// sends the browser to Keycloak's end-session endpoint. The return path is only
-// ever a relative /a/<slug> path on this host, never an outside URL.
+/**
+ * TEST_OVERVIEW: Sign-in on the artifact share host. The share host gets its own
+ * Keycloak client and a server-side share session behind an HttpOnly cookie.
+ * /auth/login starts an authorization-code + PKCE flow and remembers where to
+ * return; /auth/callback redeems the code, verifies the ID token (issuer,
+ * audience, nonce), and sets the cookie; /auth/logout drops the session and
+ * sends the browser to Keycloak's end-session endpoint. The return path is only
+ * ever a relative /a/<slug> path on this host, never an outside URL.
+ */
 import { Hono } from "hono";
 import { generateKeyPair, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
@@ -99,8 +101,10 @@ async function signIn(s: ReturnType<typeof setup>, next: string) {
 }
 
 describe("isSafeNext", () => {
-  // TEST_SCENARIO: The return path after sign-in comes from the query string.
-  // Only a share page or its raw download on this host may be returned to.
+  /**
+   * TEST_SCENARIO: The return path after sign-in comes from the query string.
+   * Only a share page or its raw download on this host may be returned to.
+   */
   it("accepts only relative /a/<slug> paths", () => {
     expect(isSafeNext("/a/xyz")).toBe(true);
     expect(isSafeNext("/a/xyz/raw?v=2&download=1")).toBe(true);
@@ -115,8 +119,10 @@ describe("isSafeNext", () => {
 });
 
 describe("share host sign-in", () => {
-  // TEST_SCENARIO: /auth/login must send the browser to Keycloak with a fresh
-  // state, nonce, and S256 challenge, and keep the verifier server-side only.
+  /**
+   * TEST_SCENARIO: /auth/login must send the browser to Keycloak with a fresh
+   * state, nonce, and S256 challenge, and keep the verifier server-side only.
+   */
   it("redirects to the identity provider and keeps PKCE state server-side", async () => {
     const s = setup();
     const res = await s.get("/auth/login?next=/a/xyz");
@@ -131,8 +137,10 @@ describe("share host sign-in", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  // TEST_SCENARIO: After a good callback the browser holds only an opaque
-  // session id in an HttpOnly, Secure, SameSite=Lax cookie and lands on `next`.
+  /**
+   * TEST_SCENARIO: After a good callback the browser holds only an opaque
+   * session id in an HttpOnly, Secure, SameSite=Lax cookie and lands on `next`.
+   */
   it("sets the share session cookie and returns to the requested page", async () => {
     const s = setup();
     const res = await signIn(s, "/a/xyz?v=2");
@@ -153,16 +161,20 @@ describe("share host sign-in", () => {
     });
   });
 
-  // TEST_SCENARIO: An outside URL in `next` must never be followed after
-  // sign-in; the fallback is the host root.
+  /**
+   * TEST_SCENARIO: An outside URL in `next` must never be followed after
+   * sign-in; the fallback is the host root.
+   */
   it("falls back to / when next is not a share path", async () => {
     const s = setup();
     const res = await signIn(s, "https://evil.example/");
     expect(res.headers.get("location")).toBe("/");
   });
 
-  // TEST_SCENARIO: A state that was never issued, already consumed, or expired
-  // must not create a session. The pending entry is single-use.
+  /**
+   * TEST_SCENARIO: A state that was never issued, already consumed, or expired
+   * must not create a session. The pending entry is single-use.
+   */
   it("rejects an unknown or replayed state", async () => {
     const s = setup();
     const first = await signIn(s, "/a/xyz");
@@ -179,8 +191,10 @@ describe("share host sign-in", () => {
     expect(bogus.status).toBe(400);
   });
 
-  // TEST_SCENARIO: The ID token's nonce must match the one minted at login;
-  // otherwise a token from another flow could be injected into this session.
+  /**
+   * TEST_SCENARIO: The ID token's nonce must match the one minted at login;
+   * otherwise a token from another flow could be injected into this session.
+   */
   it("rejects an ID token whose nonce does not match", async () => {
     const s = setup(() => ({
       sub: "u1",
@@ -193,9 +207,11 @@ describe("share host sign-in", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  // TEST_SCENARIO: Logout must drop the server-side session, clear the cookie,
-  // and send the browser to Keycloak so the SSO cookie is dropped too, with a
-  // safe return to /auth/login carrying the same `next`.
+  /**
+   * TEST_SCENARIO: Logout must drop the server-side session, clear the cookie,
+   * and send the browser to Keycloak so the SSO cookie is dropped too, with a
+   * safe return to /auth/login carrying the same `next`.
+   */
   it("ends the session and redirects to the provider's end-session endpoint", async () => {
     const s = setup();
     const signedIn = await signIn(s, "/a/xyz");
@@ -216,8 +232,10 @@ describe("share host sign-in", () => {
     );
   });
 
-  // TEST_SCENARIO: Non-auth paths still reach the viewer app; the auth sub-app
-  // only claims /auth/*.
+  /**
+   * TEST_SCENARIO: Non-auth paths still reach the viewer app; the auth sub-app
+   * only claims /auth/*.
+   */
   it("leaves other share-host paths to the viewer", async () => {
     const s = setup();
     const res = await s.get("/a/xyz");
@@ -234,8 +252,10 @@ describe("Keycloak share identity", () => {
     callbackUrl: `${SHARE}/auth/callback`,
   };
 
-  // TEST_SCENARIO: The authorize URL is browser-facing, so it must use the
-  // external Keycloak URL and carry the share client and PKCE parameters.
+  /**
+   * TEST_SCENARIO: The authorize URL is browser-facing, so it must use the
+   * external Keycloak URL and carry the share client and PKCE parameters.
+   */
   it("builds the authorize URL on the external Keycloak host", () => {
     const provider = createKeycloakShareIdentity(cfg, {
       fetch: () => Promise.reject(new Error("unused")),
@@ -258,9 +278,11 @@ describe("Keycloak share identity", () => {
     });
   });
 
-  // TEST_SCENARIO: The code is redeemed over the in-cluster Keycloak URL and the
-  // ID token is verified against issuer and audience before any claim is read.
-  // A token minted for another client (audience) is refused.
+  /**
+   * TEST_SCENARIO: The code is redeemed over the in-cluster Keycloak URL and the
+   * ID token is verified against issuer and audience before any claim is read.
+   * A token minted for another client (audience) is refused.
+   */
   it("redeems the code internally and verifies the ID token", async () => {
     const { publicKey, privateKey } = await generateKeyPair("RS256");
     const mint = (aud: string) =>

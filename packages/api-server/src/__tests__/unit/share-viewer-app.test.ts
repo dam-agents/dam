@@ -10,6 +10,10 @@ import type {
   SharedResolution,
 } from "../../modules/artifact-library/services/share-viewer-service.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
+import type { RenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 
 function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
   return {
@@ -41,6 +45,7 @@ function fakeViewer(
     resolveArtifact: () => Promise.resolve({ state: "not-found" }),
     resolveFolder: () =>
       Promise.resolve({ state: "not-found" } as FolderResolution),
+    canView: () => Promise.resolve("deny"),
     meta: () => Promise.resolve({ contentType: "text/html", sizeBytes: 40 }),
     content: () =>
       Promise.resolve({
@@ -73,9 +78,24 @@ function publicViewer(overrides: Partial<ShareViewerService> = {}) {
   });
 }
 
-function appWith(viewer: ShareViewerService) {
+let clock = 1_000_000;
+const renderTokens = createRenderTokenService({
+  grants: createMemoryTtlStore(60_000, () => clock),
+});
+
+const sessions = new Map<string, ShareSession>();
+const auth = {
+  getSession: (id: string) => Promise.resolve(sessions.get(id) ?? null),
+};
+
+function appWith(
+  viewer: ShareViewerService,
+  tokens: Pick<RenderTokenService, "mint"> = renderTokens,
+) {
   return createShareViewerApp({
     viewer,
+    auth,
+    renderTokens: tokens,
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
     contentBaseUrl: "https://content.example.com",
@@ -85,6 +105,7 @@ function appWith(viewer: ShareViewerService) {
 function contentAppWith(viewer: ShareViewerService) {
   return createContentApp({
     viewer,
+    renderTokens,
     shareBaseUrl: "https://share.example.com",
   });
 }
@@ -340,5 +361,221 @@ describe("by-link host gate", () => {
       const res = await app.request("/api/secret", { headers });
       expect(await res.text()).toBe("app-route");
     }
+  });
+});
+
+/**
+ * TEST_OVERVIEW: Restricted artifacts. The share host decides per request who
+ * may view: no session sends the browser to sign in, a listed verified email or
+ * the owner renders, everyone else gets the plain no-access page. The content
+ * host has no cookie, so it serves a restricted document or its bytes only with
+ * the short-lived render token the share host minted into the iframe src.
+ */
+describe("restricted artifacts on the share host", () => {
+  const restricted = artifactRow({
+    visibility: "restricted",
+    owner: "owner-1",
+  });
+  const alice: ShareSession = {
+    sub: "alice-sub",
+    email: "Alice@Example.com",
+    emailVerified: true,
+    createdAt: 0,
+  };
+  sessions.set("sid-alice", alice);
+  sessions.set("sid-owner", { ...alice, sub: "owner-1", email: null });
+  sessions.set("sid-unverified", { ...alice, emailVerified: false });
+  sessions.set("sid-bob", { ...alice, sub: "bob", email: "bob@example.com" });
+
+  function restrictedViewer(viewers: string[]) {
+    return fakeViewer({
+      resolveArtifact: () =>
+        Promise.resolve({
+          state: "restricted",
+          artifact: restricted,
+        } satisfies SharedResolution),
+      canView: (artifact, session) =>
+        Promise.resolve(
+          session.sub === artifact.owner ||
+            (session.emailVerified &&
+              session.email !== null &&
+              viewers.includes(session.email.trim().toLowerCase()))
+            ? "allow"
+            : "deny",
+        ),
+    });
+  }
+  const withCookie = (id: string) => ({
+    headers: { cookie: `share_session=${id}` },
+  });
+
+  /**
+   * TEST_SCENARIO: A stranger with no share session must be sent to sign in and
+   * come back to the same page afterwards. The raw download cannot redirect a
+   * browser download, so it answers 401 instead.
+   */
+  it("sends an anonymous visitor to sign in and back", async () => {
+    const app = appWith(restrictedViewer([]));
+    const page = await app.request("/a/slug-a?v=1");
+    expect(page.status).toBe(302);
+    expect(page.headers.get("Location")).toBe(
+      `/auth/login?next=${encodeURIComponent("/a/slug-a?v=1")}`,
+    );
+    expect(page.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((await app.request("/a/slug-a/raw?v=1")).status).toBe(401);
+  });
+
+  /**
+   * TEST_SCENARIO: A listed, verified viewer sees the page. The iframe src must
+   * carry a render token the content host will accept, the view is counted, and
+   * the raw bytes ride the cookie on this host.
+   */
+  it("renders for a listed viewer with a tokenised frame and counts the view", async () => {
+    let views = 0;
+    const app = appWith(
+      fakeViewer({
+        ...restrictedViewer(["alice@example.com"]),
+        recordView: () => {
+          views += 1;
+        },
+      }),
+    );
+    const res = await app.request("/a/slug-a", withCookie("sid-alice"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    const html = await res.text();
+    const src =
+      /src="https:\/\/content\.example\.com\/a\/slug-a\?v=1&amp;t=([A-Za-z0-9_-]+)"/.exec(
+        html,
+      );
+    expect(src).not.toBeNull();
+    expect(views).toBe(1);
+
+    const raw = await app.request("/a/slug-a/raw?v=1", withCookie("sid-alice"));
+    expect(raw.status).toBe(200);
+    expect(raw.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await raw.text()).toContain("<h1>hello</h1>");
+  });
+
+  /**
+   * TEST_SCENARIO: The owner is always allowed, even with no email on the
+   * account and no entry in the viewer list.
+   */
+  it("always renders for the owner", async () => {
+    const app = appWith(restrictedViewer([]));
+    expect(
+      (await app.request("/a/slug-a", withCookie("sid-owner"))).status,
+    ).toBe(200);
+  });
+
+  /**
+   * TEST_SCENARIO: Anyone else who is signed in gets the plain no-access page:
+   * their email so they know which account they used, a way to switch account,
+   * and nothing about the artifact itself. An unverified email counts as unlisted.
+   */
+  it("shows the no-access page to unlisted and unverified viewers, naming nothing", async () => {
+    const app = appWith(restrictedViewer(["alice@example.com"]));
+    for (const sid of ["sid-bob", "sid-unverified"]) {
+      const res = await app.request("/a/slug-a?v=1", withCookie(sid));
+      expect(res.status).toBe(403);
+      const html = await res.text();
+      expect(html).toContain("You don't have access");
+      expect(html).not.toContain("Weekly digest");
+      expect(html).toContain(
+        `href="/auth/logout?next=${encodeURIComponent("/a/slug-a?v=1")}"`,
+      );
+    }
+    const bob = await (
+      await app.request("/a/slug-a", withCookie("sid-bob"))
+    ).text();
+    expect(bob).toContain("bob@example.com");
+    expect(
+      (await app.request("/a/slug-a/raw", withCookie("sid-bob"))).status,
+    ).toBe(403);
+  });
+
+  /**
+   * TEST_SCENARIO: Removing an email must take effect on the next request with
+   * no cache in between, so the decision is asked again every time.
+   */
+  it("re-decides on every request", async () => {
+    const viewers = ["alice@example.com"];
+    const app = appWith(restrictedViewer(viewers));
+    expect(
+      (await app.request("/a/slug-a", withCookie("sid-alice"))).status,
+    ).toBe(200);
+    viewers.length = 0;
+    expect(
+      (await app.request("/a/slug-a", withCookie("sid-alice"))).status,
+    ).toBe(403);
+  });
+});
+
+describe("restricted artifacts on the content host", () => {
+  const restricted = artifactRow({
+    visibility: "restricted",
+    kind: "binary",
+    contentType: "image/png",
+  });
+  const viewer = fakeViewer({
+    resolveArtifact: () =>
+      Promise.resolve({
+        state: "restricted",
+        artifact: restricted,
+      } satisfies SharedResolution),
+    meta: () => Promise.resolve({ contentType: "image/png", sizeBytes: 1 }),
+    contentStream: () =>
+      Promise.resolve({
+        stream: new Blob([Buffer.from([0x89])]).stream(),
+        contentType: "image/png",
+        sizeBytes: 1,
+      }),
+  });
+
+  /**
+   * TEST_SCENARIO: The content host knows nothing about sessions. Without a
+   * token it refuses with 401 and never redirects anywhere.
+   */
+  it("refuses a restricted document and its bytes without a token", async () => {
+    const app = contentAppWith(viewer);
+    for (const path of [
+      "/a/slug-a?v=1",
+      "/a/slug-a/raw?v=1",
+      "/a/slug-a?v=1&t=short",
+    ]) {
+      const res = await app.request(path);
+      expect(res.status).toBe(401);
+      expect(res.headers.get("Location")).toBeNull();
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: A token minted by the share host opens the inner document,
+   * and the document must pass the same token on to its own raw request so the
+   * image inside the frame loads. The token is bound to one artifact and one
+   * version, and dies after 60 seconds.
+   */
+  it("serves with a valid token, threads it into the inner raw URL, and expires it", async () => {
+    const app = contentAppWith(viewer);
+    const token = await renderTokens.mint(restricted, 1);
+    const res = await app.request(`/a/slug-a?v=1&t=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await res.text()).toContain(
+      `<img src="/a/slug-a/raw?v=1&amp;t=${token}"`,
+    );
+
+    const raw = await app.request(`/a/slug-a/raw?v=1&t=${token}`);
+    expect(raw.status).toBe(200);
+    expect(raw.headers.get("Cache-Control")).toBe("private, no-store");
+
+    expect((await app.request(`/a/slug-a?v=2&t=${token}`)).status).toBe(401);
+    const other = await renderTokens.mint(artifactRow({ id: "other" }), 1);
+    expect((await app.request(`/a/slug-a?v=1&t=${other}`)).status).toBe(401);
+
+    clock += 61_000;
+    expect((await app.request(`/a/slug-a?v=1&t=${token}`)).status).toBe(401);
   });
 });
