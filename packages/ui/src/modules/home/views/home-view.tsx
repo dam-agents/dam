@@ -1,4 +1,8 @@
+import { ArrowRight } from "@carbon/icons-react";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
@@ -39,6 +43,7 @@ export function HomeView() {
     approvalsUnreadable,
   } = useFeed();
   usePodSessionsWatch();
+  const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
   const sticky = useStickyResolved();
@@ -140,6 +145,21 @@ export function HomeView() {
         <div className="space-y-3 lg:col-start-1 lg:row-start-2">
           {loadingFeed && visible.length === 0 ? (
             <FeedCardSkeleton rows={3} />
+          ) : visible.length === 0 && agents.length === 1 ? (
+            <Callout inset className="bg-card">
+              <div className="flex flex-col items-center gap-4 py-6">
+                <p className="text-sm text-foreground/80">
+                  Your first agent is ready. Open it to give it something to do.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => selectAgent(agents[0]!.id)}
+                >
+                  Open {agents[0]!.name}
+                  <ArrowRight size={16} />
+                </Button>
+              </div>
+            </Callout>
           ) : visible.length === 0 ? (
             <FeedEmptyState
               {...emptyStateFor(status, {

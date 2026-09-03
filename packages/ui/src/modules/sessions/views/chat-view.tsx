@@ -78,7 +78,7 @@ import {
   DemoHeaderActions,
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
-import { getDemoFixtures } from "../../packs/data/pack-demo-fixtures.js";
+import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
   useIsDemoAgent,
@@ -88,12 +88,12 @@ import {
   makeThisMine,
   walkAway,
 } from "../../packs/lib/demo-exit-actions.js";
+import type { SandboxSection } from "../../platform/lib/routes.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
 } from "../../schedules/components/schedule-chat-discovery.js";
 import { ScheduleIndicator } from "../../schedules/components/schedule-indicator.js";
-import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -108,6 +108,7 @@ import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { SkillsIndicator } from "../components/skills-indicator.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -117,7 +118,6 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
-import { SkillsIndicator } from "../components/skills-indicator.js";
 
 const ConfigureAgentModal = lazy(() =>
   import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
@@ -269,14 +269,17 @@ export function ChatView() {
 
   const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
-  const demoPlaceholder = useMemo(() => {
-    if (!demoPackId) return null;
-    const fixtures = getDemoFixtures(demoPackId);
-    if (!fixtures?.suggestedPrompt) return null;
-    return { text: fixtures.suggestedPrompt, fading: false };
-  }, [demoPackId]);
+  const createdFromPack = useStore((s) => s.createdFromPack);
+  const packPlaceholder = useMemo(() => {
+    const packId =
+      demoPackId ?? (selectedAgent ? createdFromPack.get(selectedAgent) : null);
+    if (!packId) return null;
+    const prompt = getSuggestedPrompt(packId);
+    if (!prompt) return null;
+    return { text: prompt, fading: false };
+  }, [demoPackId, selectedAgent, createdFromPack]);
 
-  const rotatingPlaceholder = demoPlaceholder ?? defaultPlaceholder;
+  const rotatingPlaceholder = packPlaceholder ?? defaultPlaceholder;
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -830,9 +833,7 @@ export function ChatView() {
                             <span className="text-border">·</span>
                             <ScheduleIndicator
                               agentId={selectedAgent}
-                              onManage={() =>
-                                setConfigureSection("schedules")
-                              }
+                              onManage={() => setConfigureSection("schedules")}
                             />
                             <span className="text-border">·</span>
                             <SkillsIndicator

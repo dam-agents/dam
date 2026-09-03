@@ -1,6 +1,7 @@
 import {
   Add,
   Box,
+  ChevronDown,
   Close,
   Launch,
   LogoGithub,
@@ -27,6 +28,7 @@ import { ConnectionCatalogModal } from "../../connections/components/connection-
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
+import { PackIngredientSummary } from "../../packs/components/pack-ingredient-summary.js";
 import type { Pack, PackSlot } from "../../packs/data/packs.js";
 import { mockCreateAgentFromPack } from "../../packs/lib/mock-create-from-pack.js";
 import { buildPackSummaryMessage } from "../../packs/lib/pack-summary-message.js";
@@ -205,6 +207,7 @@ export function AgentSetupView() {
         reset();
         setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
         setRegistryDisclosureOverride(null);
+        useStore.getState().setCreatedFromPack(agentId, pendingPack.id);
         setPendingPack(null);
         selectAgent(agentId);
         useStore.getState().setSessionId(`pack-session-${Date.now()}`);
@@ -226,6 +229,9 @@ export function AgentSetupView() {
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
+      if (pendingPack) {
+        useStore.getState().setCreatedFromPack(agent.id, pendingPack.id);
+      }
       setPendingPack(null);
       selectAgent(agent.id);
     } catch {}
@@ -250,6 +256,9 @@ export function AgentSetupView() {
   );
   const [addedSkillSources, setAddedSkillSources] = useState<SkillSource[]>([]);
   const [skillModalOpen, setSkillModalOpen] = useState(false);
+  const [harnessDisclosureOpen, setHarnessDisclosureOpen] = useState(false);
+  const presetSuppliesTool =
+    pendingPack != null && packDefaults.templateId != null;
 
   const presetScheduleIndices = useMemo(() => {
     const count = packDefaults.scheduleDrafts?.length ?? 0;
@@ -385,30 +394,45 @@ export function AgentSetupView() {
 
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
-      <ImageSection
-        harnesses={catalogue.harnesses}
-        loading={isLoading}
-        templateId={form.templateId}
-        customImage={form.customImage}
-        registry={{
-          value: registryCredential,
-          onChange: setRegistryCredential,
-          partial: registryPartial,
-          disclosureOverride: registryDisclosureOverride,
-          onDisclosureOverride: setRegistryDisclosureOverride,
-        }}
-        onPickTemplate={(templateId) => update({ templateId, customImage: "" })}
-        onCustomImageChange={(customImage) =>
-          update({ customImage, templateId: null })
-        }
-        onSubmit={() => void create()}
-      />
+      {presetSuppliesTool && !harnessDisclosureOpen ? (
+        <button
+          type="button"
+          onClick={() => setHarnessDisclosureOpen(true)}
+          className="flex w-full items-center gap-2 rounded-lg border border-border px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40"
+        >
+          <ChevronDown size={16} className="shrink-0" />
+          Harness and provider configured by preset — click to customize
+        </button>
+      ) : (
+        <>
+          <ImageSection
+            harnesses={catalogue.harnesses}
+            loading={isLoading}
+            templateId={form.templateId}
+            customImage={form.customImage}
+            registry={{
+              value: registryCredential,
+              onChange: setRegistryCredential,
+              partial: registryPartial,
+              disclosureOverride: registryDisclosureOverride,
+              onDisclosureOverride: setRegistryDisclosureOverride,
+            }}
+            onPickTemplate={(templateId) =>
+              update({ templateId, customImage: "" })
+            }
+            onCustomImageChange={(customImage) =>
+              update({ customImage, templateId: null })
+            }
+            onSubmit={() => void create()}
+          />
 
-      <ProviderSection
-        selected={form.providerRef}
-        onSelect={(providerRef) => update({ providerRef })}
-        policy={setupProviderPolicy("coding-agent")}
-      />
+          <ProviderSection
+            selected={form.providerRef}
+            onSelect={(providerRef) => update({ providerRef })}
+            policy={setupProviderPolicy("coding-agent")}
+          />
+        </>
+      )}
 
       <ScheduleSetupSection
         drafts={form.scheduleDrafts}
@@ -528,9 +552,9 @@ function PresetBar({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-preset">{pack.name}</p>
-        <p className="text-sm text-foreground/70">
-          Preset applied to this agent
-        </p>
+        <div className="mt-0.5">
+          <PackIngredientSummary pack={pack} />
+        </div>
       </div>
       <Button variant="outline" size="sm" onClick={onChange}>
         Change

@@ -9,6 +9,8 @@ export interface PacksSlice {
   demoAgents: Map<string, string>;
   setDemoAgent: (packId: string, agentId: string) => void;
   clearDemoAgent: (packId: string) => void;
+  createdFromPack: Map<string, string>;
+  setCreatedFromPack: (agentId: string, packId: string) => void;
 }
 
 export const createPacksSlice: StateCreator<
@@ -31,5 +33,12 @@ export const createPacksSlice: StateCreator<
       const next = new Map(s.demoAgents);
       next.delete(packId);
       return { demoAgents: next };
+    }),
+  createdFromPack: new Map(),
+  setCreatedFromPack: (agentId, packId) =>
+    set((s) => {
+      const next = new Map(s.createdFromPack);
+      next.set(agentId, packId);
+      return { createdFromPack: next };
     }),
 });

@@ -29,7 +29,11 @@ export function resolveAgentDisplay(
     state = "hibernating";
   } else if (agent.overBudget) {
     state = "over_budget";
-  } else if (restarting || agent.state === "starting" || agent.state === "preparing_workspace") {
+  } else if (
+    restarting ||
+    agent.state === "starting" ||
+    agent.state === "preparing_workspace"
+  ) {
     state = alwaysOn ? "running_always_on" : "running";
   } else if (agent.state === "running") {
     state = alwaysOn ? "running_always_on" : "running";

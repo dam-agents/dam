@@ -33,9 +33,7 @@ function collectChips(pack: Pack): Chip[] {
       chips.push({
         key: `connection-${slot.templateId ?? slot.label}`,
         label: slot.label,
-        icon: (
-          <ConnectionIcon iconSlug={slot.templateId} alt="" size={16} />
-        ),
+        icon: <ConnectionIcon iconSlug={slot.templateId} alt="" size={16} />,
         order: order + chips.length * 0.001,
       });
     } else if (slot.kind === "channel") {
@@ -53,8 +51,7 @@ function collectChips(pack: Pack): Chip[] {
   for (const [kind, count] of countByKind) {
     const base = KIND_ORDER[kind]!;
     const label = KIND_LABELS[kind] ?? kind;
-    const plural =
-      count > 1 && kind !== "knowledge-base" ? `${label}s` : label;
+    const plural = count > 1 && kind !== "knowledge-base" ? `${label}s` : label;
     chips.push({
       key: kind,
       label: `${count} ${plural}`,

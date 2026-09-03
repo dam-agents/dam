@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
-import { setMockEmpty } from "./handlers.js";
+import { setMockEmpty, setMockFirstRun } from "./handlers.js";
 import { IconInventory } from "./icon-inventory.js";
 
 interface ReviewScreen {
@@ -46,15 +46,18 @@ function useReviewScreens(): ReviewScreen[] {
 }
 
 export function MockStateBar() {
-  const [empty, setEmpty] = useState(false);
+  const [mode, setMode] = useState<"populated" | "empty" | "first-run">(
+    "populated",
+  );
   const [indexOpen, setIndexOpen] = useState(false);
   const [iconInventoryOpen, setIconInventoryOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
 
-  const pick = (next: boolean) => {
-    setEmpty(next);
-    setMockEmpty(next);
+  const pick = (next: "populated" | "empty" | "first-run") => {
+    setMode(next);
+    setMockEmpty(next === "empty");
+    setMockFirstRun(next === "first-run");
     queryClient.invalidateQueries();
   };
 
@@ -64,30 +67,25 @@ export function MockStateBar() {
         <span className="text-sm font-medium text-muted-foreground">
           Preview:
         </span>
-        <button
-          type="button"
-          onClick={() => pick(false)}
-          className={cn(
-            "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-            !empty
-              ? "bg-foreground text-background"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-          )}
-        >
-          Populated
-        </button>
-        <button
-          type="button"
-          onClick={() => pick(true)}
-          className={cn(
-            "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-            empty
-              ? "bg-foreground text-background"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-          )}
-        >
-          Empty
-        </button>
+        {(["populated", "empty", "first-run"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => pick(m)}
+            className={cn(
+              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
+              mode === m
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+            )}
+          >
+            {m === "populated"
+              ? "Populated"
+              : m === "empty"
+                ? "Empty"
+                : "First run"}
+          </button>
+        ))}
       </div>
 
       <button

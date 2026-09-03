@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
+import { isDemoAgentId } from "../../packs/hooks/use-is-demo-agent.js";
 import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
@@ -70,7 +71,7 @@ export function useFeed(): Feed {
     items,
     agents,
     runningAgents,
-    hasAgents: agents.length > 0,
+    hasAgents: agents.filter((a) => !isDemoAgentId(a.id)).length > 0,
     loadingAgents: agentsQuery.isPending,
     loadingFeed: approvals.isPending || sessions.pending,
     unreadableAgents: sessions.failed,

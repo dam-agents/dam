@@ -2,6 +2,10 @@ import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
 
+export function isDemoAgentId(id: string): boolean {
+  return id.startsWith("demo-");
+}
+
 export function useIsDemoAgent(agentId: string | null): boolean {
   const demoAgents = useStore((s) => s.demoAgents);
   return useMemo(() => {

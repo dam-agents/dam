@@ -36,6 +36,22 @@ export interface PackDemoArtifact {
   sizeBytes: number;
 }
 
+const SUGGESTED_PROMPTS: Record<string, string> = {
+  "docs-maintainer":
+    "Check the repo for any code changes that need docs updates",
+  "codebase-qa": "Explain how authentication works in this codebase",
+  "broken-link-monitor":
+    "Run a scan on our docs site and report any broken links",
+  "research-paper-scanner":
+    "Find recent papers on retrieval-augmented generation",
+};
+
+export function getSuggestedPrompt(packId: string): string | null {
+  const fixtures = DEMO_FIXTURES[packId];
+  if (fixtures?.suggestedPrompt) return fixtures.suggestedPrompt;
+  return SUGGESTED_PROMPTS[packId] ?? null;
+}
+
 const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
   "code-reviewer": {
     suggestedPrompt:

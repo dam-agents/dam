@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { DemoHeaderTag } from "../../packs/components/demo-treatments.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -30,6 +31,7 @@ export interface AgentRowProps {
   display: AgentDisplay;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
+  isDemo?: boolean;
   onSelect: () => void;
   onConfigure: () => void;
   configureLabel: string;
@@ -102,6 +104,7 @@ export function AgentRow({
   display,
   temporaryDraw,
   deletePending,
+  isDemo,
   onSelect,
   onConfigure,
   configureLabel,
@@ -140,6 +143,7 @@ export function AgentRow({
             <h2 className="min-w-0 truncate text-base font-semibold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
               {agent.name}
             </h2>
+            {isDemo && <DemoHeaderTag />}
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
 

@@ -47,7 +47,7 @@ export function AgentsView() {
       {initialLoaded && visible.length === 0 && (
         <PageEmptyState
           title="No agents yet"
-          message="Each agent runs in its own isolated environment with your credentials and tools injected. Start from a pack or configure one from scratch."
+          message="Each agent runs in its own isolated environment, with your credentials and tools injected."
           actionLabel="Create agent"
           onAction={createAgent}
         />

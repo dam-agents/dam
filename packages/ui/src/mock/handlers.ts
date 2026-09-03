@@ -25,35 +25,48 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
 /** Toggleable mock state — controlled by the floating MockToggle component. */
 export let mockEmpty = false;
+export let mockFirstRun = false;
 
 export function setMockEmpty(value: boolean) {
   mockEmpty = value;
+  if (value) mockFirstRun = false;
+}
+
+export function setMockFirstRun(value: boolean) {
+  mockFirstRun = value;
+  if (value) mockEmpty = false;
 }
 
 function getFixtures(): Record<string, unknown> {
   const empty = mockEmpty;
+  const fresh = mockFirstRun;
   return {
-    "agents.list": empty ? [] : agents,
+    "agents.list": empty || fresh ? [] : agents,
     "agents.get": agents[1],
-    "channels.available": channelsAvailable,
+    "channels.available": fresh ? [] : channelsAvailable,
     "channels.telegramBot": null,
-    "approvals.listForOwner": approvals,
-    "approvals.listForInstance": approvals.slice(0, 2),
+    "approvals.listForOwner": fresh ? [] : approvals,
+    "approvals.listForInstance": fresh ? [] : approvals.slice(0, 2),
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
-    "connections.list": connections,
-    "connections.getAgentConnections": {
-      connections: agentConnections.map((c) => ({ ...c, connectionId: c.id })),
-    },
+    "connections.list": fresh ? [] : connections,
+    "connections.getAgentConnections": fresh
+      ? { connections: [] }
+      : {
+          connections: agentConnections.map((c) => ({
+            ...c,
+            connectionId: c.id,
+          })),
+        },
     "templates.list": templates,
-    "budgets.reserved": budgetsReserved,
-    "experiments.list": empty ? [] : experiments,
-    "experiments.driverSummaries": empty ? [] : driverSummaries,
-    "schedules.list": schedules,
-    "schedules.listForOwner": schedules,
-    "knowledgeBases.list": empty ? [] : knowledgeBases,
+    "budgets.reserved": fresh ? [] : budgetsReserved,
+    "experiments.list": empty || fresh ? [] : experiments,
+    "experiments.driverSummaries": empty || fresh ? [] : driverSummaries,
+    "schedules.list": fresh ? [] : schedules,
+    "schedules.listForOwner": fresh ? [] : schedules,
+    "knowledgeBases.list": empty || fresh ? [] : knowledgeBases,
     "egressRules.list": [
       {
         id: "er-1",
@@ -97,33 +110,36 @@ function getFixtures(): Record<string, unknown> {
     "skills.sources.list": [],
     "skills.sets.list": [],
     "skills.listWithScan": { skills: [], scannedAt: null, visibility: null },
-    "skills.state": {
-      installed: [
-        { source: "platform", name: "code-review", version: "1.0.0" },
-        { source: "platform", name: "test-runner", version: "1.2.0" },
-      ],
-      standalone: [
-        {
-          name: "my-custom-skill",
-          description: "A custom skill",
-          skillPath: "/skills/my-custom-skill",
-          origin: "user",
+    "skills.state": fresh
+      ? { installed: [], standalone: [], instancePublishes: [] }
+      : {
+          installed: [
+            { source: "platform", name: "code-review", version: "1.0.0" },
+            { source: "platform", name: "test-runner", version: "1.2.0" },
+          ],
+          standalone: [
+            {
+              name: "my-custom-skill",
+              description: "A custom skill",
+              skillPath: "/skills/my-custom-skill",
+              origin: "user",
+            },
+          ],
+          instancePublishes: [],
         },
-      ],
-      instancePublishes: [],
-    },
-    "files.list": empty
-      ? []
-      : [
-          { path: "src/middleware/auth.ts", type: "file" },
-          { path: "src/middleware/strategies/jwt.ts", type: "file" },
-          { path: "src/middleware/strategies/session.ts", type: "file" },
-          { path: "src/routes/auth.ts", type: "file" },
-          { path: "src/index.ts", type: "file" },
-          { path: "package.json", type: "file" },
-        ],
-    "artifactLibrary.list": empty ? [] : artifacts,
-    "artifactLibrary.listFolders": empty ? [] : artifactFolders,
+    "files.list":
+      empty || fresh
+        ? []
+        : [
+            { path: "src/middleware/auth.ts", type: "file" },
+            { path: "src/middleware/strategies/jwt.ts", type: "file" },
+            { path: "src/middleware/strategies/session.ts", type: "file" },
+            { path: "src/routes/auth.ts", type: "file" },
+            { path: "src/index.ts", type: "file" },
+            { path: "package.json", type: "file" },
+          ],
+    "artifactLibrary.list": empty || fresh ? [] : artifacts,
+    "artifactLibrary.listFolders": empty || fresh ? [] : artifactFolders,
     "artifactLibrary.folderShareUrl": null,
     "repos.list": [],
     "apiKeys.list": [],
