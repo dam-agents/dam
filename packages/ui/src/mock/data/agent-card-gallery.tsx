@@ -1,11 +1,11 @@
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AgentRow } from "../../modules/agents/components/agent-row.js";
+import { ShareModalDemo } from "./share-modal-demo.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import type { AgentView } from "../../types.js";
 import {
-  allFixtureAgents,
   bareAgent,
   demoPackAgent,
   errorAgent,
@@ -18,7 +18,6 @@ import {
   neverHibernatesOverBudget,
   packSkippedAgent,
   singularAgent,
-  temporaryDriverAgent,
 } from "./agent-card-fixtures.js";
 
 interface CardDemoProps {
@@ -65,6 +64,7 @@ function CardDemo({ title, note, agent, temporaryDraw }: CardDemoProps) {
 }
 
 export function AgentCardGallery() {
+  document.title = "Card Designs";
   return (
     <div>
       <PageHeader
@@ -134,14 +134,7 @@ export function AgentCardGallery() {
         />
 
         <CardDemo
-          title="10. Temporary-agent driver"
-          note="The bottom line showing temporary agents running."
-          agent={temporaryDriverAgent}
-          temporaryDraw={{ count: 3, cpuMilli: 6000, memoryMi: 6144 }}
-        />
-
-        <CardDemo
-          title="11. Demo agent"
+          title="10. Demo agent"
           note="Running agent created from a pack."
           agent={demoPackAgent}
         />
@@ -150,7 +143,7 @@ export function AgentCardGallery() {
         <div>
           <div className="mb-2">
             <p className="text-sm font-semibold text-foreground">
-              12. Overflow menu
+              11. Overflow menu
             </p>
             <p className="text-sm text-muted-foreground">
               Static render of the agent card dropdown menu.
@@ -186,51 +179,18 @@ export function AgentCardGallery() {
           </div>
         </div>
 
-        {/* Empty list states */}
+        {/* Share modal */}
         <div>
           <div className="mb-2">
             <p className="text-sm font-semibold text-foreground">
-              13. Empty list — agents page
+              12. Share modal
             </p>
             <p className="text-sm text-muted-foreground">
-              No agents at all. The empty state should show the PageEmptyState
-              component.
+              Three access levels: Private, Restricted (invite by email), Public
+              (copy link).
             </p>
           </div>
-          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Empty state: "No agents yet" with a Create agent button. Rendered by
-            AgentsView when the list is empty.
-          </div>
-        </div>
-
-        {/* Bind pickers — the second card shape */}
-        <div>
-          <div className="mb-2">
-            <p className="text-sm font-semibold text-foreground">
-              14. Bind pickers (Slack + Telegram)
-            </p>
-            <p className="text-sm text-muted-foreground">
-              BindAgentRow stays deliberately reduced — it is a picker, not a
-              scanner.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            {allFixtureAgents.slice(0, 3).map((a) => (
-              <div
-                key={a.id}
-                className="flex flex-col items-start gap-0.5 rounded-lg border border-border px-4 py-3"
-              >
-                <span className="text-sm font-semibold text-foreground">
-                  {a.name}
-                </span>
-                {a.description && (
-                  <span className="text-xs text-muted-foreground">
-                    {a.description}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+          <ShareModalDemo />
         </div>
       </div>
     </div>
