@@ -32,6 +32,7 @@ export interface TemplateCreateFormProps {
   popupOAuth?: boolean;
   initialName?: string;
   onNameChange?: (name: string) => void;
+  autoFocusName?: boolean;
 }
 
 export function TemplateCreateFormBody({
@@ -42,6 +43,7 @@ export function TemplateCreateFormBody({
   popupOAuth,
   initialName,
   onNameChange,
+  autoFocusName = true,
   layout = (fields, footer) => (
     <>
       {fields}
@@ -125,7 +127,7 @@ export function TemplateCreateFormBody({
             label="Name"
             testId="connection-field-name"
             placeholder="my-connection"
-            autoFocus
+            autoFocus={autoFocusName}
             value={field.value}
             onChange={(v) => {
               field.onChange(v);

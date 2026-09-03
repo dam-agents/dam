@@ -123,7 +123,6 @@ export function templateMethodCopy(template: ConnectionTemplateView): {
 
 export function templateCreateHeading(template: ConnectionTemplateView): {
   title: string;
-  subtitle?: string;
 } {
   return { title: `Add ${template.name}` };
 }

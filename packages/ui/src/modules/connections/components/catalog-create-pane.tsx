@@ -34,12 +34,12 @@ export function CatalogCreatePane({
     ? templates.find((t) => t.id === selectedId)
     : templates[0];
 
-  const heading = multiMethod
-    ? { title: `Connect ${group.provider.title}` }
+  const title = multiMethod
+    ? `Connect ${group.provider.title}`
     : template
-      ? templateCreateHeading(template)
+      ? templateCreateHeading(template).title
       : undefined;
-  if (!heading) return null;
+  if (!title) return null;
 
   const body = (fields: ReactNode) =>
     multiMethod ? (
@@ -56,7 +56,7 @@ export function CatalogCreatePane({
   if (!template) {
     return (
       <>
-        <CatalogPaneHeader title={heading.title} onBack={onBack} />
+        <CatalogPaneHeader title={title} onBack={onBack} />
         <div className="min-h-0 flex-1 overflow-y-auto p-5">{body(null)}</div>
         <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
           <Button variant="outline" onClick={onBack}>
@@ -72,11 +72,7 @@ export function CatalogCreatePane({
 
   return (
     <>
-      <CatalogPaneHeader
-        title={heading.title}
-        subtitle={heading.subtitle}
-        onBack={onBack}
-      />
+      <CatalogPaneHeader title={title} onBack={onBack} />
       <TemplateCreateFormBody
         key={template.id}
         template={template}
@@ -86,6 +82,7 @@ export function CatalogCreatePane({
         onCancel={onBack}
         initialName={editedName}
         onNameChange={setEditedName}
+        autoFocusName={!multiMethod}
         layout={(fields, footer) => (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
