@@ -420,6 +420,16 @@ export {
   skillStateOutputSchema,
   skillUninstallInputSchema,
 } from "./modules/skills/schemas.js";
+export type {
+  PlatformFeatureId,
+  PlatformSkillFeature,
+} from "./modules/skills/platform-skills.js";
+export {
+  PLATFORM_FEATURE_IDS,
+  PLATFORM_SKILLS,
+  platformSkillFeature,
+  platformSkillsForFeature,
+} from "./modules/skills/platform-skills.js";
 
 export type {
   FilesService,

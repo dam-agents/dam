@@ -6,7 +6,9 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
@@ -24,6 +26,7 @@ export function SchedulesPanel({
   agentId: string | null;
   onResumeSession?: (sessionId: string) => void;
 }) {
+  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
 
@@ -33,11 +36,22 @@ export function SchedulesPanel({
 
   const closeForm = () => setForm(null);
 
+  const skillNote = (
+    <PlatformSkillNote
+      featureId="schedules"
+      className="mb-4"
+      onOpenSkills={
+        agentId ? () => navigateToSandboxHome(agentId, "skills") : undefined
+      }
+    />
+  );
+
   return (
     <>
       {schedules.length === 0 ? (
         <>
           <SectionLabel spaced>Schedules</SectionLabel>
+          {skillNote}
           <EmptyStateCard
             message="You have not set up any Schedules yet"
             actionLabel="Create Schedule"
@@ -57,6 +71,7 @@ export function SchedulesPanel({
               Create Schedule
             </Button>
           </div>
+          {skillNote}
           <Inset className="flex flex-col gap-3">
             {schedules.map((schedule) => (
               <ScheduleCard

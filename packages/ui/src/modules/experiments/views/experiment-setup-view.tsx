@@ -8,6 +8,7 @@ import {
   NameSection,
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
+import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
@@ -61,6 +62,7 @@ export function ExperimentSetupView() {
         </Button>
       }
     >
+      <PlatformSkillNote featureId="experiments" subject="the new agent" />
       <NameSection value={form.name} onChange={(name) => update({ name })} />
       <ProviderSection
         selected={form.providerRef}
