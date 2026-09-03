@@ -216,7 +216,11 @@ function markUndelivered(
     }
     out.push(m.error ? m : { ...m, error: undeliveredError(record) });
     const next = messages[i + 1];
-    if (next?.role === "assistant" && next.queued && next.parts.length === 0)
+    if (
+      next?.role === "assistant" &&
+      next.parts.length === 0 &&
+      (next.queued === true || !next.streaming)
+    )
       i += 1;
   }
   return out;

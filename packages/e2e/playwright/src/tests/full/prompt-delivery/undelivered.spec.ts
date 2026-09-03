@@ -121,5 +121,20 @@ test(`queued prompts outlive an abandoned tab and can be sent again, image and a
     await expect(undeliveredBubble(revisit, promptC)).toHaveCount(0);
   });
 
+  await test.step("no stale waiting bubble trails the recovered message once the turn is over", async () => {
+    const rows = await readChatMessages(revisit);
+    const idxB = rows.findIndex(
+      (r) => r.role === "user" && r.text.includes(promptB),
+    );
+    expect(idxB).toBeGreaterThanOrEqual(0);
+    const after = rows[idxB + 1];
+    expect(
+      after === undefined ||
+        after.role !== "assistant" ||
+        after.text.trim() !== "",
+      "the recovered prompt's queued placeholder must not survive as a blank agent row",
+    ).toBe(true);
+  });
+
   await restoreMockDefaultReply(api, agentId);
 });
