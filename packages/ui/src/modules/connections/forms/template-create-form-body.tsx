@@ -17,6 +17,7 @@ import {
 } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
+import { GithubAppSetupHint } from "./github-app-setup-hint.js";
 import { GithubStepsCallout } from "./github-steps-callout.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
@@ -142,6 +143,8 @@ export function TemplateCreateFormBody({
           setupUrl={extraStr("setupUrl")}
         />
       )}
+
+      {isGithubApp && <GithubAppSetupHint templateId={template.id} />}
 
       {required.map((input) => (
         <TemplateFieldInput

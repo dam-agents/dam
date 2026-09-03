@@ -26,7 +26,7 @@ export function CatalogCreatePane({
   onCreated,
 }: Props) {
   const templates = group.templates;
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState(templates[0]?.id);
   const [editedName, setEditedName] = useState<string>();
 
   const multiMethod = templates.length > 1;

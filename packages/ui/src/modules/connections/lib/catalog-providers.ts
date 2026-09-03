@@ -228,17 +228,17 @@ export function connectionKindSubtitle(
     connection.templateId === "github" ||
     connection.templateId === "github-enterprise"
   )
-    return "GitHub app";
+    return "GitHub OAuth";
   if (
     connection.templateId === "github-app" ||
     connection.templateId === "github-enterprise-app"
   )
-    return "GitHub app (installation)";
+    return "GitHub App";
   if (
     connection.templateId === "github-pat" ||
     connection.templateId === "github-enterprise-pat"
   )
-    return "GitHub personal access token";
+    return "GitHub PAT";
   const host = connection.host ?? connection.hosts[0];
   if (
     host &&
