@@ -71,8 +71,10 @@ function withinCap(
  * document is written only when a prompt is recorded, sent again, or deleted,
  * so holding a prompt's whole content — pasted image bytes included — costs a
  * rare write on this pod's own disk rather than anything per turn.
- * A record outlives session teardown and pod restarts, and goes only when the
- * user acts on it or the Session is deleted. Each prompt carries when it was
+ * A record outlives session teardown and pod restarts, and goes when the user
+ * acts on it, when the Session is deleted, or — the document is byte-capped —
+ * when another session's write needs the room: whole sessions evict, oldest
+ * first, never the one being written. Each prompt carries when it was
  * recorded, so a client can interleave these with the ones it held locally
  * while it could not reach the pod, and its attachments by name, because the
  * files themselves are not kept anywhere this outlives.

@@ -35,6 +35,7 @@ import {
   flushDraftsOnHide,
   onForeignDraftChange,
 } from "./modules/sessions/lib/draft-snapshot.js";
+import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.js";
 import {
   createPermissionsSlice,
   type PermissionsSlice,
@@ -83,7 +84,10 @@ let draftSyncStarted = false;
 export function startDraftSync(ownerId: string): void {
   if (draftSyncStarted) return;
   draftSyncStarted = true;
-  if (claimDraftsFor(ownerId)) useStore.setState({ drafts: {} });
+  if (claimDraftsFor(ownerId)) {
+    removeAllUndelivered();
+    useStore.setState({ drafts: {} });
+  }
   onForeignDraftChange((key, draft) =>
     useStore.getState().applyForeignDraft(key, draft),
   );

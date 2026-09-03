@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { Attachment, Message } from "../../../types.js";
+import type { Attachment, Message, RetryPayload } from "../../../types.js";
 import {
   connectionCloseReason,
   isConnectionClosed,
@@ -120,6 +120,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const initiator = sendOpts?.initiator;
       const retryOf = sendOpts?.retryOf;
       const resendBlocks = sendOpts?.blocks;
+      const retryPayload: RetryPayload = {
+        text,
+        ...(attachments ? { attachments } : {}),
+        ...(resendBlocks && resendBlocks.length > 0
+          ? { blocks: resendBlocks }
+          : {}),
+      };
 
       const intendedSessionId = useStore.getState().sessionId;
 
@@ -157,6 +164,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
               id: uId,
               text,
               ...(attachments ? { attachments } : {}),
+              ...(resendBlocks && resendBlocks.length > 0
+                ? { blocks: resendBlocks }
+                : {}),
               reason: message,
               recordedAt: new Date().toISOString(),
             }),
@@ -166,9 +176,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           p.flatMap<Message>((m) => {
             if (m.id === aId) return [];
             if (m.id !== uId) return [m];
-            return [
-              { ...m, error: { message, retryWith: { text, attachments } } },
-            ];
+            return [{ ...m, error: { message, retryWith: retryPayload } }];
           }),
         );
       };
@@ -182,7 +190,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                   ...m,
                   streaming: false,
                   queued: false,
-                  error: { message, retryWith: { text, attachments } },
+                  error: { message, retryWith: retryPayload },
                 }
               : m,
           ),
@@ -211,7 +219,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
-        ...(hidden ? {} : { retryWith: { text, attachments } }),
+        ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {
         forgetUndelivered(draftKey(selectedAgent, intendedSessionId), retryOf);

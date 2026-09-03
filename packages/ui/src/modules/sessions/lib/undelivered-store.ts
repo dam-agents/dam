@@ -21,6 +21,7 @@ export function undeliveredRecordOf(input: {
   id: string;
   text: string;
   attachments?: Attachment[];
+  blocks?: PromptBlock[];
   reason: string;
   recordedAt: string;
 }): PlatformUndeliveredPrompt {
@@ -28,20 +29,30 @@ export function undeliveredRecordOf(input: {
   const droppedAttachments: string[] = [];
   let inlineBytes = 0;
   let images = 0;
-  for (const a of input.attachments ?? []) {
-    if (a.kind !== "image") {
-      droppedAttachments.push(a.name);
-      continue;
-    }
+  const admitImage = (data: string): boolean => {
     images += 1;
-    if (inlineBytes + a.data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
+    if (inlineBytes + data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
       droppedAttachments.push(`pasted image ${String(images)}`);
-      continue;
+      return false;
     }
-    inlineBytes += a.data.length;
-    blocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+    inlineBytes += data.length;
+    return true;
+  };
+  if (input.blocks !== undefined && input.blocks.length > 0) {
+    for (const block of input.blocks) {
+      if (block.type !== "image" || admitImage(block.data)) blocks.push(block);
+    }
+  } else {
+    for (const a of input.attachments ?? []) {
+      if (a.kind !== "image") {
+        droppedAttachments.push(a.name);
+        continue;
+      }
+      if (admitImage(a.data))
+        blocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+    }
+    if (input.text) blocks.push({ type: "text", text: input.text });
   }
-  if (input.text) blocks.push({ type: "text", text: input.text });
   return {
     id: input.id,
     recordedAt: input.recordedAt,
@@ -52,12 +63,14 @@ export function undeliveredRecordOf(input: {
 }
 
 export interface UndeliveredStore {
+  keys(): string[];
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
 
 const browserStore: UndeliveredStore = {
+  keys: () => Object.keys(localStorage),
   getItem: (key) => localStorage.getItem(key),
   setItem: (key, value) => localStorage.setItem(key, value),
   removeItem: (key) => localStorage.removeItem(key),
@@ -133,4 +146,12 @@ export function clearUndelivered(
   store: UndeliveredStore = browserStore,
 ): void {
   store.removeItem(storageKey(key));
+}
+
+export function removeAllUndelivered(
+  store: UndeliveredStore = browserStore,
+): void {
+  for (const key of store.keys()) {
+    if (key.startsWith(UNDELIVERED_STORAGE_PREFIX)) store.removeItem(key);
+  }
 }

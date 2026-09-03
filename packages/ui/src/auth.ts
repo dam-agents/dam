@@ -4,6 +4,7 @@ import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 import { rememberReturnPath, takeReturnPath } from "./lib/return-path.js";
 import { readStoredTheme } from "./modules/platform/store/theme.js";
 import { draftWriter } from "./modules/sessions/lib/draft-snapshot.js";
+import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.js";
 
 let userManager: UserManager;
 let currentUser: User | null = null;
@@ -84,6 +85,7 @@ export function getUser(): User | null {
 
 export async function logout(): Promise<void> {
   draftWriter.clearAll();
+  removeAllUndelivered();
   await userManager.signoutRedirect();
 }
 
