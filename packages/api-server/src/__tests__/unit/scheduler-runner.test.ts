@@ -14,7 +14,7 @@ import {
 const AGENT_ID = "agent-1";
 const SCHEDULE_ID = "sched-1";
 
-function makeSchedule(storedNextRun?: string): Schedule {
+function makeSchedule(storedNextRun?: string, cron = "0 * * * *"): Schedule {
   return {
     id: SCHEDULE_ID,
     agentId: AGENT_ID,
@@ -22,7 +22,7 @@ function makeSchedule(storedNextRun?: string): Schedule {
     spec: {
       version: "1",
       type: "cron",
-      cron: "0 * * * *",
+      cron,
       task: "do the thing",
       enabled: true,
       createdBy: "user",
@@ -31,16 +31,23 @@ function makeSchedule(storedNextRun?: string): Schedule {
   };
 }
 
-function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
+function makeDeps(opts?: {
+  wakeError?: Error;
+  storedNextRun?: string;
+  cron?: string;
+}) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
   const enqueued: Date[] = [];
   const ensured: Date[] = [];
   const events: string[] = [];
+  const expiries: Date[] = [];
 
   const repo = {
     async getById(id: string) {
-      return id === SCHEDULE_ID ? makeSchedule(opts?.storedNextRun) : null;
+      return id === SCHEDULE_ID
+        ? makeSchedule(opts?.storedNextRun, opts?.cron)
+        : null;
     },
     async getOwnerById() {
       return "owner-sub";
@@ -50,7 +57,7 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
     },
     async setNextRun() {},
     async listAllEnabled() {
-      return [makeSchedule(opts?.storedNextRun)];
+      return [makeSchedule(opts?.storedNextRun, opts?.cron)];
     },
   } as unknown as SchedulesRepository;
 
@@ -68,7 +75,10 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
   const runtimeMutator: RuntimeMutator = {
     async bump(agentId, evts) {
       calls.push(`bump:${agentId}`);
-      for (const e of evts) events.push(e.id);
+      for (const e of evts) {
+        events.push(e.id);
+        expiries.push(e.expiresAt);
+      }
       return 1;
     },
     async enqueueAfterCommit(agentId) {
@@ -88,7 +98,7 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
 
-  return { runner, calls, fires, enqueued, ensured, events };
+  return { runner, calls, fires, enqueued, ensured, events, expiries };
 }
 
 describe("scheduler-runner fire", () => {
@@ -127,6 +137,31 @@ describe("scheduler-runner fire", () => {
     expect(events[0]!).toBe(
       `${SCHEDULE_ID}:${Date.parse("2026-06-12T10:00:00Z")}`,
     );
+  });
+
+  // TEST_SCENARIO: an hourly schedule fires at 10:30; the trigger expires at the 11:00 occurrence rather than after the one-hour TTL, so a fire the agent never received is superseded by the next one instead of piling up into a backlog that replays when the agent comes back.
+  it("expires a fire at the schedule's next occurrence", async () => {
+    const { runner, expiries } = makeDeps();
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(expiries).toHaveLength(1);
+    expect(expiries[0]!.toISOString()).toBe("2026-06-12T11:00:00.000Z");
+  });
+
+  // TEST_SCENARIO: a daily schedule's next occurrence is further away than the trigger TTL, so the TTL still caps how stale a fire can land.
+  it("caps a fire's expiry at the trigger TTL when the next occurrence is far", async () => {
+    const { runner, expiries } = makeDeps({ cron: "0 9 * * *" });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(expiries[0]!.toISOString()).toBe("2026-06-12T11:30:00.000Z");
   });
 
   // TEST_SCENARIO: a failed fire with BullMQ attempts left must rethrow before any re-arm bookkeeping — the retry then repeats only the delivery attempt, and nextRun stays on the due occurrence so the retry and the reconcile sweep both target that same occurrence.

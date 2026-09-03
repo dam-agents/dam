@@ -1,8 +1,15 @@
 import { useState } from "react";
 
+import { DialogHeader, Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
-import { useFeed } from "../api/queries.js";
+import { useArtifact } from "../../artifacts/api/queries.js";
+import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
+import {
+  type ArtifactTouched,
+  useFeed,
+  useFeedArtifacts,
+} from "../api/queries.js";
 import { ComputeWidget } from "../components/compute-widget.js";
 import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
@@ -26,6 +33,9 @@ import {
   type FeedStatus,
   filterFeed,
 } from "../lib/feed-filter.js";
+import type { FeedItem } from "../lib/feed-item.js";
+
+const EMPTY_ARTIFACTS: readonly ArtifactTouched[] = [];
 
 export function HomeView() {
   const {
@@ -40,8 +50,23 @@ export function HomeView() {
   } = useFeed();
   usePodSessionsWatch();
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const { isDismissed, dismiss } = useDismissals();
+  const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
+  const artifacts = useFeedArtifacts(items);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
+    null,
+  );
+  const { data: previewArtifact, isError: previewFailed } =
+    useArtifact(previewArtifactId);
+
+  const artifactsFor = (item: FeedItem): readonly ArtifactTouched[] => {
+    if (item.kind !== "unread") return EMPTY_ARTIFACTS;
+    const touched = artifacts.bySession.get(item.session.sessionId);
+    if (!touched || touched.length === 0) return EMPTY_ARTIFACTS;
+    const cleared = dismissedAt(item.agentId, item.session.sessionId);
+    if (cleared === null) return touched;
+    return touched.filter((t) => Date.parse(t.touchedAt) > cleared);
+  };
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
@@ -163,10 +188,31 @@ export function HomeView() {
                 }}
                 onResolved={(item, label) => sticky.keep(item, label)}
                 resolvedLabelFor={sticky.labelFor}
+                artifactsFor={artifactsFor}
+                onOpenArtifact={setPreviewArtifactId}
               />
             </>
           )}
         </div>
+        {previewArtifactId &&
+          (previewArtifact ? (
+            <ArtifactPreviewDialog
+              artifact={previewArtifact}
+              onClose={() => setPreviewArtifactId(null)}
+            />
+          ) : (
+            <Modal
+              widthClass="w-[860px]"
+              onClose={() => setPreviewArtifactId(null)}
+            >
+              <DialogHeader
+                title={
+                  previewFailed ? "Couldn't load the artifact" : "Loading…"
+                }
+                onClose={() => setPreviewArtifactId(null)}
+              />
+            </Modal>
+          ))}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
           <ComputeWidget
             runningAgents={runningAgents}

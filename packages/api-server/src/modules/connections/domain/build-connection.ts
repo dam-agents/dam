@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
-import type {
-  ConnectionAuthConfig,
-  ConnectionCreateInput,
-  Contribution,
-  SecretRef,
+import {
+  SHARED_KB_TEMPLATE_ID,
+  type ConnectionAuthConfig,
+  type ConnectionCreateInput,
+  type Contribution,
+  type SecretRef,
 } from "api-server-api";
+import { parseShareString, tokenHeaderName } from "../../kb-shares/index.js";
 import type { ConnectionTemplate } from "./connection-template.js";
 import {
   discoverIssuerFromResourceHost,
@@ -41,6 +43,14 @@ export async function buildConnection(
   if (input.authKind !== template.authKind) {
     throw new Error(
       `template ${template.id} expects authKind=${template.authKind}, got ${input.authKind}`,
+    );
+  }
+
+  if (template.id === SHARED_KB_TEMPLATE_ID && input.authKind === "header") {
+    return buildSharedKnowledgeBase(
+      template as Extract<ConnectionTemplate, { authKind: "header" }>,
+      input,
+      mintSecretRef,
     );
   }
 
@@ -583,6 +593,35 @@ function buildHeader(
           ...sdsFields,
         },
       ],
+    ]),
+  };
+}
+
+function buildSharedKnowledgeBase(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const parsed = parseShareString(input.value);
+  if (!parsed) {
+    throw new Error(
+      "that does not look like a share link — expected a kbshare_… string",
+    );
+  }
+  const headerName = tokenHeaderName(parsed.shareId);
+  const contributions: Contribution[] = [];
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const sdsFields = buildConnectionSdsFields(contributions, parsed.secret);
+  return {
+    auth: {
+      kind: "header",
+      valueRef: { ...secretPath, field: "value" },
+      headerName,
+      valueFormat: "{value}",
+    },
+    contributions,
+    secrets: new Map([
+      [secretPath.path, { value: parsed.secret, ...sdsFields }],
     ]),
   };
 }

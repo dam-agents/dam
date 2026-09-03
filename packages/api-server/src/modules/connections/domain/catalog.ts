@@ -7,6 +7,7 @@ import {
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
   BOB_HOST,
+  SHARED_KB_TEMPLATE_ID,
 } from "api-server-api";
 import type {
   ClientCredentialsConnectionTemplate,
@@ -807,10 +808,29 @@ const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   contributions: [],
 };
 
+function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
+  const url = shareBaseUrl ? new URL(shareBaseUrl) : null;
+  const host = url ? `${url.hostname}${url.port ? `:${url.port}` : ""}` : "";
+  return {
+    id: SHARED_KB_TEMPLATE_ID,
+    name: "Shared knowledge base",
+    category: "mcp",
+    isCustom: false,
+    description:
+      "Read-only access to a knowledge base someone shared with you, via its share link.",
+    iconSlug: "mcp",
+    authKind: "header",
+    host,
+    contributions: [],
+  };
+}
+
 export function buildCatalog(
   creds: OperatorCredentials = {},
+  opts: { shareBaseUrl?: string } = {},
 ): ConnectionTemplate[] {
   return [
+    sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,
     OPENAI,

@@ -1,7 +1,7 @@
 import type { ApprovalView } from "api-server-api";
 
 import type { SessionView } from "../../../types.js";
-import { isUnreadSession } from "./unread.js";
+import { isFeedableSession } from "./unread.js";
 
 export type FeedItem =
   | {
@@ -38,7 +38,10 @@ function sessionAt(session: SessionView): string | null {
   return session.updatedAt ?? session.createdAt ?? null;
 }
 
-export function toFeedItems({ approvals, byAgent }: FeedSources): FeedItem[] {
+export function toFeedItems(
+  { approvals, byAgent }: FeedSources,
+  now: number = Date.now(),
+): FeedItem[] {
   const items: FeedItem[] = approvals.map((approval) => ({
     kind: "approval",
     id: `approval:${approval.id}`,
@@ -59,7 +62,7 @@ export function toFeedItems({ approvals, byAgent }: FeedSources): FeedItem[] {
         });
         continue;
       }
-      if (isUnreadSession(session)) {
+      if (isFeedableSession(session, now)) {
         items.push({
           kind: "unread",
           id: `unread:${agentId}:${session.sessionId}`,

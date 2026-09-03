@@ -28,6 +28,10 @@ import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
+import {
+  registerKbShareTools,
+  type KbShareAgentOps,
+} from "../../modules/kb-shares/index.js";
 
 function resolveWorkspacePath(input: string): string {
   const agentHome = AGENT_HOME_DIR;
@@ -92,6 +96,8 @@ export interface McpSessionDeps {
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
+  kbShares: KbShareAgentOps | null;
+  agentHome: string;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -100,12 +106,19 @@ export function createMcpSession(
   agentId: string,
   deps: McpSessionDeps,
 ): McpSession {
-  const { schedules } = deps;
-  const agentHome = AGENT_HOME_DIR;
-  const server = new McpServer({
-    name: `platform-${agentId}`,
-    version: "1.0.0",
-  });
+  const { agentHome, schedules } = deps;
+  const server = new McpServer(
+    {
+      name: `platform-${agentId}`,
+      version: "1.0.0",
+    },
+    deps.kbShares
+      ? {
+          instructions:
+            "This agent is a knowledge base. You can publish it as a read-only endpoint teammates query without copying it: call share_knowledge_base to start sharing (idempotent), refresh_knowledge_base_share after substantial edits, and get_share_status to check. Sharing is read-only — curation stays with you — and the share link itself is only revealed to the owner in the UI, never to you.",
+        }
+      : undefined,
+  );
 
   const runtimeClient = createTRPCClient<AppRouter>({
     links: [
@@ -768,6 +781,10 @@ export function createMcpSession(
       deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
 
+  if (deps.kbShares) {
+    registerKbShareTools(server, { ops: deps.kbShares, agentId });
+  }
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -806,6 +823,8 @@ export interface MountMcpDeps {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
+  kbShareOpsFor: (owner: string) => KbShareAgentOps;
+  agentHome: string;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -842,6 +861,11 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       artifactLibrary,
       invocations,
       experiments,
+      kbShares:
+        verified.kind === "knowledge-base"
+          ? deps.kbShareOpsFor(verified.owner)
+          : null,
+      agentHome: deps.agentHome,
       supportsUserLookup,
       supportsMessageReactions,
     });

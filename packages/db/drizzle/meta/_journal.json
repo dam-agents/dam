@@ -267,6 +267,27 @@
       "when": 1788272111525,
       "tag": "0037_colossal_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788283766489,
+      "tag": "0038_woozy_justice",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788346861032,
+      "tag": "0039_broken_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788346872205,
+      "tag": "0040_backfill_current_artifact_versions",
+      "breakpoints": true
     }
   ]
 }

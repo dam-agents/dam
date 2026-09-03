@@ -49,6 +49,8 @@ export enum EventType {
   FeatureFlagChanged = "FeatureFlagChanged",
   ApiKeyChanged = "ApiKeyChanged",
   EntryPointChosen = "EntryPointChosen",
+  KbSharePublished = "KbSharePublished",
+  KbSharePublishFailed = "KbSharePublishFailed",
 }
 
 export type UserAuthenticated = {
@@ -368,6 +370,19 @@ export type EntryPointChosen = {
   choice: EntryPointChoice;
 };
 
+export type KbSharePublished = {
+  type: EventType.KbSharePublished;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type KbSharePublishFailed = {
+  type: EventType.KbSharePublishFailed;
+  agentId: string;
+  ownerSub: string;
+  reason: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -411,7 +426,9 @@ export type DomainEvent =
   | InvocationSpawned
   | FeatureFlagChanged
   | ApiKeyChanged
-  | EntryPointChosen;
+  | EntryPointChosen
+  | KbSharePublished
+  | KbSharePublishFailed;
 
 const bus$ = new Subject<DomainEvent>();
 

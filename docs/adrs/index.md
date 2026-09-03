@@ -80,6 +80,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 084 | [A resumed channel thread session is caught up on what it could not see](084-resumed-session-catch-up.md) | 025 | channels | A resuming channel thread turn carries the messages that arrived after that Agent's own last turn, best-effort, because a session's context only covers the messages that were relayed to it. |
 | 085 | [Usage passthrough access via a reconciled group role](085-usage-passthrough-grants.md) |  | usage-tracking | A credential-less group role holds SELECT on the usage source passthrough views, reconciled by the api-server after each migration run rather than granted inside migrations, with operators granting membership; the startup path it rides on is made safe for concurrent replicas. |
 | 086 | [Pod-owned live updates over the agent's own tRPC surface](086-pod-owned-live-updates.md) |  | platform-topology | Pod-owned state is read and watched over the agent-runtime's own tRPC surface relayed over WebSocket; a Watch lives only as long as its subscriber and emits topic-plus-ids notices, never state. |
+| 087 | [Knowledge-base sharing via a published read-only MCP snapshot](087-knowledge-base-mcp-share.md) |  | knowledge-bases | Serve knowledge-base shares from a published object-store snapshot over a read-only aggregate MCP endpoint consumed in-cluster, not by proxying the live agent. |
 
 ## Superseded
 

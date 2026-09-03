@@ -50,7 +50,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
 
   return (
     <>
-      <Modal widthClass="w-[860px]">
+      <Modal widthClass="w-[860px]" onClose={onClose}>
         <DialogHeader title={artifact.title} onClose={onClose} />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">

@@ -29,6 +29,13 @@ import {
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
+import {
+  composeKbShareServing,
+  createKbShareAgentCleanup,
+  createShareHostApp,
+  startKbShareSync,
+  startKbSharesCleanupSaga,
+} from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
@@ -178,7 +185,10 @@ export async function bootstrap() {
       : undefined,
   };
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
-  const { db, sql } = createDb(config.databaseUrl, dbTls);
+  const { db, sql } = createDb(config.databaseUrl, {
+    tls: dbTls,
+    poolMax: config.databasePoolMax,
+  });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 
   const artifactsModule = composeArtifactsModule({
@@ -281,10 +291,18 @@ export async function bootstrap() {
   };
   const shareHostGate = createShareHostGate(
     config.shareBaseUrl,
-    createShareViewerApp({
-      viewer: composeShareViewer({ db, artifacts }),
-      brandName: config.brand.name,
-      uiBaseUrl: config.uiBaseUrl,
+    createShareHostApp({
+      viewer: createShareViewerApp({
+        viewer: composeShareViewer({ db, artifacts }),
+        brandName: config.brand.name,
+        uiBaseUrl: config.uiBaseUrl,
+      }),
+      kbMcp: composeKbShareServing({
+        db,
+        store: artifacts,
+        k8s: k8sClient,
+        grepDeadlineMs: config.kbShareGrepDeadlineMs,
+      }),
     }),
   );
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
@@ -323,6 +341,7 @@ export async function bootstrap() {
     }),
     harnessServerUrl: config.harnessServerUrl,
     resolveOwner: resolveAgentOwner,
+    deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
@@ -340,6 +359,7 @@ export async function bootstrap() {
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
+    shareBaseUrl: config.shareBaseUrl,
     secretStore: secretStores.default(),
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
@@ -451,6 +471,16 @@ export async function bootstrap() {
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
   );
+  const kbSharesCleanupSub = startKbSharesCleanupSaga(
+    createKbShareAgentCleanup({
+      db,
+      store: artifacts,
+    }),
+  );
+  const kbShareAutoRefresh = startKbShareSync({
+    db,
+    namespace: config.namespace,
+  });
   const turnMetricsSub = startTurnMetricsSaga(
     createTurnMetrics(metrics.getMeter("platform-apiserver")),
   );
@@ -1032,6 +1062,8 @@ export async function bootstrap() {
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
+    kbSharesCleanupSub.unsubscribe();
+    kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();

@@ -75,6 +75,7 @@ export interface ComposeRuntimeDeliveryOpts {
   snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
   resolveOwner: (agentId: string) => Promise<string | null>;
+  deliveryConcurrency: number;
   log?: (msg: string) => void;
 }
 
@@ -108,6 +109,7 @@ export function composeRuntimeDelivery(
   const worker = startStateWorker({
     connection: opts.bullConnection,
     handler,
+    concurrency: opts.deliveryConcurrency,
     log,
   });
 

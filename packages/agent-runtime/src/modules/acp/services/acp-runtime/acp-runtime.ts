@@ -5,6 +5,10 @@ import {
   SessionType,
 } from "api-server-api";
 
+import {
+  artifactTouchIn,
+  type ArtifactTouch,
+} from "../../infrastructure/artifact-touch.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
@@ -83,6 +87,7 @@ export interface AcpRuntimeDeps {
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
+  onArtifactTouch: (touch: ArtifactTouch) => void;
 }
 
 interface OutboundMapping {
@@ -624,6 +629,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         rehydratingSessions.has(sessionId)
       ) {
         return;
+      }
+      if (!bootstrap.has(sessionId)) {
+        const touch = artifactTouchIn(frame);
+        if (touch) deps.onArtifactTouch(touch);
       }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);

@@ -43,7 +43,7 @@ export function ConnectionCatalogModal({
   sandbox,
   oauthReturnView,
 }: Props) {
-  const connectionsQ = useAppConnections();
+  const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");

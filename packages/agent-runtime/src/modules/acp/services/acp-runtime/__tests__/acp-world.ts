@@ -184,6 +184,7 @@ export function createWorld(
   const runtime = createAcpRuntime({
     workingDir: "/workspace",
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
+    onArtifactTouch: () => {},
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();

@@ -87,10 +87,13 @@ urls:
   ui: "" # default: {scheme}://{domain}{:port}
   api: "" # back-compat fallback for urls.ui; same host
   keycloak: "" # default: {scheme}://keycloak.{domain}{:port}
-  # Public share host for the artifact library. Always served from its own
-  # origin so user-generated content never shares the app origin's cookies
-  # or tokens; routed to the api-server, which host-gates it onto the
-  # public viewer.
+  # Public share host for the artifact library (and a by-link knowledge-base
+  # MCP endpoint kept for external use). Always served from its own origin so
+  # user-generated content never shares the app origin's cookies or tokens;
+  # routed to the api-server, which host-gates it onto the share-host app.
+  # This host is browser-facing only — consumer agents read shared knowledge
+  # bases over the in-cluster harness channel, never by dialing this host, so
+  # it does not need to be resolvable from agent pods.
   share: "" # default: {scheme}://share.{domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
@@ -675,6 +678,22 @@ apiServer:
     # every existing API key, so it must remain stable. Provide your own
     # (≥32 chars) for cross-cluster consistency.
     hmacKey: ""
+  # -- Knowledge base sharing: caps for the published read-only snapshots.
+  # Consumers read them over the in-cluster harness route
+  # (/api/agents/:id/kb); the same serving app is also reachable on the share
+  # host as a by-link endpoint. Needs object storage to be configured.
+  kbShares:
+    # -- Largest single text file a publish includes (bytes).
+    perFileMaxBytes: 2097152
+    # -- Total text content cap per published snapshot (bytes).
+    totalMaxBytes: 209715200
+    # -- Most files a publish includes before it fails loudly.
+    maxFiles: 5000
+    # -- Hard deadline for one consumer grep call; the worker thread running
+    # the consumer-supplied regex is terminated when it lapses (ms).
+    grepDeadlineMs: 2000
+    # -- Most shared-knowledge-base connections one account may hold.
+    maxConnectionsPerOwner: 20
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
@@ -809,12 +828,27 @@ apiServer:
     user: platform_apiserver
     password: null
     database: platform
+    # -- Connection-pool size, per replica. One pool serves both request
+    # handlers and the runtime-delivery worker; delivery jobs hold a
+    # connection only for their short queries, never across the call to the
+    # agent, so this sits far below `runtimeDelivery.concurrency`. Raise the
+    # server's `max_connections` (Postgres defaults to 100, shared with
+    # Keycloak) before scaling `replicas` past 100 / poolMax.
+    poolMax: 32
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
     # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
     sslmode: null
     # CA certificate (PEM) used to verify the external DB's TLS certificate.
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
+  # -- Runtime-state delivery to agent pods.
+  runtimeDelivery:
+    # -- Concurrent deliveries per replica. A job parked on a slow agent holds
+    # a worker slot and nothing else, so this is sized to exceed the agents
+    # that can be mid-delivery at once: no agent's delivery waits on another's
+    # for a slot. Lower it only to roll back that guarantee.
+    concurrency: 256
+
   # -- Object-store connection (empty endpoint = use shared local seaweedfs)
   objectStorage:
     endpoint: ""
@@ -1111,6 +1145,10 @@ controller:
     # cluster default — and fix `agent.base.storageClass` (and
     # `warmPool.storageClass`) too, or newly-created agents keep landing on
     # the old backend.
+    #
+    # An Agent that pins its own storage class (`spec.storageClass` on the
+    # Agent CR) migrates onto — and stays on — its pin instead: pinning the
+    # class a workspace already sits on exempts that agent from the drain.
     targetStorageClass: ""
     # -- Permit a migration whose target class is the class the workspace is
     # already on. Refused by default: it changes the access mode and nothing
