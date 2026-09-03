@@ -10,6 +10,7 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
+import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
@@ -90,7 +91,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     enabled: opts.backgroundWorkHolds,
     log: opts.log,
   });
+  const undeliveredPrompts = createUndeliveredPromptStore(opts.stateBackend);
   const runtime = createAcpRuntime({
+    undeliveredPrompts,
     spawnAgent: () =>
       createChildAgentProcess({
         command: opts.command,

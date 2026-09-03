@@ -547,6 +547,10 @@ export {
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
   platformClippedReplayMetaSchema,
+  platformReplayTurnMetaSchema,
+  promptBlockSchema,
+  platformUndeliveredPromptSchema,
+  platformUndeliveredMetaSchema,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -558,6 +562,9 @@ export type {
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
   PlatformClippedReplayMeta,
+  PlatformReplayTurnMeta,
+  PlatformUndeliveredPrompt,
+  PromptBlock,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

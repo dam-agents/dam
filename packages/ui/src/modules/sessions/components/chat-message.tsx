@@ -1,5 +1,15 @@
+import { OverflowMenuVertical } from "@carbon/icons-react";
+import type { PromptBlock } from "api-server-api";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import type { Attachment, Message } from "../../../types.js";
@@ -15,8 +25,13 @@ interface Props {
   message: Message;
   isLast: boolean;
   hasPendingPermission: boolean;
-  onRetry: (text: string, attachments?: Attachment[]) => void;
+  onRetry: (
+    text: string,
+    attachments?: Attachment[],
+    opts?: { retryOf?: string; blocks?: PromptBlock[] },
+  ) => void;
   onFileClick: (path: string) => void;
+  onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
 }
 
@@ -78,6 +93,7 @@ export const ChatMessage = memo(function ChatMessage({
   hasPendingPermission,
   onRetry,
   onFileClick,
+  onDelete,
   onLoadOlder,
 }: Props) {
   if (message.notice) {
@@ -100,7 +116,6 @@ export const ChatMessage = memo(function ChatMessage({
 
   const { role, parts, streaming, queued, error } = message;
   const isAssistant = role === "assistant";
-  const retryWith = error?.retryWith;
 
   return (
     <div
@@ -147,17 +162,97 @@ export const ChatMessage = memo(function ChatMessage({
           )}
         </div>
       )}
-      {error && (
+      {error && !isAssistant && (
+        <UndeliveredMarker
+          message={message}
+          onRetry={onRetry}
+          onDelete={onDelete}
+        />
+      )}
+      {error && isAssistant && (
         <SendErrorCard
           rawError={error.message}
           interrupted={hasAgentContent(message)}
-          onRetry={
-            retryWith
-              ? () => onRetry(retryWith.text, retryWith.attachments)
-              : undefined
-          }
+          onRetry={retryHandlerFor(message, onRetry)}
         />
       )}
     </div>
   );
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the only place retry arguments are assembled, so
+ * a resend carries the whole original message — text, and the content blocks
+ * a recovered prompt was stored with — from every surface that offers it.
+ */
+function retryHandlerFor(
+  message: Message,
+  onRetry: Props["onRetry"],
+): (() => void) | undefined {
+  const retryWith = message.error?.retryWith;
+  if (!retryWith) return undefined;
+  return () => {
+    onRetry(retryWith.text, retryWith.attachments, {
+      retryOf: message.id,
+      ...(retryWith.blocks ? { blocks: retryWith.blocks } : {}),
+    });
+  };
+}
+
+function UndeliveredMarker({
+  message,
+  onRetry,
+  onDelete,
+}: {
+  message: Message;
+  onRetry: Props["onRetry"];
+  onDelete: Props["onDelete"];
+}) {
+  const { copy } = useCopy();
+  const retry = retryHandlerFor(message, onRetry);
+  const text = message.parts.find((p) => p.kind === "text")?.text ?? "";
+  return (
+    <div
+      data-testid="undelivered-marker"
+      className="flex items-center gap-1 text-[11px] text-destructive"
+    >
+      <span>{message.error?.message}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Unsent message actions"
+            data-testid="undelivered-actions"
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {retry && (
+            <DropdownMenuItem
+              data-testid="prompt-retry-button"
+              onSelect={retry}
+            >
+              Retry
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onSelect={() => {
+              void copy(text);
+            }}
+          >
+            Copy text
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              onDelete(message.id);
+            }}
+          >
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}

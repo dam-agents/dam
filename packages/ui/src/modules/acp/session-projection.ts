@@ -4,6 +4,7 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { PromptBlock } from "api-server-api";
 
 import type {
   Message,
@@ -146,33 +147,103 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
+export interface UndeliveredRecord {
+  id: string;
+  recordedAt: string;
+  reason?: string;
+  droppedAttachments?: string[];
+  blocks?: PromptBlock[];
+  text?: string;
+}
+
+export const UNDELIVERED_MESSAGE =
+  "Not delivered — this never reached the agent.";
+
+function textOf(record: UndeliveredRecord): string {
+  if (record.text !== undefined) return record.text;
+  return (record.blocks ?? [])
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("\n\n");
+}
+
+function partsOf(record: UndeliveredRecord): MessagePart[] {
+  const parts: MessagePart[] = [];
+  for (const block of record.blocks ?? []) {
+    if (block.type === "image")
+      parts.push({
+        kind: "image",
+        data: block.data,
+        mimeType: block.mimeType,
+      });
+    else if (block.type === "resource_link")
+      parts.push({
+        kind: "file",
+        name: block.name,
+        mimeType: block.mimeType ?? "",
+      });
+  }
+  const text = textOf(record);
+  if (text) parts.push({ kind: "text", text });
+  return parts.length > 0 ? parts : [{ kind: "text", text: "" }];
+}
+
+function undeliveredBubble(record: UndeliveredRecord): Message {
+  const reason = record.reason ?? UNDELIVERED_MESSAGE;
+  const lost = record.droppedAttachments ?? [];
+  return {
+    id: record.id,
+    role: "user",
+    parts: partsOf(record),
+    streaming: false,
+    error: {
+      message:
+        lost.length === 0
+          ? reason
+          : `${reason} Sending it again will not include ${lost.join(", ")} — attach again to send ${lost.length === 1 ? "it" : "them"} too.`,
+      retryWith: {
+        text: textOf(record),
+        ...(record.blocks && record.blocks.length > 0
+          ? { blocks: record.blocks }
+          : {}),
+      },
+    },
+  };
+}
+
+export function appendUndelivered(
+  messages: Message[],
+  records: UndeliveredRecord[],
+): Message[] {
+  const fresh = records
+    .filter((r) => !messages.some((m) => m.id === r.id))
+    .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  if (fresh.length === 0) return messages;
+  return [...messages, ...fresh.map(undeliveredBubble)];
+}
+
+export function settleReplay(
+  messages: Message[],
+  { turnInFlight }: { turnInFlight: boolean },
+): Message[] {
+  return turnInFlight ? messages : finalizeAllStreaming(messages);
+}
+
 function finalizeStreaming(m: Message): Message {
   return m.role === "assistant" && m.streaming
     ? { ...m, streaming: false, queued: false }
     : m;
 }
 
-export const QUEUED_LOST_MESSAGE =
-  "Couldn't deliver — the connection dropped while this prompt was still waiting in the queue.";
-
 export function failQueuedOnDisconnect(messages: Message[]): Message[] {
   return messages.flatMap<Message>((m) => {
-    const lost =
+    const ourEmptyQueued =
       m.role === "assistant" &&
       m.streaming &&
       m.queued &&
       m.promptId !== undefined &&
       m.parts.length === 0;
-    if (!lost) return [finalizeStreaming(m)];
-    if (!m.retryWith) return [];
-    return [
-      {
-        ...m,
-        streaming: false,
-        queued: false,
-        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
-      },
-    ];
+    if (ourEmptyQueued && !m.retryWith) return [];
+    return [finalizeStreaming(m)];
   });
 }
 
@@ -403,7 +474,8 @@ function appendQueuedUser(
     tailAssistant?.role === "assistant" &&
     tailAssistant.queued &&
     tailAssistant.parts.length === 0 &&
-    tailUser?.role === "user"
+    tailUser?.role === "user" &&
+    (mid === null || tailUser.id === mid)
   ) {
     return messages.map((m, i) =>
       i === n - 2 ? { ...m, parts: mergeParts(m.parts, parts) } : m,

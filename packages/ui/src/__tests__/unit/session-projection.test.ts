@@ -531,7 +531,7 @@ describe("failQueuedOnDisconnect", () => {
     };
   }
 
-  test("fails our queued prompt with a retryable error, finalizing the rest", () => {
+  test("leaves our queued prompt unfailed, since the runtime parks it", () => {
     const out = failQueuedOnDisconnect([
       userMsg("u1", "first"),
       assistantMsg("a1", "partial reply", true, false),
@@ -542,9 +542,7 @@ describe("failQueuedOnDisconnect", () => {
     expect(out[1].error).toBeUndefined();
     expect(firstTextPart(out[1])).toBe("partial reply");
     expect(out[3].streaming).toBe(false);
-    expect(out[3].queued).toBe(false);
-    expect(out[3].error?.message).toMatch(/couldn't deliver/i);
-    expect(out[3].error?.retryWith).toEqual({ text: "second" });
+    expect(out[3].error).toBeUndefined();
   });
 
   test("behaves as finalizeAllStreaming when nothing of ours is queued", () => {

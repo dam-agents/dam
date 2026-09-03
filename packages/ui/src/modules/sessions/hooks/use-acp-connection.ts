@@ -1,6 +1,8 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import {
   platformClippedReplayMetaSchema,
+  platformReplayTurnMetaSchema,
+  platformUndeliveredMetaSchema,
   SessionMode,
   SessionType,
 } from "api-server-api";
@@ -10,14 +12,17 @@ import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
 import {
+  appendUndelivered,
   applyUpdate,
   failQueuedOnDisconnect,
-  finalizeAllStreaming,
   mergeLocalFailures,
+  settleReplay,
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { draftKey } from "../lib/draft-key.js";
+import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export interface LiveConnection {
@@ -298,9 +303,22 @@ export function useAcpConnection(
       } finally {
         if (collectorRef.current === collector) collectorRef.current = null;
       }
-      const clippedRaw = (
-        result as { _meta?: { platform?: { clipped?: unknown } } } | null
-      )?._meta?.platform?.clipped;
+      const platformMeta = (
+        result as {
+          _meta?: {
+            platform?: {
+              clipped?: unknown;
+              turn?: unknown;
+              undelivered?: unknown;
+            };
+          };
+        } | null
+      )?._meta?.platform;
+      const clippedRaw = platformMeta?.clipped;
+      const turn = platformReplayTurnMetaSchema.safeParse(platformMeta?.turn);
+      const undelivered = platformUndeliveredMetaSchema.safeParse(
+        platformMeta?.undelivered,
+      );
       const clipped =
         clippedRaw === undefined
           ? null
@@ -317,12 +335,26 @@ export function useAcpConnection(
               ...collector.updates,
             ]
           : collector.updates;
-      const replayed = finalizeAllStreaming(
+      const settled = settleReplay(
         updates.reduce<Message[]>(
           (acc, update) => applyUpdate(acc, update),
           [],
         ),
+        { turnInFlight: turn.success && turn.data.inFlight },
       );
+      const localKey = selectedAgent ? draftKey(selectedAgent, sid) : null;
+      const held = localKey === null ? [] : readUndelivered(localKey);
+      if (selectedAgent && localKey !== null && held.length > 0) {
+        handOverUndelivered(selectedAgent, sid, held)
+          .then(() => {
+            clearUndelivered(localKey);
+          })
+          .catch(() => {});
+      }
+      const replayed = appendUndelivered(settled, [
+        ...(undelivered.success ? undelivered.data : []),
+        ...held,
+      ]);
       if (replayBefore === undefined && generation === generationRef.current) {
         bindEngagement(sid);
         pendingReloadRef.current = false;
@@ -330,7 +362,7 @@ export function useAcpConnection(
       }
       return replayed;
     },
-    [openConnection, bindEngagement],
+    [openConnection, bindEngagement, selectedAgent],
   );
 
   const loadSessionHistory = useCallback(

@@ -1,4 +1,5 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { PromptBlock } from "api-server-api";
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -18,8 +19,13 @@ import {
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
+import { draftKey } from "../lib/draft-key.js";
 import { resolvePromptTarget } from "../lib/prompt-target.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
+import {
+  forgetUndelivered,
+  rememberUndelivered,
+} from "../lib/undelivered-store.js";
 import type {
   LiveConnection,
   LiveSession,
@@ -32,6 +38,8 @@ export type PromptInitiator = "user" | "system";
 export interface SendPromptOptions {
   hidden?: boolean;
   initiator?: PromptInitiator;
+  retryOf?: string;
+  blocks?: PromptBlock[];
 }
 
 export interface UseAcpPromptOptions {
@@ -101,24 +109,67 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       attachments?: Attachment[],
       sendOpts?: SendPromptOptions,
     ) => {
-      if (
-        (!text && (!attachments || attachments.length === 0)) ||
-        !selectedAgent
-      )
-        return;
+      const empty =
+        !text &&
+        (attachments?.length ?? 0) === 0 &&
+        (sendOpts?.blocks?.length ?? 0) === 0;
+      if (empty || !selectedAgent) return;
 
       const hidden = sendOpts?.hidden ?? false;
       const initiator = sendOpts?.initiator;
+      const retryOf = sendOpts?.retryOf;
+      const resendBlocks = sendOpts?.blocks;
 
       const intendedSessionId = useStore.getState().sessionId;
 
       const userParts: Message["parts"] = [];
+      for (const block of sendOpts?.blocks ?? []) {
+        if (block.type === "image")
+          userParts.push({
+            kind: "image",
+            data: block.data,
+            mimeType: block.mimeType,
+          });
+        else if (block.type === "resource_link")
+          userParts.push({
+            kind: "file",
+            name: block.name,
+            mimeType: block.mimeType ?? "",
+          });
+      }
       if (attachments?.length) for (const a of attachments) userParts.push(a);
       if (text) userParts.push({ kind: "text", text });
 
       const aId = crypto.randomUUID();
+      const promptId = crypto.randomUUID();
+      const uId = promptId;
+      let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
+      const failUserMessage = (message: string) => {
+        if (reported) return;
+        reported = true;
+        if (!hidden) {
+          rememberUndelivered(draftKey(selectedAgent, intendedSessionId), {
+            id: uId,
+            text,
+            reason: message,
+            droppedAttachments: (attachments ?? []).map((a, i) =>
+              a.kind === "file" ? a.name : `pasted image ${String(i + 1)}`,
+            ),
+            recordedAt: new Date().toISOString(),
+          });
+        }
+        setMessages((p) =>
+          p.flatMap<Message>((m) => {
+            if (m.id === aId) return [];
+            if (m.id !== uId) return [m];
+            return [
+              { ...m, error: { message, retryWith: { text, attachments } } },
+            ];
+          }),
+        );
+      };
       const finalizeBubble = () =>
         setMessages((p) =>
           p.map((m) =>
@@ -130,9 +181,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const startingQueued = hasStreamingAssistant(
         useStore.getState().messages,
       );
-      const promptId = crypto.randomUUID();
       const uMsg: Message = {
-        id: crypto.randomUUID(),
+        id: uId,
         role: "user",
         parts: userParts,
         streaming: false,
@@ -145,12 +195,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         promptId,
         ...(hidden ? {} : { retryWith: { text, attachments } }),
       };
+      if (retryOf !== undefined) {
+        forgetUndelivered(draftKey(selectedAgent, intendedSessionId), retryOf);
+      }
       setMessages((p) => [
-        ...p.map((m) =>
-          m.error?.retryWith
-            ? { ...m, error: { message: m.error.message } }
-            : m,
-        ),
+        ...p.filter((m) => m.id !== retryOf),
         ...(hidden ? [] : [uMsg]),
         aMsg,
       ]);
@@ -162,21 +211,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           dropBubble();
           return;
         }
-        setMessages((p) =>
-          p.map((m) =>
-            m.id === aId
-              ? {
-                  ...m,
-                  streaming: false,
-                  queued: false,
-                  error: {
-                    message:
-                      "Couldn't deliver — the agent never confirmed it received this message.",
-                    retryWith: m.retryWith,
-                  },
-                }
-              : m,
-          ),
+        failUserMessage(
+          "Not delivered — the agent never confirmed it received this message.",
         );
       };
       delivery.beginSend(promptId, failDelivery);
@@ -201,12 +237,15 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           ({ connection, sessionId, isOpen } = started);
         }
 
-        const promptBlocks = await buildPromptBlocks(
-          selectedAgent,
-          sessionId,
-          text,
-          attachments,
-        );
+        const promptBlocks =
+          resendBlocks && resendBlocks.length > 0
+            ? resendBlocks
+            : await buildPromptBlocks(
+                selectedAgent,
+                sessionId,
+                text,
+                attachments,
+              );
         const turn = connection.prompt({
           sessionId,
           prompt: promptBlocks,
@@ -214,6 +253,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             platform: {
               promptId,
               surface: "ui",
+              ...(retryOf !== undefined ? { retryOf } : {}),
               ...(initiator ? { initiator } : {}),
             },
           },
@@ -249,21 +289,10 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           if (!detached) {
             emitToast({ kind: "error", message: outcome.message });
           }
-        } else if (!bubble.error) {
-          setMessages((p) =>
-            p.map((m) =>
-              m.id === aId
-                ? {
-                    ...m,
-                    streaming: false,
-                    queued: false,
-                    error: hidden
-                      ? undefined
-                      : { message: outcome.message, retryWith: m.retryWith },
-                  }
-                : m,
-            ),
-          );
+        } else if (hidden) {
+          dropBubble();
+        } else {
+          failUserMessage(outcome.message);
         }
       } finally {
         delivery.endSend(promptId);

@@ -5,6 +5,7 @@ import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { openInitializedConnection } from "../../acp/acp.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import { agentLacksLiveUpdates } from "../../agents/api/queries.js";
+import type { UndeliveredSend } from "../lib/undelivered-store.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -148,6 +149,27 @@ export async function deleteAgentSession(
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
     conn.extMethod("platform/deleteSession", { sessionId }),
+  );
+}
+
+export async function forgetUndeliveredPrompt(
+  agentId: string,
+  sessionId: string,
+  id: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.extMethod("platform/forgetUndelivered", { sessionId, id }),
+  );
+}
+
+export async function handOverUndelivered(
+  agentId: string,
+  sessionId: string,
+  prompts: UndeliveredSend[],
+): Promise<void> {
+  if (prompts.length === 0) return;
+  await withConnection(agentId, (conn) =>
+    conn.extMethod("platform/recordUndelivered", { sessionId, prompts }),
   );
 }
 

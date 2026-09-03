@@ -29,6 +29,7 @@ import {
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
 export const IDLE_REAP_DELAY_MS = 3_000;
+export const QUEUE_PARK_MS = 5_000;
 
 export interface Harness {
   received(method?: string): Frame[];
@@ -185,6 +186,7 @@ export function createWorld(
     workingDir: "/workspace",
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
     onArtifactTouch: () => {},
+    queueParkMs: QUEUE_PARK_MS,
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();
