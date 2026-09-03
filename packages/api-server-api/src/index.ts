@@ -211,6 +211,7 @@ export {
 export type {
   ArtifactKind,
   ArtifactVisibility,
+  ArtifactCreateVisibility,
   ArtifactFolder,
   LibraryArtifact,
   ArtifactVersionInfo,
@@ -228,10 +229,13 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  artifactCreateVisibilitySchema,
+  viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
+  VIEWER_ALLOWLIST_MAX,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,

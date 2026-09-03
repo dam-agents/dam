@@ -639,6 +639,20 @@ export const libraryArtifactVersions = pgTable(
   ],
 );
 
+export const libraryArtifactViewers = pgTable(
+  "library_artifact_viewers",
+  {
+    artifactId: text("artifact_id")
+      .notNull()
+      .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.artifactId, table.email] })],
+);
+
 export const invocations = pgTable(
   "invocations",
   {

@@ -4,15 +4,16 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNull,
   lt,
-  inArray,
   or,
   sql,
   type Db,
   artifactFolders as foldersTable,
   libraryArtifacts as artifactsTable,
   libraryArtifactVersions as versionsTable,
+  libraryArtifactViewers as viewersTable,
 } from "db";
 
 export interface ArtifactRow {
@@ -135,6 +136,10 @@ export interface ArtifactLibraryRepository {
   ): Promise<ArtifactRow | null>;
   listVersions(artifactId: string): Promise<VersionRow[]>;
   getVersion(artifactId: string, version: number): Promise<VersionRow | null>;
+
+  listViewers(artifactId: string): Promise<string[]>;
+  listViewersForMany(artifactIds: string[]): Promise<Map<string, string[]>>;
+  replaceViewers(artifactId: string, emails: string[]): Promise<void>;
 
   insertFolder(
     row: Omit<FolderRow, "createdAt" | "updatedAt">,
@@ -418,6 +423,47 @@ export function createArtifactLibraryRepository(
         )
         .limit(1);
       return row ?? null;
+    },
+
+    async listViewers(artifactId) {
+      const rows = await db
+        .select({ email: viewersTable.email })
+        .from(viewersTable)
+        .where(eq(viewersTable.artifactId, artifactId))
+        .orderBy(asc(viewersTable.addedAt), asc(viewersTable.email));
+      return rows.map((r) => r.email);
+    },
+
+    async listViewersForMany(artifactIds) {
+      const byArtifact = new Map<string, string[]>();
+      if (artifactIds.length === 0) return byArtifact;
+      const rows = await db
+        .select({
+          artifactId: viewersTable.artifactId,
+          email: viewersTable.email,
+        })
+        .from(viewersTable)
+        .where(inArray(viewersTable.artifactId, artifactIds))
+        .orderBy(asc(viewersTable.addedAt), asc(viewersTable.email));
+      for (const row of rows) {
+        const list = byArtifact.get(row.artifactId);
+        if (list) list.push(row.email);
+        else byArtifact.set(row.artifactId, [row.email]);
+      }
+      return byArtifact;
+    },
+
+    async replaceViewers(artifactId, emails) {
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(viewersTable)
+          .where(eq(viewersTable.artifactId, artifactId));
+        if (emails.length > 0) {
+          await tx
+            .insert(viewersTable)
+            .values(emails.map((email) => ({ artifactId, email })));
+        }
+      });
     },
 
     async insertFolder(row) {
