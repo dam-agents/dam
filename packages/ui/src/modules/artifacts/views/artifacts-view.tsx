@@ -23,7 +23,7 @@ import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 import type { FolderDropCallbacks } from "../hooks/use-artifact-row-drag.js";
-import { folderDisplayName } from "../lib/folders.js";
+import { folderDisplayNames } from "../lib/folders.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
@@ -139,6 +139,7 @@ export function ArtifactsView() {
       .then((url) => url ?? null);
   };
 
+  const folderNames = folderDisplayNames(folders);
   const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
   const hasContent = artifacts.length > 0 || folders.length > 0;
@@ -203,7 +204,7 @@ export function ArtifactsView() {
             <FolderGroup
               key={folder.id}
               folder={folder}
-              displayName={folderDisplayName(folder)}
+              displayName={folderNames.get(folder.id)}
               artifacts={byFolder.get(folder.id) ?? []}
               onCopyFolderLink={copyFolderLink}
               drop={dropCallbacks}

@@ -64,6 +64,7 @@ export const RETIRED_PATHS = new Set([
   "/sandboxes/new",
   "/inbox",
   "/experiments",
+  "/experiments/",
   "/experiments/new",
 ]);
 

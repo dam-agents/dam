@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-02
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -54,7 +54,7 @@ sequenceDiagram
 
 ### Create
 
-Creation is per-purpose: each kind of thing a user can create has its own setup form, asking only what that kind needs. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and pins a harness image the user never sees — so their forms dispatch to the owning module's create rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A new agent takes its template's size and the trusted egress preset, both editable on the agent afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
+Creation is per-purpose: each kind in the GUI has its own setup form; the hidden experiment surface creates over the API. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and pins a harness image the user never sees — so a kinded create dispatches to the owning module rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A new agent takes its template's size and the trusted egress preset, both editable on the agent afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 

@@ -116,8 +116,8 @@ function pitch(brand: Brand, subject: "this-agent" | "platform"): string {
     ? ` Everyone at ${brand.vendor} already has access.`
     : "";
   return (
-    `${lead} for running agents securely in the cloud, running experiments, ` +
-    `and creating knowledge bases.${entitlement}`
+    `${lead} for running agents securely in the cloud and creating ` +
+    `knowledge bases.${entitlement}`
   );
 }
 

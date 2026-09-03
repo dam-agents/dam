@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select";
 
 import { useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders } from "../api/queries.js";
-import { folderDisplayName } from "../lib/folders.js";
+import { folderDisplayNames } from "../lib/folders.js";
 
 const NO_FOLDER = "";
 
@@ -22,6 +22,7 @@ interface Props {
 
 export function MoveArtifactDialog({ artifact, onClose }: Props) {
   const { data: folders, isError: foldersFailed } = useArtifactFolders();
+  const folderNames = folderDisplayNames(folders ?? []);
   const [chosen, setChosen] = useState<string | null>(null);
   const update = useUpdateArtifact();
   const pending = update.isPending;
@@ -70,7 +71,7 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
             <option value={NO_FOLDER}>No folder</option>
             {(folders ?? []).map((folder) => (
               <option key={folder.id} value={folder.id}>
-                {folderDisplayName(folder)}
+                {folderNames.get(folder.id)}
               </option>
             ))}
           </Select>
