@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-08-28
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -13,7 +13,7 @@ The subsystem cuts across two bounded contexts:
 - **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` callback from agents.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
-The runtime channel is two routes between api-server and agent-runtime:
+The runtime channel is two routes between api-server and agent-runtime — plus a third the agent calls on its own initiative, described below:
 
 ```mermaid
 flowchart LR
@@ -94,6 +94,12 @@ The reply is a discriminated outcome, not a bare ack:
 - **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
 Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+
+### Session-directory report — agent → api-server
+
+A second agent-initiated call rides the same gateway and the same harness API server. Whenever an agent's own record of its Sessions changes, it reports the **kind of each Session it holds** — a snapshot, not a delta, so a report that never arrives costs latency rather than leaving a permanent hole. It is deliberately narrow: the agent keeps owning Session state, and what leaves is the single dimension the spend read path cannot reconstruct once the agent hibernates or is deleted. [metrics](metrics.md#session-directory) owns what the report means and why it exists; this page owns only the fact that the channel carries it.
+
+Unlike `hello`, it is not part of catch-up: it settles nothing, acks nothing, and never touches the outbox. A failed report is logged and retried on the next change or the next boot.
 
 ### `hello` — agent → api-server catch-up
 
@@ -323,5 +329,5 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 - **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and version.** The agent's local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server — today to `hello` and to the session-directory report below. Adding a callback means adding a route there, not a second way out.
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload.

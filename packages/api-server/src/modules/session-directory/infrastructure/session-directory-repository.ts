@@ -1,10 +1,29 @@
-import type { SessionDirectoryEntry } from "agent-runtime-api";
+import {
+  podSessionTypeSchema,
+  type SessionDirectoryEntry,
+} from "agent-runtime-api";
+import {
+  sessionModeSchema,
+  type SessionMode,
+  type SessionType,
+} from "api-server-api";
 import { agentSessions, and, inArray, lt, sql, type Db } from "db";
 
 export interface StoredSession {
   sessionId: string;
+  mode: SessionMode;
+  type: SessionType;
+}
+
+function parseStoredSession(row: {
+  sessionId: string;
   mode: string;
   type: string;
+}): StoredSession | null {
+  const mode = sessionModeSchema.safeParse(row.mode);
+  const type = podSessionTypeSchema.safeParse(row.type);
+  if (!mode.success || !type.success) return null;
+  return { sessionId: row.sessionId, mode: mode.data, type: type.data };
 }
 
 export interface SessionDirectoryRepository {
@@ -48,7 +67,7 @@ export function createSessionDirectoryRepository(
 
     async find(agentIds, sessionIds) {
       if (agentIds.length === 0 || sessionIds.length === 0) return [];
-      return db
+      const rows = await db
         .select({
           sessionId: agentSessions.sessionId,
           mode: agentSessions.mode,
@@ -61,6 +80,7 @@ export function createSessionDirectoryRepository(
             inArray(agentSessions.sessionId, [...sessionIds]),
           ),
         );
+      return rows.flatMap((row) => parseStoredSession(row) ?? []);
     },
 
     async deleteOlderThan(days) {

@@ -35,13 +35,12 @@ export function createSessionChanges(coalesceMs = COALESCE_MS): SessionChanges {
       if (listeners.size === 1) hooks?.start();
       return () => {
         listeners.delete(listener);
-        if (listeners.size === 0) {
-          if (pending) {
-            clearTimeout(pending);
-            pending = undefined;
-          }
-          hooks?.stop();
+        if (listeners.size > 0) return;
+        if (watchers.size === 0 && pending) {
+          clearTimeout(pending);
+          pending = undefined;
         }
+        hooks?.stop();
       };
     },
 
