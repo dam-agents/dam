@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/errors";
 
 import { useCreateArtifact } from "../api/mutations.js";
+import { folderDisplayName } from "../lib/folders.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
 
 interface Props {
@@ -98,7 +99,7 @@ export function UploadArtifactDialog({
               <option value="">No folder</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
-                  {folder.name}
+                  {folderDisplayName(folder)}
                 </option>
               ))}
             </Select>
