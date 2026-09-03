@@ -78,8 +78,9 @@ The definition is project-agnostic: everything specific to one deployment lives 
 ## Files
 
 - [`CLAUDE.md`](CLAUDE.md) — the slim core manual loaded on every run.
+- [`AGENTS.md`](AGENTS.md) — harness entry pointer to `CLAUDE.md`; carries no rules.
 - [`ONBOARDING.md`](ONBOARDING.md) — first-run setup runbook (also carries the `work/`
-  seed templates).
+  seed templates), ending in `scripts/verify-onboarding.sh`.
 - [`docs/`](docs/) — detailed procedures, read on demand.
 - [`VERSION`](VERSION) + [`CHANGELOG.md`](CHANGELOG.md) — definition semver and
   per-version upgrade steps.

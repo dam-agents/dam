@@ -21,7 +21,9 @@ memory consolidation (when the agent has memory).
   sampling posted output against rules, interpreting trends.
 
 Design rule: a skipped check is an incomplete audit — impossible-this-week checks are
-reported as `warn` with the reason, never dropped silently.
+reported as `warn` with the reason, never dropped silently. The same applies inside a
+check: a measurement whose scan failed reports `not measured` with the reason, never a
+zero — a fabricated clean number is worse than a missing one.
 
 ## Universal check catalogue
 
@@ -37,6 +39,12 @@ Include what applies; add domain checks from the design's effects list.
   at onboarding.
 - Backup invariants (git-backed state): no `work/.git` on the volume; `.nfs*` junk count
   under `work/` as an early concurrency signal (`references/platform-dam.md`).
+- **Structure verification**: re-run `scripts/verify-onboarding.sh` (offline) — the same
+  script onboarding ends with. It is the cheapest way to catch an instance whose state
+  files drifted out of shape or whose `CONFIG.md` grew a key the runtime cannot see.
+- **Toolchain shims**: report every CLI still resolving through a `mise` shim
+  (`toolpath_shimmed`) — it passes the dependency check while silently costing the exec
+  tax, and the real fix is a pod-image change the operator has to chase.
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
 - Error scan: `ERROR:`-prefixed lines across the week's logs; with a structured events
   log, also group **every `level: error` event of the week into `failures[]` signatures**
@@ -67,9 +75,16 @@ Include what applies; add domain checks from the design's effects list.
   by name**; a partially-registered instance must warn.
 - Sample this week's outputs (~3): required markers present, formats honored, memory
   rules/overrides respected, gates (labels, opt-ins) actually gated.
-- Channel-facing agents: claimed-but-unsent messages (write-before-send means state may
-  claim a send that failed — cross-check state vs. send-failure log lines), effectiveness
-  ratios, items stuck at the escalation ceiling.
+- Channel-facing agents — the check follows the record ordering the design chose
+  (`references/architecture.md` → Record ordering): under **send-then-record**, the same
+  item messaged twice inside its cooldown (the crash window between send and record) and
+  send-failure signatures recurring across sweeps; under **write-before-send**,
+  claimed-but-unsent rows (state claims a send the log shows failing). Plus effectiveness
+  ratios and items stuck at the escalation ceiling.
+- Feedback on the agent's own output where the surface exposes it (reactions, replies):
+  read what a negative signal points at, route a real correction into memory per the
+  memory rules, and report one line per recorded lesson. A negative signal with no
+  readable reason is reported as-is, never guessed at.
 - Trends: throughput vs. last week, outcome distribution extremes (100% one verdict =
   suspicious), backlog age, idle-run ratio (a falling ratio is a rising bill).
 - Config validity: required keys present and parseable; roster integrity when one exists.
@@ -97,6 +112,20 @@ Delivery: the configured channel when channel notifications are enabled (a send 
 is itself a finding → full report to the chat UI); the chat UI always. Then append one
 line to `work/AUDIT.log` — `<ISO> ok=<n> warn=<n> red=<n> sent=<channel|chat>` — avoiding
 the substrings the error scan greps for, and persist `work/`.
+
+## Optional: a periodic quality benchmark
+
+For agents whose output quality is a judgment call (reviews, classifications, summaries),
+a rarer scheduled run — monthly, off by default, its own config key — replays a fixed
+fixture set of synthetic work items through the full pipeline and scores the output
+against seeded ground truth, keeping time and token cost per item. It is what makes
+"did the model upgrade help?" answerable instead of anecdotal. The invariants that make
+it trustworthy: ground truth lives **outside** the inputs the pipeline sees (a set that
+names its own answers is never scored), fixture creation and a scored run never share a
+session, one scored run at a time behind a lock, results are append-only and validated
+before they enter the history, and the run touches nothing in the production domain
+beyond publishing its own report. Propose it only where the operator would act on the
+numbers — it costs real tokens.
 
 ## Memory consolidation (only when the agent has memory)
 

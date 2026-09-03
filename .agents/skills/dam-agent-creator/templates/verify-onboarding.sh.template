@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# verify-onboarding.sh — one-shot structure verification of an onboarded agent.
+#
+# Runs at the end of ONBOARDING (after the sentinel is written) and again as an
+# upgrade step whenever a version changes what onboarding produces. It checks
+# that onboarding produced what it promises: the definition checkout at $HOME
+# and the work/ state files, with the STRUCTURE the templates define. Shape
+# only — required files, required keys, enum values, table headers, row formats;
+# the data inside is never judged. The goal: every deployed instance looks the
+# same apart from its configuration values.
+#
+# Detects, never repairs (same contract as preflight.sh): no external writes, no
+# local writes beyond one structured log event. Every FAIL line carries a `fix:`
+# instruction for the agent to apply; re-run after fixing until it prints PASS.
+#
+#   ok   <check> — <detail>                      passed
+#   warn <check> — <detail>                      informational, never blocks
+#   FAIL <check> — <problem> — fix: <instruction>
+#
+# Default run is offline (structure only). `--live` adds the "does it actually
+# work" pass: authentication per integration, the agent's own identity, access
+# to every configured repo/channel, and one read-only `preflight.sh <mode>` per
+# scheduled run type as the end-to-end proof.
+#
+# Exit 0 iff nothing FAILed.
+#
+# TODO(creator): fill in the check blocks below from the approved design — one
+# check per file, key, and table the ONBOARDING steps create, plus one --live
+# probe per integration. Keep every FAIL's `fix:` actionable and pointed at the
+# doc that owns the shape. Then delete the TODO comments.
+
+set -u
+export LC_ALL=C
+
+LIVE=0
+case "${1:-}" in
+  (--live) LIVE=1;;
+  ('') ;;
+  (*) printf 'usage: %s [--live]\n' "$0" >&2; exit 2;;
+esac
+
+HOME_DIR="${HOME:-/home/agent}"
+WORK="${WORK_DIR:-$HOME_DIR/work}"
+CONFIG="$WORK/CONFIG.md"
+
+# structured events log; no-op fallback keeps set -u safe
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if ! . "$SCRIPT_DIR/log.sh" 2>/dev/null; then logev() { :; }; fi
+
+CHECKS=0; FAILS=0; WARNS=0
+ok()   { CHECKS=$((CHECKS+1)); printf 'ok   %s — %s\n' "$1" "$2"; }
+fail() { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf 'FAIL %s — %s — fix: %s\n' "$1" "$2" "$3"; }
+warn() { WARNS=$((WARNS+1)); printf 'warn %s — %s\n' "$1" "$2"; }
+
+# MUST mirror preflight.sh's config reader, quote stripping included — a reader
+# that disagrees with the runtime's would pass a file the runtime cannot parse.
+cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
+        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' \
+              -e 's/^[`"'"'"']//' -e 's/[`"'"'"']$//'; }
+
+# ---------------------------------------------------------------- definition
+# TODO(creator): definition checkout present and clean; allowlist .gitignore in
+# place; origin matches the configured definition repo; checkout on the tracked
+# branch; the onboarding sentinel exists with a UTC timestamp; harness adapter
+# hooks registered by name (when the design has them).
+
+# ---------------------------------------------------------------------- work/
+# TODO(creator): work/ present and a PLAIN DIRECTORY (no .git — the invariant
+# the NFS volume forces); work/AGENTS.md pointer present; work/VERSION matches
+# the checkout; per state file: present, template sections/table header intact,
+# every row matching the documented format.
+
+# ------------------------------------------------------------------- CONFIG
+# TODO(creator): one check per required key (present + parseable by cfg());
+# enum keys resolve to a documented value; every `- key:` bullet in the file is
+# a KNOWN key (a typo'd key is invisible to the runtime and must FAIL, not pass
+# silently); table sections have the exact documented header and row shape.
+# Every value a scheduled run needs is stored here — a schedule starts a fresh
+# shell with no session exports, so a value living only in an onboarding export
+# is a pre-flight failure waiting for the first tick.
+
+# --------------------------------------------------------------------- live
+if [ "$LIVE" = 1 ]; then
+  : # TODO(creator): per integration — authentication succeeds, the agent's own
+    # identity resolves, every configured repo/channel/target is reachable with
+    # the permissions the design needs (read AND write where it writes), then one
+    # read-only `preflight.sh <mode>` per scheduled run type: valid worklist JSON,
+    # no `error` field. A probe that cannot run is `warn` with the reason —
+    # never silently skipped, and never reported as a pass.
+fi
+
+# ------------------------------------------------------------------- summary
+[ "$LIVE" = 1 ] && SCOPE="structure+live" || SCOPE="structure"
+if [ "$FAILS" -eq 0 ]; then
+  printf 'PASS (%s) — %d checks passed, %d warning(s)\n' "$SCOPE" "$CHECKS" "$WARNS"
+  logev info onboarding_verify "PASS $SCOPE ($CHECKS checks, $WARNS warnings)"
+  exit 0
+else
+  printf 'RESULT (%s): %d of %d checks FAILED — apply each fix above, then re-run this script until it prints PASS.\n' "$SCOPE" "$FAILS" "$CHECKS"
+  logev error onboarding_verify "FAILED $SCOPE ($FAILS of $CHECKS checks) — agent must repair and re-run"
+  exit 1
+fi

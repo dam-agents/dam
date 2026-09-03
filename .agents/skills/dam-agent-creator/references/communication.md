@@ -51,9 +51,20 @@ that keeps it safe must be stated in CLAUDE.md, near the top, and must say all o
   non-roster people are named in plain text. Escalation targets must be roster members
   with a valid member ID.
 - **Nudge hygiene** (only when the design nudges): age gate before the first nudge,
-  per-item cooldown, an escalation ladder that widens the audience gradually, a `held`
-  terminal level so the agent never nags forever, and write-before-send on every message.
-  The deciding (who/when/what level) is pre-flight work; the sending is the agent's.
+  per-item cooldown, an escalation ladder that widens the audience gradually, and a
+  `held` terminal level so the agent never nags forever. The deciding (who/when/what
+  level) is pre-flight work; the sending is the agent's.
+- **Send-then-record for messages.** Send first, then apply the ledger row update as the
+  very next action. A message is repeatable but not recallable: a failed send that left
+  the row untouched is retried by the next sweep, whereas a row written before a send
+  that then failed claims a message nobody received — the worse failure for a channel.
+  The crash window (sent, not yet recorded) costs at most one repeat inside the cooldown,
+  which the audit checks for. Effects where a duplicate is the worse outcome keep
+  write-before-send instead (`references/architecture.md` → Record ordering).
+- **Inbound handling gets its own dedup ledger** when the agent answers mentions or
+  requests: one row per handled message (id, UTC time, what was done), trimmed to the
+  scan window. It is what keeps a re-scanned thread from being answered twice, and it is
+  written immediately after each reply — at most one reply per inbound message.
 
 ## Public output style
 
@@ -66,10 +77,15 @@ that keeps it safe must be stated in CLAUDE.md, near the top, and must say all o
   the display name, no state-file contents, no operator conversation fragments.
 - Tone: professional, concise, no urgency theater. Escalation levels raise clarity, not
   volume.
+- **Long work can publish a progress signal** on the system it works on (a status/check
+  on the item, a placeholder comment) so a waiting human sees "started — ETA" instead of
+  silence. Opt-in, cosmetic, and **never blocking**: every terminal state is a success
+  state, a failed status write never alters the work itself, and no item is left showing
+  `pending` when the run ends.
 - **Readers are agents too.** When posted output will be consumed by later runs or other
   bots (delta comparisons, follow-ups), embed a machine-readable copy of the structured
   part — one hidden HTML comment holding compact JSON, placed next to the dedup marker —
   and keep a text-parse fallback for outputs that predate it. Parsing your own prose
   back out of a rendered page is how deltas silently break.
 - Errors are honest: a failed send/post is logged and reported to the operator, never
-  silently retried into duplicates (write-before-send + no same-run retry).
+  silently retried into duplicates (no same-run retry; the next scheduled run retries).

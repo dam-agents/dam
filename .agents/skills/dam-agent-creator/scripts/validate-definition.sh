@@ -21,7 +21,7 @@ fail() { printf 'FAIL  %s\n' "$1"; FAILS=$((FAILS + 1)); }
 cd "$REPO" || exit 1
 
 # ---------------------------------------------------------- required files ----
-for f in CLAUDE.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
+for f in CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
          docs/self-modification.md docs/persistence.md; do
   if [ -f "$f" ]; then pass "required file: $f"; else fail "missing required file: $f"; fi
 done
@@ -34,7 +34,7 @@ if [ -f .gitignore ]; then
   else
     fail ".gitignore must ignore everything first ('/*'); first rule is: ${first_rule:-<none>}"
   fi
-  for inc in '!/.gitignore' '!/CLAUDE.md' '!/ONBOARDING.md' '!/VERSION' '!/CHANGELOG.md' '!/docs/'; do
+  for inc in '!/.gitignore' '!/CLAUDE.md' '!/AGENTS.md' '!/ONBOARDING.md' '!/VERSION' '!/CHANGELOG.md' '!/docs/'; do
     grep -qxF "$inc" .gitignore \
       && pass ".gitignore re-includes ${inc#!/}" \
       || fail ".gitignore missing re-include: $inc"
@@ -99,7 +99,7 @@ grep -rqi 'code-guardian' --include='*.md' --include='*.sh' . 2>/dev/null \
 
 # ------------------------------------------------------------- shell scripts ----
 if [ -d scripts ]; then
-  for s in scripts/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
+  for s in scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
     [ -e "$s" ] || continue
     if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
     # this validator carries the literal 'awk' in its own detection pattern and message —
