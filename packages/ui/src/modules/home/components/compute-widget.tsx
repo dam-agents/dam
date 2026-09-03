@@ -168,7 +168,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
                     ({formatCores(cell.cpuMilli)} CPU · {formatGi(cell.memoryMi * BYTES_PER_MI)} Gi)
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Always-on — holds compute even while idle.
+                    Always on — holds compute even while idle.
                   </p>
                   <div className="mt-2 flex justify-end">
                     <button

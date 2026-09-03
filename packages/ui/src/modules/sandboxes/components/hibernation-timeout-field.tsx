@@ -1,4 +1,4 @@
-import { Lightning, Time } from "@carbon/icons-react";
+import { Power, Time } from "@carbon/icons-react";
 import type { UseFormRegisterReturn } from "react-hook-form";
 
 import { CardButton } from "@/components/ui/card-button";
@@ -74,11 +74,11 @@ export function HibernationTimeoutField({
           className="flex items-start gap-3 p-3"
         >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Lightning size={16} className="text-foreground" />
+            <Power size={16} className="text-foreground" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
-              Always-on
+              Always on
             </p>
             <p className="text-sm text-muted-foreground">
               Instant response, holds compute

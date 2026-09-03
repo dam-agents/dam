@@ -204,12 +204,12 @@ function ChangesIndex() {
     go: () => void;
   }[] = [
     {
-      label: "Compute Widget Always-On Hover",
+      label: "Compute Widget Always On Hover",
       where: "Home — hover over the idle agent slot in the compute bar",
       go: () => setView("home"),
     },
     {
-      label: "Startup overlay with always-on prompt",
+      label: "Startup overlay with always on prompt",
       where: "Opens a starting agent — resets one to starting if needed",
       go: () => {
         const id = ensureStartingAgent();

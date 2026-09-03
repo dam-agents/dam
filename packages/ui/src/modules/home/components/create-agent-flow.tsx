@@ -5,7 +5,7 @@ import {
   Close,
   Code,
   Connect,
-  Lightning,
+  Power,
   LogoGithub,
   Search,
   SendAltFilled,
@@ -469,11 +469,11 @@ function SetupForm({
               className="flex items-start gap-3 p-3"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-light">
-                <Lightning size={16} className="text-accent" />
+                <Power size={16} className="text-accent" />
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">
-                  Always-on
+                  Always on
                 </p>
                 <p className="text-[13px] text-muted-foreground">
                   Instant response, holds compute
@@ -816,7 +816,7 @@ function ConversationalBuilder({
               ? ` · ${HARNESS_IMAGES.find((h) => h.id === draft.image)?.name}`
               : ""}
             {" · "}
-            {draft.hibernation === "never" ? "Always-on" : "Hibernates"}
+            {draft.hibernation === "never" ? "Always on" : "Hibernates"}
           </p>
         </div>
 

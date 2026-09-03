@@ -30,7 +30,7 @@ function agentBadge(
   isWorking: boolean,
 ): { label: string; variant: NonNullable<BadgeProps["variant"]> } {
   const alwaysOn = agent.hibernationTimeoutMin === 0;
-  const suffix = alwaysOn ? " (Always-on)" : "";
+  const suffix = alwaysOn ? " (Always on)" : "";
 
   if (display.state === "running") {
     if (isWorking) return { label: `Working${suffix}`, variant: "success" };

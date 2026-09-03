@@ -48,7 +48,7 @@ function setSafe(el: HTMLElement, prop: string, value: string): void {
 }
 
 export function applyBrand(brand: Brand): void {
-  document.title = brand.title || brand.name;
+  if (!import.meta.env.VITE_MOCK) document.title = brand.title || brand.name;
 
   const themeMeta = document.querySelector<HTMLMetaElement>(
     'meta[name="theme-color"]',

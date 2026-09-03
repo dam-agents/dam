@@ -24,7 +24,7 @@ export function ShowcaseView() {
           <ArrowLeft size={16} />
         </Button>
         <h1 className="text-xl font-semibold text-foreground">
-          Always-on tag showcase
+          Always on tag showcase
         </h1>
       </div>
 
@@ -36,13 +36,13 @@ export function ShowcaseView() {
             onChange={(e) => setAlwaysOn(e.target.checked)}
             className="size-4 accent-primary"
           />
-          Show always-on badge
+          Show always on badge
         </label>
       </div>
 
       <section className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Agent card with always-on indicator:
+          Agent card with always on indicator:
         </p>
         <MockAgentCard
           name="Deploy Bot"
@@ -75,7 +75,7 @@ export function ShowcaseView() {
         <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
           <li>
             <Badge variant="accent" className="mx-1 align-baseline">
-              Always-on
+              Always on
             </Badge>
             badge appears after the kind badge, same size
           </li>
@@ -119,7 +119,7 @@ function MockAgentCard({
           </Badge>
           {alwaysOn && state === "running" && (
             <Badge variant="accent" className="shrink-0">
-              Always-on
+              Always on
             </Badge>
           )}
         </div>

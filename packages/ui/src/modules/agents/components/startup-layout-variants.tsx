@@ -1,9 +1,10 @@
-import { Idea } from "@carbon/icons-react";
+import { Idea, Power } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUpdateAgent } from "../api/mutations.js";
@@ -36,13 +37,33 @@ function useAlwaysOn(agentId: string) {
   const enable = useCallback(async () => {
     const ok = await showConfirm(
       "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
-      "Keep always-on",
-      { confirmLabel: "Keep always-on" },
+      "Keep always on",
+      { confirmLabel: "Keep always on" },
     );
     if (!ok) return;
+    const patchStarting = () => {
+      queryClient.cancelQueries({ queryKey: ["agents", "list-with-channels"] });
+      const data = queryClient.getQueryData<{
+        list: { id: string; state: string }[];
+      }>(["agents", "list-with-channels"]);
+      if (data) {
+        queryClient.setQueryData(["agents", "list-with-channels"], {
+          ...data,
+          list: data.list.map((a) =>
+            a.id === agentId ? { ...a, state: "starting", hibernationTimeoutMin: 0 } : a,
+          ),
+        });
+      }
+    };
     updateAgent.mutate(
       { id: agentId, hibernationTimeoutMin: 0 },
-      { onSuccess: () => setApplied(true) },
+      {
+        onSuccess: () => {
+          setApplied(true);
+          patchStarting();
+          setTimeout(patchStarting, 100);
+        },
+      },
     );
   }, [agentId, showConfirm, updateAgent]);
   return { applied, pending: updateAgent.isPending, enable };
@@ -115,16 +136,17 @@ function StartupOverlay({ agent }: LayoutProps) {
         <div className="mx-auto flex max-w-2xl justify-center">
           {applied ? (
             <p className="text-sm text-primary">
-              Always-on enabled, once agent starts up it will stay on
+              Always on enabled, once agent starts up it will stay on
             </p>
           ) : (
             <Button
               variant="outline"
               onClick={enable}
               disabled={pending}
-              tooltip="Keep this agent always-on so it responds instantly. It holds its CPU and memory while idle, leaving less budget for other agents."
+              tooltip="Keep this agent always on so it responds instantly. It holds its CPU and memory while idle, leaving less budget for other agents."
             >
-              {pending ? "Applying…" : "Skip the wait — keep always-on"}
+              <Power size={16} className="mr-1.5" />
+              {pending ? "Applying…" : "Skip the wait — keep always on"}
             </Button>
           )}
         </div>

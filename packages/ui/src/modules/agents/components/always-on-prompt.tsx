@@ -10,7 +10,7 @@ const FIRST_VISIT_DELAY_MS = 4_000;
 const REPEAT_VISIT_DELAY_MS = 1_000;
 
 function seenKey(agentId: string): string {
-  return `always-on-prompt-seen:${agentId}`;
+  return `always on-prompt-seen:${agentId}`;
 }
 
 interface Props {
@@ -48,8 +48,8 @@ export function AlwaysOnPrompt({ agentId }: Props) {
   const handleEnable = async () => {
     const ok = await showConfirm(
       "This agent will never hibernate — it stays running and consumes resources until you set a timeout again. You can change this anytime in Agent Setup › Lifecycle.",
-      "Keep always-on",
-      { confirmLabel: "Keep always-on" },
+      "Keep always on",
+      { confirmLabel: "Keep always on" },
     );
     if (!ok) return;
     updateAgent.mutate(
@@ -80,7 +80,7 @@ export function AlwaysOnPrompt({ agentId }: Props) {
         Skip the wait next time?
       </p>
       <p className="text-sm leading-relaxed text-muted-foreground mb-3">
-        Keep this agent always-on so it responds instantly. It holds its CPU and
+        Keep this agent always on so it responds instantly. It holds its CPU and
         memory while idle, leaving less budget for other agents.
       </p>
       <button
@@ -88,7 +88,7 @@ export function AlwaysOnPrompt({ agentId }: Props) {
         disabled={updateAgent.isPending}
         className="text-sm font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
       >
-        {updateAgent.isPending ? "Applying…" : "Keep always-on"}
+        {updateAgent.isPending ? "Applying…" : "Keep always on"}
       </button>
     </Callout>
   );
