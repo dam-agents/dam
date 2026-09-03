@@ -204,6 +204,9 @@ export function createApi(namespace: string) {
   };
 }
 
+export const createLeaseApi = () =>
+  loadKubeConfig().makeApiClient(k8s.CoordinationV1Api);
+
 export type AgentInformer = k8s.Informer<KubeObject> &
   k8s.ObjectCache<KubeObject>;
 

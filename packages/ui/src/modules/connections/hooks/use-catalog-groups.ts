@@ -2,6 +2,7 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   PROVIDER_TEMPLATE_IDS,
+  SHARED_KB_TEMPLATE_ID,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -28,13 +29,14 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
   const byTab = useMemo(
     () =>
       groupCatalog({
-        offeredTemplates: filterOfferedTemplates(
-          allTemplates,
-          showInternal,
-        ).filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id)),
+        offeredTemplates: filterOfferedTemplates(allTemplates, showInternal)
+          .filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id))
+          .filter((t) => t.id !== SHARED_KB_TEMPLATE_ID),
         allTemplates,
         connections: connections.filter(
-          (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
+          (c) =>
+            !PROVIDER_TEMPLATE_IDS.has(c.templateId) &&
+            c.templateId !== SHARED_KB_TEMPLATE_ID,
         ),
       }),
     [allTemplates, connections, showInternal],

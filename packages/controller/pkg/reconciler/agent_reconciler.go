@@ -466,6 +466,9 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 	if !r.config.WarmPool.Enabled {
 		return claims, nil
 	}
+	if pin := agentSpec.StorageClass; pin != "" && pin != r.config.WarmPool.StorageClass {
+		return claims, nil
+	}
 
 	targets := poolTargets(r.config.WarmPool)
 	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {

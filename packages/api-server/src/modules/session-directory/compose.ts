@@ -1,11 +1,7 @@
 import type { Db } from "db";
 
-import { withAdvisoryLock } from "../../core/advisory-lock.js";
+import { SESSION_DIRECTORY_RETENTION_DAYS } from "./domain/types.js";
 import { createSessionDirectoryRepository } from "./infrastructure/session-directory-repository.js";
-import {
-  startSessionDirectoryRetentionJob,
-  type SessionDirectoryRetentionJob,
-} from "./sagas/session-directory-retention-job.js";
 import {
   createSessionDirectoryService,
   type SessionDirectory,
@@ -13,14 +9,18 @@ import {
 
 export function composeSessionDirectory(db: Db): {
   sessionDirectory: SessionDirectory;
-  retentionJob: SessionDirectoryRetentionJob;
+  retentionTick: () => Promise<void>;
 } {
   const repo = createSessionDirectoryRepository(db);
   return {
     sessionDirectory: createSessionDirectoryService({ repo }),
-    retentionJob: startSessionDirectoryRetentionJob({
-      withLock: withAdvisoryLock(db),
-      deleteOld: (days) => repo.deleteOlderThan(days),
-    }),
+    retentionTick: async () => {
+      const n = await repo.deleteOlderThan(SESSION_DIRECTORY_RETENTION_DAYS);
+      if (n > 0) {
+        process.stderr.write(
+          `[session-directory/retention] deleted ${n} agent_sessions older than ${SESSION_DIRECTORY_RETENTION_DAYS}d\n`,
+        );
+      }
+    },
   };
 }

@@ -18,7 +18,6 @@ import {
   type DomainEvent,
 } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
@@ -99,10 +98,10 @@ function harness(opts: {
     events,
     worker,
     async start() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
     },
     async mention(over?: { user?: string; teamId?: string; text?: string }) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",

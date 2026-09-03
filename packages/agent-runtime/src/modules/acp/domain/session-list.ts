@@ -26,6 +26,9 @@ export interface SessionMetaLike {
   createdAt: string;
   lastActivityAt?: string;
   seenAt?: string;
+  runStartedAt?: string;
+  runTotalMs?: number;
+  runCount?: number;
 }
 
 export interface SessionListPredicates {
@@ -63,6 +66,9 @@ function fromEntry(
     experimentId: entry.meta.experimentId ?? null,
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,
+    runStartedAt: entry.runStartedAt ?? null,
+    runTotalMs: entry.runTotalMs ?? null,
+    runCount: entry.runCount ?? null,
     running,
   };
 }
@@ -82,6 +88,9 @@ function fromHarnessOnly(
     experimentId: null,
     threadTs: null,
     seenAt: null,
+    runStartedAt: null,
+    runTotalMs: null,
+    runCount: null,
     running,
   };
 }

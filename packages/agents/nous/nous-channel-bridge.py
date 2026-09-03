@@ -191,7 +191,17 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 self._reply(400, {"ok": False, "error": "empty message"})
                 return
-            send_channel_message(channel, text, chat_id)
+            try:
+                send_channel_message(channel, text, chat_id)
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    raise
+                # The MCP session is pinned to one api-server replica; a
+                # rolling deploy or scale event can remap this pod mid-
+                # sequence and 404 the follow-up. A fresh handshake lands
+                # on the new replica.
+                log.info("mcp session lost (404); retrying with a fresh session")
+                send_channel_message(channel, text, chat_id)
             log.info("forwarded gate notification to channel %r", channel)
             self._reply(200, {"ok": True})
         except Exception as exc:  # never hard-fail; Nous's notifier is best-effort

@@ -1,7 +1,9 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import type { Hono } from "hono";
 import type {
+  ArtifactTouchService,
   HarnessContext,
+  KbPublishGate,
   RuntimeDeliveryService,
   SessionDirectoryService,
 } from "api-server-api";
@@ -13,6 +15,8 @@ export interface RuntimeTrpcDeps {
   k8s: K8sClient;
   hello: RuntimeDeliveryService;
   sessionDirectory: SessionDirectoryService;
+  artifactTouchesFor: (owner: string) => ArtifactTouchService;
+  kbPublish: KbPublishGate;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -45,6 +49,8 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         agentId,
         runtimeDelivery: deps.hello,
         sessionDirectory: deps.sessionDirectory,
+        artifactTouches: deps.artifactTouchesFor(verified.owner),
+        kbPublish: deps.kbPublish,
       }),
     });
   });

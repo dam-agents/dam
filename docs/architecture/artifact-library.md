@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-08-19
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -11,7 +11,20 @@ the platform. An **Artifact** is owner-scoped like every other resource, is
 attributed to the Agent that published it (or to the user, for manual
 uploads), and outlives both the sandbox and the agent that produced it.
 Publishing a new revision keeps the same identity and share link and appends
-to a per-artifact **version history** viewers can flip through.
+to a per-artifact **version history** viewers can flip through. The history
+holds every version including the current one — creation writes the first row,
+each revision writes its own — and a version records the session that
+produced it when one is known, which is how the Home feed shows an artifact on
+the card of the session that made it. The session becomes known after the
+fact: the platform's artifact tools mark their results, the agent-runtime
+spots the marker in the session's ACP stream — frames it already proxies,
+each carrying its session id — and reports the touch over its runtime
+channel. The write is scoped to the calling agent's own artifacts and never
+overwrites another session's attribution, so a failure anywhere leaves a
+version unattributed rather than misattributed. Terminal sessions bypass ACP
+and stay unattributed. Concurrent revision publishes are
+detected — one wins, the other is refused with a conflict and leaves no
+partial version behind.
 
 An artifact's **kind is settled when it is created** and no revision can move
 it — neither by declaring one nor by renaming into another extension. The
@@ -56,10 +69,13 @@ dedicated **share host**.
 
 User-generated content is never served from the app origin. A dedicated
 **share host** (a separate subdomain, mandatory, wired through the cluster
-ingress and configured via Helm) serves *only* shared artifacts and folder
-pages. The api-server host-gates every request before any app route or auth
+ingress and configured via Helm) serves *only* the by-link surfaces — shared
+artifacts, folder pages, and the read-only knowledge-base MCP endpoint —
+never an app route. The api-server host-gates every request before any app route or auth
 middleware: requests for the share host are dispatched to a self-contained
-public viewer app; everything else falls through to the platform surface.
+share-host app — the public artifact viewer plus the read-only
+[knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` —
+and everything else falls through to the platform surface.
 The two origins therefore never share cookies or tokens — a malicious
 artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies,
 because none of them exist on its origin.
@@ -153,6 +169,9 @@ flowchart LR
   rather than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
+- The Home feed's session cards carry **artifact chips** — what the session
+  touched since the card was last dismissed, opening the preview dialog in
+  place.
 - The chat view carries the same library twice over: an **Artifacts section**
   in the session sidebar, scoped to the sandbox's agent and offering the same
   per-artifact actions, and a **docked preview** beside the conversation that

@@ -13,6 +13,8 @@ function fakeStore(): SessionMetadataStore {
     set: () => {},
     recordActivity: () => {},
     recordSeen: () => {},
+    startRun: () => {},
+    finishRun: () => {},
     all: () => ({}),
     tombstone: () => {},
     isTombstoned: () => false,

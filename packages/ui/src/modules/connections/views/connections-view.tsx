@@ -17,7 +17,7 @@ import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 
 export function ConnectionsView() {
-  const connectionsQ = useAppConnections();
+  const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [catalogOpen, setCatalogOpen] = useState(false);

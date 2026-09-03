@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { RedisBus } from "./redis-bus.js";
 
 export interface BusRpc<Req, Res> {
@@ -12,11 +13,22 @@ type Reply<T> =
   | { id: string; ok: true; body: T }
   | { id: string; ok: false; error: string };
 
+const envelopeSchema = z.object({
+  id: z.string(),
+  replyTo: z.string(),
+  body: z.unknown(),
+});
+const replySchema = z.union([
+  z.object({ id: z.string(), ok: z.literal(true), body: z.unknown() }),
+  z.object({ id: z.string(), ok: z.literal(false), error: z.string() }),
+]);
+
 export function createBusRpc<Req, Res>(opts: {
   bus: RedisBus;
   service: string;
   timeoutMs?: number;
   claim?: (requestId: string) => Promise<boolean>;
+  requestSchema?: z.ZodType<Req>;
 }): BusRpc<Req, Res> {
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const requestChannel = `rpc:${opts.service}`;
@@ -34,7 +46,7 @@ export function createBusRpc<Req, Res>(opts: {
   const unsubscribeReplies = opts.bus.subscribe(replyChannel, (payload) => {
     let reply: Reply<Res>;
     try {
-      reply = JSON.parse(payload) as Reply<Res>;
+      reply = replySchema.parse(JSON.parse(payload)) as Reply<Res>;
     } catch {
       return;
     }
@@ -73,7 +85,11 @@ export function createBusRpc<Req, Res>(opts: {
       return opts.bus.subscribe(requestChannel, (payload) => {
         let envelope: Envelope<Req>;
         try {
-          envelope = JSON.parse(payload) as Envelope<Req>;
+          const parsed = envelopeSchema.parse(JSON.parse(payload));
+          const body = opts.requestSchema
+            ? opts.requestSchema.parse(parsed.body)
+            : (parsed.body as Req);
+          envelope = { id: parsed.id, replyTo: parsed.replyTo, body };
         } catch {
           return;
         }

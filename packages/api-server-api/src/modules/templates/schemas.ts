@@ -51,6 +51,7 @@ export const templateSpecSchema = z
     imagePullSecretRef: z.string().optional(),
     hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
+    storageClass: z.string().optional(),
     backend: z
       .object({
         type: z.enum(["container", "vm"]),

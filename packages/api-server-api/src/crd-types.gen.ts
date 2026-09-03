@@ -150,6 +150,15 @@ export interface AgentSpecCR {
    */
   secretRef?: string;
   /**
+   * StorageClass pins the storage class this Agent's workspace volumes
+   * provision on, and the destination its storage migration targets — an
+   * Agent pinned to the class its workspaces already sit on is exempt from
+   * a fleet-wide drain. Empty inherits the install-wide class. A pinned
+   * Agent bypasses the warm PVC pool unless the pool provisions exactly
+   * this class.
+   */
+  storageClass?: string;
+  /**
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */
   storageSize?: string;

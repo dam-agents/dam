@@ -28,3 +28,6 @@
 pnpm-lock.yaml -diff
 package-lock.json -diff
 go.sum  -diff
+
+# Drizzle migration snapshots — full generated schema copies, reviewed by db:check:generated
+packages/db/drizzle/meta/*_snapshot.json linguist-generated=true -diff

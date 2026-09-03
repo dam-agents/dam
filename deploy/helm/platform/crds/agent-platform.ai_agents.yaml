@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "8"
+    agent-platform.ai/crd-schema-generation: "9"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -235,6 +235,15 @@ spec:
                   SecretRef names a K8s Secret whose keys are envFrom-projected into the
                   agent container (operator-supplied envs). Container backend only —
                   rejected on the vm backend (nothing projects it into the guest).
+                type: string
+              storageClass:
+                description: |-
+                  StorageClass pins the storage class this Agent's workspace volumes
+                  provision on, and the destination its storage migration targets — an
+                  Agent pinned to the class its workspaces already sit on is exempt from
+                  a fleet-wide drain. Empty inherits the install-wide class. A pinned
+                  Agent bypasses the warm PVC pool unless the pool provisions exactly
+                  this class.
                 type: string
               storageSize:
                 description: StorageSize overrides the chart-wide default PVC size;

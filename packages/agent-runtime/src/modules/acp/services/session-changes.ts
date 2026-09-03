@@ -71,6 +71,14 @@ export function notifyingSessionMetadataStore(
       store.recordSeen(sessionId);
       changes.notify();
     },
+    startRun(sessionId) {
+      store.startRun(sessionId);
+      changes.notify();
+    },
+    finishRun(sessionId) {
+      store.finishRun(sessionId);
+      changes.notify();
+    },
     tombstone(sessionId) {
       store.tombstone(sessionId);
       changes.notify();

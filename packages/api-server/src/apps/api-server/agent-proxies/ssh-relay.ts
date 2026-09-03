@@ -6,9 +6,11 @@ import type { AgentsRepository } from "../../../modules/agents/infrastructure/ag
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
+import { boundedSet } from "../../../core/bounded-map.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_DEBOUNCE_MS = 30_000;
+const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 const PING_INTERVAL_MS = 30_000;
 
 export interface SshRelay {
@@ -18,6 +20,7 @@ export interface SshRelay {
     head: Buffer,
     agentId: string,
   ): void;
+  close(): void;
 }
 
 export function createSshRelay(
@@ -30,7 +33,7 @@ export function createSshRelay(
   const bumpActivity = (id: string) => {
     const now = Date.now();
     if (now - (lastActivity.get(id) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
-      lastActivity.set(id, now);
+      boundedSet(lastActivity, id, now, ACTIVITY_MAP_MAX_ENTRIES);
       repo
         .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
         .catch(() => {});
@@ -136,5 +139,16 @@ export function createSshRelay(
     });
   }
 
-  return { handleUpgrade };
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
+    },
+  };
 }

@@ -13,7 +13,6 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
@@ -86,7 +85,7 @@ function harness(opts: {
     events,
     prompts,
     async mention(user: string) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user,
         channel: "C1",

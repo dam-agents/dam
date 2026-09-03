@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-08-17
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -53,15 +53,15 @@ Some templates (Spotify, YouTube, Google services, and the machine-to-machine au
 
 ### Connection
 
-A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the raw user inputs (kept for re-render), the auth credential state, and the projected contributions.
+A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the recorded inputs (the user's own, kept for re-render, plus any platform-derived facts the Connection is identified or labelled by), the auth credential state, and the projected contributions.
 
-The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — the JWT-signed counterpart of client credentials, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
+The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and tokens minted from it), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — client credentials' JWT-signed counterpart), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
-Credentials carry their own lifecycle. A stored one can be **updated in place** — the injected value, the client secret, or the GitHub App private key, whichever the auth mode holds. The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted. A rotation rewrites the credential and its SDS onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side via SDS, no Agent-spec patch or pod roll is needed. An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then. A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it. A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action. A failure that is not a rejection parks nothing and instead defers the next attempt on a widening backoff held on the Connection itself, so a renewal that keeps failing is not re-attempted every sweep; any successful credential write clears both records. Past its token horizon a Connection also reads expired, since a healthy one is renewed well ahead of it; a provider issuing non-expiring tokens has no horizon and stays active.
+Credentials carry their own lifecycle. A stored one can be **updated in place** — the injected value, the client secret, or the GitHub App private key, whichever the auth mode holds. The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted. A rotation rewrites the credential and its SDS onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side via SDS, no Agent-spec patch or pod roll is needed. An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then. A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it. A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action. A failure that is not a rejection parks nothing and instead defers the next attempt on a widening backoff held on the Connection itself, so a renewal that keeps failing is not re-attempted every sweep; any successful credential write clears both records. Credential writers — refresh, rotation, re-consent, and the re-point of a shared knowledge base onto a fresh link — serialize per Connection across replicas with an in-lock re-read that stands down if the state already advanced; grant fan-out serializes per Agent. Past its token horizon a Connection also reads expired, since a healthy one is renewed well ahead of it; a provider issuing non-expiring tokens has no horizon and stays active.
 
-A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously. The issuer URL is optional: when omitted, the authorization server is discovered from the API host itself (its protected-resource metadata naming the issuer, or the host serving issuer metadata directly). The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret. One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
+A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously. The issuer URL is optional — when omitted it is discovered from the API host's published OAuth metadata. The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret. One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
 
-A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token (`ghs_…`) synchronously at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
+A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
 
 Connect and disconnect raise domain events, recorded as [Activity Events](usage-tracking.md). A connect fires wherever the Connection actually reaches its connected state — at creation for the modes that complete synchronously, and at the authorization callback for OAuth, which is the only mode that cannot finish in one step. Emitting at both points would double-count OAuth; emitting only at the callback leaves every other mode invisible. A connection abandoned before that state raises neither event, so removals cannot outnumber connects. The event names the provider, not just the grant, because the Connection record is destroyed on disconnect and a grant identifier alone would die with it.
 
@@ -115,6 +115,33 @@ An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry`
 carrying the server URL. OAuth adds a placeholder Authorization header on the
 `mcp-entry`; a static-header credential instead adds an `egress-inject` (as
 Custom Header does), keeping the secret gateway-side.
+
+### Shared knowledge base
+
+A hidden managed template behind the [knowledge-base sharing](knowledge-bases.md#sharing)
+consumer flow — never offered in the generic catalog; its connections surface
+only in an agent's **Knowledge** settings. One lookup both authorizes the
+pasted share string against a live share and settles which knowledge base it
+reaches, and the connection is **identified by that knowledge base** rather
+than by the link it arrived on: unsharing retires a share id and re-sharing
+mints a fresh one, so a link for a knowledge base already connected re-points
+the row that exists — one entry per knowledge base per owner, a constraint the
+store enforces, never a dead entry beside a live one — while a link that no
+longer resolves is refused instead of stored half-identified. The secret lands
+in the per-Connection Secret under a **per-share header name**
+(`x-kb-token-<shareId>`), which is what the serving side authenticates and what
+keeps several shares distinct within one request. The owner's public name is
+readable only to a consumer whose secret still works, so the connection
+remembers the last one it saw and stops following renames once the secret it
+holds stops working — a row that broke still says which knowledge base it was,
+beside the expired status explaining it. Deliberately **no**
+`mcp-entry` per connection: one built-in aggregate entry serves all of a
+sandbox's shares (below). Reads are served **in-cluster over the harness**, not
+by the agent dialing the platform's share host — the platform reads an agent's
+granted shares and replays their per-share secrets into the aggregate serving
+app server-side (see [knowledge bases](knowledge-bases.md#sharing)), so the
+consumer path needs no egress. Connections of this template are capped per
+owner.
 
 ### App preset: Kubernetes / OpenShift
 
@@ -170,6 +197,15 @@ gateway-side upstream validation only.
   ]
 }
 ```
+
+## Built-in contributions
+
+Not every contribution comes from a grant: the runtime state builder also
+merges **built-ins** the platform itself contributes. Every agent gets the
+platform MCP entry; a sandbox holding at least one shared-knowledge-base grant
+additionally gets the aggregate `knowledge-bases` MCP entry pointing at the
+in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP
+entry), appearing and disappearing with its first and last such grant.
 
 ## Contribution fan-out
 

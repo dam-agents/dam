@@ -27,13 +27,18 @@ export interface NavigationSlice {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  sandboxFocus: string | null;
+  clearSandboxFocus: () => void;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
-  navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
+  navigateToSandboxHome: (
+    agentId: string,
+    section?: SandboxSection,
+    focus?: string,
+  ) => void;
   navigateToExperiments: () => void;
   navigateToKnowledgeBases: () => void;
-  navigateToKnowledgeBaseConfig: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -68,40 +73,42 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
+  sandboxFocus: null,
+  clearSandboxFocus: () => set({ sandboxFocus: null }),
   hydrateRoute: () =>
-    set(routeToNavigationState(parseRoute(window.location.pathname))),
+    set({
+      ...routeToNavigationState(parseRoute(window.location.pathname)),
+      sandboxFocus: null,
+    }),
   setView: (v) => {
     history.pushState(null, "", routeToPath({ view: v }));
-    set(routeToNavigationState({ view: v }));
+    set({ ...routeToNavigationState({ view: v }), sandboxFocus: null });
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";
     history.pushState(null, "", routeToPath({ view: "settings", settingsTab }));
-    set({ view: "settings", settingsTab, agentId: null });
+    set({ view: "settings", settingsTab, agentId: null, sandboxFocus: null });
   },
-  navigateToSandboxHome: (agentId, section = "setup") => {
+  navigateToSandboxHome: (agentId, section = "setup", focus) => {
     history.pushState(
       null,
       "",
       routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
-    set({ view: "sandbox-home", agentId, sandboxSection: section });
+    set({
+      view: "sandbox-home",
+      agentId,
+      sandboxSection: section,
+      sandboxFocus: focus ?? null,
+    });
   },
   navigateToExperiments: () => {
     history.pushState(null, "", routeToPath({ view: "experiments" }));
-    set({ view: "experiments", agentId: null });
+    set({ view: "experiments", agentId: null, sandboxFocus: null });
   },
   navigateToKnowledgeBases: () => {
     history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));
-    set({ view: "knowledge-bases", agentId: null });
-  },
-  navigateToKnowledgeBaseConfig: (agentId) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "sandbox-home", agentId, sandboxSection: "setup" }),
-    );
-    set({ view: "sandbox-home", agentId, sandboxSection: "setup" });
+    set({ view: "knowledge-bases", agentId: null, sandboxFocus: null });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

@@ -38,6 +38,8 @@ export interface PromptScheduler {
 
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
+  onTurnStarted?: (submission: PromptSubmission) => void;
+  onTurnEnded?: (sessionId: string) => void;
 }
 
 /**
@@ -49,7 +51,9 @@ export interface PromptSchedulerDeps {
  * prompts, and answers the runtime's busy/idle questions about turn state.
  * A turn becomes active only when the harness actually took the frame:
  * sendToAgent reports delivery, and on failure the prompt stays queued and
- * no promptStarted is sent.
+ * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
+ * every path that starts or drops an active turn, so an observer timing a turn
+ * cannot be left with one it believes is still running.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -78,6 +82,7 @@ export function createPromptScheduler(
   function start(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
     activeTurns.set(entry.sessionId, entry.outboundId);
+    deps.onTurnStarted?.(entry);
     if (entry.promptId !== null) {
       sendToChannel(
         entry.channel,
@@ -131,6 +136,7 @@ export function createPromptScheduler(
         return { turnEnded: false };
       }
       activeTurns.delete(sessionId);
+      deps.onTurnEnded?.(sessionId);
       const queue = queues.get(sessionId);
       if (!queue || queue.length === 0) {
         queues.delete(sessionId);
@@ -169,13 +175,16 @@ export function createPromptScheduler(
     },
 
     forget(sessionId) {
-      activeTurns.delete(sessionId);
+      const wasActive = activeTurns.delete(sessionId);
       queues.delete(sessionId);
+      if (wasActive) deps.onTurnEnded?.(sessionId);
     },
 
     clear() {
+      const active = [...activeTurns.keys()];
       activeTurns.clear();
       queues.clear();
+      for (const sessionId of active) deps.onTurnEnded?.(sessionId);
     },
   };
 }

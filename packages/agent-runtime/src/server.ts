@@ -31,6 +31,8 @@ import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { composeKbPublish } from "./modules/kb-publish/compose.js";
+import { createHarnessClient } from "./modules/runtime-channel/harness-client.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
@@ -42,6 +44,7 @@ import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
+  createArtifactTouchReporter,
   createEnvPlugin,
   createEnvStateStore,
   createFilePlugin,
@@ -85,7 +88,21 @@ const manifestPath = config.PLATFORM_DEV
   : join(__dir, "../runtime-manifest.yaml");
 const runtimeManifest = loadManifest(manifestPath);
 
+const platformAgentId =
+  process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
+
 const filesService = createFilesService(homeDir);
+const harnessClient = createHarnessClient({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+});
+
+const kbPublish = composeKbPublish({
+  workDir,
+  homeDir,
+  harness: harnessClient,
+  log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
+});
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const pristineSkillPaths = [
@@ -103,6 +120,11 @@ const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+
+const artifactTouchReporter = createArtifactTouchReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
+});
 
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
@@ -140,6 +162,7 @@ const {
   sessionHistory: runtimeManifest.sessionHistory,
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  onArtifactTouch: artifactTouchReporter.report,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -149,7 +172,7 @@ const runtimeChannel = await composeRuntimeChannel({
   workDir,
   stateBackend,
   apiServerUrl: config.API_SERVER_URL,
-  agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  agentId: platformAgentId,
   triggerDriver,
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
@@ -187,6 +210,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   files: filesService,
+  kbPublish: kbPublish.service,
   sessions: sessionsService,
   skills: skillsService,
   ssh: sshService,
@@ -474,7 +498,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0,
+      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
     };
     res
@@ -545,8 +569,11 @@ applyWSSHandler({
   createContext: createTrpcContext,
 });
 
-acpWss.on("connection", (ws) => {
-  acpRuntime.attach(createWebSocketChannel(ws));
+acpWss.on("connection", (ws, req: http.IncomingMessage) => {
+  const passive =
+    new URL(req.url ?? "", "http://localhost").searchParams.get("passive") ===
+    "1";
+  acpRuntime.attach(createWebSocketChannel(ws), { viewer: !passive });
 });
 
 server.on("upgrade", (req, socket, head) => {

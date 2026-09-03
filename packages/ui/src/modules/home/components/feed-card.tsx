@@ -29,19 +29,9 @@ export function FeedCard({
 }: Props) {
   return (
     <div
-      role={onOpen ? "button" : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (!onOpen) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
       className={cn(
-        "group w-full rounded-2xl border border-border bg-card/80 p-5 text-left transition-all duration-200",
-        onOpen && "cursor-pointer hover:shadow-lg",
+        "group relative w-full rounded-2xl border border-border bg-card/80 p-5 text-left transition-all duration-200",
+        onOpen && "hover:shadow-lg",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -50,8 +40,23 @@ export function FeedCard({
             {icon}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-[15px] leading-snug font-semibold text-foreground">
-            {title}
+          <p
+            className={cn(
+              "text-[15px] leading-snug text-foreground",
+              unread || working ? "font-semibold" : "font-normal",
+            )}
+          >
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={onOpen}
+                className="text-left after:absolute after:inset-0 after:cursor-pointer focus-visible:underline focus-visible:outline-none"
+              >
+                {title}
+              </button>
+            ) : (
+              title
+            )}
             {working && (
               <WorkingDots
                 className="ml-1 inline-flex align-middle text-accent"
@@ -66,11 +71,8 @@ export function FeedCard({
         {onDismiss && (
           <button
             type="button"
-            className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDismiss();
-            }}
+            className="relative z-10 shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+            onClick={onDismiss}
           >
             Dismiss
           </button>

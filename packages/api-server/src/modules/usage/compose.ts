@@ -13,14 +13,10 @@ import {
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
-import { withAdvisoryLock } from "../../core/advisory-lock.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";
-import {
-  startActivityRetentionJob,
-  type ActivityRetentionJob,
-} from "./sagas/activity-retention-job.js";
+import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
 import { createReportService } from "./services/report-service.js";
 import { createUsageRoutes } from "./routes.js";
 import type { ApiVariables } from "../../core/http-context.js";
@@ -41,6 +37,7 @@ export interface UsageModule {
   mount(app: Hono<AppEnv>): void;
   start(): void;
   stop(): void;
+  retentionTick(): Promise<void>;
 }
 
 export function composeUsageForOwner(ownerSub: string): UsageService {
@@ -66,7 +63,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
 
   let persistAgentsSub: Subscription | null = null;
   let persistActivitySub: Subscription | null = null;
-  let retentionJob: ActivityRetentionJob | null = null;
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
@@ -86,11 +82,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
         insert,
         upsertActorRole: upsertRole,
       });
-      retentionJob = startActivityRetentionJob({
-        withLock: withAdvisoryLock(deps.db),
-        deleteOld: deleteActivityEventsOlderThan(deps.db),
-      });
-      retentionJob.start();
     } else {
       process.stderr.write(
         "[usage] activityTrackingEnabled=false — activity_events not being written\n",
@@ -106,12 +97,21 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   function stop(): void {
     persistAgentsSub?.unsubscribe();
     persistActivitySub?.unsubscribe();
-    retentionJob?.stop();
   }
 
   function mount(app: Hono<AppEnv>): void {
     app.route("/", routes);
   }
 
-  return { mount, start, stop };
+  const deleteOld = deleteActivityEventsOlderThan(deps.db);
+  async function retentionTick(): Promise<void> {
+    const n = await deleteOld(ACTIVITY_RETENTION_DAYS);
+    if (n > 0) {
+      process.stderr.write(
+        `[usage/retention] deleted ${n} activity_events older than ${ACTIVITY_RETENTION_DAYS}d\n`,
+      );
+    }
+  }
+
+  return { mount, start, stop, retentionTick };
 }

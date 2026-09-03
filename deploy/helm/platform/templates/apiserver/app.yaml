@@ -43,17 +43,6 @@ metadata:
     istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
 spec:
   type: ClusterIP
-  # MCP streamable-HTTP sessions are held in-process per replica; pin each
-  # caller (a per-agent gateway pod, stable IP) to one replica so a session's
-  # follow-up requests land where the session lives.
-  #
-  # This setting alone does NOT achieve that here: it is a kube-proxy feature,
-  # and this Service is waypoint-fronted (`istio.io/use-waypoint` above), so
-  # the waypoint's Envoy load-balances the traffic and never consults it. The
-  # pinning that actually applies is the consistent-hash DestinationRule in
-  # harness-affinity.yaml. Kept for the non-waypoint path and as the declared
-  # intent — remove both or neither.
-  sessionAffinity: ClientIP
   ports:
     - port: {{ .Values.apiServer.harnessServerPort }}
       targetPort: harness
@@ -100,6 +89,16 @@ spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
       terminationGracePeriodSeconds: 45
+      # Preferred, not required: replicas should not share a node fate, but a
+      # single-node cluster (lima dev) must still schedule.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+              app.kubernetes.io/instance: {{ .Release.Name }}
       # ndots:1 so external hostnames (e.g. an MCP server's domain during
       # OAuth/DCR discovery in connections.create) resolve absolute-first.
       # The default ndots:5 expands sub-5-dot FQDNs against node-inherited
@@ -134,6 +133,10 @@ spec:
                   key: POSTGRES_APISERVER_PASSWORD
             - name: DATABASE_URL
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
+            - name: DATABASE_POOL_MAX
+              value: {{ .Values.apiServer.db.poolMax | quote }}
+            - name: RUNTIME_DELIVERY_CONCURRENCY
+              value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}
             # Verify the external DB's TLS cert against this CA (sslmode=verify-*).
             # The api-server passes it as the DB client's `ssl.ca`, scoping trust
@@ -224,6 +227,16 @@ spec:
                   key: API_KEY_HMAC_KEY
             - name: SHARE_BASE_URL
               value: {{ include "platform.url.share" . | quote }}
+            - name: KB_SHARE_PER_FILE_MAX_BYTES
+              value: {{ .Values.apiServer.kbShares.perFileMaxBytes | quote }}
+            - name: KB_SHARE_TOTAL_MAX_BYTES
+              value: {{ .Values.apiServer.kbShares.totalMaxBytes | quote }}
+            - name: KB_SHARE_MAX_FILES
+              value: {{ .Values.apiServer.kbShares.maxFiles | quote }}
+            - name: KB_SHARE_GREP_DEADLINE_MS
+              value: {{ .Values.apiServer.kbShares.grepDeadlineMs | quote }}
+            - name: KB_SHARE_MAX_CONNECTIONS_PER_OWNER
+              value: {{ .Values.apiServer.kbShares.maxConnectionsPerOwner | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -253,6 +266,15 @@ spec:
               value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
+            # The agent home is fixed at /home/agent (templateDefaults.agentHome
+            # is retired). The controller substitutes `$HOME` mount paths with
+            # this same literal at render time; the api-server resolves KB share
+            # roots beneath the work dir, so it must see the identical absolute
+            # paths the controller and agent runtime use.
+            - name: AGENT_HOME
+              value: "/home/agent"
+            - name: AGENT_WORK_DIR
+              value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
@@ -441,6 +463,16 @@ spec:
               readOnly: true
             {{- end }}
           {{- if .Values.probes.enabled }}
+          # Startup shields boot from liveness: migrations run before any
+          # listener exists, and at >1 replica the losers of the migration
+          # advisory lock block until the winner finishes — killing them
+          # mid-wait would wedge the roll. 10 min budget, then liveness arms.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
           # Readiness gates on the Keycloak JWKS warm-up (503 until the key
           # set has been fetched once), so a rolling update keeps the old pod
           # serving until this pod can verify tokens. Liveness stays on the

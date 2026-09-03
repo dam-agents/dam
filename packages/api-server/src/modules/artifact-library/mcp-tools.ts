@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  ARTIFACT_TOUCH_MARKER_VERSION,
   ARTIFACT_TITLE_MAX_LENGTH,
   artifactInternalLink,
   artifactKindSchema,
@@ -20,6 +21,19 @@ interface ToolContent {
   content: { type: "text"; text: string }[];
   isError?: boolean;
   [key: string]: unknown;
+}
+
+function touched(
+  artifact: LibraryArtifact & { internal_link: string },
+): Record<string, unknown> {
+  return {
+    ...artifact,
+    platform_artifact_touch: {
+      v: ARTIFACT_TOUCH_MARKER_VERSION,
+      artifactId: artifact.id,
+      version: artifact.version,
+    },
+  };
 }
 
 function json(value: unknown): ToolContent {
@@ -136,7 +150,7 @@ export function registerArtifactLibraryTools(
           { agentId: deps.agentId },
         );
         return json({
-          ...withInternalLink(artifact),
+          ...touched(withInternalLink(artifact)),
           ...(await experimentAttachment(artifact.id, experiment_id)),
         });
       }),
@@ -281,7 +295,13 @@ export function registerArtifactLibraryTools(
           fileName: file_name,
           folderId: folder_id === "" ? null : folder_id,
         });
-        return json(withInternalLink(artifact));
+        const publishedVersion =
+          content !== undefined || upload_ref !== undefined;
+        return json(
+          publishedVersion
+            ? touched(withInternalLink(artifact))
+            : withInternalLink(artifact),
+        );
       }),
   );
 

@@ -6,6 +6,7 @@ import {
   ilike,
   isNull,
   lt,
+  inArray,
   or,
   sql,
   type Db,
@@ -41,6 +42,22 @@ export interface FolderRow {
   slug: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+const TOUCH_LIMIT_DEFAULT = 200;
+const TOUCH_LIMIT_MAX = 200;
+
+function clampTouchLimit(limit: number | undefined): number {
+  if (limit === undefined) return TOUCH_LIMIT_DEFAULT;
+  return Math.min(Math.max(1, Math.trunc(limit)), TOUCH_LIMIT_MAX);
+}
+
+export interface TouchRow {
+  artifactId: string;
+  version: number;
+  agentId: string;
+  sessionId: string;
+  touchedAt: Date;
 }
 
 export interface VersionRow {
@@ -97,11 +114,23 @@ export interface ArtifactLibraryRepository {
     owner: string,
   ): Promise<{ artifact: ArtifactRow; versions: VersionRow[] } | null>;
   incrementViewCount(id: string): Promise<void>;
+  attributeVersion(row: {
+    artifactId: string;
+    version: number;
+    owner: string;
+    sessionId: string;
+  }): Promise<boolean>;
+  listTouches(query: {
+    owner: string;
+    agentId: string;
+    sessionIds: readonly string[];
+    limit?: number;
+  }): Promise<(TouchRow & { fileName: string })[]>;
 
   advanceVersion(
     id: string,
     owner: string,
-    snapshot: Omit<VersionRow, "createdAt">,
+    expectedVersion: number,
     patch: ArtifactPatch,
   ): Promise<ArtifactRow | null>;
   listVersions(artifactId: string): Promise<VersionRow[]>;
@@ -150,11 +179,20 @@ export function createArtifactLibraryRepository(
 
   return {
     async insertArtifact(row) {
-      const [inserted] = await db
-        .insert(artifactsTable)
-        .values(row)
-        .returning(artifactColumns);
-      return inserted!;
+      return db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(artifactsTable)
+          .values(row)
+          .returning(artifactColumns);
+        await tx.insert(versionsTable).values({
+          artifactId: inserted!.id,
+          version: inserted!.version,
+          storageRef: inserted!.storageRef,
+          contentType: inserted!.contentType,
+          sizeBytes: inserted!.sizeBytes,
+        });
+        return inserted!;
+      });
     },
 
     async getArtifact(id, owner) {
@@ -265,17 +303,97 @@ export function createArtifactLibraryRepository(
         .where(eq(artifactsTable.id, id));
     },
 
-    async advanceVersion(id, owner, snapshot, patch) {
+    async attributeVersion({ artifactId, version, owner, sessionId }) {
+      const updated = await db
+        .update(versionsTable)
+        .set({ sessionId })
+        .where(
+          and(
+            eq(versionsTable.artifactId, artifactId),
+            eq(versionsTable.version, version),
+            or(
+              isNull(versionsTable.sessionId),
+              eq(versionsTable.sessionId, sessionId),
+            ),
+            inArray(
+              versionsTable.artifactId,
+              db
+                .select({ id: artifactsTable.id })
+                .from(artifactsTable)
+                .where(
+                  and(
+                    eq(artifactsTable.id, artifactId),
+                    eq(artifactsTable.owner, owner),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ artifactId: versionsTable.artifactId });
+      return updated.length > 0;
+    },
+
+    async listTouches({ owner, agentId, sessionIds, limit }) {
+      if (sessionIds.length === 0) return [];
+      const rows = await db
+        .select({
+          artifactId: versionsTable.artifactId,
+          version: versionsTable.version,
+          sessionId: versionsTable.sessionId,
+          touchedAt: versionsTable.createdAt,
+          fileName: artifactsTable.fileName,
+        })
+        .from(versionsTable)
+        .innerJoin(
+          artifactsTable,
+          eq(artifactsTable.id, versionsTable.artifactId),
+        )
+        .where(
+          and(
+            eq(artifactsTable.owner, owner),
+            eq(artifactsTable.agentId, agentId),
+            inArray(versionsTable.sessionId, [...sessionIds]),
+          ),
+        )
+        .orderBy(desc(versionsTable.createdAt))
+        .limit(clampTouchLimit(limit));
+      return rows.flatMap((row) =>
+        row.sessionId === null
+          ? []
+          : [
+              {
+                artifactId: row.artifactId,
+                version: row.version,
+                agentId,
+                sessionId: row.sessionId,
+                touchedAt: row.touchedAt,
+                fileName: row.fileName,
+              },
+            ],
+      );
+    },
+
+    async advanceVersion(id, owner, expectedVersion, patch) {
       return db.transaction(async (tx) => {
         const [row] = await tx
           .update(artifactsTable)
           .set({ ...patch, updatedAt: new Date() })
           .where(
-            and(eq(artifactsTable.id, id), eq(artifactsTable.owner, owner)),
+            and(
+              eq(artifactsTable.id, id),
+              eq(artifactsTable.owner, owner),
+              eq(artifactsTable.version, expectedVersion),
+            ),
           )
           .returning(artifactColumns);
         if (!row) return null;
-        await tx.insert(versionsTable).values(snapshot);
+        await tx.insert(versionsTable).values({
+          artifactId: row.id,
+          version: row.version,
+          storageRef: row.storageRef,
+          contentType: row.contentType,
+          sizeBytes: row.sizeBytes,
+        });
         return row;
       });
     },

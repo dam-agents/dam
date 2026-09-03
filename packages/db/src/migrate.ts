@@ -17,6 +17,9 @@ export async function runMigrations(
     await sql`SELECT pg_advisory_lock(pg_catalog.hashtext(${MIGRATION_LOCK}))`;
     await migrate(db, { migrationsFolder });
   } finally {
+    await sql`SELECT pg_advisory_unlock(pg_catalog.hashtext(${MIGRATION_LOCK}))`.catch(
+      () => {},
+    );
     await sql.end();
   }
 }

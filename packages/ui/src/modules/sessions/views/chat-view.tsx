@@ -154,9 +154,6 @@ export function ChatView() {
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const navigateToKnowledgeBaseConfig = useStore(
-    (s) => s.navigateToKnowledgeBaseConfig,
-  );
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
@@ -427,14 +424,13 @@ export function ChatView() {
 
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
-    if (isKnowledgeBaseView) navigateToKnowledgeBaseConfig(selectedAgent);
-    else navigateToSandboxHome(selectedAgent);
-  }, [
-    selectedAgent,
-    isKnowledgeBaseView,
-    navigateToKnowledgeBaseConfig,
-    navigateToSandboxHome,
-  ]);
+    navigateToSandboxHome(selectedAgent);
+  }, [selectedAgent, navigateToSandboxHome]);
+
+  const handleShareKnowledgeBase = useCallback(() => {
+    if (!selectedAgent) return;
+    navigateToSandboxHome(selectedAgent, "setup", "knowledge");
+  }, [selectedAgent, navigateToSandboxHome]);
 
   const handleRestartSandbox = useCallback(() => {
     if (selectedAgent) restart(selectedAgent);
@@ -517,6 +513,11 @@ export function ChatView() {
               <DropdownMenuItem onSelect={handleConfigureSandbox}>
                 {surfaceCopy.configure}
               </DropdownMenuItem>
+              {isKnowledgeBaseView && (
+                <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
+                  Share knowledge base
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={handleRestartSandbox}>
                 Restart
               </DropdownMenuItem>

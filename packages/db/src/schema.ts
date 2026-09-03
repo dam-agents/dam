@@ -363,7 +363,9 @@ export const connections = pgTable(
 export const connectionGrants = pgTable(
   "connection_grants",
   {
-    connectionId: text("connection_id").notNull(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
     agentId: text("agent_id").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .defaultNow()
@@ -420,6 +422,8 @@ export const runtimeEvents = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
   },
   (table) => [
     index("runtime_events_agent_pending_idx")
@@ -637,6 +641,7 @@ export const libraryArtifactVersions = pgTable(
       .notNull()
       .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
+    sessionId: text("session_id"),
     storageRef: text("storage_ref").notNull(),
     contentType: text("content_type").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
@@ -644,7 +649,12 @@ export const libraryArtifactVersions = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
+  (table) => [
+    primaryKey({ columns: [table.artifactId, table.version] }),
+    index("library_artifact_versions_session_idx")
+      .on(table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
+  ],
 );
 
 export const invocations = pgTable(
@@ -672,5 +682,44 @@ export const invocations = pgTable(
     index("invocations_experiment_span_idx")
       .on(table.experimentSpanId)
       .where(sql`${table.experimentSpanId} IS NOT NULL`),
+  ],
+);
+
+export const kbShares = pgTable(
+  "kb_shares",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    owner: text("owner").notNull(),
+    secret: text("secret").notNull(),
+    publicName: text("public_name"),
+    roots: jsonb("roots").notNull(),
+    status: text("status").notNull().default("active"),
+    snapshotId: text("snapshot_id"),
+    snapshotManifestKey: text("snapshot_manifest_key"),
+    snapshotCreatedAt: timestamp("snapshot_created_at", { withTimezone: true }),
+    documentCount: integer("document_count"),
+    totalSizeBytes: bigint("total_size_bytes", { mode: "number" }),
+    publishState: text("publish_state").notNull().default("idle"),
+    publishError: text("publish_error"),
+    publishToken: text("publish_token"),
+    staleSnapshots: jsonb("stale_snapshots")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    queryCount: integer("query_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    dirtyAt: timestamp("dirty_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("kb_shares_active_agent_idx")
+      .on(table.agentId)
+      .where(sql`${table.status} = 'active'`),
+    index("kb_shares_owner_idx").on(table.owner),
   ],
 );

@@ -108,7 +108,13 @@ export function listFiles(scopes) {
       return TS_EXTENSIONS.has(ext) || ext === GO_EXTENSION;
     })
     .filter((f) => !/\.gen\.[cm]?[jt]sx?$/.test(f))
-    .filter((f) => f !== 'scripts/strip-comments.mjs');
+    .filter((f) => f !== 'scripts/strip-comments.mjs')
+    // api/v1 doc comments are controller-gen INPUT: they compile into the CRD
+    // descriptions (`kubectl explain`) and the api-server's generated TS
+    // JSDoc. Stripping them deletes user-facing API documentation and makes
+    // the generated manifests unreproducible — same category as the
+    // +kubebuilder markers preserved above, so the whole tree is exempt.
+    .filter((f) => !f.startsWith('packages/controller/api/'));
 }
 
 export function isGenerated(text) {

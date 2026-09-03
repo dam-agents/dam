@@ -21,6 +21,9 @@ export const podSessionSchema = z.object({
   experimentId: z.string().nullable(),
   threadTs: z.string().nullable(),
   seenAt: z.string().nullable(),
+  runStartedAt: z.string().nullable(),
+  runTotalMs: z.number().nullable(),
+  runCount: z.number().nullable(),
   running: z.boolean(),
 });
 

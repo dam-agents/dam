@@ -24,7 +24,7 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
   starting: { description: "The agent pod is starting up." },
   preparing_workspace: {
-    description: "Cloning the workspace seed. This finishes shortly.",
+    description: "Setting up the workspace. This finishes shortly.",
   },
   hibernating: { description: "The agent is going to sleep." },
   hibernated: {
