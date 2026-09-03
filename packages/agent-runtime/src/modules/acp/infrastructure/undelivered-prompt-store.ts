@@ -8,12 +8,6 @@ import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 const BYTES_CAP = 16 * 1024 * 1024;
 
-export {
-  platformUndeliveredPromptSchema as undeliveredPromptSchema,
-  type PlatformUndeliveredPrompt as UndeliveredPrompt,
-  type PromptBlock,
-} from "api-server-api";
-
 const sessionEntrySchema = z.object({
   prompts: z.array(platformUndeliveredPromptSchema).min(1),
 });
@@ -85,7 +79,7 @@ function withinCap(
  */
 export function createUndeliveredPromptStore(
   backend: DocumentStoreBackend,
-  now: () => string = () => new Date().toISOString(),
+  now: () => string,
 ): UndeliveredPromptStore {
   const store = backend.open("undelivered-prompts", {
     schema: stateSchema,

@@ -5,7 +5,7 @@ import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { UndeliveredPrompt } from "../../infrastructure/undelivered-prompt-store.js";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -61,7 +61,7 @@ export interface SessionBootstrapDeps {
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
-  undeliveredFor(sessionId: string): UndeliveredPrompt[];
+  undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
 }
 
@@ -105,7 +105,7 @@ export function createSessionBootstrap(
     value: unknown,
     clip: ReplayClip,
     turn: PlatformReplayTurnMeta | null,
-    undelivered: UndeliveredPrompt[],
+    undelivered: PlatformUndeliveredPrompt[],
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)

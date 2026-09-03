@@ -1,11 +1,15 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { PodSession } from "agent-runtime-api";
-import { SessionMode, SessionType, type SessionView } from "api-server-api";
+import {
+  type PlatformUndeliveredPrompt,
+  SessionMode,
+  SessionType,
+  type SessionView,
+} from "api-server-api";
 
 import { openInitializedConnection } from "../../acp/acp.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import { agentLacksLiveUpdates } from "../../agents/api/queries.js";
-import type { UndeliveredSend } from "../lib/undelivered-store.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -165,7 +169,7 @@ export async function forgetUndeliveredPrompt(
 export async function handOverUndelivered(
   agentId: string,
   sessionId: string,
-  prompts: UndeliveredSend[],
+  prompts: PlatformUndeliveredPrompt[],
 ): Promise<void> {
   if (prompts.length === 0) return;
   await withConnection(agentId, (conn) =>

@@ -92,7 +92,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
     enabled: opts.backgroundWorkHolds,
     log: opts.log,
   });
-  const undeliveredPrompts = createUndeliveredPromptStore(opts.stateBackend);
+  const undeliveredPrompts = createUndeliveredPromptStore(
+    opts.stateBackend,
+    () => new Date().toISOString(),
+  );
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     spawnAgent: () =>

@@ -61,6 +61,8 @@ export const promptBlockSchema = z.discriminatedUnion("type", [
 ]);
 export type PromptBlock = z.infer<typeof promptBlockSchema>;
 
+export const UNDELIVERED_INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
+
 export const platformUndeliveredPromptSchema = z.object({
   id: z.string().min(1),
   recordedAt: z.string(),

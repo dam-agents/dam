@@ -25,6 +25,7 @@ import { classifySendOutcome } from "../lib/send-outcome.js";
 import {
   forgetUndelivered,
   rememberUndelivered,
+  undeliveredRecordOf,
 } from "../lib/undelivered-store.js";
 import type {
   LiveConnection,
@@ -150,15 +151,16 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         if (reported) return;
         reported = true;
         if (!hidden) {
-          rememberUndelivered(draftKey(selectedAgent, intendedSessionId), {
-            id: uId,
-            text,
-            reason: message,
-            droppedAttachments: (attachments ?? []).map((a, i) =>
-              a.kind === "file" ? a.name : `pasted image ${String(i + 1)}`,
-            ),
-            recordedAt: new Date().toISOString(),
-          });
+          rememberUndelivered(
+            draftKey(selectedAgent, intendedSessionId),
+            undeliveredRecordOf({
+              id: uId,
+              text,
+              ...(attachments ? { attachments } : {}),
+              reason: message,
+              recordedAt: new Date().toISOString(),
+            }),
+          );
         }
         setMessages((p) =>
           p.flatMap<Message>((m) => {
@@ -168,6 +170,22 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
               { ...m, error: { message, retryWith: { text, attachments } } },
             ];
           }),
+        );
+      };
+      const interruptTurn = (message: string) => {
+        if (reported) return;
+        reported = true;
+        setMessages((p) =>
+          p.map((m) =>
+            m.id === aId
+              ? {
+                  ...m,
+                  streaming: false,
+                  queued: false,
+                  error: { message, retryWith: { text, attachments } },
+                }
+              : m,
+          ),
         );
       };
       const finalizeBubble = () =>
@@ -291,6 +309,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           }
         } else if (hidden) {
           dropBubble();
+        } else if (streamed) {
+          interruptTurn(outcome.message);
         } else {
           failUserMessage(outcome.message);
         }

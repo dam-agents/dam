@@ -551,6 +551,7 @@ export {
   promptBlockSchema,
   platformUndeliveredPromptSchema,
   platformUndeliveredMetaSchema,
+  UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";

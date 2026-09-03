@@ -4,7 +4,7 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import type { PromptBlock } from "api-server-api";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 import type {
   Message,
@@ -147,28 +147,18 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
-export interface UndeliveredRecord {
-  id: string;
-  recordedAt: string;
-  reason?: string;
-  droppedAttachments?: string[];
-  blocks?: PromptBlock[];
-  text?: string;
-}
-
 export const UNDELIVERED_MESSAGE =
   "Not delivered — this never reached the agent.";
 
-function textOf(record: UndeliveredRecord): string {
-  if (record.text !== undefined) return record.text;
-  return (record.blocks ?? [])
+function textOf(record: PlatformUndeliveredPrompt): string {
+  return record.blocks
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("\n\n");
 }
 
-function partsOf(record: UndeliveredRecord): MessagePart[] {
+function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
   const parts: MessagePart[] = [];
-  for (const block of record.blocks ?? []) {
+  for (const block of record.blocks) {
     if (block.type === "image")
       parts.push({
         kind: "image",
@@ -187,38 +177,65 @@ function partsOf(record: UndeliveredRecord): MessagePart[] {
   return parts.length > 0 ? parts : [{ kind: "text", text: "" }];
 }
 
-function undeliveredBubble(record: UndeliveredRecord): Message {
+function undeliveredError(record: PlatformUndeliveredPrompt): Message["error"] {
   const reason = record.reason ?? UNDELIVERED_MESSAGE;
-  const lost = record.droppedAttachments ?? [];
+  const lost = record.droppedAttachments;
+  return {
+    message:
+      lost.length === 0
+        ? reason
+        : `${reason} Sending it again will not include ${lost.join(", ")} — attach again to send ${lost.length === 1 ? "it" : "them"} too.`,
+    retryWith: {
+      text: textOf(record),
+      ...(record.blocks.length > 0 ? { blocks: record.blocks } : {}),
+    },
+  };
+}
+
+function undeliveredBubble(record: PlatformUndeliveredPrompt): Message {
   return {
     id: record.id,
     role: "user",
     parts: partsOf(record),
     streaming: false,
-    error: {
-      message:
-        lost.length === 0
-          ? reason
-          : `${reason} Sending it again will not include ${lost.join(", ")} — attach again to send ${lost.length === 1 ? "it" : "them"} too.`,
-      retryWith: {
-        text: textOf(record),
-        ...(record.blocks && record.blocks.length > 0
-          ? { blocks: record.blocks }
-          : {}),
-      },
-    },
+    error: undeliveredError(record),
   };
+}
+
+function markUndelivered(
+  messages: Message[],
+  records: Map<string, PlatformUndeliveredPrompt>,
+): Message[] {
+  const out: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    const record = m.role === "user" ? records.get(m.id) : undefined;
+    if (record === undefined) {
+      out.push(m);
+      continue;
+    }
+    out.push(m.error ? m : { ...m, error: undeliveredError(record) });
+    const next = messages[i + 1];
+    if (next?.role === "assistant" && next.queued && next.parts.length === 0)
+      i += 1;
+  }
+  return out;
 }
 
 export function appendUndelivered(
   messages: Message[],
-  records: UndeliveredRecord[],
+  records: PlatformUndeliveredPrompt[],
 ): Message[] {
+  if (records.length === 0) return messages;
+  const marked = markUndelivered(
+    messages,
+    new Map(records.map((r) => [r.id, r])),
+  );
   const fresh = records
     .filter((r) => !messages.some((m) => m.id === r.id))
     .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
-  if (fresh.length === 0) return messages;
-  return [...messages, ...fresh.map(undeliveredBubble)];
+  if (fresh.length === 0) return marked;
+  return [...marked, ...fresh.map(undeliveredBubble)];
 }
 
 export function settleReplay(

@@ -2,11 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
-import {
-  createUndeliveredPromptStore,
-  type UndeliveredPrompt,
-} from "../../modules/acp/infrastructure/undelivered-prompt-store.js";
+import { createUndeliveredPromptStore } from "../../modules/acp/infrastructure/undelivered-prompt-store.js";
 
 /**
  * TEST_OVERVIEW: the one property of the undelivered-prompt store that no
@@ -27,7 +25,7 @@ import {
 let tick = 0;
 const clock = (): string => `t${String(++tick).padStart(6, "0")}`;
 
-function record(id: string, text: string): UndeliveredPrompt {
+function record(id: string, text: string): PlatformUndeliveredPrompt {
   return {
     id,
     recordedAt: `r-${id}`,

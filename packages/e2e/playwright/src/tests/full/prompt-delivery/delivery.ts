@@ -20,11 +20,13 @@ export { DELIVERY_TIMEOUT_MS };
 
 export const LONG_TURN_MS = DELIVERY_TIMEOUT_MS + 15_000;
 
-// The queued-prompt park window the e2e cluster runs with: QUEUE_PARK_MS in
-// deploy/helm/platform/values-e2e.yaml, well below agent-runtime's 90s
-// default. A spec that waits the window out must wait in real time, so the
-// two have to stay in step — a spec sleeping less than the deployed window
-// would see prompts still parked and read as a regression.
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the queued-prompt park window the e2e cluster
+ * runs with — QUEUE_PARK_MS in deploy/helm/platform/values-e2e.yaml, well
+ * below agent-runtime's 90s default. A spec that waits the window out waits
+ * in real time, so the two must stay in step: a spec sleeping less than the
+ * deployed window would see prompts still parked and read as a regression.
+ */
 export const QUEUE_PARK_MS = 8_000;
 
 const MOCK_DEFAULT_REPLY = "Hello from the mock agent.";

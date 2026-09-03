@@ -70,7 +70,6 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
-import { forgetUndeliveredPrompt } from "../api/acp-session-ops.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -88,14 +87,13 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
-import { draftKey } from "../lib/draft-key.js";
-import { forgetUndelivered } from "../lib/undelivered-store.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -130,16 +128,7 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
-  const setMessages = useStore((s) => s.setMessages);
-  const deleteMessage = useCallback(
-    (id: string) => {
-      setMessages((prev) => prev.filter((m) => m.id !== id));
-      if (!selectedAgent) return;
-      forgetUndelivered(draftKey(selectedAgent, sessionId), id);
-      if (sessionId) void forgetUndeliveredPrompt(selectedAgent, sessionId, id);
-    },
-    [setMessages, selectedAgent, sessionId],
-  );
+  const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);

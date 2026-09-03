@@ -4,8 +4,9 @@ import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
   buildPlatformTurnEndedNotification,
+  platformUndeliveredPromptSchema,
   SessionType,
-  promptBlockSchema,
+  type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
 import {
@@ -19,7 +20,11 @@ import {
   parseFrame,
   type JsonRpcId,
 } from "../../domain/frames.js";
-import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
+import {
+  rewriteAuthError,
+  rewriteCwd,
+  undeliveredOf,
+} from "../../domain/mappers.js";
 import {
   composeSessionList,
   type ListedHarnessSession,
@@ -32,12 +37,7 @@ import {
   type PlatformSessionMeta,
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
-import {
-  undeliveredPromptSchema,
-  type PromptBlock,
-  type UndeliveredPrompt,
-  type UndeliveredPromptStore,
-} from "../../infrastructure/undelivered-prompt-store.js";
+import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
@@ -99,7 +99,7 @@ export interface AcpRuntimeDeps {
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
-  undeliveredPrompts?: UndeliveredPromptStore;
+  undeliveredPrompts: UndeliveredPromptStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -152,7 +152,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
-      deps.undeliveredPrompts?.remember(
+      deps.undeliveredPrompts.remember(
         sessionId,
         dropped.map((entry) =>
           undeliveredOf(entry.promptId, entry.frame, recordedAt),
@@ -201,7 +201,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
     undeliveredFor(sessionId) {
-      return deps.undeliveredPrompts?.readFor(sessionId) ?? [];
+      return deps.undeliveredPrompts.readFor(sessionId);
     },
     engage(channel, sessionId) {
       engage(channel, sessionId);
@@ -680,7 +680,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/forgetUndelivered" && paramsSid) {
         const id = extractUndeliveredId(frame);
-        if (id !== null) deps.undeliveredPrompts?.forget(paramsSid, id);
+        if (id !== null) deps.undeliveredPrompts.forget(paramsSid, id);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -689,10 +689,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "platform/recordUndelivered" && paramsSid) {
-        deps.undeliveredPrompts?.remember(
-          paramsSid,
-          extractUndeliveredPrompts(frame),
-        );
+        const prompts = extractUndeliveredPrompts(frame);
+        if (prompts === null) {
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: {
+                code: -32602,
+                message: `expected at most ${String(HANDOVER_PROMPT_CAP)} well-formed undelivered prompts; nothing was recorded`,
+              },
+            }),
+          );
+          return;
+        }
+        deps.undeliveredPrompts.remember(paramsSid, prompts);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -702,7 +714,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
-        deps.undeliveredPrompts?.forgetSession(paramsSid);
+        deps.undeliveredPrompts.forgetSession(paramsSid);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -833,7 +845,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           return;
         }
         if (retryOf !== null)
-          deps.undeliveredPrompts?.forget(promptSessionId, retryOf);
+          deps.undeliveredPrompts.forget(promptSessionId, retryOf);
         if (
           harnessColdSessions.has(promptSessionId) &&
           !rehydratingSessions.has(promptSessionId)
@@ -965,39 +977,6 @@ function rehydrateFailureMessage(error: unknown): string {
   return "the harness could not load this conversation; the message was not sent";
 }
 
-function undeliveredOf(
-  promptId: string | null,
-  frame: unknown,
-  recordedAt: string,
-): UndeliveredPrompt {
-  const id = promptId ?? randomUUID();
-  const raw = (frame as { params?: { prompt?: unknown } } | null)?.params
-    ?.prompt;
-  const parsed = z.array(promptBlockSchema).safeParse(raw);
-  if (!parsed.success)
-    return { id, recordedAt, blocks: [], droppedAttachments: [] };
-
-  const blocks: PromptBlock[] = [];
-  const droppedAttachments: string[] = [];
-  let inlineBytes = 0;
-  let images = 0;
-  for (const block of parsed.data) {
-    if (block.type !== "image") {
-      blocks.push(block);
-      continue;
-    }
-    images += 1;
-    const name = `pasted image ${String(images)}`;
-    if (inlineBytes + block.data.length > INLINE_IMAGE_BYTES_CAP) {
-      droppedAttachments.push(name);
-      continue;
-    }
-    inlineBytes += block.data.length;
-    blocks.push(block);
-  }
-  return { id, recordedAt, blocks, droppedAttachments };
-}
-
 function extractPromptId(frame: unknown): string | null {
   if (!isNonNullObject(frame)) return null;
   const params = frame.params;
@@ -1019,17 +998,18 @@ function extractUndeliveredId(frame: unknown): string | null {
 }
 
 const HANDOVER_PROMPT_CAP = 32;
-const INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
 
-function extractUndeliveredPrompts(frame: unknown): UndeliveredPrompt[] {
-  if (!isNonNullObject(frame)) return [];
+function extractUndeliveredPrompts(
+  frame: unknown,
+): PlatformUndeliveredPrompt[] | null {
+  if (!isNonNullObject(frame)) return null;
   const params = frame.params;
-  if (!isNonNullObject(params)) return [];
+  if (!isNonNullObject(params)) return null;
   const parsed = z
-    .array(undeliveredPromptSchema)
+    .array(platformUndeliveredPromptSchema)
     .max(HANDOVER_PROMPT_CAP)
     .safeParse(params.prompts);
-  return parsed.success ? parsed.data : [];
+  return parsed.success ? parsed.data : null;
 }
 
 function extractRetryOf(frame: unknown): string | null {

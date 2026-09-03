@@ -1,23 +1,18 @@
-import { OverflowMenuVertical, Warning } from "@carbon/icons-react";
-import type { PromptBlock } from "api-server-api";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
-import type { Attachment, Message } from "../../../types.js";
+import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { SendErrorCard } from "./send-error-card.js";
+import {
+  type OnRetry,
+  retryHandlerFor,
+  UndeliveredNotice,
+} from "./undelivered-notice.js";
 
 export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
@@ -25,11 +20,7 @@ interface Props {
   message: Message;
   isLast: boolean;
   hasPendingPermission: boolean;
-  onRetry: (
-    text: string,
-    attachments?: Attachment[],
-    opts?: { retryOf?: string; blocks?: PromptBlock[] },
-  ) => void;
+  onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
@@ -181,85 +172,3 @@ export const ChatMessage = memo(function ChatMessage({
     </div>
   );
 });
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the only place retry arguments are assembled, so
- * a resend carries the whole original message — text, and the content blocks
- * a recovered prompt was stored with — from every surface that offers it.
- */
-function retryHandlerFor(
-  message: Message,
-  onRetry: Props["onRetry"],
-): (() => void) | undefined {
-  const retryWith = message.error?.retryWith;
-  if (!retryWith) return undefined;
-  return () => {
-    onRetry(retryWith.text, retryWith.attachments, {
-      retryOf: message.id,
-      ...(retryWith.blocks ? { blocks: retryWith.blocks } : {}),
-    });
-  };
-}
-
-function UndeliveredNotice({
-  message,
-  onRetry,
-  onDelete,
-}: {
-  message: Message;
-  onRetry: Props["onRetry"];
-  onDelete: Props["onDelete"];
-}) {
-  const { copy } = useCopy();
-  const retry = retryHandlerFor(message, onRetry);
-  const text = message.parts.find((p) => p.kind === "text")?.text ?? "";
-  return (
-    <div
-      data-testid="undelivered-marker"
-      role="alert"
-      className="-mx-4 mt-1 flex items-start gap-2 border-t border-danger/40 px-4 pt-2"
-    >
-      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
-      <span className="flex-1 min-w-0 text-xs text-foreground break-words">
-        {message.error?.message}
-      </span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Undelivered message actions"
-            data-testid="undelivered-actions"
-            className="-my-1 shrink-0"
-          >
-            <OverflowMenuVertical size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {retry && (
-            <DropdownMenuItem
-              data-testid="prompt-retry-button"
-              onSelect={retry}
-            >
-              Retry
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            onSelect={() => {
-              void copy(text);
-            }}
-          >
-            Copy text
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              onDelete(message.id);
-            }}
-          >
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
