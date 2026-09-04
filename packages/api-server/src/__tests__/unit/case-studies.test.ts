@@ -82,12 +82,13 @@ function fakeRepo(seed: EditionRecord[] = []): CaseStudiesRepository & {
           (!filter.since || r.updatedAt >= filter.since),
       );
     },
-    async setStatus(id, status: CaseStudyStatus) {
+    async setStatus(id, status: CaseStudyStatus, content?: string) {
       const row = rows.find((r) => r.id === id);
       if (!row) return null;
       const next = record({
         ...row,
         status,
+        ...(content === undefined ? {} : { content }),
         deletedAt: status === "deleted" ? new Date() : null,
       });
       rows.splice(rows.indexOf(row), 1, next);
@@ -187,10 +188,14 @@ describe("case-study submissions", () => {
 });
 
 describe("case-study owner service", () => {
-  const deps = (repo: CaseStudiesRepository) => ({
+  const deps = (
+    repo: CaseStudiesRepository,
+    artifactText: string | null = null,
+  ) => ({
     repo,
     owner: "user-1",
     listOwnedAgentIds: async () => ["agent-a"],
+    readArtifactText: async () => artifactText,
   });
 
   // TEST_SCENARIO: The owner list must be scoped by the owned-agent allowlist — returning other owners' rows here would leak pending documents across the owner boundary.
@@ -211,6 +216,63 @@ describe("case-study owner service", () => {
     await expect(svc.get("ed-2")).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+
+  /**
+   * TEST_SCENARIO: The owner's editable copy of a pending draft is the linked
+   * artifact, so a preview must show the edited text and a release must publish
+   * it. If release kept publishing the submitted text, an owner would edit
+   * their copy, consent, and ship the words they just replaced.
+   */
+  it("previews and releases the owner's edited artifact copy", async () => {
+    const repo = fakeRepo([record({ artifactId: "art-1" })]);
+    const svc = createCaseStudiesService(deps(repo, "# Edited by the owner"));
+    const preview = await svc.get("ed-1");
+    expect(preview).toMatchObject({
+      content: "# Edited by the owner",
+      contentSource: "artifact",
+    });
+    await svc.release("ed-1");
+    expect(repo.rows[0]).toMatchObject({
+      status: "released",
+      content: "# Edited by the owner",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Releasing is consent to specific text, so the row must stop
+   * tracking the artifact the moment it is released — otherwise a later edit
+   * silently rewrites what an inspector has already read.
+   */
+  it("freezes the released text against later artifact edits", async () => {
+    const repo = fakeRepo([record({ artifactId: "art-1" })]);
+    const consented = createCaseStudiesService(deps(repo, "# As consented"));
+    await consented.release("ed-1");
+    const edited = createCaseStudiesService(deps(repo, "# Changed afterwards"));
+    expect(await edited.get("ed-1")).toMatchObject({
+      content: "# As consented",
+      contentSource: "submitted",
+    });
+    expect(repo.rows[0]?.content).toBe("# As consented");
+  });
+
+  /**
+   * TEST_SCENARIO: An artifact that cannot stand in for the draft — deleted,
+   * another owner's, binary, too large, or outside the content bounds — must
+   * degrade to the submitted text. A missing artifact is not a reason to refuse
+   * an owner their consent.
+   */
+  it("falls back to the submitted text when the artifact cannot be read", async () => {
+    for (const artifactText of [null, "", "x".repeat(300_000)]) {
+      const repo = fakeRepo([record({ artifactId: "art-1" })]);
+      const svc = createCaseStudiesService(deps(repo, artifactText));
+      expect(await svc.get("ed-1")).toMatchObject({
+        content: "# Case study",
+        contentSource: "submitted",
+      });
+      expect((await svc.release("ed-1")).status).toBe("released");
+      expect(repo.rows[0]?.content).toBe("# Case study");
+    }
   });
 
   // TEST_SCENARIO: Release is the consent event — it must flip exactly pending→released, stay idempotent on released, and refuse states where releasing would resurrect hidden or deleted content.

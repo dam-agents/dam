@@ -1,4 +1,5 @@
 import type {
+  CaseStudyContentSource,
   CaseStudyEdition,
   CaseStudyEditionSummary,
   CaseStudyStatus,
@@ -56,6 +57,13 @@ export function toSummary(record: EditionRecord): CaseStudyEditionSummary {
   };
 }
 
-export function toEdition(record: EditionRecord): CaseStudyEdition {
-  return { ...toSummary(record), content: record.content };
+export function toEdition(
+  record: EditionRecord,
+  resolved?: { content: string; source: CaseStudyContentSource },
+): CaseStudyEdition {
+  return {
+    ...toSummary(record),
+    content: resolved?.content ?? record.content,
+    contentSource: resolved?.source ?? "submitted",
+  };
 }

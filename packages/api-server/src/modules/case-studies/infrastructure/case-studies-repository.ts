@@ -36,7 +36,11 @@ export interface CaseStudiesRepository {
   getById(id: string): Promise<EditionRecord | null>;
   listByAgents(agentIds: readonly string[]): Promise<EditionRecord[]>;
   listReleased(filter: ReleasedFilter): Promise<EditionRecord[]>;
-  setStatus(id: string, status: CaseStudyStatus): Promise<EditionRecord | null>;
+  setStatus(
+    id: string,
+    status: CaseStudyStatus,
+    content?: string,
+  ): Promise<EditionRecord | null>;
   purge(createdBefore: Date, tombstonedBefore: Date): Promise<number>;
 }
 
@@ -129,11 +133,12 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
       return rows.map(parseRecord);
     },
 
-    async setStatus(id, status) {
+    async setStatus(id, status, content) {
       const rows = await db
         .update(agentCaseStudies)
         .set({
           status,
+          ...(content === undefined ? {} : { content }),
           deletedAt: status === "deleted" ? sql`now()` : null,
           updatedAt: sql`now()`,
         })

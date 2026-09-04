@@ -293,6 +293,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
       listOwnedAgentIds: async () => (await listOwnedAgents()).map((a) => a.id),
+      readArtifactText: async (artifactId) => {
+        const artifact = await artifactLibrary.getContent(artifactId);
+        if (!artifact || artifact.binary || artifact.tooLarge) return null;
+        return artifact.content;
+      },
     });
     const metrics = metricsReader
       ? createMetricsService({
