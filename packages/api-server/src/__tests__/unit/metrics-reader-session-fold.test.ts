@@ -24,9 +24,7 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     });
     expect(queries).toHaveLength(1);
     const sql = queries[0];
-    expect(sql).toContain(
-      "argMin(LogAttributes['session.id'], Timestamp) AS rootSid",
-    );
+    expect(sql).toContain("argMin(sessionId, ts) AS rootSid");
     expect(sql).toContain("coalesce(nullIf(rootSid, ''), sid) AS sessionId");
     expect(sql).toContain("LEFT JOIN session_root USING (sid)");
   });
@@ -39,7 +37,7 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     const gates = queries[0].match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(3);
+    expect(gates).toHaveLength(2);
   });
 
   it("computes roots session-unfiltered even when the read is session-scoped", async () => {
@@ -48,7 +46,9 @@ describe("runtimeBySession folds sessions under their trace root", () => {
       sessionId: "s-1",
     });
     const sql = queries[0];
-    const [traceRootCte] = sql.split("session_root AS");
-    expect(traceRootCte).not.toContain("{sessionId:String}");
+    const traceRootCte = sql.slice(sql.indexOf("trace_root AS"));
+    expect(traceRootCte.split("session_root AS")[0]).not.toContain(
+      "{sessionId:String}",
+    );
   });
 });

@@ -3,8 +3,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   formatDurationMs,
+  formatSpend,
   formatTokens,
   formatUsd,
+  spendBarPct,
 } from "../../modules/metrics/lib/format.js";
 import { totalCostUsd } from "../../modules/metrics/lib/totals.js";
 
@@ -40,5 +42,28 @@ describe("totalCostUsd", () => {
         { costUsd: 0.25 } as TokenSpendByModel,
       ]),
     ).toBe(1.75);
+  });
+});
+
+describe("credit-billed spend", () => {
+  test("shows a credit total instead of reading as $0", () => {
+    expect(formatSpend(0, [{ unit: "bobcoin", amount: 1234 }])).toBe(
+      "1.2K Bobcoins",
+    );
+    expect(formatSpend(2.5, [{ unit: "bobcoin", amount: 40 }])).toBe(
+      "$2.50 + 40 Bobcoins",
+    );
+    expect(formatSpend(2.5, [])).toBe("$2.50");
+  });
+
+  test("scales each bar against the largest row sharing its unit", () => {
+    expect(
+      spendBarPct([
+        { costUsd: 10, credits: [] },
+        { costUsd: 5, credits: [] },
+        { costUsd: 0, credits: [{ unit: "bobcoin", amount: 200 }] },
+        { costUsd: 0, credits: [{ unit: "bobcoin", amount: 50 }] },
+      ]),
+    ).toEqual([100, 50, 100, 25]);
   });
 });

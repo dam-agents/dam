@@ -1,12 +1,12 @@
 import type { SpendBySessionType } from "api-server-api";
 
-import { formatUsd } from "../lib/format.js";
+import { formatSpend, spendBarPct } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SESSION_TYPE_LABELS } from "../lib/session-type-label.js";
 import { SpendBar } from "./spend-bar.js";
 
 export function SessionTypeSpendBars({ rows }: { rows: SpendBySessionType[] }) {
-  const max = rows[0]?.costUsd ?? 0;
+  const pcts = spendBarPct(rows);
   return (
     <div className="flex flex-col gap-4">
       {rows.map((row, i) => (
@@ -14,8 +14,8 @@ export function SessionTypeSpendBars({ rows }: { rows: SpendBySessionType[] }) {
           key={row.category}
           label={SESSION_TYPE_LABELS[row.category]}
           color={seriesColor(i)}
-          pct={max > 0 ? (row.costUsd / max) * 100 : 0}
-          value={formatUsd(row.costUsd)}
+          pct={pcts[i]}
+          value={formatSpend(row.costUsd, row.credits)}
         />
       ))}
       {rows.some((row) => row.category === "unknown") && (

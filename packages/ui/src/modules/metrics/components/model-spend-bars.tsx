@@ -1,12 +1,12 @@
 import { ArrowRight } from "@carbon/icons-react";
 import type { TokenSpendByModel } from "api-server-api";
 
-import { formatTokens, formatUsd } from "../lib/format.js";
+import { formatSpend, formatTokens, spendBarPct } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SpendBar } from "./spend-bar.js";
 
 export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
-  const max = rows[0]?.costUsd ?? 0;
+  const pcts = spendBarPct(rows);
   return (
     <div className="flex flex-col gap-4">
       {rows.map((row, i) => (
@@ -14,8 +14,8 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
           key={row.model}
           label={row.model}
           color={seriesColor(i)}
-          pct={max > 0 ? (row.costUsd / max) * 100 : 0}
-          value={formatUsd(row.costUsd)}
+          pct={pcts[i]}
+          value={formatSpend(row.costUsd, row.credits)}
           caption={
             <>
               {}
@@ -30,7 +30,8 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
         />
       ))}
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
-        Bar length is share of the top model · tokens as in
+        Bar length is share of the top model billed in the same unit · tokens as
+        in
         <ArrowRight size={12} className="shrink-0" aria-hidden="true" />
         <span className="sr-only">to</span>
         out
