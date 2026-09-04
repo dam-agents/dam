@@ -28,13 +28,11 @@ NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 LOGS=()
 log() { LOGS+=("$1"); }
 
-cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
-        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'; }
-
-# Rows of a `## <heading>` config table, bounded at the NEXT `## ` heading —
-# an unbounded range would swallow every later table in the file.
-cfg_table() { sed -n "/^## $1\$/,/^## /p" "$CONFIG" 2>/dev/null \
-              | grep '^|' | tail -n +3; }
+# The config readers (`cfg`, `cfg_table`) live in one file that every reader of
+# CONFIG.md sources — never copied here, so the runtime and the verifier cannot
+# drift apart. A missing lib is fatal: parsing config by hand is how they drift.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/config.sh" || { echo "cannot source lib/config.sh" >&2; exit 1; }
 
 # GNU date first, BSD fallback (macOS dev machines — `-u` matters: without it the
 # trailing Z is parsed in local time and lock ages skew); epoch 0 on unparsable input.

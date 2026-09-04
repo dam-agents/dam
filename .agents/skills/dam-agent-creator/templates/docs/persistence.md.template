@@ -12,7 +12,7 @@ the agent definition itself.
 
 | Path | Kind | Holds |
 | --- | --- | --- |
-| `/home/agent` (outer) | git repo, remote `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
+| `/home/agent` (outer) | git repo, remote `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
 | `/home/agent/work` | **plain data directory** (no `.git`) | Live runtime state. Shared across concurrent runs; the source of truth. |
 | `$GITHUB_REPO_WORK` | git remote | Durable, versioned **backup** of `work/`. Written only via a disposable tmpfs clone (below). |
 
@@ -24,8 +24,8 @@ clone under `/dev/shm`; `work/` itself is only ever read.
 The outer `.gitignore` is an allowlist (`/*` then re-include the definition files), so
 **all** of `work/` and the HOME secrets (`.ssh`, `.claude`, `.config`) are invisible to
 the outer repo. A fresh volume seeds state files from the templates in `ONBOARDING.md`
-or restores them from the backup remote; a definition update
-(`git reset --hard origin/main`) never collides with live runtime state. **Never run
+or restores them from the backup remote; a definition update (fast-forward, or a hard
+reset when the checkout diverged) never collides with live runtime state. **Never run
 `git clean` in `/home/agent`** and never `git add` outside the allowlist (the backup's
 `git add -A` is confined to the tmpfs clone, never the home tree).
 
@@ -70,19 +70,44 @@ head -1 /home/agent/work/VERSION 2>/dev/null                        # adopted
 ```
 
 Checked-out < latest → **tell the operator the agent is not up to date** (state both
-versions); update only when they ask, never silently —
-`git -C /home/agent reset --hard origin/main` (never `git clean`), then migrate in the
-same session. Adopted ≠ checked-out → migrate now. All equal → report "up to date".
+versions); update only when they ask, never silently, then migrate in the same session.
+Adopted ≠ checked-out → migrate now. All equal → report "up to date".
+
+Update a clean checkout by **fast-forward** — it reaches the same commit without
+discarding anything, so it also passes an auto-mode guard that refuses destructive
+commands:
+
+```bash
+git -C /home/agent status --porcelain          # must be empty; otherwise stop and ask
+git -C /home/agent merge --ff-only origin/main \
+  || git -C /home/agent reset --hard origin/main   # only when the checkout diverged
+```
+
+The fallback is for a diverged checkout (a platform reset, an abandoned local commit) —
+it discards, so surface that it was needed. **Never `git clean`.**
 
 **Migration** (`from` = adopted, `to` = checked-out):
 
 1. Apply the `CHANGELOG.md` **Upgrade** blocks of every version in `(from, to]`, oldest
    first. Steps are idempotent (check before create), so re-running a partial attempt is
    safe; an operator-only step is surfaced, never guessed at.
-2. Only after every applicable step succeeded, write `to` into `work/VERSION` and log
-   `definition upgraded <from> → <to> (<n> step(s))`. A failed step: log + tell the
-   operator, leave `work/VERSION` unchanged (re-offered at the next check).
-3. Rollback (`to` < `from`) → apply nothing; just write `to`.
+2. **Offer every optional feature the crossed versions add.** An **Upgrade** block that
+   introduces an off-by-default feature names the `work/CONFIG.md` key that enables it
+   and its one-line effect (self-modification.md §12); upgrading never adopts it by
+   itself. Collect them across all crossed versions and ask the operator **once, in one
+   message**. A yes writes that key; a no or no answer writes nothing — the missing key
+   is the documented off default — and the migration continues either way. Never enable
+   a feature the operator did not confirm.
+3. Only after every applicable step succeeded, write `to` into `work/VERSION` and log
+   `definition upgraded <from> → <to> (<n> step(s))`, naming the features offered and
+   the answers. A failed step: log + tell the operator, leave `work/VERSION` unchanged
+   (re-offered at the next check).
+4. Rollback (`to` < `from`) → apply nothing, offer nothing; just write `to`.
+
+Whenever an upgrade changes what onboarding produces, its **Upgrade** block runs
+`bash "$HOME/scripts/verify-onboarding.sh"` and applies every `FAIL` line's `fix:` — the
+same verification onboarding ends with, and the only thing that keeps a long-deployed
+instance the same shape as a fresh one.
 
 Back up `work/` afterwards (section above).
 
@@ -98,7 +123,7 @@ scheduled run:
 ```bash
 git -C /home/agent fetch origin main
 git -C /home/agent checkout -b "fix/<short-slug>" origin/main
-git -C /home/agent add -- CLAUDE.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore LICENSE docs scripts
+git -C /home/agent add -- CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore LICENSE docs scripts
 git -C /home/agent commit -m "<describe the change>"
 git -C /home/agent push -u origin "fix/<short-slug>"
 gh pr create --repo "$DEFINITION_REPO" --base main --head "fix/<short-slug>" \
@@ -107,3 +132,10 @@ gh pr create --repo "$DEFINITION_REPO" --base main --head "fix/<short-slug>" \
 
 The agent's job ends at "PR opened". Use fresh descriptive branch names; runtime state
 never goes to this repo.
+
+<!-- TODO(creator): keep this paragraph only when the design supports multiple GitHub
+     hosts; delete it otherwise. -->
+The definition repo may sit on a different host than the systems the agent works on, so
+**every definition-repo call names its host** — `-R "$DEF_HOST/$DEFINITION_REPO"` for
+`gh pr`/`gh issue`, `--hostname "$DEF_HOST"` for `gh api`. The outer-repo `origin` URL
+already carries it, so plain `git fetch`/`push` need nothing extra.
