@@ -169,6 +169,10 @@ COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harne
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
 COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY --chown=65532:0 packages/platform-base/skills/ /app/working-dir/.agents/skills/
+# Staged outside /app/working-dir so the first-boot seed never installs it into
+# a sandbox's skill paths; it is invoked in place — a schedule task or slash
+# command references the absolute staged path (see #3286).
+COPY --chown=65532:0 packages/platform-base/dam-skills/ /usr/local/share/dam-skills/
 COPY --chown=65532:0 packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY --chown=65532:0 packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
 COPY --chown=65532:0 packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml

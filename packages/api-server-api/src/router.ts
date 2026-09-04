@@ -4,6 +4,7 @@ import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
+import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
@@ -38,6 +39,7 @@ export const appRouter = t.router({
   knowledgeBases: knowledgeBasesRouter,
   kbShares: kbSharesRouter,
   artifactLibrary: artifactLibraryRouter,
+  caseStudies: caseStudiesRouter,
   features: featuresRouter,
   files: filesRouter,
   links: linksRouter,

@@ -32,6 +32,15 @@ import {
   registerKbShareTools,
   type KbShareAgentOps,
 } from "../../modules/kb-shares/index.js";
+import {
+  registerCaseStudyTools,
+  type CaseStudyInspectionService,
+  type CaseStudySubmissionsService,
+} from "../../modules/case-studies/index.js";
+import {
+  registerUsageSummaryTool,
+  type AgentUsageSummaryService,
+} from "../../modules/metrics/index.js";
 
 function resolveWorkspacePath(input: string): string {
   const agentHome = AGENT_HOME_DIR;
@@ -50,19 +59,12 @@ interface McpSession {
   server: McpServer;
 }
 
-export interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-function textResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }] };
-}
-
-function errorResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }], isError: true };
-}
+import {
+  errorResult,
+  textResult,
+  type ToolContent,
+} from "../../core/mcp-tool-result.js";
+export type { ToolContent } from "../../core/mcp-tool-result.js";
 
 function errMessage(err: unknown, fallback: string): string {
   if (err instanceof TRPCError) {
@@ -98,6 +100,10 @@ export interface McpSessionDeps {
   experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
+  caseStudySubmissions: CaseStudySubmissionsService;
+  caseStudyInspection: CaseStudyInspectionService | null;
+  agentImage: (agentId: string) => Promise<string | null>;
+  usageSummary: AgentUsageSummaryService;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -803,6 +809,18 @@ export function createMcpSession(
     registerKbShareTools(server, { ops: deps.kbShares, agentId });
   }
 
+  registerCaseStudyTools(server, {
+    agentId,
+    submissions: deps.caseStudySubmissions,
+    inspection: deps.caseStudyInspection,
+    agentImage: deps.agentImage,
+  });
+
+  registerUsageSummaryTool(server, {
+    agentId,
+    usageSummary: deps.usageSummary,
+  });
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -843,6 +861,11 @@ export interface MountMcpDeps {
   experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
+  caseStudySubmissions: CaseStudySubmissionsService;
+  caseStudyInspection: CaseStudyInspectionService;
+  carriesInspectorRole: (sub: string) => Promise<boolean>;
+  agentImage: (agentId: string) => Promise<string | null>;
+  usageSummary: AgentUsageSummaryService;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -867,10 +890,12 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions] = await Promise.all([
-      deps.channelManager.supportsUserLookup(),
-      deps.channelManager.supportsMessageReactions(),
-    ]);
+    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
+      await Promise.all([
+        deps.channelManager.supportsUserLookup(),
+        deps.channelManager.supportsMessageReactions(),
+        deps.carriesInspectorRole(verified.owner),
+      ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -884,6 +909,10 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           ? deps.kbShareOpsFor(verified.owner)
           : null,
       agentHome: deps.agentHome,
+      caseStudySubmissions: deps.caseStudySubmissions,
+      caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
+      agentImage: deps.agentImage,
+      usageSummary: deps.usageSummary,
       supportsUserLookup,
       supportsMessageReactions,
     });

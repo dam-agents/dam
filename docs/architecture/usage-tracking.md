@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-31
+Last verified: 2026-09-04
 
 ## Overview
 
@@ -31,6 +31,7 @@ flowchart LR
   subgraph api-server[api-server]
     bus((event bus))
     psa[persist-activity saga]
+    par[persist-actor-roles saga]
     pas[persist-agents saga]
     boot[agent-bootstrap]
     retain[retention job]
@@ -55,9 +56,11 @@ flowchart LR
   boot -.startup K8s scan.-> postgres
 
   bus --> psa
+  bus --> par
   bus --> pas
 
   psa --> pseudo
+  par --> pseudo
   pas --> pseudo
   pseudo --> postgres
 
@@ -99,14 +102,16 @@ Six properties of that stream are load-bearing for anyone reading the numbers:
 - **A connection event names its provider, not just its grant.** A Connection's identifier is per-grant and its record is destroyed on disconnect, so the provider must ride the event or the answer to *which providers do people connect* dies with the Connection.
 - **Some interactions leave no state behind, and those are the ones the event is load-bearing for.** A skill installed from a source is recoverable from the agent's own record; a Local Skill deliberately writes none, so the event is the only trace a user ever authored one. A share-link view is anonymous by construction and the artifact carries only a lifetime counter, so the event is what places those views in time. Where an event is the *sole* record, losing it loses the fact — which is the argument for recording an interaction even when its state is uninteresting.
 
-Two sagas subscribe to the bus:
+Three sagas subscribe to the bus:
 
-- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
+- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. Runs only when activity tracking is enabled.
+- **persist-actor-roles** — upserts `actor_roles` with the user's core-role flag on `UserAuthenticated`. Deliberately a separate saga that runs **unconditionally**: the flag also gates the case-study inspector read paths ([case-studies](case-studies.md)), which must work on installs that disabled activity writes.
 
-Where an interaction already leaves durable, timestamped state, the event is not redundant with it: **the state tables hold raw Keycloak subs and the activity log holds pseudonymized ones**. A table keyed by raw subs cannot be filtered against the pseudonymized core-team set, and cannot be shown to an inspector without exposing an identifier. Routing an interaction through an event is what puts it in the one space where it can be both joined and read safely — which is the reason to record something even when its state is already persisted.
 - **persist-agents** — writes one `agents` row per `AgentCreated`, marks deleted on `AgentDeleted`. A startup bootstrap separately backfills the table from the K8s API for agents that pre-dated the saga.
 
-Both sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
+Where an interaction already leaves durable, timestamped state, the event is not redundant with it: **the state tables hold raw Keycloak subs and the activity log holds pseudonymized ones**. A table keyed by raw subs cannot be filtered against the pseudonymized core-team set, and cannot be shown to an inspector without exposing an identifier. Routing an interaction through an event is what puts it in the one space where it can be both joined and read safely — which is the reason to record something even when its state is already persisted.
+
+All three sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
 
 Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-stream concurrency cap so a burst (api-server restart, silent-renew storm) cannot saturate the Postgres connection pool. Two subscribers additionally exploit a partial unique index and an `ON CONFLICT DO NOTHING` insert: auth keeps one row per (sub, surface, day) so heavy auth traffic does not bloat the table, and the entry-point choice keeps one row per sub so the first choice stands and a replayed call is discarded.
 
@@ -116,7 +121,7 @@ Both halves of an event are gated mechanically. A type in the registry is a prom
 
 What it does not cover is a module that never reaches the bus at all — the failure that produced these gaps. Nothing mechanical catches that without a hand-maintained list of modules, which is a list that goes stale and can be satisfied without collecting anything, so the gate is deliberately scoped to the invariant it can actually hold.
 
-The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
+The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents, persist-actor-roles, and the startup bootstrap run unconditionally because the `agents` and `actor_roles` tables are also useful to consumers outside usage.
 
 ## Pseudonymization
 

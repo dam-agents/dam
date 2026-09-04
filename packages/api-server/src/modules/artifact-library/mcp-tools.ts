@@ -9,18 +9,13 @@ import {
 } from "api-server-api";
 
 import { securityLog } from "../../core/security-log.js";
+import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
 function withInternalLink(
   artifact: LibraryArtifact,
 ): LibraryArtifact & { internal_link: string } {
   return { ...artifact, internal_link: artifactInternalLink(artifact.id) };
-}
-
-interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
 }
 
 function touched(
@@ -36,24 +31,8 @@ function touched(
   };
 }
 
-function json(value: unknown): ToolContent {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
-}
-
-function errorResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }], isError: true };
-}
-
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
-  try {
-    return await fn();
-  } catch (err) {
-    return errorResult(err instanceof Error ? err.message : String(err));
-  }
 }
 
 const folderIdInput = z

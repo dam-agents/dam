@@ -3,6 +3,7 @@ import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type { BudgetsService } from "./modules/budgets/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
+import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
@@ -50,6 +51,7 @@ export interface ApiContext {
   knowledgeBases: KnowledgeBasesService;
   kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;
+  caseStudies: CaseStudiesService;
   features: FeaturesService;
   files: FilesService;
   harnessConfig: HarnessConfigService;

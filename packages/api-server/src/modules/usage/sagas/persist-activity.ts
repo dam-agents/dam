@@ -35,7 +35,6 @@ import type { ActivityEventRow } from "../domain/types.js";
 
 export type PersistActivityDeps = {
   insert: (row: ActivityEventRow) => Promise<void>;
-  upsertActorRole: (actorSub: string, isCore: boolean) => Promise<void>;
 };
 
 const STREAM_CONCURRENCY = 8;
@@ -51,7 +50,6 @@ export function startPersistActivitySaga(
         ofType<UserAuthenticated>(EventType.UserAuthenticated),
         mergeMap(async (event) => {
           try {
-            await deps.upsertActorRole(event.userSub, event.isCore);
             await deps.insert({
               type: "auth",
               actorSub: event.userSub,
