@@ -5,6 +5,6 @@
 # agent-entrypoint parses this file to strip legacy workspace-seeded pins.
 # keep pi-coding-agent in sync with the pi-dynamic-providers extension's devDependency
 [tools]
-"npm:@earendil-works/pi-coding-agent" = "0.84.2"
-"npm:pi-acp" = "0.0.28"
+"npm:@earendil-works/pi-coding-agent" = "0.85.0"
+"npm:pi-acp" = "0.0.33"
 "npm:@zhafron/pi-memory" = "1.0.2"
