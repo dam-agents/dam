@@ -368,6 +368,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
+    sessionCloseSupported = true;
+    sessionResumeSupported = false;
     deps.backgroundWork?.clear();
   }
 
@@ -595,7 +597,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const cacheable =
             mapping.method === "session/new" ||
             mapping.method === "session/fork" ||
-            mapping.method === "session/load";
+            mapping.method === "session/load" ||
+            mapping.method === "session/resume";
           const result = (frame as { result?: unknown }).result;
           if (cacheable && result !== undefined) {
             transcript.cacheMetadata(sidForChannel, result);
@@ -1133,7 +1136,10 @@ function injectPlatformMetaIntoList(
   return { ...frame, result: { ...result, sessions } };
 }
 
-function hasSessionCapability(frame: unknown, name: string): boolean {
+function hasSessionCapability(
+  frame: unknown,
+  name: "close" | "resume",
+): boolean {
   if (!isNonNullObject(frame)) return false;
   const result = frame.result;
   if (!isNonNullObject(result)) return false;

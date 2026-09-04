@@ -2,7 +2,8 @@
 # Bob is the ACP agent itself (2.0.2+); the platform speaks to it directly.
 # --trust: every session/new carries the pod workspace, which Bob would
 # otherwise refuse as untrusted.
-node /app/bob-settings.mjs
+node /app/bob-settings.mjs ||
+  echo "[harness-chat] settings bootstrap failed — Bob starts without the platform posture" >&2
 
 # Bob's ACP asks about every non-read tool or nothing at all — its own
 # allowlist of safe commands is reachable from the TUI only — so auto-approve

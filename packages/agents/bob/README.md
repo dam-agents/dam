@@ -92,7 +92,9 @@ Less common toggles, not surfaced on the provider card.
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
 
-Gone in 2.0 (silently ignored if set): `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there).
+Gone, and silently ignored if an old agent still sets them: `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` and `BOB_SHIM_TRACE` (both belonged to the bridge — resume is native and there are no shim frames to trace).
+
+The settings bootstrap also **prunes** the keys the bridge used to write into `approval` — `autoApprovalEnabled`, `allowed_permissions`, `allowedExecutors` — so an agent upgraded in place stops carrying a deleted component's posture and falls back to Bob's own defaults, with the auto-approve flag as the single source of truth.
 
 The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins the version, and a self-update inside the pod would both fail against the egress rules and print onto stdout.
 
