@@ -33,8 +33,11 @@ export interface CaseStudyEditionSummary {
   updatedAt: string;
 }
 
+export type CaseStudyContentSource = "artifact" | "submitted";
+
 export interface CaseStudyEdition extends CaseStudyEditionSummary {
   content: string;
+  contentSource: CaseStudyContentSource;
 }
 
 export interface CaseStudiesService {

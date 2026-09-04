@@ -166,13 +166,17 @@ so in one line. Do not pad.
    `update_artifact` with the new content, which publishes a new version of it
    and keeps the same link; otherwise call `create_artifact` with the content,
    markdown type, and private visibility. This copy belongs to the owner and
-   never leaves their library. If the artifact tools fail (for example, no
-   object store on this install), continue — the submission below does not
-   depend on it.
+   never leaves their library. It is also the draft they edit: while the edition
+   is pending, the platform reads this copy, so any change the owner makes here
+   is what gets released. If the artifact tools fail (for example, no object
+   store on this install), continue — the submission below does not depend on
+   it, though without a copy the owner can only release your text as written.
 2. **Submit the edition.** Call `submit_case_study` with `content` (the full
    document), `window_start`, `window_end`, and the `artifact_id` from step 1
-   when you have one. The edition lands as **pending**: only the owner can see
-   it, and nothing reaches anyone else unless the owner releases it.
+   when you have one. Send the `artifact_id` whenever step 1 produced one: it is
+   what links the owner's editable draft to the edition. The edition lands as
+   **pending**: only the owner can see it, and nothing reaches anyone else
+   unless the owner releases it.
    Re-running in the same week replaces that week's edition — that
    is intended; the latest submission wins.
 3. If `submit_case_study` is unavailable or fails, stop after step 1 and say
@@ -185,5 +189,6 @@ that it is pending, visible only to the owner until they release it; a markdown
 link to the owner's copy if one was created or updated, using the
 `internal_link` the artifact tool returned, for example
 `[Agent case study — week of 2026-08-31](platform://artifacts/<id>)`, which the
-owner sees as a chip that opens the document; and one line naming anything that
-was not measurable.
+owner sees as a chip that opens the document; that they can edit that copy
+before releasing and the edited version is what goes out; and one line naming
+anything that was not measurable.

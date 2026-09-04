@@ -297,6 +297,7 @@ export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {
   CaseStudyStatus,
+  CaseStudyContentSource,
   CaseStudySubmitInput,
   CaseStudyInspectionFilter,
   CaseStudyInspectionFilterInput,
@@ -306,6 +307,7 @@ export type {
 } from "./modules/case-studies/types.js";
 export {
   caseStudyStatusSchema,
+  caseStudyContentSchema,
   caseStudySubmitInputSchema,
   caseStudyInspectionFilterSchema,
   toCaseStudyInspectionFilter,

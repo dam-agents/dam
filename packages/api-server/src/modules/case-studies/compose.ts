@@ -61,6 +61,7 @@ export function composeCaseStudiesForOwner(deps: {
   db: Db;
   owner: string;
   listOwnedAgentIds: () => Promise<string[]>;
+  readArtifactText: (artifactId: string) => Promise<string | null>;
 }): { caseStudies: CaseStudiesService } {
   const repo = createCaseStudiesRepository(deps.db);
   return {
@@ -68,6 +69,7 @@ export function composeCaseStudiesForOwner(deps: {
       repo,
       owner: deps.owner,
       listOwnedAgentIds: deps.listOwnedAgentIds,
+      readArtifactText: deps.readArtifactText,
     }),
   };
 }

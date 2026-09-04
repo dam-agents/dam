@@ -20,8 +20,13 @@ export const caseStudyIdInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const caseStudyContentSchema = z
+  .string()
+  .min(1)
+  .max(CASE_STUDY_CONTENT_MAX_CHARS);
+
 export const caseStudySubmitInputSchema = z.object({
-  content: z.string().min(1).max(CASE_STUDY_CONTENT_MAX_CHARS),
+  content: caseStudyContentSchema,
   window_start: isoDateSchema,
   window_end: isoDateSchema,
   artifact_id: z.string().min(1).optional(),
