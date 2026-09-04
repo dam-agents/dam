@@ -304,6 +304,6 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 
 | Term | Definition |
 |------|-----------|
-| Visibility | Who may open an Artifact's share link: `private` (in-app only, no link), `restricted` (the link opens only for people on the Artifact's Viewer Allowlist, after they sign in), or `public` (anyone holding the link, no sign-in). One field, three values; "public" always means anyone |
+| Visibility | Who may open an Artifact's share link: `private` (in-app only, no link), `restricted` (the link opens only for the owner and for people on the Artifact's Viewer Allowlist, after they sign in), or `public` (anyone holding the link, no sign-in). One field, three values; "public" always means anyone |
 | Viewer Allowlist | The set of email addresses an Artifact owner names on a `restricted` Artifact. Stored as emails, not user ids, because a listed person may exist only in the connected identity provider and never have signed in to the Platform. Matched at sign-in time against the identity provider's verified email |
 | Restricted Share | An Artifact whose Visibility is `restricted`. Same share link as public; the link stays stable when Visibility changes |
