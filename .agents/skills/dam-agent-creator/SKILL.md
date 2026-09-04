@@ -129,6 +129,7 @@ agent with no scheduled runs). Templates:
 | `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
 | `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Structure verification, scoped by mode — `--config` mid-onboarding, bare at the end, `--live` for the reachability pass; every `FAIL` carries its `fix:` (see Phase 4). |
 | `templates/preflight.sh.template` | `scripts/preflight.sh` | Only when the agent has scheduled runs (see Phase 4). |
+| `templates/config-lib.sh.template` | `scripts/lib/config.sh` | The one `work/CONFIG.md` reader; every script that reads config sources it, none re-implements it. |
 | `templates/toolpath.sh.template` | `scripts/lib/toolpath.sh` | Only when a script execs a shimmed CLI in a loop — the pod's `mise` shim tax (see Phase 4). |
 | `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only when git-backed state backup was chosen — tmpfs-clone persist/restore. |
 | `templates/log.sh.template` | `scripts/log.sh` | Structured JSONL events log with secret masking — extend the masks per integration. |
@@ -164,8 +165,12 @@ Copy and adapt the operational scripts the design needs:
   cannot see it); a probe that cannot run is `warn`, never a silent pass. Keep each check
   in the scope that can already satisfy it — `--config` runs mid-onboarding, before the
   schedules and the sentinel exist, and a gate failing on state its caller has not
-  created yet only teaches the agent to ignore the output. Its `cfg()` reader is
-  byte-identical to the pre-flight's; the validator compares them.
+  created yet only teaches the agent to ignore the output.
+- `scripts/lib/config.sh` — whenever anything reads `work/CONFIG.md`. The verifier judges
+  the file the pre-flight will read, so the two must parse it identically; the way to
+  guarantee that is one reader both source, not two copies kept in step. The validator
+  asserts the structure — the lib exists, both scripts source it, neither defines a
+  reader of its own.
 - `scripts/lib/toolpath.sh` — when a script execs `jq`/`gh` in a loop; source it before
   the first call and before any `command -v` guard (`references/platform-dam.md`).
 - `scripts/tests/` — `run.sh` from the template plus one offline `test_<mode>.sh` per

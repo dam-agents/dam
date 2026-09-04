@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# config.sh — the one reader for `work/CONFIG.md`. Sourced by every script that
+# reads configuration: `preflight.sh` (the runtime) and `verify-onboarding.sh`
+# (which judges the file the runtime will read).
+#
+# It lives here, once, because the two must agree byte for byte. A verifier that
+# parses a value differently from the runtime passes a file the runtime then
+# mis-parses — and two copies of a function drift silently, so there is one.
+# Expects $CONFIG to be set by the caller.
+#
+# The contract these implement is stated in CLAUDE.md → **Runtime configuration**;
+# change it here and there in the same PR, never in one alone.
+#
+# TODO(creator): add a reader only when the design needs a shape these two do not
+# cover, and give it the same treatment. Then delete the TODO comments.
+
+# A scalar key: `- <key>: <value>`. The first match wins; a trailing `#` comment,
+# surrounding whitespace and one layer of surrounding quotes/backticks are stripped.
+cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
+        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' \
+              -e 's/^[`"'"'"']//' -e 's/[`"'"'"']$//'; }
+
+# Rows of a `## <heading>` config table, bounded at the NEXT `## ` heading —
+# an unbounded range would swallow every later table in the file.
+cfg_table() { sed -n "/^## $1\$/,/^## /p" "$CONFIG" 2>/dev/null \
+              | grep '^|' | tail -n +3; }

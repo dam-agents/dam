@@ -117,38 +117,29 @@ if [ -d scripts ]; then
 fi
 
 # ------------------------------------------------------ config reader parity ----
-# verify-onboarding.sh judges CONFIG.md with the reader the runtime uses; if the
-# two drift, the verifier passes a file preflight then mis-parses. Whitespace is
-# normalized away, a missing `-e` clause is not.
-if [ -f scripts/preflight.sh ] && [ -f scripts/verify-onboarding.sh ]; then
-  # A sed start/end range never tests its end address on the start line, so it
-  # would run the natural one-line `cfg() { …; }` on into the next function and
-  # compare unrelated code. Read it instead, closing on the start line too.
-  cfg_body() { # <file>
-    local line stripped inblock=0 out=""
-    while IFS= read -r line; do
-      case "$line" in (cfg\(\)*) inblock=1 ;; esac
-      [ "$inblock" = 1 ] || continue
-      stripped="$(printf '%s' "$line" | sed 's/[[:space:]]*$//')"
-      # a trailing line-continuation is layout, not code — drop it, so the same
-      # reader wrapped differently in the two files still compares equal
-      case "$stripped" in
-        (*\\) out="$out${stripped%\\}" ;;
-        (*)   out="$out$stripped" ;;
-      esac
-      case "$stripped" in (*'}') break ;; esac
-    done < "$1"
-    printf '%s' "$out" | tr -d ' \t'
-  }
-  pf_cfg="$(cfg_body scripts/preflight.sh)"
-  vo_cfg="$(cfg_body scripts/verify-onboarding.sh)"
-  if [ -z "$pf_cfg" ] || [ -z "$vo_cfg" ]; then
-    warn "could not extract cfg() from both scripts — check the parity by hand"
-  elif [ "$pf_cfg" = "$vo_cfg" ]; then
-    pass "cfg() reader identical in preflight.sh and verify-onboarding.sh"
+# The runtime and the verifier must read CONFIG.md identically. Two copies of a
+# parser drift silently, so there is exactly one: scripts/lib/config.sh, sourced
+# by both. This asserts the structure rather than diffing two function bodies —
+# a text comparison has to guess where a shell function ends, and every wrong
+# guess is either a gate that passes drifted readers or one that fails identical
+# ones.
+for f in scripts/preflight.sh scripts/verify-onboarding.sh; do
+  [ -f "$f" ] || continue
+  if grep -q 'lib/config\.sh' "$f"; then
+    pass "$f sources the shared config reader"
   else
-    fail "cfg() differs between preflight.sh and verify-onboarding.sh — the verifier would read config values differently from the runtime"
+    fail "$f does not source scripts/lib/config.sh — it must not parse CONFIG.md itself"
   fi
+  if grep -qE '^[[:space:]]*cfg(_table)?\(\)' "$f"; then
+    fail "$f defines its own cfg()/cfg_table() — the reader belongs in scripts/lib/config.sh alone"
+  else
+    pass "$f defines no config reader of its own"
+  fi
+done
+if [ -f scripts/preflight.sh ] || [ -f scripts/verify-onboarding.sh ]; then
+  [ -f scripts/lib/config.sh ] \
+    && pass "shared config reader present (scripts/lib/config.sh)" \
+    || fail "missing scripts/lib/config.sh — the single home of the CONFIG.md readers"
 fi
 
 # ------------------------------------------------------- dead relative links ----
