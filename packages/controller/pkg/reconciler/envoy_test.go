@@ -618,6 +618,43 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	assert.False(t, byHost["github.com"].Credentialed())
 }
 
+// TEST_SCENARIO: Bob prefixes every gateway call with a service path the proxy does not serve, so the rewrite route must match before the catch-all and leave the host's other paths alone.
+func TestBuildChainForwardRoutes_RewriteRoutePrecedesCatchAll(t *testing.T) {
+	c := credentialedChain("platform-conn-litellm", "litellm.example.com")
+	c.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
+
+	routes := buildChainForwardRoutes(c)
+	require.Len(t, routes, 2)
+
+	rewrite := routes[0].(ev)
+	assert.Equal(t, "/inference/v1/", rewrite["match"].(ev)["prefix"])
+	assert.Equal(t, "/v1/", rewrite["route"].(ev)["prefix_rewrite"])
+	assert.Equal(t, "upstream_platform-conn-litellm", rewrite["route"].(ev)["cluster"])
+
+	catchAll := routes[1].(ev)
+	assert.Equal(t, "/", catchAll["match"].(ev)["prefix"])
+	assert.NotContains(t, catchAll["route"], "prefix_rewrite")
+}
+
+// TEST_SCENARIO: the annotation is read back from a Secret this process did not author, so a rewrite that could escape its path segment is dropped rather than rendered.
+func TestChainsFromSecrets_MalformedPathRewriteIsDropped(t *testing.T) {
+	s := ownerSecret("platform-conn-litellm", "connection", "litellm")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[{"host":"litellm.example.com","pathRewrites":[
+		{"prefix":"/inference/v1/","replacement":"/v1/"},
+		{"prefix":"/admin/v1","replacement":"/"},
+		{"prefix":"/x/","replacement":"/../etc/"}
+	]}]`
+	s = withHostSDS(s, "litellm.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.Equal(t,
+		[]envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}},
+		chains[0].PathRewrites,
+	)
+}
+
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 	assert.Equal(t, "host-YXBpLmdpdGh1Yi5jb20.sds.yaml", sdsFileKeyForHost("api.github.com"))
 	assert.Equal(t, "host-Z2l0aHViLmNvbQ.sds.yaml", sdsFileKeyForHost("github.com"))

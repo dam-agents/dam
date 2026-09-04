@@ -120,7 +120,7 @@ export function ProviderConnectDialog({
           <IbmLitellmForm
             variant={variant}
             onCancel={onClose}
-            onSave={({ value }) =>
+            onSave={({ value, bobModel }) =>
               persist({
                 value,
                 createInput: {
@@ -128,6 +128,7 @@ export function ProviderConnectDialog({
                   name: "ibm-litellm",
                   authKind: "header",
                   value,
+                  ...(bobModel ? { configInputs: { bobModel } } : {}),
                 },
               })
             }

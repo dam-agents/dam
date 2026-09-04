@@ -69,6 +69,7 @@ export function connectionSecretAnnotations(
     .map((c) => ({
       host: c.host,
       ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
+      ...(c.pathRewrites ? { pathRewrites: c.pathRewrites } : {}),
       headerName: c.headerName,
       valueFormat: c.valueFormat,
       ...(c.encoding ? { encoding: c.encoding } : {}),
