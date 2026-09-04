@@ -207,7 +207,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "teamId",
       envName: "BOB_TEAM_ID",
       label: "Team ID",
-      hint: "Sets the x-team-id header.",
+      hint: "Team ID for general-type API keys. Applies to terminal (TUI) sessions; chat sessions ignore it.",
     },
     {
       inputName: "maxCost",
