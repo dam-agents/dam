@@ -53,6 +53,7 @@ function reader(byModel: TokenSpendByModel[], sessions: number) {
     },
     spendByAgent: async () => [],
     spendByDay: async () => [],
+    spendBySession: async () => [],
     contextPerCall: async () => [],
     close: async () => {},
   };
