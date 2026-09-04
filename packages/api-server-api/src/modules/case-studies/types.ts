@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  caseStudyContentSourceSchema,
   caseStudyInspectionFilterSchema,
   caseStudyStatusSchema,
   caseStudySubmitInputSchema,
@@ -7,7 +8,9 @@ import type {
 
 export type CaseStudyStatus = z.infer<typeof caseStudyStatusSchema>;
 
-export type CaseStudyContentSource = "artifact" | "submitted";
+export type CaseStudyContentSource = z.infer<
+  typeof caseStudyContentSourceSchema
+>;
 
 export type CaseStudySubmitInput = z.infer<typeof caseStudySubmitInputSchema>;
 

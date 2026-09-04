@@ -12,6 +12,7 @@ export interface EditionRecord {
   windowStart: string;
   windowEnd: string;
   content: string;
+  contentSource: CaseStudyContentSource;
   harnessImage: string | null;
   artifactId: string | null;
   status: CaseStudyStatus;
@@ -50,7 +51,7 @@ function carried(
   record: EditionRecord,
   resolved?: ResolvedContent,
 ): ResolvedContent {
-  return resolved ?? { content: record.content, source: "submitted" };
+  return resolved ?? { content: record.content, source: record.contentSource };
 }
 
 export function toSummary(

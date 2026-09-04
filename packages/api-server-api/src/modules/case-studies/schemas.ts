@@ -12,6 +12,8 @@ export const caseStudyStatusSchema = z.enum([
   "deleted",
 ]);
 
+export const caseStudyContentSourceSchema = z.enum(["artifact", "submitted"]);
+
 const isoDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");

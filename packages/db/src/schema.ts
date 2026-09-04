@@ -667,6 +667,7 @@ export const agentCaseStudies = pgTable(
     windowStart: text("window_start").notNull(),
     windowEnd: text("window_end").notNull(),
     content: text("content").notNull(),
+    contentSource: text("content_source").notNull().default("submitted"),
     harnessImage: text("harness_image"),
     artifactId: text("artifact_id"),
     status: text("status").notNull().default("pending"),
@@ -683,9 +684,9 @@ export const agentCaseStudies = pgTable(
       table.agentId,
       table.editionWeekStart,
     ),
-    index("agent_case_studies_status_created_idx").on(
+    index("agent_case_studies_status_week_idx").on(
       table.status,
-      table.createdAt,
+      table.editionWeekStart,
     ),
     index("agent_case_studies_deleted_idx")
       .on(table.deletedAt)

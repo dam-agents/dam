@@ -42,12 +42,12 @@ export function createCaseStudiesService(deps: {
    */
   async function resolveDraft(record: EditionRecord): Promise<ResolvedContent> {
     if (record.status !== "pending" || !record.artifactId) {
-      return { content: record.content, source: "submitted" };
+      return { content: record.content, source: record.contentSource };
     }
     const live = await deps.readArtifactText(record.artifactId);
     const parsed = caseStudyContentSchema.safeParse(live);
     if (!parsed.success || parsed.data === record.content) {
-      return { content: record.content, source: "submitted" };
+      return { content: record.content, source: record.contentSource };
     }
     return { content: parsed.data, source: "artifact" };
   }
@@ -75,7 +75,7 @@ export function createCaseStudiesService(deps: {
       }
       if (verdict === "already-released") return toSummary(record);
       const draft = await resolveDraft(record);
-      const released = await deps.repo.setStatus(id, "released", draft.content);
+      const released = await deps.repo.setStatus(id, "released", draft);
       if (!released) {
         throw new TRPCError({
           code: "NOT_FOUND",

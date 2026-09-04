@@ -7,7 +7,10 @@ import {
   toCaseStudyInspectionFilter,
   type CaseStudyStatus,
 } from "api-server-api";
-import type { EditionRecord } from "../../modules/case-studies/domain/editions.js";
+import type {
+  EditionRecord,
+  ResolvedContent,
+} from "../../modules/case-studies/domain/editions.js";
 import type {
   CaseStudiesRepository,
   UpsertEditionInput,
@@ -27,6 +30,7 @@ function record(overrides: Partial<EditionRecord> = {}): EditionRecord {
     windowStart: "2026-08-11",
     windowEnd: "2026-08-18",
     content: "# Case study",
+    contentSource: "submitted",
     harnessImage: "img:1",
     artifactId: null,
     status: "pending",
@@ -40,11 +44,11 @@ function record(overrides: Partial<EditionRecord> = {}): EditionRecord {
 function fakeRepo(seed: EditionRecord[] = []): CaseStudiesRepository & {
   rows: EditionRecord[];
   upserts: UpsertEditionInput[];
-  purges: { createdBefore: Date; tombstonedBefore: Date }[];
+  purges: { weekStartBefore: string; tombstonedBefore: Date }[];
 } {
   const rows = [...seed];
   const upserts: UpsertEditionInput[] = [];
-  const purges: { createdBefore: Date; tombstonedBefore: Date }[] = [];
+  const purges: { weekStartBefore: string; tombstonedBefore: Date }[] = [];
   return {
     rows,
     upserts,
@@ -61,6 +65,7 @@ function fakeRepo(seed: EditionRecord[] = []): CaseStudiesRepository & {
         ...input,
         id: existing?.id ?? `ed-${rows.length + 1}`,
         status: "pending",
+        contentSource: "submitted",
         deletedAt: null,
       });
       if (existing) rows.splice(rows.indexOf(existing), 1, next);
@@ -82,20 +87,22 @@ function fakeRepo(seed: EditionRecord[] = []): CaseStudiesRepository & {
           (!filter.since || r.updatedAt >= filter.since),
       );
     },
-    async setStatus(id, status: CaseStudyStatus, content?: string) {
+    async setStatus(id, status: CaseStudyStatus, resolved?: ResolvedContent) {
       const row = rows.find((r) => r.id === id);
       if (!row) return null;
       const next = record({
         ...row,
         status,
-        ...(content === undefined ? {} : { content }),
+        ...(resolved === undefined
+          ? {}
+          : { content: resolved.content, contentSource: resolved.source }),
         deletedAt: status === "deleted" ? new Date() : null,
       });
       rows.splice(rows.indexOf(row), 1, next);
       return next;
     },
-    async purge(createdBefore, tombstonedBefore) {
-      purges.push({ createdBefore, tombstonedBefore });
+    async purge(weekStartBefore, tombstonedBefore) {
+      purges.push({ weekStartBefore, tombstonedBefore });
       return 0;
     },
   };
@@ -269,7 +276,10 @@ describe("case-study owner service", () => {
   /**
    * TEST_SCENARIO: Releasing is consent to specific text, so the row must stop
    * tracking the artifact the moment it is released — otherwise a later edit
-   * silently rewrites what an inspector has already read.
+   * silently rewrites what an inspector has already read. The freeze must also
+   * keep the provenance of what it froze: reads can no longer recompute which
+   * copy won, so a frozen owner edit reported as agent-submitted would
+   * misattribute the text to the agent.
    */
   it("freezes the released text against later artifact edits", async () => {
     const repo = fakeRepo([record({ artifactId: "art-1" })]);
@@ -278,7 +288,7 @@ describe("case-study owner service", () => {
     const edited = createCaseStudiesService(deps(repo, "# Changed afterwards"));
     expect(await edited.get("ed-1")).toMatchObject({
       content: "# As consented",
-      contentSource: "submitted",
+      contentSource: "artifact",
     });
     expect(repo.rows[0]?.content).toBe("# As consented");
   });
@@ -375,7 +385,13 @@ describe("case-study inspection", () => {
 });
 
 describe("case-study retention sweeper", () => {
-  // TEST_SCENARIO: Retention math off by a unit silently erases live editions or keeps tombstones forever; the cutoffs must derive from the injected clock and the configured windows exactly.
+  /**
+   * TEST_SCENARIO: Retention math off by a unit silently erases live editions
+   * or keeps tombstones forever. Editions age by the week they cover, so the
+   * age cutoff is a week start one window plus one week back — anything before
+   * it ended its week a full window ago — while the tombstone cutoff derives
+   * from the grace window and the injected clock exactly.
+   */
   it("purges with cutoffs derived from retention and grace windows", async () => {
     const repo = fakeRepo();
     const sweeper = createCaseStudyRetentionSweeper({
@@ -385,9 +401,7 @@ describe("case-study retention sweeper", () => {
       now: () => new Date("2026-08-17T00:00:00Z"),
     });
     await sweeper.tick();
-    expect(repo.purges[0]?.createdBefore.toISOString()).toBe(
-      "2025-08-17T00:00:00.000Z",
-    );
+    expect(repo.purges[0]?.weekStartBefore).toBe("2025-08-10");
     expect(repo.purges[0]?.tombstonedBefore.toISOString()).toBe(
       "2026-07-18T00:00:00.000Z",
     );

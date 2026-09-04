@@ -673,14 +673,17 @@ apiServer:
     hmacKey: ""
   # -- Agent case-study editions (submitted by the agent-case-study skill).
   caseStudies:
-    # -- Days an edition row is kept before the retention sweep deletes it.
-    # Editions are weekly, so one agent produces roughly 52 rows a year.
+    # -- Days an edition is kept past the end of the week it covers before
+    # the retention sweep deletes it. Editions are weekly, so one agent
+    # produces roughly 52 rows a year.
     # Pending final retention rules from the data-collection legal review
     # (#3262).
     retentionDays: 365
     # -- Days a withdrawn (tombstoned) edition is kept before the same sweep
     # purges it for good. Shorter than retentionDays: withdrawal is an explicit
     # owner action, and the grace window exists only to make it recoverable.
+    # Retention stays the outer bound — a withdrawal near the retention
+    # horizon is purged by age rather than kept the full grace.
     tombstoneGraceDays: 30
   # -- API keys for headless / CI use.
   apiKeys:
