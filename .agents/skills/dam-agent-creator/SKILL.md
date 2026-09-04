@@ -161,7 +161,11 @@ Copy and adapt the operational scripts the design needs:
   ONBOARDING creates, plus one `--live` probe per integration and a read-only pre-flight
   per scheduled mode. Same detect-never-repair contract as the pre-flight; it judges
   *shape*, never data; a config bullet that is not a known key must FAIL (the runtime
-  cannot see it); a probe that cannot run is `warn`, never a silent pass.
+  cannot see it); a probe that cannot run is `warn`, never a silent pass. Keep each check
+  in the scope that can already satisfy it — `--config` runs mid-onboarding, before the
+  schedules and the sentinel exist, and a gate failing on state its caller has not
+  created yet only teaches the agent to ignore the output. Its `cfg()` reader is
+  byte-identical to the pre-flight's; the validator compares them.
 - `scripts/lib/toolpath.sh` — when a script execs `jq`/`gh` in a loop; source it before
   the first call and before any `command -v` guard (`references/platform-dam.md`).
 - `scripts/tests/` — `run.sh` from the template plus one offline `test_<mode>.sh` per

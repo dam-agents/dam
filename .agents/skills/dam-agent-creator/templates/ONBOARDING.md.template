@@ -152,8 +152,10 @@ The definition is project-agnostic: every instance-specific value lives in
 it first). Gather the values below, then write the file in **exactly the shape of the
 example at the end of this step**: the runtime reads `- <key>: <value>` bullets under
 those key names, so any other label is invisible to it, not merely wrong. Then run
-`bash "$HOME/scripts/verify-onboarding.sh"`, apply what it reports, and show the file to
-the operator.
+`bash "$HOME/scripts/verify-onboarding.sh" --config`, apply what it reports, and show the
+file to the operator. `--config` is the mid-onboarding scope: the schedules,
+`work/VERSION` and the sentinel do not exist yet, and a gate that fails on state its
+caller has not created teaches the agent to ignore it. The full run comes in Step 6.
 
 **Store every resolved value a scheduled run needs**, including the ones the platform
 usually supplies as environment variables — a schedule starts a fresh shell with no

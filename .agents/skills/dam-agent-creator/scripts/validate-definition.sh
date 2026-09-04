@@ -116,6 +116,23 @@ if [ -d scripts ]; then
   done
 fi
 
+# ------------------------------------------------------ config reader parity ----
+# verify-onboarding.sh judges CONFIG.md with the reader the runtime uses; if the
+# two drift, the verifier passes a file preflight then mis-parses. Whitespace is
+# normalized away, a missing `-e` clause is not.
+if [ -f scripts/preflight.sh ] && [ -f scripts/verify-onboarding.sh ]; then
+  cfg_body() { sed -n '/^cfg() {/,/}[[:space:]]*$/p' "$1" | tr -d ' \t'; }
+  pf_cfg="$(cfg_body scripts/preflight.sh)"
+  vo_cfg="$(cfg_body scripts/verify-onboarding.sh)"
+  if [ -z "$pf_cfg" ] || [ -z "$vo_cfg" ]; then
+    warn "could not extract cfg() from both scripts — check the parity by hand"
+  elif [ "$pf_cfg" = "$vo_cfg" ]; then
+    pass "cfg() reader identical in preflight.sh and verify-onboarding.sh"
+  else
+    fail "cfg() differs between preflight.sh and verify-onboarding.sh — the verifier would read config values differently from the runtime"
+  fi
+fi
+
 # ------------------------------------------------------- dead relative links ----
 dead=0
 while IFS= read -r f; do

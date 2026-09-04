@@ -28,8 +28,12 @@ NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 LOGS=()
 log() { LOGS+=("$1"); }
 
+# The runtime's config reader. `scripts/verify-onboarding.sh` carries this
+# function byte-identically — a verifier that reads a value differently from the
+# runtime passes a file the runtime then mis-parses; the validator compares them.
 cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
-        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'; }
+        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' \
+              -e 's/^[`"'"'"']//' -e 's/[`"'"'"']$//'; }
 
 # Rows of a `## <heading>` config table, bounded at the NEXT `## ` heading —
 # an unbounded range would swallow every later table in the file.

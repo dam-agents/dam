@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # verify-onboarding.sh — one-shot structure verification of an onboarded agent.
 #
-# Runs at the end of ONBOARDING (after the sentinel is written) and again as an
+# Runs twice during ONBOARDING — `--config` right after `work/CONFIG.md` is
+# written, then a full run at the end (after the sentinel) — and again as an
 # upgrade step whenever a version changes what onboarding produces. It checks
 # that onboarding produced what it promises: the definition checkout at $HOME
 # and the work/ state files, with the STRUCTURE the templates define. Shape
@@ -17,10 +18,16 @@
 #   warn <check> — <detail>                      informational, never blocks
 #   FAIL <check> — <problem> — fix: <instruction>
 #
-# Default run is offline (structure only). `--live` adds the "does it actually
-# work" pass: authentication per integration, the agent's own identity, access
-# to every configured repo/channel, and one read-only `preflight.sh <mode>` per
-# scheduled run type as the end-to-end proof.
+# Scope is chosen by the mode, so a gate never checks state its caller has not
+# created yet — a FAIL the agent cannot act on teaches it to ignore the output:
+#
+#   --config   the CONFIG block only. For mid-onboarding use, before the
+#              schedules, work/VERSION and the sentinel exist.
+#   (none)     every offline block: definition, work/, CONFIG.
+#   --live     the offline blocks plus the "does it actually work" pass —
+#              authentication per integration, the agent's own identity, access
+#              to every configured repo/channel, and one read-only
+#              `preflight.sh <mode>` per scheduled run type as end-to-end proof.
 #
 # Exit 0 iff nothing FAILed.
 #
@@ -32,11 +39,12 @@
 set -u
 export LC_ALL=C
 
-LIVE=0
+LIVE=0; STRUCTURE=1
 case "${1:-}" in
-  (--live) LIVE=1;;
+  (--live)   LIVE=1;;
+  (--config) STRUCTURE=0;;
   ('') ;;
-  (*) printf 'usage: %s [--live]\n' "$0" >&2; exit 2;;
+  (*) printf 'usage: %s [--config|--live]\n' "$0" >&2; exit 2;;
 esac
 
 HOME_DIR="${HOME:-/home/agent}"
@@ -52,23 +60,28 @@ ok()   { CHECKS=$((CHECKS+1)); printf 'ok   %s — %s\n' "$1" "$2"; }
 fail() { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf 'FAIL %s — %s — fix: %s\n' "$1" "$2" "$3"; }
 warn() { WARNS=$((WARNS+1)); printf 'warn %s — %s\n' "$1" "$2"; }
 
-# MUST mirror preflight.sh's config reader, quote stripping included — a reader
-# that disagrees with the runtime's would pass a file the runtime cannot parse.
+# Byte-identical to preflight.sh's reader — a verifier that reads a value
+# differently from the runtime passes a file the runtime then mis-parses. The
+# validator compares the two bodies, so this stays true (self-modification §9).
 cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
         | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' \
               -e 's/^[`"'"'"']//' -e 's/[`"'"'"']$//'; }
 
-# ---------------------------------------------------------------- definition
-# TODO(creator): definition checkout present and clean; allowlist .gitignore in
-# place; origin matches the configured definition repo; checkout on the tracked
-# branch; the onboarding sentinel exists with a UTC timestamp; harness adapter
-# hooks registered by name (when the design has them).
+# Everything the mid-onboarding `--config` run must not reach — it checks state
+# that later ONBOARDING steps create (schedules, work/VERSION, the sentinel).
+if [ "$STRUCTURE" = 1 ]; then
+  : # ------------------------------------------------------------- definition
+    # TODO(creator): definition checkout present and clean; allowlist .gitignore
+    # in place; origin matches the configured definition repo; checkout on the
+    # tracked branch; the onboarding sentinel exists with a UTC timestamp;
+    # harness adapter hooks registered by name (when the design has them).
 
-# ---------------------------------------------------------------------- work/
-# TODO(creator): work/ present and a PLAIN DIRECTORY (no .git — the invariant
-# the NFS volume forces); work/AGENTS.md pointer present; work/VERSION matches
-# the checkout; per state file: present, template sections/table header intact,
-# every row matching the documented format.
+  : # ------------------------------------------------------------------ work/
+    # TODO(creator): work/ present and a PLAIN DIRECTORY (no .git — the
+    # invariant the NFS volume forces); work/AGENTS.md pointer present;
+    # work/VERSION matches the checkout; per state file: present, template
+    # sections/table header intact, every row matching the documented format.
+fi
 
 # ------------------------------------------------------------------- CONFIG
 # TODO(creator): one check per required key (present + parseable by cfg());
@@ -90,7 +103,9 @@ if [ "$LIVE" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------- summary
-[ "$LIVE" = 1 ] && SCOPE="structure+live" || SCOPE="structure"
+if [ "$LIVE" = 1 ]; then SCOPE="structure+live"
+elif [ "$STRUCTURE" = 1 ]; then SCOPE="structure"
+else SCOPE="config"; fi
 if [ "$FAILS" -eq 0 ]; then
   printf 'PASS (%s) — %d checks passed, %d warning(s)\n' "$SCOPE" "$CHECKS" "$WARNS"
   logev info onboarding_verify "PASS $SCOPE ($CHECKS checks, $WARNS warnings)"
