@@ -10,6 +10,7 @@ import {
   or,
   sql,
   type Db,
+  type DbTx,
   artifactFolders as foldersTable,
   libraryArtifacts as artifactsTable,
   libraryArtifactVersions as versionsTable,
@@ -96,6 +97,14 @@ export type ArtifactPatch = Partial<
   >
 >;
 
+export type SharingPatch = Pick<ArtifactPatch, "visibility" | "expiresAt">;
+
+export interface SharingChange {
+  before: ArtifactRow;
+  after: ArtifactRow;
+  viewers: string[];
+}
+
 export interface ArtifactLibraryRepository {
   insertArtifact(
     row: Omit<ArtifactRow, "createdAt" | "updatedAt" | "viewCount">,
@@ -139,7 +148,12 @@ export interface ArtifactLibraryRepository {
 
   listViewers(artifactId: string): Promise<string[]>;
   listViewersForMany(artifactIds: string[]): Promise<Map<string, string[]>>;
-  replaceViewers(artifactId: string, emails: string[]): Promise<void>;
+  updateSharing(
+    id: string,
+    owner: string,
+    patch: SharingPatch,
+    viewers: string[] | undefined,
+  ): Promise<SharingChange | null>;
 
   insertFolder(
     row: Omit<FolderRow, "createdAt" | "updatedAt">,
@@ -181,6 +195,18 @@ export function createArtifactLibraryRepository(
     createdAt: artifactsTable.createdAt,
     updatedAt: artifactsTable.updatedAt,
   };
+
+  async function selectViewers(
+    runner: Db | DbTx,
+    artifactId: string,
+  ): Promise<string[]> {
+    const rows = await runner
+      .select({ email: viewersTable.email })
+      .from(viewersTable)
+      .where(eq(viewersTable.artifactId, artifactId))
+      .orderBy(asc(viewersTable.addedAt), asc(viewersTable.email));
+    return rows.map((r) => r.email);
+  }
 
   return {
     async insertArtifact(row) {
@@ -425,14 +451,7 @@ export function createArtifactLibraryRepository(
       return row ?? null;
     },
 
-    async listViewers(artifactId) {
-      const rows = await db
-        .select({ email: viewersTable.email })
-        .from(viewersTable)
-        .where(eq(viewersTable.artifactId, artifactId))
-        .orderBy(asc(viewersTable.addedAt), asc(viewersTable.email));
-      return rows.map((r) => r.email);
-    },
+    listViewers: (artifactId) => selectViewers(db, artifactId),
 
     async listViewersForMany(artifactIds) {
       const byArtifact = new Map<string, string[]>();
@@ -453,16 +472,34 @@ export function createArtifactLibraryRepository(
       return byArtifact;
     },
 
-    async replaceViewers(artifactId, emails) {
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(viewersTable)
-          .where(eq(viewersTable.artifactId, artifactId));
-        if (emails.length > 0) {
-          await tx
-            .insert(viewersTable)
-            .values(emails.map((email) => ({ artifactId, email })));
+    async updateSharing(id, owner, patch, viewers) {
+      return db.transaction(async (tx) => {
+        const [before] = await tx
+          .select(artifactColumns)
+          .from(artifactsTable)
+          .where(
+            and(eq(artifactsTable.id, id), eq(artifactsTable.owner, owner)),
+          )
+          .for("update");
+        if (!before) return null;
+        const [after] = await tx
+          .update(artifactsTable)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(artifactsTable.id, id))
+          .returning(artifactColumns);
+        if (viewers !== undefined) {
+          await tx.delete(viewersTable).where(eq(viewersTable.artifactId, id));
+          if (viewers.length > 0) {
+            await tx
+              .insert(viewersTable)
+              .values(viewers.map((email) => ({ artifactId: id, email })));
+          }
         }
+        return {
+          before,
+          after: after!,
+          viewers: await selectViewers(tx, id),
+        };
       });
     },
 

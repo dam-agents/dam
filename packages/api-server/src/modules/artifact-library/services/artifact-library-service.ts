@@ -35,6 +35,7 @@ import type {
   ArtifactLibraryRepository,
   ArtifactRow,
   FolderRow,
+  SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import { emit, EventType } from "../../../events.js";
@@ -450,36 +451,31 @@ export function createArtifactLibraryService(
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      const before = await requireArtifact(id);
-      refuseAgentOnRestricted(before, input);
-      const patch: Parameters<typeof repo.updateArtifact>[2] = {};
+      const current = await requireArtifact(id);
+      refuseAgentOnRestricted(current, input);
+      const patch: SharingPatch = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)
         patch.expiresAt = expiresAtFrom(input.expiresInHours);
-      const updated = await repo.updateArtifact(id, owner, patch);
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
-      if (input.viewers !== undefined)
-        await repo.replaceViewers(id, input.viewers);
+      const change = await repo.updateSharing(id, owner, patch, input.viewers);
+      if (!change) throw new TRPCError({ code: "NOT_FOUND" });
+      const { before, after, viewers } = change;
       emit({
         type: EventType.ArtifactUpdated,
         artifactId: id,
         ownerSub: owner,
-        ...(updated.agentId ? { agentId: updated.agentId } : {}),
+        ...(after.agentId ? { agentId: after.agentId } : {}),
       });
-      if (before.visibility === "private" && updated.visibility !== "private") {
+      if (before.visibility === "private" && after.visibility !== "private") {
         emit({
           type: EventType.ArtifactShared,
           actorSub: owner,
           artifactId: id,
-          visibility: updated.visibility,
+          visibility: after.visibility,
           surface,
         });
       }
-      return toLibraryArtifact(
-        updated,
-        shareBaseUrl,
-        input.viewers ?? (await repo.listViewers(id)),
-      );
+      return toLibraryArtifact(after, shareBaseUrl, viewers);
     },
 
     async delete(id) {
