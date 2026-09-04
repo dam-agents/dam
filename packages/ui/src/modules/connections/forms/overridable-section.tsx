@@ -1,4 +1,5 @@
 import type { ConnectionTemplateInput } from "api-server-api";
+import type { ReactNode } from "react";
 import { type Control, Controller, useWatch } from "react-hook-form";
 
 import { Switch } from "@/components/ui/switch";
@@ -13,18 +14,24 @@ export function OverridableSection({
   control,
   templateId,
   fromFamily,
+  overrideHint,
 }: {
   inputs: ConnectionTemplateInput[];
   control: Control<TemplateFormValues>;
   templateId: string;
   fromFamily?: boolean;
+  overrideHint?: ReactNode;
 }) {
   const overriding = useWatch({ control, name: "overrideDefaults" });
   return (
-    <DisclosureBox title="Customize defaults" testId="customize-defaults">
+    <DisclosureBox
+      title="Customize defaults"
+      testId="customize-defaults"
+      variant="plain"
+    >
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {fromFamily
               ? "Reused from another connection you've already set up. Leave off to share the same app, or turn on to use your own."
               : "These values are pre-configured by your administrator. Leave off to use the defaults, or turn on to supply your own."}
@@ -44,6 +51,7 @@ export function OverridableSection({
         </div>
         {overriding ? (
           <div className="flex flex-col gap-3">
+            {overrideHint}
             {inputs.map((input) => (
               <TemplateFieldInput
                 key={input.name}
@@ -68,13 +76,13 @@ export function OverridableSection({
 function PresetSummary({ input }: { input: ConnectionTemplateInput }) {
   if (input.presetValue)
     return (
-      <p className="text-[11px] font-mono text-muted-foreground">
+      <p className="text-xs font-mono text-muted-foreground">
         {labelFor(input.name)}: {input.presetValue}
       </p>
     );
   if (input.secret)
     return (
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {labelFor(input.name)}: preset value hidden.
       </p>
     );

@@ -1,3 +1,4 @@
+import { ChevronRight } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -10,7 +11,7 @@ interface Props {
   defaultOpen?: boolean;
   bodyClassName?: string;
   testId?: string;
-  variant?: "box" | "section";
+  variant?: "box" | "section" | "plain";
   description?: ReactNode;
   children: ReactNode;
 }
@@ -26,6 +27,28 @@ export function DisclosureBox({
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const toggle = () => setOpen((v) => !v);
+
+  if (variant === "plain") {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          data-testid={testId}
+          className="flex items-center gap-1.5 text-left text-sm text-foreground"
+        >
+          {title}
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className={cn("shrink-0 transition-transform", open && "rotate-90")}
+          />
+        </button>
+        {open && <div className={cn("mt-3", bodyClassName)}>{children}</div>}
+      </div>
+    );
+  }
 
   if (variant === "section") {
     return (

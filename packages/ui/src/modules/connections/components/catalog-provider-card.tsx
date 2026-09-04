@@ -6,11 +6,9 @@ import { Button } from "@/components/ui/button";
 import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
-import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type { RowMaintenanceActions } from "./catalog-connection-row.js";
-import { CatalogConnectionRow } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
-import { GithubAppInstallHint } from "./github-app-install-hint.js";
+import { ConnectionRowCard } from "./connection-row-card.js";
 
 export interface SandboxGrantControls {
   grantedIds: ReadonlySet<string>;
@@ -67,30 +65,24 @@ export function CatalogProviderCard({
       headerRight={connections.length > 0 && newButton}
     >
       {connections.length > 0 ? (
-        <>
-          <GithubAppInstallHint connections={connections} />
-          <div className="divide-y divide-border">
-            {connections.map((c) => (
-              <CatalogConnectionRow
-                key={c.id}
-                connection={c}
-                subtitle={connectionKindSubtitle(
-                  c,
-                  templateById.get(c.templateId),
-                )}
-                grant={
-                  sandbox && {
-                    granted: sandbox.grantedIds.has(c.id),
-                    onToggle: (on) => sandbox.onToggleGrant(c.id, on),
-                  }
+        <div className="flex flex-col gap-3 p-4">
+          {connections.map((c) => (
+            <ConnectionRowCard
+              key={c.id}
+              connection={c}
+              template={templateById.get(c.templateId)}
+              grant={
+                sandbox && {
+                  granted: sandbox.grantedIds.has(c.id),
+                  onToggle: (on) => sandbox.onToggleGrant(c.id, on),
                 }
-                onDelete={() => onDelete(c.id, c.name)}
-                deleting={deletingId === c.id}
-                maintenance={maintenance?.(c)}
-              />
-            ))}
-          </div>
-        </>
+              }
+              onDelete={() => onDelete(c.id, c.name)}
+              deleting={deletingId === c.id}
+              maintenance={maintenance?.(c)}
+            />
+          ))}
+        </div>
       ) : (
         <div className="flex flex-col items-start gap-3 px-4 py-4">
           <p className="text-sm text-muted-foreground">
