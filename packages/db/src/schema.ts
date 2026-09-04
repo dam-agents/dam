@@ -257,6 +257,24 @@ export const agents = pgTable(
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    mode: text("mode").notNull(),
+    type: text("type").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    reportedAt: timestamp("reported_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.sessionId] }),
+    index("agent_sessions_created_idx").on(table.createdAt),
+  ],
+);
+
 export const agentEnv = pgTable(
   "agent_env",
   {

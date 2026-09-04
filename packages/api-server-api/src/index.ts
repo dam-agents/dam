@@ -305,6 +305,8 @@ export type {
   TokenSpendByModel,
   SpendByAgent,
   SpendByDay,
+  SpendBySessionType,
+  SpendCategory,
   SessionRuntime,
   CallContext,
 } from "./modules/metrics/types.js";
@@ -353,13 +355,16 @@ export type {
 export {
   SessionType,
   SessionMode,
+  SESSION_CATEGORIES,
+  sessionCategoryOf,
   sessionModeSchema,
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
-export type { SessionView } from "./modules/sessions/types.js";
+export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
+export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
 export {
   OP_INPUT,

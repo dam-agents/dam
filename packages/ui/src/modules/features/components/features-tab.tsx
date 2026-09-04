@@ -30,7 +30,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "session-costs",
     label: "Session costs",
     description:
-      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
+      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
   },
 ];
 
