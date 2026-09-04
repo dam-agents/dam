@@ -12,6 +12,7 @@ const schema = z.object({
     .string()
     .default("on")
     .transform((v) => v !== "off"),
+  QUEUE_PARK_MS: z.coerce.number().int().positive().optional(),
 });
 
 export const config = schema.parse(process.env);

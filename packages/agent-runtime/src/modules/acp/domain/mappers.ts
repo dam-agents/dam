@@ -1,3 +1,23 @@
+import {
+  capInlineImages,
+  promptBlockSchema,
+  type PlatformUndeliveredPrompt,
+} from "api-server-api";
+import { z } from "zod";
+
+export function undeliveredOf(
+  id: string,
+  frame: unknown,
+  recordedAt: string,
+): PlatformUndeliveredPrompt {
+  const raw = (frame as { params?: { prompt?: unknown } } | null)?.params
+    ?.prompt;
+  const parsed = z.array(promptBlockSchema).safeParse(raw);
+  if (!parsed.success)
+    return { id, recordedAt, blocks: [], droppedAttachments: [] };
+  return { id, recordedAt, ...capInlineImages(parsed.data) };
+}
+
 const AUTH_HINT =
   "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent (Agents > select agent > Secrets).\n\nError: ";
 

@@ -190,6 +190,7 @@ export function ChatInput({
           ref={fileInputRef}
           type="file"
           multiple
+          data-testid="prompt-attach-input"
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) addFiles(e.target.files);

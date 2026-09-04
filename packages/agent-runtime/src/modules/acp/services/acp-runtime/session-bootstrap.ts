@@ -1,9 +1,11 @@
+import type { PlatformReplayTurnMeta } from "api-server-api";
 import { match } from "ts-pattern";
 
 import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -58,6 +60,9 @@ export interface SessionBootstrapDeps {
   historyProvider?: HistoryProvider;
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
+  turnInFlight(sessionId: string): boolean;
+  undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
+  supersededFor(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
 }
 
@@ -97,8 +102,20 @@ export function createSessionBootstrap(
 ): SessionBootstrap {
   const bootstrapBySession = new Map<string, BootstrapState>();
 
-  function withClipMeta(value: unknown, clip: ReplayClip): unknown {
-    if (!clip.clipped) return value;
+  function withReplayMeta(
+    value: unknown,
+    clip: ReplayClip,
+    turn: PlatformReplayTurnMeta | null,
+    undelivered: PlatformUndeliveredPrompt[],
+    superseded: string[],
+  ): unknown {
+    const extras: Record<string, unknown> = {};
+    if (clip.clipped)
+      extras.clipped = clip.older !== undefined ? { older: clip.older } : {};
+    if (turn !== null) extras.turn = turn;
+    if (undelivered.length > 0) extras.undelivered = undelivered;
+    if (superseded.length > 0) extras.superseded = superseded;
+    if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
         ? (value as Record<string, unknown>)
@@ -115,10 +132,7 @@ export function createSessionBootstrap(
       ...base,
       _meta: {
         ...meta,
-        platform: {
-          ...platform,
-          clipped: clip.older !== undefined ? { older: clip.older } : {},
-        },
+        platform: { ...platform, ...extras },
       },
     };
   }
@@ -156,7 +170,13 @@ export function createSessionBootstrap(
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: withClipMeta(metadata.value, clip),
+      result: withReplayMeta(
+        metadata.value,
+        clip,
+        kind === "load" ? { inFlight: deps.turnInFlight(sessionId) } : null,
+        kind === "load" ? deps.undeliveredFor(sessionId) : [],
+        kind === "load" ? deps.supersededFor(sessionId) : [],
+      ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
   }
@@ -300,7 +320,7 @@ export function createSessionBootstrap(
           const response = JSON.stringify({
             jsonrpc: "2.0",
             id: originalId,
-            result: withClipMeta(metadata.value, page.clip),
+            result: withReplayMeta(metadata.value, page.clip, null, [], []),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));
           return;

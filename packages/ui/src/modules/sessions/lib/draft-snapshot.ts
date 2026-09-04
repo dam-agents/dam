@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 import type { SessionDraft } from "./draft-key.js";
+import {
+  browserStorage,
+  type KeyValueStore,
+  removeAllWithPrefix,
+  safeGetItem,
+  safeKeys,
+  safeRemoveItem,
+} from "./safe-storage.js";
 
 export const DRAFT_STORAGE_PREFIX = "platform-draft:";
 
@@ -15,20 +23,6 @@ const persistedDraftSchema = z.object({
 });
 
 type PersistedDraft = z.infer<typeof persistedDraftSchema>;
-
-export interface DraftStore {
-  keys(): string[];
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
-
-const localStore: DraftStore = {
-  keys: () => Object.keys(localStorage),
-  getItem: (key) => localStorage.getItem(key),
-  setItem: (key, value) => localStorage.setItem(key, value),
-  removeItem: (key) => localStorage.removeItem(key),
-};
 
 function parseDraftEntry(raw: string): SessionDraft | null {
   let json: unknown;
@@ -57,28 +51,17 @@ function attachmentNames(draft: SessionDraft): string[] {
 }
 
 export function loadDraftSnapshot(
-  store: DraftStore = localStore,
+  store: KeyValueStore = browserStorage,
 ): Record<string, SessionDraft> {
-  let storageKeys: string[] = [];
-  try {
-    storageKeys = store.keys();
-  } catch {
-    return {};
-  }
   const drafts: Record<string, SessionDraft> = {};
-  for (const storageKey of storageKeys) {
+  for (const storageKey of safeKeys(store)) {
     if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
-    let raw: string | null = null;
-    try {
-      raw = store.getItem(storageKey);
-    } catch {}
+    const raw = safeGetItem(store, storageKey);
     if (raw === null) continue;
     const draft = parseDraftEntry(raw);
     if (draft === null) {
       console.warn(`[drafts] discarding unreadable ${storageKey}`);
-      try {
-        store.removeItem(storageKey);
-      } catch {}
+      safeRemoveItem(store, storageKey);
       continue;
     }
     drafts[storageKey.slice(DRAFT_STORAGE_PREFIX.length)] = draft;
@@ -89,7 +72,7 @@ export function loadDraftSnapshot(
 function writeDraftEntry(
   key: string,
   draft: SessionDraft | null,
-  store: DraftStore,
+  store: KeyValueStore,
 ): void {
   const storageKey = `${DRAFT_STORAGE_PREFIX}${key}`;
   const names = draft === null ? [] : attachmentNames(draft);
@@ -113,21 +96,6 @@ function writeDraftEntry(
   }
 }
 
-function removeAllDraftEntries(store: DraftStore): void {
-  let storageKeys: string[] = [];
-  try {
-    storageKeys = store.keys();
-  } catch {
-    return;
-  }
-  for (const storageKey of storageKeys) {
-    if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
-    try {
-      store.removeItem(storageKey);
-    } catch {}
-  }
-}
-
 export interface DraftWriter {
   write(key: string, draft: SessionDraft | null): void;
   flush(): void;
@@ -135,7 +103,7 @@ export interface DraftWriter {
 }
 
 export function createDraftWriter(
-  store: DraftStore = localStore,
+  store: KeyValueStore = browserStorage,
   batchMs: number = WRITE_BATCH_MS,
 ): DraftWriter {
   const queued = new Map<string, SessionDraft>();
@@ -168,7 +136,7 @@ export function createDraftWriter(
     flush,
     clearAll() {
       discardQueue();
-      removeAllDraftEntries(store);
+      removeAllWithPrefix(store, DRAFT_STORAGE_PREFIX);
     },
   };
 }
@@ -177,7 +145,7 @@ export const draftWriter = createDraftWriter();
 
 export function claimDraftsFor(
   ownerId: string,
-  store: DraftStore = localStore,
+  store: KeyValueStore = browserStorage,
 ): boolean {
   let previous: string | null = null;
   try {
@@ -187,7 +155,7 @@ export function claimDraftsFor(
   }
   if (previous === ownerId) return false;
   const foreign = previous !== null;
-  if (foreign) removeAllDraftEntries(store);
+  if (foreign) removeAllWithPrefix(store, DRAFT_STORAGE_PREFIX);
   try {
     store.setItem(DRAFT_OWNER_KEY, ownerId);
   } catch {}

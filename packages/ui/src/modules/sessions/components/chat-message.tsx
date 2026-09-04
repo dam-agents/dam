@@ -2,12 +2,13 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import type { Attachment, Message } from "../../../types.js";
+import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { SendErrorCard } from "./send-error-card.js";
+import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 
 export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
@@ -15,8 +16,9 @@ interface Props {
   message: Message;
   isLast: boolean;
   hasPendingPermission: boolean;
-  onRetry: (text: string, attachments?: Attachment[]) => void;
+  onRetry: OnRetry;
   onFileClick: (path: string) => void;
+  onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
 }
 
@@ -78,6 +80,7 @@ export const ChatMessage = memo(function ChatMessage({
   hasPendingPermission,
   onRetry,
   onFileClick,
+  onDelete,
   onLoadOlder,
 }: Props) {
   if (message.notice) {
@@ -100,7 +103,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   const { role, parts, streaming, queued, error } = message;
   const isAssistant = role === "assistant";
-  const retryWith = error?.retryWith;
+  const undelivered = !isAssistant && error !== undefined;
 
   return (
     <div
@@ -115,13 +118,14 @@ export const ChatMessage = memo(function ChatMessage({
       <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
         {isAssistant ? "Agent" : "You"}
       </span>
-      {(!error || parts.length > 0) && (
+      {(!error || parts.length > 0 || undelivered) && (
         <div
-          className={
+          className={cn(
             isAssistant
               ? "flex flex-col gap-4 w-full max-w-full"
-              : "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-          }
+              : "flex flex-col gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-foreground",
+            !isAssistant && (undelivered ? "border-danger" : "border-border"),
+          )}
         >
           {parts.map((p, i) => (
             <ChatMessagePart
@@ -145,17 +149,19 @@ export const ChatMessage = memo(function ChatMessage({
           {isAssistant && streaming && !queued && !hasPendingPermission && (
             <BusyIndicator className="py-1" />
           )}
+          {undelivered && (
+            <UndeliveredNotice
+              message={message}
+              onRetry={onRetry}
+              onDelete={onDelete}
+            />
+          )}
         </div>
       )}
-      {error && (
+      {error && isAssistant && (
         <SendErrorCard
           rawError={error.message}
           interrupted={hasAgentContent(message)}
-          onRetry={
-            retryWith
-              ? () => onRetry(retryWith.text, retryWith.attachments)
-              : undefined
-          }
         />
       )}
     </div>

@@ -8,10 +8,15 @@ import {
   type SessionFailureKind,
   type SessionListing,
 } from "../../acp/errors.js";
-import { hasStreamingAssistant } from "../../acp/session-projection.js";
+import {
+  appendUndelivered,
+  hasStreamingAssistant,
+} from "../../acp/session-projection.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
+import { draftKey } from "../lib/draft-key.js";
+import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
@@ -93,12 +98,23 @@ export function useAcpSession(
     delivery,
   });
 
+  useEffect(() => {
+    if (!selectedAgent || sessionId !== null) return;
+    if (useStore.getState().messages.length > 0) return;
+    const held = readUndelivered(draftKey(selectedAgent, null));
+    if (held.length > 0) setMessages(appendUndelivered([], held));
+  }, [selectedAgent, sessionId, setMessages]);
+
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
-    setMessages([]);
+    setMessages(
+      selectedAgent === null
+        ? []
+        : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
+    );
     useStore.getState().setSessionError(null);
-  }, [resetConnection, setSessionId, setMessages]);
+  }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
   const resumeSession = useCallback(
     async (sid: string) => {

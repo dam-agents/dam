@@ -37,6 +37,71 @@ export type PlatformClippedReplayMeta = z.infer<
   typeof platformClippedReplayMetaSchema
 >;
 
+export const platformReplayTurnMetaSchema = z.object({
+  inFlight: z.boolean(),
+});
+export type PlatformReplayTurnMeta = z.infer<
+  typeof platformReplayTurnMetaSchema
+>;
+
+export const promptBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("image"),
+    data: z.string(),
+    mimeType: z.string(),
+  }),
+  z.object({
+    type: z.literal("resource_link"),
+    uri: z.string(),
+    name: z.string(),
+    mimeType: z.string().optional(),
+    size: z.number().optional(),
+  }),
+]);
+export type PromptBlock = z.infer<typeof promptBlockSchema>;
+
+export const UNDELIVERED_INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
+
+export function capInlineImages(blocks: PromptBlock[]): {
+  blocks: PromptBlock[];
+  droppedAttachments: string[];
+} {
+  const kept: PromptBlock[] = [];
+  const droppedAttachments: string[] = [];
+  let inlineBytes = 0;
+  let images = 0;
+  for (const block of blocks) {
+    if (block.type !== "image") {
+      kept.push(block);
+      continue;
+    }
+    images += 1;
+    if (inlineBytes + block.data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
+      droppedAttachments.push(`pasted image ${String(images)}`);
+      continue;
+    }
+    inlineBytes += block.data.length;
+    kept.push(block);
+  }
+  return { blocks: kept, droppedAttachments };
+}
+
+export const platformUndeliveredPromptSchema = z.object({
+  id: z.string().min(1),
+  recordedAt: z.string(),
+  blocks: z.array(promptBlockSchema).default([]),
+  droppedAttachments: z.array(z.string()).default([]),
+  reason: z.string().optional(),
+});
+export const platformUndeliveredMetaSchema = z.array(
+  platformUndeliveredPromptSchema,
+);
+export const platformSupersededMetaSchema = z.array(z.string());
+export type PlatformUndeliveredPrompt = z.infer<
+  typeof platformUndeliveredPromptSchema
+>;
+
 export const platformPromptAcceptedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),

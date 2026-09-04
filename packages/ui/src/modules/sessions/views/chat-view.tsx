@@ -87,12 +87,15 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { draftKey } from "../lib/draft-key.js";
+import { clearUndelivered } from "../lib/undelivered-store.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -127,6 +130,7 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
@@ -376,6 +380,7 @@ export function ChatView() {
 
   const handleNewSession = useCallback(() => {
     unfocusPendingLaunch();
+    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
       return;
@@ -385,6 +390,7 @@ export function ChatView() {
     resetSession();
     setMobileScreen("chat");
   }, [
+    selectedAgent,
     sessionId,
     messages.length,
     resetSession,
@@ -696,6 +702,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
+                        onDelete={deleteMessage}
                         onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
