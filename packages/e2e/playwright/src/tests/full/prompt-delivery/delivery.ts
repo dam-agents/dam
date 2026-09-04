@@ -39,10 +39,6 @@ export function deliveryError(page: Page): Locator {
   return page.getByTestId("prompt-delivery-error");
 }
 
-export function retryButton(page: Page): Locator {
-  return page.getByTestId("prompt-retry-button");
-}
-
 export function undeliveredMarker(page: Page): Locator {
   return page.getByTestId("undelivered-marker");
 }

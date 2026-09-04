@@ -584,11 +584,11 @@ describe("failQueuedOnDisconnect", () => {
 
 describe("mergeLocalFailures", () => {
   const failed: Message = {
-    ...assistantMsg("a1", "", false),
+    ...userMsg("u9", "dropped"),
     error: { message: "Couldn't deliver", retryWith: { text: "dropped" } },
   };
 
-  test("carries a locally-failed bubble across the reconnect rebuild", () => {
+  test("carries a locally-failed prompt across the reconnect rebuild", () => {
     const rebuilt = [userMsg("u1", "first"), assistantMsg("a1r", "reply")];
     const out = mergeLocalFailures(rebuilt, [...rebuilt, failed]);
     expect(out).toHaveLength(3);
@@ -604,8 +604,22 @@ describe("mergeLocalFailures", () => {
     expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);
   });
 
-  test("does not duplicate a failed bubble the rebuild already contains", () => {
+  test("does not duplicate a failed prompt the rebuild already contains", () => {
     const rebuilt = [userMsg("u1", "first"), failed];
     expect(mergeLocalFailures(rebuilt, [failed])).toBe(rebuilt);
+  });
+
+  test("drops an interrupted agent bubble, since the replay owns agent content", () => {
+    const interrupted: Message = {
+      ...assistantMsg("a9", "partial", false),
+      error: { message: "Interrupted", retryWith: { text: "prompt" } },
+    };
+    const rebuilt = [
+      userMsg("u1", "prompt"),
+      assistantMsg("a1r", "partial and the rest"),
+    ];
+    expect(mergeLocalFailures(rebuilt, [...rebuilt, interrupted])).toBe(
+      rebuilt,
+    );
   });
 });

@@ -8,11 +8,7 @@ import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { SendErrorCard } from "./send-error-card.js";
-import {
-  type OnRetry,
-  retryHandlerFor,
-  UndeliveredNotice,
-} from "./undelivered-notice.js";
+import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 
 export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
@@ -166,7 +162,6 @@ export const ChatMessage = memo(function ChatMessage({
         <SendErrorCard
           rawError={error.message}
           interrupted={hasAgentContent(message)}
-          onRetry={retryHandlerFor(message, onRetry)}
         />
       )}
     </div>

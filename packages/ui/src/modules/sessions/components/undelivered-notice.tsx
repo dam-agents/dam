@@ -28,7 +28,7 @@ export type OnRetry = (
  * user-role bubble passes its id: an interrupted turn's bubble is the agent's
  * partial reply, and naming it would delete that reply on retry.
  */
-export function retryHandlerFor(
+function retryHandlerFor(
   message: Message,
   onRetry: OnRetry,
 ): (() => void) | undefined {

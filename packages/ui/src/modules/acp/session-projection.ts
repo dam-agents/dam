@@ -291,7 +291,10 @@ export function mergeLocalFailures(
   previous: Message[],
 ): Message[] {
   const carried = previous.filter(
-    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
+    (m) =>
+      m.role === "user" &&
+      m.error?.retryWith &&
+      !rebuilt.some((r) => r.id === m.id),
   );
   return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }

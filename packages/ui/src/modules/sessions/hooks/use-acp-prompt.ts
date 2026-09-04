@@ -154,24 +154,26 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
+      const recordUndeliveredLocally = (reason: string) => {
+        if (hidden) return;
+        rememberUndelivered(
+          draftKey(selectedAgent, intendedSessionId),
+          undeliveredRecordOf({
+            id: uId,
+            text,
+            ...(attachments ? { attachments } : {}),
+            ...(resendBlocks && resendBlocks.length > 0
+              ? { blocks: resendBlocks }
+              : {}),
+            reason,
+            recordedAt: new Date().toISOString(),
+          }),
+        );
+      };
       const failUserMessage = (message: string) => {
         if (reported) return;
         reported = true;
-        if (!hidden) {
-          rememberUndelivered(
-            draftKey(selectedAgent, intendedSessionId),
-            undeliveredRecordOf({
-              id: uId,
-              text,
-              ...(attachments ? { attachments } : {}),
-              ...(resendBlocks && resendBlocks.length > 0
-                ? { blocks: resendBlocks }
-                : {}),
-              reason: message,
-              recordedAt: new Date().toISOString(),
-            }),
-          );
-        }
+        recordUndeliveredLocally(message);
         setMessages((p) =>
           p.flatMap<Message>((m) => {
             if (m.id === aId) return [];
@@ -186,12 +188,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         setMessages((p) =>
           p.map((m) =>
             m.id === aId
-              ? {
-                  ...m,
-                  streaming: false,
-                  queued: false,
-                  error: { message, retryWith: retryPayload },
-                }
+              ? { ...m, streaming: false, queued: false, error: { message } }
               : m,
           ),
         );
@@ -232,7 +229,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
       const failDelivery = () => {
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
-        if (!bubble?.streaming || hasAgentContent(bubble)) return;
+        if (bubble && (!bubble.streaming || hasAgentContent(bubble))) return;
         if (hidden) {
           dropBubble();
           return;
@@ -312,6 +309,10 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         } else if (!outcome.report) {
           finalizeBubble();
         } else if (!bubble) {
+          if (!reported && !delivered) {
+            reported = true;
+            recordUndeliveredLocally(outcome.message);
+          }
           if (!detached) {
             emitToast({ kind: "error", message: outcome.message });
           }
