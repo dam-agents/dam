@@ -19,6 +19,7 @@ const PLATFORM_RULE_PATH = join(RULES_DIR, "platform.md");
 const PLATFORM_INSTRUCTIONS = "/etc/AGENTS.md";
 const MODES = ["agent", "plan", "ask"];
 const LEGACY_MODES = { code: "agent", advanced: "agent" };
+const APPROVALS = ["auto", "ask"];
 const RETIRED_APPROVAL_KEYS = [
   "autoApprovalEnabled",
   "allowed_permissions",
@@ -61,9 +62,17 @@ function firstNonBlank(...values) {
   return null;
 }
 
+function resolveApprovals(panel) {
+  const chosen = firstNonBlank(panel.approvals);
+  if (chosen && APPROVALS.includes(chosen)) return chosen;
+  return process.env.BOB_AUTO_APPROVE === "0" ? "ask" : "auto";
+}
+
 function writeSettings() {
   const existing = readExistingSettings();
-  const mode = normalizeMode(process.env.BOB_CHAT_MODE);
+  const panel = section(existing, "platform");
+  const mode =
+    normalizeMode(panel.mode) ?? normalizeMode(process.env.BOB_CHAT_MODE);
   const model = firstNonBlank(process.env.BOB_SHELL_MODEL);
   const cost = Number(
     firstNonBlank(process.env.BOB_MAX_COINS, process.env.BOB_MAX_COST),
@@ -88,6 +97,7 @@ function writeSettings() {
   };
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+  process.stdout.write(`${resolveApprovals(panel)}\n`);
 }
 
 function platformRuleIsLinked() {
