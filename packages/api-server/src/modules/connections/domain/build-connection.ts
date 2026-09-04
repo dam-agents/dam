@@ -216,18 +216,23 @@ function substituteHostInContribution(
   }
 }
 
-function githubEnterpriseHostContributions(host: string): Contribution[] {
+function githubEnterpriseHostContributions(
+  host: string,
+  port?: number,
+): Contribution[] {
   return [
     { kind: "env", name: "GH_HOST", placeholder: host },
     {
       kind: "egress-inject",
       host: `api.${host}`,
+      ...(port ? { port } : {}),
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
     },
     {
       kind: "egress-inject",
       host,
+      ...(port ? { port } : {}),
       headerName: "Authorization",
       valueFormat: "Basic {value}",
       encoding: "basic-x-access-token",
@@ -533,7 +538,7 @@ function buildHeader(
   }
 
   if (template.id === "github-enterprise-pat") {
-    contributions.push(...githubEnterpriseHostContributions(host));
+    contributions.push(...githubEnterpriseHostContributions(host, port));
   }
 
   const hasHostContrib = contributions.some(

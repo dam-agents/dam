@@ -79,6 +79,7 @@ function RadioGroupCard({
   testId,
   className,
   children,
+  "aria-describedby": describedBy,
   ...props
 }: RadioGroupCardProps) {
   const descriptionId = React.useId();
@@ -86,7 +87,11 @@ function RadioGroupCard({
     <div className={cn("rounded-lg border border-border", className)}>
       <RadioGroupPrimitive.Item
         aria-label={label}
-        aria-describedby={description ? descriptionId : undefined}
+        aria-describedby={
+          [description ? descriptionId : null, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         data-testid={testId}
         className="flex w-full items-start gap-3 p-4 text-left ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         {...props}

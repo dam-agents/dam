@@ -28,7 +28,7 @@ export function FormField({
   const indentLabel = !disableInset && labelInset;
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <label className="flex flex-col gap-2">
+      <label className="contents">
         <SectionLabel className={cn(indentLabel && LABEL_INSET)}>
           {label}
         </SectionLabel>
