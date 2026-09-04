@@ -52,6 +52,11 @@ type envoyCredential struct {
 	SDSFileKey     string
 }
 
+type envoyPathRewrite struct {
+	Prefix      string `json:"prefix"`
+	Replacement string `json:"replacement"`
+}
+
 type envoyHostChain struct {
 	ChainID         string
 	Host            string
@@ -61,6 +66,7 @@ type envoyHostChain struct {
 	UpstreamPort    int
 	Upgrades        bool
 	UpstreamCAFile  string
+	PathRewrites    []envoyPathRewrite
 }
 
 func (c envoyHostChain) UpstreamPortValue() int {
@@ -213,17 +219,18 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 }
 
 type connectionHostInjection struct {
-	Host           string `json:"host"`
-	PathPattern    string `json:"pathPattern,omitempty"`
-	HeaderName     string `json:"headerName,omitempty"`
-	ValueFormat    string `json:"valueFormat,omitempty"`
-	Encoding       string `json:"encoding,omitempty"`
-	QueryParamName string `json:"queryParamName,omitempty"`
-	HTTP2          bool   `json:"http2,omitempty"`
-	Port           int    `json:"port,omitempty"`
-	Upgrades       bool   `json:"upgrades,omitempty"`
-	CAKey          string `json:"caKey,omitempty"`
-	SDSKey         string `json:"sdsKey,omitempty"`
+	Host           string             `json:"host"`
+	PathPattern    string             `json:"pathPattern,omitempty"`
+	PathRewrites   []envoyPathRewrite `json:"pathRewrites,omitempty"`
+	HeaderName     string             `json:"headerName,omitempty"`
+	ValueFormat    string             `json:"valueFormat,omitempty"`
+	Encoding       string             `json:"encoding,omitempty"`
+	QueryParamName string             `json:"queryParamName,omitempty"`
+	HTTP2          bool               `json:"http2,omitempty"`
+	Port           int                `json:"port,omitempty"`
+	Upgrades       bool               `json:"upgrades,omitempty"`
+	CAKey          string             `json:"caKey,omitempty"`
+	SDSKey         string             `json:"sdsKey,omitempty"`
 }
 
 func sdsFileKeyForHost(host string) string {
@@ -237,6 +244,27 @@ func sdsFileKey(e connectionHostInjection) string {
 	return sdsFileKeyForHost(e.Host)
 }
 
+func validPathRewrites(s corev1.Secret, e connectionHostInjection) []envoyPathRewrite {
+	out := make([]envoyPathRewrite, 0, len(e.PathRewrites))
+	for _, r := range e.PathRewrites {
+		if !anchoredPath(r.Prefix) || !anchoredPath(r.Replacement) {
+			slog.Warn("invalid path rewrite in injection-hosts; ignoring",
+				"namespace", s.Namespace, "secret", s.Name, "host", e.Host,
+				"prefix", r.Prefix, "replacement", r.Replacement)
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func anchoredPath(p string) bool {
+	if !strings.HasPrefix(p, "/") || !strings.HasSuffix(p, "/") {
+		return false
+	}
+	return !strings.ContainsAny(p, "?#*\\ ") && !strings.Contains(p, "//") && !strings.Contains(p, "..")
+}
+
 type hostCredential struct {
 	host string
 	opts chainOpts
@@ -244,10 +272,11 @@ type hostCredential struct {
 }
 
 type chainOpts struct {
-	http2    bool
-	port     int
-	upgrades bool
-	caFile   string
+	http2        bool
+	port         int
+	upgrades     bool
+	caFile       string
+	pathRewrites []envoyPathRewrite
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -288,10 +317,11 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		out = append(out, hostCredential{
 			host: e.Host,
 			opts: chainOpts{
-				http2:    e.HTTP2,
-				port:     e.Port,
-				upgrades: e.Upgrades,
-				caFile:   caFile,
+				http2:        e.HTTP2,
+				port:         e.Port,
+				upgrades:     e.Upgrades,
+				caFile:       caFile,
+				pathRewrites: validPathRewrites(s, e),
 			},
 			cred: envoyCredential{
 				SecretName:     s.Name,
@@ -321,11 +351,12 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 
 func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
 	type bucket struct {
-		host        string
-		seenHeader  map[string]string
-		credentials []envoyCredential
-		opts        chainOpts
-		first       string
+		host            string
+		seenHeader      map[string]string
+		rewriteByPrefix map[string]string
+		credentials     []envoyCredential
+		opts            chainOpts
+		first           string
 	}
 	byHost := map[string]*bucket{}
 	order := []string{}
@@ -336,7 +367,12 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		}
 		b := byHost[host]
 		if b == nil {
-			b = &bucket{host: host, seenHeader: map[string]string{}, first: secretName}
+			b = &bucket{
+				host:            host,
+				seenHeader:      map[string]string{},
+				rewriteByPrefix: map[string]string{},
+				first:           secretName,
+			}
 			byHost[host] = b
 			order = append(order, host)
 		}
@@ -363,6 +399,18 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 					"host", host, "keptCA", b.opts.caFile,
 					"skippedCA", opts.caFile, "skippedSecret", secretName)
 			}
+		}
+		for _, r := range opts.pathRewrites {
+			if kept, dup := b.rewriteByPrefix[r.Prefix]; dup {
+				if kept != r.Replacement {
+					slog.Warn("conflicting path rewrite on host; keeping first",
+						"host", host, "prefix", r.Prefix, "keptReplacement", kept,
+						"skippedReplacement", r.Replacement, "skippedSecret", secretName)
+				}
+				continue
+			}
+			b.rewriteByPrefix[r.Prefix] = r.Replacement
+			b.opts.pathRewrites = append(b.opts.pathRewrites, r)
 		}
 		if cred == nil {
 			return
@@ -418,6 +466,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			UpstreamPort:    b.opts.port,
 			Upgrades:        b.opts.upgrades,
 			UpstreamCAFile:  b.opts.caFile,
+			PathRewrites:    b.opts.pathRewrites,
 		})
 	}
 	return chains

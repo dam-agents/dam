@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-03
+Last verified: 2026-09-04
 
 ## Overview
 
@@ -71,7 +71,7 @@ A typed unit a Connection emits when granted to an Agent — a discriminated uni
 
 - **`env`** — an environment variable the harness merges in at spawn. For credential-derived env the value is a placeholder (the real secret is injected gateway-side); for user-typed and non-credential config env it is the literal value.
 - **`egress-allow`** — permission to reach a host (optionally path-scoped, optionally port-scoped for endpoints not on 443).
-- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
+- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), carry the upstream's private CA for gateway-side TLS validation, and declare path prefix rewrites the gateway applies on the way upstream (mechanics in [security and credentials](security-and-credentials.md)).
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](runtime-delivery.md#built-in-contribution-impls)).
 - **`mcp-entry`** — an MCP server to expose to the harness.
 - **`skill-ref`** — a skill source to install at a pinned version.
@@ -176,6 +176,26 @@ gateway-side upstream validation only.
   ]
 }
 ```
+
+### App preset: IBM LiteLLM proxy
+
+The model-endpoint proxy that fronts models for IBM-internal use. Which
+model provider an agent runs against follows from the Connection it is
+granted, not from harness configuration: the LiteLLM Connection
+contributes the env each harness reads for its base URL — including Bob's
+gateway URL — a placeholder key, and a model the proxy actually serves.
+Bob is the case that needs more than a base URL. It prefixes every
+gateway call with its own service path, and that prefix is not
+configurable, so the Connection also declares the prefix rewrite the
+gateway applies; the auth scheme needs no such treatment, because the
+gateway overwrites the credential header outright. What the endpoint has
+to offer for this to work is the OpenAI-shaped chat-completion route, a
+model-information route reporting a non-empty model list (Bob treats an
+empty list as an error), and no region hint of its own — a gateway
+answering the profile route with one would redirect Bob's inference calls
+off the configured host. The model matters because Bob's built-in default
+names a model that exists only on its own gateway; the Connection pins a
+proxy-served model instead, overridable per connection.
 
 ### Custom Header credential
 
