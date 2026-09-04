@@ -272,7 +272,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 		"route_config": ev{
 			"name": "forward_" + c.ChainID,
 			"virtual_hosts": []any{
-				ev{"name": "default", "domains": []any{"*"}, "routes": []any{buildChainForwardRoute(c)}},
+				ev{"name": "default", "domains": []any{"*"}, "routes": buildChainForwardRoutes(c)},
 			},
 		},
 	}
@@ -340,7 +340,17 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	return filters
 }
 
-func buildChainForwardRoute(c envoyHostChain) ev {
+func buildChainForwardRoutes(c envoyHostChain) []any {
+	routes := make([]any, 0, len(c.PathRewrites)+1)
+	for _, r := range c.PathRewrites {
+		route := buildChainRouteAction(c)
+		route["prefix_rewrite"] = r.Replacement
+		routes = append(routes, ev{"match": ev{"prefix": r.Prefix}, "route": route})
+	}
+	return append(routes, ev{"match": ev{"prefix": "/"}, "route": buildChainRouteAction(c)})
+}
+
+func buildChainRouteAction(c envoyHostChain) ev {
 	route := ev{"timeout": "0s"}
 	if c.Credentialed() {
 		route["cluster"] = c.UpstreamCluster
@@ -351,7 +361,7 @@ func buildChainForwardRoute(c envoyHostChain) ev {
 	if c.Upgrades {
 		route["idle_timeout"] = "14400s"
 	}
-	return ev{"match": ev{"prefix": "/"}, "route": route}
+	return route
 }
 
 func buildCollectorChain(p bootstrapParams) ev {

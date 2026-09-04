@@ -17,6 +17,13 @@ export interface InjectionConfig {
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
+export const BOB_INFERENCE_PREFIX_REWRITE = {
+  prefix: "/inference/v1/",
+  replacement: "/v1/",
+} as const;
+
+export const IBM_LITELLM_BOB_MODEL = "aws/claude-opus-4-8";
+
 export function ibmLitellmEnvMappings(): EnvMapping[] {
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
@@ -29,6 +36,8 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
     { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
+    { envName: "BOB_GATEWAY_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "BOBSHELL_API_KEY", placeholder: "sk-dummy" },
   ];
 }
 

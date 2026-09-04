@@ -178,6 +178,7 @@ export type {
 export {
   BOB_CHAT_MODES,
   DEFAULT_ENV_PLACEHOLDER,
+  IBM_LITELLM_BOB_MODEL,
   isProviderPresetType,
   isValidEnvName,
   PROVIDER_PRESET_TYPES,

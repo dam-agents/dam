@@ -1,6 +1,8 @@
 import {
   type Contribution,
   type EnvMapping,
+  BOB_INFERENCE_PREFIX_REWRITE,
+  IBM_LITELLM_BOB_MODEL,
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
@@ -144,7 +146,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Proxy that fronts model endpoints for IBM-internal Claude Code.",
+    "Proxy that fronts model endpoints for IBM-internal Claude Code and Bob.",
   iconSlug: "ibm",
   authKind: "header",
   host: IBM_LITELLM_HOST,
@@ -157,6 +159,16 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
       host: IBM_LITELLM_HOST,
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
+      pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
+    },
+  ],
+  configInputs: [
+    {
+      inputName: "bobModel",
+      envName: "BOB_SHELL_MODEL",
+      label: "Bob model",
+      defaultValue: IBM_LITELLM_BOB_MODEL,
+      hint: `Model Bob asks this proxy for. Empty → ${IBM_LITELLM_BOB_MODEL}. Bob's own default model name does not exist on the proxy.`,
     },
   ],
 };

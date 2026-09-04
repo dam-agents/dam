@@ -46,10 +46,18 @@ export const egressAllowContribution = z.object({
   pathPattern: z.string().optional(),
 });
 
+const anchoredPathSegments = /^\/(?:[A-Za-z0-9._~-]+\/)*$/;
+
+export const pathRewrite = z.object({
+  prefix: z.string().regex(anchoredPathSegments),
+  replacement: z.string().regex(anchoredPathSegments),
+});
+
 export const egressInjectContribution = z.object({
   kind: z.literal("egress-inject"),
   host: z.string().min(1),
   pathPattern: z.string().optional(),
+  pathRewrites: z.array(pathRewrite).min(1).max(8).optional(),
   headerName: z.string().min(1),
   valueFormat: z.string().min(1),
   encoding: z.literal("basic-x-access-token").optional(),

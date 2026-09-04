@@ -315,27 +315,21 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
-host**, all from one K8s Secret. The Secret carries a JSON
-`agent-platform.ai/injection-hosts` annotation listing each
-`{host, headerName?, valueFormat?, encoding?, pathPattern?}` tuple; the
-controller fans the Secret into one Envoy filter chain per host —
-entries that share a host stack into that chain as an ordered list of
-credential injectors (see *Multiple injection steps per host* below) —
-mounting the Secret once and reading one SDS file per injection step
-inside it. The same list drives the egress allowlist (one
-`connection:<id>` rule per host) — there is no second source of truth.
+host**, all from one K8s Secret. The Secret carries an annotated list of
+per-host injection descriptors; the controller fans it into one Envoy
+filter chain per host, stacking entries that share a host, and mounts
+the Secret once. The same list drives the egress allowlist, one rule per
+host and connection, so there is no second source of truth.
 
 GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
-the same OAuth token must reach `api.github.com` as
-`Authorization: Bearer …`, `github.com` as
-`Authorization: Basic base64("x-access-token:<token>")` (so `git clone`
-of private repos works without a credential helper), and
-`raw.githubusercontent.com` as `Bearer` again (raw-file fetches).
+the same OAuth token must reach the API host as a bearer token, the git
+host as basic auth carrying the token as a password (so `git clone` of
+private repos works without a credential helper), and the raw-content
+host as a bearer token again.
 
-The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
-Only the gateway pod mounts the Secret; the agent pod does not. See
-[`packages/api-server/src/modules/connections/infrastructure/`](../../packages/api-server/src/modules/connections/infrastructure/) and
-[`packages/api-server/src/modules/connections/domain/connection-sds.ts`](../../packages/api-server/src/modules/connections/domain/connection-sds.ts).
+The Secret also carries the SDS documents Envoy reads, one per injection
+step — see
+[`packages/api-server/src/modules/connections/`](../../packages/api-server/src/modules/connections/).
 
 ## Image pull credentials
 
@@ -516,16 +510,26 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
   with SAN pinning unchanged. Agent-side trust is unaffected: the agent
   always trusts the platform MITM CA, never the upstream's.
 
+**Path rewriting.** An injection descriptor can declare path prefix
+rewrites for its host: the chain matches those prefixes ahead of its
+catch-all route and swaps the prefix on the way upstream, leaving every
+other path untouched ([connections](connections.md) has the case that
+needs it). Rewriting is a routing-leg concern, after the ext_authz
+Check, so egress rules and approvals describe the paths the agent
+requests. Both ends of a rewrite are whole path segments and the gateway
+drops any that are not, so a rewrite cannot reach past what the host's
+chain already admits.
+
 **Multiple injection steps per host.** A single host can carry more than
 one credential — either two different credentials (e.g. an API key and a
 tenant ID on distinct headers) or the same credential injected into both
-a header and a URL query parameter (e.g. Bob shell's `/key/info?key=…`
-endpoint). The controller groups Secrets by `hostPattern` into one L7
-chain with an ordered list of `credential_injector` filters; each step
-must use a unique header name, and steps marked with `queryParamName`
-get a follow-up Lua filter that moves the (bare, percent-encoded) value
-into the named URL query parameter and strips the carrier header so it
-never reaches the upstream.
+a header and a URL query parameter, for upstreams that authenticate off
+the URL. The controller groups Secrets by host into one L7
+chain with an ordered list of credential injectors; each step must use a
+unique header name, and a step that targets a query parameter instead
+gets a follow-up filter that moves the percent-encoded value into that
+parameter and strips the carrier header, so it never reaches the
+upstream.
 
 ## HITL ext_authz
 
