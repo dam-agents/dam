@@ -94,6 +94,8 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { draftKey } from "../lib/draft-key.js";
+import { clearUndelivered } from "../lib/undelivered-store.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -378,6 +380,7 @@ export function ChatView() {
 
   const handleNewSession = useCallback(() => {
     unfocusPendingLaunch();
+    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
       return;
@@ -387,6 +390,7 @@ export function ChatView() {
     resetSession();
     setMobileScreen("chat");
   }, [
+    selectedAgent,
     sessionId,
     messages.length,
     resetSession,
