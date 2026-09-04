@@ -1,4 +1,4 @@
-import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
+import { Chemistry, OverflowMenuVertical, Power } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,14 +76,20 @@ function AgentStateBadge({
 }) {
   if (state === "running") {
     return (
-      <Badge variant="success">
-        {neverHibernates ? "Working (Always-on)" : "Working"}
+      <Badge variant="success" className="gap-1">
+        {neverHibernates && <Power size={12} />}
+        Working
       </Badge>
     );
   }
   if (state === "hibernating" || state === "hibernated") {
     if (neverHibernates) {
-      return <Badge className={BLUE_BADGE}>Idle (Always-on)</Badge>;
+      return (
+        <Badge className={cn(BLUE_BADGE, "gap-1")}>
+          <Power size={12} />
+          Idle
+        </Badge>
+      );
     }
     return <Badge variant="muted">Hibernating</Badge>;
   }

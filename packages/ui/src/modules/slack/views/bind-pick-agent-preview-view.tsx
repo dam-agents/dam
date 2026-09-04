@@ -1,4 +1,4 @@
-import { Search } from "@carbon/icons-react";
+import { Power, Search } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -49,14 +49,20 @@ function StateBadge({
   if (overBudget) return <Badge variant="warning">Over budget</Badge>;
   if (state === "running") {
     return (
-      <Badge variant="success">
-        {neverHibernates ? "Working (Always-on)" : "Working"}
+      <Badge variant="success" className="gap-1">
+        {neverHibernates && <Power size={12} />}
+        Working
       </Badge>
     );
   }
   if (state === "hibernating" || state === "hibernated") {
     if (neverHibernates) {
-      return <Badge className={BLUE_BADGE}>Idle (Always-on)</Badge>;
+      return (
+        <Badge className={cn(BLUE_BADGE, "gap-1")}>
+          <Power size={12} />
+          Idle
+        </Badge>
+      );
     }
     return <Badge variant="muted">Hibernating</Badge>;
   }
