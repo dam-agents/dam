@@ -20,25 +20,28 @@ export function BindSuccessPreviewView() {
         </h1>
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Mention{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-sm">
-          @{brand.name}
-        </code>{" "}
-        in the channel to use it. If the channel has more than one agent, add
-        the name:{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-sm">
-          @{brand.name} {agentName}
-        </code>
-        .
-        <br />
-        <br />
-        Disconnect anytime with{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-sm">
-          /{brand.short} unbind {agentName}
-        </code>
-        .
-      </p>
+      <ol className="flex flex-col gap-3 text-sm text-muted-foreground list-decimal pl-5">
+        <li>
+          Invite the bot to your channel (to DM, skip this step)
+        </li>
+        <li>
+          Mention{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-sm">
+            @{brand.name}
+          </code>{" "}
+          in the channel to use it. If the channel has more than one agent, add
+          the name:{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-sm">
+            @{brand.name} {agentName}
+          </code>
+        </li>
+        <li>
+          Disconnect anytime with{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-sm">
+            /{brand.short} unbind {agentName}
+          </code>
+        </li>
+      </ol>
 
       <button
         type="button"
