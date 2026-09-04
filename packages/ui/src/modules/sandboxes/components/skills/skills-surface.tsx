@@ -17,6 +17,7 @@ import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
+import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
@@ -72,6 +73,7 @@ export function SkillsSurface({
     totals,
     matchCount,
     shownCreatedHere,
+    shownPlatform,
     shownBuiltIn,
     publishableSources,
     previewReady,
@@ -257,6 +259,22 @@ export function SkillsSurface({
             />
 
             {}
+            {shownPlatform.length > 0 && (
+              <PlatformSkillsGroup
+                skills={shownPlatform}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+                onOpenSection={
+                  agentId
+                    ? (section) => navigateToSandboxHome(agentId, section)
+                    : undefined
+                }
+              />
+            )}
+
             {shownBuiltIn.length > 0 && (
               <BuiltInSkillsGroup
                 skills={shownBuiltIn}

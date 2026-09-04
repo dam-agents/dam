@@ -129,10 +129,11 @@ Catalog and orchestration view of skills. Distinct from the agent-runtime's Skil
 | Installed Skill Ref | A record that a Scanned Skill from a Skill Source is installed at a Version on a specific Agent; identity is `(agentId, source, name)` |
 | Skill Publish Record | A record that a Local Skill from an Agent was published as a PR to a Skill Source; written on every successful Publish, denormalized so it survives source rename or deletion |
 | Seed List | The cluster-admin-declared system Skill Sources injected as JSON into api-server config (`SKILL_SOURCES_SEED`) at startup; merged into Skill Source listings with `system: true` and protected from user deletion |
+| Platform Skill | A Local Skill the platform ships to make one of its own features usable. A reading over Skill Origin, not a fourth origin value: the skill must be judged `system` or `system-modified` against the image **and** be named in the platform skill registry, a static skill-name-to-feature map in the contract package |
 
 ## Skills — agent-runtime side (bounded context)
 
-Pod-side operational view of skills. Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
+Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../docs/architecture/agent-skills.md)). Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
 
 | Term | Definition |
 |------|-----------|
