@@ -18,7 +18,7 @@ The skill directory ships in the platform-base image under the staged-skills dir
 
 The skill's evidence sources are harness-aware:
 
-- **The platform session index** (`$HOME/.platform/session-metadata.json`, [agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven / experiment classification that transcript paths cannot provide.
+- **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven / experiment classification that transcript paths cannot provide.
 - **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and a companion reference alongside it says how to read each. No env var identifies the harness in-pod; probing is the only signal.
 - **Cost comes from `get_usage_summary` only** — the agent-facing MCP read over the metrics service ([metrics](metrics.md)), pinned server-side to the calling agent. When the telemetry backend is disabled the tool answers `available: false` and the skill reports cost as not measured; the skill never counts tokens out of transcripts.
 
@@ -27,16 +27,17 @@ The skill's evidence sources are harness-aware:
 An Edition's identity is `(agent, week start)` — the Monday (UTC) of the submitting week, taken from the server clock. Keying the week by a real date rather than an ISO `YYYY-Www` stamp keeps the column range-filterable and sortable and removes week-numbering from the code entirely: a week that spans New Year needs no special case, because the Monday it started on already carries the year. Submitting again in the same week **replaces** that week's edition and resets it to `pending` — re-released content the owner has not seen does not exist.
 
 ```
-pending → released ⇄ hidden → deleted (tombstone) → purged
+pending → released
+released ⇄ hidden → deleted (tombstone) → purged   (reserved for the consent surface)
 ```
 
 - **pending** — what `submit_case_study` writes. Visible to the owner only; the inspector surfaces never serve it.
 - **released** — the owner's explicit consent event, a status flip (`caseStudies.release` over tRPC). The only state the inspector surfaces serve.
-- **hidden / deleted** — reserved for the consent surface's opt-out and withdrawal levers; `deleted` is a tombstone (recoverable) until the sweep purges it after a grace window.
+- **hidden / deleted** — reserved for the consent surface's opt-out and withdrawal levers; `deleted` is a tombstone (recoverable) until the sweep purges it after a grace window. No shipped path enters either state yet: today `hidden` appears only as the quarantine an edition falls into when its stored status is unrecognized, which keeps an undecipherable row off every inspector surface without destroying it.
 
 The owner's copy in the artifact library is not a second store of record: the edition row is **replaced** by a re-run while the artifact **appends a version** ([artifact-library](artifact-library.md)), so the platform holds only the latest edition while the owner keeps the revision history of their own copy.
 
-That copy is also **the draft the owner edits**. While an edition is pending, the linked artifact is what the owner surface reads and what release publishes, so an edit to it reaches the platform team; the row meanwhile holds only what the agent last submitted, and each response says which of the two it carried and sizes that one. Listing does not resolve — one artifact read per row is the wrong trade for a length — so a pending row reports the submitted text and says so, and a reader that needs the draft fetches the edition. Releasing **freezes** the resolved text into the row and stops consulting the artifact ever after — consent attaches to specific words, so an edit made after release must not rewrite what an inspector already read, just as an edit made before it must not be ignored. An artifact that cannot stand in for the draft (deleted, another owner's, binary, oversized, or outside the content bounds) falls back to the submitted text rather than failing the owner's read: a missing artifact is not a reason to refuse someone their own consent. The skill scopes its lookup of that copy to the artifacts it published itself — every agent an owner runs titles its weekly copy the same way, and an update is owner-scoped rather than agent-scoped, so an unscoped title match would let one agent publish over another's.
+That copy is also **the draft the owner edits**. While an edition is pending, the linked artifact is what the owner surface reads and what release publishes, so an edit to it reaches the platform team; the row meanwhile holds only what the agent last submitted, and each response says which of the two it carried and sizes that one. Listing does not resolve — one artifact read per row is the wrong trade for a length — so a pending row reports the submitted text and says so, and a reader that needs the draft fetches the edition. Releasing **freezes** the resolved text and a stamp of which copy won into the row, and stops consulting the artifact ever after — consent attaches to specific words, so an edit made after release must not rewrite what an inspector already read, just as an edit made before it must not be ignored; the stamp keeps saying which copy consent froze once reads can no longer recompute it. An artifact that cannot stand in for the draft (deleted, another owner's, binary, oversized, or outside the content bounds) falls back to the submitted text rather than failing the owner's read: a missing artifact is not a reason to refuse someone their own consent. The skill scopes its lookup of that copy to the artifacts it published itself — every agent an owner runs titles its weekly copy the same way, and an update is owner-scoped rather than agent-scoped, so an unscoped title match would let one agent publish over another's.
 
 Attribution is server-stamped and unforgeable: the agent id comes from the mesh-bound MCP session, never tool input; the harness image is read from the Agent CR at submit time so it survives agent deletion. Owner resolution rides the `agents` mirror ([usage-tracking](usage-tracking.md)) — editions carry no owner column. Content is the sanitized markdown itself, size-capped, in a Postgres text column: small, bounded, queryable, and retention or withdrawal is a row delete with no blob side to orphan.
 
@@ -50,7 +51,7 @@ Every submit, release, and inspector read is security-logged (`case_study.submit
 
 ## Retention
 
-A daily platform periodic job purges editions older than the configured retention window (`apiServer.caseStudies.retentionDays`, default 365), and withdrawn (tombstoned) editions past their own shorter grace window (`apiServer.caseStudies.tombstoneGraceDays`, default 30). Both windows are knobs because the legal review of data-collection streams has not settled; the single-table shape keeps stricter and looser outcomes alike one-line changes. The sweep is an interval, not a wall-clock schedule: a purge lags its window by up to a day, and an install that stays down past a slot re-aligns to the next one rather than catching up at boot.
+A daily platform periodic job purges editions once the week they cover ended more than the retention window ago (`apiServer.caseStudies.retentionDays`), and withdrawn (tombstoned) editions past their own shorter grace window (`apiServer.caseStudies.tombstoneGraceDays`); the defaults live in the chart [values](../../deploy/helm/platform/values.yaml). Editions age by the week they cover rather than by row timestamps, because both timestamps mislead here: a same-week resubmission rewrites the row in place, so the row's creation time would age the new text by the text it replaced, while a release touches the row's update time, so consenting would extend retention. The week anchor gives every submitted version the full window, lets no edition outlive its week by more than the window, and stays the outer bound for tombstones — a withdrawal near the horizon is purged by age rather than kept the full grace. Both windows are knobs because the legal review of data-collection streams has not settled; the single-table shape keeps stricter and looser outcomes alike one-line changes. The sweep is an interval, not a wall-clock schedule: a purge lags its window by up to a day, and an install that stays down past a slot re-aligns to the next one rather than catching up at boot.
 
 ## Persistence touchpoints
 
@@ -61,7 +62,7 @@ One Postgres table, `agent_case_studies` ([`packages/db/src/schema.ts`](../../pa
 - Skill: [`packages/platform-base/dam-skills/agent-case-study/`](../../packages/platform-base/dam-skills/agent-case-study/)
 - Contract (types, schemas, router, canonical schedule task): [`packages/api-server-api/src/modules/case-studies/`](../../packages/api-server-api/src/modules/case-studies/)
 - Implementation (repository, services, routes, MCP tools, sweeper): [`packages/api-server/src/modules/case-studies/`](../../packages/api-server/src/modules/case-studies/)
-- Agent-facing usage read: [`packages/api-server/src/modules/metrics/services/agent-usage-summary.ts`](../../packages/api-server/src/modules/metrics/services/agent-usage-summary.ts)
+- Agent-facing usage read: [`packages/api-server/src/modules/metrics/`](../../packages/api-server/src/modules/metrics/)
 
 ## Invariants
 

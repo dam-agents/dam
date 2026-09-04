@@ -11,9 +11,12 @@ import {
   sql,
   type Db,
 } from "db";
-import { caseStudyStatusSchema } from "api-server-api";
+import {
+  caseStudyContentSourceSchema,
+  caseStudyStatusSchema,
+} from "api-server-api";
 import type { CaseStudyStatus } from "api-server-api";
-import type { EditionRecord } from "../domain/editions.js";
+import type { EditionRecord, ResolvedContent } from "../domain/editions.js";
 
 export interface UpsertEditionInput {
   agentId: string;
@@ -39,9 +42,9 @@ export interface CaseStudiesRepository {
   setStatus(
     id: string,
     status: CaseStudyStatus,
-    content?: string,
+    resolved?: ResolvedContent,
   ): Promise<EditionRecord | null>;
-  purge(createdBefore: Date, tombstonedBefore: Date): Promise<number>;
+  purge(weekStartBefore: string, tombstonedBefore: Date): Promise<number>;
 }
 
 type Row = typeof agentCaseStudies.$inferSelect;
@@ -54,6 +57,9 @@ function parseRecord(row: Row): EditionRecord {
     windowStart: row.windowStart,
     windowEnd: row.windowEnd,
     content: row.content,
+    contentSource: caseStudyContentSourceSchema
+      .catch("submitted")
+      .parse(row.contentSource),
     harnessImage: row.harnessImage,
     artifactId: row.artifactId,
     status: caseStudyStatusSchema.catch("hidden").parse(row.status),
@@ -68,13 +74,14 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
     async upsertEdition(input) {
       const rows = await db
         .insert(agentCaseStudies)
-        .values({ id: randomUUID(), ...input })
+        .values({ id: randomUUID(), ...input, contentSource: "submitted" })
         .onConflictDoUpdate({
           target: [agentCaseStudies.agentId, agentCaseStudies.editionWeekStart],
           set: {
             windowStart: input.windowStart,
             windowEnd: input.windowEnd,
             content: input.content,
+            contentSource: "submitted",
             harnessImage: input.harnessImage,
             artifactId: input.artifactId,
             status: "pending",
@@ -133,12 +140,14 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
       return rows.map(parseRecord);
     },
 
-    async setStatus(id, status, content) {
+    async setStatus(id, status, resolved) {
       const rows = await db
         .update(agentCaseStudies)
         .set({
           status,
-          ...(content === undefined ? {} : { content }),
+          ...(resolved === undefined
+            ? {}
+            : { content: resolved.content, contentSource: resolved.source }),
           deletedAt: status === "deleted" ? sql`now()` : null,
           updatedAt: sql`now()`,
         })
@@ -148,12 +157,12 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
       return row ? parseRecord(row) : null;
     },
 
-    async purge(createdBefore, tombstonedBefore) {
+    async purge(weekStartBefore, tombstonedBefore) {
       const purged = await db
         .delete(agentCaseStudies)
         .where(
           or(
-            lt(agentCaseStudies.createdAt, createdBefore),
+            lt(agentCaseStudies.editionWeekStart, weekStartBefore),
             and(
               eq(agentCaseStudies.status, "deleted"),
               lt(agentCaseStudies.deletedAt, tombstonedBefore),

@@ -307,6 +307,7 @@ export type {
 } from "./modules/case-studies/types.js";
 export {
   caseStudyStatusSchema,
+  caseStudyContentSourceSchema,
   caseStudyContentSchema,
   caseStudySubmitInputSchema,
   caseStudyInspectionFilterSchema,

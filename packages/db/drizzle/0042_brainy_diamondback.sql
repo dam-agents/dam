@@ -12,6 +12,7 @@ CREATE TABLE "agent_case_studies" (
 	"window_start" text NOT NULL,
 	"window_end" text NOT NULL,
 	"content" text NOT NULL,
+	"content_source" text DEFAULT 'submitted' NOT NULL,
 	"harness_image" text,
 	"artifact_id" text,
 	"status" text DEFAULT 'pending' NOT NULL,
@@ -21,5 +22,5 @@ CREATE TABLE "agent_case_studies" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "agent_case_studies_agent_week_start_idx" ON "agent_case_studies" USING btree ("agent_id","edition_week_start");--> statement-breakpoint
-CREATE INDEX "agent_case_studies_status_created_idx" ON "agent_case_studies" USING btree ("status","created_at");--> statement-breakpoint
+CREATE INDEX "agent_case_studies_status_week_idx" ON "agent_case_studies" USING btree ("status","edition_week_start");--> statement-breakpoint
 CREATE INDEX "agent_case_studies_deleted_idx" ON "agent_case_studies" USING btree ("deleted_at") WHERE "agent_case_studies"."deleted_at" IS NOT NULL;

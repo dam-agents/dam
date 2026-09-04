@@ -1,5 +1,5 @@
 {
-  "id": "c88e6cde-1223-447f-a2df-4817a2841f8b",
+  "id": "bf4f152c-bf66-4320-a6a1-5596130aadf9",
   "prevId": "a69049ac-fe78-400a-a591-ad3dc751e5fc",
   "version": "7",
   "dialect": "postgresql",
@@ -289,6 +289,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "content_source": {
+          "name": "content_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'submitted'"
+        },
         "harness_image": {
           "name": "harness_image",
           "type": "text",
@@ -351,8 +358,8 @@
           "method": "btree",
           "with": {}
         },
-        "agent_case_studies_status_created_idx": {
-          "name": "agent_case_studies_status_created_idx",
+        "agent_case_studies_status_week_idx": {
+          "name": "agent_case_studies_status_week_idx",
           "columns": [
             {
               "expression": "status",
@@ -361,7 +368,7 @@
               "nulls": "last"
             },
             {
-              "expression": "created_at",
+              "expression": "edition_week_start",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
