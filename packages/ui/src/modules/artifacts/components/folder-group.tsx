@@ -81,7 +81,7 @@ export function FolderGroup({
     drop ?? INERT_DROP,
   );
   const { copy } = useCopy();
-  const sharedCount = artifacts.filter((a) => a.shareUrl !== null).length;
+  const sharedCount = artifacts.filter((a) => a.visibility === "public").length;
   const Wrapper = nested ? "div" : Card;
 
   return (
