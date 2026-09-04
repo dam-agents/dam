@@ -125,6 +125,8 @@ spec:
             - name: PLATFORM_REQUEST_ACCESS_URL
               value: {{ . | quote }}
             {{- end }}
+            - name: PLATFORM_SHARE_CLIENT_ID
+              value: {{ .Values.keycloak.shareClientId | quote }}
             {{- with .Values.keycloak.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

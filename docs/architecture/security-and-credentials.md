@@ -121,7 +121,11 @@ values ([`helm/values.yaml`](../../helm/values.yaml))
 select the variant and an optional "Request access" link; they reach the
 theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
-and a pod roll — no theme rebuild, no realm change. Upstream identity
+and a pod roll — no theme rebuild, no realm change. The same page also
+knows which client started the sign-in: when it is the artifact share
+host's client (`keycloak.shareClientId`), the heading and lead paragraph
+tell the visitor they need to sign in to view a shared artifact instead
+of the general product pitch. Upstream identity
 providers themselves (e.g. w3id) are realm configuration managed outside
 the chart.
 

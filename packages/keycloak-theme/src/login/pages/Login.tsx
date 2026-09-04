@@ -33,6 +33,9 @@ export default function Login(
     kcContext.properties.PLATFORM_ALLOW_PASSWORD === "false" &&
     providers.length > 0;
   const requestAccessUrl = kcContext.properties.PLATFORM_REQUEST_ACCESS_URL;
+  const isShareSignIn =
+    kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
+  const brand = realm.displayName || BRAND_FALLBACK;
 
   return (
     <Template
@@ -41,20 +44,30 @@ export default function Login(
       doUseDefaultCss={doUseDefaultCss}
       classes={classes}
       displayMessage={!usernameError}
-      headerNode={`Sign in to ${realm.displayName || BRAND_FALLBACK}`}
+      headerNode={
+        isShareSignIn
+          ? `Well ${brand}, you don't have access.`
+          : `Sign in to ${brand}`
+      }
     >
       <p className="mt-6 text-base leading-relaxed text-pretty md:text-xl">
-        Run AI-driven experiments with the harness and model you choose,
-        connected to your tools. Governed access, auditable execution, built to
-        repeat.{" "}
-        <a
-          href={LOGIN_DOCS_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-accent hover:underline"
-        >
-          Read the docs to learn more.
-        </a>
+        {isShareSignIn ? (
+          "You're not signed in. Please sign in with your account to view the artifact."
+        ) : (
+          <>
+            Run AI-driven experiments with the harness and model you choose,
+            connected to your tools. Governed access, auditable execution, built
+            to repeat.{" "}
+            <a
+              href={LOGIN_DOCS_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-accent hover:underline"
+            >
+              Read the docs to learn more.
+            </a>
+          </>
+        )}
       </p>
 
       {!isSsoOnly && realm.password && (
