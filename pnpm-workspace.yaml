@@ -6,6 +6,10 @@ packages:
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
+  # fast-uri@3.1.7 (2026-09-02) is the only 3.x release fixing CVE-2026-84292
+  # and CVE-2026-84394, and it is younger than the 7-day floor. Drop this
+  # entry once the release ages past the floor.
+  - "fast-uri@3.1.7"
   # qs@6.16.0 (2026-08-29) is the only release fixing CVE-2026-82417 and
   # CVE-2026-82562, and it is younger than the 7-day floor. Drop this entry
   # once the release ages past the floor.
