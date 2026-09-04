@@ -3,8 +3,8 @@
  * Keycloak client and a server-side share session behind an HttpOnly cookie.
  * /auth/login starts an authorization-code + PKCE flow and remembers where to
  * return; /auth/callback redeems the code, verifies the ID token (issuer,
- * audience, nonce), and sets the cookie; /auth/logout drops the session and
- * sends the browser to Keycloak's end-session endpoint. The return path is only
+ * audience, nonce), and sets the cookie; a POST to /auth/logout drops the
+ * session and sends the browser to Keycloak's end-session endpoint. The return path is only
  * ever a relative /a/<slug> path on this host, never an outside URL.
  */
 import { Hono } from "hono";
@@ -89,7 +89,15 @@ function setup(identity: IdentityFn = alice) {
     host.fetch(
       new Request(`${SHARE}${path}`, { headers: cookie ? { cookie } : {} }),
     );
-  return { pending, sessions, auth, get };
+  const post = (path: string, form: Record<string, string>, cookie?: string) =>
+    host.fetch(
+      new Request(`${SHARE}${path}`, {
+        method: "POST",
+        body: new URLSearchParams(form),
+        headers: cookie ? { cookie } : {},
+      }),
+    );
+  return { pending, sessions, auth, get, post };
 }
 
 async function signIn(s: ReturnType<typeof setup>, next: string) {
@@ -210,7 +218,9 @@ describe("share host sign-in", () => {
   /**
    * TEST_SCENARIO: Logout must drop the server-side session, clear the cookie,
    * and send the browser to Keycloak so the SSO cookie is dropped too, with a
-   * safe return to /auth/login carrying the same `next`.
+   * safe return to /auth/login carrying the same `next`. It only answers a
+   * form POST: a cross-site link (a GET) must not be able to sign the viewer
+   * out.
    */
   it("ends the session and redirects to the provider's end-session endpoint", async () => {
     const s = setup();
@@ -219,7 +229,12 @@ describe("share host sign-in", () => {
     const id = cookie.split("=")[1]!;
     expect(await s.auth.getSession(id)).not.toBeNull();
 
-    const res = await s.get("/auth/logout?next=/a/xyz", cookie);
+    const viaGet = await s.get("/auth/logout?next=/a/xyz", cookie);
+    expect(viaGet.headers.get("set-cookie")).toBeNull();
+    expect(viaGet.headers.get("location")).toBeNull();
+    expect(await s.auth.getSession(id)).not.toBeNull();
+
+    const res = await s.post("/auth/logout", { next: "/a/xyz" }, cookie);
     expect(res.status).toBe(302);
     expect(await s.auth.getSession(id)).toBeNull();
     expect(res.headers.get("set-cookie")).toMatch(

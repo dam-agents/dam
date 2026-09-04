@@ -97,7 +97,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
                     renderNoAccess({
                       email: session.email,
                       brandName: deps.brandName,
-                      logoutUrl: `/auth/logout?next=${encodeURIComponent(currentPath(c))}`,
+                      next: currentPath(c),
                     }),
                     403,
                   )

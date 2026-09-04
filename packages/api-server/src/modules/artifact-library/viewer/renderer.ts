@@ -425,7 +425,7 @@ export function renderSignInFailed(input: {
 export function renderNoAccess(input: {
   email: string | null;
   brandName: string;
-  logoutUrl: string;
+  next: string;
 }): string {
   const detail =
     input.email === null
@@ -436,7 +436,10 @@ export function renderNoAccess(input: {
     `<div class="center-card"><div class="card">
       <h1>Well ${escapeHtml(input.brandName)}, you don't have access.</h1>
       <p>${detail}</p>
-      <a class="btn" href="${escapeHtml(input.logoutUrl)}">Switch account</a>
+      <form method="post" action="/auth/logout">
+        <input type="hidden" name="next" value="${escapeHtml(input.next)}">
+        <button type="submit">Switch account</button>
+      </form>
     </div></div>`,
   );
 }

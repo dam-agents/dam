@@ -481,9 +481,8 @@ describe("restricted artifacts on the share host", () => {
       const html = await res.text();
       expect(html).toContain("you don't have access");
       expect(html).not.toContain("Weekly digest");
-      expect(html).toContain(
-        `href="/auth/logout?next=${encodeURIComponent("/a/slug-a?v=1")}"`,
-      );
+      expect(html).toContain('<form method="post" action="/auth/logout">');
+      expect(html).toContain('name="next" value="/a/slug-a?v=1"');
     }
     const bob = await (
       await app.request("/a/slug-a", withCookie("sid-bob"))

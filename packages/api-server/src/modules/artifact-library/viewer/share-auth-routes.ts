@@ -73,14 +73,16 @@ export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {
     return c.redirect(result.value.next, 302);
   });
 
-  app.get("/logout", async (c) => {
+  app.post("/logout", async (c) => {
     const id = getCookie(c, SHARE_SESSION_COOKIE);
     if (id) await auth.endSession(id);
     deleteCookie(c, SHARE_SESSION_COOKIE, {
       path: "/",
       secure: deps.secureCookie,
     });
-    return c.redirect(auth.logoutUrl(c.req.query("next")), 302);
+    const body = await c.req.parseBody();
+    const next = typeof body.next === "string" ? body.next : undefined;
+    return c.redirect(auth.logoutUrl(next), 302);
   });
 
   return app;
