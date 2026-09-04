@@ -165,9 +165,17 @@ function fakeRepo(
             .map((id) => [id, viewers.get(id)!]),
         ),
       ),
-    replaceViewers: (id, emails) => {
-      viewers.set(id, [...emails]);
-      return Promise.resolve();
+    updateSharing: (id, owner, patch, emails) => {
+      const row = artifacts.find((a) => a.id === id && a.owner === owner);
+      if (!row) return Promise.resolve(null);
+      const before = { ...row };
+      Object.assign(row, patch, { updatedAt: new Date() });
+      if (emails !== undefined) viewers.set(id, [...emails]);
+      return Promise.resolve({
+        before,
+        after: row,
+        viewers: viewers.get(id) ?? [],
+      });
     },
     insertFolder: notImplemented,
     getFolder: notImplemented,

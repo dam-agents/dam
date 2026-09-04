@@ -83,6 +83,12 @@ two that have one, so switching between them never changes the link.
 - Each successful share-page render increments a per-artifact **view count**,
   surfaced in-app as a cheap reach signal.
 
+A sharing change — visibility, retention date, and the viewer allowlist — is
+one transaction: the artifact row is locked, every part of the new sharing
+state lands together or not at all, and the share event is judged against the
+state the change replaced, so no failure can leave a restricted link with a
+stale allowlist or fire a share for a transition that never committed.
+
 ## The share host — trust boundary
 
 User-generated content is never served from the app origin. Two dedicated
