@@ -174,13 +174,16 @@ export {
   experimentFolderName,
 } from "./modules/experiments/schemas.js";
 export type {
+  KbHarnessFamily,
   KnowledgeBaseCreateInput,
   KnowledgeBaseTemplateId,
   KnowledgeBasesService,
 } from "./modules/knowledge-bases/types.js";
 export {
+  kbHarnessFamilySchema,
   knowledgeBaseCreateInputSchema,
   knowledgeBaseTemplateIdSchema,
+  parseKbHarnessFamily,
 } from "./modules/knowledge-bases/schemas.js";
 export type {
   KbShareCreateInput,

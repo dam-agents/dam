@@ -38,6 +38,7 @@ export const templateSpecSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     category: templateCategorySchema,
+    harness: z.string().optional(),
     tags: z.array(z.string()).optional(),
     docsUrl: z.string().optional(),
     releaseNotesUrl: z.string().optional(),

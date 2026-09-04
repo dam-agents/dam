@@ -4,6 +4,20 @@ import { agentSizeSchema } from "../agents/schemas.js";
 
 export const knowledgeBaseTemplateIdSchema = z.enum(["llm-wiki", "plain-wiki"]);
 
+export const kbHarnessFamilySchema = z.enum([
+  "claude-code",
+  "codex",
+  "pi",
+  "bob",
+]);
+
+export function parseKbHarnessFamily(
+  harness: string | undefined,
+): z.infer<typeof kbHarnessFamilySchema> | undefined {
+  const parsed = kbHarnessFamilySchema.safeParse(harness);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export const knowledgeBaseCreateInputSchema = z
   .object({
     name: z

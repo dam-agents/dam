@@ -1255,6 +1255,12 @@ controller:
 # but reachable from no creation flow, pending the specialized-sandbox redesign,
 # so an entry users must be able to pick should take the default category.
 # `experimental: true` badges the image as alpha.
+# `harness` names the harness family running inside the image (claude-code,
+# codex, pi, bob) — which CLI the template wraps, independent of the entry's
+# key. Knowledge-base creation passes it to the KB template's installer so the
+# installed tooling (manual, commands, skill) lands where that harness reads
+# it. Omit it for images that wrap none of the known families — the installer
+# then falls back to its own harness detection.
 #
 # To predefine an *experimental external agent* (a private-registry image users
 # just pick from the template list, with no manual "Private registry" entry),
@@ -1288,6 +1294,7 @@ agentTemplates:
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     telemetry: true
+    harness: claude-code
     tags: ["Anthropic"]
     image:
       repository: quay.io/dam-agents/claude-code
@@ -1304,6 +1311,7 @@ agentTemplates:
     description: "Claude Code in a full VM — docker + k3s inside the sandbox"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     experimental: true
+    harness: claude-code
     tags: ["Anthropic", "VM"]
     backend:
       type: vm
@@ -1317,6 +1325,7 @@ agentTemplates:
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
     releaseNotesUrl: "https://github.com/openai/codex/releases"
+    harness: codex
     tags: ["OpenAI"]
     image:
       repository: quay.io/dam-agents/codex
@@ -1327,6 +1336,7 @@ agentTemplates:
     enabled: true
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
+    harness: pi
     tags: ["Any provider"]
     image:
       repository: quay.io/dam-agents/pi-agent
@@ -1338,6 +1348,7 @@ agentTemplates:
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
+    harness: bob
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob

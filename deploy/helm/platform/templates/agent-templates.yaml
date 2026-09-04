@@ -40,6 +40,9 @@ data:
     {{- with $tmpl.category }}
     category: {{ . | quote }}
     {{- end }}
+    {{- with $tmpl.harness }}
+    harness: {{ . | quote }}
+    {{- end }}
     {{- with $tmpl.tags }}
     tags:
       {{- toYaml . | nindent 6 }}
