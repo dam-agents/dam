@@ -162,10 +162,13 @@ describe("acp-runtime: session-history provider", () => {
 
   /**
    * TEST_SCENARIO: A harness that advertises sessionCapabilities.resume is
-   * re-attached with session/resume instead of session/load. Resume restores
-   * the session without replaying it, so a harness that streams its replay
-   * after the response — Bob Shell does — cannot duplicate the history the
-   * transcript already holds.
+   * re-attached with session/resume instead of session/load, because resume
+   * restores a session without replaying it — a harness that answers a load
+   * first and streams its replay afterwards, as Bob Shell does, would
+   * otherwise duplicate the history the transcript already holds. The resume
+   * reply carries the real session metadata, so a later load reports the
+   * harness's modes rather than the synthetic placeholder, and the log keeps
+   * one copy of the provider history, the prompt and the live reply.
    */
   it("should re-attach with session/resume when the harness advertises it", async () => {
     const world = createWorld({
@@ -185,8 +188,21 @@ describe("acp-runtime: session-history provider", () => {
     expect(world.harness().received("session/resume")).toHaveLength(1);
     expect(world.harness().received("session/prompt")).toEqual([]);
 
-    world.harness().replyToSession("session/resume", SESSION, {});
+    world.harness().replyToSession("session/resume", SESSION, {
+      sessionId: SESSION,
+      modes: { currentModeId: "auto" },
+    });
     expect(world.harness().received("session/prompt")).toHaveLength(1);
+
+    world.harness().emit(frames.agentMessage(SESSION, "reply"));
+    await settle();
+
+    const carol = world.connect();
+    carol.send(frames.loadSession(1, SESSION));
+    expect(replayedTexts(carol)).toEqual(["m1", "hello there", "reply"]);
+    expect(carol.reply(1)).toMatchObject({
+      result: { sessionId: SESSION, modes: { currentModeId: "auto" } },
+    });
   });
 
   /**
