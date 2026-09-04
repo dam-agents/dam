@@ -68,7 +68,7 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
       return closeActiveAssistant(messages);
 
     case "platform_prompt_accepted":
-      return update.queued
+      return update.queued && waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
@@ -96,6 +96,15 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     default:
       return messages;
   }
+}
+
+function waitsBehindAnotherReply(
+  messages: Message[],
+  promptId: string,
+): boolean {
+  return messages.some(
+    (m) => m.role === "assistant" && m.streaming && m.promptId !== promptId,
+  );
 }
 
 function setQueuedByPromptId(

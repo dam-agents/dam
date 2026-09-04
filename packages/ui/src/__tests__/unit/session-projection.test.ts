@@ -497,6 +497,38 @@ describe("queued prompt scenarios", () => {
     });
     expect(m[3].streaming).toBe(false);
   });
+
+  test("an accepted prompt shows as queued when another reply is in flight", () => {
+    const behindTurn: Message[] = [
+      userMsg("u1", "first"),
+      assistantMsg("a1", "streaming reply", true, false),
+      userMsg("u2", "second"),
+      { ...assistantMsg("a2", "", true), promptId: "p2" },
+    ];
+    const out = applyUpdate(behindTurn, {
+      sessionUpdate: "platform_prompt_accepted",
+      sessionId: "test-sid",
+      promptId: "p2",
+      queued: true,
+    });
+    expect(out[3].queued).toBe(true);
+  });
+
+  test("a prompt queued only for a cold session stays a plain busy reply", () => {
+    const coldSend: Message[] = [
+      userMsg("u1", "old conversation"),
+      assistantMsg("a0", "old reply", false),
+      userMsg("u2", "fresh send"),
+      { ...assistantMsg("a2", "", true), promptId: "p2" },
+    ];
+    const out = applyUpdate(coldSend, {
+      sessionUpdate: "platform_prompt_accepted",
+      sessionId: "test-sid",
+      promptId: "p2",
+      queued: true,
+    });
+    expect(out[3].queued ?? false).toBe(false);
+  });
 });
 
 describe("finalizeAllStreaming + hasStreamingAssistant", () => {
