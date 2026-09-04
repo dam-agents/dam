@@ -4,17 +4,18 @@ import type { PlatformStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import { routeToPath } from "../platform/lib/routes.js";
 
+export interface RestartingEntry {
+  seenNonRunning: boolean;
+  clickedAt: number;
+  parkedAtClick?: boolean;
+}
+
 export interface AgentsSlice {
   selectedAgent: string | null;
-  restartingAgents: Map<string, { seenNonRunning: boolean; clickedAt: number }>;
-  setRestartingAgent: (
-    id: string,
-    entry: { seenNonRunning: boolean; clickedAt: number },
-  ) => void;
+  restartingAgents: Map<string, RestartingEntry>;
+  setRestartingAgent: (id: string, entry: RestartingEntry) => void;
   clearRestartingAgent: (id: string) => void;
-  setRestartingAgents: (
-    map: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
-  ) => void;
+  setRestartingAgents: (map: Map<string, RestartingEntry>) => void;
   pausingAgents: Map<string, { clickedAt: number }>;
   setPausingAgent: (id: string, entry: { clickedAt: number }) => void;
   clearPausingAgent: (id: string) => void;
@@ -150,16 +151,13 @@ export const createAgentsSlice: StateCreator<
 const RESTART_DISPLAY_TTL_MS = 120_000;
 
 export function transitionRestartingAgents(
-  current: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
+  current: Map<string, RestartingEntry>,
   agents: readonly AgentView[],
   now: number = Date.now(),
-): Map<string, { seenNonRunning: boolean; clickedAt: number }> {
+): Map<string, RestartingEntry> {
   if (current.size === 0) return current;
   const byId = new Map(agents.map((a) => [a.id, a]));
-  const next = new Map<
-    string,
-    { seenNonRunning: boolean; clickedAt: number }
-  >();
+  const next = new Map<string, RestartingEntry>();
   for (const [id, entry] of current) {
     const agent = byId.get(id);
     if (!agent) continue;
@@ -167,7 +165,7 @@ export function transitionRestartingAgents(
     if (agent.state === "error") continue;
     if (agent.overBudget) continue;
     if (agent.state !== "running") {
-      next.set(id, { seenNonRunning: true, clickedAt: entry.clickedAt });
+      next.set(id, { ...entry, seenNonRunning: true });
     } else if (!entry.seenNonRunning) {
       next.set(id, entry);
     }

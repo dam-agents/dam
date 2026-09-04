@@ -204,11 +204,9 @@ export function useSandboxSettingsForm() {
     hibernationTimeoutMin,
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
-    setSize: (patch: { sizeCpuMilli?: number; sizeMemoryMi?: number }) => {
-      if (patch.sizeCpuMilli !== undefined)
-        setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
-      if (patch.sizeMemoryMi !== undefined)
-        setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
+    setSize: (patch: { sizeCpuMilli: number; sizeMemoryMi: number }) => {
+      setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
+      setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
     },
     sizeRestartsAgent:
       agent !== null && !(agent.state === "hibernated" || agent.overBudget),

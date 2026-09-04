@@ -96,6 +96,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
       },
+      slotSize: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
