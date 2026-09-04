@@ -88,10 +88,10 @@ export function NewSessionLauncher({
             <div className="pointer-events-none relative flex flex-col gap-3">
               {t.icon}
               <div className="min-w-0">
-                <p className="text-base font-semibold text-foreground">
+                <p className="text-sm font-medium text-foreground">
                   {t.title}
                 </p>
-                <p className="text-sm text-muted-foreground">{t.desc}</p>
+                <p className="text-[13px] text-muted-foreground">{t.desc}</p>
               </div>
             </div>
           </div>

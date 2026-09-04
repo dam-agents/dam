@@ -672,7 +672,7 @@ export function ChatView() {
                         </div>
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          <p className="text-base font-bold text-foreground mb-2">
+                          <p className="text-lg font-bold text-foreground mb-2">
                             Start a new session
                           </p>
                           <p className="text-sm text-muted-foreground">
