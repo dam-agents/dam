@@ -1,5 +1,5 @@
 import type { ConnectionTemplateView } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
@@ -28,6 +28,23 @@ export function CatalogCreatePane({
   const templates = group.templates;
   const [selectedId, setSelectedId] = useState(templates[0]?.id);
   const [editedName, setEditedName] = useState<string>();
+  const listRef = useRef<HTMLDivElement>(null);
+  const restoreFocus = useRef(false);
+
+  const selectMethod = (id: string) => {
+    restoreFocus.current = true;
+    setSelectedId(id);
+  };
+
+  useEffect(() => {
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    listRef.current
+      ?.querySelector<HTMLElement>(
+        `[data-testid="catalog-option-${selectedId}"]`,
+      )
+      ?.focus();
+  }, [selectedId]);
 
   const multiMethod = templates.length > 1;
   const template = multiMethod
@@ -43,12 +60,14 @@ export function CatalogCreatePane({
 
   const body = (fields: ReactNode) =>
     multiMethod ? (
-      <MethodRadioList
-        templates={templates}
-        selectedId={template?.id}
-        onSelect={setSelectedId}
-        fields={fields}
-      />
+      <div ref={listRef}>
+        <MethodRadioList
+          templates={templates}
+          selectedId={template?.id}
+          onSelect={selectMethod}
+          fields={fields}
+        />
+      </div>
     ) : (
       fields
     );
