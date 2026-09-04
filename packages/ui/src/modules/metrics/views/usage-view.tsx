@@ -17,14 +17,21 @@ import {
   UsageStaleLabel,
 } from "../components/usage-notice.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
-import { formatUsdCents } from "../lib/format.js";
+import {
+  creditUnitLabel,
+  formatAxisCount,
+  formatAxisUsd,
+  formatCredits,
+  formatUsd,
+  formatUsdCents,
+} from "../lib/format.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
-import { totalCostUsd } from "../lib/totals.js";
+import { daySeries, totalCostUsd, totalCredits } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">
-    LLM API spend across all supported agents (currently only Claude Code and
-    derivatives).
+    LLM API spend across all supported agents. Harnesses billed in credits
+    rather than dollars are reported in their own unit, never converted.
   </span>
 );
 
@@ -42,6 +49,7 @@ export function UsageView() {
   const { data: features } = useFeatures();
   const showSessionTypes = features?.["session-costs"] ?? false;
   const total = totalCostUsd(data?.byModel ?? []);
+  const credits = totalCredits(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
     shownMonth,
     monthRange(shownMonth).isCurrentMonth,
@@ -88,6 +96,11 @@ export function UsageView() {
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
               {formatUsdCents(total)}
             </div>
+            {credits.length > 0 && (
+              <div className="mt-2 font-mono text-xl font-semibold tabular-nums text-muted-foreground">
+                + {formatCredits(credits)}
+              </div>
+            )}
           </section>
           {data.byModel.length === 0 ? (
             <section>
@@ -101,9 +114,29 @@ export function UsageView() {
               <section>
                 <SectionLabel spaced>Spend by day</SectionLabel>
                 <Card className="p-5">
-                  <SpendByDayChart days={dailyDays} />
+                  <SpendByDayChart
+                    days={daySeries(dailyDays, null)}
+                    formatValue={formatUsd}
+                    formatAxis={formatAxisUsd}
+                  />
                 </Card>
               </section>
+              {credits.map((credit) => (
+                <section key={credit.unit}>
+                  <SectionLabel spaced>
+                    {creditUnitLabel(credit.unit)} by day
+                  </SectionLabel>
+                  <Card className="p-5">
+                    <SpendByDayChart
+                      days={daySeries(dailyDays, credit.unit)}
+                      formatValue={(v) =>
+                        formatCredits([{ unit: credit.unit, amount: v }])
+                      }
+                      formatAxis={formatAxisCount}
+                    />
+                  </Card>
+                </section>
+              ))}
               <section>
                 <SectionLabel spaced>Spend by model</SectionLabel>
                 <Card className="p-5">

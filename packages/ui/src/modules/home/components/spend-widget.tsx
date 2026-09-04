@@ -3,7 +3,12 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
-import { totalCostUsd } from "../../metrics/lib/totals.js";
+import {
+  formatCredits,
+  formatSpend,
+  spendBarPct,
+} from "../../metrics/lib/format.js";
+import { totalCostUsd, totalCredits } from "../../metrics/lib/totals.js";
 import {
   SPEND_PERIODS,
   type SpendPeriod,
@@ -31,11 +36,14 @@ export function SpendWidget() {
   if (isPending) return <WidgetSkeleton rows={3} />;
 
   const total = data ? totalCostUsd(data.byModel) : 0;
+  const credits = data ? totalCredits(data.byModel) : [];
   const spenders = (data?.byAgent ?? [])
-    .filter((row) => row.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD)
-    .sort((a, b) => b.costUsd - a.costUsd)
+    .filter(
+      (row) =>
+        row.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD || row.credits.length > 0,
+    )
     .slice(0, TOP_SPENDERS);
-  const top = spenders[0]?.costUsd ?? 0;
+  const pcts = spendBarPct(spenders);
 
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
@@ -61,27 +69,32 @@ export function SpendWidget() {
         </div>
       </div>
 
-      <p className="mb-5 text-[28px] leading-none font-bold tracking-tight text-foreground tabular-nums">
-        ${total.toFixed(2)}
-      </p>
+      <div className="mb-5">
+        <p className="text-[28px] leading-none font-bold tracking-tight text-foreground tabular-nums">
+          ${total.toFixed(2)}
+        </p>
+        {credits.length > 0 && (
+          <p className="mt-1 text-sm font-medium text-muted-foreground tabular-nums">
+            + {formatCredits(credits)}
+          </p>
+        )}
+      </div>
 
       {spenders.length > 0 ? (
         <div className="space-y-3">
-          {spenders.map((spender) => (
+          {spenders.map((spender, i) => (
             <div key={spender.agentId}>
               <div className="mb-1 flex items-center justify-between">
                 <span className="truncate text-sm text-muted-foreground">
                   {spender.agentName}
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
-                  ${spender.costUsd.toFixed(2)}
+                  {formatSpend(spender.costUsd, spender.credits)}
                 </span>
               </div>
               <div
                 className="h-3 rounded-full bg-accent"
-                style={{
-                  width: top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
-                }}
+                style={{ width: `${pcts[i]}%` }}
               />
             </div>
           ))}

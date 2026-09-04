@@ -12,6 +12,11 @@ export type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
 
+export interface CreditSpend {
+  unit: string;
+  amount: number;
+}
+
 export interface TokenSpendByModel {
   model: string;
   calls: number;
@@ -20,6 +25,7 @@ export interface TokenSpendByModel {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd: number;
+  credits: CreditSpend[];
   durationMs: number;
 }
 
@@ -27,6 +33,7 @@ export interface SpendByAgent {
   agentId: string;
   agentName: string;
   costUsd: number;
+  credits: CreditSpend[];
 }
 
 export type SpendCategory = SessionCategory | "unknown";
@@ -34,11 +41,13 @@ export type SpendCategory = SessionCategory | "unknown";
 export interface SpendBySessionType {
   category: SpendCategory;
   costUsd: number;
+  credits: CreditSpend[];
 }
 
 export interface SpendByDay {
   day: string;
   costUsd: number;
+  credits: CreditSpend[];
 }
 
 export interface SessionRuntime {
@@ -51,6 +60,7 @@ export interface SessionRuntime {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd: number;
+  credits: CreditSpend[];
   firstAt: string;
   lastAt: string;
 }
@@ -66,6 +76,7 @@ export interface CallContext {
   outputTokens: number;
   contextTokens: number;
   costUsd: number;
+  credits: CreditSpend[];
   durationMs: number;
 }
 

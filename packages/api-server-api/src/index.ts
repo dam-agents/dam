@@ -338,6 +338,7 @@ export type {
   MetricsSpendBreakdownQuery,
   MetricsOverview,
   SpendBreakdown,
+  CreditSpend,
   TokenSpendByModel,
   SpendByAgent,
   SpendByDay,
