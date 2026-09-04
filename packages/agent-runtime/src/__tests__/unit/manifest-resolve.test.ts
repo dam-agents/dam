@@ -173,8 +173,14 @@ describe("shipped agent manifests resolve", () => {
       impl: "harness-config",
       file: "$HOME/.bob/settings/settings.json",
       keys: {
+        model: "platform.model",
         mode: "platform.mode",
         configOptions: { approvals: "platform.approvals" },
+      },
+      modelDiscovery: {
+        urlEnv: ["BOB_GATEWAY_URL"],
+        path: "/inference/v1/model/info",
+        shape: "litellm-model-info",
       },
     });
   });

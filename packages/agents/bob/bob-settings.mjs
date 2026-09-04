@@ -73,7 +73,7 @@ function writeSettings() {
   const panel = section(existing, "platform");
   const mode =
     normalizeMode(panel.mode) ?? normalizeMode(process.env.BOB_CHAT_MODE);
-  const model = firstNonBlank(process.env.BOB_SHELL_MODEL);
+  const model = firstNonBlank(panel.model, process.env.BOB_SHELL_MODEL);
   const cost = Number(
     firstNonBlank(process.env.BOB_MAX_COINS, process.env.BOB_MAX_COST),
   );
