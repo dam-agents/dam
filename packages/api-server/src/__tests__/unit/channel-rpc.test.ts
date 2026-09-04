@@ -111,6 +111,48 @@ describe("channel attachments across replicas", () => {
     expect(blobs.store.size).toBe(0);
   });
 
+  it("a thread reply's attachment crosses to the leader the same way", async () => {
+    const bus = fakeBus();
+    const blobs = fakeBlobs();
+    const leaderWorker = fakeSlackWorker();
+
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+
+    const data = Buffer.from([1, 2, 3]);
+    const result = await follower.reply("agent-1", ChannelType.Slack, {
+      text: "attached",
+      threadTs: "1.1",
+      attachment: { filename: "x.txt", data },
+    });
+
+    expect(result).toEqual({ ok: true });
+    const passed = vi.mocked(leaderWorker.reply).mock.calls[0]![1];
+    expect(passed.threadTs).toBe("1.1");
+    expect([...passed.attachment!.data]).toEqual([...data]);
+    expect(blobs.store.size).toBe(0);
+
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+
   it("refuses rather than posting a message with the attachment silently missing", async () => {
     const bus = fakeBus();
     const blobs = fakeBlobs();

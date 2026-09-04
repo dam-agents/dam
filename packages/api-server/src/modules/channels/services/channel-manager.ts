@@ -31,6 +31,7 @@ export interface ChannelReply {
   threadTs?: string;
   conversationId?: string;
   alsoSendToChannel?: boolean;
+  attachment?: ChannelAttachment;
 }
 
 export interface ChannelReaction {
@@ -259,6 +260,37 @@ export function createChannelManager(deps: {
   const workers: Worker[] = [slackWorker, telegramWorker].filter(
     Boolean,
   ) as Worker[];
+
+  async function stashAttachment(
+    attachment: ChannelAttachment,
+  ): Promise<ChannelAttachment | { error: string }> {
+    if (!blobs)
+      return {
+        error: "cannot post an attachment from this replica (no handoff)",
+      };
+    const { data, ...meta } = attachment;
+    return {
+      ...meta,
+      dataKey: await blobs.put(data),
+    } as unknown as ChannelAttachment;
+  }
+
+  async function restoreAttachment(
+    attachment: ChannelAttachment | undefined,
+  ): Promise<ChannelAttachment | undefined | { error: string }> {
+    const wire = attachment as
+      | (ChannelAttachment & Partial<WireAttachment>)
+      | undefined;
+    if (!wire?.dataKey) return attachment;
+    const data = await blobs?.take(wire.dataKey);
+    if (!data)
+      return {
+        error:
+          "attachment bytes were not available on the posting replica; retry the send",
+      };
+    const { dataKey: _key, ...meta } = wire;
+    return { ...meta, data };
+  }
   const subscriptions: Subscription[] = [];
   let stopServing: (() => void) | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -355,31 +387,22 @@ export function createChannelManager(deps: {
       if (!worker)
         return { error: `channel type ${channelType} not available` };
 
-      const wire = options?.attachment as
-        | (ChannelAttachment & Partial<WireAttachment>)
-        | undefined;
-      if (wire?.dataKey) {
-        const data = await blobs?.take(wire.dataKey);
-        if (!data)
-          return {
-            error:
-              "attachment bytes were not available on the posting replica; retry the send",
-          };
-        const { dataKey: _key, ...meta } = wire;
-        options = { ...options, attachment: { ...meta, data } };
-      }
+      const attachment = await restoreAttachment(options?.attachment);
+      if (attachment && "error" in attachment) return attachment;
+      if (attachment) options = { ...options, attachment };
       return worker.postMessage(instanceName, text, options);
     },
-    reply: (
+    reply: async (
       instanceName: string,
       channelType: ChannelType,
       replyArgs: ChannelReply,
     ) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker?.reply)
-        return Promise.resolve({
-          error: `reply not supported on ${channelType}`,
-        });
+        return { error: `reply not supported on ${channelType}` };
+      const attachment = await restoreAttachment(replyArgs.attachment);
+      if (attachment && "error" in attachment) return attachment;
+      if (attachment) replyArgs = { ...replyArgs, attachment };
       return worker.reply(instanceName, replyArgs);
     },
     react: (
@@ -541,18 +564,9 @@ export function createChannelManager(deps: {
     async postMessage(instanceName, channelType, text, options) {
       let wireOptions = options;
       if (!isLeader() && rpc && options?.attachment) {
-        if (!blobs)
-          return {
-            error: "cannot post an attachment from this replica (no handoff)",
-          };
-        const { data, ...meta } = options.attachment;
-        wireOptions = {
-          ...options,
-          attachment: {
-            ...meta,
-            dataKey: await blobs.put(data),
-          } as unknown as ChannelAttachment,
-        };
+        const attachment = await stashAttachment(options.attachment);
+        if ("error" in attachment) return attachment;
+        wireOptions = { ...options, attachment };
       }
       return dispatchResult(
         "postMessage",
@@ -562,10 +576,16 @@ export function createChannelManager(deps: {
       );
     },
 
-    reply(instanceName, channelType, replyArgs) {
+    async reply(instanceName, channelType, replyArgs) {
+      let wireArgs = replyArgs;
+      if (!isLeader() && rpc && replyArgs.attachment) {
+        const attachment = await stashAttachment(replyArgs.attachment);
+        if ("error" in attachment) return attachment;
+        wireArgs = { ...replyArgs, attachment };
+      }
       return dispatchResult(
         "reply",
-        [instanceName, channelType, replyArgs],
+        [instanceName, channelType, wireArgs],
         () => localHandlers.reply(instanceName, channelType, replyArgs),
       );
     },

@@ -148,6 +148,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
       kind: z.literal("upload"),
       channelId: z.string(),
       filename: z.string(),
+      threadTs: z.string().optional(),
     })
     .strict(),
   z
