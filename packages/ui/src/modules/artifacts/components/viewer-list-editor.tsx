@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { normalizeViewerEmail } from "../lib/viewer-allowlist.js";
-import { ViewerChip } from "./viewer-chip.js";
+import { ViewerRow } from "./viewer-row.js";
 
 const COUNTER_FROM = 40;
 
@@ -13,6 +13,15 @@ interface Props {
   viewers: string[];
   onChange: (viewers: string[]) => void;
   disabled: boolean;
+}
+
+function sharedWithCaption(count: number, full: boolean) {
+  if (count === 0) return "Not shared with anyone yet";
+  const users = count === 1 ? "user" : "users";
+  if (full) return `Currently shared with ${count} ${users} · the list is full`;
+  if (count >= COUNTER_FROM)
+    return `Currently shared with ${count} ${users} · ${count} / ${VIEWER_ALLOWLIST_MAX}`;
+  return `Currently shared with ${count} ${users}`;
 }
 
 export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
@@ -36,7 +45,7 @@ export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
   }
 
   return (
-    <div className="ml-6 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <Input
           type="email"
@@ -71,28 +80,23 @@ export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
       {invalid && (
         <p className="text-xs text-danger">Enter a full email address</p>
       )}
-      {viewers.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Nobody is on the list yet. Only you can open the link until you add
-          someone.
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5" data-testid="viewer-list">
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {sharedWithCaption(viewers.length, full)}
+      </p>
+      {viewers.length > 0 && (
+        <ul
+          className="-ml-1 max-h-24 overflow-y-auto pr-1"
+          data-testid="viewer-list"
+        >
           {viewers.map((email) => (
-            <ViewerChip
+            <ViewerRow
               key={email}
               email={email}
               onRemove={handleRemove}
               disabled={disabled}
             />
           ))}
-        </div>
-      )}
-      {viewers.length >= COUNTER_FROM && (
-        <p className="text-xs text-muted-foreground tabular-nums">
-          {viewers.length} / {VIEWER_ALLOWLIST_MAX}
-          {full && " — the list is full"}
-        </p>
+        </ul>
       )}
     </div>
   );
