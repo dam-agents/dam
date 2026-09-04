@@ -5,10 +5,6 @@ export function isExperimentFolder(folder: ArtifactFolder): boolean {
   return folder.name.startsWith(EXPERIMENT_FOLDER_PREFIX);
 }
 
-export function isUserFolder(folder: ArtifactFolder): boolean {
-  return !isExperimentFolder(folder);
-}
-
 export function folderDisplayName(folder: ArtifactFolder): string {
   return isExperimentFolder(folder)
     ? folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)
@@ -27,7 +23,7 @@ export function folderDisplayNames(
   }
   const names = new Map<string, string>();
   for (const folder of folders) {
-    const name = stripped.get(folder.id)!;
+    const name = stripped.get(folder.id) ?? folder.name;
     names.set(folder.id, (counts.get(name) ?? 0) > 1 ? folder.name : name);
   }
   return names;

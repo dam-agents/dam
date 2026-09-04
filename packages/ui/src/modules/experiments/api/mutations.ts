@@ -27,13 +27,3 @@ export function useStopExperiment() {
     },
   });
 }
-
-export function useDeleteExperiment() {
-  return useMutation({
-    ...trpc.experiments.delete.mutationOptions(),
-    meta: {
-      invalidates: invalidatesExperiments,
-      errorToast: "Failed to delete experiment",
-    },
-  });
-}

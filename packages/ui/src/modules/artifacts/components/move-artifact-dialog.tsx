@@ -71,7 +71,7 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
             <option value={NO_FOLDER}>No folder</option>
             {(folders ?? []).map((folder) => (
               <option key={folder.id} value={folder.id}>
-                {folderNames.get(folder.id)}
+                {folderNames.get(folder.id) ?? folder.name}
               </option>
             ))}
           </Select>

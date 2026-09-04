@@ -130,7 +130,7 @@ test("experiment: plan, execute, watch it run to completion", async ({
 
   await test.step("the retired destination lands on Home, and chat stays reachable", async () => {
     await page.goto(`${baseUrl}/experiments`);
-    await expect(page).toHaveURL(new RegExp("/$"));
+    await expect(page).toHaveURL(`${baseUrl}/`);
     await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
     await expect(chatInput(page)).toBeVisible({ timeout: 30_000 });
   });
