@@ -240,6 +240,33 @@ describe("case-study owner service", () => {
   });
 
   /**
+   * TEST_SCENARIO: A size must describe the text alongside it, and a payload
+   * must say which copy it read. Listing cannot afford an artifact fetch per
+   * row, so a pending row reports the submitted text while get reports the
+   * draft — legitimate only because each states its own provenance. A size
+   * computed from a different copy than the content beside it is a payload
+   * contradicting itself.
+   */
+  it("sizes and labels the copy each payload actually carries", async () => {
+    const repo = fakeRepo([record({ artifactId: "art-1" })]);
+    const svc = createCaseStudiesService(deps(repo, "# A much longer edit"));
+    const edition = await svc.get("ed-1");
+    expect(edition.contentChars).toBe(edition.content.length);
+    expect(edition).toMatchObject({ contentSource: "artifact" });
+    const [summary] = await svc.list();
+    expect(summary).toMatchObject({
+      contentChars: "# Case study".length,
+      contentSource: "submitted",
+    });
+    await svc.release("ed-1");
+    const afterRelease = await svc.get("ed-1");
+    expect(afterRelease.contentChars).toBe(afterRelease.content.length);
+    expect((await svc.list())[0]?.contentChars).toBe(
+      afterRelease.content.length,
+    );
+  });
+
+  /**
    * TEST_SCENARIO: Releasing is consent to specific text, so the row must stop
    * tracking the artifact the moment it is released — otherwise a later edit
    * silently rewrites what an inspector has already read.

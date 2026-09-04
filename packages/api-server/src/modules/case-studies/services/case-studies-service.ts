@@ -10,6 +10,7 @@ import {
   toEdition,
   toSummary,
   type EditionRecord,
+  type ResolvedContent,
 } from "../domain/editions.js";
 import type { CaseStudiesRepository } from "../infrastructure/case-studies-repository.js";
 
@@ -39,9 +40,7 @@ export function createCaseStudiesService(deps: {
    * owner's, binary, too large, or outside the content bounds) falls back to
    * the submitted text rather than failing the read.
    */
-  async function resolveDraft(
-    record: EditionRecord,
-  ): Promise<{ content: string; source: CaseStudyContentSource }> {
+  async function resolveDraft(record: EditionRecord): Promise<ResolvedContent> {
     if (record.status !== "pending" || !record.artifactId) {
       return { content: record.content, source: "submitted" };
     }
@@ -57,7 +56,7 @@ export function createCaseStudiesService(deps: {
     async list() {
       const owned = await deps.listOwnedAgentIds();
       const records = await deps.repo.listByAgents(owned);
-      return records.map(toSummary);
+      return records.map((record) => toSummary(record));
     },
 
     async get(id) {

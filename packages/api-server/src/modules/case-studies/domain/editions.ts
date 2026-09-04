@@ -41,7 +41,23 @@ export function releaseVerdict(status: CaseStudyStatus): ReleaseVerdict {
   return "not-releasable";
 }
 
-export function toSummary(record: EditionRecord): CaseStudyEditionSummary {
+export interface ResolvedContent {
+  content: string;
+  source: CaseStudyContentSource;
+}
+
+function carried(
+  record: EditionRecord,
+  resolved?: ResolvedContent,
+): ResolvedContent {
+  return resolved ?? { content: record.content, source: "submitted" };
+}
+
+export function toSummary(
+  record: EditionRecord,
+  resolved?: ResolvedContent,
+): CaseStudyEditionSummary {
+  const { content, source } = carried(record, resolved);
   return {
     id: record.id,
     agentId: record.agentId,
@@ -51,7 +67,8 @@ export function toSummary(record: EditionRecord): CaseStudyEditionSummary {
     status: record.status,
     harnessImage: record.harnessImage,
     artifactId: record.artifactId,
-    contentChars: record.content.length,
+    contentChars: content.length,
+    contentSource: source,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
@@ -59,11 +76,10 @@ export function toSummary(record: EditionRecord): CaseStudyEditionSummary {
 
 export function toEdition(
   record: EditionRecord,
-  resolved?: { content: string; source: CaseStudyContentSource },
+  resolved?: ResolvedContent,
 ): CaseStudyEdition {
   return {
-    ...toSummary(record),
-    content: resolved?.content ?? record.content,
-    contentSource: resolved?.source ?? "submitted",
+    ...toSummary(record, resolved),
+    content: carried(record, resolved).content,
   };
 }

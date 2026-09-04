@@ -7,6 +7,8 @@ import type {
 
 export type CaseStudyStatus = z.infer<typeof caseStudyStatusSchema>;
 
+export type CaseStudyContentSource = "artifact" | "submitted";
+
 export type CaseStudySubmitInput = z.infer<typeof caseStudySubmitInputSchema>;
 
 export type CaseStudyInspectionFilterInput = z.infer<
@@ -29,15 +31,13 @@ export interface CaseStudyEditionSummary {
   harnessImage: string | null;
   artifactId: string | null;
   contentChars: number;
+  contentSource: CaseStudyContentSource;
   createdAt: string;
   updatedAt: string;
 }
 
-export type CaseStudyContentSource = "artifact" | "submitted";
-
 export interface CaseStudyEdition extends CaseStudyEditionSummary {
   content: string;
-  contentSource: CaseStudyContentSource;
 }
 
 export interface CaseStudiesService {
