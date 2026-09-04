@@ -128,6 +128,75 @@ export function createMcpSession(
     ],
   });
 
+  const attachmentInput = z
+    .object({
+      path: z
+        .string()
+        .min(1)
+        .describe(
+          `Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`,
+        ),
+      filename: z
+        .string()
+        .optional()
+        .describe(
+          "Name shown in the channel; defaults to the basename of path.",
+        ),
+      mimeType: z
+        .string()
+        .optional()
+        .describe("Override the runtime-detected MIME type."),
+      title: z.string().optional(),
+    })
+    .optional();
+
+  async function loadAttachment(
+    attachment: NonNullable<z.infer<typeof attachmentInput>>,
+  ): Promise<
+    | { resolved: ChannelAttachment; audit: Record<string, unknown> }
+    | { error: string }
+  > {
+    const resolvedPath = resolveWorkspacePath(attachment.path);
+    let file: { content: string; binary: boolean; mimeType?: string };
+    try {
+      file = await runtimeClient.files.read.query({ path: resolvedPath });
+    } catch (err) {
+      if (err instanceof TRPCClientError) {
+        if (err.data?.code === "NOT_FOUND") {
+          return {
+            error: `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`,
+          };
+        }
+        if (err.data?.code === "PAYLOAD_TOO_LARGE") {
+          return {
+            error: `attachment ${attachment.path} exceeds the 50 MB per-file cap`,
+          };
+        }
+      }
+      return {
+        error: `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    const data = file.binary
+      ? Buffer.from(file.content, "base64")
+      : Buffer.from(file.content, "utf8");
+    return {
+      resolved: {
+        filename: attachment.filename ?? basename(attachment.path),
+        data,
+        ...((attachment.mimeType ?? file.mimeType)
+          ? { mimeType: attachment.mimeType ?? file.mimeType }
+          : {}),
+        ...(attachment.title ? { title: attachment.title } : {}),
+      },
+      audit: {
+        requestedPath: attachment.path,
+        resolvedPath,
+        bytes: data.length,
+      },
+    };
+  }
+
   server.tool(
     "describe_channel",
     "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other workspace channel the bot is a member of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
@@ -153,70 +222,13 @@ export function createMcpSession(
         .describe(
           "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
         ),
-      attachment: z
-        .object({
-          path: z
-            .string()
-            .min(1)
-            .describe(
-              `Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`,
-            ),
-          filename: z
-            .string()
-            .optional()
-            .describe(
-              "Name shown in the channel; defaults to the basename of path.",
-            ),
-          mimeType: z
-            .string()
-            .optional()
-            .describe("Override the runtime-detected MIME type."),
-          title: z.string().optional(),
-        })
-        .optional(),
+      attachment: attachmentInput,
     },
     async ({ channel, text, chatId, attachment }) => {
-      let resolved: ChannelAttachment | undefined;
-      let attachmentAudit: Record<string, unknown> | undefined;
-      if (attachment) {
-        const resolvedPath = resolveWorkspacePath(attachment.path);
-        let file: { content: string; binary: boolean; mimeType?: string };
-        try {
-          file = await runtimeClient.files.read.query({ path: resolvedPath });
-        } catch (err) {
-          if (err instanceof TRPCClientError) {
-            if (err.data?.code === "NOT_FOUND") {
-              return errorResult(
-                `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`,
-              );
-            }
-            if (err.data?.code === "PAYLOAD_TOO_LARGE") {
-              return errorResult(
-                `attachment ${attachment.path} exceeds the 50 MB per-file cap`,
-              );
-            }
-          }
-          return errorResult(
-            `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-        const data = file.binary
-          ? Buffer.from(file.content, "base64")
-          : Buffer.from(file.content, "utf8");
-        resolved = {
-          filename: attachment.filename ?? basename(attachment.path),
-          data,
-          ...((attachment.mimeType ?? file.mimeType)
-            ? { mimeType: attachment.mimeType ?? file.mimeType }
-            : {}),
-          ...(attachment.title ? { title: attachment.title } : {}),
-        };
-        attachmentAudit = {
-          requestedPath: attachment.path,
-          resolvedPath,
-          bytes: data.length,
-        };
-      }
+      const loaded = attachment ? await loadAttachment(attachment) : undefined;
+      if (loaded && "error" in loaded) return errorResult(loaded.error);
+      const resolved = loaded?.resolved;
+      const attachmentAudit = loaded?.audit;
       const result = await deps.channelManager.postMessage(
         agentId,
         channel,
@@ -364,9 +376,10 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Use send_channel_message instead for a new top-level or cross-channel post.",
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
+      attachment: attachmentInput,
       threadTs: z
         .string()
         .optional()
@@ -380,7 +393,9 @@ export function createMcpSession(
           'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Use it when the thread is old enough that people watching the channel would otherwise miss the reply; leave it off for ordinary back-and-forth, which would spam the channel.',
         ),
     },
-    async ({ text, threadTs, alsoSendToChannel }) => {
+    async ({ text, attachment, threadTs, alsoSendToChannel }) => {
+      const loaded = attachment ? await loadAttachment(attachment) : undefined;
+      if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
         agentId,
         ChannelType.Slack,
@@ -388,6 +403,7 @@ export function createMcpSession(
           text,
           ...(threadTs ? { threadTs } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
+          ...(loaded ? { attachment: loaded.resolved } : {}),
         },
       );
       const failed = "error" in result;
@@ -402,6 +418,8 @@ export function createMcpSession(
           action: "reply",
           textLength: text.length,
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
+          hasAttachment: loaded !== undefined,
+          ...(loaded ? { attachment: loaded.audit } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
