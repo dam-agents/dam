@@ -1,8 +1,8 @@
 #!/bin/sh
 # Model, mode and cost pins ride the settings file the ACP surface also reads;
 # tenant scoping has no settings key, so it stays a flag here.
-node /app/bob-settings.mjs ||
-  echo "[harness-terminal] settings bootstrap failed — Bob starts without the platform posture" >&2
+# Same as the chat harness: no posture, no usable tools, so fail rather than warn.
+node /app/bob-settings.mjs || exit 1
 
 set --
 [ -n "$BOB_INSTANCE_ID" ] && set -- "$@" --instance-id "$BOB_INSTANCE_ID"
