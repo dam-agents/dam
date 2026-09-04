@@ -27,7 +27,7 @@ export function createCaseStudyInspection(deps: {
           : undefined,
         agentId: filter.agentId,
       });
-      return records.map(toSummary);
+      return records.map((record) => toSummary(record));
     },
 
     async get(id) {
