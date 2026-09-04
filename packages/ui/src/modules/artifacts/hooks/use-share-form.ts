@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
+import { becomesPublic } from "../lib/public-share.js";
 import { sameViewers } from "../lib/viewer-allowlist.js";
 
 export interface ShareFormValues {
@@ -21,6 +22,7 @@ const SAVED_MESSAGE: Record<ArtifactVisibility, string> = {
 
 export function useShareForm(artifact: LibraryArtifact, onClose: () => void) {
   const [committed, setCommitted] = useState({
+    visibility: artifact.visibility,
     shareUrl: artifact.shareUrl,
     viewers: artifact.viewers,
   });
@@ -32,33 +34,46 @@ export function useShareForm(artifact: LibraryArtifact, onClose: () => void) {
     },
   });
 
-  const submit = form.handleSubmit((values) => {
-    const sendViewers =
-      values.visibility === "restricted" ||
-      !sameViewers(values.viewers, committed.viewers);
-    sharing.mutate(
-      {
-        id: artifact.id,
-        visibility: values.visibility,
-        ...(sendViewers ? { viewers: values.viewers } : {}),
-      },
-      {
-        onSuccess: (saved) => {
-          setCommitted({ shareUrl: saved.shareUrl, viewers: saved.viewers });
-          form.reset({ visibility: saved.visibility, viewers: saved.viewers });
-          emitToast({
-            kind: "success",
-            message: SAVED_MESSAGE[saved.visibility],
-          });
-          if (saved.visibility === "private") onClose();
+  const submit = (opts?: { closeOnSuccess?: boolean }) =>
+    form.handleSubmit((values) => {
+      const sendViewers =
+        values.visibility === "restricted" ||
+        !sameViewers(values.viewers, committed.viewers);
+      sharing.mutate(
+        {
+          id: artifact.id,
+          visibility: values.visibility,
+          ...(sendViewers ? { viewers: values.viewers } : {}),
         },
-      },
-    );
-  });
+        {
+          onSuccess: (saved) => {
+            setCommitted({
+              visibility: saved.visibility,
+              shareUrl: saved.shareUrl,
+              viewers: saved.viewers,
+            });
+            form.reset({
+              visibility: saved.visibility,
+              viewers: saved.viewers,
+            });
+            emitToast({
+              kind: "success",
+              message: SAVED_MESSAGE[saved.visibility],
+            });
+            if (saved.visibility === "private" || opts?.closeOnSuccess)
+              onClose();
+          },
+        },
+      );
+    })();
 
   return {
     form,
     shareUrl: committed.shareUrl,
+    needsPublicConfirm: becomesPublic(
+      committed.visibility,
+      form.watch("visibility"),
+    ),
     submit,
     isPending: sharing.isPending,
   };
