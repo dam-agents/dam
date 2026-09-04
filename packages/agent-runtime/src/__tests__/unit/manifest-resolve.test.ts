@@ -165,6 +165,20 @@ describe("shipped agent manifests resolve", () => {
     });
   });
 
+  it("bob declares harness-config over keys Bob itself ignores", () => {
+    const r = resolveDrivers(
+      loadManifest(join(agentsDir, "bob/runtime-manifest.yaml")),
+    );
+    expect(r["harness-config"]).toMatchObject({
+      impl: "harness-config",
+      file: "$HOME/.bob/settings/settings.json",
+      keys: {
+        mode: "platform.mode",
+        configOptions: { approvals: "platform.approvals" },
+      },
+    });
+  });
+
   it("platform-base is all defaults (no harness-config)", () => {
     const r = resolveDrivers(loadManifest(baseManifest));
     expect("harness-config" in r).toBe(false);
