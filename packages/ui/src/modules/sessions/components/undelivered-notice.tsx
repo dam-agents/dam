@@ -24,6 +24,9 @@ export type OnRetry = (
  * UNIT_BOUNDARY_DESCRIPTION: the only place retry arguments are assembled, so
  * a resend carries the whole original message — text, and the content blocks
  * a recovered prompt was stored with — from every surface that offers it.
+ * retryOf names the undelivered user prompt the resend supersedes, so only a
+ * user-role bubble passes its id: an interrupted turn's bubble is the agent's
+ * partial reply, and naming it would delete that reply on retry.
  */
 export function retryHandlerFor(
   message: Message,
@@ -33,7 +36,7 @@ export function retryHandlerFor(
   if (!retryWith) return undefined;
   return () => {
     onRetry(retryWith.text, retryWith.attachments, {
-      retryOf: message.id,
+      ...(message.role === "user" ? { retryOf: message.id } : {}),
       ...(retryWith.blocks ? { blocks: retryWith.blocks } : {}),
     });
   };

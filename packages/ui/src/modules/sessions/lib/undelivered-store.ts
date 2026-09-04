@@ -1,12 +1,19 @@
 import {
+  capInlineImages,
   type PlatformUndeliveredPrompt,
   platformUndeliveredPromptSchema,
   type PromptBlock,
-  UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
 } from "api-server-api";
 import { z } from "zod";
 
 import type { Attachment } from "../../../types.js";
+import {
+  browserStorage,
+  type KeyValueStore,
+  removeAllWithPrefix,
+  safeGetItem,
+  safeRemoveItem,
+} from "./safe-storage.js";
 
 export const UNDELIVERED_STORAGE_PREFIX = "platform-undelivered:";
 
@@ -25,56 +32,27 @@ export function undeliveredRecordOf(input: {
   reason: string;
   recordedAt: string;
 }): PlatformUndeliveredPrompt {
-  const blocks: PromptBlock[] = [];
-  const droppedAttachments: string[] = [];
-  let inlineBytes = 0;
-  let images = 0;
-  const admitImage = (data: string): boolean => {
-    images += 1;
-    if (inlineBytes + data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
-      droppedAttachments.push(`pasted image ${String(images)}`);
-      return false;
-    }
-    inlineBytes += data.length;
-    return true;
-  };
+  const staged: PromptBlock[] = [];
+  const droppedFiles: string[] = [];
   if (input.blocks !== undefined && input.blocks.length > 0) {
-    for (const block of input.blocks) {
-      if (block.type !== "image" || admitImage(block.data)) blocks.push(block);
-    }
+    staged.push(...input.blocks);
   } else {
     for (const a of input.attachments ?? []) {
-      if (a.kind !== "image") {
-        droppedAttachments.push(a.name);
-        continue;
-      }
-      if (admitImage(a.data))
-        blocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+      if (a.kind === "image")
+        staged.push({ type: "image", data: a.data, mimeType: a.mimeType });
+      else droppedFiles.push(a.name);
     }
-    if (input.text) blocks.push({ type: "text", text: input.text });
+    if (input.text) staged.push({ type: "text", text: input.text });
   }
+  const capped = capInlineImages(staged);
   return {
     id: input.id,
     recordedAt: input.recordedAt,
-    blocks,
-    droppedAttachments,
+    blocks: capped.blocks,
+    droppedAttachments: [...droppedFiles, ...capped.droppedAttachments],
     reason: input.reason,
   };
 }
-
-export interface UndeliveredStore {
-  keys(): string[];
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
-
-const browserStore: UndeliveredStore = {
-  keys: () => Object.keys(localStorage),
-  getItem: (key) => localStorage.getItem(key),
-  setItem: (key, value) => localStorage.setItem(key, value),
-  removeItem: (key) => localStorage.removeItem(key),
-};
 
 function storageKey(key: string): string {
   return `${UNDELIVERED_STORAGE_PREFIX}${key}`;
@@ -82,20 +60,20 @@ function storageKey(key: string): string {
 
 export function readUndelivered(
   key: string,
-  store: UndeliveredStore = browserStore,
+  store: KeyValueStore = browserStorage,
 ): PlatformUndeliveredPrompt[] {
-  const raw = store.getItem(storageKey(key));
+  const raw = safeGetItem(store, storageKey(key));
   if (raw === null) return [];
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    store.removeItem(storageKey(key));
+    safeRemoveItem(store, storageKey(key));
     return [];
   }
   const parsed = persistedUndeliveredSchema.safeParse(json);
   if (!parsed.success) {
-    store.removeItem(storageKey(key));
+    safeRemoveItem(store, storageKey(key));
     return [];
   }
   return parsed.data.sends;
@@ -104,7 +82,7 @@ export function readUndelivered(
 function writeUndelivered(
   key: string,
   sends: PlatformUndeliveredPrompt[],
-  store: UndeliveredStore,
+  store: KeyValueStore,
 ): void {
   let kept = sends.slice(-RECORDS_CAP);
   while (kept.length > 0) {
@@ -120,13 +98,13 @@ function writeUndelivered(
       kept = kept.slice(1);
     }
   }
-  store.removeItem(storageKey(key));
+  safeRemoveItem(store, storageKey(key));
 }
 
 export function rememberUndelivered(
   key: string,
   send: PlatformUndeliveredPrompt,
-  store: UndeliveredStore = browserStore,
+  store: KeyValueStore = browserStorage,
 ): void {
   const kept = readUndelivered(key, store).filter((s) => s.id !== send.id);
   writeUndelivered(key, [...kept, send], store);
@@ -135,7 +113,7 @@ export function rememberUndelivered(
 export function forgetUndelivered(
   key: string,
   id: string,
-  store: UndeliveredStore = browserStore,
+  store: KeyValueStore = browserStorage,
 ): void {
   const kept = readUndelivered(key, store).filter((s) => s.id !== id);
   writeUndelivered(key, kept, store);
@@ -143,15 +121,13 @@ export function forgetUndelivered(
 
 export function clearUndelivered(
   key: string,
-  store: UndeliveredStore = browserStore,
+  store: KeyValueStore = browserStorage,
 ): void {
-  store.removeItem(storageKey(key));
+  safeRemoveItem(store, storageKey(key));
 }
 
 export function removeAllUndelivered(
-  store: UndeliveredStore = browserStore,
+  store: KeyValueStore = browserStorage,
 ): void {
-  for (const key of store.keys()) {
-    if (key.startsWith(UNDELIVERED_STORAGE_PREFIX)) store.removeItem(key);
-  }
+  removeAllWithPrefix(store, UNDELIVERED_STORAGE_PREFIX);
 }

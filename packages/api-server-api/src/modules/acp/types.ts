@@ -63,6 +63,30 @@ export type PromptBlock = z.infer<typeof promptBlockSchema>;
 
 export const UNDELIVERED_INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
 
+export function capInlineImages(blocks: PromptBlock[]): {
+  blocks: PromptBlock[];
+  droppedAttachments: string[];
+} {
+  const kept: PromptBlock[] = [];
+  const droppedAttachments: string[] = [];
+  let inlineBytes = 0;
+  let images = 0;
+  for (const block of blocks) {
+    if (block.type !== "image") {
+      kept.push(block);
+      continue;
+    }
+    images += 1;
+    if (inlineBytes + block.data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
+      droppedAttachments.push(`pasted image ${String(images)}`);
+      continue;
+    }
+    inlineBytes += block.data.length;
+    kept.push(block);
+  }
+  return { blocks: kept, droppedAttachments };
+}
+
 export const platformUndeliveredPromptSchema = z.object({
   id: z.string().min(1),
   recordedAt: z.string(),

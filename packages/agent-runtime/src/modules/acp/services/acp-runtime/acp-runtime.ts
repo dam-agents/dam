@@ -155,7 +155,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.undeliveredPrompts.remember(
         sessionId,
         dropped.map((entry) =>
-          undeliveredOf(entry.promptId, entry.frame, recordedAt),
+          undeliveredOf(
+            entry.promptId ?? randomUUID(),
+            entry.frame,
+            recordedAt,
+          ),
         ),
       );
       deps.log?.(

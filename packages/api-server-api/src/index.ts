@@ -553,6 +553,7 @@ export {
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
   UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
+  capInlineImages,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";

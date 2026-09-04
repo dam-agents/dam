@@ -1,43 +1,21 @@
-import { randomUUID } from "node:crypto";
 import {
+  capInlineImages,
   promptBlockSchema,
-  UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
   type PlatformUndeliveredPrompt,
-  type PromptBlock,
 } from "api-server-api";
 import { z } from "zod";
 
 export function undeliveredOf(
-  promptId: string | null,
+  id: string,
   frame: unknown,
   recordedAt: string,
 ): PlatformUndeliveredPrompt {
-  const id = promptId ?? randomUUID();
   const raw = (frame as { params?: { prompt?: unknown } } | null)?.params
     ?.prompt;
   const parsed = z.array(promptBlockSchema).safeParse(raw);
   if (!parsed.success)
     return { id, recordedAt, blocks: [], droppedAttachments: [] };
-
-  const blocks: PromptBlock[] = [];
-  const droppedAttachments: string[] = [];
-  let inlineBytes = 0;
-  let images = 0;
-  for (const block of parsed.data) {
-    if (block.type !== "image") {
-      blocks.push(block);
-      continue;
-    }
-    images += 1;
-    const name = `pasted image ${String(images)}`;
-    if (inlineBytes + block.data.length > UNDELIVERED_INLINE_IMAGE_BYTES_CAP) {
-      droppedAttachments.push(name);
-      continue;
-    }
-    inlineBytes += block.data.length;
-    blocks.push(block);
-  }
-  return { id, recordedAt, blocks, droppedAttachments };
+  return { id, recordedAt, ...capInlineImages(parsed.data) };
 }
 
 const AUTH_HINT =
