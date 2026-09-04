@@ -190,7 +190,9 @@ CHANGELOG.md, docs/self-modification.md, docs/persistence.md), write per-domain:
   before declaring the run done.
 - `docs/preferences.md` — only if the agent learns (memory routes, consolidation bounds).
 - `docs/logging.md` — when the agent keeps the structured events log: event catalogue,
-  who writes what (script vs. agent vs. harness hook), triage guidance.
+  who writes what (script vs. agent vs. harness hook), triage guidance, and — when
+  `scripts/lib/toolpath.sh` ships — a **Tool path resolution** section holding its
+  rationale and measurements, which that script's header points at.
 - `docs/audit.md` — the audit task list (`references/audit.md`).
 - `README.md` — for humans: what it does, setup, config table, runtime requirements,
   external surfaces, token scopes.

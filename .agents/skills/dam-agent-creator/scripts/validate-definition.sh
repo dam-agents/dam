@@ -122,7 +122,8 @@ fi
 # by both. This asserts the structure rather than diffing two function bodies —
 # a text comparison has to guess where a shell function ends, and every wrong
 # guess is either a gate that passes drifted readers or one that fails identical
-# ones.
+# ones. The residual: this is structural, not semantic — a script that sources the
+# lib and then parses CONFIG.md again under another name still passes.
 for f in scripts/preflight.sh scripts/verify-onboarding.sh; do
   [ -f "$f" ] || continue
   if grep -q 'lib/config\.sh' "$f"; then

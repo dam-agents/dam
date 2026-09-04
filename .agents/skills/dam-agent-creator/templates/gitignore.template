@@ -7,8 +7,8 @@
 # NOTE: NOTHING under work/ is tracked — it is all runtime state, seeded on a fresh
 # volume from the templates in ONBOARDING.md, not from this repo. The `/*` rule hides
 # every untracked top-level path; only the re-included definition files are versioned.
-# This lets a deployed instance update the definition (`git reset --hard origin/main`)
-# without ever colliding with its live work/ state.
+# This lets a deployed instance update the definition (fast-forward; a hard reset
+# only for a diverged checkout) without ever colliding with its live work/ state.
 
 /*
 

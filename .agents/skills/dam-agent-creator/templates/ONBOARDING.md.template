@@ -81,9 +81,9 @@ never touches untracked files:
 cd /home/agent
 if [ ! -d /home/agent/.git ]; then
   git init -q
-  git remote add origin "https://github.com/$DEFINITION_REPO.git"
+  git remote add origin "https://${DEF_HOST:-github.com}/$DEFINITION_REPO.git"
 else
-  git remote set-url origin "https://github.com/$DEFINITION_REPO.git"
+  git remote set-url origin "https://${DEF_HOST:-github.com}/$DEFINITION_REPO.git"
 fi
 git fetch -q origin main
 git reset --hard origin/main

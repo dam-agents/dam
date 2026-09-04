@@ -72,8 +72,9 @@ The definition is project-agnostic: everything specific to one deployment lives 
 
 <!-- TODO(creator): two short paragraphs — state-backup mode (git-backed work/ with
      end-of-run commit & push, or local-only + what is reconstructable from external
-     markers), and the definition-update story (git reset --hard origin/main never
-     touches work/). Link docs/persistence.md. -->
+     markers), and the definition-update story (fast-forward to origin/main, hard
+     reset only for a diverged checkout — neither ever touches work/). Link
+     docs/persistence.md. -->
 
 ## Files
 
