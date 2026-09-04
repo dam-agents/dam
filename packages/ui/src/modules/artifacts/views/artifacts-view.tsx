@@ -1,6 +1,6 @@
 import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -12,7 +12,7 @@ import { formatBytes } from "@/lib/format-size";
 import { api } from "../../../api.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import { useDeleteFolder, useUpdateArtifact } from "../api/mutations.js";
+import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
 import { ExperimentsSection } from "../components/experiments-section.js";
@@ -23,7 +23,7 @@ import { RenameArtifactDialog } from "../components/rename-artifact-dialog.js";
 import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
-import type { FolderDropCallbacks } from "../hooks/use-artifact-row-drag.js";
+import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { isExperimentFolder, isUserFolder } from "../lib/folders.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
@@ -54,11 +54,8 @@ export function ArtifactsView() {
     dialog?.kind === "deleteFolder" ? dialog.folder : null;
 
   const deleteFolder = useDeleteFolder();
-  const [hotFolderId, setHotFolderId] = useState<string | null | undefined>(
-    undefined,
-  );
-  const [dragInProgress, setDragInProgress] = useState(false);
-  const dragOriginId = useRef<string | null>(null);
+  const { dropCallbacks, hotFolderId, dragInProgress } =
+    useFolderDragOrchestration(artifacts);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -78,36 +75,6 @@ export function ArtifactsView() {
     }
     return groups;
   }, [filtered]);
-
-  const updateArtifact = useUpdateArtifact();
-  const moveArtifact = updateArtifact.mutate;
-  const dropCallbacks = useMemo<FolderDropCallbacks>(
-    () => ({
-      onStart: (folderId) => {
-        dragOriginId.current = folderId;
-        setDragInProgress(true);
-      },
-      onEnd: () => {
-        dragOriginId.current = null;
-        setDragInProgress(false);
-        setHotFolderId(undefined);
-      },
-      onEnter: (folderId) =>
-        setHotFolderId(
-          folderId === dragOriginId.current ? undefined : folderId,
-        ),
-      onLeave: (folderId) =>
-        setHotFolderId((hot) => (hot === folderId ? undefined : hot)),
-      onDrop: (folderId, artifactId) => {
-        setDragInProgress(false);
-        setHotFolderId(undefined);
-        const moved = artifacts.find((a) => a.id === artifactId);
-        if (!moved || moved.folderId === folderId) return;
-        moveArtifact({ id: artifactId, folderId });
-      },
-    }),
-    [artifacts, moveArtifact],
-  );
 
   const totalBytes = useMemo(
     () => artifacts.reduce((sum, a) => sum + a.sizeBytes, 0),
