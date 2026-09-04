@@ -135,6 +135,13 @@ The user agent flow:
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
 
+The realm holds a **second public client** for the artifact share host
+([artifact-library](artifact-library.md#the-share-host--trust-boundary)):
+PKCE-only, redirect pinned to that host's sign-in callback, and no
+`platform-api` audience, so its tokens are rejected by the api-server. A
+restricted-link viewer thus gets an identity on the share origin without
+the app's tokens ever being valid there.
+
 Two interstitials can take the browser off the page the user asked for:
 the login redirect above, and the Terms-of-Use gate. Both park that
 destination and resume it once cleared, so a deep link survives them —
@@ -173,11 +180,8 @@ cannot escalate.
 Keycloak is also an audit event source. It emits login and admin events
 to pod stdout via its built-in `jboss-logging` event listener, so they
 ride the same cluster log pipeline as every other pod log out to the
-external log service. The listener's level is set through Keycloak's
-per-listener SPI knobs rather than a broad `org.keycloak` log-category
-override: successes surface at `info`, errors at `warn`. Production pods
-emit structured JSON; local dev overrides the console format to plain
-text for a readable `cluster:logs`.
+external log service. Successes surface at `info`, errors at `warn`, as
+structured JSON in production.
 
 Persistence is split by event class:
 
@@ -682,26 +686,13 @@ mesh.
 
 ## Dev cluster: SVID rotation resilience
 
-A dev-cluster constraint, not an architectural property. The local
-k3s/lima [`cluster:install`](../../.mise/tasks/cluster/install)
-pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
-outlive a typical dev cluster's lifetime, and installs a
-`ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent
-ztunnel logs every 10 min for `certificate expired` /
-`AlertReceived(CertificateExpired)` and rolls the affected mesh
-workloads — `ds/ztunnel` and the istio-synthesised waypoint
-deployments, whose SVIDs expire independently. An expired waypoint
-cert stalls only the flows through that waypoint (e.g. the harness
-path), which is why it can masquerade as an app-level bug — see
-[issue #705](https://github.com/dam-agents/dam/issues/705).
-`mise run cluster:fix-certs` performs the same roll on demand, and
-`mise run cluster:status` reports whether the expired-cert signature
-is present. Together these absorb the race where lima VM
-suspend/resume on a sleeping host laptop slips past the default 24h
-rotation window and stalls every mesh hop — see
-[issue #283](https://github.com/dam-agents/dam/issues/283).
-The same clock skip can age out cert-manager's short-lived webhook
-serving cert, failing chart installs at admission; `cluster:status`
-probes for that and `cluster:fix-certs` restarts the webhook too.
-Production deployments configure mesh PKI separately and don't get
-any of these knobs.
+A dev-cluster constraint, not an architectural property. A lima VM that
+sleeps with the host can slip past the mesh's default certificate rotation
+window, expiring workload SVIDs (and cert-manager's webhook cert) and stalling
+every mesh hop — an expired waypoint cert stalls only the flows through that
+waypoint, so it can masquerade as an app-level bug. The local
+`cluster:install` lengthens the workload cert TTL and installs a watchdog that
+rolls affected mesh workloads; `cluster:status` reports the signature and
+`cluster:fix-certs` heals on demand. Symptoms and recovery live in the
+[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill. Production
+deployments configure mesh PKI separately and get none of these knobs.
