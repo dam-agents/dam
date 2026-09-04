@@ -29,7 +29,7 @@ Install writes the skill directory into **every** configured Skill Path; uninsta
 Every Local Skill carries a **provenance** verdict, judged by the agent-runtime at read time. The reference is the set of **pristine roots** in the image — exactly two sanctioned locations, both immutable and always in-pod, so no build-time manifest or on-PVC marker is needed (a marker was tried and reverted — third-party baked skills aren't ours to stamp, and the PVC is agent-writable anyway):
 
 1. the **pristine workspace copy** — the directory the image's first-boot seed copies onto the PVC and never touches again, and
-2. the **staged-skills dir** — the one place images put system skills that must *not* reach every agent (an Agent Kind's Install Command copies them onto the PVC at create; the shared constant lives in the agent-runtime contract package).
+2. the **staged-skills dir** — the one place images put system skills that must *not* reach every agent, either copied onto the PVC at create by an Agent Kind's Install Command or invoked in place from the image path and never copied ([case-studies](case-studies.md)); the shared constant lives in the agent-runtime contract package.
 
 This is a deliberate convention, not a growing list: an image-shipped skill anywhere else will misclassify as user-authored, so new features ship their skills through one of these two locations.
 

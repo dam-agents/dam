@@ -1,4 +1,4 @@
-import { USAGE_SUMMARY_MAX_DAYS, type TokenSpendByModel } from "api-server-api";
+import type { TokenSpendByModel } from "api-server-api";
 import type { MetricsReader } from "./metrics-service.js";
 
 export type AgentUsageSummaryResult =
@@ -20,11 +20,7 @@ export function createAgentUsageSummary(deps: {
 }): AgentUsageSummaryService {
   return {
     async summary(agentId, days) {
-      const windowDays = Math.min(
-        Math.max(Math.trunc(days), 1),
-        USAGE_SUMMARY_MAX_DAYS,
-      );
-      const window = { hours: windowDays * 24 };
+      const window = { hours: days * 24 };
       const [byModel, sessions] = await Promise.all([
         deps.reader.tokenSpendByModel([agentId], window),
         deps.reader.runtimeBySession([agentId], window),
@@ -32,7 +28,7 @@ export function createAgentUsageSummary(deps: {
       const totalCostUsd = byModel.reduce((sum, row) => sum + row.costUsd, 0);
       return {
         available: true,
-        windowDays,
+        windowDays: days,
         totalCostUsd,
         sessionCount: sessions.length,
         byModel,

@@ -52,7 +52,7 @@ function parseRecord(row: Row): EditionRecord {
     content: row.content,
     harnessImage: row.harnessImage,
     artifactId: row.artifactId,
-    status: caseStudyStatusSchema.catch("pending").parse(row.status),
+    status: caseStudyStatusSchema.catch("hidden").parse(row.status),
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -144,7 +144,7 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
     },
 
     async purge(createdBefore, tombstonedBefore) {
-      const result = await db
+      const purged = await db
         .delete(agentCaseStudies)
         .where(
           or(
@@ -154,8 +154,9 @@ export function createCaseStudiesRepository(db: Db): CaseStudiesRepository {
               lt(agentCaseStudies.deletedAt, tombstonedBefore),
             ),
           ),
-        );
-      return (result as unknown as { rowCount?: number }).rowCount ?? 0;
+        )
+        .returning({ id: agentCaseStudies.id });
+      return purged.length;
     },
   };
 }

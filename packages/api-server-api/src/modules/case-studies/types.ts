@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  caseStudyInspectionFilterSchema,
   caseStudyStatusSchema,
   caseStudySubmitInputSchema,
 } from "./schemas.js";
@@ -7,6 +8,16 @@ import type {
 export type CaseStudyStatus = z.infer<typeof caseStudyStatusSchema>;
 
 export type CaseStudySubmitInput = z.infer<typeof caseStudySubmitInputSchema>;
+
+export type CaseStudyInspectionFilterInput = z.infer<
+  typeof caseStudyInspectionFilterSchema
+>;
+
+export interface CaseStudyInspectionFilter {
+  since?: Date;
+  weekOf?: Date;
+  agentId?: string;
+}
 
 export interface CaseStudyEditionSummary {
   id: string;

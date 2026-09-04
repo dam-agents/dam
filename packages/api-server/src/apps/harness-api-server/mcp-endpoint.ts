@@ -101,8 +101,7 @@ export interface McpSessionDeps {
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
-  caseStudyInspection: CaseStudyInspectionService;
-  ownerCarriesInspectorRole: boolean;
+  caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   usageSummary: AgentUsageSummaryService;
   supportsUserLookup: boolean;
@@ -814,7 +813,6 @@ export function createMcpSession(
     agentId,
     submissions: deps.caseStudySubmissions,
     inspection: deps.caseStudyInspection,
-    ownerCarriesInspectorRole: deps.ownerCarriesInspectorRole,
     agentImage: deps.agentImage,
   });
 
@@ -912,8 +910,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           : null,
       agentHome: deps.agentHome,
       caseStudySubmissions: deps.caseStudySubmissions,
-      caseStudyInspection: deps.caseStudyInspection,
-      ownerCarriesInspectorRole: ownerIsInspector,
+      caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       usageSummary: deps.usageSummary,
       supportsUserLookup,

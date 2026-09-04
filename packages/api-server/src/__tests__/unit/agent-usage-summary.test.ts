@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  USAGE_SUMMARY_MAX_DAYS,
+  usageSummaryInputSchema,
+} from "api-server-api";
 import type { TokenSpendByModel } from "api-server-api";
 import {
   createAgentUsageSummary,
@@ -9,7 +13,7 @@ import type {
   MetricsWindow,
 } from "../../modules/metrics/index.js";
 
-// TEST_OVERVIEW: get_usage_summary is the agent-facing cost read the case-study skill depends on for grounded numbers. It must pin the query to exactly the calling agent, clamp the window to the telemetry store's 30-day reality, and degrade to an explicit available=false instead of an error when the backend is off — the skill turns that into "cost is not measured", never an estimate.
+// TEST_OVERVIEW: get_usage_summary is the agent-facing cost read the case-study skill depends on for grounded numbers. It must pin the query to exactly the calling agent, bound the window to the telemetry store's retention at the one schema the tool parses with, and degrade to an explicit available=false instead of an error when the backend is off — the skill turns that into "cost is not measured", never an estimate.
 
 function spend(model: string, costUsd: number): TokenSpendByModel {
   return {
@@ -72,13 +76,34 @@ describe("agent usage summary", () => {
     });
   });
 
-  // TEST_SCENARIO: The telemetry store retains 30 days — a larger requested window must clamp rather than imply a longer measurement than exists.
-  it("clamps the window to 30 days", async () => {
+  /**
+   * TEST_SCENARIO: The telemetry store retains a bounded window, so a longer
+   * request must never imply a longer measurement than exists. The input schema
+   * is the single owner of that bound — it is what the agent-facing tool parses
+   * with — so the rejection has to happen there, before the reader is asked for
+   * a window it cannot answer for.
+   */
+  it("refuses a window longer than the retained one", () => {
+    expect(
+      usageSummaryInputSchema.safeParse({ days: USAGE_SUMMARY_MAX_DAYS + 1 })
+        .success,
+    ).toBe(false);
+    expect(
+      usageSummaryInputSchema.safeParse({ days: USAGE_SUMMARY_MAX_DAYS })
+        .success,
+    ).toBe(true);
+  });
+
+  // TEST_SCENARIO: The window the service reports must be the one it measured, so a caller can tell which period a cost figure covers.
+  it("measures and reports the window it was given", async () => {
     const { r, calls } = reader([], 0);
     const svc = createAgentUsageSummary({ reader: r });
-    const result = await svc.summary("agent-a", 90);
-    expect(result).toMatchObject({ available: true, windowDays: 30 });
-    expect(calls[0]?.window).toEqual({ hours: 720 });
+    const result = await svc.summary("agent-a", USAGE_SUMMARY_MAX_DAYS);
+    expect(result).toMatchObject({
+      available: true,
+      windowDays: USAGE_SUMMARY_MAX_DAYS,
+    });
+    expect(calls[0]?.window).toEqual({ hours: USAGE_SUMMARY_MAX_DAYS * 24 });
   });
 
   // TEST_SCENARIO: With no telemetry backend the tool must answer available=false as a result, not throw — an error here reads to the skill as a transient failure and invites retries or estimation.
