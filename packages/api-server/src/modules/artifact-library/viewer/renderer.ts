@@ -434,7 +434,7 @@ export function renderNoAccess(input: {
   return chromePage(
     `You don't have access · ${input.brandName}`,
     `<div class="center-card"><div class="card">
-      <h1>You don't have access</h1>
+      <h1>Well ${escapeHtml(input.brandName)}, you don't have access.</h1>
       <p>${detail}</p>
       <a class="btn" href="${escapeHtml(input.logoutUrl)}">Switch account</a>
     </div></div>`,
