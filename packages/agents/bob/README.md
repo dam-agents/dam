@@ -69,7 +69,7 @@ Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate a
 
 ### The Config panel (per agent)
 
-The manifest declares a `harness-config` driver, which is what puts the panel on the agent at all, and it offers two options: **Mode** (`agent` / `plan` / `ask`) and **Approvals** (`auto` / `ask`).
+The manifest declares a `harness-config` driver, which is what puts the panel on the agent at all, and it offers three options: **Model**, **Mode** (`agent` / `plan` / `ask`) and **Approvals** (`auto` / `ask`).
 
 The panel writes into a `platform` section of the settings file that **Bob itself ignores**, not into `session.*`. That indirection is load-bearing: `bob-settings.mjs` rewrites Bob's own keys on every harness start, so a panel writing them directly would be overwritten by the provider pin (or deleted when the pin is cleared). Instead the bootstrap reads the `platform` section, resolves panel value over provider pin, and writes the result — so a panel choice survives every restart, and an agent with no panel choice still follows the pin.
 
@@ -80,7 +80,13 @@ Two consequences worth knowing:
 - **A change lands on the next harness start.** The platform writes the panel event once and never re-asserts it, and neither surface re-reads the file mid-session. A running session keeps the posture it started with; the next one picks the new one up. The env rail is the faster lever, since an env change recycles the harness.
 - **The file stays yours.** A panel value is never reconciled away, so a hand-edit through the Files panel or SSH survives — including one to the `platform` section.
 
-Model is deliberately not in the panel: Bob's list comes from a LiteLLM-shaped `/model/info` under its own path prefix, which neither a static catalog nor the platform's `modelDiscovery` can serve yet. `BOB_SHELL_MODEL` remains the way to set it.
+### Where the Model list comes from
+
+The panel's Model choices are not a list this repo maintains — the manifest declares a `modelDiscovery` source and agent-runtime reads the list live, so what the dropdown offers is what the granted key and tenant actually serve.
+
+Discovery asks the same endpoint Bob itself asks, `/inference/v1/model/info` on the gateway, and reads the LiteLLM-shaped `data[].model_name` out of it. Which gateway that is follows from the connection: with one that points Bob at another endpoint the URL comes from `BOB_GATEWAY_URL`, and without it discovery falls back to the gateway Bob's own bundle defaults to. The request leaves the pod through `HTTPS_PROXY` like every other, so the credential is injected at the sidecar and the agent container never holds it.
+
+A list that cannot be read — no route to the gateway, an auth failure, or an empty list — leaves the panel on its last known list and the rest of the panel usable; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for agents that make no panel choice, with the same precedence as Mode: panel over pin.
 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 
@@ -89,7 +95,7 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 | Env var | Translated to | Effect |
 |---|---|---|
 | `BOBSHELL_API_KEY` | n/a (env-only) | API key the Envoy sidecar swaps to the real value on the wire. Always emitted. |
-| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
+| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks, unless the agent's Config panel sets one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
 | `BOB_CHAT_MODE` | `session.defaultMode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
 | `BOB_MAX_COINS` | `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |
 | `BOB_INSTANCE_ID` | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles. |

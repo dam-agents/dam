@@ -43,6 +43,11 @@ export const harnessConfigBinding = z.object({
   modelDiscovery: z
     .object({
       urlEnv: z.array(z.string().min(1)).nonempty(),
+      defaultUrl: z.string().url().optional(),
+      path: z.string().startsWith("/").optional(),
+      shape: z
+        .enum(["openai-models", "litellm-model-info"])
+        .default("openai-models"),
     })
     .optional(),
 });

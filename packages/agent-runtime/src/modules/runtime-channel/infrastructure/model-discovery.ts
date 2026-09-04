@@ -1,7 +1,12 @@
 import type { HarnessConfigChoice } from "agent-runtime-api";
 
+export type ModelListShape = "openai-models" | "litellm-model-info";
+
 export interface ModelDiscoverySpec {
   urlEnv: string[];
+  defaultUrl?: string;
+  path?: string;
+  shape?: ModelListShape;
 }
 
 export type ModelDiscoveryOutcome =
@@ -16,21 +21,33 @@ export type ModelDiscovery = (
 
 const DISCOVERY_TIMEOUT_MS = 5_000;
 
-export function createOpenAiModelDiscovery(deps: {
+function discoveryUrl(spec: ModelDiscoverySpec, base: string): string {
+  const trimmed = base.replace(/\/+$/, "");
+  if (spec.path) return `${trimmed}${spec.path}`;
+  const root = /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+  return `${root}/models`;
+}
+
+function modelIdOf(entry: unknown, shape: ModelListShape): string | null {
+  const field = shape === "litellm-model-info" ? "model_name" : "id";
+  const value = (entry as Record<string, unknown> | null)?.[field];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+export function createModelDiscovery(deps: {
   log: (msg: string) => void;
   fetchImpl?: typeof globalThis.fetch;
 }): ModelDiscovery {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
   return async (spec, env) => {
     if (!spec) return { status: "not-configured" };
-    const base = spec.urlEnv
-      .map((name) => env[name]?.trim())
-      .find((v): v is string => !!v);
+    const base =
+      spec.urlEnv
+        .map((name) => env[name]?.trim())
+        .find((v): v is string => !!v) ?? spec.defaultUrl;
     if (!base) return { status: "unavailable" };
 
-    const trimmed = base.replace(/\/+$/, "");
-    const root = /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
-    const url = `${root}/models`;
+    const url = discoveryUrl(spec, base);
     try {
       const res = await doFetch(url, {
         headers: { accept: "application/json" },
@@ -46,11 +63,15 @@ export function createOpenAiModelDiscovery(deps: {
       const ids = [
         ...new Set(
           data.flatMap((m): string[] => {
-            const id = (m as { id?: unknown } | null)?.id;
-            return typeof id === "string" && !/embedding/i.test(id) ? [id] : [];
+            const id = modelIdOf(m, spec.shape ?? "openai-models");
+            return id && !/embedding/i.test(id) ? [id] : [];
           }),
         ),
       ].sort();
+      if (ids.length === 0) {
+        deps.log(`[harness-config] model discovery ${url} → empty model list`);
+        return { status: "unavailable" };
+      }
       return {
         status: "observed",
         models: ids.map((id) => ({ value: id, name: id })),

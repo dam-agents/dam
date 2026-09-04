@@ -30,7 +30,7 @@ import { createExtensionLoader } from "./infrastructure/extension-loader.js";
 import { createHarnessClient, type HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
 import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
-import { createOpenAiModelDiscovery } from "./infrastructure/model-discovery.js";
+import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { runHello } from "./hello.js";
 import {
   createSessionDirectoryReporter,
@@ -107,7 +107,7 @@ export async function composeRuntimeChannel(
       : undefined,
     agentHome: opts.agentHome,
     envReader: opts.envReader,
-    discoverModels: createOpenAiModelDiscovery({ log }),
+    discoverModels: createModelDiscovery({ log }),
     log,
   });
   if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);

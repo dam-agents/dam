@@ -32,18 +32,20 @@ drivers:
   # into `session.*`: bob-settings.mjs owns Bob's own keys on every harness
   # start, and two writers on one key would fight. It resolves panel value over
   # provider pin and translates the result — see the agent README.
-  #
-  # Model is deliberately absent: Bob's list comes from a LiteLLM-shaped
-  # /model/info under its own path prefix, which neither the static catalog nor
-  # modelDiscovery can serve yet.
   harness-config:
     file: "$HOME/.bob/settings/settings.json"
     keys:
+      model: "platform.model"
       mode: "platform.mode"
       configOptions:
         approvals: "platform.approvals"
     catalog:
       options:
+        - id: model
+          name: Model
+          description: Model Bob starts a session with
+          category: model
+          choices: []
         - id: mode
           name: Mode
           description: Which persona Bob starts a session in
@@ -69,3 +71,14 @@ drivers:
             - value: ask
               name: "Ask every time"
               description: "Prompts for every tool except file reads, including each shell command. Takes effect on the next harness start, and an unattended session has nobody to answer."
+    # Bob reads its model list from a LiteLLM-shaped /model/info under its own
+    # inference prefix, so discovery follows the same path Bob itself calls —
+    # the gateway rewrite that fronts a plain LiteLLM applies to both alike.
+    # BOB_GATEWAY_URL is set only when a connection points Bob elsewhere;
+    # without it, discovery asks the gateway Bob's own bundle defaults to.
+    modelDiscovery:
+      urlEnv:
+        - BOB_GATEWAY_URL
+      defaultUrl: "https://api.us-east.bob.ibm.com"
+      path: /inference/v1/model/info
+      shape: litellm-model-info
