@@ -1343,6 +1343,10 @@ agentTemplates:
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
+    # Bob exports OTLP traces rather than the per-call log records Claude Code
+    # writes, so it rides its own env rail. Its cost counter is denominated in
+    # Bobcoins, not dollars — see docs/architecture/metrics.md.
+    telemetry: bob
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob

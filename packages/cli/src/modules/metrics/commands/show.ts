@@ -1,3 +1,4 @@
+import type { CreditSpend } from "api-server-api";
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
 import { createAgentResolver } from "../../agent/index.js";
@@ -20,6 +21,14 @@ import { printServiceError } from "../../shared/trpc/print.js";
 import type { MetricsService } from "../services/metrics-service.js";
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+
+const cost = (costUsd: number, credits: CreditSpend[]): string =>
+  credits.length === 0
+    ? costUsd.toFixed(4)
+    : [
+        ...(costUsd > 0 ? [costUsd.toFixed(4)] : []),
+        ...credits.map((c) => `${c.amount.toFixed(2)} ${c.unit}`),
+      ].join(" + ");
 
 export function buildMetricsCommand(deps: {
   compatService: CompatService;
@@ -143,6 +152,14 @@ export function buildMetricsCommand(deps: {
 
         const totalCalls = tokenSpendByModel.reduce((n, r) => n + r.calls, 0);
         const totalCost = tokenSpendByModel.reduce((n, r) => n + r.costUsd, 0);
+        const totalCredits = [
+          ...tokenSpendByModel
+            .flatMap((r) => r.credits)
+            .reduce(
+              (acc, c) => acc.set(c.unit, (acc.get(c.unit) ?? 0) + c.amount),
+              new Map<string, number>(),
+            ),
+        ].map(([unit, amount]) => ({ unit, amount }));
         const totalApiMs = runtimeBySession.reduce(
           (n, r) => n + r.totalDurationMs,
           0,
@@ -153,18 +170,10 @@ export function buildMetricsCommand(deps: {
           ["API CALLS", String(totalCalls)],
           ["SESSIONS", String(runtimeBySession.length)],
           ["API TIME", secs(totalApiMs)],
-          ["COST USD", totalCost.toFixed(4)],
+          ["COST", cost(totalCost, totalCredits)],
         ]);
         const byModel = renderTable([
-          [
-            "MODEL",
-            "CALLS",
-            "INPUT",
-            "OUTPUT",
-            "CACHE R",
-            "CACHE W",
-            "COST USD",
-          ],
+          ["MODEL", "CALLS", "INPUT", "OUTPUT", "CACHE R", "CACHE W", "COST"],
           ...tokenSpendByModel.map((r) => [
             r.model,
             String(r.calls),
@@ -172,7 +181,7 @@ export function buildMetricsCommand(deps: {
             r.outputTokens.toLocaleString(),
             r.cacheReadTokens.toLocaleString(),
             r.cacheCreationTokens.toLocaleString(),
-            r.costUsd.toFixed(4),
+            cost(r.costUsd, r.credits),
           ]),
         ]);
         const bySession = renderFittedTable(
@@ -184,7 +193,7 @@ export function buildMetricsCommand(deps: {
             "OUTPUT",
             "CACHE R",
             "CACHE W",
-            "COST USD",
+            "COST",
             "LAST",
           ],
           runtimeBySession.map((r) => [
@@ -195,21 +204,13 @@ export function buildMetricsCommand(deps: {
             r.outputTokens.toLocaleString(),
             r.cacheReadTokens.toLocaleString(),
             r.cacheCreationTokens.toLocaleString(),
-            r.costUsd.toFixed(4),
+            cost(r.costUsd, r.credits),
             r.lastAt,
           ]),
           0,
         );
         const recent = renderTable([
-          [
-            "TIME",
-            "MODEL",
-            "CONTEXT",
-            "INPUT",
-            "CACHE R",
-            "OUTPUT",
-            "COST USD",
-          ],
+          ["TIME", "MODEL", "CONTEXT", "INPUT", "CACHE R", "OUTPUT", "COST"],
           ...contextPerCall.map((r) => [
             r.at,
             r.model,
@@ -217,7 +218,7 @@ export function buildMetricsCommand(deps: {
             r.inputTokens.toLocaleString(),
             r.cacheReadTokens.toLocaleString(),
             r.outputTokens.toLocaleString(),
-            r.costUsd.toFixed(4),
+            cost(r.costUsd, r.credits),
           ]),
         ]);
         return writeStdoutAndExit(

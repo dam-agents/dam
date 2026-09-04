@@ -4,8 +4,15 @@ import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
+import {
+  creditUnitLabel,
+  formatAxisCount,
+  formatAxisUsd,
+  formatCredits,
+  formatUsd,
+} from "../lib/format.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
-import { totalCostUsd } from "../lib/totals.js";
+import { daySeries, totalCostUsd, totalCredits } from "../lib/totals.js";
 import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
@@ -19,6 +26,7 @@ import {
 function totals(rows: TokenSpendByModel[]) {
   return {
     costUsd: totalCostUsd(rows),
+    credits: totalCredits(rows),
     ...rows.reduce(
       (acc, row) => ({
         calls: acc.calls + row.calls,
@@ -47,6 +55,11 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
     freshness,
   } = useMonthlySpend(agentId);
   const sums = totals(data?.byModel ?? []);
+  const monthDays = fillMonthDays(
+    shownMonth,
+    monthRange(shownMonth).isCurrentMonth,
+    data?.byDay,
+  );
 
   return (
     <section className="mb-8">
@@ -91,14 +104,28 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
                 <SectionLabel spaced>Spend by day</SectionLabel>
                 <Card className="p-5">
                   <SpendByDayChart
-                    days={fillMonthDays(
-                      shownMonth,
-                      monthRange(shownMonth).isCurrentMonth,
-                      data.byDay,
-                    )}
+                    days={daySeries(monthDays, null)}
+                    formatValue={formatUsd}
+                    formatAxis={formatAxisUsd}
                   />
                 </Card>
               </section>
+              {sums.credits.map((credit) => (
+                <section key={credit.unit}>
+                  <SectionLabel spaced>
+                    {creditUnitLabel(credit.unit)} by day
+                  </SectionLabel>
+                  <Card className="p-5">
+                    <SpendByDayChart
+                      days={daySeries(monthDays, credit.unit)}
+                      formatValue={(v) =>
+                        formatCredits([{ unit: credit.unit, amount: v }])
+                      }
+                      formatAxis={formatAxisCount}
+                    />
+                  </Card>
+                </section>
+              ))}
             </>
           )}
         </div>

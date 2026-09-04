@@ -1,6 +1,7 @@
 import { type ClickHouseClient, createClient } from "@clickhouse/client";
 import type {
   CallContext,
+  CreditSpend,
   SessionRuntime,
   SpendByAgent,
   SpendByDay,
@@ -26,33 +27,87 @@ export function createClickhouseClient(cfg: {
   });
 }
 
-export const ownedApiRequests = (w: MetricsWindow): string => {
-  const base = [
-    "Body = 'claude_code.api_request'",
-    "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
-    ...(w.hours === undefined
-      ? []
-      : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
-    ...(w.fromIso === undefined
-      ? []
-      : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
-    ...(w.toIso === undefined
-      ? []
-      : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
-  ];
-  if (w.sessionId === undefined) return base.join("\n  AND ");
-  const owned = base.join(" AND ");
-  return [
-    ...base,
-    `(LogAttributes['session.id'] = {sessionId:String}
-   OR LogAttributes['session.id'] IN (
-     SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
-     WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
-       SELECT DISTINCT TraceId FROM otel_logs
-       WHERE ${owned}
-         AND LogAttributes['session.id'] = {sessionId:String}
-         AND TraceId != '')))`,
-  ].join("\n  AND ");
+const windowBounds = (w: MetricsWindow): string[] => [
+  "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
+  ...(w.hours === undefined
+    ? []
+    : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
+  ...(w.fromIso === undefined
+    ? []
+    : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
+  ...(w.toIso === undefined
+    ? []
+    : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
+];
+
+const gate = (row: string, w: MetricsWindow): string =>
+  [row, ...windowBounds(w)].join("\n       AND ");
+
+const logAttr = (a: string) => `toInt64OrZero(LogAttributes['${a}'])`;
+const spanAttr = (a: string) => `toInt64OrZero(SpanAttributes['${a}'])`;
+
+const claudeCodeCalls = (w: MetricsWindow): string => `
+     SELECT
+       Timestamp AS ts,
+       TraceId AS traceId,
+       ResourceAttributes['platform.agent.id'] AS agentId,
+       ResourceAttributes['platform.agent.name'] AS agentNameRaw,
+       ResourceAttributes['platform.invocation.id'] AS invocationId,
+       LogAttributes['session.id'] AS sessionId,
+       LogAttributes['model'] AS modelName,
+       LogAttributes['request_id'] AS requestIdRaw,
+       ${logAttr("input_tokens")} AS tokIn,
+       ${logAttr("output_tokens")} AS tokOut,
+       ${logAttr("cache_read_tokens")} AS tokCacheR,
+       ${logAttr("cache_creation_tokens")} AS tokCacheC,
+       ${logAttr("duration_ms")} AS durMs,
+       ${logAttr("cost_usd_micros")} / 1e6 AS usd,
+       '' AS creditUnit,
+       toFloat64(0) AS creditAmount
+     FROM otel_logs
+     WHERE ${gate("Body = 'claude_code.api_request'", w)}`;
+
+const bobCalls = (w: MetricsWindow): string => `
+     SELECT
+       Timestamp AS ts,
+       TraceId AS traceId,
+       ResourceAttributes['platform.agent.id'] AS agentId,
+       ResourceAttributes['platform.agent.name'] AS agentNameRaw,
+       ResourceAttributes['platform.invocation.id'] AS invocationId,
+       SpanAttributes['langfuse.session.id'] AS sessionId,
+       coalesce(
+         nullIf(SpanAttributes['gen_ai.response.model'], ''),
+         SpanAttributes['gen_ai.request.model']) AS modelName,
+       '' AS requestIdRaw,
+       ${spanAttr("gen_ai.usage.input_tokens")} AS tokIn,
+       ${spanAttr("gen_ai.usage.output_tokens")} AS tokOut,
+       ${spanAttr("gen_ai.usage.cache_read.input_tokens")} AS tokCacheR,
+       ${spanAttr("gen_ai.usage.cache_creation.input_tokens")} AS tokCacheC,
+       ${spanAttr("gen_ai.client.operation.duration")} AS durMs,
+       toFloat64(0) AS usd,
+       'bobcoin' AS creditUnit,
+       toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS creditAmount
+     FROM otel_traces
+     WHERE ${gate("SpanName = 'LLM Generation'", w)}`;
+
+export const callsCte = (w: MetricsWindow): string => {
+  const all = `${claudeCodeCalls(w)}
+     UNION ALL${bobCalls(w)}`;
+  const narrow =
+    w.sessionId === undefined
+      ? "SELECT * FROM calls_all"
+      : `SELECT * FROM calls_all
+     WHERE sessionId = {sessionId:String}
+        OR sessionId IN (
+             SELECT DISTINCT sessionId FROM calls_all
+             WHERE sessionId != '' AND traceId IN (
+               SELECT DISTINCT traceId FROM calls_all
+               WHERE sessionId = {sessionId:String} AND traceId != ''))`;
+  return `WITH calls_all AS (${all}
+   ),
+   calls AS (
+     ${narrow}
+   )`;
 };
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
@@ -63,13 +118,24 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
 });
 
-const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
-const TOK_IN = IN("'input_tokens'");
-const TOK_CACHE_R = IN("'cache_read_tokens'");
-const TOK_CACHE_C = IN("'cache_creation_tokens'");
-const COST_USD = `${IN("'cost_usd_micros'")} / 1e6`;
+const CREDITS = "sumMap([creditUnit], [creditAmount]) AS credits";
 
 const n = (v: unknown): number => Number(v ?? 0);
+
+const credits = (v: unknown): CreditSpend[] => {
+  if (!Array.isArray(v)) return [];
+  const [units, amounts] = v as [unknown[], unknown[]];
+  if (!Array.isArray(units) || !Array.isArray(amounts)) return [];
+  return units.flatMap((unit, i) => {
+    const amount = n(amounts[i]);
+    return unit === "" || amount === 0 ? [] : [{ unit: String(unit), amount }];
+  });
+};
+
+const one = (unit: unknown, amount: unknown): CreditSpend[] =>
+  unit === "" || unit == null || n(amount) === 0
+    ? []
+    : [{ unit: String(unit), amount: n(amount) }];
 
 export function createClickhouseReader(
   client: ClickHouseClient,
@@ -89,19 +155,20 @@ export function createClickhouseReader(
   return {
     async tokenSpendByModel(agentIds, window) {
       const r = await rows(
-        `SELECT
-           LogAttributes['model'] AS model,
+        `${callsCte(window)}
+         SELECT
+           modelName AS model,
            count() AS calls,
-           sum(${TOK_IN}) AS inputTokens,
-           sum(${IN("'output_tokens'")}) AS outputTokens,
-           sum(${TOK_CACHE_R}) AS cacheReadTokens,
-           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd,
-           sum(${IN("'duration_ms'")}) AS durationMs
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
-         GROUP BY model
-         ORDER BY costUsd DESC`,
+           sum(tokIn) AS inputTokens,
+           sum(tokOut) AS outputTokens,
+           sum(tokCacheR) AS cacheReadTokens,
+           sum(tokCacheC) AS cacheCreationTokens,
+           sum(usd) AS costUsd,
+           ${CREDITS},
+           sum(durMs) AS durationMs
+         FROM calls
+         GROUP BY modelName
+         ORDER BY costUsd DESC, sum(creditAmount) DESC`,
         windowParams(agentIds, window),
       );
       return r.map((x) => ({
@@ -112,36 +179,40 @@ export function createClickhouseReader(
         cacheReadTokens: n(x.cacheReadTokens),
         cacheCreationTokens: n(x.cacheCreationTokens),
         costUsd: n(x.costUsd),
+        credits: credits(x.credits),
         durationMs: n(x.durationMs),
       })) satisfies TokenSpendByModel[];
     },
 
     async spendByAgent(agentIds, window) {
       const r = await rows(
-        `SELECT
-           ResourceAttributes['platform.agent.id'] AS agentId,
-           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName,
-           sum(${COST_USD}) AS costUsd
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
+        `${callsCte(window)}
+         SELECT
+           agentId,
+           argMaxIf(agentNameRaw, ts, invocationId = '' AND agentNameRaw != '') AS agentName,
+           sum(usd) AS costUsd,
+           ${CREDITS}
+         FROM calls
          GROUP BY agentId
-         ORDER BY costUsd DESC`,
+         ORDER BY costUsd DESC, sum(creditAmount) DESC`,
         windowParams(agentIds, window),
       );
       return r.map((x) => ({
         agentId: String(x.agentId ?? ""),
         agentName: String(x.agentName ?? ""),
         costUsd: n(x.costUsd),
+        credits: credits(x.credits),
       })) satisfies SpendByAgent[];
     },
 
     async spendByDay(agentIds, window, timeZone) {
       const r = await rows(
-        `SELECT
-           toDate(toTimeZone(Timestamp, {timeZone:String})) AS day,
-           sum(${COST_USD}) AS costUsd
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
+        `${callsCte(window)}
+         SELECT
+           toDate(toTimeZone(ts, {timeZone:String})) AS day,
+           sum(usd) AS costUsd,
+           ${CREDITS}
+         FROM calls
          GROUP BY day
          ORDER BY day`,
         { ...windowParams(agentIds, window), timeZone },
@@ -149,41 +220,37 @@ export function createClickhouseReader(
       return r.map((x) => ({
         day: String(x.day ?? ""),
         costUsd: n(x.costUsd),
+        credits: credits(x.credits),
       })) satisfies SpendByDay[];
     },
 
     async spendBySession(agentIds, window) {
-      const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
-        `WITH trace_root AS (
-           SELECT TraceId,
-                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
-           FROM otel_logs
-           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-           GROUP BY TraceId
+        `${callsCte(window)},
+         trace_root AS (
+           SELECT traceId, argMin(sessionId, ts) AS rootSid
+           FROM calls_all
+           WHERE traceId != '' AND sessionId != ''
+           GROUP BY traceId
          ),
          session_root AS (
            SELECT sid, argMin(rootSid, firstAt) AS rootSid
            FROM (
-             SELECT LogAttributes['session.id'] AS sid,
-                    TraceId,
-                    min(Timestamp) AS firstAt
-             FROM otel_logs
-             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-             GROUP BY sid, TraceId
+             SELECT sessionId AS sid, traceId, min(ts) AS firstAt
+             FROM calls_all
+             WHERE traceId != '' AND sessionId != ''
+             GROUP BY sid, traceId
            ) AS st
-           INNER JOIN trace_root USING (TraceId)
+           INNER JOIN trace_root USING (traceId)
            GROUP BY sid
          )
          SELECT
            coalesce(nullIf(rootSid, ''), sid) AS sessionId,
-           sum(rowCostUsd) AS costUsd
+           sum(usd) AS costUsd,
+           ${CREDITS}
          FROM (
-           SELECT
-             LogAttributes['session.id'] AS sid,
-             ${COST_USD} AS rowCostUsd
-           FROM otel_logs
-           WHERE ${ownedApiRequests(window)}
+           SELECT sessionId AS sid, usd, creditUnit, creditAmount
+           FROM calls
          ) AS calls_rows
          LEFT JOIN session_root USING (sid)
          GROUP BY sessionId`,
@@ -192,57 +259,49 @@ export function createClickhouseReader(
       return r.map((x) => ({
         sessionId: String(x.sessionId ?? ""),
         costUsd: n(x.costUsd),
+        credits: credits(x.credits),
       })) satisfies SessionSpend[];
     },
 
     async runtimeBySession(agentIds, window) {
-      const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
-        `WITH trace_root AS (
-           SELECT TraceId,
-                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
-           FROM otel_logs
-           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-           GROUP BY TraceId
+        `${callsCte(window)},
+         trace_root AS (
+           SELECT traceId, argMin(sessionId, ts) AS rootSid
+           FROM calls_all
+           WHERE traceId != '' AND sessionId != ''
+           GROUP BY traceId
          ),
          session_root AS (
            SELECT sid, argMin(rootSid, firstAt) AS rootSid
            FROM (
-             SELECT LogAttributes['session.id'] AS sid,
-                    TraceId,
-                    min(Timestamp) AS firstAt
-             FROM otel_logs
-             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-             GROUP BY sid, TraceId
+             SELECT sessionId AS sid, traceId, min(ts) AS firstAt
+             FROM calls_all
+             WHERE traceId != '' AND sessionId != ''
+             GROUP BY sid, traceId
            ) AS st
-           INNER JOIN trace_root USING (TraceId)
+           INNER JOIN trace_root USING (traceId)
            GROUP BY sid
          )
          SELECT
            coalesce(nullIf(rootSid, ''), sid) AS sessionId,
            agentId,
            count() AS calls,
-           sum(durationMs) AS totalDurationMs,
-           sum(rowInputTokens) AS inputTokens,
-           sum(rowOutputTokens) AS outputTokens,
-           sum(rowCacheReadTokens) AS cacheReadTokens,
-           sum(rowCacheCreationTokens) AS cacheCreationTokens,
-           sum(rowCostUsd) AS costUsd,
+           sum(durMs) AS totalDurationMs,
+           sum(tokIn) AS inputTokens,
+           sum(tokOut) AS outputTokens,
+           sum(tokCacheR) AS cacheReadTokens,
+           sum(tokCacheC) AS cacheCreationTokens,
+           sum(usd) AS costUsd,
+           ${CREDITS},
            min(ts) AS firstAt,
            max(ts) AS lastAt
          FROM (
            SELECT
-             LogAttributes['session.id'] AS sid,
-             ResourceAttributes['platform.agent.id'] AS agentId,
-             ${IN("'duration_ms'")} AS durationMs,
-             ${TOK_IN} AS rowInputTokens,
-             ${IN("'output_tokens'")} AS rowOutputTokens,
-             ${TOK_CACHE_R} AS rowCacheReadTokens,
-             ${TOK_CACHE_C} AS rowCacheCreationTokens,
-             ${COST_USD} AS rowCostUsd,
-             Timestamp AS ts
-           FROM otel_logs
-           WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
+             sessionId AS sid, agentId, ts,
+             tokIn, tokOut, tokCacheR, tokCacheC, durMs, usd,
+             creditUnit, creditAmount
+           FROM calls WHERE sessionId != ''
          ) AS calls_rows
          LEFT JOIN session_root USING (sid)
          GROUP BY sessionId, agentId
@@ -259,6 +318,7 @@ export function createClickhouseReader(
         cacheReadTokens: n(x.cacheReadTokens),
         cacheCreationTokens: n(x.cacheCreationTokens),
         costUsd: n(x.costUsd),
+        credits: credits(x.credits),
         firstAt: String(x.firstAt ?? ""),
         lastAt: String(x.lastAt ?? ""),
       })) satisfies SessionRuntime[];
@@ -266,21 +326,23 @@ export function createClickhouseReader(
 
     async contextPerCall(agentIds, window, limit) {
       const r = await rows(
-        `SELECT
-           Timestamp AS at,
-           LogAttributes['request_id'] AS requestId,
-           ResourceAttributes['platform.agent.id'] AS agentId,
-           LogAttributes['model'] AS model,
-           ${TOK_IN} AS inputTokens,
-           ${TOK_CACHE_R} AS cacheReadTokens,
-           ${TOK_CACHE_C} AS cacheCreationTokens,
-           ${IN("'output_tokens'")} AS outputTokens,
-           ${TOK_IN} + ${TOK_CACHE_R} + ${TOK_CACHE_C} AS contextTokens,
-           ${COST_USD} AS costUsd,
-           ${IN("'duration_ms'")} AS durationMs
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
-         ORDER BY Timestamp DESC
+        `${callsCte(window)}
+         SELECT
+           ts AS at,
+           requestIdRaw AS requestId,
+           agentId,
+           modelName AS model,
+           tokIn AS inputTokens,
+           tokCacheR AS cacheReadTokens,
+           tokCacheC AS cacheCreationTokens,
+           tokOut AS outputTokens,
+           tokIn + tokCacheR + tokCacheC AS contextTokens,
+           usd AS costUsd,
+           creditUnit,
+           creditAmount,
+           durMs AS durationMs
+         FROM calls
+         ORDER BY ts DESC
          LIMIT {limit:UInt32}`,
         { ...windowParams(agentIds, window), limit },
       );
@@ -295,6 +357,7 @@ export function createClickhouseReader(
         outputTokens: n(x.outputTokens),
         contextTokens: n(x.contextTokens),
         costUsd: n(x.costUsd),
+        credits: one(x.creditUnit, x.creditAmount),
         durationMs: n(x.durationMs),
       })) satisfies CallContext[];
     },

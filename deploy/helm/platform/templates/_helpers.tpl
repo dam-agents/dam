@@ -443,11 +443,24 @@ API Server ServiceAccount name
 {{- printf "http://%s-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" $fullname .Release.Namespace }}
 {{- end }}
 
-{{/* Call with (dict "root" $ "templateName" <name>): the harness's default
-     OTel service name is the CLI's own ("claude-code" for every claude-code-
-     based image), which makes derived templates like nous indistinguishable
-     in the exploration UI — so name the service after the template. */}}
+{{/* Call with (dict "root" $ "templateName" <name> "rail" $tmpl.telemetry).
+     Each harness reads its own export env, so `telemetry` names the rail:
+     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's.
+     Both land on the same collector over the agent's ordinary gateway egress —
+     see docs/architecture/observability.md. */}}
 {{- define "platform.agentTelemetry.env" -}}
+{{- if eq (toString .rail) "bob" }}
+{{- include "platform.agentTelemetry.env.bob" . }}
+{{- else }}
+{{- include "platform.agentTelemetry.env.claudeCode" . }}
+{{- end }}
+{{- end }}
+
+{{/* The harness's default OTel service name is the CLI's own ("claude-code" for
+     every claude-code-based image), which makes derived templates like nous
+     indistinguishable in the exploration UI — so name the service after the
+     template. */}}
+{{- define "platform.agentTelemetry.env.claudeCode" -}}
 {{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .root) .root.Release.Namespace }}
 - name: OTEL_SERVICE_NAME
   value: {{ .templateName | quote }}
@@ -476,4 +489,29 @@ API Server ServiceAccount name
   value: "1000"
 - name: OTEL_TRACES_EXPORT_INTERVAL
   value: "1000"
+{{- end }}
+
+{{/* Bob Shell reads none of the standard OTEL_* env for its own telemetry — it
+     builds a tracer from BOB_TELEMETRY_* alone and posts OTLP/HTTP JSON to
+     {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log records.
+     Three of these are load-bearing rather than cosmetic:
+       - the LF key pair is validated even though the collector ignores it, and
+         a failed parse silently falls back to Bob's own IBM endpoint;
+       - AGENT_OPS gates the LLM Generation span, which carries every counter;
+       - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is not
+         read), so templates off this image share one name in the UI. */}}
+{{- define "platform.agentTelemetry.env.bob" -}}
+{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .root) .root.Release.Namespace }}
+- name: BOB_TELEMETRY_PROVIDER
+  value: "langfuse"
+- name: BOB_TELEMETRY_URL
+  value: {{ printf "https://%s:4318" $host | quote }}
+- name: BOB_TELEMETRY_SERVICE_PATH
+  value: "/v1/traces"
+- name: BOB_TELEMETRY_AGENT_OPS_ENABLED
+  value: "true"
+- name: BOB_TELEMETRY_LF_PUBLIC_KEY
+  value: "unused"
+- name: BOB_TELEMETRY_LF_SECRET_KEY
+  value: "unused"
 {{- end }}

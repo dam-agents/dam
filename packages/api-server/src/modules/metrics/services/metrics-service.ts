@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type {
   CallContext,
+  CreditSpend,
   SessionRuntime,
   MetricsQuery,
   MetricsService,
@@ -21,6 +22,7 @@ export interface MetricsWindow {
 export interface SessionSpend {
   sessionId: string;
   costUsd: number;
+  credits: CreditSpend[];
 }
 
 export interface MetricsReader {

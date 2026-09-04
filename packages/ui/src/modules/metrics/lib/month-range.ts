@@ -26,7 +26,7 @@ export function fillMonthDays(
   isCurrentMonth: boolean,
   rows: SpendByDay[] | undefined,
 ): SpendByDay[] {
-  const byDay = new Map((rows ?? []).map((r) => [r.day, r.costUsd]));
+  const byDay = new Map((rows ?? []).map((r) => [r.day, r]));
   const year = month.getFullYear();
   const m = month.getMonth();
   const daysInMonth = new Date(year, m + 1, 0).getDate();
@@ -34,7 +34,7 @@ export function fillMonthDays(
   const days: SpendByDay[] = [];
   for (let d = 1; d <= lastDay; d++) {
     const day = `${year}-${pad(m + 1)}-${pad(d)}`;
-    days.push({ day, costUsd: byDay.get(day) ?? 0 });
+    days.push(byDay.get(day) ?? { day, costUsd: 0, credits: [] });
   }
   return days;
 }
