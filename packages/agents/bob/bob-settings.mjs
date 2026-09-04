@@ -37,12 +37,15 @@ function normalizeMode(mode) {
 }
 
 function readExistingSettings() {
+  let raw;
   try {
-    const parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
-    return isNonNullObject(parsed) && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
+    raw = readFileSync(SETTINGS_PATH, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return {};
+    throw err;
   }
+  const parsed = JSON.parse(raw);
+  return isNonNullObject(parsed) && !Array.isArray(parsed) ? parsed : {};
 }
 
 function section(existing, key) {
@@ -50,21 +53,36 @@ function section(existing, key) {
   return isNonNullObject(value) && !Array.isArray(value) ? { ...value } : {};
 }
 
+function firstNonBlank(...values) {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 function writeSettings() {
   const existing = readExistingSettings();
   const mode = normalizeMode(process.env.BOB_CHAT_MODE);
-  const model = process.env.BOB_SHELL_MODEL?.trim();
-  const maxCost = Number(process.env.BOB_MAX_COINS ?? process.env.BOB_MAX_COST);
+  const model = firstNonBlank(process.env.BOB_SHELL_MODEL);
+  const cost = Number(
+    firstNonBlank(process.env.BOB_MAX_COINS, process.env.BOB_MAX_COST),
+  );
+  const maxCost = Number.isFinite(cost) && cost > 0 ? cost : null;
   const approval = section(existing, "approval");
   for (const key of RETIRED_APPROVAL_KEYS) delete approval[key];
+  const session = section(existing, "session");
+  for (const [key, value] of Object.entries({
+    defaultMode: mode,
+    model,
+    maxCost,
+  })) {
+    if (value === null) delete session[key];
+    else session[key] = value;
+  }
   const settings = {
     ...existing,
-    session: {
-      ...section(existing, "session"),
-      ...(mode ? { defaultMode: mode } : {}),
-      ...(model ? { model } : {}),
-      ...(Number.isFinite(maxCost) && maxCost > 0 ? { maxCost } : {}),
-    },
+    session,
     approval: { ...approval, outsideWorkspaceAllowed: true },
     bobShell: { ...section(existing, "bobShell"), autoUpdate: false },
   };
@@ -93,13 +111,14 @@ function ensureRules() {
   }
 }
 
-let failed = false;
-for (const step of [writeSettings, ensureRules]) {
+function run(step, { required }) {
   try {
     step();
   } catch (err) {
-    failed = true;
     process.stderr.write(`[bob-settings] ${step.name} failed: ${err.message}\n`);
+    if (required) process.exitCode = 1;
   }
 }
-if (failed) process.exitCode = 1;
+
+run(writeSettings, { required: true });
+run(ensureRules, { required: false });

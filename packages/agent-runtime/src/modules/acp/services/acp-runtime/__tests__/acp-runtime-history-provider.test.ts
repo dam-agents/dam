@@ -161,6 +161,35 @@ describe("acp-runtime: session-history provider", () => {
   });
 
   /**
+   * TEST_SCENARIO: Capabilities belong to the harness process that advertised
+   * them. A resume-capable harness is recycled and its replacement advertises
+   * neither capability, so the re-attach must fall back to session/load —
+   * sending a resume the new process cannot answer would wedge the session
+   * behind an unanswerable frame.
+   */
+  it("should forget the resume capability when the harness is recycled", async () => {
+    const world = createWorld({
+      historyProvider: providerOf(["m1"].map(updateLine)),
+    });
+
+    const first = world.connect();
+    first.send(frames.initialize(1));
+    world.harness().replyTo("initialize", {
+      agentCapabilities: { sessionCapabilities: { resume: {} } },
+    });
+
+    world.runtime.refreshEnv({ force: false });
+
+    const second = world.connect();
+    second.send(frames.loadSession(2, SESSION));
+    await settle();
+
+    second.send(frames.prompt(3, SESSION, "hello there"));
+    expect(world.harness().received("session/resume")).toEqual([]);
+    expect(world.harness().received("session/load")).toHaveLength(1);
+  });
+
+  /**
    * TEST_SCENARIO: A harness that advertises sessionCapabilities.resume is
    * re-attached with session/resume instead of session/load, because resume
    * restores a session without replaying it — a harness that answers a load
