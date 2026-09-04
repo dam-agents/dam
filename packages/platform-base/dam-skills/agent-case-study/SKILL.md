@@ -15,68 +15,79 @@ covers the use case the agent serves, what it delivered, what it cost, and where
 the platform got in the way. You then submit it to the platform, where only the
 owner can see it until they release it.
 
-Keep it general. An account of the use case is; an account full of this 
+Keep it general. An account of the use case is useful; an account full of this
 deployment's names is not. Anonymizing is required.
 
-Four rules override everything else:
+## Rules
 
-1. **Grounded**: Base each claim on real history. Count what a command can
-   count. Label sampled numbers as approximate. If you cannot verify a number,
-   say so.
+Five rules override everything else.
+
+1. **Grounded**: Every claim comes from real history. Count what a command can
+   count; label sampled numbers approximate.
 2. **Sanitized**: Do not identify this company, its people, its systems, or its
-   data. The document must not contain any personal or sensitive information.
-   This rule musrt be followed extremely strictly with no exceptions
-3. **Plain**: Write in ASD-STE100. Short sentences, one idea each, active
-   voice, everyday words, no filler. Explain jargon inline at first use or avoid
-   it altogether. Do not open with a glossary.
-4. **Honest**: Give facts, not adjectives. Include failures and wasted spend,
-   without spin. If some requirement cannot be met, state so directly.
+   data. No personal or sensitive information, no exceptions.
+3. **Plain**: Write in ASD-STE100: short sentences, one idea each, active
+   voice, everyday words, no filler. Explain jargon inline at first use or
+   avoid it; never open with a glossary.
+4. **Honest**: Facts, not adjectives. Include failures and wasted spend,
+   without spin. Say plainly what you cannot verify, meet, or measure.
+5. **Unattended**: Never ask a question mid-run. Thin evidence makes a thin
+   document, not a question.
 
-## Ground rules for the run
+Two mechanics, for the whole run:
 
-- This file sits in a directory that also holds `scripts/` and `references/`.
-  Resolve those paths relative to this file, wherever it lies.
-- You run unattended. Never ask a question mid-run. If evidence is thin, write
-  the honest thin version and say what is missing.
-- Do a bounded survey, not an audit. Spend only a small part of the session on
-  mining.
-- If you find no conversational history at all — no platform session index, no
-  harness session store with sessions in the window — reply that there is
-  nothing to summarize and stop. Submit nothing. A quiet week is a normal
-  outcome, not a failure: never pad an edition to fill one.
-- The platform tools this skill uses live on the `platform-outbound` MCP
-  server: `submit_case_study`, `get_usage_summary`, `list_schedules`,
-  `list_artifacts`, `create_artifact`, `update_artifact`. If a tool's schema is
-  not loaded, fetch it with ToolSearch, e.g.
+- **Paths.** This file sits beside `scripts/` and `references/`. Resolve those
+  relative to this file, wherever it lies.
+- **Tools.** `submit_case_study`, `get_usage_summary`, `list_schedules`,
+  `list_artifacts`, `create_artifact`, and `update_artifact` live on the
+  `platform-outbound` MCP server. If a schema is not loaded, fetch it with
+  ToolSearch, e.g.
   `select:mcp__platform-outbound__submit_case_study,mcp__platform-outbound__get_usage_summary`.
 
 ## Step 1: Mine your real history
 
-Window: `window_start` is 7 days ago, `window_end` is today, both `YYYY-MM-DD`.
+Set the window first: `window_start` is 7 days ago, `window_end` is today, both
+`YYYY-MM-DD`. Then work these sources in order.
 
-| Read this | For this |
-| --- | --- |
-| `$HOME/.platform/session-metadata.json` | Session count and the mix of scheduled, channel-driven, experiment, and on-demand runs. Skip tombstoned ids. All kinds share one harness store, so this index is the only reliable split. Shape and a counting command: `references/harness-stores.md`. |
-| `sh scripts/locate-history.sh`, then the matching recipe in `references/harness-stores.md` | Transcripts. Sample a spread across the window and across task types; replace a useless session rather than pad from it. Unknown store: say so in the source notes and work from the index, the workspace, and memory. |
-| `list_schedules` | Every schedule. Each one is part of the job. |
-| The workspace | CLAUDE.md, AGENTS.md, the READMEs, the tree; then notes, memory files, logs, ledgers, state files, installed skills. |
-| The systems you act on | Counts of what you produced: posts, messages, items handled. |
-| `get_usage_summary` with `days: 7` | Total cost, per-model split, session count, one or two averages. Report only what it returns; if it is unavailable write "Cost is not measured on this install". Never estimate cost another way and never count tokens out of transcripts. |
+1. **Session index.** `$HOME/.platform/session-metadata.json`, the platform's
+   metadata on every session. Count the window's sessions and their mix —
+   scheduled, channel-driven, experiment, on-demand — skipping tombstoned ids.
+   Only the index tells these kinds apart; the harness store mixes them. Shape
+   and counting command: `references/harness-stores.md`.
+2. **Session content.** The transcripts: what was asked, what you did, how it
+   landed. `sh scripts/locate-history.sh` finds this pod's store; the store's
+   recipe in `references/harness-stores.md` reads it. Skim every opening
+   request to map what you are used for. Deep-read a spread across window and
+   task types — parallel read-only subagents if available, else at most ~10
+   sessions yourself; numbers always from your own commands, never a
+   subagent's summary. Replace useless samples. Unknown store: note it, use
+   the other sources.
+3. **Schedules.** Call `list_schedules`. Each schedule is part of the job.
+4. **Workspace.** Your standing setup and accumulated state — the mission,
+   rules, and seed files the Setup recipe section reconstructs. Read CLAUDE.md,
+   AGENTS.md, the READMEs, and the tree; then notes, memory files, logs,
+   ledgers, state files, installed skills.
+5. **Outputs.** Count what you produced in the window — posts, messages, items
+   handled — by querying the systems themselves over the connections you
+   already use to act on them. Transcripts and schedules name those systems.
+6. **Cost.** Call `get_usage_summary` with `days: 7` and report only what it
+   returns: total cost, per-model split, session count, one or two averages.
+   If unavailable, write "Cost is not measured on this install". Never
+   estimate cost another way; never count tokens from transcripts.
 
-Deep transcript reads go to parallel read-only subagents if you have them, else
-read at most ~10 sessions. Every number comes from your own commands, never from
-a subagent's summary.
-
-Two things get their own section, so mine them deliberately:
+While mining, collect for the document's two dedicated sections:
 
 - **Delivered value.** Confirmed: thanks, output someone used or built on,
-  repeat requests. Inferred: an outcome that served the mission with nobody
-  reacting — judge it against your mission, and state the outcome rather than
-  claiming credit. Misses count too: output ignored, corrected, complained
-  about.
+  repeat requests. Inferred: outcomes nobody reacted to — judge them against
+  your mission and state the outcome, not a claim of credit. Misses count too:
+  output ignored, corrected, complained about.
 - **Platform friction.** Per item: the goal, what the platform put in the way,
   the workaround or none. Include what the owner wanted and could not have. The
   subject is the platform, not the model and not a hard task.
+
+If the window holds no sessions at all (no platform index, nothing in the
+harness store), reply that there is nothing to summarize and stop. Submit
+nothing. A quiet week is normal; never pad an edition to fill one.
 
 ## Step 2: Sanitize
 
@@ -104,32 +115,22 @@ paragraphs. No padding.
 
 ## Step 4: Publish and submit
 
-1. **Owner's copy.** Title: `Agent case study — week of <YYYY-MM-DD>`, the
-   Monday of this week in UTC
-   (`date -u -d "-$(( $(date -u +%u) - 1 )) days" +%F`). The platform keys the
-   edition on that same week, so a re-run reuses the title. Find it with
-   `list_artifacts` passing both `search` (the title) and `mine_only: true`:
-   `search` keeps the library out of your context, `mine_only` keeps you off the
-   identically titled copies of this owner's other agents, which
-   `update_artifact` will overwrite without complaint. Exists →
-   `update_artifact`, which versions it behind the same link. Otherwise →
-   `create_artifact`, markdown type, private. This copy is also the draft the
-   owner edits: while the edition is pending the platform reads it, so their
-   changes are what gets released. If the artifact tools fail, carry on — the
-   owner can then only release your text as written.
-2. **Edition.** `submit_case_study` with `content` (the whole document),
-   `window_start`, `window_end`, and `artifact_id` whenever step 1 produced
-   one, since that link is what makes the draft editable. It lands **pending**:
-   owner-only until they release it. A re-run in the same week replaces that
-   week's edition; latest wins.
-3. If `submit_case_study` is unavailable or fails, stop and say so plainly: the
-   draft exists, nothing left the owner's boundary.
+1. Title the document `Agent case study — week of <YYYY-MM-DD>`, the Monday of
+   this week in UTC: `date -u -d "-$(( $(date -u +%u) - 1 )) days" +%F`.
+2. Look it up with `list_artifacts`, passing both `search` (the title) and
+   `mine_only: true`. Found: `update_artifact` with the new content. Not
+   found: `create_artifact`, markdown type, private visibility. If the
+   artifact tools fail, continue.
+3. Call `submit_case_study` with `content` (the full document),
+   `window_start`, `window_end`, and the `artifact_id` from step 2 if you have
+   one.
+4. If `submit_case_study` is unavailable or fails, stop and say so plainly:
+   the draft exists, nothing left the owner's boundary.
 
-## Step 5: Report
+## Step 5: Reply
 
-The window and session count. The edition week, pending and owner-only until
-released. A markdown link to the owner's copy built from the `internal_link` the
-artifact tool returned, e.g.
-`[Agent case study — week of 2026-08-31](platform://artifacts/<id>)`, which the
-owner sees as a chip that opens the document. That editing that copy before
-releasing changes what goes out. One line naming anything not measurable.
+The final reply is all the owner sees of the run; everything else belongs in
+the document. State success or failure, link the owner's copy as
+`[<title>](<internal_link>)` — the owner sees a chip that opens it — and say
+that they can edit that copy before releasing; until released, the edition
+stays pending and visible only to them.
