@@ -479,7 +479,7 @@ describe("restricted artifacts on the share host", () => {
       const res = await app.request("/a/slug-a?v=1", withCookie(sid));
       expect(res.status).toBe(403);
       const html = await res.text();
-      expect(html).toContain("You don't have access");
+      expect(html).toContain("you don't have access");
       expect(html).not.toContain("Weekly digest");
       expect(html).toContain(
         `href="/auth/logout?next=${encodeURIComponent("/a/slug-a?v=1")}"`,
