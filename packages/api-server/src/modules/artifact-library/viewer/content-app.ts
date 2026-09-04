@@ -61,7 +61,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
         const version = parseVersion(c.req.query("v")) ?? r.artifact.version;
         const valid =
           token !== undefined &&
-          (await renderTokens.redeem(token, r.artifact, version));
+          (await renderTokens.redeem(token, r.artifact.id, version));
         return valid
           ? allowed(r.artifact)
           : denied(c.text("unauthorized", 401));

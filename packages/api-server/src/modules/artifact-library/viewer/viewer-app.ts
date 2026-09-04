@@ -132,7 +132,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     if (isRestricted(artifact)) {
       contentUrl.searchParams.set(
         "t",
-        await renderTokens.mint(artifact, version),
+        await renderTokens.mint(artifact.id, version),
       );
     }
 

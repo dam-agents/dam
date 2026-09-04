@@ -6,15 +6,10 @@ import {
   isRenderTokenShape,
   type RenderGrant,
 } from "../domain/render-grant.js";
-import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 
 export interface RenderTokenService {
-  mint(artifact: ArtifactRow, version: number): Promise<string>;
-  redeem(
-    token: string,
-    artifact: ArtifactRow,
-    version: number,
-  ): Promise<boolean>;
+  mint(artifactId: string, version: number): Promise<string>;
+  redeem(token: string, artifactId: string, version: number): Promise<boolean>;
 }
 
 export function createRenderTokenService(deps: {
@@ -22,16 +17,16 @@ export function createRenderTokenService(deps: {
 }): RenderTokenService {
   const { grants } = deps;
   return {
-    async mint(artifact, version) {
+    async mint(artifactId, version) {
       const token = crypto.randomBytes(32).toString("base64url");
-      await grants.set(token, { artifactId: artifact.id, version });
+      await grants.set(token, { artifactId, version });
       return token;
     },
 
-    async redeem(token, artifact, version) {
+    async redeem(token, artifactId, version) {
       if (!isRenderTokenShape(token)) return false;
       const grant = await grants.peek(token);
-      return grant !== null && grantCovers(grant, artifact.id, version);
+      return grant !== null && grantCovers(grant, artifactId, version);
     },
   };
 }

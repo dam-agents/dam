@@ -559,7 +559,7 @@ describe("restricted artifacts on the content host", () => {
    */
   it("serves with a valid token, threads it into the inner raw URL, and expires it", async () => {
     const app = contentAppWith(viewer);
-    const token = await renderTokens.mint(restricted, 1);
+    const token = await renderTokens.mint(restricted.id, 1);
     const res = await app.request(`/a/slug-a?v=1&t=${token}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
@@ -572,7 +572,7 @@ describe("restricted artifacts on the content host", () => {
     expect(raw.headers.get("Cache-Control")).toBe("private, no-store");
 
     expect((await app.request(`/a/slug-a?v=2&t=${token}`)).status).toBe(401);
-    const other = await renderTokens.mint(artifactRow({ id: "other" }), 1);
+    const other = await renderTokens.mint("other", 1);
     expect((await app.request(`/a/slug-a?v=1&t=${other}`)).status).toBe(401);
 
     clock += 61_000;
