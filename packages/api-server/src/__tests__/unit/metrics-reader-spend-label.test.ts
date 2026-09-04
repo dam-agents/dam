@@ -22,7 +22,7 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
     await createClickhouseReader(client).spendByAgent(["a-1"], { hours: 24 });
     expect(queries).toHaveLength(1);
     expect(queries[0]).toContain(
-      "argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName",
+      "argMaxIf(agentNameRaw, ts, invocationId = '' AND agentNameRaw != '') AS agentName",
     );
     expect(queries[0]).toContain(
       "ResourceAttributes['platform.agent.id'] AS agentId",
@@ -38,7 +38,7 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
       { hours: 24 },
     );
     expect(out).toEqual([
-      { agentId: "root-driver", agentName: "", costUsd: 1.5 },
+      { agentId: "root-driver", agentName: "", costUsd: 1.5, credits: [] },
     ]);
   });
 });
