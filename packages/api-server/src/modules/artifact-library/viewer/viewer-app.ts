@@ -1,27 +1,45 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { match } from "ts-pattern";
 
 import type { ArtifactKind } from "api-server-api";
-import type { ShareViewerService } from "../services/share-viewer-service.js";
+import type { RenderTokenService } from "../services/render-token-service.js";
+import type { ShareAuthService } from "../services/share-auth-service.js";
+import type {
+  SharedResolution,
+  ShareViewerService,
+} from "../services/share-viewer-service.js";
 import {
-  renderDownloadInner,
+  allowed,
+  denied,
+  isRestricted,
+  PRIVATE_NO_STORE,
+  type Authorized,
+} from "./authorize.js";
+import { createRawHandler, RAW_ROUTE } from "./raw-handler.js";
+import {
   renderExpired,
   renderFolderPage,
-  renderImageInner,
+  renderNoAccess,
   renderNotFound,
-  renderTextKindInner,
   renderWrapper,
 } from "./renderer.js";
-
-const RENDER_MAX_BYTES = 10 * 1024 * 1024;
+import { loginPath, readShareSession } from "./share-auth-routes.js";
+import { parseVersion } from "./version-query.js";
 
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
+  auth: Pick<ShareAuthService, "getSession">;
+  renderTokens: Pick<RenderTokenService, "mint">;
   brandName: string;
   uiBaseUrl: string;
+  contentBaseUrl: string;
 }
 
+type Surface = "page" | "raw";
+
 export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
-  const { viewer } = deps;
+  const { viewer, auth, renderTokens } = deps;
+  const contentBase = deps.contentBaseUrl.replace(/\/+$/, "");
   const app = new Hono();
 
   app.use("*", async (c, next) => {
@@ -36,61 +54,94 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     );
   });
 
-  function parseVersion(raw: string | undefined): number | undefined {
-    if (!raw) return undefined;
-    const v = Number.parseInt(raw, 10);
-    return Number.isInteger(v) && v >= 1 ? v : undefined;
+  function currentPath(c: Context): string {
+    const url = new URL(c.req.url);
+    return `${url.pathname}${url.search}`;
   }
+
+  function authorize(surface: Surface) {
+    return async (
+      c: Context,
+      resolution: SharedResolution,
+    ): Promise<Authorized> =>
+      match(resolution)
+        .with({ state: "not-found" }, () =>
+          denied(
+            surface === "page"
+              ? c.html(renderNotFound(), 404)
+              : c.text("not found", 404),
+          ),
+        )
+        .with({ state: "expired" }, (r) =>
+          denied(
+            surface === "page"
+              ? c.html(renderExpired({ withinGrace: r.withinGrace }), 410)
+              : c.text("not found", 410),
+          ),
+        )
+        .with({ state: "ok" }, (r) => allowed(r.artifact))
+        .with({ state: "restricted" }, async (r) => {
+          c.header("Cache-Control", PRIVATE_NO_STORE);
+          const session = await readShareSession(c, auth);
+          if (!session) {
+            return denied(
+              surface === "page"
+                ? c.redirect(loginPath(currentPath(c)), 302)
+                : c.text("unauthorized", 401),
+            );
+          }
+          if ((await viewer.canView(r.artifact, session)) === "deny") {
+            return denied(
+              surface === "page"
+                ? c.html(
+                    renderNoAccess({
+                      email: session.email,
+                      brandName: deps.brandName,
+                      next: currentPath(c),
+                    }),
+                    403,
+                  )
+                : c.text("forbidden", 403),
+            );
+          }
+          return allowed(r.artifact);
+        })
+        .exhaustive();
+  }
+
+  const authorizePage = authorize("page");
 
   app.get("/a/:slug", async (c) => {
     const slug = c.req.param("slug");
-    const resolution = await viewer.resolveArtifact(slug);
-    if (resolution.state === "not-found") return c.html(renderNotFound(), 404);
-    if (resolution.state === "expired")
-      return c.html(
-        renderExpired({ withinGrace: resolution.withinGrace }),
-        410,
-      );
+    const authorized = await authorizePage(
+      c,
+      await viewer.resolveArtifact(slug),
+    );
+    if (!authorized.ok) return authorized.response;
 
-    const artifact = resolution.artifact;
+    const artifact = authorized.artifact;
     const versionCount = await viewer.versionCount(artifact.id);
     const requested = parseVersion(c.req.query("v"));
     const version =
       requested !== undefined && requested <= versionCount
         ? requested
         : artifact.version;
-    const versionArg = version === artifact.version ? undefined : version;
-    const meta = await viewer.meta(artifact, versionArg);
-    if (!meta) return c.html(renderNotFound(), 404);
 
-    const kind = artifact.kind as ArtifactKind;
-    const rawUrl = `/a/${slug}/raw?v=${version}`;
-    const downloadInner = () =>
-      renderDownloadInner({
-        title: artifact.title,
-        fileName: artifact.fileName,
-        sizeBytes: meta.sizeBytes,
-        rawUrl: `${rawUrl}&download=1`,
-      });
-    let inner: string;
-    if (kind !== "binary") {
-      const blob = await viewer.content(artifact, versionArg, RENDER_MAX_BYTES);
-      inner = blob
-        ? renderTextKindInner(kind, blob.content.toString("utf8"), {
-            title: artifact.title,
-            fileName: artifact.fileName,
-          })
-        : downloadInner();
-    } else if (meta.contentType.startsWith("image/"))
-      inner = renderImageInner(rawUrl, artifact.title);
-    else inner = downloadInner();
+    const contentUrl = new URL(`${contentBase}/a/${encodeURIComponent(slug)}`);
+    contentUrl.searchParams.set("v", String(version));
+    if (isRestricted(artifact)) {
+      contentUrl.searchParams.set(
+        "t",
+        await renderTokens.mint(artifact.id, version),
+      );
+    }
 
     viewer.recordView(artifact);
     return c.html(
       renderWrapper({
         title: artifact.title,
         brandName: deps.brandName,
-        innerHtml: inner,
+        contentUrl: contentUrl.href,
         slug,
         version,
         versionCount,
@@ -99,34 +150,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     );
   });
 
-  app.get("/a/:slug/raw", async (c) => {
-    const slug = c.req.param("slug");
-    const resolution = await viewer.resolveArtifact(slug);
-    if (resolution.state !== "ok")
-      return c.text("not found", resolution.state === "expired" ? 410 : 404);
-
-    const artifact = resolution.artifact;
-    const requested = parseVersion(c.req.query("v"));
-    const versionArg =
-      requested === undefined || requested === artifact.version
-        ? undefined
-        : requested;
-    const safeName = artifact.fileName.replace(/[\r\n"\\]/g, "");
-
-    const blob = await viewer.contentStream(artifact, versionArg);
-    if (!blob) return c.text("not found", 404);
-
-    const isImage = blob.contentType.startsWith("image/");
-    const forceDownload = c.req.query("download") === "1";
-    const headers = new Headers({
-      "Content-Type": isImage ? blob.contentType : "application/octet-stream",
-      "Content-Length": String(blob.sizeBytes),
-    });
-    if (!isImage || forceDownload) {
-      headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
-    }
-    return new Response(blob.stream, { headers });
-  });
+  app.get(RAW_ROUTE, createRawHandler(viewer, authorize("raw")));
 
   app.get("/f/:slug", async (c) => {
     const slug = c.req.param("slug");

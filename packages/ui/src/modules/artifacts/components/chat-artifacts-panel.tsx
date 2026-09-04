@@ -139,7 +139,7 @@ function ArtifactListRow({
       <ArtifactKindBadge kind={artifact.kind} />
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
-      {artifact.visibility === "public" && (
+      {artifact.shareUrl !== null && (
         <span
           role="img"
           aria-label="Shared"

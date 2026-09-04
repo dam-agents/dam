@@ -300,3 +300,10 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 | CLI Client | The Platform CLI's public OAuth client registered in Keycloak (`platform-cli` by default, advertised as `cliClientId` on `/api/auth/config`); device-grant only, no client secret, no redirect URIs |
 | Agent Ref | The user-supplied string that addresses an Agent from the CLI — either an Agent ID (anything starting with the Reserved ID Prefix `agent-`) or an Agent name, disambiguated syntactically |
 | Agent Resolver | The cross-module application service every Agent-targeted CLI verb consumes to convert an Agent Ref into the owner's Agent; exact case-sensitive name match; returns a typed not-found / ambiguous / transport / auth-required error |
+## Artifact Library (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Visibility | Who may open an Artifact's share link: `private` (in-app only, no link), `restricted` (the link opens only for the owner and for people on the Artifact's Viewer Allowlist, after they sign in), or `public` (anyone holding the link, no sign-in). One field, three values; "public" always means anyone |
+| Viewer Allowlist | The set of email addresses an Artifact owner names on a `restricted` Artifact. Stored as emails, not user ids, because a listed person may exist only in the connected identity provider and never have signed in to the Platform. Matched at sign-in time against the identity provider's verified email |
+| Restricted Share | An Artifact whose Visibility is `restricted`. Same share link as public; the link stays stable when Visibility changes |

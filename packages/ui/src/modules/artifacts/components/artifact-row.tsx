@@ -3,7 +3,6 @@ import {
   Checkmark,
   Link,
   OverflowMenuVertical,
-  Share,
   Time,
   View,
 } from "@carbon/icons-react";
@@ -126,14 +125,19 @@ export function ArtifactRow({
           </span>
         </span>
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      <div
+        draggable={false}
+        className="ml-auto flex shrink-0 items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {artifact.shareUrl && (
+          <CopyLinkButton
+            shareUrl={artifact.shareUrl}
+            restricted={artifact.visibility === "restricted"}
+          />
+        )}
         <ArtifactStatusBadge artifact={artifact} />
-        <div
-          draggable={false}
-          className={cn("flex gap-0.5", HOVER_ACTION)}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ShareLinkButton artifact={artifact} onShare={onShare} />
+        <div className={cn("flex gap-0.5", HOVER_ACTION)}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="More actions">
@@ -183,40 +187,31 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
   );
 }
 
-function ShareLinkButton({
-  artifact,
-  onShare,
+function CopyLinkButton({
+  shareUrl,
+  restricted,
 }: {
-  artifact: LibraryArtifact;
-  onShare: (artifact: LibraryArtifact) => void;
+  shareUrl: string;
+  restricted: boolean;
 }) {
   const { copy, copied } = useCopy();
-  const url = artifact.shareUrl;
+  const hint = restricted
+    ? "Opens only for people on the list"
+    : "Anyone with the link can open it";
   return (
     <Button
       variant="ghost"
-      size="icon-sm"
-      aria-label={
-        copied
-          ? "Share link copied"
-          : url
-            ? "Copy share link"
-            : "Sharing settings"
-      }
-      tooltip={
-        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
-      }
-      onClick={() =>
-        url ? void copy(url).then(toastCopyOutcome) : onShare(artifact)
-      }
+      size="xs"
+      tooltip={copied ? "Copied!" : hint}
+      className="gap-1.5 text-muted-foreground"
+      onClick={() => void copy(shareUrl).then(toastCopyOutcome)}
     >
       {copied ? (
-        <Checkmark size={16} className="text-success" />
-      ) : url ? (
-        <Link size={16} />
+        <Checkmark size={14} className="text-success" />
       ) : (
-        <Share size={16} />
+        <Link size={14} />
       )}
+      {copied ? "Copied" : "Copy link"}
     </Button>
   );
 }

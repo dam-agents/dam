@@ -1,6 +1,7 @@
 {{- if .Values.keycloak.enabled }}
 {{- $appName := include "platform.keycloak.fullname" . }}
 {{- $uiUrl := include "platform.url.ui" . }}
+{{- $shareUrl := include "platform.url.share" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -103,6 +104,25 @@ data:
               }
             }
           ]
+        },
+        {
+          "clientId": {{ .Values.keycloak.shareClientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            {{ printf "%s/auth/callback" $shareUrl | quote }}
+          ],
+          "webOrigins": [
+            {{ $shareUrl | quote }}
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": {{ printf "%s/auth/login*" $shareUrl | quote }}
+          }
         }
       ],
       {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole }}

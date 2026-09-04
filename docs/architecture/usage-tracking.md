@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-31
+Last verified: 2026-09-04
 
 ## Overview
 
@@ -97,7 +97,7 @@ Six properties of that stream are load-bearing for anyone reading the numbers:
 
 - **Connect events cover every authentication kind, not just OAuth.** A connection reaches its connected state either at creation or — for OAuth alone — when its authorization callback lands, so the event fires at whichever of those two points completes it. Emitting at both would double-count OAuth; emitting only at the callback (as it once did) left every non-OAuth connection invisible and could make disconnects outnumber connects.
 - **A connection event names its provider, not just its grant.** A Connection's identifier is per-grant and its record is destroyed on disconnect, so the provider must ride the event or the answer to *which providers do people connect* dies with the Connection.
-- **Some interactions leave no state behind, and those are the ones the event is load-bearing for.** A skill installed from a source is recoverable from the agent's own record; a Local Skill deliberately writes none, so the event is the only trace a user ever authored one. A share-link view is anonymous by construction and the artifact carries only a lifetime counter, so the event is what places those views in time. Where an event is the *sole* record, losing it loses the fact — which is the argument for recording an interaction even when its state is uninteresting.
+- **Some interactions leave no state behind, and those are the ones the event is load-bearing for.** A skill installed from a source is recoverable from the agent's own record; a Local Skill deliberately writes none, so the event is the only trace a user ever authored one. A share-link view is recorded without a viewer — even a restricted link's signed-in viewer is not written — and the artifact carries only a lifetime counter, so the event is what places those views in time. Where an event is the *sole* record, losing it loses the fact — which is the argument for recording an interaction even when its state is uninteresting.
 
 Two sagas subscribe to the bus:
 

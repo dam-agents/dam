@@ -34,6 +34,7 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
+  libraryArtifactViewers,
   invocations,
   kbShares,
 } from "./schema.js";

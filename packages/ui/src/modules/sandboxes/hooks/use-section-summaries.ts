@@ -147,9 +147,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   const artifactsSummary = useMemo(() => {
     if (!agent || !agentArtifacts) return undefined;
     if (agentArtifacts.length === 0) return "No artifacts";
-    const shared = agentArtifacts.filter(
-      (a) => a.visibility === "public",
-    ).length;
+    const shared = agentArtifacts.filter((a) => a.shareUrl !== null).length;
     const base = `${agentArtifacts.length} artifact${agentArtifacts.length === 1 ? "" : "s"}`;
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);

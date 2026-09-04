@@ -8,5 +8,16 @@ export type { ArtifactLibraryServiceImpl } from "./services/artifact-library-ser
 export type { ShareViewerService } from "./services/share-viewer-service.js";
 export type { ArtifactExpirySweeper } from "./services/expiry-sweeper.js";
 export { createShareViewerApp } from "./viewer/viewer-app.js";
-export { createShareHostGate } from "./viewer/share-host-gate.js";
+export { createContentApp } from "./viewer/content-app.js";
+export { createByLinkHostGate } from "./viewer/by-link-host-gate.js";
 export { createArtifactLibraryRoutes } from "./library-routes.js";
+export { composeShareAuth, composeShareRenderTokens } from "./compose.js";
+export type { RenderTokenService } from "./services/render-token-service.js";
+export type { ComposeShareAuthOpts } from "./compose.js";
+export type { ShareAuthService } from "./services/share-auth-service.js";
+export type { ShareSession } from "./domain/share-session.js";
+export {
+  createShareAuthRoutes,
+  readShareSession,
+  loginPath,
+} from "./viewer/share-auth-routes.js";

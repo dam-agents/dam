@@ -52,7 +52,7 @@ function chromePage(title: string, body: string): string {
 export interface WrapperInput {
   title: string;
   brandName: string;
-  innerHtml: string;
+  contentUrl: string;
   slug: string;
   version: number;
   versionCount: number;
@@ -100,7 +100,7 @@ export function renderWrapper(input: WrapperInput): string {
   ${versionNav}
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="${escapeHtml(input.innerHtml)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
 </body>
 </html>`;
 }
@@ -405,5 +405,41 @@ export function renderFolderPage(input: {
       <p class="sub">${input.artifacts.length} shared artifact${input.artifacts.length === 1 ? "" : "s"} · via ${escapeHtml(input.brandName)}</p>
       ${rows}
     </div>`,
+  );
+}
+
+export function renderSignInFailed(input: {
+  brandName: string;
+  retryUrl: string;
+}): string {
+  return chromePage(
+    "Sign-in didn't work",
+    `<div class="center-card"><div class="card">
+      <h1>Sign-in didn't work</h1>
+      <p>The sign-in link expired or was already used. Try again to open the shared page via ${escapeHtml(input.brandName)}.</p>
+      <a class="btn" href="${escapeHtml(input.retryUrl)}">Try again</a>
+    </div></div>`,
+  );
+}
+
+export function renderNoAccess(input: {
+  email: string | null;
+  brandName: string;
+  next: string;
+}): string {
+  const detail =
+    input.email === null
+      ? "Your account has no email address on record, so it cannot be on a viewer list."
+      : `You are signed in as <strong>${escapeHtml(input.email)}</strong>. Ask the person who sent you this link to add you, or sign in with another account.`;
+  return chromePage(
+    `You don't have access · ${input.brandName}`,
+    `<div class="center-card"><div class="card">
+      <h1>Well ${escapeHtml(input.brandName)}, you don't have access.</h1>
+      <p>${detail}</p>
+      <form method="post" action="/auth/logout">
+        <input type="hidden" name="next" value="${escapeHtml(input.next)}">
+        <button type="submit">Switch account</button>
+      </form>
+    </div></div>`,
   );
 }

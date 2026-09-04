@@ -1,21 +1,20 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
+import { Controller } from "react-hook-form";
 
+import { getBrand } from "@/brand";
 import {
   DialogActions,
   DialogBody,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { useCopy } from "@/hooks/use-copy";
-import { emitToast } from "@/lib/toast";
 
-import { useSetArtifactSharing } from "../api/mutations.js";
-import { toastCopyOutcome } from "../lib/share-link.js";
+import { useShareForm } from "../hooks/use-share-form.js";
+import { PUBLIC_SHARE_TITLE, publicShareMessage } from "../lib/public-share.js";
+import { ShareLinkRow } from "./share-link-row.js";
+import { ShareVisibilityChoice } from "./share-visibility-choice.js";
+import { ViewerListEditor } from "./viewer-list-editor.js";
 
 interface Props {
   artifact: LibraryArtifact;
@@ -23,96 +22,91 @@ interface Props {
 }
 
 export function ShareDialog({ artifact, onClose }: Props) {
-  const [committed, setCommitted] = useState({
-    isPublic: artifact.visibility === "public",
-    shareUrl: artifact.shareUrl,
-  });
-  const [isPublic, setIsPublic] = useState(committed.isPublic);
-  const { copy, copied } = useCopy();
-  const sharing = useSetArtifactSharing();
-  const shareUrl = committed.shareUrl;
-  const unsaved = isPublic !== committed.isPublic;
+  const { form, shareUrl, needsPublicConfirm, submit, isPending } =
+    useShareForm(artifact, onClose);
+  const [confirmingPublic, setConfirmingPublic] = useState(false);
+  const visibility = form.watch("visibility");
+  const hasLink = visibility !== "private" && shareUrl !== null;
 
-  const save = () => {
-    sharing.mutate(
-      { id: artifact.id, visibility: isPublic ? "public" : "private" },
-      {
-        onSuccess: ({ visibility, shareUrl: savedUrl }) => {
-          const nowPublic = visibility === "public";
-          setCommitted({ isPublic: nowPublic, shareUrl: savedUrl });
-          emitToast({
-            kind: "success",
-            message: nowPublic
-              ? "Sharing updated — the public link is live."
-              : "Sharing updated — the artifact is now private.",
-          });
-          if (!nowPublic) onClose();
-        },
-      },
-    );
+  const onSave = () => {
+    if (needsPublicConfirm) setConfirmingPublic(true);
+    else void submit();
   };
+
+  const viewerEditor = (
+    <Controller
+      control={form.control}
+      name="viewers"
+      render={({ field }) => (
+        <ViewerListEditor
+          viewers={field.value}
+          onChange={field.onChange}
+          disabled={isPending}
+        />
+      )}
+    />
+  );
 
   return (
     <Modal>
-      <DialogHeader
-        title={`Share “${artifact.title}”`}
-        onClose={onClose}
-        closeDisabled={sharing.isPending}
-      />
-      <DialogBody>
-        <div className="flex flex-col gap-5">
-          <label className="flex items-center justify-between gap-3">
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Public link
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                Anyone with the link can view — no platform account needed.
-              </span>
-            </span>
-            <Switch
-              checked={isPublic}
-              onCheckedChange={setIsPublic}
-              disabled={sharing.isPending}
-            />
-          </label>
-
-          {isPublic && shareUrl && (
-            <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={shareUrl}
-                size="sm"
-                variant="monospace"
-                onFocus={(e) => e.currentTarget.select()}
-              />
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Copy link"
-                tooltip="Copy link"
-                onClick={() => void copy(shareUrl).then(toastCopyOutcome)}
-              >
-                {copied ? (
-                  <Checkmark size={14} className="text-success" />
-                ) : (
-                  <Copy size={14} />
+      {confirmingPublic ? (
+        <>
+          <DialogHeader
+            title={PUBLIC_SHARE_TITLE}
+            onClose={onClose}
+            closeDisabled={isPending}
+            divided={false}
+          />
+          <DialogBody className="pt-0">
+            <p className="text-sm text-muted-foreground">
+              {publicShareMessage(getBrand().vendor)}
+            </p>
+          </DialogBody>
+          <DialogActions
+            onCancel={() => setConfirmingPublic(false)}
+            label="Share publicly"
+            pendingLabel="Sharing…"
+            pending={isPending}
+            cancelDisabled={isPending}
+            onSubmit={() => void submit({ closeOnSuccess: true })}
+          />
+        </>
+      ) : (
+        <>
+          <DialogHeader
+            title={`Share “${artifact.title}”`}
+            onClose={onClose}
+            closeDisabled={isPending}
+          />
+          <DialogBody>
+            <div className="flex flex-col gap-4">
+              <Controller
+                control={form.control}
+                name="visibility"
+                render={({ field }) => (
+                  <ShareVisibilityChoice
+                    value={field.value}
+                    onChange={field.onChange}
+                    disabled={isPending}
+                    restrictedPanel={viewerEditor}
+                  />
                 )}
-              </Button>
+              />
+              {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
             </div>
-          )}
-        </div>
-      </DialogBody>
-      <DialogActions
-        onCancel={onClose}
-        cancelLabel="Close"
-        label="Save"
-        pendingLabel="Saving…"
-        pending={sharing.isPending}
-        cancelDisabled={sharing.isPending}
-        disabled={!unsaved}
-        onSubmit={save}
-      />
+          </DialogBody>
+          <DialogActions
+            onCancel={onClose}
+            cancelLabel="Close"
+            label="Save"
+            pendingLabel="Saving…"
+            pending={isPending}
+            cancelDisabled={isPending}
+            disabled={!form.formState.isDirty}
+            onSubmit={onSave}
+          />
+        </>
+      )}
     </Modal>
   );
 }

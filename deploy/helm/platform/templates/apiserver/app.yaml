@@ -227,6 +227,8 @@ spec:
                   key: API_KEY_HMAC_KEY
             - name: SHARE_BASE_URL
               value: {{ include "platform.url.share" . | quote }}
+            - name: CONTENT_BASE_URL
+              value: {{ include "platform.url.content" . | quote }}
             - name: KB_SHARE_PER_FILE_MAX_BYTES
               value: {{ .Values.apiServer.kbShares.perFileMaxBytes | quote }}
             - name: KB_SHARE_TOTAL_MAX_BYTES
@@ -248,6 +250,8 @@ spec:
               value: {{ .Values.keycloak.clientId | quote }}
             - name: KEYCLOAK_CLI_CLIENT_ID
               value: {{ .Values.keycloak.cliClientId | quote }}
+            - name: KEYCLOAK_SHARE_CLIENT_ID
+              value: {{ .Values.keycloak.shareClientId | quote }}
             - name: KEYCLOAK_API_AUDIENCE
               value: {{ .Values.keycloak.apiAudience | quote }}
             - name: KEYCLOAK_API_CLIENT_ID

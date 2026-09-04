@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-02
+Last verified: 2026-09-04
 
 ## Overview
 
@@ -40,18 +40,35 @@ artifact's current name.
 The design is a port of a proven external tool (the "slop" artifact vault)
 onto platform rails: content bytes live in the S3-compatible object store
 ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing
-surface is the per-agent platform MCP server, and public serving happens on a
-dedicated **share host**.
+surface is the per-agent platform MCP server, and by-link serving happens on
+two dedicated hosts — a **share host** for the pages and a **content host** for
+the framed artifact itself.
 
 ## Sharing model
 
-- An artifact is **private** by default: visible in-app only.
-- Making it **public** activates its share link — a URL on the share host
-  keyed by an unguessable random **slug**. The slug is the *entire* access
-  control: there is no account, token, or password on the public side —
-  whoever holds the link may view, and guarding the link is the sharer's
-  responsibility (deliberately: a second factor sent alongside a leaked link
-  leaks with it).
+**Visibility** is one field with three values, and the share link — a URL on
+the share host keyed by an unguessable random **slug** — is the same for the
+two that have one, so switching between them never changes the link.
+
+- An artifact is **private** by default: visible in-app only, no link.
+- **Restricted** opens the link to a named group. The owner keeps a **viewer
+  allowlist** of email addresses — emails, not user ids, because a listed
+  person may exist only in the identity provider and never have signed in to
+  the platform. A visitor is asked to sign in with the platform's identity
+  provider; the artifact renders when the verified email from that sign-in
+  matches a listed one (normalised once, at the boundary: trimmed and
+  lowercased), or when the visitor is the owner. Anyone else lands on a plain
+  no-access page naming the email they signed in with and offering to switch
+  account; it shows neither the title nor the owner. Here the slug only
+  *locates* the artifact — the share session authorizes. Only a person sets
+  restricted, in the Share dialog: agent tools offer private and public, and
+  refuse any sharing change on an artifact that is already restricted, so an
+  agent can neither widen a restricted link nor edit who is on it.
+- **Public** opens the link to anyone. For a public artifact the slug is the
+  *entire* access control: there is no account, token, or password on the
+  public side — whoever holds the link may view, and guarding the link is the
+  sharer's responsibility (deliberately: a second factor sent alongside a
+  leaked link leaks with it).
 - An optional **retention** date bounds the *artifact's* lifetime — it schedules
   permanent deletion, not link expiry, and applies regardless of visibility (a
   private artifact is deleted the same way; storage lifecycle is a separate
@@ -59,32 +76,79 @@ dedicated **share host**.
   (with a distinct "scheduled for deletion" page during a grace window in which
   the owner can still restore it by choosing a new date); once the grace window
   passes, a background sweep hard-deletes the content.
-- A folder has a public page of its own, listing only the *shared* artifacts
-  inside it; a folder with nothing shared is indistinguishable from a
-  nonexistent one.
-- Each successful public render increments a per-artifact **view count**,
+- A folder has a public page of its own, listing only the *public* artifacts
+  inside it — restricted ones never appear there, since the page itself has no
+  viewer; a folder with nothing public is indistinguishable from a nonexistent
+  one.
+- Each successful share-page render increments a per-artifact **view count**,
   surfaced in-app as a cheap reach signal.
+
+A sharing change — visibility, retention date, and the viewer allowlist — is
+one transaction: the artifact row is locked, every part of the new sharing
+state lands together or not at all, and the share event is judged against the
+state the change replaced, so no failure can leave a restricted link with a
+stale allowlist or fire a share for a transition that never committed.
 
 ## The share host — trust boundary
 
-User-generated content is never served from the app origin. A dedicated
-**share host** (a separate subdomain, mandatory, wired through the cluster
-ingress and configured via Helm) serves *only* the by-link surfaces — shared
-artifacts, folder pages, and the read-only knowledge-base MCP endpoint —
-never an app route. The api-server host-gates every request before any app route or auth
-middleware: requests for the share host are dispatched to a self-contained
-share-host app — the public artifact viewer plus the read-only
-[knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` —
-and everything else falls through to the platform surface.
-The two origins therefore never share cookies or tokens — a malicious
-artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies,
-because none of them exist on its origin.
+User-generated content is never served from the app origin. Two dedicated
+by-link hosts (separate subdomains, both mandatory, wired through the cluster
+ingress and configured via Helm) carry it:
 
-Within a share page, the artifact renders inside a sandboxed iframe: the
-outer page is platform chrome (title banner, version navigation, source
-download) and the inner document is the user content. Rendering is entirely
-client-side — the server never compiles or sanitizes user content, it only
-wraps it:
+- The **share host** serves *only* the by-link surfaces — share pages and
+  their source download, folder pages, the share sign-in routes, and the
+  read-only knowledge-base MCP endpoint — never an app route.
+- The **content host** serves *only* the framed artifact document and its raw
+  bytes. It has no cookie, no sign-in, and no page of its own, so there is
+  nothing on that origin for artifact code to act as.
+
+The api-server host-gates every request before any app route or auth
+middleware: requests for the share host go to a self-contained share-host app
+— the artifact viewer, share sign-in, plus the read-only
+[knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` —
+requests for the content host go to the content app, and everything else
+falls through to the platform surface. The app origin shares nothing with
+either by-link origin — no cookie, no token — so a malicious artifact cannot
+reach Keycloak tokens, the tRPC surface, or app cookies, because none of them
+exist on its origin.
+
+**Share session.** A restricted artifact needs a viewer identity on the share
+host, and that identity is deliberately not the app's. The share host signs
+the visitor in through a second, dedicated public Keycloak client
+(authorization code with PKCE, asking only for the email scope, see
+[identity](security-and-credentials.md#identity)). Its redirect is pinned to
+the share host's callback and its tokens carry no api audience, so a token
+minted for it is useless against the api-server. The code is redeemed
+server-side and no token ever reaches the browser: the browser holds an opaque
+session id in an `HttpOnly` cookie scoped to the share origin, pointing at a
+Redis-held session that carries the subject, the email and whether the
+provider verified it, and a fixed lifetime. Signing out ends both that session
+and the identity provider's, so "switch account" on the no-access page really
+switches. Every restricted response is marked private and uncacheable so no
+shared cache replays it to the next visitor.
+
+**The artifact frame.** A share page is two documents from two origins. The
+outer page, on the share host, is platform chrome (title banner, version
+navigation, source download); the inner document is the user content, loaded
+from the content host in an iframe. The browser's same-origin rule is the
+boundary: artifact code runs as the content origin, so it can neither read the
+share session cookie nor call the share host as the signed-in viewer. The
+sandbox attribute stays as a second layer but is no longer what holds the
+line. The content host agrees to be framed only by the share origin, and
+serves raw bytes under a sandbox directive so a document opened directly
+cannot run either.
+
+The content host cannot see the share session, so a restricted frame carries
+a **render token**: minted by the share page for exactly one artifact and
+version after the viewer passed, valid for one minute, redeemed by the
+content host on the document and on its raw bytes. It is a short-lived,
+single-purpose grant — not a session and not an identity; after its minute a
+pasted frame address answers unauthorized. A public frame needs no token, and
+the source download on the share host never does: it is gated by the share
+session like the page itself.
+
+Rendering is entirely client-side — the server never compiles or sanitizes
+user content, it only wraps it:
 
 - **HTML** renders as authored (links retargeted to open new tabs).
 - **JSX** is transformed in the visitor's browser (babel-standalone) with
@@ -94,13 +158,13 @@ wraps it:
   render as highlighted source.
 - **Images** preview inline; other binaries get a download page. Raw bytes
   are served inline only for images — everything else is download-only, so
-  no user-controlled document can execute on the share origin *outside* the
-  sandbox.
+  no user-controlled document can execute on either by-link origin *outside*
+  the frame.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned
-to self) but deliberately no restrictive content CSP: a `srcdoc` iframe
-inherits the parent CSP, and the sandbox attribute plus the dedicated origin
-are the actual isolation.
+to the share origin) but deliberately no restrictive content CSP: the
+dedicated content origin plus the sandbox attribute are the actual
+isolation.
 
 Blob bytes relay through the api-server with constant memory: raw views
 stream store → response without ever buffering the object (the store is
@@ -128,7 +192,8 @@ flowchart LR
   api-server -->|metadata| postgres[(postgres)]
   api-server <-->|blobs + presigned links| store[(object store)]
   harness -->|direct PUT/GET via gateway| store
-  visitor[external visitor] -->|share host| api-server
+  visitor[external visitor] -->|share + content host| api-server
+  visitor -->|restricted: sign in| keycloak[keycloak]
 ```
 
 - **Agents** publish through artifact tools on the per-agent platform MCP
@@ -209,8 +274,9 @@ moment can produce both:
   and raises a delete like any other.
 - **Usage.** Publish, share, view, and delete are recorded as
   [Activity Events](usage-tracking.md). Share is raised only on the transition
-  *into* public, so neither extending retention nor revoking a link counts as
-  sharing. A view is what places an opening in time — the artifact's own
+  *out of* private — into public or restricted alike — so neither extending
+  retention, moving between the two shared states, nor revoking a link counts
+  as sharing. A view is what places an opening in time — the artifact's own
   counter is a lifetime total that cannot say when, or whether the link was
   opened at all after some date.
 
@@ -230,7 +296,7 @@ counting them would report the platform's own writes as user activity.
 ## Where the code lives
 
 - Contract (types, schemas, tRPC router): [`packages/api-server-api/src/modules/artifact-library/`](../../packages/api-server-api/src/modules/artifact-library/)
-- Implementation (service, repository, viewer app, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
+- Implementation (service, repository, share and content apps, share sign-in, render tokens, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
 - Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
 - UI destination: [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
-- Share host wiring (ingress rule, env): [`deploy/helm/platform/`](../../deploy/helm/platform/)
+- Share and content host wiring (ingress rules, env, share Keycloak client): [`deploy/helm/platform/`](../../deploy/helm/platform/)

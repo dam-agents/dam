@@ -35,12 +35,14 @@ import type {
   ArtifactLibraryRepository,
   ArtifactRow,
   FolderRow,
+  SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+const AGENT_SURFACE = "mcp";
 
 export interface ArtifactAgentDownloadTicket {
   url: string;
@@ -94,9 +96,14 @@ export function folderShareUrlFor(shareBaseUrl: string, slug: string): string {
   return `${shareBaseUrl.replace(/\/+$/, "")}/f/${slug}`;
 }
 
+function hasShareLink(visibility: string): boolean {
+  return visibility === "public" || visibility === "restricted";
+}
+
 export function toLibraryArtifact(
   row: ArtifactRow,
   shareBaseUrl: string,
+  viewers: string[],
 ): LibraryArtifact {
   return {
     id: row.id,
@@ -112,8 +119,10 @@ export function toLibraryArtifact(
     visibility: row.visibility as ArtifactVisibility,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
-    shareUrl:
-      row.visibility === "public" ? shareUrlFor(shareBaseUrl, row.slug) : null,
+    shareUrl: hasShareLink(row.visibility)
+      ? shareUrlFor(shareBaseUrl, row.slug)
+      : null,
+    viewers,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -152,6 +161,27 @@ export function createArtifactLibraryService(
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "artifact not found" });
     return row;
+  }
+
+  async function withViewers(row: ArtifactRow): Promise<LibraryArtifact> {
+    return toLibraryArtifact(row, shareBaseUrl, await repo.listViewers(row.id));
+  }
+
+  function refuseAgentOnRestricted(
+    before: ArtifactRow,
+    input: ArtifactSharingInput,
+  ): void {
+    if (surface !== AGENT_SURFACE) return;
+    if (before.visibility === "restricted")
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Restricted by the owner. Change sharing in the app.",
+      });
+    if (input.visibility === "restricted" || input.viewers !== undefined)
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Restricted sharing is set by the owner in the app.",
+      });
   }
 
   async function resolveRef(
@@ -228,12 +258,15 @@ export function createArtifactLibraryService(
         search: filter?.search,
         limit: LIST_LIMIT,
       });
-      return rows.map((r) => toLibraryArtifact(r, shareBaseUrl));
+      const viewers = await repo.listViewersForMany(rows.map((r) => r.id));
+      return rows.map((r) =>
+        toLibraryArtifact(r, shareBaseUrl, viewers.get(r.id) ?? []),
+      );
     },
 
     async get(id) {
       const row = await repo.getArtifact(id, owner);
-      return row ? toLibraryArtifact(row, shareBaseUrl) : null;
+      return row ? withViewers(row) : null;
     },
 
     async getContent(id, version) {
@@ -346,7 +379,7 @@ export function createArtifactLibraryService(
           surface,
         });
       }
-      return toLibraryArtifact(row, shareBaseUrl);
+      return toLibraryArtifact(row, shareBaseUrl, []);
     },
 
     async update(id, input: ArtifactUpdateInput) {
@@ -399,7 +432,7 @@ export function createArtifactLibraryService(
           ownerSub: owner,
           ...(row.agentId ? { agentId: row.agentId } : {}),
         });
-        return toLibraryArtifact(advanced, shareBaseUrl);
+        return withViewers(advanced);
       } else {
         if (input.fileName !== undefined) patch.fileName = input.fileName;
         if (input.contentType !== undefined)
@@ -414,33 +447,35 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(updated.agentId ? { agentId: updated.agentId } : {}),
       });
-      return toLibraryArtifact(updated, shareBaseUrl);
+      return withViewers(updated);
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      const before = await requireArtifact(id);
-      const patch: Parameters<typeof repo.updateArtifact>[2] = {};
+      const current = await requireArtifact(id);
+      refuseAgentOnRestricted(current, input);
+      const patch: SharingPatch = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)
         patch.expiresAt = expiresAtFrom(input.expiresInHours);
-      const updated = await repo.updateArtifact(id, owner, patch);
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      const change = await repo.updateSharing(id, owner, patch, input.viewers);
+      if (!change) throw new TRPCError({ code: "NOT_FOUND" });
+      const { before, after, viewers } = change;
       emit({
         type: EventType.ArtifactUpdated,
         artifactId: id,
         ownerSub: owner,
-        ...(updated.agentId ? { agentId: updated.agentId } : {}),
+        ...(after.agentId ? { agentId: after.agentId } : {}),
       });
-      if (updated.visibility === "public" && before.visibility !== "public") {
+      if (before.visibility === "private" && after.visibility !== "private") {
         emit({
           type: EventType.ArtifactShared,
           actorSub: owner,
           artifactId: id,
-          visibility: updated.visibility,
+          visibility: after.visibility,
           surface,
         });
       }
-      return toLibraryArtifact(updated, shareBaseUrl);
+      return toLibraryArtifact(after, shareBaseUrl, viewers);
     },
 
     async delete(id) {
