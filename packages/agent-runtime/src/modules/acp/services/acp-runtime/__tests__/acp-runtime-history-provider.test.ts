@@ -10,11 +10,12 @@ import type { HistoryProvider } from "../../../infrastructure/history-provider.j
  * session/load runs it and fills the Session Transcript from its output — no
  * harness process is involved and the response is synthesized with
  * placeholder metadata. The harness has then never loaded the session, so the
- * first session/prompt triggers one silent harness session/load first (its
- * replay is dropped — the transcript already holds the history) and the
- * prompt is forwarded only after the harness answers, which also upgrades the
- * cached metadata to the harness's real answer. A provider failure falls back
- * to the harness load, and a provider-served session that goes idle sends no
+ * first session/prompt silently re-attaches it first — session/resume when the
+ * harness advertises that capability, session/load otherwise, with the replay
+ * dropped because the transcript already holds the history — and the prompt is
+ * forwarded only after the harness answers, which also upgrades the cached
+ * metadata to the harness's real answer. A provider failure falls back to the
+ * harness load, and a provider-served session that goes idle sends no
  * session/close, because the harness holds nothing to close.
  */
 
@@ -154,6 +155,80 @@ describe("acp-runtime: session-history provider", () => {
     const carol = world.connect();
     carol.send(frames.loadSession(1, SESSION));
     expect(replayedTexts(carol)).toEqual(["m1", "m2", "hello there"]);
+    expect(carol.reply(1)).toMatchObject({
+      result: { sessionId: SESSION, modes: { currentModeId: "auto" } },
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Capabilities belong to the harness process that advertised
+   * them. A resume-capable harness is recycled and its replacement advertises
+   * neither capability, so the re-attach must fall back to session/load —
+   * sending a resume the new process cannot answer would wedge the session
+   * behind an unanswerable frame.
+   */
+  it("should forget the resume capability when the harness is recycled", async () => {
+    const world = createWorld({
+      historyProvider: providerOf(["m1"].map(updateLine)),
+    });
+
+    const first = world.connect();
+    first.send(frames.initialize(1));
+    world.harness().replyTo("initialize", {
+      agentCapabilities: { sessionCapabilities: { resume: {} } },
+    });
+
+    world.runtime.refreshEnv({ force: false });
+
+    const second = world.connect();
+    second.send(frames.loadSession(2, SESSION));
+    await settle();
+
+    second.send(frames.prompt(3, SESSION, "hello there"));
+    expect(world.harness().received("session/resume")).toEqual([]);
+    expect(world.harness().received("session/load")).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A harness that advertises sessionCapabilities.resume is
+   * re-attached with session/resume instead of session/load, because resume
+   * restores a session without replaying it — a harness that answers a load
+   * first and streams its replay afterwards, as Bob Shell does, would
+   * otherwise duplicate the history the transcript already holds. The resume
+   * reply carries the real session metadata, so a later load reports the
+   * harness's modes rather than the synthetic placeholder, and the log keeps
+   * one copy of the provider history, the prompt and the live reply.
+   */
+  it("should re-attach with session/resume when the harness advertises it", async () => {
+    const world = createWorld({
+      historyProvider: providerOf(["m1"].map(updateLine)),
+    });
+
+    const bob = world.connect();
+    bob.send(frames.initialize(1));
+    world.harness().replyTo("initialize", {
+      agentCapabilities: { sessionCapabilities: { resume: {} } },
+    });
+    bob.send(frames.loadSession(2, SESSION));
+    await settle();
+
+    bob.send(frames.prompt(3, SESSION, "hello there"));
+    expect(world.harness().received("session/load")).toEqual([]);
+    expect(world.harness().received("session/resume")).toHaveLength(1);
+    expect(world.harness().received("session/prompt")).toEqual([]);
+
+    world.harness().replyToSession("session/resume", SESSION, {
+      sessionId: SESSION,
+      modes: { currentModeId: "auto" },
+    });
+    expect(world.harness().received("session/prompt")).toHaveLength(1);
+
+    world.harness().emit(frames.agentMessage(SESSION, "reply"));
+    await settle();
+
+    const carol = world.connect();
+    carol.send(frames.loadSession(1, SESSION));
+    expect(replayedTexts(carol)).toEqual(["m1", "hello there", "reply"]);
     expect(carol.reply(1)).toMatchObject({
       result: { sessionId: SESSION, modes: { currentModeId: "auto" } },
     });
