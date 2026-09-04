@@ -23,6 +23,20 @@ export function ShareDialog({ artifact, onClose }: Props) {
   const visibility = form.watch("visibility");
   const hasLink = visibility !== "private" && shareUrl !== null;
 
+  const viewerEditor = (
+    <Controller
+      control={form.control}
+      name="viewers"
+      render={({ field }) => (
+        <ViewerListEditor
+          viewers={field.value}
+          onChange={field.onChange}
+          disabled={isPending}
+        />
+      )}
+    />
+  );
+
   return (
     <Modal>
       <DialogHeader
@@ -40,22 +54,10 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 value={field.value}
                 onChange={field.onChange}
                 disabled={isPending}
+                restrictedPanel={viewerEditor}
               />
             )}
           />
-          {visibility === "restricted" && (
-            <Controller
-              control={form.control}
-              name="viewers"
-              render={({ field }) => (
-                <ViewerListEditor
-                  viewers={field.value}
-                  onChange={field.onChange}
-                  disabled={isPending}
-                />
-              )}
-            />
-          )}
           {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
         </div>
       </DialogBody>

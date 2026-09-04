@@ -1,4 +1,5 @@
 import type { ArtifactVisibility } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -6,6 +7,7 @@ interface Props {
   value: ArtifactVisibility;
   onChange: (value: ArtifactVisibility) => void;
   disabled: boolean;
+  restrictedPanel: ReactNode;
 }
 
 const OPTIONS: {
@@ -13,25 +15,25 @@ const OPTIONS: {
   label: string;
   description: string;
 }[] = [
-  { value: "private", label: "Private", description: "Only you, in the app." },
+  { value: "private", label: "Private", description: "Only you" },
   {
     value: "restricted",
     label: "Restricted",
-    description:
-      "Only people you name. They sign in with their company account.",
+    description: "Only invited people",
   },
-  {
-    value: "public",
-    label: "Public link",
-    description: "Anyone with the link. No account needed.",
-  },
+  { value: "public", label: "Public", description: "Anyone with the link" },
 ];
 
 function isVisibility(value: string): value is ArtifactVisibility {
   return OPTIONS.some((option) => option.value === value);
 }
 
-export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
+export function ShareVisibilityChoice({
+  value,
+  onChange,
+  disabled,
+  restrictedPanel,
+}: Props) {
   return (
     <RadioGroup
       aria-label="Who can open this artifact"
@@ -42,14 +44,18 @@ export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
       }}
     >
       {OPTIONS.map((option) => (
-        <RadioGroupItem
-          key={option.value}
-          value={option.value}
-          label={option.label}
-          description={option.description}
-          testId={`share-visibility-${option.value}`}
-          className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
-        />
+        <div key={option.value} className="flex flex-col gap-1">
+          <RadioGroupItem
+            value={option.value}
+            label={option.label}
+            description={option.description}
+            testId={`share-visibility-${option.value}`}
+            className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
+          />
+          {option.value === "restricted" && value === "restricted" && (
+            <div className="pb-1 pl-[34px] pr-2">{restrictedPanel}</div>
+          )}
+        </div>
       ))}
     </RadioGroup>
   );
