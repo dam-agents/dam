@@ -55,11 +55,11 @@ Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query
 
 Both surfaces run `--trust --accept-license`, because Bob refuses to open a session in an untrusted workspace and the platform's workspace arrives as a plain `cwd`, with no one to answer a trust prompt.
 
-**Chat asks.** Bob's ACP requests permission per tool call (allow once / always allow / reject / always reject, an "always" remembered per tool name for the session), and the harness deliberately does *not* pass `--auto-approve`, so those requests reach the client like any other agent's: read-only tools run unprompted, everything else surfaces as an approval. This is the change 2.0.2 bought — the old bridge drove a batch mode with no way to ask mid-turn, so Bob was the one agent that never asked.
+Both surfaces also auto-approve by default, and **that is a Bob limitation, not a platform preference**. Bob's ACP decides a tool call like this: a built-in skill, a `read`-permission tool, or `--auto-approve` runs; anything else asks the client. There is no middle setting. Bob does own a finer posture — permission groups, a per-tool executor allowlist, and a default allowlist of safe commands (`cat`, `ls`, `git status`, `grep`, …) — but the only code that consults it is Bob's TUI approval handler, reached through its own terminal-app singletons. The ACP path never sees it.
 
-It follows that an unattended session behaves like other agents too: a permission request with no engaged viewer expires against agent-runtime's TTL and the tool call aborts. A scheduled or channel-triggered Bob task that edits files needs someone to answer it, or the platform-wide approval posture to change — this is not Bob-specific.
+So asking means asking about *everything* except file reads: one execute tool, five edit tools, browser and MCP all prompt, and Bob is a shell assistant that reaches for `execute_command` constantly. A prompt per `ls` is worse than no prompt at all, which is why the default stands at `--auto-approve`.
 
-**Terminal auto-approves**, as it did before this change: `bob chat --auto-approve` keeps the TUI from stopping on every tool.
+`BOB_AUTO_APPROVE=0` turns per-tool prompts on for an agent that wants them (allow once / always allow / reject / always reject, an "always" remembered per tool name for the session). Two things to know before setting it: an unattended session has nobody to answer, so a request expires against agent-runtime's TTL and the tool call aborts; and one "always allow" on `execute_command` silences commands for the rest of that session anyway. Per-session granularity would have to come from Bob — approvals wired to its modes, or `session/set_config_option` registered in its ACP host.
 
 Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate ahead of any approval decision (the settings bootstrap opens it, or Bob would refuse every tool touching `$HOME` — skills, rules), `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
 
@@ -88,6 +88,7 @@ Less common toggles, not surfaced on the provider card.
 
 | Env var | Effect |
 |---|---|
+| `BOB_AUTO_APPROVE` | Set to `0` to make chat sessions ask per tool call instead of auto-approving (see [Autonomy posture](#autonomy-posture)). |
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
 
