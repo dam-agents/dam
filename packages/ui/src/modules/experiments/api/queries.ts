@@ -3,23 +3,6 @@ import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
 
-export function useExperiments() {
-  return useQuery({
-    ...trpc.experiments.list.queryOptions(),
-    refetchOnMount: "always",
-    staleTime: 0,
-    meta: { errorToast: "Couldn't load experiments" },
-  });
-}
-
-export function useExperimentsAmbient() {
-  return useQuery({
-    ...trpc.experiments.list.queryOptions(),
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
-}
-
 export function useDriverSummaries(opts?: { silent?: boolean }) {
   return useQuery({
     ...trpc.experiments.driverSummaries.queryOptions(),

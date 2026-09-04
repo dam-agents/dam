@@ -11,11 +11,7 @@ import { Select } from "@/components/ui/select";
 
 import { useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders } from "../api/queries.js";
-import {
-  folderDisplayName,
-  isExperimentFolder,
-  isUserFolder,
-} from "../lib/folders.js";
+import { folderDisplayNames } from "../lib/folders.js";
 
 const NO_FOLDER = "";
 
@@ -26,6 +22,7 @@ interface Props {
 
 export function MoveArtifactDialog({ artifact, onClose }: Props) {
   const { data: folders, isError: foldersFailed } = useArtifactFolders();
+  const folderNames = folderDisplayNames(folders ?? []);
   const [chosen, setChosen] = useState<string | null>(null);
   const update = useUpdateArtifact();
   const pending = update.isPending;
@@ -38,9 +35,6 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
     return () => document.removeEventListener("keydown", onKey);
   }, [pending, onClose]);
 
-  const all = folders ?? [];
-  const userFolders = all.filter(isUserFolder);
-  const experimentFolders = all.filter(isExperimentFolder);
   const currentFolderId = artifact.folderId ?? NO_FOLDER;
   const selected = chosen ?? currentFolderId;
 
@@ -75,27 +69,18 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
             onChange={(e) => setChosen(e.target.value)}
           >
             <option value={NO_FOLDER}>No folder</option>
-            {userFolders.map((folder) => (
+            {(folders ?? []).map((folder) => (
               <option key={folder.id} value={folder.id}>
-                {folderDisplayName(folder)}
+                {folderNames.get(folder.id) ?? folder.name}
               </option>
             ))}
-            {experimentFolders.length > 0 && (
-              <optgroup label="Experiments">
-                {experimentFolders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folderDisplayName(folder)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
           </Select>
           {foldersFailed && (
             <p className="text-xs text-danger">
               Couldn’t load your folders. Close this dialog and try again.
             </p>
           )}
-          {folders !== undefined && all.length === 0 && (
+          {folders !== undefined && folders.length === 0 && (
             <p className="text-xs text-muted-foreground">
               No folders yet — create one from the Artifacts page first.
             </p>

@@ -1,8 +1,17 @@
 # Experiments
 
-Last verified: 2026-08-28
+Last verified: 2026-09-03
 
 ## Overview
+
+The GUI currently hides this subsystem, pending a rethink of how optimization
+frameworks surface. The destination and the setup flow are removed from the
+code (git history holds them); lineage folders render as ordinary folders in
+the artifact library; no interface path creates an experiment agent. The data
+and every procedure stay live, and the chat view still renders a running
+experiment's dock and gates the onboarding greeting. Mentions of the
+destination below describe the design the hidden surfaces implemented, kept
+as the reference for their return.
 
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the
@@ -305,4 +314,4 @@ publishes either — [artifact-library](artifact-library.md) owns that rule.
 - Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
 - Authoring kit staged in the image: [`packages/agents/claude-code/dam-skills/`](../../packages/agents/claude-code/dam-skills/)
 - Shared kinded-create rail: [`packages/api-server/src/modules/agents/services/kinded-agent-create.ts`](../../packages/api-server/src/modules/agents/services/kinded-agent-create.ts)
-- UI destination: [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)
+- UI module (chat dock, store, API bindings): [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

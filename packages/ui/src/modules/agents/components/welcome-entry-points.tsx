@@ -2,7 +2,6 @@ import {
   ArrowRight,
   Book,
   type CarbonIconType,
-  Chemistry,
   Code,
 } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
@@ -16,7 +15,7 @@ import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import { useRecordEntryPoint } from "../../usage/api/mutations.js";
 
-type SetupView = "coding-agent-new" | "experiment-new" | "knowledge-base-new";
+type SetupView = "coding-agent-new" | "knowledge-base-new";
 
 interface EntryPoint {
   choice: EntryPointChoice;
@@ -34,14 +33,6 @@ const ENTRY_POINTS: EntryPoint[] = [
     title: "Create a coding agent",
     description:
       "Work with your preferred coding agent, credentials, and tools in an isolated environment.",
-  },
-  {
-    choice: "experiment",
-    setupView: "experiment-new",
-    icon: Chemistry,
-    title: "Begin an experiment",
-    description:
-      "Run one goal across many variants at once and compare results.",
   },
   {
     choice: "knowledge-base",
@@ -69,11 +60,11 @@ export function WelcomeEntryPoints() {
       </h2>
       <p className="mt-1.5 max-w-[560px] text-sm leading-relaxed text-muted-foreground">
         Run agents in isolated cloud environments with credentials and tools
-        securely injected. Create knowledge bases, run experiments to compare
-        agent variants, and trigger agents from Slack or on a schedule.
+        securely injected. Create knowledge bases, and trigger agents from Slack
+        or on a schedule.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
         {ENTRY_POINTS.map((entryPoint) => (
           <EntryPointCard
             key={entryPoint.choice}

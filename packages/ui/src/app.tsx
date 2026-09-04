@@ -11,8 +11,6 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
-import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -56,7 +54,6 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>([
   "coding-agent-new",
-  "experiment-new",
   "knowledge-base-new",
 ]);
 
@@ -126,10 +123,6 @@ function MainApp() {
                 <SettingsView />
               ) : view === "coding-agents" ? (
                 <CodingAgentsView />
-              ) : view === "experiments" ? (
-                <ExperimentsListView />
-              ) : view === "experiment-new" ? (
-                <ExperimentSetupView />
               ) : view === "knowledge-base-new" ? (
                 <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (

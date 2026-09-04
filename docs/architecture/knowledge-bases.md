@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-09-01
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -8,7 +8,7 @@ A **Knowledge Base** is an Agent that builds and maintains a body of knowledge t
 
 Two pieces make an Agent a Knowledge Base:
 
-- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. Each Kind has its own destination, and every one of them badges what it lists; a knowledge base *is* an agent, so the Knowledge Bases destination is a filtered view onto the same agents rather than an exclusive home, and what the owner pays to run is accounted for across those destinations and the compute and spend figures on Home. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent. The marker is shared machinery: [experiments](experiments.md) uses the same one, and both ride a shared kinded-create rail owned by the agents module.
+- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. A Kind surfaces where its agents list — knowledge bases on their own destination, experiment agents badged among the coding agents while their surface is hidden; a knowledge base *is* an agent, so the Knowledge Bases destination is a filtered view onto the same agents rather than an exclusive home, and what the owner pays to run is accounted for across those destinations and the compute and spend figures on Home. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent. The marker is shared machinery: [experiments](experiments.md) uses the same one, and both ride a shared kinded-create rail owned by the agents module.
 - **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). Two exist today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline); the server maps the template id to its command, and a new procedure is a new id plus a new mapping. Each template's bootstrap installs a `/wiki-onboard` command, so the greeting (below) stays template-agnostic. The platform ships the pointer, never the tooling. The picked template id rides the same create-time annotation stamp as the Kind marker and is surfaced on the Agent view (opaque to the agents module — the knowledge-bases surface owns the id set), so the KB list can display which procedure a knowledge base came from; it is absent on knowledge bases created before it was recorded.
 
 ## Create flow
