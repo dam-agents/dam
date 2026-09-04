@@ -127,7 +127,7 @@ agent with no scheduled runs). Templates:
 | `templates/CHANGELOG.md.template` | `CHANGELOG.md` | Rules header + the `1.0.0` entry. |
 | `templates/docs/self-modification.md.template` | `docs/self-modification.md` | Add the domain invariants to §10. |
 | `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
-| `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Post-onboarding structure verification; every `FAIL` carries its `fix:` (see Phase 4). |
+| `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Structure verification, scoped by mode — `--config` mid-onboarding, bare at the end, `--live` for the reachability pass; every `FAIL` carries its `fix:` (see Phase 4). |
 | `templates/preflight.sh.template` | `scripts/preflight.sh` | Only when the agent has scheduled runs (see Phase 4). |
 | `templates/toolpath.sh.template` | `scripts/lib/toolpath.sh` | Only when a script execs a shimmed CLI in a loop — the pod's `mise` shim tax (see Phase 4). |
 | `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only when git-backed state backup was chosen — tmpfs-clone persist/restore. |

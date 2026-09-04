@@ -121,7 +121,25 @@ fi
 # two drift, the verifier passes a file preflight then mis-parses. Whitespace is
 # normalized away, a missing `-e` clause is not.
 if [ -f scripts/preflight.sh ] && [ -f scripts/verify-onboarding.sh ]; then
-  cfg_body() { sed -n '/^cfg() {/,/}[[:space:]]*$/p' "$1" | tr -d ' \t'; }
+  # A sed start/end range never tests its end address on the start line, so it
+  # would run the natural one-line `cfg() { …; }` on into the next function and
+  # compare unrelated code. Read it instead, closing on the start line too.
+  cfg_body() { # <file>
+    local line stripped inblock=0 out=""
+    while IFS= read -r line; do
+      case "$line" in (cfg\(\)*) inblock=1 ;; esac
+      [ "$inblock" = 1 ] || continue
+      stripped="$(printf '%s' "$line" | sed 's/[[:space:]]*$//')"
+      # a trailing line-continuation is layout, not code — drop it, so the same
+      # reader wrapped differently in the two files still compares equal
+      case "$stripped" in
+        (*\\) out="$out${stripped%\\}" ;;
+        (*)   out="$out$stripped" ;;
+      esac
+      case "$stripped" in (*'}') break ;; esac
+    done < "$1"
+    printf '%s' "$out" | tr -d ' \t'
+  }
   pf_cfg="$(cfg_body scripts/preflight.sh)"
   vo_cfg="$(cfg_body scripts/verify-onboarding.sh)"
   if [ -z "$pf_cfg" ] || [ -z "$vo_cfg" ]; then
