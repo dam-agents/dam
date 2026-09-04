@@ -121,7 +121,7 @@ version = "0.7.0"
 backend = "go:honnef.co/go/tools/cmd/staticcheck"
 
 [[tools."go:sigs.k8s.io/controller-tools/cmd/controller-gen"]]
-version = "latest"
+version = "0.22.0"
 backend = "go:sigs.k8s.io/controller-tools/cmd/controller-gen"
 
 [[tools."go:sigs.k8s.io/crdify"]]
