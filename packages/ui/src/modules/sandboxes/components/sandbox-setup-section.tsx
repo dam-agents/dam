@@ -55,11 +55,6 @@ export function SandboxSetupSection({ f }: Props) {
         onChange={f.setSize}
         disabled={f.saving}
         currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-        restartNote={
-          f.sizeRestartsAgent
-            ? "Changing the size restarts the agent on save."
-            : "The new size applies when the agent next starts."
-        }
       />
 
       <section className="mb-8">

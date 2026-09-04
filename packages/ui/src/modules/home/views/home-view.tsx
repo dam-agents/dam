@@ -107,9 +107,6 @@ export function HomeView() {
   const visible = filterFeed(live, status, included);
   const stats = feedStats(visible);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
-  const workingAgentIds = new Set(
-    live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
-  );
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -214,10 +211,7 @@ export function HomeView() {
             </Modal>
           ))}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
-          <ComputeWidget
-            runningAgents={runningAgents}
-            workingAgentIds={workingAgentIds}
-          />
+          <ComputeWidget agents={agents} />
           <SpendWidget />
           <SchedulesWidget />
         </aside>

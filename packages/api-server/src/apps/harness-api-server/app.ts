@@ -221,6 +221,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           cpu: config.defaultUserCpuBudget,
           memory: config.defaultUserMemoryBudget,
         },
+        slotSize: {
+          cpu: config.agentDefaultCpuLimit,
+          memory: config.agentDefaultMemoryLimit,
+        },
       }).budgets,
     defaultLimits: {
       cpu: config.agentDefaultCpuLimit,

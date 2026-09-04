@@ -15,12 +15,14 @@ export function composeBudgetsModule(deps: {
   owner: string;
   listAgents(): Promise<BudgetedAgent[]>;
   defaultCeiling: { cpu: string; memory: string };
+  slotSize: { cpu: string; memory: string };
 }): { budgets: BudgetsService; resizeGate: ResizeGate } {
   const userBudgets = createUserBudgetsReader(deps.k8s);
   const serviceDeps = {
     listAgents: deps.listAgents,
     readCeilingOverride: () => userBudgets.ceiling(deps.owner),
     defaultCeiling: deps.defaultCeiling,
+    slotSize: deps.slotSize,
   };
   return {
     budgets: createBudgetsService(serviceDeps),

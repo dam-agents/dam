@@ -2,6 +2,8 @@ import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
+import { useBudgetReserved } from "../../budgets/api/queries.js";
+import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useDriverSummaries } from "../../experiments/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -27,6 +29,7 @@ export function useAgentRows() {
   const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
+  const { data: budget } = useBudgetReserved();
   const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
@@ -64,8 +67,9 @@ export function useAgentRows() {
       connectionTemplateIdById: new Map(
         (connections.data ?? []).map((c) => [c.id, c.templateId]),
       ),
+      slotUnit: budget ? slotUnitOf(budget) : undefined,
     }),
-    [templates, connections.data],
+    [templates, connections.data, budget],
   );
 
   const rowProps = (agent: AgentView) => ({
