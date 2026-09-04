@@ -162,7 +162,7 @@ export function AgentRow({
               {hasSlack && (
                 <Badge variant="muted" className="gap-1.5">
                   <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                  {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
+                  {visibleSlack.map((ch) => `#${ch.slackChannelId}`).join(", ")}
                   {slackOverflow > 0 && `, +${slackOverflow}`}
                 </Badge>
               )}

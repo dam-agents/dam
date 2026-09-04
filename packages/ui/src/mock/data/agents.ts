@@ -13,12 +13,12 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.codexResearch,
     spawnedBy: null,
-    name: "brand-asset-generator",
+    name: "frontend-eng",
     templateId: "codex",
     templateUpdate: null,
     image: "ghcr.io/openai/codex:latest",
     description:
-      "Generates brand assets, social media graphics, and marketing collateral",
+      "Builds and maintains the React UI, component library, and design system",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
@@ -40,11 +40,11 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.claudeCodeMain,
     spawnedBy: null,
-    name: "packaging-layouts",
+    name: "api-backend",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Creates packaging mockups and print-ready layout files",
+    description: "Handles API server changes, migrations, and backend services",
 
     hibernationTimeoutMin: 60,
     grantedSecretIds: ["sec-github-pat"],
@@ -57,7 +57,7 @@ export const agents: AgentView[] = [
     size: { cpu: "2000m", memory: "2Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [{ type: "slack", slackChannelId: "C01234" }],
+    channels: [{ type: "slack", slackChannelId: "eng-frontend" }],
 
     kind: undefined,
     kbTemplateId: null,
@@ -66,12 +66,12 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.geminiPipeline,
     spawnedBy: null,
-    name: "photo-retouching",
+    name: "test-runner",
     templateId: "gemini-cli",
     templateUpdate: null,
     image: "ghcr.io/google/gemini-cli:latest",
     description:
-      "Batch photo retouching, background removal, and color grading",
+      "Runs and fixes failing test suites, maintains CI pipeline health",
     env: [{ name: "PIPELINE_ENV", value: "staging" }],
     hibernationTimeoutMin: 15,
     grantedSecretIds: [],
@@ -93,11 +93,11 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.cacheTuning,
     spawnedBy: null,
-    name: "cache-tuning",
+    name: "infra-deploy",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Tunes cache eviction strategies using live traffic patterns",
+    description: "Manages Terraform, Helm charts, and deployment pipelines",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
@@ -110,7 +110,7 @@ export const agents: AgentView[] = [
     size: { cpu: "1000m", memory: "1Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [{ type: "slack", slackChannelId: "C03CACHE" }],
+    channels: [{ type: "slack", slackChannelId: "infra-alerts" }],
 
     kind: undefined,
     kbTemplateId: null,
