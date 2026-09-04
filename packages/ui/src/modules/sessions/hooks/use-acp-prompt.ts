@@ -150,7 +150,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
       const aId = crypto.randomUUID();
       const promptId = crypto.randomUUID();
-      const uId = promptId;
+      const uId = retryOf ?? promptId;
       let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
