@@ -1,11 +1,13 @@
 import { Hono, type Context, type Next } from "hono";
+import {
+  caseStudyInspectionFilterSchema,
+  toCaseStudyInspectionFilter,
+} from "api-server-api";
 import type { ApiVariables } from "../../core/http-context.js";
 import { securityLog } from "../../core/security-log.js";
 import type { CaseStudyInspectionService } from "./services/inspection-service.js";
 
 type AppEnv = { Variables: ApiVariables };
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type CaseStudiesRoutesDeps = {
   inspection: CaseStudyInspectionService;
@@ -41,25 +43,20 @@ export function createCaseStudiesRoutes(deps: CaseStudiesRoutesDeps) {
   routes.use("/api/case-studies/*", inspectorOnly);
 
   routes.get("/api/case-studies", async (c) => {
-    const sinceRaw = c.req.query("since");
-    const weekOf = c.req.query("week_of");
-    const agentId = c.req.query("agent");
-    let since: Date | undefined;
-    if (sinceRaw !== undefined) {
-      const parsed = new Date(sinceRaw);
-      if (Number.isNaN(parsed.getTime())) {
-        return c.json({ error: "since must be an ISO date-time" }, 400);
-      }
-      since = parsed;
-    }
-    if (weekOf !== undefined && !DATE_RE.test(weekOf)) {
-      return c.json({ error: "week_of must be a date, YYYY-MM-DD" }, 400);
-    }
-    const editions = await deps.inspection.list({
-      since,
-      weekOf: weekOf === undefined ? undefined : new Date(weekOf),
-      agentId,
+    const parsed = caseStudyInspectionFilterSchema.safeParse({
+      since: c.req.query("since"),
+      week_of: c.req.query("week_of"),
+      agent_id: c.req.query("agent"),
     });
+    if (!parsed.success) {
+      return c.json(
+        { error: parsed.error.issues[0]?.message ?? "bad filter" },
+        400,
+      );
+    }
+    const editions = await deps.inspection.list(
+      toCaseStudyInspectionFilter(parsed.data),
+    );
     return c.json({ editions });
   });
 

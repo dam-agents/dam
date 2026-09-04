@@ -10,7 +10,10 @@ export function carriesInspectorRole(db: Db, pseudo: SubPseudonymizer) {
         .where(eq(actorRoles.actorSub, pseudo.hashSub(sub)))
         .limit(1);
       return rows[0]?.isCore ?? false;
-    } catch {
+    } catch (err) {
+      process.stderr.write(
+        `[usage/actor-role-flags] inspector lookup failed, denying: ${err}\n`,
+      );
       return false;
     }
   };

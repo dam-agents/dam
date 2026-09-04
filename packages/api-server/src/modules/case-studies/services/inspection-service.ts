@@ -1,16 +1,14 @@
-import type { CaseStudyEdition, CaseStudyEditionSummary } from "api-server-api";
+import type {
+  CaseStudyEdition,
+  CaseStudyEditionSummary,
+  CaseStudyInspectionFilter,
+} from "api-server-api";
 import {
   editionWeekStartOf,
   toEdition,
   toSummary,
 } from "../domain/editions.js";
 import type { CaseStudiesRepository } from "../infrastructure/case-studies-repository.js";
-
-export interface CaseStudyInspectionFilter {
-  since?: Date;
-  weekOf?: Date;
-  agentId?: string;
-}
 
 export interface CaseStudyInspectionService {
   list(filter: CaseStudyInspectionFilter): Promise<CaseStudyEditionSummary[]>;

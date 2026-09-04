@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { TRPCError } from "@trpc/server";
 import {
   CASE_STUDY_CONTENT_MAX_CHARS,
+  caseStudyInspectionFilterSchema,
   caseStudySubmitInputSchema,
+  toCaseStudyInspectionFilter,
   type CaseStudyStatus,
 } from "api-server-api";
 import type { EditionRecord } from "../../modules/case-studies/domain/editions.js";
@@ -250,6 +252,30 @@ describe("case-study inspection", () => {
   });
 
   // TEST_SCENARIO: The list result is metadata for enumeration — shipping content on every row would make the processing corpus read O(fleet) and leak document bodies into places that only asked for an index.
+  /**
+   * TEST_SCENARIO: Both inspector read surfaces parse the week filter through
+   * this one schema, and the week it yields is fed straight to date arithmetic.
+   * A pattern-only check passes strings that are shaped like dates but are not
+   * dates: an impossible one crashes that arithmetic (a 500 where a 400 belongs)
+   * and an overflowing one silently resolves to the wrong week. Validating by
+   * construction is what makes a rejected filter a client error rather than a
+   * server fault or a quietly wrong answer.
+   */
+  it("refuses a week filter that is shaped like a date but is not one", () => {
+    for (const week_of of ["2026-13-45", "2026-02-30", "2026-02-29"]) {
+      expect(
+        caseStudyInspectionFilterSchema.safeParse({ week_of }).success,
+      ).toBe(false);
+    }
+    const parsed = caseStudyInspectionFilterSchema.safeParse({
+      week_of: "2026-09-01",
+    });
+    expect(parsed.success).toBe(true);
+    expect(
+      toCaseStudyInspectionFilter(parsed.data!).weekOf?.toISOString(),
+    ).toBe("2026-09-01T00:00:00.000Z");
+  });
+
   it("list carries sizes, never content", async () => {
     const repo = fakeRepo([record({ status: "released" })]);
     const svc = createCaseStudyInspection({ repo });

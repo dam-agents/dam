@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-09-03
+Last verified: 2026-09-04
 
 ## Overview
 
@@ -14,12 +14,12 @@ The subsystem is deliberately split across three concerns:
 
 ## The skill
 
-The skill directory ships in the platform-base image under the staged-skills dir (`/usr/local/share/dam-skills/agent-case-study/`), so every harness image carries it. It is deliberately **off every skill path**: no harness ambient-discovers it, so it costs no context on unrelated turns and can never self-trigger. Invocation is always an explicit reference to the absolute path — the canonical weekly schedule task (`CASE_STUDY_SCHEDULE_TASK` in the contract package, [`packages/api-server-api/src/modules/case-studies/constants.ts`](../../packages/api-server-api/src/modules/case-studies/constants.ts)) and the Claude Code `/agent-case-study` command shim both point at it. The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running pod.
+The skill directory ships in the platform-base image under the staged-skills dir ([skills](skills.md)), so every harness image carries it, and it is consumed in place rather than copied onto any agent's PVC. It is deliberately **off every skill path**: no harness ambient-discovers it, so it costs no context on unrelated turns and can never self-trigger. Invocation is always an explicit reference to that path — the canonical weekly schedule task, which the contract package owns, and the Claude Code `/agent-case-study` command shim both point at it. The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running pod.
 
 The skill's evidence sources are harness-aware:
 
 - **The platform session index** (`$HOME/.platform/session-metadata.json`, [agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven / experiment classification that transcript paths cannot provide.
-- **A per-harness locator** (`scripts/locate-history.sh`) probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and the recipes in `references/harness-stores.md` say how to read each. No env var identifies the harness in-pod; probing is the only signal.
+- **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and a companion reference alongside it says how to read each. No env var identifies the harness in-pod; probing is the only signal.
 - **Cost comes from `get_usage_summary` only** — the agent-facing MCP read over the metrics service ([metrics](metrics.md)), pinned server-side to the calling agent. When the telemetry backend is disabled the tool answers `available: false` and the skill reports cost as not measured; the skill never counts tokens out of transcripts.
 
 ## Editions and their states
@@ -41,8 +41,8 @@ Attribution is server-stamped and unforgeable: the agent id comes from the mesh-
 ## Read paths
 
 - **Owner** — owner-scoped tRPC (`caseStudies.list` / `get` / `release`), scoped by the same live-plus-registry owned-agent union the metrics reads use, so a deleted agent's editions stay visible to the owner who collected them.
-- **Platform team** — `GET /api/case-studies` (metadata; `since` / `week_of` / `agent` filters — `week_of` takes any `YYYY-MM-DD` and matches the week containing it) and `GET /api/case-studies/:id` (content), gated by the `platform-inspector` realm role exactly like `/api/usage`, mounted as a no-op router when the role is unconfigured.
-- **Agents whose owner is an inspector** — `list_case_studies` / `get_case_study` MCP tools, registered at MCP session creation only when the agent's owner carries the inspector role. The check reads `actor_roles.is_core`, which records inspector-role carriage at auth time: the surface attribution wires the "core" role to `keycloakInspectorRole`, and the actor-roles saga runs unconditionally (independent of the activity-tracking toggle) precisely so this gate works on installs that disabled activity writes. Two accepted lags: a role grant takes effect at the owner's next login, and tool registration follows at the next MCP session. This is the intended read path for the future processing system — an agent cannot reach Postgres and holds no bearer tokens, so cross-owner reads ride mesh identity plus the recorded role.
+- **Platform team** — `GET /api/case-studies` (metadata, filterable by update time, week, and agent — the week filter takes any real calendar date and matches the week containing it; both read surfaces parse the filter through one schema in the contract package, so neither can accept what the other rejects) and `GET /api/case-studies/:id` (content), gated by the `platform-inspector` realm role exactly like `/api/usage`, mounted as a no-op router when the role is unconfigured.
+- **Agents whose owner is an inspector** — `list_case_studies` / `get_case_study` MCP tools, registered at MCP session creation only when the agent's owner carries the inspector role. The check reads the recorded inspector-role flag on the actor-roles projection ([usage-tracking](usage-tracking.md)), which records inspector-role carriage at auth time; that saga runs unconditionally (independent of the activity-tracking toggle) precisely so this gate works on installs that disabled activity writes. A grant or revocation lands on the owner's next authenticated request, and tool registration follows at the next MCP session — so a revoked inspector keeps a live session's tools until it ends. This is the intended read path for the future processing system — an agent cannot reach Postgres and holds no bearer tokens, so cross-owner reads ride mesh identity plus the recorded role.
 
 Every submit, release, and inspector read is security-logged (`case_study.submitted` / `case_study.released` / `case_study.inspect`).
 

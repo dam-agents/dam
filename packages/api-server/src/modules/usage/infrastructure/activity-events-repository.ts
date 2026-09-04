@@ -32,7 +32,7 @@ export function upsertActorRole(db: Db, pseudo: SubPseudonymizer) {
       .onConflictDoUpdate({
         target: actorRoles.actorSub,
         set: { isCore, updatedAt: sql`now()` },
-        setWhere: sql`${actorRoles.updatedAt} < CURRENT_DATE`,
+        setWhere: sql`${actorRoles.updatedAt} < CURRENT_DATE or ${actorRoles.isCore} is distinct from excluded.is_core`,
       });
   };
 }

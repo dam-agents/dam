@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { caseStudySubmitInputSchema } from "api-server-api";
+import {
+  caseStudyInspectionFilterSchema,
+  caseStudySubmitInputSchema,
+  toCaseStudyInspectionFilter,
+} from "api-server-api";
 import { securityLog } from "../../core/security-log.js";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { CaseStudyInspectionService } from "./services/inspection-service.js";
@@ -11,8 +15,7 @@ export function registerCaseStudyTools(
   deps: {
     agentId: string;
     submissions: CaseStudySubmissionsService;
-    inspection: CaseStudyInspectionService;
-    ownerCarriesInspectorRole: boolean;
+    inspection: CaseStudyInspectionService | null;
     agentImage: (agentId: string) => Promise<string | null>;
   },
 ): void {
@@ -55,33 +58,18 @@ export function registerCaseStudyTools(
     },
   );
 
-  if (!deps.ownerCarriesInspectorRole) return;
+  const inspection = deps.inspection;
+  if (!inspection) return;
 
   server.tool(
     "list_case_studies",
     "Operator tool: list released case-study editions across all agents on this deployment (metadata only, no content). Available to this agent because its owner carries the platform inspector role. Pending, hidden, and deleted editions are never returned.",
-    {
-      since: z
-        .string()
-        .datetime()
-        .optional()
-        .describe("Only editions updated at or after this ISO date-time."),
-      week_of: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional()
-        .describe(
-          "Only editions of the week containing this date (YYYY-MM-DD, any day of that week).",
-        ),
-      agent_id: z.string().min(1).optional(),
-    },
-    ({ since, week_of, agent_id }) =>
+    caseStudyInspectionFilterSchema.shape,
+    (filter) =>
       run(async () => {
-        const editions = await deps.inspection.list({
-          since: since ? new Date(since) : undefined,
-          weekOf: week_of ? new Date(week_of) : undefined,
-          agentId: agent_id,
-        });
+        const editions = await inspection.list(
+          toCaseStudyInspectionFilter(filter),
+        );
         securityLog("info", "case_study.inspect", {
           category: "privileged",
           actor: deps.agentId,
@@ -100,7 +88,7 @@ export function registerCaseStudyTools(
     { id: z.string().min(1) },
     ({ id }) =>
       run(async () => {
-        const edition = await deps.inspection.get(id);
+        const edition = await inspection.get(id);
         securityLog("info", "case_study.inspect", {
           category: "privileged",
           actor: deps.agentId,
