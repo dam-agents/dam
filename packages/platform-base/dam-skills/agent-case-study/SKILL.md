@@ -63,10 +63,10 @@ Set the window first: `window_start` is 7 days ago, `window_end` is today, both
    subagent's summary. Replace useless samples. Unknown store: note it, use
    the other sources.
 3. **Schedules.** Call `list_schedules`. Each schedule is part of the job.
-4. **Workspace.** Your standing setup and accumulated state - the mission,
-   rules, and seed files the Setup recipe section reconstructs. Read CLAUDE.md,
-   AGENTS.md, the READMEs, and the tree; then notes, memory files, logs,
-   ledgers, state files, installed skills.
+4. **Workspace.** Your standing setup and accumulated state: the mission and
+   rules behind everything the document describes. Read CLAUDE.md, AGENTS.md,
+   the READMEs, and the tree; then notes, memory files, logs, ledgers, state
+   files, installed skills.
 5. **Outputs.** Count what you produced in the window - posts, messages, items
    handled - by querying the systems themselves over the connections you
    already use to act on them. Transcripts and schedules name those systems.
@@ -107,8 +107,8 @@ nothing. A quiet week is normal; never pad an edition to fill one.
 ## Step 3: Write
 
 Draft in a scratch location, never the workspace. Follow
-`references/template.md` exactly. One page; only the recipe may run onto a
-second. Tables for enumerable facts, prose for behavior. Results only, no
+`references/template.md` exactly. One page, strictly. Tables for enumerable
+facts, prose for behavior. Results only, no
 methodology. A one-line source note behind each number ("counted from the
 platform session index"). An empty section says so in one line. No em dashes in
 paragraphs. No padding.

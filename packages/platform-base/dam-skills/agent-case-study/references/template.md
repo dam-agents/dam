@@ -16,10 +16,6 @@ _Generated: <date> · Covers: <window>, <session count> sessions_
 ## Is it worth it
 
 ## Platform friction
-
-## Setup recipe
-
-## Gotchas
 ```
 
 ## At a glance
@@ -31,7 +27,7 @@ label (vertical headers, no header row). Each row expands into a section below:
 - Runs as · the mix of scheduled and on-demand work
 - Headline value · the single strongest outcome for the person or business served
 - Cost · rounded spend for the window, or "not measured on this install"
-- Needs · the connections it relies on + human minutes per week
+- Needs · the connections it relies on
 - Friction · the single worst thing the platform put in the way, or "none worth naming"
 
 ## Use case
@@ -50,17 +46,15 @@ with one sentence: what runs unattended, and what waits for a human.
 
 ## Is it worth it
 
-Give three inputs. Do not give a verdict.
+Give two inputs. Do not give a verdict.
 
-- **Value:** at most 5 outcomes for the person or business served, one line
+- **Value:** at most 5 outcomes for the person served, one line
   each. Give outcomes, not output counts: "reviewed 90 changes" is scale;
   "caught a bug before it shipped" is value. Cite reception (paraphrased
-  thanks, output acted on) as proof. Self-maintenance is never value; a
-  transferable lesson from it goes in Gotchas.
+  thanks, output acted on) as proof. Self-maintenance is never value.
 - **Scale & cost:** sessions this week, counted outputs, the window's spend and
-  model split from the platform's own numbers (mark anything approximate), one
-  or two averages, and the single biggest lever to lower spend.
-- **Human time:** what the person puts in each week.
+  model split from the platform's own numbers (mark anything approximate), and
+  one or two averages.
 
 ## Platform friction
 
@@ -69,18 +63,3 @@ do, what the platform put in the way, then the workaround, or "no workaround".
 Include things the owner wanted and could not have. Platform feature names are
 expected here; company and product names are not. If the window had no
 friction, say so in one line.
-
-## Setup recipe
-
-Numbered steps from zero that a person can follow as written: the agent to
-create (name the harness image); the seed files and the contents of each (the
-memory design lives here); the connections; the skills; the schedules (cadence
-and the shape of each task prompt); the first-session ritual; the standing
-rules that make unattended runs safe (only rules this agent really enforces).
-
-## Gotchas
-
-At most 5 lessons from real failures, most transferable first, one line each:
-what broke, then the fix, in plain English. Platform defects do not belong
-here — they go under Platform friction; Gotchas are craft the next person
-copies.
