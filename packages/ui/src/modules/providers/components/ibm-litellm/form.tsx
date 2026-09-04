@@ -3,16 +3,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
+import { IBM_LITELLM_BOB_MODEL } from "../../../../types.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const ibmLitellmCredentialSchema = z
-  .object({ value: z.string() })
+  .object({ value: z.string(), bobModel: z.string() })
   .superRefine((data, ctx) => {
     if (stripWhitespace(data.value).length === 0) {
       ctx.addIssue({
@@ -31,13 +33,13 @@ export function IbmLitellmForm({
   onCancel,
 }: {
   variant: "wizard" | "edit";
-  onSave: (input: { value: string }) => Promise<void>;
+  onSave: (input: { value: string; bobModel: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(ibmLitellmCredentialSchema),
     mode: "onChange",
-    defaultValues: { value: "" },
+    defaultValues: { value: "", bobModel: "" },
   });
   const { isSubmitting, isValid } = formState;
 
@@ -45,7 +47,10 @@ export function IbmLitellmForm({
   const submitDisabled = isSubmitting || !isValid;
 
   const onSubmit = handleSubmit(async (values) => {
-    await onSave({ value: stripWhitespace(values.value) });
+    await onSave({
+      value: stripWhitespace(values.value),
+      bobModel: values.bobModel.trim(),
+    });
   });
 
   return (
@@ -93,6 +98,23 @@ export function IbmLitellmForm({
           {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
+
+      {!isEdit && (
+        <FormField
+          label="Bob model"
+          hint={`Model Bob asks this proxy for. Empty → ${IBM_LITELLM_BOB_MODEL}.`}
+        >
+          <Input
+            type="text"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder={IBM_LITELLM_BOB_MODEL}
+            className="font-mono text-sm"
+            {...register("bobModel")}
+          />
+        </FormField>
+      )}
     </ProviderFormShell>
   );
 }
