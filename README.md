@@ -24,7 +24,6 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
-  [![Apache 2.0](https://img.shields.io/badge/Apache%202.0-License-EA7826?style=plastic&logo=apache&logoColor=white)](https://github.com/i-am-bee/beeai-framework?tab=Apache-2.0-1-ov-file#readme)
   <img alt="Kubernetes" src="https://img.shields.io/badge/runs%20on-Kubernetes-326ce5" />
 </p>
 
@@ -60,7 +59,7 @@ Every team that runs agents rebuilds the same infrastructure. DAM builds it once
 |---|---|
 | **Harnesses** | Claude Code, Codex, Pi, Bob, or any [ACP](https://agentclientprotocol.com/get-started/introduction)-compatible runtime. One protocol, so every platform feature works on every harness. |
 | **Models** | Your endpoints: AWS Bedrock, internal gateways, open-weight models. Pick per agent, mix across agents, compare. |
-| **Security** | Agents hold no secrets and no cluster access. A gateway injects credentials and is the only network exit; humans approve risky actions; production runs each agent in its own lightweight VM. |
+| **Security** | Agents hold no secrets and no cluster access. A gateway injects credentials and is the only network exit; humans approve risky actions; clusters that support it can give each agent its own VM. |
 | **Cost & budgets** | Per-user and per-agent spend visibility, budgets, and a full audit trail. |
 | **Subagents** | A running agent spawns agents on any harness and gets back typed, schema-checked results. A subagent can never carry more access than its parent. |
 | **Skills** | Your team's conventions and workflows, packaged once in git, installed by every agent, improved by pull request. |
