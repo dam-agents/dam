@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-  The open platform for running AI agents: any harness, any model, on your own Kubernetes
+  The open platform for running AI agents: any harness, any model, on Kubernetes
 </h3>
 
 <p align="center">
