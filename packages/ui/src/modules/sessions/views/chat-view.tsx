@@ -32,6 +32,10 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import {
+  readPersistedNumber,
+  writePersistedNumber,
+} from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -96,6 +100,10 @@ import {
 import { useSessionWatch } from "../hooks/use-session-watch.js";
 import { draftKey } from "../lib/draft-key.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+
+const LEFT_WIDTH_KEY = "platform-left-w";
+const FILE_PANEL_WIDTH_KEY = "platform-file-w";
+const SESSIONS_HEIGHT_KEY = "platform-sessions-h";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -170,15 +178,15 @@ export function ChatView() {
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
-  const [leftW, setLeftW] = useState(
-    () => Number(localStorage.getItem("platform-left-w")) || 220,
+  const [leftW, setLeftW] = useState(() =>
+    readPersistedNumber(LEFT_WIDTH_KEY, 220),
   );
-  const [rightW, setRightW] = useState<number | null>(
-    () => Number(localStorage.getItem("platform-file-w")) || null,
+  const [rightW, setRightW] = useState<number | null>(() =>
+    readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsH, setSessionsH] = useState(
-    () => Number(localStorage.getItem("platform-sessions-h")) || 260,
+  const [sessionsH, setSessionsH] = useState(() =>
+    readPersistedNumber(SESSIONS_HEIGHT_KEY, 260),
   );
   const [resizingSections, setResizingSections] = useState(false);
   const sectionTransition = resizingSections
@@ -576,7 +584,7 @@ export function ChatView() {
                 setResizingSections(true);
                 setSessionsH((h) => {
                   const v = Math.max(120, Math.min(600, h + d));
-                  localStorage.setItem("platform-sessions-h", String(v));
+                  writePersistedNumber(SESSIONS_HEIGHT_KEY, v);
                   return v;
                 });
               }}
@@ -603,7 +611,7 @@ export function ChatView() {
           onResize={(d) =>
             setLeftW((w) => {
               const v = Math.max(140, Math.min(400, w + d));
-              localStorage.setItem("platform-left-w", String(v));
+              writePersistedNumber(LEFT_WIDTH_KEY, v);
               return v;
             })
           }
@@ -771,7 +779,7 @@ export function ChatView() {
                     const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
                     const max = Math.min(960, window.innerWidth - 500);
                     const v = Math.max(240, Math.min(max, base + d));
-                    localStorage.setItem("platform-file-w", String(v));
+                    writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
                     return v;
                   })
                 }

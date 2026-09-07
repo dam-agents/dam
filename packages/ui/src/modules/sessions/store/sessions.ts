@@ -4,7 +4,7 @@ import type { StateCreator } from "zustand";
 import {
   readPersistedFlag,
   writePersistedFlag,
-} from "../../../lib/persisted-flag.js";
+} from "../../../lib/persisted-prefs.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";

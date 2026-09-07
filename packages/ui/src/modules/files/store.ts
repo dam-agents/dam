@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import {
   readPersistedFlag,
   writePersistedFlag,
-} from "../../lib/persisted-flag.js";
+} from "../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../store.js";
 
 export const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
