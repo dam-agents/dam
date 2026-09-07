@@ -37,6 +37,7 @@ import {
   type PlatformSessionMeta,
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
+import type { RunResultStore } from "../../infrastructure/run-result-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
 import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
@@ -68,6 +69,8 @@ const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
+
+const RUN_TEXT_BYTES_CAP = 1024 * 1024;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
@@ -102,6 +105,7 @@ export interface AcpRuntimeDeps {
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
   activeTurns: ActiveTurnStore;
+  runResults?: RunResultStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -264,6 +268,31 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const runTextBuffers = new Map<
+    string,
+    { text: string; truncated: boolean }
+  >();
+
+  function isRunSession(sessionId: string): boolean {
+    return (
+      deps.sessionMetadata?.get(sessionId)?.meta.type === SessionType.CliRun
+    );
+  }
+
+  function accumulateRunText(sessionId: string, text: string): void {
+    const buffer = runTextBuffers.get(sessionId) ?? {
+      text: "",
+      truncated: false,
+    };
+    if (buffer.truncated) return;
+    if (buffer.text.length + text.length > RUN_TEXT_BYTES_CAP) {
+      buffer.text += text.slice(0, RUN_TEXT_BYTES_CAP - buffer.text.length);
+      buffer.truncated = true;
+    } else {
+      buffer.text += text;
+    }
+    runTextBuffers.set(sessionId, buffer);
+  }
   const supersededEchoes = new Map<string, Set<string>>();
 
   function supersedeEcho(sessionId: string, id: string): void {
@@ -373,6 +402,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     engagedSessions.clear();
     transcript.clear();
+    runTextBuffers.clear();
     bootstrap.clear();
     pendingRequests.clear();
     for (const t of idleReapTimers.values()) clearTimeout(t);
@@ -532,6 +562,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     transcript.forget(sessionId);
+    runTextBuffers.delete(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
     pendingRequests.forget(sessionId);
@@ -651,18 +682,34 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
-          const { turnEnded } = promptScheduler.onPromptResponse(
+          const { turnEnded, promptId } = promptScheduler.onPromptResponse(
             sid,
             outboundId,
           );
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
+          const stopReason = extractStopReason(frame);
           transcript.append(
             sid,
             JSON.stringify(
-              buildPlatformTurnEndedNotification({ sessionId: sid }),
+              buildPlatformTurnEndedNotification({
+                sessionId: sid,
+                ...(promptId !== null && { promptId }),
+                ...(stopReason !== null && { stopReason }),
+              }),
             ),
           );
+          if (turnEnded && isRunSession(sid)) {
+            const buffer = runTextBuffers.get(sid);
+            runTextBuffers.delete(sid);
+            deps.runResults?.record(sid, {
+              promptId,
+              stopReason,
+              finalText: buffer?.text ?? "",
+              truncated: buffer?.truncated ?? false,
+              endedAt: new Date().toISOString(),
+            });
+          }
           maybeCloseIdleSession(sid);
           if (turnEnded) lease.maybeRecycle();
         }
@@ -685,6 +732,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
+        const text = extractAgentTextChunk(frame);
+        if (text !== null && isRunSession(sessionId))
+          accumulateRunText(sessionId, text);
         transcript.append(sessionId, line);
       }
     } else {
@@ -752,10 +802,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "platform/runResult" && paramsSid) {
+        const record = deps.runResults?.readFor(paramsSid) ?? null;
+        const response = promptScheduler.hasWork(paramsSid)
+          ? { status: "pending" }
+          : record === null
+            ? { status: "none" }
+            : { status: "done", result: record };
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: response }),
+        );
+        return;
+      }
+
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
         deps.activeTurns.remove(paramsSid);
+        deps.runResults?.forgetSession(paramsSid);
         supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,
@@ -1158,6 +1223,29 @@ function extractSessionCloseSupported(frame: unknown): boolean {
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session.close);
+}
+
+function extractStopReason(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return null;
+  const stopReason = result.stopReason;
+  return typeof stopReason === "string" && stopReason.length > 0
+    ? stopReason
+    : null;
+}
+
+function extractAgentTextChunk(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  if (frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const update = params.update;
+  if (!isNonNullObject(update)) return null;
+  if (update.sessionUpdate !== "agent_message_chunk") return null;
+  const content = update.content;
+  if (!isNonNullObject(content) || content.type !== "text") return null;
+  return typeof content.text === "string" ? content.text : null;
 }
 
 function extractParamsSessionId(frame: unknown): string | null {

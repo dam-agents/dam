@@ -11,6 +11,7 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
+import { createRunResultStore } from "./infrastructure/run-result-store.js";
 import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
 import {
   createActiveTurnStore,
@@ -105,6 +106,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     activeTurns,
+    runResults: createRunResultStore(opts.stateBackend),
     spawnAgent: () =>
       createChildAgentProcess({
         command: opts.command,

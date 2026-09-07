@@ -32,7 +32,7 @@ export interface PromptScheduler {
   onPromptResponse(
     sessionId: string,
     outboundId: number,
-  ): { turnEnded: boolean };
+  ): { turnEnded: boolean; promptId: string | null };
   hasTurnInFlight(sessionId: string): boolean;
   hasWork(sessionId: string): boolean;
   anyWork(): boolean;
@@ -88,7 +88,10 @@ export interface PromptSchedulerDeps {
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
 ): PromptScheduler {
-  const activeTurns = new Map<string, number>();
+  const activeTurns = new Map<
+    string,
+    { outboundId: number; promptId: string | null }
+  >();
   const queues = new Map<string, PromptSubmission[]>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
@@ -127,7 +130,10 @@ export function createPromptScheduler(
 
   function start(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
-    activeTurns.set(entry.sessionId, entry.outboundId);
+    activeTurns.set(entry.sessionId, {
+      outboundId: entry.outboundId,
+      promptId: entry.promptId,
+    });
     deps.onTurnStarted?.(entry);
     if (entry.promptId !== null) {
       sendToChannel(
@@ -193,14 +199,15 @@ export function createPromptScheduler(
     },
 
     onPromptResponse(sessionId, outboundId) {
-      if (activeTurns.get(sessionId) !== outboundId) {
-        return { turnEnded: false };
+      const active = activeTurns.get(sessionId);
+      if (active === undefined || active.outboundId !== outboundId) {
+        return { turnEnded: false, promptId: null };
       }
       activeTurns.delete(sessionId);
       deps.onTurnEnded?.(sessionId);
       if (queues.get(sessionId)?.length) maybeStartNext(sessionId);
       else queues.delete(sessionId);
-      return { turnEnded: true };
+      return { turnEnded: true, promptId: active.promptId };
     },
 
     hasTurnInFlight(sessionId) {

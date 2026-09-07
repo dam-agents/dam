@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-08-24
+Last verified: 2026-09-07
 
 ## Overview
 
@@ -64,6 +64,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`agent`** — list, get, create, interactive create, delete, restart, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
+- **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
 - **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear. Both owned by [security-and-credentials.md](security-and-credentials.md).
@@ -98,6 +99,14 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 `dam chat <agent>` connects the local terminal to a running agent's interactive TUI over a WebSocket, using the same binary terminal-frame protocol as the UI's terminal mode. It requires a TTY and puts stdin in raw mode so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
 
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself. There is no server-side session endpoint. A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session. On disconnect the CLI prints a ready-to-paste resume command. `dam session list` reads the same agent-owned session list.
+
+## Headless runs
+
+`dam run <agent>` is the CI verb: it speaks ACP to the relay like the UI does — open a Session, submit one prompt, stream the assistant's text to stdout — and exits with a code derived from the turn's stop reason, so a pipeline can branch on the outcome. The prompt comes from a flag or a file (`-` reads stdin — never implicitly, so a promptless invocation errors instead of hanging a CI job). Sessions it creates are typed `cli_run` through the same session metadata every other surface uses, which is what groups them under their own category in the UI and in `dam session list`; every prompt is stamped with a minted prompt identity and the CLI surface marker, so the runtime reports the prompt's fate and frames the turn as a direct one.
+
+The headline property is that **the caller may leave**. Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`. To make the result readable after the fact — the in-memory session log is reaped seconds after an unwatched turn ends, and harnesses differ in what they can replay — the agent-runtime records each finished `cli_run` turn's outcome (prompt identity, stop reason, accumulated assistant text) in a **run record**, a size-capped document on the pod's own disk, deleted with the Session. A runtime-answered extension method serves it back as *done*, *pending* (turn still in flight), or *none*; `dam run get` prints it, `--wait` attaches until the turn ends, and `dam run cancel` cancels only a run that is still pending. The record lives and dies with the pod's filesystem — durability beyond the pod is a deliberate non-goal for now.
+
+The same record is the disconnect story: a `dam run` that loses its socket mid-turn reconnects with backoff, re-loads the Session, and finishes from the record — matching its own turn by the prompt identity and stop reason the logged end-of-turn signal carries — printing only the text it has not already streamed; an explicit `--timeout` (the `agent create --wait` convention) bounds the total wait and exits non-zero with the session id still printed, leaving the run resumable. Permission requests are never answered — a headless auto-deny would also deny the egress approvals the platform injects as synthetic permission requests — the CLI prints that the run is waiting and on what, and the request is already mirrored into the approvals queue where the UI or `dam approval` resolves it out-of-band.
 
 ## SSH access
 
