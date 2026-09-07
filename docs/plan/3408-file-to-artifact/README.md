@@ -12,8 +12,7 @@ DAM-2.png — the same, private, "Share")
 A user looking at a file in the chat dock turns it into an artifact without leaving the panel,
 and shares it from where they land. The artifact remembers which file it came from: promoting
 the same file again publishes a new version to the same share link instead of minting a second
-artifact, and linked artifacts carry a glyph in the sidebar so the file/artifact distinction is
-visible before sharing fails.
+artifact, so the file/artifact distinction stops mattering at the moment of sharing.
 
 ## Approach
 
@@ -60,15 +59,9 @@ See [artifact-library](../../architecture/artifact-library.md). Three facts shap
 |----|-------|-------|------------|
 | 01 ✅ | The source link in the contract | `source_path` column + migration, `sourcePath` through create/update inputs and `LibraryArtifact`, optional `source_path` on the two MCP tools | — |
 | 02 | Promote from the file panel | The Create artifact / Sync to artifact button, the panel switching to the artifact view on success, and the toolbar typography unification | 01 |
-| 03 | The link glyph | The chain icon on sidebar artifact rows carrying a `sourcePath`, tooltip naming the file | 01 |
 
-```mermaid
-graph LR
-  01 --> 02
-  01 --> 03
-```
-
-02 and 03 are independent once 01 is in.
+The icon beside artifact titles in the designs is the app's existing shared-artifact
+indicator, not a new file-link glyph — no sidebar change ships with this feature.
 
 ## Conventions & glossary
 
@@ -86,7 +79,7 @@ graph LR
 
 On a cluster, in an agent's chat: open a text file the agent made in the dock. Promote it —
 the panel becomes the artifact view with Share; share it and copy the link. The sidebar's
-Artifacts section shows the new artifact with the chain glyph, tooltip naming the file. Ask
+Artifacts section shows the new artifact. Ask
 the agent to edit the file, reopen it, and the button reads "Sync to artifact"; sync, and the
 share page shows v2 of 2 under the same URL. Open a binary file and confirm the button is
 disabled with a reason. Rename the artifact, sync again, and the title survives.
