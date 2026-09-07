@@ -55,7 +55,7 @@ All paths under `packages/ui/src/modules/artifacts/` unless noted.
 | 02 | ✅ [Folder groups in the chat panel](./02-panel-folder-groups.md) | Group panel rows by folder; all user folders; collapse with per-agent persisted state; counts | — |
 | 03 | ✅ [Drag-to-folder in the panel](./03-panel-drag-to-folder.md) | Rows draggable, folder headers drop targets, drop moves the artifact | 01, 02 |
 | 04 | ✅ [Marquee title truncation](./04-marquee-titles.md) | Looping title scroll on overflow per the design spec, reduced-motion safe | 02 |
-| 05 | [Sandbox home grouped by folder](./05-sandbox-home-groups.md) | Same grouping on the agent page's Artifacts section | 02 |
+| 05 | ✅ [Sandbox home grouped by folder](./05-sandbox-home-groups.md) | Same grouping on the agent page's Artifacts section | 02 |
 
 ## Conventions & glossary
 
