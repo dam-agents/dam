@@ -27,6 +27,7 @@ import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestrati
 import { folderDisplayName } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { MarqueeTitle } from "./marquee-title.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
@@ -179,6 +180,7 @@ function ArtifactListRow({
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const startDrag = useCallback(
     (folderId: string | null) => {
       setDragging(true);
@@ -199,6 +201,8 @@ function ArtifactListRow({
     <div
       {...clickableProps(onClick)}
       {...(drag ? dragProps : {})}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       title={artifact.title}
       className={cn(
         "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
@@ -211,7 +215,11 @@ function ArtifactListRow({
         aria-hidden
         className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
       />
-      <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
+      <MarqueeTitle
+        text={artifact.title}
+        animate={active || hovered}
+        className="min-w-0 flex-1"
+      />
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
         <span
