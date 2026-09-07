@@ -4,9 +4,7 @@ import { buildConnection } from "../../modules/connections/domain/build-connecti
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
-// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy.
-// It must carry the gateway env Bob reads, a model the proxy actually serves,
-// and the path rewrite that turns Bob's /inference/v1 calls into plain /v1.
+// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads, a model the proxy actually serves, and the path rewrite that turns Bob's /inference/v1 calls into plain /v1.
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -35,9 +33,7 @@ function envOf(contributions: Contribution[], name: string) {
 }
 
 describe("ibm-litellm connection template", () => {
-  // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy,
-  // so the gateway URL, a placeholder key and a proxy-served model must all ride
-  // along — Bob's own default model name does not exist on the proxy.
+  // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy, so the gateway URL, a placeholder key and a proxy-served model must all ride along — Bob's own default model name does not exist on the proxy.
   it("contributes the Bob gateway env with a proxy-served model", async () => {
     const { contributions } = await buildIbmLitellm();
 
@@ -50,8 +46,7 @@ describe("ibm-litellm connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: the model is a config input, so a user who wants another
-  // model on the same proxy overrides the default instead of editing code.
+  // TEST_SCENARIO: the model is a config input, so a user who wants another model on the same proxy overrides the default instead of editing code.
   it("lets the connection override the default Bob model", async () => {
     const { contributions } = await buildIbmLitellm({
       bobModel: "aws/claude-sonnet-4-6",
@@ -62,8 +57,7 @@ describe("ibm-litellm connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: the rewrite reaches Envoy only through the Secret
-  // annotation, which is the contract the controller reads.
+  // TEST_SCENARIO: the rewrite reaches Envoy only through the Secret annotation, which is the contract the controller reads.
   it("publishes the inference prefix rewrite on the Secret annotation", async () => {
     const { contributions } = await buildIbmLitellm();
     const annotations = connectionSecretAnnotations(contributions);
