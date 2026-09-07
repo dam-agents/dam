@@ -262,7 +262,12 @@ func anchoredPath(p string) bool {
 	if !strings.HasPrefix(p, "/") || !strings.HasSuffix(p, "/") {
 		return false
 	}
-	return !strings.ContainsAny(p, "?#*\\ ") && !strings.Contains(p, "//") && !strings.Contains(p, "..")
+	for _, seg := range strings.Split(strings.Trim(p, "/"), "/") {
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return !strings.ContainsAny(p, "?#*%\\ ") && !strings.Contains(p, "//")
 }
 
 type hostCredential struct {

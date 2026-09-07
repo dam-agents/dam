@@ -4,7 +4,7 @@ import { buildConnection } from "../../modules/connections/domain/build-connecti
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
-// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads, a model the proxy actually serves, and the path rewrite that turns Bob's /inference/v1 calls into plain /v1.
+// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads, the path rewrite that turns Bob's /inference/v1 calls into plain /v1, and a model only when the user names one.
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -33,26 +33,25 @@ function envOf(contributions: Contribution[], name: string) {
 }
 
 describe("ibm-litellm connection template", () => {
-  // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy, so the gateway URL, a placeholder key and a proxy-served model must all ride along — Bob's own default model name does not exist on the proxy.
-  it("contributes the Bob gateway env with a proxy-served model", async () => {
+  // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy, so the gateway URL and a key placeholder must ride along — and the placeholder stays inert, since a key-shaped one has meant a different backend to some Bob versions.
+  it("contributes the Bob gateway env with an inert key placeholder", async () => {
     const { contributions } = await buildIbmLitellm();
 
     expect(envOf(contributions, "BOB_GATEWAY_URL")).toMatchObject({
       placeholder: "https://ete-litellm.ai-models.vpc.res.ibm.com",
     });
-    expect(envOf(contributions, "BOBSHELL_API_KEY")).toBeDefined();
-    expect(envOf(contributions, "BOB_SHELL_MODEL")).toMatchObject({
-      placeholder: "aws/claude-opus-4-8",
+    expect(envOf(contributions, "BOBSHELL_API_KEY")).toMatchObject({
+      placeholder: "dummy-placeholder",
     });
   });
 
-  // TEST_SCENARIO: the model is a config input, so a user who wants another model on the same proxy overrides the default instead of editing code.
-  it("lets the connection override the default Bob model", async () => {
-    const { contributions } = await buildIbmLitellm({
-      bobModel: "aws/claude-sonnet-4-6",
-    });
+  // TEST_SCENARIO: the Bob template contributes the same env name from its own model input, so this one must stay silent unless the user names a model here — otherwise granting both connections would pick a winner by creation order.
+  it("contributes a Bob model only when the connection names one", async () => {
+    const { contributions } = await buildIbmLitellm();
+    expect(envOf(contributions, "BOB_SHELL_MODEL")).toBeUndefined();
 
-    expect(envOf(contributions, "BOB_SHELL_MODEL")).toMatchObject({
+    const named = await buildIbmLitellm({ bobModel: "aws/claude-sonnet-4-6" });
+    expect(envOf(named.contributions, "BOB_SHELL_MODEL")).toMatchObject({
       placeholder: "aws/claude-sonnet-4-6",
     });
   });

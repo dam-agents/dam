@@ -53,6 +53,16 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 
 Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
 
+### Running against another gateway (IBM LiteLLM)
+
+Granting the **IBM LiteLLM ETE Proxy** connection points Bob at that proxy instead of IBM's Bob gateway: it contributes `BOB_GATEWAY_URL`, an inert `BOBSHELL_API_KEY` placeholder, and a gateway path rewrite that maps Bob's `/inference/v1` prefix onto the proxy's plain `/v1` routes. Bob itself is unchanged — its prefixes are compiled in, and the rewrite happens in the Envoy sidecar. Three things to know:
+
+- **A model has to be named on that connection.** Bob's built-in default resolves to a tier alias only its own gateway serves, so a connection with the model field left empty produces sessions that fail on an unknown model.
+- **That field is deliberately not defaulted.** The Bob Shell connection contributes the same `BOB_SHELL_MODEL` from its own pin, so if an agent is granted both connections *and* both carry a model, the one whose connection was created first wins — silently, because every consumer of the env rail keeps the first value for a name. Naming the model on only one of them avoids the question.
+- **The field is create-only.** The edit dialog replaces the credential and nothing else, so changing the model means recreating the connection — or setting `BOB_SHELL_MODEL` per agent in Configure Agent → Env, which overrides the inherited pin either way.
+
+A connection's contributions are projected when it is created, so a LiteLLM connection made before this shipped carries no gateway env and keeps Bob on its own gateway; recreating it picks the new contributions up.
+
 ### Free-form env vars (Configure Agent → Env)
 
 Less common toggles, not surfaced on the provider card.

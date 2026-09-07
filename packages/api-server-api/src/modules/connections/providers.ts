@@ -22,7 +22,9 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
   replacement: "/v1/",
 } as const;
 
-export const IBM_LITELLM_BOB_MODEL = "aws/claude-opus-4-8";
+export const IBM_LITELLM_BOB_MODEL_EXAMPLE = "aws/claude-opus-4-8";
+export const IBM_LITELLM_BOB_MODEL_LABEL = "Bob model";
+export const IBM_LITELLM_BOB_MODEL_HINT = `Model Bob asks this proxy for, e.g. ${IBM_LITELLM_BOB_MODEL_EXAMPLE}. Bob's own default names a model this proxy does not serve, so Bob needs one set here to run against it.`;
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
   return [
@@ -37,7 +39,7 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
     { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
     { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
     { envName: "BOB_GATEWAY_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "BOBSHELL_API_KEY", placeholder: "sk-dummy" },
+    { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
   ];
 }
 

@@ -61,7 +61,6 @@ export interface ConfigInputSpec {
   inputName: string;
   envName: string;
   label: string;
-  defaultValue?: string;
   hint?: string;
   pattern?: string;
   patternHint?: string;

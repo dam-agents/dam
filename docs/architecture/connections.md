@@ -183,7 +183,7 @@ The model-endpoint proxy that fronts models for IBM-internal use. Which
 model provider an agent runs against follows from the Connection it is
 granted, not from harness configuration: the LiteLLM Connection
 contributes the env each harness reads for its base URL — including Bob's
-gateway URL — a placeholder key, and a model the proxy actually serves.
+gateway URL — plus an inert key placeholder.
 Bob is the case that needs more than a base URL. It prefixes every
 gateway call with its own service path, and that prefix is not
 configurable, so the Connection also declares the prefix rewrite the
@@ -193,9 +193,12 @@ to offer for this to work is the OpenAI-shaped chat-completion route, a
 model-information route reporting a non-empty model list (Bob treats an
 empty list as an error), and no region hint of its own — a gateway
 answering the profile route with one would redirect Bob's inference calls
-off the configured host. The model matters because Bob's built-in default
-names a model that exists only on its own gateway; the Connection pins a
-proxy-served model instead, overridable per connection.
+off the configured host. A model has to be named on the Connection as
+well, because Bob's built-in default resolves to a model only its own
+gateway serves; it is a config input rather than a shipped default,
+since the Bob Connection contributes that same variable from its own
+input and two always-firing contributors would leave the winner to
+grant order.
 
 ### Custom Header credential
 

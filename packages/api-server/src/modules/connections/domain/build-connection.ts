@@ -566,8 +566,7 @@ function buildHeader(
   }
 
   for (const spec of template.configInputs ?? []) {
-    const value =
-      input.configInputs?.[spec.inputName]?.trim() || spec.defaultValue;
+    const value = input.configInputs?.[spec.inputName]?.trim();
     if (!value) continue;
     if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(value)) {
       throw new Error(`${spec.label}: "${value}" is not valid`);
