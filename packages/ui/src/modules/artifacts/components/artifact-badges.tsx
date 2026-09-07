@@ -1,9 +1,7 @@
-import { Globe } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
-
-import { deletionState } from "../lib/format.js";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const KIND_PRESENTATION: Record<
   ArtifactKind,
@@ -32,19 +30,33 @@ export function ArtifactKindBadge({ kind }: { kind: ArtifactKind }) {
 
 export function ArtifactStatusBadge({
   artifact,
+  onShare,
 }: {
   artifact: LibraryArtifact;
+  onShare?: (artifact: LibraryArtifact) => void;
 }) {
-  if (deletionState(artifact.expiresAt).state === "expired") {
-    return <Badge variant="danger">Deleting soon</Badge>;
-  }
-  if (artifact.visibility !== "public") {
-    return <Badge variant="muted">Private</Badge>;
+  const isPublic = artifact.visibility === "public";
+  const variant = isPublic ? "success" : "muted";
+  const label = isPublic ? "Public" : "Private";
+
+  if (!onShare) {
+    return <Badge variant={variant}>{label}</Badge>;
   }
   return (
-    <Badge variant="success" className="gap-1">
-      <Globe size={12} />
-      Public
-    </Badge>
+    <Tooltip content={isPublic ? "Change sharing" : "Share this artifact"}>
+      <Badge
+        asChild
+        variant={variant}
+        className="cursor-pointer hover:border-current"
+      >
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => onShare(artifact)}
+        >
+          {label}
+        </button>
+      </Badge>
+    </Tooltip>
   );
 }

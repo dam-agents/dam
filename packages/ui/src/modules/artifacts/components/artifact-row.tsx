@@ -3,7 +3,6 @@ import {
   Checkmark,
   Link,
   OverflowMenuVertical,
-  Share,
   Time,
   View,
 } from "@carbon/icons-react";
@@ -17,7 +16,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/hooks/use-copy";
 import { clickableProps } from "@/lib/clickable";
@@ -105,10 +103,12 @@ export function ArtifactRow({
         <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
           {artifact.version > 1 && <VersionBadge version={artifact.version} />}
-          <span className="inline-flex items-center gap-1">
-            <View size={12} />
-            {artifact.viewCount}
-          </span>
+          {artifact.visibility === "public" && (
+            <span className="inline-flex items-center gap-1">
+              <View size={12} />
+              {artifact.viewCount}
+            </span>
+          )}
           {deletion.state !== "never" && (
             <span
               className={cn(
@@ -126,31 +126,29 @@ export function ArtifactRow({
           </span>
         </span>
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <ArtifactStatusBadge artifact={artifact} />
-        <div
-          draggable={false}
-          className={cn("flex gap-0.5", HOVER_ACTION)}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ShareLinkButton artifact={artifact} onShare={onShare} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="More actions">
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <ArtifactRowMenuItems
-                artifact={artifact}
-                onRename={onRename}
-                onMove={onMove}
-                onShare={onShare}
-                onSetRetention={onSetRetention}
-              />
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+      <div
+        draggable={false}
+        className="ml-auto flex shrink-0 items-center gap-1.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {artifact.shareUrl && <CopyLinkButton url={artifact.shareUrl} />}
+        <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="More actions">
+              <OverflowMenuVertical size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <ArtifactRowMenuItems
+              artifact={artifact}
+              onRename={onRename}
+              onMove={onMove}
+              onShare={onShare}
+              onSetRetention={onSetRetention}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -183,40 +181,20 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
   );
 }
 
-function ShareLinkButton({
-  artifact,
-  onShare,
-}: {
-  artifact: LibraryArtifact;
-  onShare: (artifact: LibraryArtifact) => void;
-}) {
+function CopyLinkButton({ url }: { url: string }) {
   const { copy, copied } = useCopy();
-  const url = artifact.shareUrl;
   return (
     <Button
       variant="ghost"
-      size="icon-sm"
-      aria-label={
-        copied
-          ? "Share link copied"
-          : url
-            ? "Copy share link"
-            : "Sharing settings"
-      }
-      tooltip={
-        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
-      }
-      onClick={() =>
-        url ? void copy(url).then(toastCopyOutcome) : onShare(artifact)
-      }
+      size="xs"
+      onClick={() => void copy(url).then(toastCopyOutcome)}
     >
       {copied ? (
-        <Checkmark size={16} className="text-success" />
-      ) : url ? (
-        <Link size={16} />
+        <Checkmark size={14} className="text-success" />
       ) : (
-        <Share size={16} />
+        <Link size={14} />
       )}
+      Copy link
     </Button>
   );
 }

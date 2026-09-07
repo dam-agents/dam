@@ -77,7 +77,9 @@ placeholder or disabled state.
   `toastCopyOutcome`
   ([`share-link.ts`](../../../packages/ui/src/modules/artifacts/lib/share-link.ts)),
   with the same `Checkmark` copied state as the row. Write no new clipboard
-  handling.
+  handling. The row's control carries **no tooltip** — its visible label names
+  the action and `toastCopyOutcome` already reports the outcome — so this one
+  gets none either.
 - The Source and Fullscreen buttons stay gated on `renderable`. **Copy link** is
   not — it is gated on `shareUrl` only.
 
@@ -106,6 +108,16 @@ whose `preview` and `share` members are mutually exclusive, so routing through
 the parents would mean reworking the state machine at every mount site to allow
 two dialogs at once. Self-owned gets all three sites right and touches none of
 them.
+
+`Modal` registers its Escape handler on `window` with no propagation guard, and
+`ShareDialog` renders `<Modal>` with **no** `onClose` — so Escape has never
+closed the share dialog. Stacked, one Escape press therefore closes the
+*preview underneath* and leaves the share dialog floating over nothing. Fix it
+in [`modal.tsx`](../../../packages/ui/src/components/modal.tsx) by having every
+`Modal` register its depth **unconditionally** — the registration cannot be
+skipped when `onClose` is absent, or the topmost check reads the wrong layer —
+and closing on Escape only when topmost. Escape then does nothing while the
+share dialog is stacked, which matches how that dialog already behaves.
 
 Closing the share dialog must leave the preview open — that is the user story.
 Note that
