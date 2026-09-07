@@ -316,6 +316,7 @@ describe("run service", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("run-failed");
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(cancels).toEqual([]);
   });
 });

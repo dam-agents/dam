@@ -41,15 +41,16 @@ function readPromptFile(path: string): string {
   return readFileSync(path === "-" ? 0 : path, "utf8");
 }
 
-function fail(e: RunError): never {
+function fail(e: RunError): void {
   if (e.kind === "run-failed") {
     process.stderr.write(`error: ${e.reason}\n`);
     if (e.sessionId !== undefined)
       process.stderr.write(`session: ${e.sessionId}\n`);
-    process.exit(EXIT_RUNTIME_FAILURE);
+    process.exitCode = EXIT_RUNTIME_FAILURE;
+    return;
   }
   printError(e);
-  process.exit(exitCodeFor(e));
+  process.exitCode = exitCodeFor(e);
 }
 
 function stopExitCode(stopReason: string | null): number {
@@ -99,7 +100,8 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
         });
         if (!prompt.ok) {
           process.stderr.write(`error: ${prompt.error}\n`);
-          process.exit(EXIT_INVALID_INPUT);
+          process.exitCode = EXIT_INVALID_INPUT;
+          return;
         }
 
         const result = await deps.runService.run({
@@ -110,7 +112,10 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           async: opts.async,
           timeoutSeconds: timeoutOrInvalid(opts.timeout),
         });
-        if (!result.ok) fail(result.error);
+        if (!result.ok) {
+          fail(result.error);
+          return;
+        }
 
         const outcome = result.value;
         if (outcome.kind === "async-started") {
@@ -125,13 +130,14 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
             `timed out waiting; the run continues on the agent\n` +
               `check it with: dam run get ${agentRef} ${outcome.sessionId}\n`,
           );
-          process.exit(EXIT_RUN_TIMEOUT);
+          process.exitCode = EXIT_RUN_TIMEOUT;
+          return;
         }
         endStdoutLine();
         process.stderr.write(
           `stopReason: ${outcome.stopReason ?? "unknown"}\n`,
         );
-        process.exit(stopExitCode(outcome.stopReason));
+        process.exitCode = stopExitCode(outcome.stopReason);
       },
     );
 
@@ -165,7 +171,10 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           wait: opts.wait,
           timeoutSeconds: timeoutOrInvalid(opts.timeout),
         });
-        if (!result.ok) fail(result.error);
+        if (!result.ok) {
+          fail(result.error);
+          return;
+        }
 
         const outcome = result.value;
         if (outcome.kind === "pending") {
@@ -181,17 +190,22 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
             process.stderr.write(
               "no recorded result for this session — it never finished a headless run here, or the record was evicted\n",
             );
-          process.exit(EXIT_INVALID_INPUT);
+          process.exitCode = EXIT_INVALID_INPUT;
+          return;
         }
         if (outcome.kind === "timed-out") {
+          if (opts.json)
+            process.stdout.write(`${JSON.stringify({ status: "pending" })}\n`);
           process.stderr.write("timed out waiting; the run continues\n");
-          process.exit(EXIT_RUN_TIMEOUT);
+          process.exitCode = EXIT_RUN_TIMEOUT;
+          return;
         }
         if (opts.json) {
           process.stdout.write(
             `${JSON.stringify({ status: "done", result: outcome.result })}\n`,
           );
-          process.exit(stopExitCode(outcome.result.stopReason));
+          process.exitCode = stopExitCode(outcome.result.stopReason);
+          return;
         }
         if (outcome.result.finalText.length > 0) {
           process.stdout.write(outcome.result.finalText);
@@ -203,7 +217,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
         process.stderr.write(
           `stopReason: ${outcome.result.stopReason ?? "unknown"}\n`,
         );
-        process.exit(stopExitCode(outcome.result.stopReason));
+        process.exitCode = stopExitCode(outcome.result.stopReason);
       },
     );
 
@@ -224,12 +238,16 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           serverFlag: opts.server,
           sessionId,
         });
-        if (!result.ok) fail(result.error);
+        if (!result.ok) {
+          fail(result.error);
+          return;
+        }
         if (result.value.kind === "not-running") {
           process.stderr.write(
             "nothing to cancel: the session is not running\n",
           );
-          process.exit(EXIT_INVALID_INPUT);
+          process.exitCode = EXIT_INVALID_INPUT;
+          return;
         }
         process.stderr.write("cancel sent\n");
       },
