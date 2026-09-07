@@ -1,6 +1,12 @@
 import type { StateCreator } from "zustand";
 
+import {
+  readPersistedFlag,
+  writePersistedFlag,
+} from "../../lib/persisted-flag.js";
 import type { PlatformStore } from "../../store.js";
+
+export const ARTIFACTS_SECTION_OPEN_STORAGE_KEY = "platform-artifacts-open";
 
 export interface ArtifactsSlice {
   openArtifactId: string | null;
@@ -15,22 +21,6 @@ export interface ArtifactsSlice {
   ) => void;
 }
 
-const SECTION_OPEN_KEY = "platform-artifacts-open";
-
-function readStoredSectionOpen(): boolean {
-  try {
-    return localStorage.getItem(SECTION_OPEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function storeSectionOpen(open: boolean): void {
-  try {
-    localStorage.setItem(SECTION_OPEN_KEY, open ? "1" : "0");
-  } catch {}
-}
-
 export const createArtifactsSlice: StateCreator<
   PlatformStore,
   [],
@@ -38,14 +28,17 @@ export const createArtifactsSlice: StateCreator<
   ArtifactsSlice
 > = (set) => ({
   openArtifactId: null,
-  artifactsSectionOpen: readStoredSectionOpen(),
+  artifactsSectionOpen: readPersistedFlag(
+    ARTIFACTS_SECTION_OPEN_STORAGE_KEY,
+    true,
+  ),
   artifactFolderCollapse: {},
   setOpenArtifactId: (id) =>
     set(
       id ? { openArtifactId: id, openFilePath: null } : { openArtifactId: id },
     ),
   setArtifactsSectionOpen: (open) => {
-    storeSectionOpen(open);
+    writePersistedFlag(ARTIFACTS_SECTION_OPEN_STORAGE_KEY, open);
     set({ artifactsSectionOpen: open });
   },
   setArtifactFolderCollapsed: (scopeId, folderKey, collapsed) =>

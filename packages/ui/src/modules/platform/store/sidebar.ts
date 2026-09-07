@@ -1,5 +1,9 @@
 import type { StateCreator } from "zustand";
 
+import {
+  readPersistedFlag,
+  writePersistedFlag,
+} from "../../../lib/persisted-flag.js";
 import type { PlatformStore } from "../../../store.js";
 
 export const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
@@ -10,11 +14,7 @@ export interface SidebarSlice {
 }
 
 export function readStoredSidebarExpanded(): boolean {
-  try {
-    return localStorage.getItem(SIDEBAR_EXPANDED_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, false);
 }
 
 export const createSidebarSlice: StateCreator<
@@ -25,9 +25,7 @@ export const createSidebarSlice: StateCreator<
 > = (set) => ({
   sidebarExpanded: readStoredSidebarExpanded(),
   setSidebarExpanded: (expanded) => {
-    try {
-      localStorage.setItem(SIDEBAR_EXPANDED_STORAGE_KEY, expanded ? "1" : "0");
-    } catch {}
+    writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
   },
 });

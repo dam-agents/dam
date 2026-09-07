@@ -160,6 +160,8 @@ export function ChatView() {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const setView = useStore((s) => s.setView);
+  const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
+  const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
@@ -175,7 +177,6 @@ export function ChatView() {
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsOpen, setSessionsOpen] = useState(true);
   const [sessionsH, setSessionsH] = useState(
     () => Number(localStorage.getItem("platform-sessions-h")) || 260,
   );
@@ -558,17 +559,17 @@ export function ChatView() {
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <SessionsSidebar
-            open={sessionsOpen}
-            onToggle={() => setSessionsOpen((o) => !o)}
+            open={sessionsSectionOpen}
+            onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
             className={sectionTransition}
             style={sectionFlex(
-              sessionsOpen,
-              sessionsOpen && filesSectionOpen ? sessionsH : undefined,
+              sessionsSectionOpen,
+              sessionsSectionOpen && filesSectionOpen ? sessionsH : undefined,
             )}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
           />
-          {sessionsOpen && filesSectionOpen && (
+          {sessionsSectionOpen && filesSectionOpen && (
             <ResizeHandle
               orientation="vertical"
               onResize={(d) => {
