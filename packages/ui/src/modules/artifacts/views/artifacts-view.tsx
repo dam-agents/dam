@@ -24,6 +24,7 @@ import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { folderDisplayNames } from "../lib/folders.js";
+import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
@@ -66,14 +67,14 @@ export function ArtifactsView() {
     );
   }, [artifacts, search]);
 
-  const byFolder = useMemo(() => {
-    const groups = new Map<string | null, LibraryArtifact[]>();
-    for (const artifact of filtered) {
-      const key = artifact.folderId;
-      groups.set(key, [...(groups.get(key) ?? []), artifact]);
-    }
-    return groups;
-  }, [filtered]);
+  const groups = useMemo(
+    () =>
+      groupArtifactsByFolder(filtered, folders, {
+        includeEmptyUngrouped: dragInProgress,
+        includeEmptyExperimentFolders: true,
+      }),
+    [filtered, folders, dragInProgress],
+  );
 
   const totalBytes = useMemo(
     () => artifacts.reduce((sum, a) => sum + a.sizeBytes, 0),
@@ -107,7 +108,6 @@ export function ArtifactsView() {
   };
 
   const folderNames = folderDisplayNames(folders);
-  const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
   const hasContent = artifacts.length > 0 || folders.length > 0;
   const isEmpty = !loading && !hasContent;
@@ -167,28 +167,21 @@ export function ArtifactsView() {
 
       {hasContent && (
         <div className="mt-5 flex flex-col gap-3">
-          {folders.map((folder) => (
+          {groups.map((group) => (
             <FolderGroup
-              key={folder.id}
-              folder={folder}
-              displayName={folderNames.get(folder.id)}
-              artifacts={byFolder.get(folder.id) ?? []}
-              onCopyFolderLink={copyFolderLink}
+              key={group.key}
+              folder={group.folder}
+              displayName={
+                group.folder ? folderNames.get(group.folder.id) : undefined
+              }
+              artifacts={group.artifacts}
+              onCopyFolderLink={group.folder ? copyFolderLink : undefined}
               drop={dropCallbacks}
-              dropActive={hotFolderId === folder.id}
-              {...folderActions}
+              dropActive={hotFolderId === (group.folder?.id ?? null)}
+              {...(group.folder ? folderActions : {})}
               {...rowActions}
             />
           ))}
-          {(ungrouped.length > 0 || dragInProgress) && (
-            <FolderGroup
-              folder={null}
-              artifacts={ungrouped}
-              drop={dropCallbacks}
-              dropActive={hotFolderId === null}
-              {...rowActions}
-            />
-          )}
         </div>
       )}
 

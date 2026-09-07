@@ -17,6 +17,20 @@ export interface ArtifactsSlice {
 
 const SECTION_OPEN_KEY = "platform-artifacts-open";
 
+function readStoredSectionOpen(): boolean {
+  try {
+    return localStorage.getItem(SECTION_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeSectionOpen(open: boolean): void {
+  try {
+    localStorage.setItem(SECTION_OPEN_KEY, open ? "1" : "0");
+  } catch {}
+}
+
 export const createArtifactsSlice: StateCreator<
   PlatformStore,
   [],
@@ -24,14 +38,14 @@ export const createArtifactsSlice: StateCreator<
   ArtifactsSlice
 > = (set) => ({
   openArtifactId: null,
-  artifactsSectionOpen: localStorage.getItem(SECTION_OPEN_KEY) === "1",
+  artifactsSectionOpen: readStoredSectionOpen(),
   artifactFolderCollapse: {},
   setOpenArtifactId: (id) =>
     set(
       id ? { openArtifactId: id, openFilePath: null } : { openArtifactId: id },
     ),
   setArtifactsSectionOpen: (open) => {
-    localStorage.setItem(SECTION_OPEN_KEY, open ? "1" : "0");
+    storeSectionOpen(open);
     set({ artifactsSectionOpen: open });
   },
   setArtifactFolderCollapsed: (scopeId, folderKey, collapsed) =>

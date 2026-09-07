@@ -1,8 +1,7 @@
 import { type CSSProperties, useLayoutEffect, useRef, useState } from "react";
 
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { cn } from "@/lib/utils";
-
-const MAX_SHIFT_PX = 96;
 
 export function MarqueeTitle({
   text,
@@ -20,18 +19,14 @@ export function MarqueeTitle({
     const el = containerRef.current;
     if (!el) return;
     const measure = () =>
-      setShift(
-        Math.max(Math.min(0, el.clientWidth - el.scrollWidth), -MAX_SHIFT_PX),
-      );
+      setShift(Math.min(0, el.clientWidth - el.scrollWidth));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, [text]);
 
-  const reducedMotion = window.matchMedia(
-    "(prefers-reduced-motion: reduce)",
-  ).matches;
+  const reducedMotion = usePrefersReducedMotion();
   const animating = animate && shift < 0 && !reducedMotion;
   return (
     <span

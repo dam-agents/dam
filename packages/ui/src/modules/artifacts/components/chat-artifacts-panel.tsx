@@ -48,12 +48,13 @@ export function ChatArtifactsPanel({
   className?: string;
   style?: CSSProperties;
 }) {
+  const enabled = open && !!agentId;
   const { data: artifacts = [], isPending } = useArtifacts(
-    open && agentId ? { agentId } : null,
+    enabled && agentId ? { agentId } : null,
   );
-  const { data: folders = [], isPending: foldersPending } = useArtifactFolders(
-    open && !!agentId,
-  );
+  const { data: folders = [], isPending: foldersPending } =
+    useArtifactFolders(enabled);
+  const loading = enabled && (isPending || foldersPending);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const folderCollapse = useStore((s) =>
@@ -86,9 +87,9 @@ export function ChatArtifactsPanel({
       headerClassName="border-t border-border"
       style={style}
     >
-      {foldersPending || groups.length === 0 ? (
+      {loading || artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
-          {isPending || foldersPending ? "Loading\u2026" : "No artifacts yet"}
+          {loading ? "Loading\u2026" : "No artifacts yet"}
         </p>
       ) : (
         <div className="overflow-y-auto">
