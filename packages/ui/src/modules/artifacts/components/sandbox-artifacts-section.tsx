@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
-import { folderDisplayName } from "../lib/folders.js";
+import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { FolderGroup } from "./folder-group.js";
@@ -28,6 +28,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
   const { data: folders = [], isPending: foldersPending } =
     useArtifactFolders();
+  const folderNames = folderDisplayNames(folders);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -81,7 +82,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 folder={group.folder}
                 artifacts={group.artifacts}
                 displayName={
-                  group.folder ? folderDisplayName(group.folder) : undefined
+                  group.folder ? folderNames.get(group.folder.id) : undefined
                 }
                 nested
                 defaultCollapsed={group.artifacts.length === 0}

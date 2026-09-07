@@ -24,7 +24,7 @@ import {
   useArtifactRowDrag,
 } from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
-import { folderDisplayName } from "../lib/folders.js";
+import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { MarqueeTitle } from "./marquee-title.js";
@@ -70,6 +70,7 @@ export function ChatArtifactsPanel({
       }),
     [artifacts, folders, dragInProgress],
   );
+  const folderNames = useMemo(() => folderDisplayNames(folders), [folders]);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -101,7 +102,9 @@ export function ChatArtifactsPanel({
                 key={group.key}
                 folderId={group.folder?.id ?? null}
                 label={
-                  group.folder ? folderDisplayName(group.folder) : "Ungrouped"
+                  group.folder
+                    ? (folderNames.get(group.folder.id) ?? group.folder.name)
+                    : "Ungrouped"
                 }
                 count={group.artifacts.length}
                 collapsed={collapsed}
