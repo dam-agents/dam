@@ -1,6 +1,6 @@
 import http from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -29,6 +29,7 @@ import {
 } from "api-server-api";
 import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
+import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
@@ -623,16 +624,11 @@ server.listen(config.PORT, () => {
   });
 });
 
-function readCgroupBytes(v2: string, v1: string): number | null {
-  for (const p of [v2, v1]) {
-    try {
-      const raw = readFileSync(p, "utf8").trim();
-      if (raw === "max") return Infinity;
-      const n = Number.parseInt(raw, 10);
-      if (Number.isFinite(n)) return n;
-    } catch {}
-  }
-  return null;
+if (config.MEM_REAPER && !config.PLATFORM_DEV) {
+  startMemReaper({
+    thresholdFraction: config.MEM_REAPER_THRESHOLD,
+    log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
+  });
 }
 
 const mib = (n: number) => Math.round(n / 1_048_576);
