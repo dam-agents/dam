@@ -87,13 +87,13 @@ export function ArtifactPreviewDialog({
                 </Button>
                 {!showSource && (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon-sm"
                     aria-label="Fullscreen"
                     tooltip="Fullscreen"
                     onClick={() => setFullscreen(true)}
                   >
-                    <Maximize size={16} />
+                    <Maximize size={14} />
                   </Button>
                 )}
               </>

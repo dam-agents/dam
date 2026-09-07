@@ -82,7 +82,7 @@ export function DialogHeader({
       id={title ? undefined : labelId}
       data-dialog-noautofocus
       className={cn(
-        "px-5 pt-5 pb-4 md:px-7 md:pt-7",
+        "px-5 py-5 md:px-6 md:py-6",
         divided && "border-b border-border",
         className,
       )}
@@ -142,7 +142,7 @@ export function DialogBody({
 }: DialogRegionProps & { flush?: boolean }) {
   return (
     <div
-      className={`flex-1 min-h-0 overflow-y-auto py-5 ${flush ? "" : "px-5 md:px-7"} ${className ?? ""}`}
+      className={`flex-1 min-h-0 overflow-y-auto pt-5 md:pt-6 [&:last-child]:pb-5 md:[&:last-child]:pb-6 ${flush ? "" : "px-5 md:px-6"} ${className ?? ""}`}
     >
       {children}
     </div>
@@ -152,7 +152,7 @@ export function DialogBody({
 export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
-      className={`px-5 md:px-7 py-4 flex items-center justify-end gap-3 ${className ?? ""}`}
+      className={`px-5 py-5 md:px-6 md:py-6 flex items-center justify-end gap-3 ${className ?? ""}`}
     >
       {children}
     </div>
