@@ -121,7 +121,7 @@ export function DialogHeader({
                   aria-label="Close"
                   data-dialog-close
                   data-testid={closeTestId}
-                  className="-mr-1.5 shrink-0 text-muted-foreground"
+                  className="shrink-0 text-muted-foreground"
                 >
                   <Close size={16} />
                 </Button>
