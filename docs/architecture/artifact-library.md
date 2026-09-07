@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-02
+Last verified: 2026-09-07
 
 ## Overview
 
@@ -165,8 +165,9 @@ flowchart LR
   taken out again from the library itself, so organising a library is not tied
   to the moment each artifact was published. Nothing reads membership as a
   claim about provenance — an [experiment](experiments.md) lineage folder is an
-  ordinary destination, and what a run produced is recorded by the experiment
-  rather than by where the artifact sits.
+  ordinary destination, listed among the other folders under its plain name
+  (its full name when that would collide), and what a run produced is recorded
+  by the experiment rather than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
 - The Home feed's session cards carry **artifact chips** — what the session

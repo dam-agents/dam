@@ -60,8 +60,8 @@ export function WelcomeEntryPoints() {
       </h2>
       <p className="mt-1.5 max-w-[560px] text-sm leading-relaxed text-muted-foreground">
         Run agents in isolated cloud environments with credentials and tools
-        securely injected. Create knowledge base agents, and trigger agents
-        from Slack or on a schedule.
+        securely injected. Create knowledge base agents, and trigger agents from
+        Slack or on a schedule.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
