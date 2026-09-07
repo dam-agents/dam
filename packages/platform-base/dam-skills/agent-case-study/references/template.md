@@ -1,7 +1,7 @@
 # The document skeleton
 
-Follow this structure exactly. Text in angle brackets is what you write; the
-guidance under each section is for you, not for the document.
+Follow this structure exactly. Angle brackets are what you write; the guidance
+under each section is for you, not for the document.
 
 ```
 # Agent Case Study: <generalized role, e.g. "Support-triage agent for a SaaS product">
@@ -11,55 +11,38 @@ _Generated: <date> · Covers: <window>, <session count> sessions_
 
 ## Use case
 
-## What it does
-
-## Is it worth it
+## Platform in use
 
 ## Platform friction
 ```
 
 ## At a glance
 
-A two-column table, six rows, bare facts. The first cell of each row is its
-label (vertical headers, no header row). Each row expands into a section below:
+Two-column table, five rows, bare facts; the first cell is the row's label:
 
 - What · the job and who it serves
 - Runs as · the mix of scheduled and on-demand work
-- Headline value · the single strongest outcome for the person or business served
-- Cost · rounded spend for the window, or "not measured on this install"
 - Needs · the connections it relies on
-- Friction · the single worst thing the platform put in the way, or "none worth naming"
+- Since last edition · what appeared, what stopped, or "first edition" / "no change"
+- Friction · the worst things the platform put in the way, or "none worth naming"
 
 ## Use case
 
-3–5 sentences: the problem, who has it, what the work looked like before, what
-"done well" means now.
+One short paragraph in plain terms: what the agent is used for, who it serves
+(a role, never a person), the kinds of requests it handles, and roughly how
+much of it there is. No task inventory, no per-job detail.
 
-## What it does
+## Platform in use
 
-A table of recurring jobs: job · cadence · what one run produces. Give ongoing
-upkeep (notes, ledgers, watch-lists) its own rows with cadence "ongoing". Then
-show the flagship job as 3–5 numbered steps: what a run reads, gathers,
-decides, produces, and where the output lands. Make each step copyable, not a
-story. Then add a short paragraph on the 2–4 main on-demand request types. End
-with one sentence: what runs unattended, and what waits for a human.
-
-## Is it worth it
-
-Give two inputs. Do not give a verdict.
-
-- **Value:** at most 5 outcomes for the person served, one line
-  each. Give outcomes, not output counts: "reviewed 90 changes" is scale;
-  "caught a bug before it shipped" is value. Cite reception (paraphrased
-  thanks, output acted on) as proof. Self-maintenance is never value.
-- **Scale & cost:** sessions this week, counted outputs, the window's spend and
-  model split from the platform's own numbers (mark anything approximate), and
-  one or two averages.
+One line per platform feature the deployment touches: how the use case uses
+it, or that it is offered and unused plus the reason when visible. Cover at
+least sessions, schedules, channels, connections, memory or files on the pod,
+the artifact library, skills.
 
 ## Platform friction
 
-3–5 items, worst first, one line each: what the owner or agent was trying to
-do, what the platform put in the way, then the workaround, or "no workaround".
-Include things the owner wanted and could not have. Platform feature names are
-expected here; company and product names are not. If the window had no
-friction, say so in one line.
+Ideally at most 5 items, worst first, one line each: the goal, what the platform put in the
+way, the workaround or "no workaround". Include what the owner wanted and
+could not have. Tag an item already present in the previous edition "(also
+last edition)". Platform feature names are expected; company and product names
+are not. No friction: say so in one line.

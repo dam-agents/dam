@@ -38,7 +38,7 @@ The Overview session filter is **trace-aware**, not a literal session-id match: 
 
 ## Agent-facing read
 
-A third read serves an agent rather than a signed-in user: the `get_usage_summary` MCP tool, over the same reader, **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own spend. It answers the one question an unattended agent needs (what did I cost over the last N days: total, per-model split, session count). Its window is bounded *and* defaulted in the contract package next to the tRPC input bounds — 7 days by default, 30 at most — so a tool call cannot widen into a whole-retention scan, and an agent that omits the argument gets the cheap window rather than the widest one. Its consumer today is the case-study skill ([case-studies](case-studies.md)), which is told to prefer it over counting tokens out of its own transcripts.
+A third read serves an agent rather than a signed-in user: the `get_usage_summary` MCP tool, over the same reader, **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own spend. It answers the one question an unattended agent needs (what did I cost over the last N days: total, per-model split, session count). Its window is bounded *and* defaulted in the contract package next to the tRPC input bounds — 7 days by default, 30 at most — so a tool call cannot widen into a whole-retention scan, and an agent that omits the argument gets the cheap window rather than the widest one. It exists for owner-directed questions an agent answers about its own spend; the case-study edition deliberately carries no cost, so nothing consent-gated depends on it ([case-studies](case-studies.md)).
 
 ## Session directory
 

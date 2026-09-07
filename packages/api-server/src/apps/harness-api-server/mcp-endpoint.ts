@@ -814,6 +814,11 @@ export function createMcpSession(
     submissions: deps.caseStudySubmissions,
     inspection: deps.caseStudyInspection,
     agentImage: deps.agentImage,
+    readArtifactText: async (artifactId) => {
+      const artifact = await deps.artifactLibrary.getContent(artifactId);
+      if (!artifact || artifact.binary || artifact.tooLarge) return null;
+      return artifact.content;
+    },
   });
 
   registerUsageSummaryTool(server, {

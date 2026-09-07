@@ -1,6 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import type { CaseStudySubmitInput } from "api-server-api";
-import { editionWeekStartOf } from "../domain/editions.js";
+import type { CaseStudyEdition, CaseStudySubmitInput } from "api-server-api";
+import {
+  editionWeekStartOf,
+  resolveDraft,
+  toEdition,
+} from "../domain/editions.js";
 import type { CaseStudiesRepository } from "../infrastructure/case-studies-repository.js";
 
 export interface CaseStudySubmissionReceipt {
@@ -15,6 +19,10 @@ export interface CaseStudySubmissionsService {
     input: CaseStudySubmitInput,
     harnessImage: string | null,
   ): Promise<CaseStudySubmissionReceipt>;
+  baseline(
+    agentId: string,
+    readArtifactText: (artifactId: string) => Promise<string | null>,
+  ): Promise<CaseStudyEdition | null>;
 }
 
 export function createCaseStudySubmissions(deps: {
@@ -43,6 +51,18 @@ export function createCaseStudySubmissions(deps: {
         editionWeekStart: record.editionWeekStart,
         status: "pending",
       };
+    },
+
+    async baseline(agentId, readArtifactText) {
+      const thisWeek = editionWeekStartOf(deps.now());
+      const records = await deps.repo.listByAgents([agentId]);
+      const record = records.find(
+        (r) =>
+          r.editionWeekStart < thisWeek &&
+          (r.status === "pending" || r.status === "released"),
+      );
+      if (!record) return null;
+      return toEdition(record, await resolveDraft(record, readArtifactText));
     },
   };
 }

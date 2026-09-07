@@ -2,18 +2,20 @@
 name: agent-case-study
 description: >
   Produce this agent's case study - a sanitized, plain-English, one-page account
-  of the use case it serves, what it delivered, what it cost, and where the
-  platform got in the way - then submit it to the platform as a pending edition
+  of the use case it serves, how it uses the platform, and where the platform
+  got in the way - then submit it to the platform as a pending edition
   only the owner can see. Use only when a scheduled task or the owner explicitly
   asks for a case study ("case study", "share your experience", "document how
   you work", "summarize what you do and what it's worth"). Never start one on
   your own initiative.
 ---
 
-You write one document: a plain-English, one-page case study of this agent. It
-covers the use case the agent serves, what it delivered, what it cost, and where
-the platform got in the way. You then submit it to the platform, where only the
-owner can see it until they release it.
+You write one document: a plain-English, one-page case study of this agent,
+for the platform team. It covers the use case the agent serves, how it uses
+the platform, and where the platform got in the way. The use
+case and the platform are the subject, never the model's craft. You then
+submit it to the platform, where only the owner can see it until they release
+it.
 
 Keep it general. An account of the use case is useful; an account full of this
 deployment's names is not. Anonymizing is required.
@@ -29,8 +31,7 @@ Five rules override everything else.
 3. **Plain**: Write in ASD-STE100: short sentences, one idea each, active
    voice, everyday words, no filler. Explain jargon inline at first use or
    avoid it; never open with a glossary.
-4. **Honest**: Facts, not adjectives. Include failures and wasted spend,
-   without spin. Say plainly what you cannot verify, meet, or measure.
+4. **Honest**: Facts, not adjectives. Include failures, without spin. Say plainly what you cannot verify, meet, or measure.
 5. **Unattended**: Never ask a question mid-run. Thin evidence makes a thin
    document, not a question.
 
@@ -38,11 +39,11 @@ Two mechanics, for the whole run:
 
 - **Paths.** This file sits beside `scripts/` and `references/`. Resolve those
   relative to this file, wherever it lies.
-- **Tools.** `submit_case_study`, `get_usage_summary`, `list_schedules`,
+- **Tools.** `submit_case_study`, `get_case_study_baseline`, `list_schedules`,
   `list_artifacts`, `create_artifact`, and `update_artifact` live on the
   `platform-outbound` MCP server. If a schema is not loaded, fetch it with
   ToolSearch, e.g.
-  `select:mcp__platform-outbound__submit_case_study,mcp__platform-outbound__get_usage_summary`.
+  `select:mcp__platform-outbound__submit_case_study`.
 
 ## Step 1: Mine your real history
 
@@ -67,23 +68,19 @@ Set the window first: `window_start` is 7 days ago, `window_end` is today, both
    rules behind everything the document describes. Read CLAUDE.md, AGENTS.md,
    the READMEs, and the tree; then notes, memory files, logs, ledgers, state
    files, installed skills.
-5. **Outputs.** Count what you produced in the window - posts, messages, items
-   handled - by querying the systems themselves over the connections you
-   already use to act on them. Transcripts and schedules name those systems.
-6. **Cost.** Call `get_usage_summary` with `days: 7` and report only what it
-   returns: total cost, per-model split, session count, one or two averages.
-   If unavailable, write "Cost is not measured on this install". Never
-   estimate cost another way; never count tokens from transcripts.
+5. **Previous edition.** Call `get_case_study_baseline`: your most recent
+   edition before this week, as the owner curated it. A claim the owner
+   removed earns no continuity, and the baseline only fills "Since last
+   edition" and the "(also last edition)" tags, never this week's claims.
+   A null edition, or the tool missing: write "first edition".
 
-While mining, collect for the document's two dedicated sections:
+While mining, collect for the document's platform-facing sections:
 
-- **Delivered value.** Confirmed: thanks, output someone used or built on,
-  repeat requests. Inferred: outcomes nobody reacted to - judge them against
-  your mission and state the outcome, not a claim of credit. Misses count too:
-  output ignored, corrected, complained about.
-- **Platform friction.** Per item: the goal, what the platform put in the way,
-  the workaround or none. Include what the owner wanted and could not have. The
-  subject is the platform, not the model and not a hard task.
+- **Feature use.** How each platform feature carries the work, and which sit
+  unused, and why.
+- **Platform friction.** Every moment the platform got in the way, including
+  what the owner wanted and could not have. The subject is the platform, not
+  the model and not a hard task.
 
 If the window holds no sessions at all (no platform index, nothing in the
 harness store), reply that there is nothing to summarize and stop. Submit

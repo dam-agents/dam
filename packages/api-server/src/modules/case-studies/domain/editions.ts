@@ -1,3 +1,4 @@
+import { caseStudyContentSchema } from "api-server-api";
 import type {
   CaseStudyContentSource,
   CaseStudyEdition,
@@ -83,4 +84,30 @@ export function toEdition(
     ...toSummary(record, resolved),
     content: carried(record, resolved).content,
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Resolves the text an owner is consenting to. A
+ * pending Edition is a draft, and the owner's editable copy of it is the
+ * linked artifact — so while it is pending the artifact wins, and the row
+ * holds only what the agent last submitted. Once released the row is
+ * authoritative and never re-reads, because releasing is consent to specific
+ * text: a later artifact edit must not rewrite what an inspector already
+ * read. Any artifact that cannot stand in for the draft (deleted, not the
+ * owner's, binary, too large, or outside the content bounds) falls back to
+ * the submitted text rather than failing the read.
+ */
+export async function resolveDraft(
+  record: EditionRecord,
+  readArtifactText: (artifactId: string) => Promise<string | null>,
+): Promise<ResolvedContent> {
+  if (record.status !== "pending" || !record.artifactId) {
+    return { content: record.content, source: record.contentSource };
+  }
+  const live = await readArtifactText(record.artifactId);
+  const parsed = caseStudyContentSchema.safeParse(live);
+  if (!parsed.success || parsed.data === record.content) {
+    return { content: record.content, source: record.contentSource };
+  }
+  return { content: parsed.data, source: "artifact" };
 }

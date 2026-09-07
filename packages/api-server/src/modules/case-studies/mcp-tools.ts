@@ -17,6 +17,7 @@ export function registerCaseStudyTools(
     submissions: CaseStudySubmissionsService;
     inspection: CaseStudyInspectionService | null;
     agentImage: (agentId: string) => Promise<string | null>;
+    readArtifactText: (artifactId: string) => Promise<string | null>;
   },
 ): void {
   server.tool(
@@ -56,6 +57,21 @@ export function registerCaseStudyTools(
         return errorResult(err instanceof Error ? err.message : String(err));
       }
     },
+  );
+
+  server.tool(
+    "get_case_study_baseline",
+    "This agent's most recent case-study edition before the current week: the owner-curated draft while pending, the frozen released text once released. Returns { edition: null } when no prior edition exists. Use only when the agent-case-study skill instructs you to, as the baseline for what changed since the last edition, never as a source for new claims.",
+    {},
+    () =>
+      run(async () =>
+        json({
+          edition: await deps.submissions.baseline(
+            deps.agentId,
+            deps.readArtifactText,
+          ),
+        }),
+      ),
   );
 
   const inspection = deps.inspection;

@@ -4,7 +4,7 @@ Last verified: 2026-09-04
 
 ## Overview
 
-A **Case Study** is a sanitized, plain-English, one-page account an agent writes about itself: the use case it serves, what it delivered, what it cost, and where the platform got in the way. The **agent-case-study skill** produces it from the agent's real history; the platform stores each **Edition** — one per agent per week — where the owner, the platform team, and a future processing system can read it, each through their own gate.
+A **Case Study** is a sanitized, plain-English, one-page account an agent writes about itself: the use case it serves, how it uses the platform, and where the platform got in the way. The **agent-case-study skill** produces it from the agent's real history; the platform stores each **Edition** — one per agent per week — where the owner, the platform team, and a future processing system can read it, each through their own gate.
 
 The subsystem is deliberately split across three concerns:
 
@@ -20,7 +20,6 @@ The skill's evidence sources are harness-aware:
 
 - **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven / experiment classification that transcript paths cannot provide.
 - **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and a companion reference alongside it says how to read each. No env var identifies the harness in-pod; probing is the only signal.
-- **Cost comes from `get_usage_summary` only** — the agent-facing MCP read over the metrics service ([metrics](metrics.md)), pinned server-side to the calling agent. When the telemetry backend is disabled the tool answers `available: false` and the skill reports cost as not measured; the skill never counts tokens out of transcripts.
 
 ## Editions and their states
 
@@ -45,6 +44,7 @@ Attribution is server-stamped and unforgeable: the agent id comes from the mesh-
 
 - **Owner** — owner-scoped tRPC (`caseStudies.list` / `get` / `release`), scoped by the same live-plus-registry owned-agent union the metrics reads use, so a deleted agent's editions stay visible to the owner who collected them.
 - **Platform team** — `GET /api/case-studies` (metadata, filterable by update time, week, and agent — the week filter takes any real calendar date and matches the week containing it; both read surfaces parse the filter through one schema in the contract package, so neither can accept what the other rejects) and `GET /api/case-studies/:id` (content), gated by the `platform-inspector` realm role exactly like `/api/usage`, mounted as a no-op router when the role is unconfigured.
+- **The submitting agent** — `get_case_study_baseline`, pinned server-side to the caller like the submit tool: its latest edition before the current week, resolved through the same draft rule as the owner's read (pending serves the owner-curated draft, released serves the frozen text), skipping hidden and withdrawn editions. It exists so the skill can state what changed between editions from the owner-approved record rather than reconstructing it from artifact titles; the skill treats it as a diff baseline, never as a source.
 - **Agents whose owner is an inspector** — `list_case_studies` / `get_case_study` MCP tools, registered at MCP session creation only when the agent's owner carries the inspector role. The check reads the recorded inspector-role flag on the actor-roles projection ([usage-tracking](usage-tracking.md)), which records inspector-role carriage at auth time; that saga runs unconditionally (independent of the activity-tracking toggle) precisely so this gate works on installs that disabled activity writes. A grant or revocation lands on the owner's next authenticated request, and tool registration follows at the next MCP session — so a revoked inspector keeps a live session's tools until it ends. This is the intended read path for the future processing system — an agent cannot reach Postgres and holds no bearer tokens, so cross-owner reads ride mesh identity plus the recorded role.
 
 Every submit, release, and inspector read is security-logged (`case_study.submitted` / `case_study.released` / `case_study.inspect`).

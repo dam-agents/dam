@@ -1,16 +1,12 @@
 import { TRPCError } from "@trpc/server";
-import { caseStudyContentSchema } from "api-server-api";
-import type {
-  CaseStudyContentSource,
-  CaseStudiesService,
-} from "api-server-api";
+import type { CaseStudiesService } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import {
   releaseVerdict,
+  resolveDraft,
   toEdition,
   toSummary,
   type EditionRecord,
-  type ResolvedContent,
 } from "../domain/editions.js";
 import type { CaseStudiesRepository } from "../infrastructure/case-studies-repository.js";
 
@@ -29,29 +25,6 @@ export function createCaseStudiesService(deps: {
     throw new TRPCError({ code: "NOT_FOUND", message: "edition not found" });
   }
 
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: Resolves the text an owner is consenting to. A
-   * pending Edition is a draft, and the owner's editable copy of it is the
-   * linked artifact — so while it is pending the artifact wins, and the row
-   * holds only what the agent last submitted. Once released the row is
-   * authoritative and never re-reads, because releasing is consent to specific
-   * text: a later artifact edit must not rewrite what an inspector already
-   * read. Any artifact that cannot stand in for the draft (deleted, not the
-   * owner's, binary, too large, or outside the content bounds) falls back to
-   * the submitted text rather than failing the read.
-   */
-  async function resolveDraft(record: EditionRecord): Promise<ResolvedContent> {
-    if (record.status !== "pending" || !record.artifactId) {
-      return { content: record.content, source: record.contentSource };
-    }
-    const live = await deps.readArtifactText(record.artifactId);
-    const parsed = caseStudyContentSchema.safeParse(live);
-    if (!parsed.success || parsed.data === record.content) {
-      return { content: record.content, source: record.contentSource };
-    }
-    return { content: parsed.data, source: "artifact" };
-  }
-
   return {
     async list() {
       const owned = await deps.listOwnedAgentIds();
@@ -61,7 +34,10 @@ export function createCaseStudiesService(deps: {
 
     async get(id) {
       const record = await getOwned(id);
-      return toEdition(record, await resolveDraft(record));
+      return toEdition(
+        record,
+        await resolveDraft(record, deps.readArtifactText),
+      );
     },
 
     async release(id) {
@@ -74,7 +50,7 @@ export function createCaseStudiesService(deps: {
         });
       }
       if (verdict === "already-released") return toSummary(record);
-      const draft = await resolveDraft(record);
+      const draft = await resolveDraft(record, deps.readArtifactText);
       const released = await deps.repo.setStatus(id, "released", draft);
       if (!released) {
         throw new TRPCError({
