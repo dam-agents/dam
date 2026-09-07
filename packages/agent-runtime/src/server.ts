@@ -41,6 +41,7 @@ import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
@@ -168,6 +169,20 @@ const {
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
+let recoveryScheduled = false;
+function scheduleRecovery(): void {
+  if (recoveryScheduled) return;
+  recoveryScheduled = true;
+  setTimeout(() => {
+    void recoverInterruptedTurns({
+      store: activeTurns,
+      sessionMetadata,
+      triggerDriver,
+      log: (msg) => process.stderr.write(`[recovery] ${msg}\n`),
+    });
+  }, 5_000).unref();
+}
+
 const runtimeChannel = await composeRuntimeChannel({
   manifestPath,
   agentHome: homeDir,
@@ -190,6 +205,7 @@ const runtimeChannel = await composeRuntimeChannel({
         configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),
         );
+        scheduleRecovery();
       },
     }),
     createFilePlugin(),
@@ -623,6 +639,8 @@ server.listen(config.PORT, () => {
     agentRuntimeVersion:
       process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
+
+  if (envStore.ready()) scheduleRecovery();
 });
 
 if (config.MEM_REAPER && !config.PLATFORM_DEV) {

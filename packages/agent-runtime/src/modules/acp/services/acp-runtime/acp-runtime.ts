@@ -214,6 +214,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
+    interruptedAt(sessionId) {
+      if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
+      return deps.activeTurns
+        ?.leftovers()
+        .find((m) => m.sessionId === sessionId && m.origin === "interactive")
+        ?.startedAt;
+    },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
     },
