@@ -75,6 +75,7 @@ export function useFeedArtifacts(items: readonly FeedItem[]): SessionArtifacts {
 
 export interface Feed {
   items: FeedItem[];
+  workingAgentIds: ReadonlySet<string>;
   agents: readonly AgentView[];
   runningAgents: readonly AgentView[];
   hasAgents: boolean;
@@ -124,6 +125,9 @@ export function useFeed(): Feed {
 
   return {
     items,
+    workingAgentIds: new Set(
+      items.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
+    ),
     agents,
     runningAgents,
     hasAgents: agents.length > 0,

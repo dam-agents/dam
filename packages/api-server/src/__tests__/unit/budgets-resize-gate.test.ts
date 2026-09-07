@@ -89,12 +89,17 @@ describe("budgets meter (#1900)", () => {
       ],
       readCeilingOverride: async () => null,
       defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu).toEqual({ reservedMilli: 1500, ceilingMilli: 4000 });
     expect(reserved.memory).toEqual({
       reservedBytes: 1024 ** 3,
       ceilingBytes: 8 * 1024 ** 3,
+    });
+    expect(reserved.slot).toEqual({
+      cpuMilli: 1000,
+      memoryBytes: 2 * 1024 ** 3,
     });
   });
 
@@ -103,6 +108,7 @@ describe("budgets meter (#1900)", () => {
       listAgents: async () => [],
       readCeilingOverride: async () => ({ cpu: "8", memory: "16Gi" }),
       defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu.ceilingMilli).toBe(8000);
