@@ -42,7 +42,7 @@ export function readProcTable(): ProcEntry[] {
           rssBytes = Number.parseInt(line.slice(6), 10) * 1024;
       }
       entries.push({ pid, ppid, name, rssBytes });
-    } catch {} // processes vanish between readdir and read
+    } catch {}
   }
   return entries;
 }

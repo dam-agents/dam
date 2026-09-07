@@ -38,6 +38,7 @@ import {
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
+import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
@@ -100,6 +101,7 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
+  activeTurns?: ActiveTurnStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -139,15 +141,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return channels;
   }
 
+  const isMachineSession = (sessionId: string): boolean => {
+    const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+    return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
+  };
+
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
-      if (!nonViewerChannels.has(channel)) return;
-      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
-      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+      const machine = isMachineSession(sessionId);
+      deps.activeTurns?.record(sessionId, machine ? "machine" : "interactive");
+      if (nonViewerChannels.has(channel) && machine)
         deps.sessionMetadata?.startRun(sessionId);
     },
-    onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
+    onTurnEnded: (sessionId, cause) => {
+      deps.sessionMetadata?.finishRun(sessionId);
+      if (cause === "completed") deps.activeTurns?.remove(sessionId);
+    },
     canStart: (sessionId) =>
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
@@ -737,6 +747,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
+        deps.activeTurns?.remove(paramsSid);
         supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,

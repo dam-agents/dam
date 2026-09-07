@@ -13,6 +13,10 @@ import {
 } from "./infrastructure/history-provider.js";
 import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
 import {
+  createActiveTurnStore,
+  type ActiveTurnStore,
+} from "./infrastructure/active-turn-store.js";
+import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
@@ -82,6 +86,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   backgroundWork: BackgroundWorkRegistry;
   sessions: SessionsService;
   sessionChanges: SessionChanges;
+  activeTurns: ActiveTurnStore;
 } {
   const sessionChanges = createSessionChanges();
   const sessionMetadata = notifyingSessionMetadataStore(
@@ -96,8 +101,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
     opts.stateBackend,
     () => new Date().toISOString(),
   );
+  const activeTurns = createActiveTurnStore(opts.stateBackend);
   const runtime = createAcpRuntime({
     undeliveredPrompts,
+    activeTurns,
     spawnAgent: () =>
       createChildAgentProcess({
         command: opts.command,
@@ -135,5 +142,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     backgroundWork,
     sessions,
     sessionChanges,
+    activeTurns,
   };
 }

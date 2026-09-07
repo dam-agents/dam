@@ -13,6 +13,8 @@ const DEFAULT_QUEUE_PARK_MS = 90 * 1000;
 
 export type PromptFate = "started" | "queued" | "refused";
 
+export type TurnEndCause = "completed" | "dropped";
+
 export type QueueDropCause =
   | "park-expired"
   | "session-forgotten"
@@ -54,7 +56,7 @@ export interface PromptSchedulerDeps {
     cause: QueueDropCause,
   ) => void;
   onTurnStarted?: (submission: PromptSubmission) => void;
-  onTurnEnded?: (sessionId: string) => void;
+  onTurnEnded?: (sessionId: string, cause: TurnEndCause) => void;
   queueParkMs?: number;
 }
 
@@ -197,7 +199,7 @@ export function createPromptScheduler(
         return { turnEnded: false };
       }
       activeTurns.delete(sessionId);
-      deps.onTurnEnded?.(sessionId);
+      deps.onTurnEnded?.(sessionId, "completed");
       if (queues.get(sessionId)?.length) maybeStartNext(sessionId);
       else queues.delete(sessionId);
       return { turnEnded: true };
@@ -249,7 +251,7 @@ export function createPromptScheduler(
     forget(sessionId) {
       const wasActive = activeTurns.delete(sessionId);
       dropQueue(sessionId, "session-forgotten");
-      if (wasActive) deps.onTurnEnded?.(sessionId);
+      if (wasActive) deps.onTurnEnded?.(sessionId, "dropped");
     },
 
     clear() {
@@ -259,7 +261,7 @@ export function createPromptScheduler(
       activeTurns.clear();
       for (const sessionId of [...queues.keys()])
         dropQueue(sessionId, "scheduler-cleared");
-      for (const sessionId of active) deps.onTurnEnded?.(sessionId);
+      for (const sessionId of active) deps.onTurnEnded?.(sessionId, "dropped");
     },
   };
 }
