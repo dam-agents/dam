@@ -15,7 +15,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `UserAuthenticated` | `auth` | admission/auth |
 | `AgentCreated` | _elsewhere_ | agents |
 | `AgentUpdated` | _elsewhere_ | agents |
-| `AgentDeleted` | _elsewhere_ | agents |
+| `AgentDeleted` | _elsewhere_ | agents, agent-artifacts-sweeper |
 | `AgentRestarted` | _elsewhere_ | agents |
 | `AgentWoken` | _elsewhere_ | agents |
 | `SlackConnected` | _elsewhere_ | agents |

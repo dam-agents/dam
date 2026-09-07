@@ -55,6 +55,7 @@ export {
   type DefaultResourceLimits,
 } from "./domain/spec-assembly.js";
 export {
+  allChannelAgentIds,
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,

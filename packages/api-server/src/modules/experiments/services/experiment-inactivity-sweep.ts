@@ -1,5 +1,5 @@
-import { emit, EventType } from "../../../events.js";
 import { sweepDecision } from "../domain/lifecycle.js";
+import { reapRunningExperiment } from "./reap-running-experiment.js";
 import type { ExperimentsRepository } from "../infrastructure/experiments-repository.js";
 
 export interface ExperimentInactivitySweep {
@@ -49,20 +49,12 @@ export function createExperimentInactivitySweep(
           ) {
             continue;
           }
-          const flipped = await deps.repo.transition(
-            row.id,
-            "running",
-            "failed",
-            { finishedAt: at, error: "inactivity deadline exceeded" },
+          const flipped = await reapRunningExperiment(
+            deps.repo,
+            row,
+            "inactivity deadline exceeded",
+            at,
           );
-          if (flipped) {
-            emit({
-              type: EventType.ExperimentChanged,
-              experimentId: row.id,
-              agentId: row.driverAgentId,
-              ownerSub: row.owner,
-            });
-          }
           if (flipped && deps.onReaped) {
             await deps.onReaped({
               id: row.id,

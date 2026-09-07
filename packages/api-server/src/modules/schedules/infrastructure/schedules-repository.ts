@@ -41,6 +41,9 @@ export interface SchedulesRepository {
   ): Promise<Schedule | null>;
   updateName(id: string, owner: string, name: string): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
+  listIdsByAgent(agentId: string): Promise<string[]>;
+  deleteByAgent(agentId: string): Promise<void>;
+  listAgentIds(): Promise<string[]>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -184,6 +187,27 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
       await db
         .delete(schedulesTable)
         .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)));
+    },
+
+    async listIdsByAgent(agentId): Promise<string[]> {
+      const rows = await db
+        .select({ id: schedulesTable.id })
+        .from(schedulesTable)
+        .where(eq(schedulesTable.agentId, agentId));
+      return rows.map((r) => r.id);
+    },
+
+    async deleteByAgent(agentId): Promise<void> {
+      await db
+        .delete(schedulesTable)
+        .where(eq(schedulesTable.agentId, agentId));
+    },
+
+    async listAgentIds(): Promise<string[]> {
+      const rows = await db
+        .selectDistinct({ agentId: schedulesTable.agentId })
+        .from(schedulesTable);
+      return rows.map((r) => r.agentId);
     },
 
     async toggle(id, owner): Promise<Schedule | null> {

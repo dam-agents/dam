@@ -1,14 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { createAgentArtifactsSweeper } from "../../sagas/agent-artifacts-sweeper.js";
+import { events$, ofType, EventType, type AgentDeleted } from "../../events.js";
 import type {
   K8sClient,
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
 
-function fakeK8s(liveAgents: string[]): K8sClient {
+function fakeK8s(
+  liveAgents: string[],
+  opts: { appearsAfterList?: string[] } = {},
+): K8sClient {
+  const present = new Set([...liveAgents, ...(opts.appearsAfterList ?? [])]);
   return {
     listCustomObjects: async () =>
       liveAgents.map((name) => ({ metadata: { name } }) as KubeObject),
+    getCustomObject: async (_plural: string, name: string) =>
+      present.has(name) ? ({ metadata: { name } } as KubeObject) : null,
   } as unknown as K8sClient;
 }
 
@@ -102,6 +109,69 @@ describe("agent-artifacts-sweeper", () => {
     expect(cleaned).toEqual(["agent-orphan"]);
     expect(stderr).toHaveBeenCalled();
     stderr.mockRestore();
+  });
+
+  /**
+   * TEST_SCENARIO: An Agent created between the CR list and the source scan
+   * shows up as an orphan candidate. Its rows must survive: the sweep re-reads
+   * the CR before touching anything, because some cleanups soft-delete the
+   * agent's usage record.
+   */
+  it("skips a candidate whose Agent exists by the time it is reaped", async () => {
+    const cleaned: string[] = [];
+    const sweeper = createAgentArtifactsSweeper({
+      k8s: fakeK8s([], { appearsAfterList: ["agent-new"] }),
+      sources: [
+        {
+          name: "usage-agents",
+          listAgentIds: async () => ["agent-new", "agent-orphan"],
+          cleanup: async (id) => {
+            cleaned.push(id);
+          },
+        },
+      ],
+      batchSize: 100,
+    });
+
+    await sweeper.tick();
+    expect(cleaned).toEqual(["agent-orphan"]);
+  });
+
+  /**
+   * TEST_SCENARIO: Record kinds maintained by deletion-event subscribers are
+   * listed for detection only. Each confirmed orphan is announced once as an
+   * AgentDeleted event, after the direct cleanups ran, so every subscriber
+   * reacts as on an API delete. A candidate whose Agent still exists is never
+   * announced.
+   */
+  it("announces each confirmed orphan once, after the direct cleanups", async () => {
+    const order: string[] = [];
+    const sub = events$()
+      .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
+      .subscribe((e) => {
+        order.push(`deleted:${e.agentId}`);
+      });
+    const sweeper = createAgentArtifactsSweeper({
+      k8s: fakeK8s(["agent-live"], { appearsAfterList: ["agent-new"] }),
+      sources: [
+        {
+          name: "egress",
+          listAgentIds: async () => ["agent-orphan"],
+          cleanup: async (id) => {
+            order.push(`cleanup:${id}`);
+          },
+        },
+        {
+          name: "channels",
+          listAgentIds: async () => ["agent-orphan", "agent-new", "agent-live"],
+        },
+      ],
+      batchSize: 100,
+    });
+
+    await sweeper.tick();
+    sub.unsubscribe();
+    expect(order).toEqual(["cleanup:agent-orphan", "deleted:agent-orphan"]);
   });
 
   it("is a no-op when there are no orphans", async () => {

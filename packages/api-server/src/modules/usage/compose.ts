@@ -10,6 +10,7 @@ import {
 } from "./infrastructure/activity-events-repository.js";
 import {
   upsertAgent,
+  listLiveAgentIds,
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
@@ -53,6 +54,9 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const insert = insertActivityEvent(deps.db, deps.subPseudonymizer);
   const upsertRole = upsertActorRole(deps.db, deps.subPseudonymizer);
   const upsertAgentRow = upsertAgent(deps.db, deps.subPseudonymizer);
+  const registerCreatedAgent = upsertAgent(deps.db, deps.subPseudonymizer, {
+    resetRuntimeState: true,
+  });
   const markDeleted = markAgentDeleted(deps.db);
 
   const routes: Hono<AppEnv> = deps.inspectorRole
@@ -68,7 +72,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
-      upsertAgent: upsertAgentRow,
+      upsertAgent: registerCreatedAgent,
       markAgentDeleted: markDeleted,
     });
     persistActorRolesSub = startPersistActorRolesSaga({
@@ -119,4 +123,8 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   }
 
   return { mount, start, stop, retentionTick };
+}
+
+export function listUsageAgentIds(db: Db): Promise<string[]> {
+  return listLiveAgentIds(db)();
 }

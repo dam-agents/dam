@@ -4,6 +4,7 @@ export {
   composeKbSharesForOwner,
   createKbShareResolver,
   createKbShareAgentCleanup,
+  listKbShareAgentIds,
   startKbShareSync,
   type KbShareAgentOps,
   type KbShareStorePort,

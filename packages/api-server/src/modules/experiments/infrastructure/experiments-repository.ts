@@ -3,6 +3,7 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   lt,
   isNull,
   or,
@@ -132,6 +133,9 @@ export interface ExperimentsRepository {
 
   listInactiveRunning(cutoff: Date, limit: number): Promise<ExperimentRow[]>;
   listRunningDrivers(): Promise<string[]>;
+  listRunningByDriver(driverAgentId: string): Promise<ExperimentRow[]>;
+  listOpenDriverIds(): Promise<string[]>;
+  deleteDraftsByDriver(driverAgentId: string): Promise<void>;
   hasRunningForDriver(driverAgentId: string): Promise<boolean>;
 }
 
@@ -409,6 +413,38 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
         .from(experimentsTable)
         .where(eq(experimentsTable.status, "running"));
       return rows.map((r) => r.driverAgentId);
+    },
+
+    async listRunningByDriver(driverAgentId) {
+      const rows = await db
+        .select()
+        .from(experimentsTable)
+        .where(
+          and(
+            eq(experimentsTable.driverAgentId, driverAgentId),
+            eq(experimentsTable.status, "running"),
+          ),
+        );
+      return rows.map(toRow);
+    },
+
+    async listOpenDriverIds() {
+      const rows = await db
+        .selectDistinct({ driverAgentId: experimentsTable.driverAgentId })
+        .from(experimentsTable)
+        .where(inArray(experimentsTable.status, ["draft", "running"]));
+      return rows.map((r) => r.driverAgentId);
+    },
+
+    async deleteDraftsByDriver(driverAgentId) {
+      await db
+        .delete(experimentsTable)
+        .where(
+          and(
+            eq(experimentsTable.driverAgentId, driverAgentId),
+            eq(experimentsTable.status, "draft"),
+          ),
+        );
     },
 
     async hasRunningForDriver(driverAgentId) {

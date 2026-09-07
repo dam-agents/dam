@@ -82,6 +82,8 @@ export interface OutboxRepo {
     kinds: RuntimeEventKind[],
   ): Promise<number>;
   deleteExpiredEvents(): Promise<number>;
+  deleteForAgent(agentId: string): Promise<void>;
+  listAgentIds(): Promise<string[]>;
   insertEvent(
     input: PendingEventRow & { createdAt?: Date },
     tx?: Db | DbTx,
@@ -367,6 +369,25 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         )
         .returning({ id: runtimeEvents.id })) as { id: string }[];
       return rows.length;
+    },
+
+    async deleteForAgent(agentId): Promise<void> {
+      await db.delete(runtimeEvents).where(eq(runtimeEvents.agentId, agentId));
+      await db
+        .delete(runtimeStateOutbox)
+        .where(eq(runtimeStateOutbox.agentId, agentId));
+    },
+
+    async listAgentIds(): Promise<string[]> {
+      const [outbox, events] = await Promise.all([
+        db
+          .select({ agentId: runtimeStateOutbox.agentId })
+          .from(runtimeStateOutbox),
+        db
+          .selectDistinct({ agentId: runtimeEvents.agentId })
+          .from(runtimeEvents),
+      ]);
+      return [...new Set([...outbox, ...events].map((r) => r.agentId))];
     },
 
     async deleteExpiredEvents(): Promise<number> {

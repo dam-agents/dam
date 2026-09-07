@@ -17,6 +17,11 @@ import {
   createExperimentInactivitySweep,
   type ExperimentInactivitySweep,
 } from "./services/experiment-inactivity-sweep.js";
+import {
+  createExperimentDriverCleanup,
+  type ReapedExperiment,
+} from "./services/experiment-driver-cleanup.js";
+import type { ExperimentsRepository } from "./infrastructure/experiments-repository.js";
 
 export interface ExperimentPinPort {
   set(driverAgentId: string): Promise<void>;
@@ -125,6 +130,56 @@ export function composeExperimentsForOwner(opts: {
   return { experiments };
 }
 
+interface ReapFollowUpOpts {
+  db: Db;
+  repo: ExperimentsRepository;
+  reason: string;
+  logTag: string;
+  pin?: ExperimentPinPort;
+  artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
+  agentsFor?: (owner: string) => AgentsService;
+}
+
+function createReapFollowUp(
+  opts: ReapFollowUpOpts,
+): (row: ReapedExperiment) => Promise<void> {
+  const invocationsRepo = createInvocationsRepository(opts.db);
+  const snapshot = opts.artifactLibraryFor
+    ? createDashboardSnapshotter({
+        db: opts.db,
+        artifactLibraryFor: opts.artifactLibraryFor,
+        repo: opts.repo,
+      })
+    : null;
+  return async ({ id, owner, driverAgentId }) => {
+    try {
+      await cancelExperimentInvocations({
+        invocationsRepo,
+        agents: opts.agentsFor?.(owner),
+        driverAgentId,
+        experimentId: id,
+        reason: opts.reason,
+      });
+    } catch (err) {
+      process.stderr.write(
+        `[${opts.logTag}] invocation cancel ${id} failed: ${err instanceof Error ? err.message : err}\n`,
+      );
+    }
+    if (opts.pin && !(await opts.repo.hasRunningForDriver(driverAgentId))) {
+      await opts.pin.clear(driverAgentId);
+    }
+    if (snapshot) {
+      try {
+        await snapshot(id, owner);
+      } catch (err) {
+        process.stderr.write(
+          `[${opts.logTag}] dashboard snapshot ${id} failed: ${err instanceof Error ? err.message : err}\n`,
+        );
+      }
+    }
+  };
+}
+
 export function composeExperimentInactivitySweep(opts: {
   db: Db;
   inactivityMs: number;
@@ -134,54 +189,38 @@ export function composeExperimentInactivitySweep(opts: {
   agentsFor?: (owner: string) => AgentsService;
 }): ExperimentInactivitySweep {
   const repo = createExperimentsRepository(opts.db);
-  const invocationsRepo = createInvocationsRepository(opts.db);
-  const snapshot = opts.artifactLibraryFor
-    ? createDashboardSnapshotter({
-        db: opts.db,
-        artifactLibraryFor: opts.artifactLibraryFor,
-        repo,
-      })
-    : null;
   return createExperimentInactivitySweep({
     repo,
     inactivityMs: opts.inactivityMs,
     batchSize: opts.batchSize,
-    onReaped: async ({
-      id,
-      owner,
-      driverAgentId,
-    }: {
-      id: string;
-      owner: string;
-      driverAgentId: string;
-    }) => {
-      try {
-        await cancelExperimentInvocations({
-          invocationsRepo,
-          agents: opts.agentsFor?.(owner),
-          driverAgentId,
-          experimentId: id,
-          reason: "experiment reaped for inactivity",
-        });
-      } catch (err) {
-        process.stderr.write(
-          `[experiment-inactivity] invocation cancel ${id} failed: ${err instanceof Error ? err.message : err}\n`,
-        );
-      }
-      if (opts.pin && !(await repo.hasRunningForDriver(driverAgentId))) {
-        await opts.pin.clear(driverAgentId);
-      }
-      if (snapshot) {
-        try {
-          await snapshot(id, owner);
-        } catch (err) {
-          process.stderr.write(
-            `[experiment-inactivity] dashboard snapshot ${id} failed: ${err instanceof Error ? err.message : err}\n`,
-          );
-        }
-      }
-    },
+    onReaped: createReapFollowUp({
+      ...opts,
+      repo,
+      reason: "experiment reaped for inactivity",
+      logTag: "experiment-inactivity",
+    }),
   });
+}
+
+export function createExperimentsCleanupHook(opts: {
+  db: Db;
+  artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
+  agentsFor?: (owner: string) => AgentsService;
+}): (agentId: string) => Promise<void> {
+  const repo = createExperimentsRepository(opts.db);
+  return createExperimentDriverCleanup({
+    repo,
+    onReaped: createReapFollowUp({
+      ...opts,
+      repo,
+      reason: "driver agent deleted",
+      logTag: "experiments-cleanup",
+    }),
+  });
+}
+
+export function listOpenExperimentDriverIds(db: Db): Promise<string[]> {
+  return createExperimentsRepository(db).listOpenDriverIds();
 }
 
 export async function reconcileExperimentPins(opts: {

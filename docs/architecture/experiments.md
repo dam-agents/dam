@@ -286,7 +286,11 @@ the sweep runs with a jittered start. A running Experiment also **pins** its
 driver Agent against the idle checker's hibernation (the
 `agent-platform.ai/experiment-active` annotation, subordinate to a user hard
 stop); reaching any terminal state releases the pin — the sweep is therefore
-also what un-pins a crashed run's driver.
+also what un-pins a crashed run's driver. Deleting the driver Agent closes its
+running Experiments the same way — reaped to `failed`, Invocations shed,
+results artifact minted — and removes its drafts, which cannot run without
+their driver; the periodic orphan sweep does the same for a deletion that
+bypassed the API ([persistence § Lifetime](persistence.md#lifetime)).
 
 ## Domain events
 
