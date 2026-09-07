@@ -51,7 +51,9 @@ export function ChatArtifactsPanel({
   const { data: artifacts = [], isPending } = useArtifacts(
     open && agentId ? { agentId } : null,
   );
-  const { data: folders = [] } = useArtifactFolders(open && !!agentId);
+  const { data: folders = [], isPending: foldersPending } = useArtifactFolders(
+    open && !!agentId,
+  );
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const folderCollapse = useStore((s) =>
@@ -84,9 +86,9 @@ export function ChatArtifactsPanel({
       headerClassName="border-t border-border"
       style={style}
     >
-      {groups.length === 0 ? (
+      {foldersPending || groups.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
-          {isPending ? "Loading\u2026" : "No artifacts yet"}
+          {isPending || foldersPending ? "Loading\u2026" : "No artifacts yet"}
         </p>
       ) : (
         <div className="overflow-y-auto">

@@ -26,7 +26,8 @@ function ToolChip({ name }: { name: string }) {
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
-  const { data: folders = [] } = useArtifactFolders();
+  const { data: folders = [], isPending: foldersPending } =
+    useArtifactFolders();
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -61,7 +62,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         </span>
       </Callout>
 
-      {isLoading ? (
+      {isLoading || foldersPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : artifacts.length === 0 ? (
         <Card className="px-5 py-8 text-center">

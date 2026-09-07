@@ -29,7 +29,10 @@ export function MarqueeTitle({
     return () => observer.disconnect();
   }, [text]);
 
-  const animating = animate && shift < 0;
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  const animating = animate && shift < 0 && !reducedMotion;
   return (
     <span
       ref={containerRef}

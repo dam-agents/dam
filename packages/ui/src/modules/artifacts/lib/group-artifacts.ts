@@ -36,7 +36,10 @@ export function groupArtifactsByFolder(
       groups.push({ key: folder.id, folder, artifacts: inFolder });
   }
 
-  const ungrouped = byFolder.get(null) ?? [];
+  const knownFolderIds = new Set(folders.map((f) => f.id));
+  const ungrouped = artifacts.filter(
+    (a) => a.folderId === null || !knownFolderIds.has(a.folderId),
+  );
   if (ungrouped.length > 0 || includeEmptyUngrouped)
     groups.push({ key: UNGROUPED_KEY, folder: null, artifacts: ungrouped });
 
