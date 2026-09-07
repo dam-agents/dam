@@ -19,9 +19,16 @@ import {
 } from "../lib/slots.js";
 import { SlotBar } from "./slot-bar.js";
 
-const STATE_DOT: Record<Exclude<ComputeCellState, "available">, string> = {
+type HeldState = Exclude<ComputeCellState, "available">;
+
+const STATE_DOT: Record<HeldState, string> = {
   running: "bg-success",
   awake: "bg-accent",
+};
+
+const STATE_LABEL: Record<HeldState, string> = {
+  running: "running",
+  awake: "awake",
 };
 
 function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
@@ -85,7 +92,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
                   STATE_DOT[group.state],
                 )}
               />
-              {group.agents} {group.state}
+              {group.agents} {STATE_LABEL[group.state]}
             </span>
           ))}
         </span>
