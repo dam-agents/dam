@@ -2,11 +2,8 @@ import { z } from "zod";
 
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
-export type TurnOrigin = "machine" | "interactive";
-
 const markerSchema = z.object({
   startedAt: z.string(),
-  origin: z.enum(["machine", "interactive"]),
   attempts: z.number().int().nonnegative().default(0),
 });
 export type ActiveTurnMarker = z.infer<typeof markerSchema> & {
@@ -25,7 +22,7 @@ const stateSchema = z
   });
 
 export interface ActiveTurnStore {
-  record(sessionId: string, origin: TurnOrigin): void;
+  record(sessionId: string): void;
   remove(sessionId: string): void;
   bumpAttempts(sessionId: string): void;
   clearAll(): void;
@@ -35,15 +32,16 @@ export interface ActiveTurnStore {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Marks the session of every turn while it runs, on
  * this pod's own disk, so the next boot can tell which turns an abnormal death
- * cut short. A marker is written when a turn starts and removed only when that
- * turn *completes* — a turn dropped because the harness died stays marked,
- * since that is exactly the interruption to recover from. It is removed on
- * session delete and on graceful shutdown (SIGTERM is hibernation or a
- * deliberate stop, not a crash). `attempts` counts recovery resumes so a
- * continuation that dies again cannot crash-loop the pod; a re-record of a
- * still-marked session preserves its count. Its own document, separate from
- * session metadata, so a corrupt write here cannot take run accounting or user
- * text with it.
+ * cut short. A marker is written when a turn starts and removed on every turn
+ * end agent-runtime observes — completed, or dropped in-process when the
+ * harness recycles — and on session delete and graceful shutdown. So a marker
+ * that survives to the next boot names precisely a turn whose end agent-runtime
+ * never saw: the process was SIGKILLed (an OOM group-kill, an eviction) with
+ * the turn still running. `attempts` counts recovery resumes so a continuation
+ * that dies again cannot crash-loop the pod; a re-record of a still-marked
+ * session preserves its count. Its own document, separate from session
+ * metadata, so a corrupt write here cannot take run accounting or user text
+ * with it.
  */
 export function createActiveTurnStore(
   backend: DocumentStoreBackend,
@@ -55,17 +53,13 @@ export function createActiveTurnStore(
   });
 
   return {
-    record(sessionId, origin) {
+    record(sessionId) {
       const { sessions } = store.read();
       const existing = sessions[sessionId];
       store.write({
         sessions: {
           ...sessions,
-          [sessionId]: {
-            startedAt: now(),
-            origin,
-            attempts: existing?.attempts ?? 0,
-          },
+          [sessionId]: { startedAt: now(), attempts: existing?.attempts ?? 0 },
         },
       });
     },

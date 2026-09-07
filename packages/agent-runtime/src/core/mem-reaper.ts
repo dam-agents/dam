@@ -81,6 +81,20 @@ export function pickVictim(
 
 const mib = (n: number) => Math.round(n / 1_048_576);
 
+function sumStat(path: string, keys: string[]): number {
+  try {
+    let total = 0;
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      const [key, value] = line.split(" ");
+      if (key !== undefined && keys.includes(key))
+        total += Number.parseInt(value ?? "0", 10) || 0;
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
 export function startMemReaper(opts: {
   thresholdFraction: number;
   log: (msg: string) => void;
@@ -100,17 +114,33 @@ export function startMemReaper(opts: {
         "/sys/fs/cgroup/memory.current",
         "/sys/fs/cgroup/memory/memory.usage_in_bytes",
       );
-      if (cur === null || cur / cgMax < opts.thresholdFraction) return;
-      const usage = `cgroup ${mib(cur)}/${mib(cgMax)}MB`;
+      if (cur === null) return;
+      const reclaimable = sumStat("/sys/fs/cgroup/memory.stat", [
+        "inactive_file",
+        "active_file",
+      ]);
+      const unreclaimable = Math.max(0, cur - reclaimable);
+      if (unreclaimable / cgMax < opts.thresholdFraction) return;
+      const usage = `cgroup ${mib(unreclaimable)}(+${mib(reclaimable)} cache)/${mib(cgMax)}MB`;
       const victim = pickVictim(readProcTable(), process.pid);
       if (victim === null) {
         opts.log(`at ${usage} with only protected processes; cannot reap`);
         return;
       }
-      process.kill(victim.pid, "SIGKILL");
-      opts.log(
-        `killed pid ${String(victim.pid)} (${victim.name}, ${mib(victim.rssBytes)}MB) at ${usage}`,
-      );
-    } catch {}
+      try {
+        process.kill(victim.pid, "SIGKILL");
+        opts.log(
+          `killed pid ${String(victim.pid)} (${victim.name}, ${mib(victim.rssBytes)}MB) at ${usage}`,
+        );
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ESRCH")
+          opts.log(
+            `failed to kill pid ${String(victim.pid)}: ${String(code ?? err)}`,
+          );
+      }
+    } catch (err) {
+      opts.log(`poll failed: ${(err as Error).message}`);
+    }
   }, opts.pollMs ?? 2_000).unref();
 }

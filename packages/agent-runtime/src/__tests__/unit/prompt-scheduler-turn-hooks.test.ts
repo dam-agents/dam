@@ -48,17 +48,14 @@ describe("prompt scheduler turn hooks", () => {
 
     scheduler.submit(submission("s1", 1));
     scheduler.forget("s1");
-    expect(onTurnEnded.mock.calls).toEqual([["s1", "dropped"]]);
+    expect(onTurnEnded.mock.calls).toEqual([["s1"]]);
 
     scheduler.forget("s1");
     expect(onTurnEnded).toHaveBeenCalledTimes(1);
 
     scheduler.submit(submission("s2", 2));
     scheduler.clear();
-    expect(onTurnEnded.mock.calls).toEqual([
-      ["s1", "dropped"],
-      ["s2", "dropped"],
-    ]);
+    expect(onTurnEnded.mock.calls).toEqual([["s1"], ["s2"]]);
   });
 
   /**

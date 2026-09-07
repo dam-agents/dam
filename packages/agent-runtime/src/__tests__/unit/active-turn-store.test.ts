@@ -29,16 +29,11 @@ const open = () =>
 describe("active-turn store", () => {
   it("records, surfaces, and clears markers", () => {
     const store = open();
-    store.record("s1", "machine");
-    store.record("s2", "interactive");
+    store.record("s1");
+    store.record("s2");
     expect(store.leftovers()).toEqual([
-      { sessionId: "s1", startedAt: "t0001", origin: "machine", attempts: 0 },
-      {
-        sessionId: "s2",
-        startedAt: "t0002",
-        origin: "interactive",
-        attempts: 0,
-      },
+      { sessionId: "s1", startedAt: "t0001", attempts: 0 },
+      { sessionId: "s2", startedAt: "t0002", attempts: 0 },
     ]);
     store.remove("s1");
     expect(store.leftovers().map((m) => m.sessionId)).toEqual(["s2"]);
@@ -46,22 +41,22 @@ describe("active-turn store", () => {
 
   it("preserves attempts across a re-record but bumps on demand", () => {
     const store = open();
-    store.record("s1", "machine");
+    store.record("s1");
     store.bumpAttempts("s1");
-    store.record("s1", "machine");
+    store.record("s1");
     expect(store.leftovers()[0]?.attempts).toBe(1);
   });
 
   it("reads leftovers back from disk on a fresh backend", () => {
-    open().record("s1", "machine");
+    open().record("s1");
     expect(open().leftovers()).toEqual([
-      { sessionId: "s1", startedAt: "t0001", origin: "machine", attempts: 0 },
+      { sessionId: "s1", startedAt: "t0001", attempts: 0 },
     ]);
   });
 
   it("clearAll empties the document", () => {
     const store = open();
-    store.record("s1", "machine");
+    store.record("s1");
     store.clearAll();
     expect(store.leftovers()).toEqual([]);
   });

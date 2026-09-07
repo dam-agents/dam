@@ -61,7 +61,6 @@ export interface SessionBootstrapDeps {
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
-  interruptedAt(sessionId: string): string | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
   supersededFor(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
@@ -174,14 +173,7 @@ export function createSessionBootstrap(
       result: withReplayMeta(
         metadata.value,
         clip,
-        kind === "load"
-          ? {
-              inFlight: deps.turnInFlight(sessionId),
-              ...(deps.interruptedAt(sessionId) !== undefined && {
-                interruptedAt: deps.interruptedAt(sessionId),
-              }),
-            }
-          : null,
+        kind === "load" ? { inFlight: deps.turnInFlight(sessionId) } : null,
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
         kind === "load" ? deps.supersededFor(sessionId) : [],
       ),

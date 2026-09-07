@@ -101,7 +101,7 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
-  activeTurns?: ActiveTurnStore;
+  activeTurns: ActiveTurnStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -149,14 +149,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
-      const machine = isMachineSession(sessionId);
-      deps.activeTurns?.record(sessionId, machine ? "machine" : "interactive");
-      if (nonViewerChannels.has(channel) && machine)
+      deps.activeTurns.record(sessionId);
+      if (nonViewerChannels.has(channel) && isMachineSession(sessionId))
         deps.sessionMetadata?.startRun(sessionId);
     },
-    onTurnEnded: (sessionId, cause) => {
+    onTurnEnded: (sessionId) => {
       deps.sessionMetadata?.finishRun(sessionId);
-      if (cause === "completed") deps.activeTurns?.remove(sessionId);
+      deps.activeTurns.remove(sessionId);
     },
     canStart: (sessionId) =>
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
@@ -213,13 +212,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript,
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
-    },
-    interruptedAt(sessionId) {
-      if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
-      return deps.activeTurns
-        ?.leftovers()
-        .find((m) => m.sessionId === sessionId && m.origin === "interactive")
-        ?.startedAt;
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
@@ -754,7 +746,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
-        deps.activeTurns?.remove(paramsSid);
+        deps.activeTurns.remove(paramsSid);
         supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,

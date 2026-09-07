@@ -11,6 +11,7 @@ import {
   type SessionMetadataStore,
 } from "../../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
+import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 /**
@@ -212,6 +213,7 @@ export function createWorld(
     onArtifactTouch: () => {},
     queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),
+    activeTurns: createActiveTurnStore(memoryDocumentBackend()),
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();
@@ -313,9 +315,8 @@ export interface SessionMetadata {
   unread(sessionId: string): boolean;
 }
 
-export function createSessionMetadata(): SessionMetadata {
-  let tick = 0;
-  const backend: DocumentStoreBackend = {
+export function memoryDocumentBackend(): DocumentStoreBackend {
+  return {
     open(_name, opts) {
       let state = opts.initial();
       return {
@@ -326,8 +327,12 @@ export function createSessionMetadata(): SessionMetadata {
       };
     },
   };
+}
+
+export function createSessionMetadata(): SessionMetadata {
+  let tick = 0;
   const store = createSessionMetadataStore(
-    backend,
+    memoryDocumentBackend(),
     () => `t${String(++tick).padStart(6, "0")}`,
   );
   return {

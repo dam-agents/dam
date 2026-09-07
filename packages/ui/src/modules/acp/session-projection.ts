@@ -276,17 +276,6 @@ export function settleReplay(
   return turnInFlight ? messages : finalizeAllStreaming(messages);
 }
 
-export function appendInterruptedNotice(
-  messages: Message[],
-  interruptedAt: string | undefined,
-): Message[] {
-  if (interruptedAt === undefined) return messages;
-  return appendNotice(
-    messages,
-    "The agent's previous turn was interrupted by an unexpected restart, likely out of memory. Its last actions may be incomplete — send a message to continue.",
-  );
-}
-
 function finalizeStreaming(m: Message): Message {
   return m.role === "assistant" && m.streaming
     ? { ...m, streaming: false, queued: false }

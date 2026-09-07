@@ -13,17 +13,19 @@ const INTERRUPTION_NOTICE = [
 ].join("\n");
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: On boot, resumes the machine-driven Sessions whose
- * turn an abnormal pod death interrupted, so a scheduled fire that was running
- * when the pod was OOM-killed continues instead of being silently dropped. It
- * reads the leftover Active-Turn markers, and for each one that is
- * machine-driven, still on its first attempt, and not deleted, it resumes the
- * Session through the Trigger Session Driver with an injected interruption
- * notice as the prompt. The attempt is counted before the resume is tried, so
- * a continuation that runs out of memory again cannot crash-loop the pod.
- * Interactive Sessions are left for the user to continue — surfaced on
- * session/load, never auto-resumed — matching the platform's no-auto-resend
- * rule, since only the user can judge whether a dropped prompt already ran.
+ * UNIT_BOUNDARY_DESCRIPTION: On boot, resumes every Session whose turn an
+ * abnormal pod death interrupted, so work continues unattended instead of
+ * silently stopping until someone notices — a scheduled fire and a person's
+ * chat alike. It reads the leftover Active-Turn markers and, for each still on
+ * its first attempt and not deleted, resumes the Session through the Trigger
+ * Session Driver with an injected interruption notice as the prompt; the
+ * running harness picks the resumed turn up the way it would a message sent
+ * mid-task. The attempt is counted before the resume is tried, so a
+ * continuation that runs out of memory again cannot crash-loop the pod. This is
+ * not the no-auto-resend case: an Active-Turn marker is written only once the
+ * harness has *taken* the prompt, so resuming continues a turn the agent
+ * already saw — it never re-sends a queued prompt the agent never received
+ * (those live in the undelivered-prompts document and stay user-initiated).
  */
 export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
@@ -32,7 +34,6 @@ export async function recoverInterruptedTurns(deps: {
   log: (msg: string) => void;
 }): Promise<void> {
   for (const marker of deps.store.leftovers()) {
-    if (marker.origin !== "machine") continue;
     if (marker.attempts > 0) {
       deps.log(
         `not resuming ${marker.sessionId}: already attempted ${String(marker.attempts)}x`,
