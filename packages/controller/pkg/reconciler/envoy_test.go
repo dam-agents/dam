@@ -655,6 +655,30 @@ func TestChainsFromSecrets_MalformedPathRewriteIsDropped(t *testing.T) {
 	)
 }
 
+// TEST_SCENARIO: two Secrets on one host can disagree about what a prefix rewrites to, and the chain can carry only one route per prefix, so the first is kept and the loser is dropped rather than rendering an ambiguous route table.
+func TestChainsFromSecrets_ConflictingRewriteKeepsFirst(t *testing.T) {
+	first := ownerSecret("platform-conn-a", "connection", "a")
+	delete(first.Annotations, envoyHostPatternAnn)
+	first.Annotations[envoyInjectionHostsAnn] = `[{"host":"proxy.example.com","pathRewrites":[
+		{"prefix":"/inference/v1/","replacement":"/v1/"}
+	]}]`
+	first = withHostSDS(first, "proxy.example.com")
+
+	second := ownerSecret("platform-conn-b", "connection", "b")
+	delete(second.Annotations, envoyHostPatternAnn)
+	second.Annotations[envoyInjectionHostsAnn] = `[{"host":"proxy.example.com","headerName":"X-Other","pathRewrites":[
+		{"prefix":"/inference/v1/","replacement":"/other/"}
+	]}]`
+	second = withHostSDS(second, "proxy.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{first, second}, nil)
+	require.Len(t, chains, 1)
+	assert.Equal(t,
+		[]envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}},
+		chains[0].PathRewrites,
+	)
+}
+
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 	assert.Equal(t, "host-YXBpLmdpdGh1Yi5jb20.sds.yaml", sdsFileKeyForHost("api.github.com"))
 	assert.Equal(t, "host-Z2l0aHViLmNvbQ.sds.yaml", sdsFileKeyForHost("github.com"))

@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { IBM_LITELLM_BOB_MODEL } from "../../../../types.js";
+import {
+  IBM_LITELLM_BOB_MODEL_EXAMPLE,
+  IBM_LITELLM_BOB_MODEL_HINT,
+  IBM_LITELLM_BOB_MODEL_LABEL,
+} from "../../../../types.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
@@ -41,7 +45,7 @@ export function IbmLitellmForm({
     mode: "onChange",
     defaultValues: { value: "", bobModel: "" },
   });
-  const { isSubmitting, isValid } = formState;
+  const { errors, isSubmitting, isValid } = formState;
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
@@ -84,6 +88,24 @@ export function IbmLitellmForm({
         />
       </a>
 
+      {!isEdit && (
+        <FormField
+          label={IBM_LITELLM_BOB_MODEL_LABEL}
+          hint={IBM_LITELLM_BOB_MODEL_HINT}
+          error={errors.bobModel?.message}
+        >
+          <Input
+            type="text"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            placeholder={IBM_LITELLM_BOB_MODEL_EXAMPLE}
+            className="font-mono text-sm"
+            {...register("bobModel")}
+          />
+        </FormField>
+      )}
+
       <div className="flex gap-3">
         <Input
           type="password"
@@ -99,22 +121,6 @@ export function IbmLitellmForm({
         </Button>
       </div>
 
-      {!isEdit && (
-        <FormField
-          label="Bob model"
-          hint={`Model Bob asks this proxy for. Empty → ${IBM_LITELLM_BOB_MODEL}.`}
-        >
-          <Input
-            type="text"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
-            placeholder={IBM_LITELLM_BOB_MODEL}
-            className="font-mono text-sm"
-            {...register("bobModel")}
-          />
-        </FormField>
-      )}
     </ProviderFormShell>
   );
 }

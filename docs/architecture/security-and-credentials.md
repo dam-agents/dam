@@ -513,12 +513,12 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
 **Path rewriting.** An injection descriptor can declare path prefix
 rewrites for its host: the chain matches those prefixes ahead of its
 catch-all route and swaps the prefix on the way upstream, leaving every
-other path untouched ([connections](connections.md) has the case that
-needs it). Rewriting is a routing-leg concern, after the ext_authz
-Check, so egress rules and approvals describe the paths the agent
-requests. Both ends of a rewrite are whole path segments and the gateway
-drops any that are not, so a rewrite cannot reach past what the host's
-chain already admits.
+other path untouched. Rewriting is a routing-leg concern, after the
+ext_authz Check, so egress rules describe the paths the agent requests.
+Both ends of a rewrite are whole path segments and the gateway drops any
+that are not, so a rewrite cannot reach past what the host's chain
+admits. One prefix carries one replacement: conflicting Secrets keep the
+first and log the loser.
 
 **Multiple injection steps per host.** A single host can carry more than
 one credential — either two different credentials (e.g. an API key and a

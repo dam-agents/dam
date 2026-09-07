@@ -48,9 +48,17 @@ export const egressAllowContribution = z.object({
 
 const anchoredPathSegments = /^\/(?:[A-Za-z0-9._~-]+\/)*$/;
 
+const anchoredPath = z
+  .string()
+  .regex(anchoredPathSegments)
+  .refine(
+    (p) => p.split("/").every((seg) => seg !== "." && seg !== ".."),
+    "path segments must not be relative",
+  );
+
 export const pathRewrite = z.object({
-  prefix: z.string().regex(anchoredPathSegments),
-  replacement: z.string().regex(anchoredPathSegments),
+  prefix: anchoredPath,
+  replacement: anchoredPath,
 });
 
 export const egressInjectContribution = z.object({

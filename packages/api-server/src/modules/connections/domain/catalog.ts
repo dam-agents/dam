@@ -1,8 +1,10 @@
 import {
+  contribution as contributionSchema,
   type Contribution,
   type EnvMapping,
   BOB_INFERENCE_PREFIX_REWRITE,
-  IBM_LITELLM_BOB_MODEL,
+  IBM_LITELLM_BOB_MODEL_HINT,
+  IBM_LITELLM_BOB_MODEL_LABEL,
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
@@ -166,9 +168,8 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
     {
       inputName: "bobModel",
       envName: "BOB_SHELL_MODEL",
-      label: "Bob model",
-      defaultValue: IBM_LITELLM_BOB_MODEL,
-      hint: `Model Bob asks this proxy for. Empty → ${IBM_LITELLM_BOB_MODEL}. Bob's own default model name does not exist on the proxy.`,
+      label: IBM_LITELLM_BOB_MODEL_LABEL,
+      hint: IBM_LITELLM_BOB_MODEL_HINT,
     },
   ],
 };
@@ -837,11 +838,27 @@ function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
   };
 }
 
+function assertContributionsParse(
+  templates: ConnectionTemplate[],
+): ConnectionTemplate[] {
+  for (const template of templates) {
+    for (const c of template.contributions ?? []) {
+      const parsed = contributionSchema.safeParse(c);
+      if (!parsed.success) {
+        throw new Error(
+          `connection template "${template.id}" declares a contribution the runtime contract rejects: ${parsed.error.message}`,
+        );
+      }
+    }
+  }
+  return templates;
+}
+
 export function buildCatalog(
   creds: OperatorCredentials = {},
   opts: { shareBaseUrl?: string } = {},
 ): ConnectionTemplate[] {
-  return [
+  return assertContributionsParse([
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,
@@ -863,5 +880,5 @@ export function buildCatalog(
     CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,
-  ];
+  ]);
 }
