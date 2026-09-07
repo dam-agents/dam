@@ -169,15 +169,21 @@ flowchart LR
   (its full name when that would collide), and what a run produced is recorded
   by the experiment rather than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
-  agent published, with the same actions.
+  agent published, grouped into the same collapsible folder groups as the
+  library, with the same actions.
 - The Home feed's session cards carry **artifact chips** — what the session
   touched since the card was last dismissed, opening the preview dialog in
   place.
 - The chat view carries the same library twice over: an **Artifacts section**
-  in the session sidebar, scoped to the sandbox's agent and offering the same
-  per-artifact actions, and a **docked preview** beside the conversation that
-  renders the selected artifact and follows new versions as they are
-  published. Deleting the artifact a preview is showing closes that preview.
+  in the session sidebar, scoped to the sandbox's agent, grouped by folder and
+  offering the same per-artifact actions plus drag-to-folder filing, and a
+  **docked preview** beside the conversation that renders the selected
+  artifact and follows new versions as they are published. Deleting the
+  artifact a preview is showing closes that preview.
+- On the two agent-scoped surfaces a folder shows only that agent's artifacts,
+  every user folder is listed even when empty (so there is always a filing
+  target), and an experiment lineage folder appears only while it holds one of
+  the agent's artifacts. The library itself lists every folder unconditionally.
 
 ## Lifecycle and cleanup
 

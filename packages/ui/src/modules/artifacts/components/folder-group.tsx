@@ -59,6 +59,7 @@ interface Props extends ArtifactRowActions, Partial<FolderGroupActions> {
   sections?: FolderSection[];
   drop?: FolderDropCallbacks;
   dropActive?: boolean;
+  showAgent?: boolean;
 }
 
 export function FolderGroup({
@@ -70,6 +71,7 @@ export function FolderGroup({
   sections,
   drop,
   dropActive = false,
+  showAgent = true,
   onEditFolder,
   onDeleteFolder,
   onCopyFolderLink,
@@ -118,7 +120,7 @@ export function FolderGroup({
             <Badge variant="success">{sharedCount} shared</Badge>
           )}
         </DisclosureToggle>
-        {folder && (
+        {folder && (onEditFolder || onDeleteFolder || onCopyFolderLink) && (
           <div className={cn("ml-auto", HOVER_ACTION)}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -176,6 +178,7 @@ export function FolderGroup({
                     key={artifact.id}
                     artifact={artifact}
                     drag={drop}
+                    showAgent={showAgent}
                     {...rowActions}
                   />
                 ))}
@@ -187,6 +190,7 @@ export function FolderGroup({
                 key={artifact.id}
                 artifact={artifact}
                 drag={drop}
+                showAgent={showAgent}
                 {...rowActions}
               />
             ))
