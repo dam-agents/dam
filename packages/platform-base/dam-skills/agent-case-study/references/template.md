@@ -28,9 +28,12 @@ Two-column table, five rows, bare facts; the first cell is the row's label:
 
 ## Use case
 
-One short paragraph in plain terms: what the agent is used for, who it serves
-(a role, never a person), the kinds of requests it handles, and roughly how
-much of it there is. No task inventory, no per-job detail.
+One short paragraph in plain terms: what the agent is for, who it serves (a
+role, never a person), the kinds of requests it handles, and roughly how much
+of it there is. Name the request kinds as a stranger to the domain would
+("health and career advice", "planning a long-term project"): the domain's
+detail is the owner's business, not the reader's. No task inventory, no
+per-job detail.
 
 ## Platform in use
 
@@ -41,8 +44,12 @@ the artifact library, skills.
 
 ## Platform friction
 
-Ideally at most 5 items, worst first, one line each: the goal, what the platform put in the
-way, the workaround or "no workaround". Include what the owner wanted and
-could not have. Tag an item already present in the previous edition "(also
-last edition)". Platform feature names are expected; company and product names
-are not. No friction: say so in one line.
+Only friction that happened: a real attempt in the window, by the owner or by
+the agent doing the owner's work, that the platform blocked or made harder.
+Platform state merely observed (an empty source list, an unused feature,
+leftover files) is not friction until someone hits it. "None this window" in
+one line beats a padded list. At most 5 items, worst first, one line each: the
+goal, the obstacle, the workaround or "no workaround". One item per underlying
+gap: two symptoms of one missing feature merge. Tag an item already present in
+the previous edition "(also last edition)". Platform feature names are
+expected; company and product names are not.

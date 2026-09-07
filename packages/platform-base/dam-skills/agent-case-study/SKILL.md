@@ -78,9 +78,12 @@ While mining, collect for the document's platform-facing sections:
 
 - **Feature use.** How each platform feature carries the work, and which sit
   unused, and why.
-- **Platform friction.** Every moment the platform got in the way, including
-  what the owner wanted and could not have. The subject is the platform, not
-  the model and not a hard task.
+- **Platform friction.** Moments someone actually hit in the window: a request
+  that failed, a wall someone worked around, an owner ask the platform could
+  not serve. Platform state you merely notice while mining is not friction.
+  The subject is the platform, not the model and not a hard task; what only
+  this run's own production needed (submission, baseline, artifact tools)
+  never counts.
 
 If the window holds no sessions at all (no platform index, nothing in the
 harness store), reply that there is nothing to summarize and stop. Submit
@@ -105,9 +108,8 @@ nothing. A quiet week is normal; never pad an edition to fill one.
 
 Draft in a scratch location, never the workspace. Follow
 `references/template.md` exactly. One page, strictly. Tables for enumerable
-facts, prose for behavior. Results only, no
-methodology. A one-line source note behind each number ("counted from the
-platform session index"). An empty section says so in one line. No em dashes in
+facts, prose for behavior. Results only, no methodology, no source notes. An
+empty section says so in one line. No em dashes in
 paragraphs. No padding.
 
 ## Step 4: Publish and submit
