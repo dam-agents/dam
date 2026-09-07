@@ -17,8 +17,6 @@ type ParameterlessView =
   | "artifacts"
   | "coding-agents"
   | "coding-agent-new"
-  | "experiments"
-  | "experiment-new"
   | "knowledge-base-new"
   | "knowledge-bases";
 
@@ -37,7 +35,6 @@ export interface NavigationSlice {
     section?: SandboxSection,
     focus?: string,
   ) => void;
-  navigateToExperiments: () => void;
   navigateToKnowledgeBases: () => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
@@ -101,10 +98,6 @@ export const createNavigationSlice: StateCreator<
       sandboxSection: section,
       sandboxFocus: focus ?? null,
     });
-  },
-  navigateToExperiments: () => {
-    history.pushState(null, "", routeToPath({ view: "experiments" }));
-    set({ view: "experiments", agentId: null, sandboxFocus: null });
   },
   navigateToKnowledgeBases: () => {
     history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));

@@ -128,14 +128,10 @@ test("experiment: plan, execute, watch it run to completion", async ({
       .not.toBe(draft.dashboardArtifactId);
   });
 
-  await test.step("the Experiments destination indexes the agent and routes to chat", async () => {
+  await test.step("the retired destination lands on Home, and chat stays reachable", async () => {
     await page.goto(`${baseUrl}/experiments`);
-    const row = page.getByRole("button", { name: new RegExp(agentName) });
-    await expect(row).toBeVisible();
-    await expect(
-      page.getByText(experimentName, { exact: false }),
-    ).toBeVisible();
-    await row.click();
+    await expect(page).toHaveURL(`${baseUrl}/`);
+    await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
     await expect(chatInput(page)).toBeVisible({ timeout: 30_000 });
   });
 

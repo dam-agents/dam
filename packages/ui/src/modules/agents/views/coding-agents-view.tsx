@@ -10,7 +10,7 @@ import { OutdatedTemplatesBanner } from "../components/outdated-templates-banner
 import { SandboxList } from "../components/sandbox-list.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
-import { isCodingAgent } from "../utils/agent-kind.js";
+import { isCodingAgent, isExperimentSandbox } from "../utils/agent-kind.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function CodingAgentsView() {
@@ -20,7 +20,9 @@ export function CodingAgentsView() {
   const { visible, drawByDriver } = splitTemporarySandboxes(
     agentsData?.list ?? [],
   );
-  const codingAgents = visible.filter(isCodingAgent);
+  const codingAgents = visible.filter(
+    (agent) => isCodingAgent(agent) || isExperimentSandbox(agent),
+  );
   const { stopSandbox, deleteSandbox } = useSandboxRowActions({
     deleteAgent,
     suspend,

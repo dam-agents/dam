@@ -32,8 +32,6 @@ export type Route =
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "coding-agents" }
   | { view: "coding-agent-new" }
-  | { view: "experiments" }
-  | { view: "experiment-new" }
   | { view: "knowledge-base-new" }
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
@@ -65,6 +63,9 @@ export const RETIRED_PATHS = new Set([
   "/sandboxes/",
   "/sandboxes/new",
   "/inbox",
+  "/experiments",
+  "/experiments/",
+  "/experiments/new",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -106,8 +107,6 @@ export function parseRoute(path: string): Route {
   }
   if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
-  if (path === "/experiments") return { view: "experiments" };
-  if (path === "/experiments/new") return { view: "experiment-new" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
   const knowledgeBaseConfigMatch = path.match(
@@ -158,10 +157,6 @@ export function routeToPath(route: Route): string {
       return "/coding-agents";
     case "coding-agent-new":
       return "/coding-agents/new";
-    case "experiments":
-      return "/experiments";
-    case "experiment-new":
-      return "/experiments/new";
     case "knowledge-bases":
       return "/knowledge-bases";
     case "knowledge-base-new":

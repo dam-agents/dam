@@ -9,6 +9,7 @@ import { useDriverSummaries } from "../../experiments/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { isExperimentSandbox } from "../utils/agent-kind.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import {
   sandboxSubtitle,
@@ -76,9 +77,10 @@ export function useAgentRows() {
     agent,
     display: resolveAgentDisplay(agent, restartingIds, pausingIds),
     subtitle: sandboxSubtitle(agent, subtitleLookup, {
-      experimentCount: experimentCountByDriver
-        ? (experimentCountByDriver.get(agent.id) ?? 0)
-        : undefined,
+      experimentCount:
+        isExperimentSandbox(agent) && experimentCountByDriver
+          ? (experimentCountByDriver.get(agent.id) ?? 0)
+          : undefined,
     }),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
