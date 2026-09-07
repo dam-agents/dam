@@ -28,9 +28,11 @@ export function useArtifact(id: string | null) {
   });
 }
 
-export function useArtifactFolders() {
+export function useArtifactFolders(enabled = true) {
   return useQuery({
-    ...trpc.artifactLibrary.listFolders.queryOptions(),
+    ...trpc.artifactLibrary.listFolders.queryOptions(
+      enabled ? undefined : skipToken,
+    ),
     refetchOnMount: "always",
     staleTime: 0,
     meta: { errorToast: "Couldn't load folders" },

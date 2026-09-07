@@ -7,7 +7,9 @@ Last verified: 2026-09-07
 The GUI currently hides this subsystem, pending a rethink of how optimization
 frameworks surface. The destination and the setup flow are removed from the
 code (git history holds them); lineage folders render as ordinary folders in
-the artifact library; no interface path creates an experiment agent. The data
+the artifact library (the agent-scoped artifact lists show one only while it
+holds that agent's artifacts — see [artifact-library](artifact-library.md));
+no interface path creates an experiment agent. The data
 and every procedure stay live, and the chat view still renders a running
 experiment's dock and gates the onboarding greeting. Mentions of the
 destination below describe the design the hidden surfaces implemented, kept

@@ -6,9 +6,11 @@ import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useArtifacts } from "../api/queries.js";
+import { useArtifactFolders, useArtifacts } from "../api/queries.js";
+import { folderDisplayNames } from "../lib/folders.js";
+import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
-import { ArtifactRow } from "./artifact-row.js";
+import { FolderGroup } from "./folder-group.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
@@ -24,6 +26,9 @@ function ToolChip({ name }: { name: string }) {
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
+  const { data: folders = [], isPending: foldersPending } =
+    useArtifactFolders();
+  const folderNames = folderDisplayNames(folders);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -58,7 +63,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         </span>
       </Callout>
 
-      {isLoading ? (
+      {isLoading || foldersPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : artifacts.length === 0 ? (
         <Card className="px-5 py-8 text-center">
@@ -71,10 +76,16 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         <Card className="overflow-hidden">
           {}
           <div className="-mt-px">
-            {artifacts.map((artifact) => (
-              <ArtifactRow
-                key={artifact.id}
-                artifact={artifact}
+            {groupArtifactsByFolder(artifacts, folders).map((group) => (
+              <FolderGroup
+                key={group.key}
+                folder={group.folder}
+                artifacts={group.artifacts}
+                displayName={
+                  group.folder ? folderNames.get(group.folder.id) : undefined
+                }
+                nested
+                defaultCollapsed={group.artifacts.length === 0}
                 showAgent={false}
                 onPreview={setPreviewTarget}
                 onRename={setRenameTarget}
