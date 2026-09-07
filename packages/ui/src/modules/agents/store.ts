@@ -7,7 +7,7 @@ import { routeToPath } from "../platform/lib/routes.js";
 export interface RestartingEntry {
   seenNonRunning: boolean;
   clickedAt: number;
-  parkedAtClick?: boolean;
+  parkedAtClick: boolean;
 }
 
 export interface AgentsSlice {

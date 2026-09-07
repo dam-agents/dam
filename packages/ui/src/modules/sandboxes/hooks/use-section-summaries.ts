@@ -91,6 +91,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     const lookup: SandboxSubtitleLookup = {
       templateNameById: new Map(templates.map((t) => [t.id, t.name])),
       connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
+      slotUnit: null,
     };
     const { harness, provider } = sandboxSubtitleParts(agent, lookup);
     const base = [harness, provider, modelName].filter(Boolean).join(", ");

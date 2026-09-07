@@ -2,16 +2,21 @@ import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { useRestartAgentMutation } from "../api/mutations.js";
-import { useAgents } from "../api/queries.js";
+import { useAgents, useAgentsList } from "../api/queries.js";
 import { transitionRestartingAgents } from "../store.js";
 
 export function useRestartAgent() {
+  const agents = useAgentsList();
   const setRestarting = useStore((s) => s.setRestartingAgent);
   const clearRestarting = useStore((s) => s.clearRestartingAgent);
   const restartMutation = useRestartAgentMutation();
 
   const restart = (id: string) => {
-    setRestarting(id, { seenNonRunning: false, clickedAt: Date.now() });
+    setRestarting(id, {
+      seenNonRunning: false,
+      clickedAt: Date.now(),
+      parkedAtClick: agents.find((a) => a.id === id)?.overBudget ?? false,
+    });
     restartMutation.mutate(
       { id },
       {

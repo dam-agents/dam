@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { ComputeUsageCard } from "../../budgets/components/compute-usage.js";
+import { useFeed } from "../../home/api/queries.js";
 import { OutdatedTemplatesBanner } from "../components/outdated-templates-banner.js";
 import { SandboxList } from "../components/sandbox-list.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
@@ -15,6 +16,7 @@ import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 export function CodingAgentsView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
     useAgentRows();
+  const { workingAgentIds } = useFeed();
   const { visible, drawByDriver } = splitTemporarySandboxes(
     agentsData?.list ?? [],
   );
@@ -46,7 +48,10 @@ export function CodingAgentsView() {
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && codingAgents.length > 0 && (
-        <ComputeUsageCard agents={agentsData?.list ?? []} />
+        <ComputeUsageCard
+          agents={agentsData?.list ?? []}
+          workingAgentIds={workingAgentIds}
+        />
       )}
 
       {initialLoaded && <OutdatedTemplatesBanner agents={codingAgents} />}

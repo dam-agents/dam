@@ -11,7 +11,7 @@ import { kbTemplateName } from "../../knowledge-bases/lib/kb-templates.js";
 export interface SandboxSubtitleLookup {
   templateNameById: ReadonlyMap<string, string>;
   connectionTemplateIdById: ReadonlyMap<string, string>;
-  slotUnit?: SlotUnit;
+  slotUnit: SlotUnit | null;
 }
 
 export function sandboxSubtitleParts(

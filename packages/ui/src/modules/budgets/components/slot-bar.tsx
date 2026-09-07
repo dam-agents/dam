@@ -24,30 +24,39 @@ export function SlotBar({ segments, totalSlots, label, ariaLabel }: Props) {
       className="grid gap-1.5"
       style={{ gridTemplateColumns: `repeat(${totalSlots}, minmax(0, 1fr))` }}
     >
-      {segments.map((segment, index) => (
-        <Tooltip key={index} content={label(segment)} side="top">
-          <span
-            aria-label={label(segment)}
-            className="group grid gap-1.5"
-            style={{
-              gridColumn: `span ${segment.slots}`,
-              gridTemplateColumns: `repeat(${segment.slots}, minmax(0, 1fr))`,
-            }}
+      {segments.map((segment) => {
+        const held = segment.state !== "available";
+        return (
+          <Tooltip
+            key={segment.agentId ?? "available"}
+            content={label(segment)}
+            side="top"
           >
-            {Array.from({ length: segment.slots }, (_, cell) => (
-              <span
-                key={cell}
-                className={cn(
-                  "h-2 rounded-sm transition-shadow",
-                  SEGMENT_FILL[segment.state],
-                  segment.state !== "available" &&
-                    "group-hover:ring-2 group-hover:ring-foreground/40",
-                )}
-              />
-            ))}
-          </span>
-        </Tooltip>
-      ))}
+            <span
+              role="img"
+              aria-label={label(segment)}
+              tabIndex={held ? 0 : undefined}
+              className="group grid gap-1.5 rounded-sm outline-none"
+              style={{
+                gridColumn: `span ${segment.slots}`,
+                gridTemplateColumns: `repeat(${segment.slots}, minmax(0, 1fr))`,
+              }}
+            >
+              {Array.from({ length: segment.slots }, (_, cell) => (
+                <span
+                  key={cell}
+                  className={cn(
+                    "h-2 rounded-sm transition-shadow",
+                    SEGMENT_FILL[segment.state],
+                    held &&
+                      "group-hover:ring-2 group-hover:ring-foreground/40 group-focus-visible:ring-2 group-focus-visible:ring-foreground/40",
+                  )}
+                />
+              ))}
+            </span>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/select";
 import { HintTooltip } from "@/components/ui/tooltip";
 
 import { useBudgetReserved } from "../../budgets/api/queries.js";
+import { formatCores, formatGi } from "../../budgets/lib/format.js";
 import {
   formatSizeLabel,
   freeSlots,
@@ -35,24 +36,22 @@ export function SandboxSizeSection({
   currentSize,
 }: Props) {
   const { data: budget } = useBudgetReserved();
-  if (!budget) return null;
-
-  const unit = slotUnitOf(budget);
+  const unit = budget ? slotUnitOf(budget) : null;
   const selected: SizeMi = { cpuMilli: sizeCpuMilli, memoryMi: sizeMemoryMi };
-  const presets = SIZE_MULTIPLIERS.map((m) => sizeForMultiplier(unit, m));
+  const presets = unit
+    ? SIZE_MULTIPLIERS.map((m) => sizeForMultiplier(unit, m))
+    : [];
   const options = presets.some((p) => keyOf(p) === keyOf(selected))
     ? presets
     : [...presets, selected].sort(
         (a, b) => a.cpuMilli - b.cpuMilli || a.memoryMi - b.memoryMi,
       );
 
-  const needed = slotsFor(selected, unit);
-  const free = freeSlots(
-    budget,
-    unit,
-    currentSize ? sizeInMi(currentSize) : undefined,
-  );
-  const over = needed > free;
+  const needed = unit ? slotsFor(selected, unit) : 0;
+  const free =
+    budget && unit
+      ? freeSlots(budget, unit, currentSize ? sizeInMi(currentSize) : undefined)
+      : Infinity;
 
   return (
     <section className="mb-8">
@@ -60,7 +59,11 @@ export function SandboxSizeSection({
         <SectionLabel>Compute resources</SectionLabel>
         <HintTooltip
           label="About compute resources"
-          content="Compute counts toward your budget only when the sandbox is active. Changing the size of an existing sandbox restarts it."
+          content={`Compute counts toward your budget only when the sandbox is active. ${
+            currentSize
+              ? "Changing the size restarts the sandbox on save."
+              : "The new size applies when the sandbox next starts."
+          }`}
         >
           <Help size={14} className="text-muted-foreground/60" />
         </HintTooltip>
@@ -69,7 +72,7 @@ export function SandboxSizeSection({
         <Select
           aria-label="Compute resources"
           value={keyOf(selected)}
-          disabled={disabled}
+          disabled={disabled || !unit}
           onChange={(e) => {
             const [cpuMilli, memoryMi] = e.target.value.split(":").map(Number);
             onChange({ sizeCpuMilli: cpuMilli!, sizeMemoryMi: memoryMi! });
@@ -77,12 +80,14 @@ export function SandboxSizeSection({
         >
           {options.map((option) => (
             <option key={keyOf(option)} value={keyOf(option)}>
-              {formatSizeLabel(option, unit)}
+              {unit
+                ? formatSizeLabel(option, unit)
+                : `${formatCores(option.cpuMilli)} CPU · ${formatGi(option.memoryMi * 1024 ** 2)} Gi`}
             </option>
           ))}
         </Select>
       </Inset>
-      {!disabled && over && (
+      {!disabled && needed > free && (
         <p className="mt-3 text-sm text-warning">
           This size needs {needed} {needed === 1 ? "slot" : "slots"} but only{" "}
           {free} {free === 1 ? "is" : "are"} free.{" "}

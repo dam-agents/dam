@@ -67,7 +67,7 @@ export function useAgentRows() {
       connectionTemplateIdById: new Map(
         (connections.data ?? []).map((c) => [c.id, c.templateId]),
       ),
-      slotUnit: budget ? slotUnitOf(budget) : undefined,
+      slotUnit: budget ? slotUnitOf(budget) : null,
     }),
     [templates, connections.data, budget],
   );

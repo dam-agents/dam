@@ -110,8 +110,6 @@ export interface ComputeGroup {
   state: Exclude<ComputeCellState, "available">;
   agents: number;
   slots: number;
-  cpuMilli: number;
-  memoryMi: number;
 }
 
 export interface ComputeView {
@@ -177,8 +175,6 @@ export function computeView(
       state,
       agents: rows.length,
       slots: rows.reduce((sum, r) => sum + r.slots, 0),
-      cpuMilli: rows.reduce((sum, r) => sum + r.cpuMilli, 0),
-      memoryMi: rows.reduce((sum, r) => sum + r.memoryMi, 0),
     };
   };
 

@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import type { AgentView } from "../../../types.js";
-import { useFeed } from "../../home/api/queries.js";
 import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
 import {
@@ -34,18 +33,20 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
   )}`;
 }
 
-export function ComputeUsage({ agents }: { agents: readonly AgentView[] }) {
+interface Props {
+  agents: readonly AgentView[];
+  workingAgentIds: ReadonlySet<string>;
+}
+
+export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
-  const { items } = useFeed();
   if (!budget) return null;
 
   const unit = slotUnitOf(budget);
   const view = computeView(
     agents.filter((a) => a.state === "running"),
-    new Set(
-      items.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
-    ),
+    workingAgentIds,
     budget,
   );
 
@@ -100,10 +101,10 @@ export function ComputeUsage({ agents }: { agents: readonly AgentView[] }) {
   );
 }
 
-export function ComputeUsageCard({ agents }: { agents: readonly AgentView[] }) {
+export function ComputeUsageCard(props: Props) {
   return (
     <Card className="mb-8 border border-border p-4">
-      <ComputeUsage agents={agents} />
+      <ComputeUsage {...props} />
     </Card>
   );
 }
