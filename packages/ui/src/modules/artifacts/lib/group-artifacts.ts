@@ -1,6 +1,6 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 
-import { isExperimentFolder, isUserFolder } from "./folders.js";
+import { isExperimentFolder } from "./folders.js";
 
 export const UNGROUPED_KEY = "ungrouped";
 
@@ -22,7 +22,7 @@ export function groupArtifactsByFolder(
   }
 
   const groups: ArtifactFolderGroup[] = folders
-    .filter(isUserFolder)
+    .filter((folder) => !isExperimentFolder(folder))
     .map((folder) => ({
       key: folder.id,
       folder,
