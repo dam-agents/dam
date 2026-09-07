@@ -1,6 +1,10 @@
-import { Link, OverflowMenuVertical } from "@carbon/icons-react";
+import {
+  ArrowsVertical,
+  Link,
+  OverflowMenuVertical,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +19,11 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
+import {
+  type ArtifactDragCallbacks,
+  useArtifactRowDrag,
+} from "../hooks/use-artifact-row-drag.js";
+import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { folderDisplayName } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
@@ -48,9 +57,14 @@ export function ChatArtifactsPanel({
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );
   const setFolderCollapsed = useStore((s) => s.setArtifactFolderCollapsed);
+  const { dropCallbacks, hotFolderId, dragInProgress } =
+    useFolderDragOrchestration(artifacts);
   const groups = useMemo(
-    () => groupArtifactsByFolder(artifacts, folders),
-    [artifacts, folders],
+    () =>
+      groupArtifactsByFolder(artifacts, folders, {
+        includeEmptyUngrouped: dragInProgress,
+      }),
+    [artifacts, folders, dragInProgress],
   );
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
@@ -81,6 +95,7 @@ export function ChatArtifactsPanel({
             return (
               <SidebarFolderGroup
                 key={group.key}
+                folderId={group.folder?.id ?? null}
                 label={
                   group.folder ? folderDisplayName(group.folder) : "Ungrouped"
                 }
@@ -90,6 +105,8 @@ export function ChatArtifactsPanel({
                   if (agentId)
                     setFolderCollapsed(agentId, group.key, !collapsed);
                 }}
+                drop={dropCallbacks}
+                dropActive={hotFolderId === (group.folder?.id ?? null)}
                 testId={`artifacts-folder-${group.key}`}
               >
                 {group.artifacts.map((artifact) => (
@@ -102,6 +119,7 @@ export function ChatArtifactsPanel({
                         artifact.id === openArtifactId ? null : artifact.id,
                       )
                     }
+                    drag={dropCallbacks}
                     onRename={setRenameTarget}
                     onMove={setMoveTarget}
                     onShare={setShareTarget}
@@ -145,6 +163,7 @@ function ArtifactListRow({
   artifact,
   active,
   onClick,
+  drag,
   onRename,
   onMove,
   onShare,
@@ -153,20 +172,45 @@ function ArtifactListRow({
   artifact: LibraryArtifact;
   active: boolean;
   onClick: () => void;
+  drag?: ArtifactDragCallbacks;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
+  const [dragging, setDragging] = useState(false);
+  const startDrag = useCallback(
+    (folderId: string | null) => {
+      setDragging(true);
+      drag?.onStart(folderId);
+    },
+    [drag],
+  );
+  const endDrag = useCallback(() => {
+    setDragging(false);
+    drag?.onEnd();
+  }, [drag]);
+  const dragProps = useArtifactRowDrag(artifact.id, artifact.folderId, {
+    onStart: startDrag,
+    onEnd: endDrag,
+  });
+
   return (
     <div
       {...clickableProps(onClick)}
+      {...(drag ? dragProps : {})}
       title={artifact.title}
       className={cn(
-        "group flex h-8 w-full cursor-pointer items-center gap-2 py-1 pl-8 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+        "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
+        dragging && "opacity-50",
       )}
     >
+      <ArrowsVertical
+        size={12}
+        aria-hidden
+        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+      />
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
