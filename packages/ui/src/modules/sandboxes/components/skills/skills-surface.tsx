@@ -1,5 +1,4 @@
 import { Add } from "@carbon/icons-react";
-import type { SkillsState } from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -37,13 +36,11 @@ export function SkillsSurface({
   agentState,
   readOnly,
   comingUp,
-  onStateChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
   comingUp?: boolean;
-  onStateChange?: (state: SkillsState) => void;
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -54,11 +51,7 @@ export function SkillsSurface({
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
 
-  const surface = useSkillsSurface(agentId, {
-    readOnly,
-    isError,
-    onStateChange,
-  });
+  const surface = useSkillsSurface(agentId, { readOnly, isError });
   const derived = useSkillsDerivations(surface, { readOnly, query });
   const {
     deleteStandaloneWithConfirm,
