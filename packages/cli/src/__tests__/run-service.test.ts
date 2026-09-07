@@ -178,6 +178,73 @@ describe("run service", () => {
   }, 15_000);
 
   /**
+   * TEST_SCENARIO: `--async` stdout is machine-read (`SID=$(dam run --async …)`), so the
+   * outcome must arrive at promptStarted with no assistant text leaking into
+   * the output — even when the agent starts answering immediately.
+   */
+  it("prints nothing and exits at promptStarted in async mode", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt") {
+        chunk(ws, "sess-1", "leaky text");
+        const promptId = (
+          frame.params as { _meta: { platform: { promptId: string } } }
+        )._meta.platform.promptId;
+        notify(ws, "platform/promptStarted", { sessionId: "sess-1", promptId });
+      }
+    });
+    const { service, printed } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      async: true,
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual(ok({ kind: "async-started", sessionId: "sess-1" }));
+    expect(printed()).toBe("");
+  });
+
+  /**
+   * TEST_SCENARIO: A `--session` continuation suppresses another turn's live chunks until
+   * its own prompt starts — but must not lose its own text when the started
+   * signal and the first chunk arrive back to back.
+   */
+  it("streams a --session turn's text from the promptStarted signal on", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/load") {
+        reply(ws, frame.id, {});
+        return;
+      }
+      if (frame.method === "session/prompt") {
+        const promptId = (
+          frame.params as { _meta: { platform: { promptId: string } } }
+        )._meta.platform.promptId;
+        notify(ws, "platform/promptStarted", { sessionId: "sess-1", promptId });
+        chunk(ws, "sess-1", "continued answer");
+        reply(ws, frame.id, { stopReason: "end_turn" });
+      }
+    });
+    const { service, printed } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "again",
+      sessionId: "sess-1",
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual(
+      ok({ kind: "completed", sessionId: "sess-1", stopReason: "end_turn" }),
+    );
+    expect(printed()).toBe("continued answer");
+  });
+
+  /**
    * TEST_SCENARIO: `dam run get` on a finished run must return the record without touching
    * the session; on a running one it must say pending rather than done.
    */

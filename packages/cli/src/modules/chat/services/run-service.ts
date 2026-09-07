@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
   platformRunResultResponseSchema,
   platformTurnEndedParamsSchema,
@@ -171,6 +172,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
     waiter: Waiter,
     sessionFilter: () => string | null,
     onText: (text: string) => void,
+    onPromptStarted?: () => void,
   ): Promise<RunConnection | null> {
     let conn: RunConnection;
     try {
@@ -191,11 +193,16 @@ export function createRunService(deps: RunServiceDeps): RunService {
           }
           if (method === "platform/promptStarted") {
             const parsed = platformPromptStartedParamsSchema.safeParse(params);
-            if (parsed.success) waiter.push({ kind: "prompt-started" });
+            if (parsed.success) {
+              onPromptStarted?.();
+              waiter.push({ kind: "prompt-started" });
+            }
             return;
           }
           if (method === "platform/promptAccepted") {
-            waiter.push({ kind: "prompt-queued" });
+            const parsed = platformPromptAcceptedParamsSchema.safeParse(params);
+            if (parsed.success && parsed.data.queued)
+              waiter.push({ kind: "prompt-queued" });
             return;
           }
           if (method === "platform/turnEnded") {
@@ -350,6 +357,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
       const deadlineAt = Date.now() + input.timeoutSeconds * 1000;
       const promptId = randomUUID();
       let sessionId: string | null = input.sessionId ?? null;
+      const streaming = input.async !== true;
       let started = input.sessionId === undefined;
       let printedChars = 0;
 
@@ -359,9 +367,12 @@ export function createRunService(deps: RunServiceDeps): RunService {
         waiter,
         () => sessionId,
         (text) => {
-          if (!started) return;
+          if (!started || !streaming) return;
           deps.out(text);
           printedChars += text.length;
+        },
+        () => {
+          started = true;
         },
       );
       if (conn === null)
