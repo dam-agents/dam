@@ -146,11 +146,17 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
       "--timeout <seconds>",
       `with --wait, give up after this many seconds (default ${String(DEFAULT_RUN_TIMEOUT_SECONDS)})`,
     )
+    .option("--json", "emit the raw run-result payload instead of plain text")
     .action(
       async (
         agentRef: string,
         sessionId: string,
-        opts: { server?: string; wait?: boolean; timeout?: string },
+        opts: {
+          server?: string;
+          wait?: boolean;
+          timeout?: string;
+          json?: boolean;
+        },
       ) => {
         const result = await deps.runService.get({
           agentRef,
@@ -163,18 +169,29 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
 
         const outcome = result.value;
         if (outcome.kind === "pending") {
-          process.stderr.write("still running\n");
+          if (opts.json)
+            process.stdout.write(`${JSON.stringify({ status: "pending" })}\n`);
+          else process.stderr.write("still running\n");
           return;
         }
         if (outcome.kind === "none") {
-          process.stderr.write(
-            "no recorded result for this session — it never finished a headless run here, or the record was evicted\n",
-          );
+          if (opts.json)
+            process.stdout.write(`${JSON.stringify({ status: "none" })}\n`);
+          else
+            process.stderr.write(
+              "no recorded result for this session — it never finished a headless run here, or the record was evicted\n",
+            );
           process.exit(EXIT_INVALID_INPUT);
         }
         if (outcome.kind === "timed-out") {
           process.stderr.write("timed out waiting; the run continues\n");
           process.exit(EXIT_RUN_TIMEOUT);
+        }
+        if (opts.json) {
+          process.stdout.write(
+            `${JSON.stringify({ status: "done", result: outcome.result })}\n`,
+          );
+          process.exit(stopExitCode(outcome.result.stopReason));
         }
         if (outcome.result.finalText.length > 0) {
           process.stdout.write(outcome.result.finalText);

@@ -578,7 +578,14 @@ export function createRunService(deps: RunServiceDeps): RunService {
         });
       try {
         const record = await fetchRunResult(conn, sessionId);
-        if (record?.status !== "pending")
+        if (record === null)
+          return err({
+            kind: "run-failed" as const,
+            reason:
+              "could not read the run state — the agent may not support run results; update its image, or cancel from the UI",
+            sessionId,
+          });
+        if (record.status !== "pending")
           return ok({ kind: "not-running" as const, sessionId });
         conn.notify("session/cancel", { sessionId });
         return ok({ kind: "cancelled" as const, sessionId });

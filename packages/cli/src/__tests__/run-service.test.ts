@@ -286,6 +286,38 @@ describe("run service", () => {
     });
     expect(pending).toEqual(ok({ kind: "pending", sessionId: "sess-running" }));
   });
+
+  /**
+   * TEST_SCENARIO: A failed run-state read must never read as "the run stopped": on an
+   * agent that errors `platform/runResult`, cancel reports the failure instead
+   * of claiming there is nothing to cancel, and sends no `session/cancel`.
+   */
+  it("reports a failed run-state read on cancel instead of not-running", async () => {
+    const cancels: string[] = [];
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "platform/runResult") {
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: { code: -32601, message: "unknown method" },
+          }),
+        );
+        return;
+      }
+      if (frame.method === "session/cancel") cancels.push("sent");
+    });
+    const { service } = serviceFor(relay);
+
+    const result = await service.cancel({
+      agentRef: "agent-1",
+      sessionId: "sess-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("run-failed");
+    expect(cancels).toEqual([]);
+  });
 });
 
 describe("resolvePrompt", () => {
