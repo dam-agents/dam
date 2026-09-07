@@ -1,36 +1,42 @@
-function readRaw(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
+import {
+  browserStorage,
+  type KeyValueStore,
+  safeGetItem,
+  safeSetItem,
+} from "./safe-storage.js";
 
-function writeRaw(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-
-export function readPersistedFlag(key: string, fallback: boolean): boolean {
-  const raw = readRaw(key);
+export function readPersistedFlag(
+  key: string,
+  fallback: boolean,
+  store: KeyValueStore = browserStorage,
+): boolean {
+  const raw = safeGetItem(store, key);
   return raw === null ? fallback : raw === "1";
 }
 
-export function writePersistedFlag(key: string, value: boolean): void {
-  writeRaw(key, value ? "1" : "0");
+export function writePersistedFlag(
+  key: string,
+  value: boolean,
+  store: KeyValueStore = browserStorage,
+): void {
+  safeSetItem(store, key, value ? "1" : "0");
 }
 
 export function readPersistedNumber<T extends number | null>(
   key: string,
   fallback: T,
+  store: KeyValueStore = browserStorage,
 ): number | T {
-  const raw = readRaw(key);
+  const raw = safeGetItem(store, key);
   if (raw === null || raw.trim() === "") return fallback;
   const value = Number(raw);
   return Number.isFinite(value) ? value : fallback;
 }
 
-export function writePersistedNumber(key: string, value: number): void {
-  writeRaw(key, String(value));
+export function writePersistedNumber(
+  key: string,
+  value: number,
+  store: KeyValueStore = browserStorage,
+): void {
+  safeSetItem(store, key, String(value));
 }
