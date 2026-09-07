@@ -193,7 +193,7 @@ export function AddSkillSetsModal({
         divided={false}
       />
 
-      <DialogBody flush className="py-0">
+      <DialogBody flush>
         {loadFailed ? (
           <p className="px-5 py-4 text-sm text-danger md:px-6">
             Couldn't load your saved skill sets. Reopen the Skills page to try

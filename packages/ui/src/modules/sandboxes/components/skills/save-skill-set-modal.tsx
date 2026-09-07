@@ -104,7 +104,7 @@ export function SaveSkillSetModal({
         }}
       >
         {}
-        <DialogBody flush className="py-0">
+        <DialogBody flush>
           <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-6">
             {omittedCount > 0 && (
               <p className="pb-2 text-sm text-warning-fg">

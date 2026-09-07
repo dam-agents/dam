@@ -91,7 +91,7 @@ export function DialogHeader({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {title && (
-              <div className="flex items-center gap-2">
+              <div className="flex min-h-7 items-center gap-2">
                 <h2
                   id={labelId}
                   className={cn(
@@ -142,7 +142,11 @@ export function DialogBody({
 }: DialogRegionProps & { flush?: boolean }) {
   return (
     <div
-      className={`flex-1 min-h-0 overflow-y-auto pt-5 md:pt-6 [&:last-child]:pb-5 md:[&:last-child]:pb-6 ${flush ? "" : "px-5 md:px-6"} ${className ?? ""}`}
+      className={cn(
+        "flex-1 min-h-0 overflow-y-auto pt-5 md:pt-6 [&:last-child]:pb-5 md:[&:last-child]:pb-6",
+        !flush && "px-5 md:px-6",
+        className,
+      )}
     >
       {children}
     </div>
@@ -152,7 +156,10 @@ export function DialogBody({
 export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
-      className={`px-5 py-5 md:px-6 md:py-6 flex items-center justify-end gap-3 ${className ?? ""}`}
+      className={cn(
+        "px-5 py-5 md:px-6 md:py-6 flex items-center justify-end gap-3",
+        className,
+      )}
     >
       {children}
     </div>
