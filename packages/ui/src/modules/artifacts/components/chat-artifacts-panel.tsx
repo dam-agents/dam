@@ -240,7 +240,7 @@ function ArtifactListRow({
           tooltip="Share"
           onClick={() => onShare(artifact)}
         >
-          <Link size={13} />
+          <Link size={16} />
         </Button>
       </div>
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
