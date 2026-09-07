@@ -1,4 +1,4 @@
-import { skipToken, useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   LocalSkill,
   ScanFailure,
@@ -22,10 +22,11 @@ import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { useSkillSources, useSkillsState } from "../../agents/api/skills.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
 
 const SCAN_STALE_MS = 60_000;
-const SKILLS_GC_MS = 24 * 60 * 60_000;
+const SCAN_GC_MS = 24 * 60 * 60_000;
 const STATE_POLL_MS = 5_000;
 
 const NO_SOURCES: SkillSource[] = [];
@@ -33,11 +34,6 @@ const NO_SETS: SkillSet[] = [];
 const NO_REFS: SkillRef[] = [];
 const NO_LOCAL: LocalSkill[] = [];
 const NO_PUBLISHES: SkillPublishRecord[] = [];
-const NO_SKILLS: Skill[] = [];
-
-function sourcesInput(agentId: string | null) {
-  return agentId ? { agentId } : undefined;
-}
 
 function scanInput(sourceId: string, agentId: string | null) {
   return agentId ? { sourceId, agentId } : { sourceId };
@@ -66,6 +62,7 @@ export interface SkillsSurface {
   stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
   loadingBySource: Record<string, boolean>;
+  revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   scannedAtBySource: Record<string, string>;
   visibilityBySource: Record<string, "public" | "private">;
@@ -131,37 +128,32 @@ export function useSkillsSurface(
   const [updatingAll, setUpdatingAll] = useState(false);
   const [applyingSets, setApplyingSets] = useState(false);
 
-  const sourcesQuery = useQuery({
-    ...trpc.skills.sources.list.queryOptions(sourcesInput(agentId)),
-    retry: false,
-    staleTime: SCAN_STALE_MS,
-    gcTime: SKILLS_GC_MS,
-  });
+  const sourcesQuery = useSkillSources(agentId);
   const sources = sourcesQuery.data ?? NO_SOURCES;
+  const sourcesLoaded = agentId === null || !sourcesQuery.isPending;
 
   const scans = useQueries({
     queries: sources.map((src) => ({
       ...trpc.skills.listWithScan.queryOptions(scanInput(src.id, agentId)),
       retry: false,
       staleTime: SCAN_STALE_MS,
-      gcTime: SKILLS_GC_MS,
+      gcTime: SCAN_GC_MS,
       refetchOnWindowFocus: false,
     })),
     combine: (results) => {
       const skillsBySource: Record<string, Skill[]> = {};
       const loadingBySource: Record<string, boolean> = {};
+      const revalidatingBySource: Record<string, boolean> = {};
       const errorBySource: Record<string, ScanFailure | null> = {};
       const scannedAtBySource: Record<string, string> = {};
       const visibilityBySource: Record<string, "public" | "private"> = {};
       results.forEach((result, index) => {
         const src = sources[index];
         if (!src) return;
-        loadingBySource[src.id] = result.isFetching;
-        if (result.isError) {
-          errorBySource[src.id] = toScanFailure(result.error);
-          skillsBySource[src.id] = NO_SKILLS;
-          return;
-        }
+        const painted = result.data !== undefined;
+        loadingBySource[src.id] = result.isFetching && !painted;
+        revalidatingBySource[src.id] = result.isFetching && painted;
+        if (result.isError) errorBySource[src.id] = toScanFailure(result.error);
         if (!result.data) return;
         skillsBySource[src.id] = result.data.skills;
         scannedAtBySource[src.id] = result.data.scannedAt;
@@ -172,6 +164,7 @@ export function useSkillsSurface(
       return {
         skillsBySource,
         loadingBySource,
+        revalidatingBySource,
         errorBySource,
         scannedAtBySource,
         visibilityBySource,
@@ -179,12 +172,7 @@ export function useSkillsSurface(
     },
   });
 
-  const stateQuery = useQuery({
-    ...trpc.skills.state.queryOptions(agentId ? { agentId } : skipToken),
-    retry: false,
-    refetchInterval: STATE_POLL_MS,
-    gcTime: SKILLS_GC_MS,
-  });
+  const stateQuery = useSkillsState(agentId, { pollMs: STATE_POLL_MS });
   const stateLoaded = agentId === null || !stateQuery.isPending;
   const installed = stateQuery.data?.installed ?? NO_REFS;
   const standalone = stateQuery.data?.standalone ?? NO_LOCAL;
@@ -195,7 +183,7 @@ export function useSkillsSurface(
     ...trpc.skills.sets.list.queryOptions(),
     retry: false,
     staleTime: SCAN_STALE_MS,
-    gcTime: SKILLS_GC_MS,
+    gcTime: SCAN_GC_MS,
   });
   const sets = setsQuery.data ?? NO_SETS;
 
@@ -204,7 +192,12 @@ export function useSkillsSurface(
       if (!agentId) return;
       const key = trpc.skills.state.queryKey({ agentId });
       await queryClient.cancelQueries({ queryKey: key });
-      queryClient.setQueryData(key, (prev) => (prev ? patch(prev) : prev));
+      const prev = queryClient.getQueryData(key);
+      if (!prev) {
+        void queryClient.refetchQueries({ queryKey: key });
+        return;
+      }
+      queryClient.setQueryData(key, patch(prev));
     },
     [agentId],
   );
@@ -407,10 +400,12 @@ export function useSkillsSurface(
         "Failed to add source",
       );
       if (result === ACTION_FAILED) return null;
-      queryClient.setQueryData(
-        trpc.skills.sources.list.queryKey(sourcesInput(agentId)),
-        (prev) => [...(prev ?? []), result],
-      );
+      if (agentId) {
+        queryClient.setQueryData(
+          trpc.skills.sources.list.queryKey({ agentId }),
+          (prev) => [...(prev ?? []), result],
+        );
+      }
       void queryClient.invalidateQueries(trpc.skills.sources.list.pathFilter());
       return result;
     },
@@ -493,10 +488,12 @@ export function useSkillsSurface(
         "Failed to remove source",
       );
       if (result === ACTION_FAILED) return false;
-      queryClient.setQueryData(
-        trpc.skills.sources.list.queryKey(sourcesInput(agentId)),
-        (prev) => (prev ?? []).filter((s) => s.id !== id),
-      );
+      if (agentId) {
+        queryClient.setQueryData(
+          trpc.skills.sources.list.queryKey({ agentId }),
+          (prev) => (prev ?? []).filter((s) => s.id !== id),
+        );
+      }
       queryClient.removeQueries({
         queryKey: trpc.skills.listWithScan.queryKey(scanInput(id, agentId)),
       });
@@ -583,10 +580,11 @@ export function useSkillsSurface(
 
   return {
     sources,
-    sourcesLoaded: !sourcesQuery.isPending,
+    sourcesLoaded,
     stateLoaded,
     skillsBySource: scans.skillsBySource,
     loadingBySource: scans.loadingBySource,
+    revalidatingBySource: scans.revalidatingBySource,
     errorBySource: scans.errorBySource,
     scannedAtBySource: scans.scannedAtBySource,
     visibilityBySource: scans.visibilityBySource,

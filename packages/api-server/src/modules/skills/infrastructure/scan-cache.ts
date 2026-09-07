@@ -40,6 +40,10 @@ function sourceKey(gitUrl: string, path: string | undefined): string {
   return `${gitUrl}\0${path ?? ""}`;
 }
 
+function failureText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function scopeLabel(scope: ScanScope): string {
   return scope.kind === "shared"
     ? "shared"
@@ -106,8 +110,10 @@ export function createScanCache(
           log(
             `[skills] cache hit, rescanning behind it: ${source} (${label})\n`,
           );
-          void read(key, gitUrl, scanner).catch(() => {
-            log(`[skills] background rescan failed: ${source} (${label})\n`);
+          void read(key, gitUrl, scanner).catch((err: unknown) => {
+            log(
+              `[skills] background rescan failed: ${source} (${label}): ${failureText(err)}\n`,
+            );
           });
         }
         return { skills: hit.skills, scannedAt: hit.scannedAt };

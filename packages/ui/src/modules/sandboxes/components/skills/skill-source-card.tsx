@@ -37,23 +37,16 @@ function repoLabel(source: SkillSource): string {
 
 function ScanFreshness({
   scannedAt,
-  scanning,
+  rescanning,
   onRescan,
 }: {
   scannedAt: string;
-  scanning: boolean;
+  rescanning: boolean;
   onRescan: () => void;
 }) {
-  if (scanning) {
-    return (
-      <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-        <Spinner size={13} /> Scanning…
-      </span>
-    );
-  }
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-      <Time size={13} />
+      {rescanning ? <Spinner size={13} /> : <Time size={13} />}
       <span title={formatTimestamp(scannedAt)}>
         scanned {timeAgo(scannedAt)}
       </span>
@@ -75,6 +68,7 @@ export function SkillSourceCard({
   source,
   skills,
   loading,
+  revalidating,
   error,
   scannedAt,
   visibility,
@@ -97,6 +91,7 @@ export function SkillSourceCard({
   source: SkillSource;
   skills: Skill[] | undefined;
   loading: boolean;
+  revalidating: boolean;
   error: ScanFailure | null;
   scannedAt?: string;
   visibility?: "public" | "private";
@@ -160,7 +155,7 @@ export function SkillSourceCard({
             <p className="truncate text-[15px] font-semibold text-foreground">
               {source.name}
             </p>
-            {loaded && !error && (
+            {loaded && (
               <span className="shrink-0 text-sm text-muted-foreground">
                 {enabled.length} of {list.length} on
               </span>
@@ -182,16 +177,16 @@ export function SkillSourceCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {}
-          {!error && scannedAt && (
+          {scannedAt && (
             <ScanFreshness
               scannedAt={scannedAt}
-              scanning={loading}
+              rescanning={revalidating}
               onRescan={onRescan}
             />
           )}
           {!scannedAt && loading && <Spinner size={15} />}
           {}
-          {onToggleAll && !readOnly && loaded && !error && (
+          {onToggleAll && !readOnly && loaded && (
             <Button
               variant="outline"
               size="sm"
@@ -248,13 +243,12 @@ export function SkillSourceCard({
           onManageConnections={onManageConnections}
         />
       )}
-      {loaded && !error && list.length === 0 && (
+      {loaded && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
           No skills in this source.
         </p>
       )}
       {loaded &&
-        !error &&
         visible.map((skill) => {
           const ref = installedRef(skill.source, skill.name);
           const hasDrift = isDrifted(ref, skill);
@@ -278,7 +272,7 @@ export function SkillSourceCard({
           );
         })}
 
-      {loaded && !error && collapsible && !filtering && (
+      {loaded && collapsible && !filtering && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}

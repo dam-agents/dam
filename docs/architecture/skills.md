@@ -217,7 +217,7 @@ Two of those verdicts describe the same 401/404 from GitHub and are told apart b
 
 The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list. The in-product content read shares this cache, so an invalidation also updates which revision a preview renders.
 
-The Skills panel holds the lists it was last served and repaints from them when a user returns, refreshing each source behind what is already on screen rather than emptying the page first. A source's list therefore costs a wait on the first visit, not on every one, and a slow repository delays only its own card.
+For as long as a browsing session lasts, the Skills panel keeps the lists it was served and repaints from them when a user returns to the page, emptying nothing; a source whose list has aged past a short window is re-read behind what is already on screen. A reload starts the session over and reads every source again. Each card fills from its own source's scan, so one slow repository holds up only itself.
 
 ### Reconciled state
 
