@@ -1,6 +1,6 @@
 import type { SpendByAgent } from "api-server-api";
 
-import { formatSpend, spendBarPct } from "../lib/format.js";
+import { formatSpend, spendBarPct, spendBarScaleLabel } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SpendBar } from "./spend-bar.js";
 
@@ -15,6 +15,7 @@ export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
           color={seriesColor(i)}
           pct={pcts[i]}
           value={formatSpend(row.costUsd, row.credits)}
+          scaleLabel={spendBarScaleLabel(row)}
         />
       ))}
     </div>

@@ -28,6 +28,7 @@ import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import {
+  formatCreditsExact,
   formatSpend,
   formatTokens,
   formatUsdCell,
@@ -172,7 +173,7 @@ export function SessionRow({
           {cost && (
             <span
               className="tabular-nums"
-              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · ${formatSpend(cost.costUsd, cost.credits)}`}
+              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · ${formatSpend(cost.costUsd, cost.credits, (v) => `$${v.toFixed(4)}`, formatCreditsExact)}`}
             >
               {" · "}
               {formatSpend(cost.costUsd, cost.credits, formatUsdCell)}

@@ -4,9 +4,11 @@ import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import {
-  formatCredits,
+  formatCreditsExact,
   formatSpend,
   spendBarPct,
+  spendBarScaleLabel,
+  topPerUnit,
 } from "../../metrics/lib/format.js";
 import { totalCostUsd, totalCredits } from "../../metrics/lib/totals.js";
 import {
@@ -37,12 +39,11 @@ export function SpendWidget() {
 
   const total = data ? totalCostUsd(data.byModel) : 0;
   const credits = data ? totalCredits(data.byModel) : [];
-  const spenders = (data?.byAgent ?? [])
-    .filter(
-      (row) =>
-        row.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD || row.credits.length > 0,
-    )
-    .slice(0, TOP_SPENDERS);
+  const ranked = (data?.byAgent ?? []).filter(
+    (row) =>
+      row.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD || row.credits.length > 0,
+  );
+  const spenders = topPerUnit(ranked, TOP_SPENDERS);
   const pcts = spendBarPct(spenders);
 
   return (
@@ -75,7 +76,7 @@ export function SpendWidget() {
         </p>
         {credits.length > 0 && (
           <p className="mt-1 text-sm font-medium text-muted-foreground tabular-nums">
-            + {formatCredits(credits)}
+            + {formatCreditsExact(credits)}
           </p>
         )}
       </div>
@@ -94,6 +95,8 @@ export function SpendWidget() {
               </div>
               <div
                 className="h-3 rounded-full bg-accent"
+                role="img"
+                aria-label={`${Math.round(pcts[i])}% of the largest row billed in ${spendBarScaleLabel(spender)}`}
                 style={{ width: `${pcts[i]}%` }}
               />
             </div>

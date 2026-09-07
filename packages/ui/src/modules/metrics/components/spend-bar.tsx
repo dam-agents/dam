@@ -6,9 +6,20 @@ interface Props {
   pct: number;
   color: string;
   caption?: ReactNode;
+  scaleLabel?: string;
 }
 
-export function SpendBar({ label, value, pct, color, caption }: Props) {
+export function SpendBar({
+  label,
+  value,
+  pct,
+  color,
+  caption,
+  scaleLabel,
+}: Props) {
+  const of = scaleLabel
+    ? `the largest row billed in ${scaleLabel}`
+    : "the largest";
   return (
     <div className="flex items-center gap-4 text-sm">
       <span className="flex w-[150px] shrink-0 items-center gap-2">
@@ -26,8 +37,8 @@ export function SpendBar({ label, value, pct, color, caption }: Props) {
         role="img"
         aria-label={
           pct > 0 && pct < 1
-            ? "less than 1% of the largest"
-            : `${Math.round(pct)}% of the largest`
+            ? `less than 1% of ${of}`
+            : `${Math.round(pct)}% of ${of}`
         }
       >
         {}
