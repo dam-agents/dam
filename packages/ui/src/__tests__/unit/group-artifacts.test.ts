@@ -35,10 +35,12 @@ const folder = (id: string, name = id): ArtifactFolder => ({
   updatedAt: "2026-09-01T00:00:00Z",
 });
 
-// TEST_OVERVIEW: grouping for the folder-aware artifact lists — every user
-// folder is a group (empty included), experiment folders appear only when
-// they hold artifacts, Ungrouped comes last, and no artifact is ever dropped
-// even when its folder is unknown to the folders list.
+/**
+ * TEST_OVERVIEW: grouping for the folder-aware artifact lists — every user
+ * folder is a group (empty included), experiment folders appear only when
+ * they hold artifacts, Ungrouped comes last, and no artifact is ever dropped
+ * even when its folder is unknown to the folders list.
+ */
 describe("groupArtifactsByFolder", () => {
   test("lists every user folder, empty ones included, with Ungrouped last", () => {
     const groups = groupArtifactsByFolder(
