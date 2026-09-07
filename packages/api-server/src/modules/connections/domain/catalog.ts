@@ -715,6 +715,27 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
   ],
 };
 
+function githubEnterprisePat(
+  creds?: GitHubEnterpriseCredentials,
+): HeaderConnectionTemplate {
+  return {
+    id: "github-enterprise-pat",
+    name: "GitHub Enterprise (Personal Access Token)",
+    category: "app",
+    isCustom: false,
+    description:
+      "Read + write repos, issues, PRs on a GitHub Enterprise host with a personal access token.",
+    iconSlug: "github-enterprise",
+    authKind: "header",
+    ...(creds?.host ? { host: creds.host } : {}),
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+    contributions: [
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    ],
+  };
+}
+
 function githubEnterpriseApp(
   creds?: GitHubEnterpriseCredentials,
 ): GitHubAppConnectionTemplate {
@@ -820,6 +841,7 @@ export function buildCatalog(
     GITHUB_PAT,
     GITHUB_APP,
     githubEnterprise(creds.githubEnterprise),
+    githubEnterprisePat(creds.githubEnterprise),
     githubEnterpriseApp(creds.githubEnterprise),
     KUBERNETES,
     spotify(creds.spotify),

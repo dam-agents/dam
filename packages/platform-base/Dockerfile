@@ -35,9 +35,9 @@ RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
 RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install python
-# mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643); self-upgrade
-# until a python release bundles pip >= 26.1.2.
-RUN mise exec python -- python -m pip install --upgrade pip==26.1.2
+# mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643, CVE-2026-13346); self-upgrade
+# until a python release bundles pip >= 26.2.0.
+RUN mise exec python -- python -m pip install --upgrade pip==26.2.0
 # node 24.19.0's bundled npm ships vulnerable brace-expansion 5.0.7, ip-address
 # 10.2.0, tar 7.5.19 and undici 6.27.0; self-upgrade until a node release
 # bundles npm >= 11.19.1. Not npm 12: 12.0.2 predates the 11.19.1 dep bumps and

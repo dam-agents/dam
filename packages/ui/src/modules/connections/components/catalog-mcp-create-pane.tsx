@@ -281,7 +281,6 @@ function McpField({
           help={help}
           error={fieldState.error?.message}
           autoFocus={autoFocus}
-          inset
         />
       )}
     />

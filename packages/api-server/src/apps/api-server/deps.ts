@@ -45,6 +45,7 @@ import type { SchedulesBoot } from "../../modules/schedules/index.js";
 import type { SecretStoreRegistry } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import type { MetricsReader } from "../../modules/metrics/index.js";
+import type { SessionDirectory } from "../../modules/session-directory/index.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
 import type { Config } from "../../config.js";
@@ -85,6 +86,7 @@ export interface ApiServerDeps {
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   metricsReader: MetricsReader | null;
+  sessionDirectory: SessionDirectory;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;

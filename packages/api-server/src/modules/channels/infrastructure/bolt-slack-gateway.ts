@@ -300,13 +300,16 @@ export function createBoltSlackGateway(
 
     async uploadFile(args) {
       if (!app) return;
-      await app.client.files.uploadV2({
+      const upload = {
         channel_id: args.channelId,
         file: args.file,
         filename: args.filename,
         title: args.title,
         initial_comment: args.initialComment,
-      });
+      };
+      await app.client.files.uploadV2(
+        args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
+      );
     },
 
     async downloadFile(

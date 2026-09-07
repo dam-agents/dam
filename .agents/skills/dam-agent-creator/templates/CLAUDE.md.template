@@ -55,7 +55,14 @@ one JSON object:
 ## Runtime configuration: `work/CONFIG.md`
 
 **This definition is project-agnostic.** Every instance-specific value lives in
-`work/CONFIG.md` (created at onboarding), loaded once at run start:
+`work/CONFIG.md` (created at onboarding), loaded once at run start.
+
+**Parsing contract:** a key is read from a `- <key>: <value>` bullet and nothing else —
+a differently-labelled line is invisible, not merely wrong. A trailing `#` comment,
+surrounding whitespace, and one layer of surrounding quotes or backticks are stripped
+from the value. `scripts/preflight.sh` and `scripts/verify-onboarding.sh` carry that
+reader byte-identically, so what the verifier accepts is exactly what a run sees.
+
 
 <!-- TODO(creator): one bullet per key: name — purpose, default, missing-key behavior,
      immutability notes. Mark immutable-once-used keys (anything woven into external

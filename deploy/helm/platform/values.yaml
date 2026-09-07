@@ -1043,6 +1043,11 @@ controller:
       # No default env. `PORT` is baked into agent-runtime (defaults to 8080).
       # Platform-injected envs (HOME, HTTPS_PROXY, API_SERVER_URL, etc.) are
       # set unconditionally by the controller.
+      #
+      # `QUEUE_PARK_MS` is settable here: how long a session's queued prompts
+      # wait for a client to come back before they are recorded as undelivered
+      # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
+      # spec need not spend the full window in a real wait.
       env: []
       skillSources: []
 

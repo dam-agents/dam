@@ -40,6 +40,7 @@ import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
@@ -173,6 +174,10 @@ const runtimeChannel = await composeRuntimeChannel({
   apiServerUrl: config.API_SERVER_URL,
   agentId: platformAgentId,
   triggerDriver,
+  readSessions: () =>
+    sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
+      sessionMetadata.isTombstoned(sessionId),
+    ),
   envReader: envStore,
   plugins: [
     createEnvPlugin({
@@ -266,6 +271,8 @@ function sweepPtyLiveness(): void {
   }
   if (changed) sessionChanges.notify();
 }
+
+sessionChanges.watch(() => runtimeChannel.sessionDirectory.report());
 
 sessionChanges.onDemand({
   start: () => {

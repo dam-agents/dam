@@ -60,8 +60,11 @@ publish a file, open a PR):
 - Where does the **idempotency marker** for this effect live (hidden marker in the posted
   body carrying the item id + content version is the proven pattern)?
 - What happens on partial failure (posted but not recorded / recorded but not posted)?
-  Default: **write-before-send** — record intent in state first; under-acting beats
-  double-acting.
+  Ask which is worse for *this* effect — a duplicate or a silent drop — and pick the
+  ordering from the answer: **write-before-send** when a duplicate is worse (publishing,
+  paying, an irreversible write), **send-then-record** when a silent drop is worse
+  (messages, replies, nudges). Do not default; the choice decides an audit check
+  (`references/architecture.md` → Record ordering).
 - Any effect that publishes to a public/semi-public surface → call it out; it must be
   documented in README and default to off unless it's the agent's core purpose.
 

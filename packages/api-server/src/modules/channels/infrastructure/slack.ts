@@ -3232,6 +3232,21 @@ export function createSlackWorker(
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
         });
+        if (args.attachment) {
+          try {
+            await gw.uploadFile({
+              channelId: target.id,
+              threadTs,
+              file: args.attachment.data,
+              filename: args.attachment.filename,
+              title: args.attachment.title,
+            });
+          } catch (err) {
+            return {
+              error: `reply posted, but the attachment upload failed: ${formatError(err)}`,
+            };
+          }
+        }
         noteEngagedTurn(
           instanceName,
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,

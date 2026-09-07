@@ -1,18 +1,13 @@
 import {
   isAmbientThreadKey,
-  SessionMode,
+  type SessionCategory,
+  sessionCategoryOf,
   SessionType,
   type SessionView,
 } from "api-server-api";
 
-export const SESSION_CATEGORIES = [
-  "chats",
-  "experiments",
-  "scheduled",
-  "channels",
-  "terminal",
-] as const;
-export type SessionCategory = (typeof SESSION_CATEGORIES)[number];
+export type { SessionCategory } from "api-server-api";
+export { SESSION_CATEGORIES } from "api-server-api";
 
 export const SESSION_CATEGORY_LABELS: Record<SessionCategory, string> = {
   chats: "Chats",
@@ -23,15 +18,7 @@ export const SESSION_CATEGORY_LABELS: Record<SessionCategory, string> = {
 };
 
 export function sessionCategory(session: SessionView): SessionCategory {
-  if (session.mode === SessionMode.Terminal) return "terminal";
-  if (
-    session.type === SessionType.ChannelSlack ||
-    session.type === SessionType.ChannelTelegram
-  )
-    return "channels";
-  if (session.type === SessionType.ScheduleCron) return "scheduled";
-  if (session.type === SessionType.ExperimentExecute) return "experiments";
-  return "chats";
+  return sessionCategoryOf(session);
 }
 
 export type SlackSessionKind = "ambient" | "thread";

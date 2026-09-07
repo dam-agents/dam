@@ -38,7 +38,7 @@ const ENTRY_POINTS: EntryPoint[] = [
     choice: "knowledge-base",
     setupView: "knowledge-base-new",
     icon: Book,
-    title: "Start a knowledge base",
+    title: "Start a knowledge base agent",
     description:
       "Organize and converse with data sourced from repos, documents, and more (LLM wiki).",
   },
@@ -60,8 +60,8 @@ export function WelcomeEntryPoints() {
       </h2>
       <p className="mt-1.5 max-w-[560px] text-sm leading-relaxed text-muted-foreground">
         Run agents in isolated cloud environments with credentials and tools
-        securely injected. Create knowledge bases, and trigger agents from Slack
-        or on a schedule.
+        securely injected. Create knowledge base agents, and trigger agents
+        from Slack or on a schedule.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">

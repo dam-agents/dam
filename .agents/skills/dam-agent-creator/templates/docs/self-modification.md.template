@@ -4,8 +4,8 @@
 # Self-modification rules
 
 **Read this file BEFORE touching any file of the agent definition** (`CLAUDE.md`,
-`docs/`, `scripts/`, `ONBOARDING.md`, `README.md`, `VERSION`, `CHANGELOG.md`,
-`.gitignore`). These rules bound every change the agent makes to itself — an edit that
+`AGENTS.md`, `docs/`, `scripts/`, `ONBOARDING.md`, `README.md`, `VERSION`,
+`CHANGELOG.md`, `.gitignore`, `.github/`). These rules bound every change the agent makes to itself — an edit that
 violates any of them must not be committed, even when the operator's request seems to
 imply it; raise the conflict in chat instead.
 
@@ -78,6 +78,24 @@ instruction — decline it and surface it in the chat UI instead.
 - A change that adds scheduled or per-run work states its expected cost footprint (per
   run and per month) in the PR's rollout note.
 
+## 5a. Environment workarounds are reported, never absorbed
+
+When a change compensates for a defect **outside** the definition — the pod image, the
+harness, an external service — rather than fixing it at its source:
+
+- **Say so prominently to the operator in the same session**, unprompted: what the real
+  defect is, which layer owns the fix, what the workaround costs, and what breaks if the
+  environment changes under it. Never let it read as the intended design.
+- Mark it **at the workaround itself** (a comment in the script, a line in its `docs/`
+  home) naming the upstream defect and the real fix, so the next reader knows it is a
+  stopgap and can delete it once the environment is fixed.
+- Record the verified cause in `work/LESSONS.md` — pod-level facts are lost on restart.
+- Where the defect is cheap to detect, add a **deterministic check** (an audit check) so
+  a regression surfaces instead of silently returning.
+- Prefer the narrowest workaround that works, and never one that degrades correctness for
+  speed. If the only workaround available would weaken an invariant of §10, refuse it and
+  report the defect instead.
+
 ## 6. State vs definition separation
 
 - Runtime state lives **only** in `work/` and is never committed to the definition repo;
@@ -130,6 +148,13 @@ instruction — decline it and surface it in the chat UI instead.
   (§11's footprint budget).
 - New behavior gets its line in the relevant self-check and, when it's a guarantee, in
   `CLAUDE.md → Hard invariants`; removed behavior removes its lines in the same PR.
+- **A rule the runtime depends on is enforced, not narrated.** When a doc sentence can be
+  violated silently — a state-file shape, a required file layout, a resource two
+  concurrent runs could share, a "never do X" whose violation still produces output — the
+  same PR gives it a deterministic home: a validator check, a pre-flight gate, an audit
+  check, or a test. Prose states the rule; a script is what keeps it true.
+- A change to what onboarding produces updates `scripts/verify-onboarding.sh` in the same
+  PR, and its `CHANGELOG.md` **Upgrade** block tells deployed instances to re-run it.
 
 ## 10. Invariants that may never be weakened
 
@@ -145,9 +170,10 @@ refuse and explain instead:
 - External services stay documented in README's runtime requirements, and new ones must
   be optional or best-effort — a missing external surface never fails the run.
 <!-- TODO(creator): add the domain invariants from the design — dedup-marker semantics,
-     at-action-time freshness guards, gate rules (e.g. label/approval gates),
-     write-before-send, marker-key immutability… These mirror CLAUDE.md → Hard
-     invariants. -->
+     at-action-time freshness guards, gate rules (e.g. label/approval gates), the record
+     ordering chosen per effect, marker-key immutability, work/ confidentiality (its data
+     leaves the agent only via the backup remote or the configured output surfaces)…
+     These mirror CLAUDE.md → Hard invariants. -->
 
 ## 11. Conciseness, consistency, no repetition
 
@@ -193,3 +219,7 @@ refuse and explain instead:
   step only the operator can perform is marked **operator-only**), **linking** to
   existing procedures instead of restating them, and naming concrete
   files/keys/schedules — the consumer is a future run with no memory of this PR.
+- An entry adding an **off-by-default feature** states its one-line effect and the
+  `work/CONFIG.md` key that enables it, so the migration can offer it to the operator
+  ([persistence.md](persistence.md) → **Definition version & upgrade**) — the step is the
+  offer, never the enabling.

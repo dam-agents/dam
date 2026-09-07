@@ -86,6 +86,7 @@ export interface SlackUpload {
   filename: string;
   title?: string;
   initialComment?: string;
+  threadTs?: string;
 }
 
 export interface SlackStartStream {

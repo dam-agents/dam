@@ -15,6 +15,11 @@ function channel(): ClientChannel {
   } as unknown as ClientChannel;
 }
 
+const alwaysReady = {
+  canStart: () => true,
+  onQueueDropped: () => {},
+};
+
 function submission(sessionId: string, outboundId: number): PromptSubmission {
   return {
     sessionId,
@@ -36,6 +41,7 @@ describe("prompt scheduler turn hooks", () => {
   it("ends a dropped turn on both forget and clear", () => {
     const onTurnEnded = vi.fn();
     const scheduler = createPromptScheduler({
+      ...alwaysReady,
       sendToAgent: () => true,
       onTurnEnded,
     });
@@ -59,6 +65,7 @@ describe("prompt scheduler turn hooks", () => {
   it("starts a turn only when the harness took the frame", () => {
     const onTurnStarted = vi.fn();
     const scheduler = createPromptScheduler({
+      ...alwaysReady,
       sendToAgent: () => false,
       onTurnStarted,
     });

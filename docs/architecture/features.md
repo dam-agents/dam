@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-07-28
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -35,11 +35,21 @@ where a feature *appears*:
   session-creation check is reintroduced with the next feature that needs
   it.
 
-It does **not** gate the underlying API: the feature's tRPC endpoints remain
-available to the authenticated owner regardless of the flag. Every endpoint
-is owner-scoped and safe on its own terms — the flag hides surfaces, it is
-not a security boundary. Anything that must actually be denied is enforced by
-auth and owner scoping, never by a flag check.
+- **A rollup inside a shared read** — where a feature adds one section to a
+  response every caller already receives, the flag decides whether that
+  section is computed. The gate is a cost decision, not an access one: the
+  section rides in a procedure nobody can opt out of, so leaving it ungated
+  would charge every user its backing queries to render nothing. Off, the
+  field comes back empty; the procedure itself stays open. The spend-by-
+  session-kind rollup in [metrics](metrics.md) is the first of these.
+
+What none of these do is **gate an endpoint**: the feature's tRPC procedures
+remain callable by the authenticated owner regardless of the flag, and a
+flagged-off client that calls one gets a valid, owner-scoped answer rather
+than a refusal. Every endpoint is owner-scoped and safe on its own terms —
+a flag decides what is shown and what is computed, it is not a security
+boundary. Anything that must actually be denied is enforced by auth and
+owner scoping, never by a flag check.
 
 ## Semantics
 

@@ -5,6 +5,8 @@ import type {
   podSessionModeSchema,
   podSessionSchema,
   podSessionTypeSchema,
+  sessionDirectoryEntrySchema,
+  sessionDirectoryReportSchema,
 } from "./schemas.js";
 
 export type PodSessionMode = z.infer<typeof podSessionModeSchema>;
@@ -17,3 +19,8 @@ export interface SessionsService {
   list(): Promise<PodSession[]>;
   watch(signal?: AbortSignal): AsyncIterable<PodSessionNotice>;
 }
+
+export type SessionDirectoryEntry = z.infer<typeof sessionDirectoryEntrySchema>;
+export type SessionDirectoryReport = z.infer<
+  typeof sessionDirectoryReportSchema
+>;

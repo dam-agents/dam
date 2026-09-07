@@ -4,6 +4,7 @@ import type {
   AgentsService,
   ConnectionsService,
   RuntimeDeliveryService,
+  SessionDirectoryService,
 } from "api-server-api";
 import type { Db } from "db";
 import type { RuntimeProgressPort } from "../../modules/agents/index.js";
@@ -50,6 +51,7 @@ export interface HarnessApiServerAppDeps {
   channelManager: ChannelManager;
   seedSources: SkillSourceSeed[];
   runtimeHello: RuntimeDeliveryService;
+  sessionDirectory: SessionDirectoryService;
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
@@ -67,6 +69,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     channelManager,
     seedSources,
     runtimeHello,
+    sessionDirectory,
     schedulesBoot,
     runtimeMutator,
     artifacts,
@@ -166,6 +169,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     channelManager,
     k8s: k8sClient,
     runtimeHello,
+    sessionDirectory,
     kbPublishGate,
     composeSkills: (owner) =>
       composeSkillsModule({

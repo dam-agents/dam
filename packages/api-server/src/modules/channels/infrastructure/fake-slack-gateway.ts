@@ -225,6 +225,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         kind: "upload",
         channelId: args.channelId,
         filename: args.filename,
+        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
       });
     },
 

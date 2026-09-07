@@ -5,6 +5,7 @@ import {
   promptTextsOf,
   transcriptOf,
   IDLE_REAP_DELAY_MS,
+  QUEUE_PARK_MS,
 } from "./acp-world.js";
 
 /**
@@ -13,8 +14,10 @@ import {
  * Nobody says goodbye. A tab closes, a laptop lid drops, a connection just
  * dies — and the conversation, the other people in it, and the work in
  * flight must be exactly as they would have been with the socket still
- * there. Only what belonged to the leaver alone goes with them, and once
- * nothing belongs to anyone, the sandbox lets the conversation go.
+ * there. Only what belonged to the leaver alone goes with them; queued work
+ * belongs to the conversation, so it waits out a departure rather than
+ * following it. Once nothing belongs to anyone, the sandbox lets the
+ * conversation go.
  *
  * See `acp-runtime-joining.test.ts` for the way back in; this feature is
  * about what a departure may and may not change.
@@ -109,17 +112,20 @@ describe("acp-runtime: leaving", () => {
 
   /**
    * TEST_SCENARIO: A queued message has not reached the harness yet; it exists only inside
-   * the runtime. If its sender leaves before its turn comes, running it
-   * anyway would start work whose asker can never see it, answer its
-   * permission prompts, or read its result — so it goes with them. But only
-   * theirs: the queue is the conversation's, not the leaver's, and the
-   * neighbour behind them in line did nothing wrong.
+   * the runtime. One of three people watching leaves before their message's
+   * turn comes, and it still runs.
    *
-   * Only the runtime can make that cut. The harness has never seen either
-   * message, and each client knows only its own — the runtime alone knows
-   * whose message is whose.
+   * The queue belongs to the conversation, not to the socket that filled it.
+   * The runtime cannot tell a closed tab from a reloading one — a returning
+   * client arrives as a brand-new channel with nothing tying it to the one
+   * that left — so keying each queued message to its sender is what made a
+   * page reload throw the user's own messages away. What the runtime can see
+   * is whether anyone is engaged on the session at all, and while someone
+   * is, every queued message still has a reader: its permission prompts fan
+   * out to whoever is present, and its answer lands in the transcript they
+   * all share.
    */
-  it("should drop a leaver's queued messages but nobody else's", () => {
+  it("should keep a leaver's queued messages while anyone is still watching", () => {
     const world = createWorld();
 
     const alice = world.connect();
@@ -137,12 +143,49 @@ describe("acp-runtime: leaving", () => {
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
     expect(promptTextsOf(world.harness())).toEqual([
       "keep the build green",
+      "also update the deps",
       "and tag a release",
     ]);
     expect(carol.reply(2)?.result).toEqual({ stopReason: "end_turn" });
+  });
+
+  /**
+   * TEST_SCENARIO: A parked queue is dropped because nobody came back, and now the
+   * session really is idle: no clients, no turn, no queue. It must be
+   * released like any other abandoned conversation.
+   *
+   * The release check runs a few seconds after the last client leaves, which
+   * is long before the park window closes — and it refuses to release a
+   * session that still has queued work, correctly, because that work is
+   * waiting for a return. Nothing else asks again afterwards, so dropping
+   * the queue has to be its own cue to re-check, or a session nobody will
+   * ever open again keeps its harness subprocess alive for the life of the
+   * pod.
+   */
+  it("should release the session once its parked queue is dropped", () => {
+    vi.useFakeTimers();
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "run the migration"));
+    alice.send(frames.prompt(3, SESSION, "then check the logs"));
+    alice.disconnect();
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    vi.advanceTimersByTime(QUEUE_PARK_MS + IDLE_REAP_DELAY_MS);
+
+    expect(
+      world
+        .harness()
+        .received("session/close")
+        .map((frame) => frame.params),
+    ).toEqual([{ sessionId: SESSION }]);
   });
 
   /**

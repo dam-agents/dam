@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { createWorld, frames } from "./acp-world.js";
+import { createSessionMetadata, createWorld, frames } from "./acp-world.js";
+import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
+import { createUndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 
 /**
  * TEST_OVERVIEW: applying an env change to a running sandbox.
@@ -11,6 +13,25 @@ import { createWorld, frames } from "./acp-world.js";
  * and — when the caller forces it — after a bounded grace period even if
  * work never drains, so a revoked credential cannot stay usable forever.
  */
+
+const SESSION = "sess-env";
+
+let tick = 0;
+const clock = (): string => `t${String(++tick).padStart(6, "0")}`;
+
+function createMemoryBackend(): DocumentStoreBackend {
+  return {
+    open(_name, opts) {
+      let state = opts.initial();
+      return {
+        read: () => state,
+        write(next) {
+          state = next;
+        },
+      };
+    },
+  };
+}
 
 describe("acp-runtime: env changes", () => {
   afterEach(() => {
@@ -39,6 +60,49 @@ describe("acp-runtime: env changes", () => {
 
     world.connect();
     expect(world.harnessCount()).toBe(2);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change forces a recycle while messages are still
+   * queued behind the running turn. Those prompts exist nowhere but this
+   * process — the harness has never seen them — so killing it would lose
+   * work the user was told was waiting, and no client is left holding a copy
+   * to report it either.
+   *
+   * A queue may not be discarded anywhere without being written down first,
+   * so every route that drops one — the park window expiring, a session
+   * being released, the harness going down — hands its prompts to the same
+   * recorder. This is the route only the runtime can see: a browser cannot
+   * make a harness exit, and the client that sent the prompts may be long
+   * gone by the time it happens.
+   */
+  it("should record queued prompts as undelivered when the harness goes down", () => {
+    const undelivered = createUndeliveredPromptStore(
+      createMemoryBackend(),
+      clock,
+    );
+    vi.useFakeTimers();
+    const metadata = createSessionMetadata();
+    const world = createWorld({
+      undeliveredPrompts: undelivered,
+      sessionMetadata: metadata.store,
+      envForceRecycleMs: 60_000,
+    });
+
+    const client = world.connect();
+    client.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    client.send(frames.prompt(2, SESSION, "run the migration"));
+    client.send(frames.prompt(3, SESSION, "then check the logs"));
+
+    world.runtime.refreshEnv({ force: true });
+    vi.advanceTimersByTime(60_000);
+
+    expect(
+      undelivered
+        .readFor(SESSION)
+        .flatMap((p) => p.blocks.map((b) => (b.type === "text" ? b.text : ""))),
+    ).toEqual(["then check the logs"]);
   });
 
   /**

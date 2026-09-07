@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import { QUEUE_FULL_DESCRIPTION } from "../../modules/acp/errors.js";
-import { QUEUED_LOST_MESSAGE } from "../../modules/acp/session-projection.js";
 import {
   classifySendOutcome,
   type SendFailureFacts,
@@ -50,12 +49,12 @@ describe("classifySendOutcome", () => {
     if (outcome.report) expect(outcome.message).toContain("agent exited");
   });
 
-  test("a queued prompt is lost when its channel goes", () => {
+  test("a queued prompt is not a failure when its channel goes: the runtime parks it", () => {
     expect(
       classifySendOutcome(
         facts({ connectionClosed: true, delivered: true, queued: true }),
       ),
-    ).toEqual({ report: true, message: QUEUED_LOST_MESSAGE });
+    ).toEqual({ report: false });
   });
 
   test("a delivered turn keeps running, so a drop reports nothing", () => {

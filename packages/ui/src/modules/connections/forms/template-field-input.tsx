@@ -15,7 +15,7 @@ export function TemplateFieldInput({
   input: ConnectionTemplateInput;
 }) {
   const optional = input.state === "optional";
-  const basePlaceholder = placeholderFor(input.name);
+  const basePlaceholder = placeholderFor(templateId, input.name);
   const placeholder = optional
     ? [basePlaceholder, "(optional)"].filter(Boolean).join(" ")
     : basePlaceholder;
@@ -35,7 +35,6 @@ export function TemplateFieldInput({
           onBlur={field.onBlur}
           error={fieldState.error?.message}
           help={hintFor(templateId, input.name) ?? input.hint}
-          inset
         />
       )}
     />

@@ -1,5 +1,8 @@
 import type { ConnectionView } from "api-server-api";
 
+import { Badge } from "@/components/ui/badge";
+
+import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
 import { ConnectionStatusBadge } from "./connection-status-badge.js";
 
@@ -18,7 +21,8 @@ export interface RowMaintenanceActions {
 
 interface Props {
   connection: ConnectionView;
-  subtitle: string;
+  tag: string;
+  iconSlug?: string;
   grant?: RowGrantControls;
   onManage?: () => void;
   onDelete?: () => void;
@@ -28,7 +32,8 @@ interface Props {
 
 export function CatalogConnectionRow({
   connection,
-  subtitle,
+  tag,
+  iconSlug,
   grant,
   onManage,
   onDelete,
@@ -41,16 +46,24 @@ export function CatalogConnectionRow({
       className="px-4 py-3"
     >
       <div className="flex items-center gap-2">
-        <div className="min-w-[160px] flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-[15px] text-foreground">
-              {connection.name}
-            </p>
-            {connection.status !== "active" && (
-              <ConnectionStatusBadge status={connection.status} />
-            )}
-          </div>
-          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+        <div className="flex min-w-[160px] flex-1 items-center gap-2">
+          {iconSlug && (
+            <ConnectionIcon
+              iconSlug={iconSlug}
+              alt=""
+              size={16}
+              className="shrink-0 text-foreground/80"
+            />
+          )}
+          <p className="truncate text-[15px] text-foreground">
+            {connection.name}
+          </p>
+          <Badge variant="muted" className="shrink-0 font-normal">
+            {tag}
+          </Badge>
+          {connection.status !== "active" && (
+            <ConnectionStatusBadge status={connection.status} />
+          )}
         </div>
         <ConnectionRowActions
           connection={connection}

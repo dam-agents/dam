@@ -4,6 +4,7 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 import type {
   Message,
@@ -67,7 +68,7 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
       return closeActiveAssistant(messages);
 
     case "platform_prompt_accepted":
-      return update.queued
+      return update.queued && waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
@@ -95,6 +96,15 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     default:
       return messages;
   }
+}
+
+function waitsBehindAnotherReply(
+  messages: Message[],
+  promptId: string,
+): boolean {
+  return messages.some(
+    (m) => m.role === "assistant" && m.streaming && m.promptId !== promptId,
+  );
 }
 
 function setQueuedByPromptId(
@@ -146,33 +156,142 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
+export const UNDELIVERED_MESSAGE =
+  "Not delivered — this never reached the agent.";
+
+function textOf(record: PlatformUndeliveredPrompt): string {
+  return record.blocks
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("\n\n");
+}
+
+function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+  const parts: MessagePart[] = [];
+  for (const block of record.blocks) {
+    if (block.type === "image")
+      parts.push({
+        kind: "image",
+        data: block.data,
+        mimeType: block.mimeType,
+      });
+    else if (block.type === "resource_link")
+      parts.push({
+        kind: "file",
+        name: block.name,
+        mimeType: block.mimeType ?? "",
+      });
+  }
+  const text = textOf(record);
+  if (text) parts.push({ kind: "text", text });
+  return parts.length > 0 ? parts : [{ kind: "text", text: "" }];
+}
+
+function undeliveredError(record: PlatformUndeliveredPrompt): Message["error"] {
+  const reason = record.reason ?? UNDELIVERED_MESSAGE;
+  const lost = record.droppedAttachments;
+  return {
+    message:
+      lost.length === 0
+        ? reason
+        : `${reason} Sending it again will not include ${lost.join(", ")} — attach again to send ${lost.length === 1 ? "it" : "them"} too.`,
+    retryWith: {
+      text: textOf(record),
+      ...(record.blocks.length > 0 ? { blocks: record.blocks } : {}),
+    },
+  };
+}
+
+function undeliveredBubble(record: PlatformUndeliveredPrompt): Message {
+  return {
+    id: record.id,
+    role: "user",
+    parts: partsOf(record),
+    streaming: false,
+    error: undeliveredError(record),
+  };
+}
+
+function isVestigialPlaceholder(m: Message | undefined): boolean {
+  return (
+    m !== undefined &&
+    m.role === "assistant" &&
+    m.parts.length === 0 &&
+    (m.queued === true || !m.streaming)
+  );
+}
+
+function markUndelivered(
+  messages: Message[],
+  records: Map<string, PlatformUndeliveredPrompt>,
+): Message[] {
+  const out: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    const record = m.role === "user" ? records.get(m.id) : undefined;
+    if (record === undefined) {
+      out.push(m);
+      continue;
+    }
+    out.push(m.error ? m : { ...m, error: undeliveredError(record) });
+    if (isVestigialPlaceholder(messages[i + 1])) i += 1;
+  }
+  return out;
+}
+
+export function dropSuperseded(messages: Message[], ids: string[]): Message[] {
+  if (ids.length === 0) return messages;
+  const gone = new Set(ids);
+  const out: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (m.role === "user" && gone.has(m.id)) {
+      if (isVestigialPlaceholder(messages[i + 1])) i += 1;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}
+
+export function appendUndelivered(
+  messages: Message[],
+  records: PlatformUndeliveredPrompt[],
+): Message[] {
+  if (records.length === 0) return messages;
+  const marked = markUndelivered(
+    messages,
+    new Map(records.map((r) => [r.id, r])),
+  );
+  const fresh = records
+    .filter((r) => !messages.some((m) => m.id === r.id))
+    .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  if (fresh.length === 0) return marked;
+  return [...marked, ...fresh.map(undeliveredBubble)];
+}
+
+export function settleReplay(
+  messages: Message[],
+  { turnInFlight }: { turnInFlight: boolean },
+): Message[] {
+  return turnInFlight ? messages : finalizeAllStreaming(messages);
+}
+
 function finalizeStreaming(m: Message): Message {
   return m.role === "assistant" && m.streaming
     ? { ...m, streaming: false, queued: false }
     : m;
 }
 
-export const QUEUED_LOST_MESSAGE =
-  "Couldn't deliver — the connection dropped while this prompt was still waiting in the queue.";
-
 export function failQueuedOnDisconnect(messages: Message[]): Message[] {
   return messages.flatMap<Message>((m) => {
-    const lost =
+    const ourEmptyQueued =
       m.role === "assistant" &&
       m.streaming &&
       m.queued &&
       m.promptId !== undefined &&
       m.parts.length === 0;
-    if (!lost) return [finalizeStreaming(m)];
-    if (!m.retryWith) return [];
-    return [
-      {
-        ...m,
-        streaming: false,
-        queued: false,
-        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
-      },
-    ];
+    if (ourEmptyQueued && !m.retryWith) return [];
+    return [finalizeStreaming(m)];
   });
 }
 
@@ -181,7 +300,10 @@ export function mergeLocalFailures(
   previous: Message[],
 ): Message[] {
   const carried = previous.filter(
-    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
+    (m) =>
+      m.role === "user" &&
+      m.error?.retryWith &&
+      !rebuilt.some((r) => r.id === m.id),
   );
   return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
@@ -403,7 +525,8 @@ function appendQueuedUser(
     tailAssistant?.role === "assistant" &&
     tailAssistant.queued &&
     tailAssistant.parts.length === 0 &&
-    tailUser?.role === "user"
+    tailUser?.role === "user" &&
+    (mid === null || tailUser.id === mid)
   ) {
     return messages.map((m, i) =>
       i === n - 2 ? { ...m, parts: mergeParts(m.parts, parts) } : m,

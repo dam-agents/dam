@@ -10,6 +10,8 @@ import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "../../../infrastructure/session-metadata-store.js";
+import type { UndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
+import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 /**
  * TEST_OVERVIEW: Test doubles for the two ports the ACP runtime talks through, plus a world
@@ -29,6 +31,7 @@ import {
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
 export const IDLE_REAP_DELAY_MS = 3_000;
+export const QUEUE_PARK_MS = 5_000;
 
 export interface Harness {
   received(method?: string): Frame[];
@@ -176,6 +179,28 @@ export interface World {
   harnessCount(): number;
 }
 
+export function createInMemoryUndeliveredStore(): UndeliveredPromptStore {
+  const sessions = new Map<string, PlatformUndeliveredPrompt[]>();
+  return {
+    readFor: (sessionId) => sessions.get(sessionId) ?? [],
+    remember(sessionId, prompts) {
+      const existing = sessions.get(sessionId) ?? [];
+      const fresh = prompts.filter((p) => !existing.some((e) => e.id === p.id));
+      if (fresh.length > 0) sessions.set(sessionId, [...existing, ...fresh]);
+    },
+    forget(sessionId, id) {
+      const existing = sessions.get(sessionId) ?? [];
+      const kept = existing.filter((p) => p.id !== id);
+      if (kept.length === 0) sessions.delete(sessionId);
+      else sessions.set(sessionId, kept);
+      return kept.length !== existing.length;
+    },
+    forgetSession(sessionId) {
+      sessions.delete(sessionId);
+    },
+  };
+}
+
 export function createWorld(
   overrides: Partial<Omit<AcpRuntimeDeps, "spawnAgent">> = {},
 ): World {
@@ -185,6 +210,8 @@ export function createWorld(
     workingDir: "/workspace",
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
     onArtifactTouch: () => {},
+    queueParkMs: QUEUE_PARK_MS,
+    undeliveredPrompts: createInMemoryUndeliveredStore(),
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();

@@ -3,14 +3,12 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
-import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
-import { CatalogConnectionRow } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
-import { GithubAppInstallHint } from "./github-app-install-hint.js";
+import { ConnectionRowCard } from "./connection-row-card.js";
 
 interface Props {
   group: CatalogProviderGroup;
@@ -56,13 +54,12 @@ export function ConnectionGroupCard({
         )
       }
     >
-      <GithubAppInstallHint connections={connections} />
-      <div className="divide-y divide-border">
+      <div className="flex flex-col gap-3 p-4">
         {connections.map((c) => (
-          <CatalogConnectionRow
+          <ConnectionRowCard
             key={c.id}
             connection={c}
-            subtitle={connectionKindSubtitle(c, templateById.get(c.templateId))}
+            template={templateById.get(c.templateId)}
             grant={grant?.(c)}
             onManage={onManage}
             onDelete={onDelete && (() => onDelete(c.id, c.name))}

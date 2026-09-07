@@ -1,6 +1,5 @@
-import { Renew, Warning } from "@carbon/icons-react";
+import { Warning } from "@carbon/icons-react";
 
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
@@ -9,10 +8,9 @@ import { describeSendError } from "../../acp/errors.js";
 interface Props {
   rawError: string;
   interrupted?: boolean;
-  onRetry?: () => void;
 }
 
-export function SendErrorCard({ rawError, interrupted, onRetry }: Props) {
+export function SendErrorCard({ rawError, interrupted }: Props) {
   const { message, hint } = describeSendError(rawError);
   return (
     <Callout
@@ -34,17 +32,6 @@ export function SendErrorCard({ rawError, interrupted, onRetry }: Props) {
         </div>
         {hint && (
           <p className="text-xs text-muted-foreground break-words">{hint}</p>
-        )}
-        {onRetry && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            className="self-start"
-            data-testid="prompt-retry-button"
-          >
-            <Renew size={11} /> Retry
-          </Button>
         )}
       </div>
     </Callout>

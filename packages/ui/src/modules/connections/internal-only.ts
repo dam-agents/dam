@@ -4,8 +4,6 @@ export const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
   "spotify",
   "youtube",
   "custom-client-credentials",
-  "github-app",
-  "github-enterprise-app",
 ]);
 
 export const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = [

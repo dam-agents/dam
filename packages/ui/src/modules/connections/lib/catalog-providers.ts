@@ -36,13 +36,17 @@ const STATIC_PROVIDERS: readonly {
   {
     id: "github",
     title: "GitHub",
-    templateIds: ["github", "github-pat"],
+    templateIds: ["github", "github-pat", "github-app"],
     tab: "apps",
   },
   {
     id: "github-enterprise",
     title: "GitHub Enterprise",
-    templateIds: ["github-enterprise"],
+    templateIds: [
+      "github-enterprise",
+      "github-enterprise-pat",
+      "github-enterprise-app",
+    ],
     tab: "apps",
   },
   { id: "modal", title: "Modal", templateIds: ["modal"], tab: "apps" },
@@ -76,14 +80,32 @@ export function catalogProviderTitle(templateId: string): string | undefined {
 
 const METHOD_COPY: Record<string, { title: string; description: string }> = {
   github: {
-    title: "Sign in with Github",
+    title: "Authorize with GitHub",
     description:
-      "Connect by logging in with your Github account — no token to create or paste",
+      "Connect by logging in with your GitHub account — no token to create or paste",
   },
   "github-pat": {
-    title: "Personal access token",
+    title: "Connect with a personal access token",
     description:
-      "Paste a token you create on Github. Best when finer-grained access is preferred",
+      "Paste a token you create on GitHub. Best when finer-grained access is preferred",
+  },
+  "github-app": {
+    title: "Connect your GitHub App",
+    description: "Agents act as a bot and your org owns the app",
+  },
+  "github-enterprise": {
+    title: "Authorize with GitHub Enterprise",
+    description:
+      "Connect by logging in on your GitHub Enterprise host — no token to create or paste",
+  },
+  "github-enterprise-pat": {
+    title: "Connect with a personal access token",
+    description:
+      "Paste a token you create on GitHub. Best when finer-grained access is preferred",
+  },
+  "github-enterprise-app": {
+    title: "Connect your GitHub App",
+    description: "Agents act as a bot and your org owns the app",
   },
 };
 
@@ -99,26 +121,25 @@ export function templateMethodCopy(template: ConnectionTemplateView): {
   );
 }
 
-const CREATE_COPY: Record<string, { title: string; subtitle?: string }> = {
-  github: {
-    title: "Sign in with Github",
-    subtitle: "After authorizing, install the app on your organization.",
-  },
-  "github-enterprise": {
-    title: "Sign in with Github Enterprise",
-    subtitle: "After authorizing, install the app on your organization.",
-  },
-  "github-pat": {
-    title: "Personal access token",
-    subtitle: "Paste a fine-grained token scoped to the repos you need.",
-  },
-};
-
 export function templateCreateHeading(template: ConnectionTemplateView): {
   title: string;
-  subtitle?: string;
 } {
-  return CREATE_COPY[template.id] ?? { title: `Add ${template.name}` };
+  return { title: `Add ${template.name}` };
+}
+
+const SUBMIT_LABELS: Record<string, { label: string; external?: boolean }> = {
+  github: { label: "Continue to GitHub", external: true },
+  "github-enterprise": { label: "Continue to GitHub", external: true },
+  "github-pat": { label: "Create token" },
+  "github-enterprise-pat": { label: "Create token" },
+  "github-app": { label: "Connect app" },
+  "github-enterprise-app": { label: "Connect app" },
+};
+
+export function templateSubmitLabel(
+  templateId: string,
+): { label: string; external?: boolean } | undefined {
+  return SUBMIT_LABELS[templateId];
 }
 
 const tabForCategory = (
@@ -179,6 +200,13 @@ export function groupCatalog({
   for (const t of offeredTemplates) groupFor(t.id).templates.push(t);
   for (const c of connections) groupFor(c.templateId).connections.push(c);
 
+  for (const def of STATIC_PROVIDERS) {
+    const group = groups.get(def.id);
+    group?.templates.sort(
+      (a, b) => def.templateIds.indexOf(a.id) - def.templateIds.indexOf(b.id),
+    );
+  }
+
   const byTab = new Map<CatalogTab, CatalogProviderGroup[]>(
     CATALOG_TAB_ORDER.map((tab) => [tab, []]),
   );
@@ -206,8 +234,17 @@ export function connectionKindSubtitle(
     connection.templateId === "github" ||
     connection.templateId === "github-enterprise"
   )
-    return "GitHub app";
-  if (connection.templateId === "github-pat") return "Personal access token";
+    return "GitHub OAuth";
+  if (
+    connection.templateId === "github-app" ||
+    connection.templateId === "github-enterprise-app"
+  )
+    return "GitHub App";
+  if (
+    connection.templateId === "github-pat" ||
+    connection.templateId === "github-enterprise-pat"
+  )
+    return "GitHub PAT";
   const host = connection.host ?? connection.hosts[0];
   if (
     host &&

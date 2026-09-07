@@ -1,5 +1,4 @@
 import { QUEUE_FULL_DESCRIPTION } from "../../acp/errors.js";
-import { QUEUED_LOST_MESSAGE } from "../../acp/session-projection.js";
 
 export type SendOutcome = { report: false } | { report: true; message: string };
 
@@ -30,9 +29,6 @@ export function classifySendOutcome(facts: SendFailureFacts): SendOutcome {
   }
   if (!facts.delivered) {
     return { report: true, message: undelivered(facts.closeReason) };
-  }
-  if (facts.queued) {
-    return { report: true, message: QUEUED_LOST_MESSAGE };
   }
   return { report: false };
 }

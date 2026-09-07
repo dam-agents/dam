@@ -82,6 +82,7 @@ import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
+import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
@@ -979,6 +980,14 @@ export async function bootstrap() {
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
+  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
+    composeSessionDirectory(db);
+  await periodicJobs.register(
+    "session-directory-retention",
+    7 * 24 * 60 * 60 * 1000,
+    () => sessionDirectoryRetentionTick(),
+  );
+
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
     periodicJobs,
@@ -1010,6 +1019,7 @@ export async function bootstrap() {
     mountUsageRoutes: usage.mount,
     listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
     metricsReader: composeMetricsReader(config),
+    sessionDirectory,
     terms: termsService,
     isTermsAccepted,
     e2e: e2eService,
@@ -1039,6 +1049,7 @@ export async function bootstrap() {
     channelManager,
     seedSources,
     runtimeHello: runtimeDelivery.hello,
+    sessionDirectory,
     schedulesBoot,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     runtimeProgress: contributionsProgressPort,

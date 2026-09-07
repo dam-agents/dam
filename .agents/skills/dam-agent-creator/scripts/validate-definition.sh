@@ -21,8 +21,8 @@ fail() { printf 'FAIL  %s\n' "$1"; FAILS=$((FAILS + 1)); }
 cd "$REPO" || exit 1
 
 # ---------------------------------------------------------- required files ----
-for f in CLAUDE.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
-         docs/self-modification.md docs/persistence.md; do
+for f in CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
+         docs/self-modification.md docs/persistence.md scripts/verify-onboarding.sh; do
   if [ -f "$f" ]; then pass "required file: $f"; else fail "missing required file: $f"; fi
 done
 
@@ -34,7 +34,7 @@ if [ -f .gitignore ]; then
   else
     fail ".gitignore must ignore everything first ('/*'); first rule is: ${first_rule:-<none>}"
   fi
-  for inc in '!/.gitignore' '!/CLAUDE.md' '!/ONBOARDING.md' '!/VERSION' '!/CHANGELOG.md' '!/docs/'; do
+  for inc in '!/.gitignore' '!/CLAUDE.md' '!/AGENTS.md' '!/ONBOARDING.md' '!/VERSION' '!/CHANGELOG.md' '!/docs/'; do
     grep -qxF "$inc" .gitignore \
       && pass ".gitignore re-includes ${inc#!/}" \
       || fail ".gitignore missing re-include: $inc"
@@ -99,7 +99,7 @@ grep -rqi 'code-guardian' --include='*.md' --include='*.sh' . 2>/dev/null \
 
 # ------------------------------------------------------------- shell scripts ----
 if [ -d scripts ]; then
-  for s in scripts/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
+  for s in scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
     [ -e "$s" ] || continue
     if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
     # this validator carries the literal 'awk' in its own detection pattern and message —
@@ -114,6 +114,33 @@ if [ -d scripts ]; then
       && fail "$s uses awk — not available on the pod" \
       || pass "$s is awk-free"
   done
+fi
+
+# ------------------------------------------------------ config reader parity ----
+# The runtime and the verifier must read CONFIG.md identically. Two copies of a
+# parser drift silently, so there is exactly one: scripts/lib/config.sh, sourced
+# by both. This asserts the structure rather than diffing two function bodies —
+# a text comparison has to guess where a shell function ends, and every wrong
+# guess is either a gate that passes drifted readers or one that fails identical
+# ones. The residual: this is structural, not semantic — a script that sources the
+# lib and then parses CONFIG.md again under another name still passes.
+for f in scripts/preflight.sh scripts/verify-onboarding.sh; do
+  [ -f "$f" ] || continue
+  if grep -q 'lib/config\.sh' "$f"; then
+    pass "$f sources the shared config reader"
+  else
+    fail "$f does not source scripts/lib/config.sh — it must not parse CONFIG.md itself"
+  fi
+  if grep -qE '^[[:space:]]*cfg(_table)?\(\)' "$f"; then
+    fail "$f defines its own cfg()/cfg_table() — the reader belongs in scripts/lib/config.sh alone"
+  else
+    pass "$f defines no config reader of its own"
+  fi
+done
+if [ -f scripts/preflight.sh ] || [ -f scripts/verify-onboarding.sh ]; then
+  [ -f scripts/lib/config.sh ] \
+    && pass "shared config reader present (scripts/lib/config.sh)" \
+    || fail "missing scripts/lib/config.sh — the single home of the CONFIG.md readers"
 fi
 
 # ------------------------------------------------------- dead relative links ----

@@ -50,3 +50,28 @@ export interface SessionView {
   runTotalMs?: number | null;
   runCount?: number | null;
 }
+
+export const SESSION_CATEGORIES = [
+  "chats",
+  "experiments",
+  "scheduled",
+  "channels",
+  "terminal",
+] as const;
+
+export type SessionCategory = (typeof SESSION_CATEGORIES)[number];
+
+export function sessionCategoryOf(session: {
+  mode: SessionMode;
+  type: SessionType;
+}): SessionCategory {
+  if (session.mode === SessionMode.Terminal) return "terminal";
+  if (
+    session.type === SessionType.ChannelSlack ||
+    session.type === SessionType.ChannelTelegram
+  )
+    return "channels";
+  if (session.type === SessionType.ScheduleCron) return "scheduled";
+  if (session.type === SessionType.ExperimentExecute) return "experiments";
+  return "chats";
+}

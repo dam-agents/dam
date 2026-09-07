@@ -212,6 +212,28 @@ describe("slack outbound — cross-workspace reach", () => {
     ]);
   });
 
+  it("a reply's attachment is uploaded into the same thread", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    const result = await h.worker.reply("agent-1", {
+      text: "lorem ipsum attached",
+      threadTs: "1700000000.000100",
+      attachment: { filename: "lorem-ipsum.txt", data: Buffer.from("x") },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(h.messages()).toMatchObject([
+      { channel: BOUND, threadTs: "1700000000.000100" },
+    ]);
+    expect(h.uploads()).toEqual([
+      {
+        kind: "upload",
+        channelId: BOUND,
+        filename: "lorem-ipsum.txt",
+        threadTs: "1700000000.000100",
+      },
+    ]);
+  });
+
   it("a failed upload after a delivered text message says the text landed", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     h.gw.uploadFile = async () => {

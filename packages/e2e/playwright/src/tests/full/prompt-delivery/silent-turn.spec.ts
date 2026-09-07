@@ -10,7 +10,6 @@ import {
   LONG_TURN_MS,
   openMockAgentChat,
   restoreMockDefaultReply,
-  retryButton,
   sendPrompt,
 } from "./delivery.js";
 
@@ -64,7 +63,6 @@ test("a turn that started but streamed nothing survives a dropped connection wit
   await test.step("the turn reads as an ordinary exchange after replay", async () => {
     await expect(page.getByText(promptA)).toBeVisible();
     await expect(deliveryError(page)).toBeHidden();
-    await expect(retryButton(page)).toBeHidden();
   });
 
   await restoreMockDefaultReply(api, agentId);

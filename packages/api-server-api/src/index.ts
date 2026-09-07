@@ -305,6 +305,8 @@ export type {
   TokenSpendByModel,
   SpendByAgent,
   SpendByDay,
+  SpendBySessionType,
+  SpendCategory,
   SessionRuntime,
   CallContext,
 } from "./modules/metrics/types.js";
@@ -353,13 +355,16 @@ export type {
 export {
   SessionType,
   SessionMode,
+  SESSION_CATEGORIES,
+  sessionCategoryOf,
   sessionModeSchema,
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
-export type { SessionView } from "./modules/sessions/types.js";
+export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
+export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
 export {
   OP_INPUT,
@@ -451,6 +456,15 @@ export {
   skillStateOutputSchema,
   skillUninstallInputSchema,
 } from "./modules/skills/schemas.js";
+export type {
+  PlatformFeatureId,
+  PlatformSkillFeature,
+} from "./modules/skills/platform-skills.js";
+export {
+  PLATFORM_SKILLS,
+  platformSkillFeature,
+  platformSkillsForFeature,
+} from "./modules/skills/platform-skills.js";
 
 export type {
   FilesService,
@@ -533,6 +547,13 @@ export {
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
   platformClippedReplayMetaSchema,
+  platformReplayTurnMetaSchema,
+  promptBlockSchema,
+  platformUndeliveredPromptSchema,
+  platformUndeliveredMetaSchema,
+  platformSupersededMetaSchema,
+  UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
+  capInlineImages,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -544,6 +565,9 @@ export type {
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
   PlatformClippedReplayMeta,
+  PlatformReplayTurnMeta,
+  PlatformUndeliveredPrompt,
+  PromptBlock,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

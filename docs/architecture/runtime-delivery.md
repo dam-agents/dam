@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-02
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -10,11 +10,12 @@ Eight subsystems push through this machinery — agents, connections, experiment
 
 The subsystem cuts across two bounded contexts:
 
-- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents.
+- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents. The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory).
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
-The runtime channel is three routes between api-server and agent-runtime —
-`applyState` inward, `hello` and the artifact-touch report outward:
+The runtime channel is four routes between api-server and agent-runtime —
+`applyState` inward, `hello`, the artifact-touch report and the
+session-directory report outward:
 
 ```mermaid
 flowchart LR
@@ -104,6 +105,12 @@ The reply is a discriminated outcome, not a bare ack:
 - **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
 Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+
+### Session-directory report — agent → api-server
+
+A second agent-initiated call rides the same gateway and the same harness API server. Whenever an agent's own record of its Sessions changes, it reports the **kind of each Session it holds** — a snapshot, not a delta, so a report that never arrives costs latency rather than leaving a permanent hole. It is deliberately narrow: the agent keeps owning Session state, and what leaves is the single dimension the spend read path cannot reconstruct once the agent hibernates or is deleted. [metrics](metrics.md#session-directory) owns what the report means and why it exists; this page owns only the fact that the channel carries it.
+
+Unlike `hello`, it is not part of catch-up: it settles nothing, acks nothing, and never touches the outbox. A failed report is logged and retried on the next change or the next boot.
 
 ### `hello` — agent → api-server catch-up
 
@@ -342,5 +349,5 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 - **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's two callbacks: `hello`, and the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report, and the session-directory report below — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload. A flow-gating capability (the knowledge-base publish level) fails visibly instead: the gated feature records an update-the-agent failure rather than dropping work silently.

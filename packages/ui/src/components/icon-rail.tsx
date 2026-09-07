@@ -19,6 +19,7 @@ import { useStore } from "../store.js";
 
 interface Destination {
   label: string;
+  shortLabel?: string;
   icon: CarbonIconType;
   active: boolean;
   badge: number;
@@ -52,7 +53,8 @@ export function IconRail({
     navigate: () => setView("coding-agents"),
   };
   const knowledgeBases: Destination = {
-    label: "Knowledge bases",
+    label: "Knowledge base agents",
+    shortLabel: "Knowledge",
     icon: Book,
     active: view === "knowledge-bases" || view === "knowledge-base-chat",
     badge: 0,
@@ -194,6 +196,7 @@ function RailItem({
 
 function BottomBarItem({
   label,
+  shortLabel,
   icon: Icon,
   active,
   badge,
@@ -203,13 +206,16 @@ function BottomBarItem({
     <button
       type="button"
       onClick={navigate}
+      aria-label={badge > 0 ? `${label}, ${badge} pending` : label}
       className={cn(
-        "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
+        "flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} />
-      <span className="text-[10px] font-semibold">{label}</span>
+      <span className="max-w-full truncate text-[10px] font-semibold">
+        {shortLabel ?? label}
+      </span>
     </button>
   );
 }

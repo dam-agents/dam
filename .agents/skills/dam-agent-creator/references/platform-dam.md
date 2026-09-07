@@ -22,6 +22,15 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
   available. **`awk` is not** — generated scripts must be awk-free. When a script may
   also run on macOS during development, guard date parsing:
   `date -d "$iso" +%s 2>/dev/null || date -j -f '%Y-%m-%dT%H:%M:%SZ' "$iso" +%s`.
+- **`jq` and `gh` on `PATH` are `mise` shims** — every exec re-resolves the toolchain
+  (~250 ms against ~17 ms for the real binary). A pre-flight execs `jq` dozens of times
+  per run and harness hooks fire per tool call, so a hot script sources a
+  `scripts/lib/toolpath.sh` (template provided) that resolves each shimmed tool **once
+  per shell process** and shadows it with a function calling the binary directly. It
+  never modifies `PATH` (the offline tests stub CLIs by prepending to it), never fails a
+  run, and leaves a tool already resolving outside `*/shims/*` untouched. The real fix
+  belongs in the pod image, so onboarding reports the shim and the audit keeps warning
+  until it lands — a workaround is reported, never absorbed.
 - Temp files go under `/tmp`, namespaced per item (`/tmp/<agent>-<item>/`), and are
   cleaned up by the end of the run — leftovers are an audit finding.
 
@@ -31,8 +40,11 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
   `mcp__platform-outbound__list_schedules`, `create_schedule` (`sessionMode: fresh`),
   `toggle_schedule`, `delete_schedule`. Never an in-process cron or background loop —
   only platform schedules survive restarts and are visible to the operator.
-- Each scheduled run starts a **fresh session**: no memory of previous runs beyond what
-  is in files. This is why state files, logs, and the worklist JSON carry everything.
+- Each scheduled run starts a **fresh session** in a **fresh shell**: no memory of
+  previous runs beyond what is in files, and **no environment exports from the onboarding
+  session**. This is why state files, logs, and the worklist JSON carry everything — and
+  why every value a scheduled run resolves must be persisted to `work/CONFIG.md`, even
+  when the platform usually supplies it as an env var (the env var still wins when set).
 - Schedule names: prefix with the agent name (`<agent-name>-<runtype>-<cadence>`), so
   the audit can find them and multiple agents never collide.
 - Registration happens in ONBOARDING (check-then-create, idempotent); the task text
@@ -51,11 +63,17 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
 
 ## GitHub specifics (the default, well-trodden integration)
 
-- Route git auth through `gh` once (idempotent, works for all github.com repos):
-  ```bash
-  git config --global --replace-all credential."https://github.com".helper "" \
-    && git config --global --add credential."https://github.com".helper "!gh auth git-credential"
-  ```
+- Route git auth through `gh` with `gh auth setup-git` (idempotent; covers **every**
+  host `gh` is authenticated with, so re-run it from any run that clones).
+- **Multi-host is the default assumption.** Every repo reference the design stores is
+  `[<host>/]<owner>/<repo>` — a bare slug resolves to `github.com` — so the definition
+  repo, the target, the state backup, and any helper source may each live on a different
+  GitHub host. Name the host on every call (`gh api --hostname <host>`, `gh pr -R
+  <host>/<owner>/<repo>`); export `GH_HOST` in `~/.bashrc` when the *target* host is not
+  `github.com`, since each run starts a fresh shell. Authenticating a new host is
+  operator-only (`gh auth login --hostname <host>`) — report and stop, never work around
+  it. Content the agent produces for a target stays on that target's host, whatever would
+  render better elsewhere.
 - **GraphQL is not proxied — it 401s.** `gh` subcommands that ride GraphQL (`gh pr edit`,
   parts of `gh pr view`) fail on the pod. Prefer REST: `gh api repos/...` for reads and
   writes (e.g. label removal is `gh api -X DELETE "repos/$REPO/issues/<n>/labels/<label>"`),

@@ -1,4 +1,7 @@
 import type { ConnectionAuthKind } from "api-server-api";
+import type { ReactNode } from "react";
+
+import { externalLinkProps } from "@/lib/external-link";
 
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
@@ -42,10 +45,38 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };
 
-const TEMPLATE_FIELD_HINTS: Record<string, Record<string, string>> = {
+const GHE_HOST_HINT = "The hostname of your GitHub Enterprise instance";
+
+const TEMPLATE_FIELD_PLACEHOLDERS: Record<string, Record<string, string>> = {
+  "github-enterprise": { host: "github.ibm.com" },
+  "github-enterprise-pat": { host: "github.ibm.com" },
+  "github-enterprise-app": { host: "github.ibm.com" },
+};
+
+const TEMPLATE_FIELD_HINTS: Record<string, Record<string, ReactNode>> = {
   "github-pat": {
-    value:
-      "Create a fine-grained token at github.com/settings/tokens — scope it to the exact repos and permissions you want.",
+    value: (
+      <>
+        Create a token at{" "}
+        <a
+          href="https://github.com/settings/tokens"
+          {...externalLinkProps}
+          className="text-primary hover:underline"
+        >
+          github.com/settings/tokens
+        </a>
+      </>
+    ),
+  },
+  "github-enterprise": {
+    host: GHE_HOST_HINT,
+  },
+  "github-enterprise-pat": {
+    host: GHE_HOST_HINT,
+    value: "Create a token at settings/tokens on your GitHub Enterprise host",
+  },
+  "github-enterprise-app": {
+    host: GHE_HOST_HINT,
   },
   slack: {
     clientId:
@@ -90,10 +121,18 @@ export function labelFor(key: string): string {
   return FIELD_LABELS[key] ?? key;
 }
 
-export function placeholderFor(key: string): string | undefined {
-  return FIELD_PLACEHOLDERS[key];
+export function placeholderFor(
+  templateId: string,
+  key: string,
+): string | undefined {
+  return (
+    TEMPLATE_FIELD_PLACEHOLDERS[templateId]?.[key] ?? FIELD_PLACEHOLDERS[key]
+  );
 }
 
-export function hintFor(templateId: string, key: string): string | undefined {
+export function hintFor(
+  templateId: string,
+  key: string,
+): ReactNode | undefined {
   return TEMPLATE_FIELD_HINTS[templateId]?.[key];
 }

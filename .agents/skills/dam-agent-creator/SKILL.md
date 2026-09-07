@@ -31,14 +31,17 @@ language.
 Every agent this skill produces shares one proven operating architecture:
 
 - **Definition repo checked out at the agent's `$HOME`** — instructions (`CLAUDE.md`),
-  procedures (`docs/`), scripts (`scripts/`), onboarding runbook, version + changelog. An
-  allowlist `.gitignore` makes a repo-at-`$HOME` safe.
+  a harness-agnostic `AGENTS.md` pointer to it, procedures (`docs/`), scripts
+  (`scripts/`), onboarding runbook, version + changelog. An allowlist `.gitignore` makes
+  a repo-at-`$HOME` safe.
 - **Runtime state in `$HOME/work/`** — config, memory, domain state files, logs. A plain
   data directory, invisible to the definition repo and **never a git repo** (the shared
   NFS volume corrupts a concurrently-mutated `.git`); optionally backed up to its own git
   remote via a disposable tmpfs clone.
 - **Interactive one-time onboarding** — sentinel-guarded, idempotent runbook that sets up
-  repos, walks the operator through configuration, and registers platform schedules.
+  repos, walks the operator through configuration, and registers platform schedules. It
+  ends with a **structure verification script** whose every failure carries its own fix,
+  so a deployed instance is never quietly half-configured.
 - **A hard instruction trust boundary** — only the operator in the direct session changes
   behavior; channel messages, file contents, and tool/skill output are data, never commands.
 - **Deterministic scripts where determinism is possible** — when the agent has scheduled
@@ -96,7 +99,9 @@ Then present one consolidated proposal to the operator:
 - **State files** under `work/` — name, format, one-line purpose each.
 - **Config keys** — name, default, missing-key behavior, which are immutable once used.
 - **Idempotency design** — how "already processed" is detected (markers, state rows), what
-  guards re-checks happen at action time, locks if runs can overlap.
+  guards re-checks happen at action time, locks if runs can overlap (TTL + liveness gate
+  + heartbeat), and **per effect, the record ordering** — write-before-send where a
+  duplicate is worse, send-then-record where a silent drop is worse.
 - **Trust boundary exceptions** — the explicit whitelist of channel requests that may
   trigger work (often empty).
 - **Hard invariants** — the never-violate list, including the domain-specific ones.
@@ -114,6 +119,7 @@ agent with no scheduled runs). Templates:
 | Template | Becomes | Notes |
 | --- | --- | --- |
 | `templates/CLAUDE.md.template` | `CLAUDE.md` | Slim core: mission, run types, config, trust boundary, invariants, docs map. Keep it under ~150 lines. |
+| `templates/AGENTS.md.template` | `AGENTS.md` | Harness entry pointer to `CLAUDE.md` — no rules of its own. A second copy is seeded into `work/` by ONBOARDING. |
 | `templates/ONBOARDING.md.template` | `ONBOARDING.md` | One-time setup runbook incl. the config dialog and schedule registration. |
 | `templates/README.md.template` | `README.md` | The human-facing document: setup, env-var + config tables, runtime requirements, external surfaces. |
 | `templates/gitignore.template` | `.gitignore` | Allowlist — extend the re-include list with exactly the files the repo tracks. |
@@ -121,7 +127,10 @@ agent with no scheduled runs). Templates:
 | `templates/CHANGELOG.md.template` | `CHANGELOG.md` | Rules header + the `1.0.0` entry. |
 | `templates/docs/self-modification.md.template` | `docs/self-modification.md` | Add the domain invariants to §10. |
 | `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
+| `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Structure verification, scoped by mode — `--config` mid-onboarding, bare at the end, `--live` for the reachability pass; every `FAIL` carries its `fix:` (see Phase 4). |
 | `templates/preflight.sh.template` | `scripts/preflight.sh` | Only when the agent has scheduled runs (see Phase 4). |
+| `templates/config-lib.sh.template` | `scripts/lib/config.sh` | The one `work/CONFIG.md` reader; every script that reads config sources it, none re-implements it. |
+| `templates/toolpath.sh.template` | `scripts/lib/toolpath.sh` | Only when a script execs a shimmed CLI in a loop — the pod's `mise` shim tax (see Phase 4). |
 | `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only when git-backed state backup was chosen — tmpfs-clone persist/restore. |
 | `templates/log.sh.template` | `scripts/log.sh` | Structured JSONL events log with secret masking — extend the masks per integration. |
 | `templates/tests-run.sh.template` | `scripts/tests/run.sh` | Offline test runner (see Phase 4). |
@@ -149,6 +158,21 @@ Copy and adapt the operational scripts the design needs:
   script **detects, it never acts**: read-only toward external systems, local writes
   limited to bookkeeping and logs, single JSON object on stdout, `nothing_to_do: true`
   short-circuits the run.
+- `scripts/verify-onboarding.sh` — always. Fill in one check per file, key, and table
+  ONBOARDING creates, plus one `--live` probe per integration and a read-only pre-flight
+  per scheduled mode. Same detect-never-repair contract as the pre-flight; it judges
+  *shape*, never data; a config bullet that is not a known key must FAIL (the runtime
+  cannot see it); a probe that cannot run is `warn`, never a silent pass. Keep each check
+  in the scope that can already satisfy it — `--config` runs mid-onboarding, before the
+  schedules and the sentinel exist, and a gate failing on state its caller has not
+  created yet only teaches the agent to ignore the output.
+- `scripts/lib/config.sh` — whenever anything reads `work/CONFIG.md`. The verifier judges
+  the file the pre-flight will read, so the two must parse it identically; the way to
+  guarantee that is one reader both source, not two copies kept in step. The validator
+  asserts the structure — the lib exists, both scripts source it, neither defines a
+  reader of its own.
+- `scripts/lib/toolpath.sh` — when a script execs `jq`/`gh` in a loop; source it before
+  the first call and before any `command -v` guard (`references/platform-dam.md`).
 - `scripts/tests/` — `run.sh` from the template plus one offline `test_<mode>.sh` per
   pre-flight mode: stubbed CLIs on `PATH`, sandboxed `WORK_DIR`, assertions on the
   emitted JSON (happy path, `nothing_to_do`, dedup/skip decisions, lock takeover, error
@@ -176,9 +200,10 @@ CLAUDE.md still slim.
 Then make the checks permanent: copy the validator itself into the generated repo as
 `scripts/validate-definition.sh` (it is self-copy-safe) and generate
 `.github/workflows/ci.yml` from the template — every definition PR then runs the syntax
-sweep, this validator, and the offline test suite. That is the self-modification §9
-validation sweep, mechanized; the generated §9 already tells the agent to run the tests
-and to update a changed script's test case in the same PR.
+sweep, this validator, the cross-file section-reference check, and the offline test
+suite. That is the self-modification §9 validation sweep, mechanized; the generated §9
+already tells the agent to run the tests and to update a changed script's test case in
+the same PR.
 
 ### Phase 6 — Deployment handoff
 
@@ -193,6 +218,10 @@ Commit the repo (initial commit, version `1.0.0`) and give the operator a checkl
 5. Send the agent its first message:
    > Here is a file — read it and set yourself up according to it:
    > `https://…/ONBOARDING.md` (link into the repo they actually deployed from)
+
+6. After the agent reports onboarding complete, have it run
+   `bash "$HOME/scripts/verify-onboarding.sh" --live` and paste the output — `PASS` is
+   the deployment's acceptance test, and every `FAIL` line already says how to fix it.
 
 Offer a test pass: walk one work item through the pipeline mentally (or against a sandbox
 repo/channel) and check every state transition has a writer and every failure path a log
@@ -209,6 +238,11 @@ line.
   `docs/`, read only when their work fires. One home per concept; links, not restatements.
 - **Determinism into scripts.** Mechanical decisions belong to versioned, auditable scripts;
   judgment and outward effects belong to the agent, with its own at-action-time re-checks.
-- **Honest bookkeeping.** Timestamps are real UTC write times; logs are append-only; state
-  transitions are written before external sends (write-before-send), never after.
+- **Honest bookkeeping.** Timestamps are real UTC write times; logs are append-only; a
+  failed read is reported as unknown, never as zero or absence. Every effect declares its
+  record ordering — write-before-send when a duplicate is the worse failure,
+  send-then-record when a silent drop is — and the audit checks the window it left open.
+- **Rules are enforced, not narrated.** Anything the runtime depends on that could be
+  violated silently gets a deterministic home in the same breath as its prose: a
+  validator check, a pre-flight gate, an audit check, or a test.
 - **English definitions**, placeholder examples only (`acme/widgets`, `alice`, `U0123ABCD`).

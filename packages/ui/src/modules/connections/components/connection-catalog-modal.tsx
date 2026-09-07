@@ -1,4 +1,4 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import type { ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
@@ -6,7 +6,6 @@ import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
 import { useAppConnections } from "../api/queries.js";
-import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
@@ -16,11 +15,9 @@ import {
   type CatalogProviderGroup,
   type CatalogTab,
   catalogTabCounts,
-  templateCreateHeading,
 } from "../lib/catalog-providers.js";
+import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
-import { CatalogMethodChooser } from "./catalog-method-chooser.js";
-import { CatalogPaneHeader } from "./catalog-pane-header.js";
 import {
   CatalogProviderCard,
   type SandboxGrantControls,
@@ -32,8 +29,7 @@ const MCP_PROVIDER_ID = "mcp-server";
 
 type Pane =
   | { kind: "browse" }
-  | { kind: "choose"; providerId: string }
-  | { kind: "create"; templateId: string; providerId: string }
+  | { kind: "create"; providerId: string }
   | { kind: "create-mcp" };
 
 interface Props {
@@ -77,14 +73,8 @@ export function ConnectionCatalogModal({
   const openNew = (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
     if (providerId === MCP_PROVIDER_ID) setPane({ kind: "create-mcp" });
-    else if (group.templates.length > 1)
-      setPane({ kind: "choose", providerId });
-    else if (group.templates[0])
-      setPane({
-        kind: "create",
-        templateId: group.templates[0].id,
-        providerId,
-      });
+    else if (group.templates.length > 0)
+      setPane({ kind: "create", providerId });
   };
 
   const onCreated = (id: string) => {
@@ -100,14 +90,6 @@ export function ConnectionCatalogModal({
 
   const groupById = (providerId: string) =>
     allGroups.find((g) => g.provider.id === providerId);
-  const backFromCreate = (providerId: string) => {
-    const group = groupById(providerId);
-    setPane(
-      group && group.templates.length > 1
-        ? { kind: "choose", providerId }
-        : { kind: "browse" },
-    );
-  };
 
   if (maintenance.updating || maintenance.editingScope) {
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
@@ -151,27 +133,18 @@ export function ConnectionCatalogModal({
               ))}
             </div>
           )}
-          {pane.kind === "choose" && (
-            <ChoosePane
-              group={groupById(pane.providerId)}
-              onBack={() => setPane({ kind: "browse" })}
-              onPick={(t) =>
-                setPane({
-                  kind: "create",
-                  templateId: t.id,
-                  providerId: pane.providerId,
-                })
-              }
-            />
-          )}
-          {pane.kind === "create" && (
-            <CreatePane
-              template={templateById.get(pane.templateId)}
-              oauthReturnView={oauthReturnView}
-              onBack={() => backFromCreate(pane.providerId)}
-              onCreated={onCreated}
-            />
-          )}
+          {pane.kind === "create" &&
+            (() => {
+              const group = groupById(pane.providerId);
+              return group ? (
+                <CatalogCreatePane
+                  group={group}
+                  oauthReturnView={oauthReturnView}
+                  onBack={() => setPane({ kind: "browse" })}
+                  onCreated={onCreated}
+                />
+              ) : null;
+            })()}
           {pane.kind === "create-mcp" && (
             <McpCreatePane
               templateById={templateById}
@@ -183,65 +156,5 @@ export function ConnectionCatalogModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function ChoosePane({
-  group,
-  onBack,
-  onPick,
-}: {
-  group: CatalogProviderGroup | undefined;
-  onBack: () => void;
-  onPick: (template: ConnectionTemplateView) => void;
-}) {
-  if (!group) return null;
-  return (
-    <>
-      <CatalogPaneHeader
-        title={`Connect ${group.provider.title}`}
-        subtitle="Choose an authentication method"
-        onBack={onBack}
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <CatalogMethodChooser templates={group.templates} onPick={onPick} />
-      </div>
-    </>
-  );
-}
-
-function CreatePane({
-  template,
-  oauthReturnView,
-  onBack,
-  onCreated,
-}: {
-  template: ConnectionTemplateView | undefined;
-  oauthReturnView?: string;
-  onBack: () => void;
-  onCreated: (id: string) => void;
-}) {
-  if (!template) return null;
-  const { title, subtitle } = templateCreateHeading(template);
-  return (
-    <>
-      <CatalogPaneHeader title={title} subtitle={subtitle} onBack={onBack} />
-      <TemplateCreateFormBody
-        key={template.id}
-        template={template}
-        popupOAuth
-        oauthReturnView={oauthReturnView}
-        onCreated={onCreated}
-        onCancel={onBack}
-        layout={(fields, footer) => (
-          <>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">{fields}</div>
-            <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
-              {footer}
-            </div>
-          </>
-        )}
-      />
-    </>
   );
 }

@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
   buildPlatformTurnEndedNotification,
+  platformUndeliveredPromptSchema,
   SessionType,
+  type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
 import {
@@ -16,7 +20,11 @@ import {
   parseFrame,
   type JsonRpcId,
 } from "../../domain/frames.js";
-import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
+import {
+  rewriteAuthError,
+  rewriteCwd,
+  undeliveredOf,
+} from "../../domain/mappers.js";
 import {
   composeSessionList,
   type ListedHarnessSession,
@@ -29,6 +37,7 @@ import {
   type PlatformSessionMeta,
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
+import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
@@ -38,7 +47,10 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
-import { createPromptScheduler } from "./prompt-scheduler.js";
+import {
+  createPromptScheduler,
+  type QueueDropCause,
+} from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
@@ -86,6 +98,8 @@ export interface AcpRuntimeDeps {
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
+  queueParkMs?: number;
+  undeliveredPrompts: UndeliveredPromptStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -134,6 +148,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.startRun(sessionId);
     },
     onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
+    canStart: (sessionId) =>
+      hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
+    onQueueDropped(sessionId, dropped, cause) {
+      const recordedAt = new Date().toISOString();
+      deps.undeliveredPrompts.remember(
+        sessionId,
+        dropped.map((entry) =>
+          undeliveredOf(
+            entry.promptId ?? randomUUID(),
+            entry.frame,
+            recordedAt,
+          ),
+        ),
+      );
+      deps.log?.(
+        `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
+      );
+      if (cause === "park-expired") maybeCloseIdleSession(sessionId);
+    },
+    ...(deps.queueParkMs !== undefined
+      ? { queueParkMs: deps.queueParkMs }
+      : {}),
   });
 
   const sessionIsRunning = (sessionId: string): boolean =>
@@ -165,6 +201,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const bootstrap = createSessionBootstrap({
     transcript,
+    turnInFlight(sessionId) {
+      return promptScheduler.hasTurnInFlight(sessionId);
+    },
+    undeliveredFor(sessionId) {
+      return deps.undeliveredPrompts.readFor(sessionId);
+    },
+    supersededFor(sessionId) {
+      return [...(supersededEchoes.get(sessionId) ?? [])];
+    },
     engage(channel, sessionId) {
       engage(channel, sessionId);
     },
@@ -202,14 +247,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const supersededEchoes = new Map<string, Set<string>>();
+
+  function supersedeEcho(sessionId: string, id: string): void {
+    const ids = supersededEchoes.get(sessionId) ?? new Set<string>();
+    ids.add(id);
+    supersededEchoes.set(sessionId, ids);
+  }
   const rehydratingSessions = new Set<string>();
   const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const rehydrateLoadIds = new Map<string, number>();
   const orphanedHarnessLoads = new Map<string, number>();
-  const heldPrompts = new Map<
-    string,
-    { channel: ClientChannel; data: string }[]
-  >();
 
   function orphanLoad(sessionId: string, outboundId: number): void {
     orphanedHarnessLoads.set(sessionId, outboundId);
@@ -278,27 +326,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     rehydratingSessions.delete(sessionId);
-    const held = heldPrompts.get(sessionId) ?? [];
-    heldPrompts.delete(sessionId);
     const error = (frame as { error?: unknown }).error;
     if (error === undefined) {
       harnessColdSessions.delete(sessionId);
-      for (const prompt of held) {
-        if (prompt.channel.isOpen())
-          handleClientMessage(prompt.channel, prompt.data);
-      }
+      promptScheduler.onSessionReady(sessionId);
       return;
     }
-    for (const prompt of held) {
-      if (!prompt.channel.isOpen()) continue;
-      const parsed = parseFrame(prompt.data);
-      if (!parsed || !isRequest(parsed)) continue;
-      prompt.channel.send(
-        rewriteAuthError(
-          JSON.stringify({ jsonrpc: "2.0", id: parsed.id, error }),
-        ),
-      );
-    }
+    promptScheduler.refuseQueue(sessionId, rehydrateFailureMessage(error));
   }
 
   const teardownCloseByReason: Record<
@@ -332,7 +366,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
-    heldPrompts.clear();
     deps.backgroundWork?.clear();
   }
 
@@ -379,6 +412,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.sessionMetadata?.recordSeen(sessionId);
 
     pendingRequests.onEngaged(channel, sessionId);
+    promptScheduler.onEngaged(sessionId);
   }
 
   function hasEngagedChannel(sessionId: string): boolean {
@@ -405,6 +439,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     prompt: unknown,
     originator: ClientChannel,
     queued: boolean,
+    messageId: string,
   ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
@@ -412,6 +447,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const update: Record<string, unknown> = {
         sessionUpdate: "user_message_chunk",
         content: block,
+        messageId,
       };
       if (queued) update._meta = { queued: true };
       const line = JSON.stringify({
@@ -446,14 +482,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     engagedSessions.delete(channel);
     nonViewerChannels.delete(channel);
     transcript.dropChannel(channel);
-    promptScheduler.dropChannel(channel);
     bootstrap.dropChannel(channel);
-    for (const [sid, held] of heldPrompts) {
-      const remaining = held.filter((p) => p.channel !== channel);
-      if (remaining.length === 0) heldPrompts.delete(sid);
-      else heldPrompts.set(sid, remaining);
-    }
-
     for (const [outId, m] of outboundIdToClient) {
       if (m.channel === channel && m.promptSessionId === null) {
         outboundIdToClient.delete(outId);
@@ -462,6 +491,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     if (sessions) {
       for (const sid of sessions) {
+        promptScheduler.onDetached(sid);
         pendingRequests.reassess(sid);
         maybeCloseIdleSession(sid);
       }
@@ -483,8 +513,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (rehydrateTimer) clearTimeout(rehydrateTimer);
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
-    heldPrompts.delete(sessionId);
     transcript.forget(sessionId);
+    supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
@@ -663,8 +693,51 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      if (method === "platform/forgetUndelivered" && paramsSid) {
+        const id = extractUndeliveredId(frame);
+        if (id !== null && deps.undeliveredPrompts.forget(paramsSid, id))
+          supersedeEcho(paramsSid, id);
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
+        );
+        return;
+      }
+
+      if (method === "platform/recordUndelivered" && paramsSid) {
+        const prompts = extractUndeliveredPrompts(frame);
+        if (prompts === null) {
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: {
+                code: -32602,
+                message: `expected at most ${String(HANDOVER_PROMPT_CAP)} well-formed undelivered prompts; nothing was recorded`,
+              },
+            }),
+          );
+          return;
+        }
+        const disposed = supersededEchoes.get(paramsSid);
+        deps.undeliveredPrompts.remember(
+          paramsSid,
+          disposed === undefined
+            ? prompts
+            : prompts.filter((p) => !disposed.has(p.id)),
+        );
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
+        );
+        return;
+      }
+
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
+        deps.undeliveredPrompts.forgetSession(paramsSid);
+        supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -710,37 +783,29 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         method === "session/prompt" &&
         paramsSid &&
-        harnessColdSessions.has(paramsSid)
+        harnessColdSessions.has(paramsSid) &&
+        orphanedHarnessLoads.has(paramsSid)
       ) {
-        if (orphanedHarnessLoads.has(paramsSid)) {
-          sendToChannel(
-            channel,
-            rewriteAuthError(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id: frame.id,
-                error: {
-                  code: -32000,
-                  message:
-                    "the harness is not answering; it is being restarted — try again",
-                },
-              }),
-            ),
-          );
-          return;
-        }
-        const held = heldPrompts.get(paramsSid) ?? [];
-        held.push({ channel, data });
-        heldPrompts.set(paramsSid, held);
-        if (!rehydratingSessions.has(paramsSid)) {
-          startHarnessRehydrate(paramsSid);
-        }
+        sendToChannel(
+          channel,
+          rewriteAuthError(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: {
+                code: -32000,
+                message:
+                  "the harness is not answering; it is being restarted — try again",
+              },
+            }),
+          ),
+        );
         return;
       }
 
       const outboundId = nextOutboundId++;
 
-      if (paramsSid) engage(channel, paramsSid);
+      if (paramsSid !== null) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
 
@@ -748,6 +813,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         method === "session/new" ? extractPlatformMeta(frame) : null;
       const promptId =
         method === "session/prompt" ? extractPromptId(frame) : null;
+      const retryOf =
+        method === "session/prompt" ? extractRetryOf(frame) : null;
       const forwardFrame =
         platformMeta !== null || method === "session/prompt"
           ? stripPlatformMeta(frame)
@@ -785,6 +852,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           promptBlocks,
           channel,
           willQueue,
+          promptId ?? randomUUID(),
         );
 
         const fate = promptScheduler.submit({
@@ -795,7 +863,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           frame: rewritten,
           promptId,
         });
-        if (fate === "refused") outboundIdToClient.delete(outboundId);
+        if (fate === "refused") {
+          outboundIdToClient.delete(outboundId);
+          return;
+        }
+        if (
+          retryOf !== null &&
+          deps.undeliveredPrompts.forget(promptSessionId, retryOf)
+        )
+          supersedeEcho(promptSessionId, retryOf);
+        if (
+          harnessColdSessions.has(promptSessionId) &&
+          !rehydratingSessions.has(promptSessionId)
+        ) {
+          startHarnessRehydrate(promptSessionId);
+        }
         return;
       }
 
@@ -915,6 +997,12 @@ function extractLoadToken(frame: unknown): string | null {
     : null;
 }
 
+function rehydrateFailureMessage(error: unknown): string {
+  if (isNonNullObject(error) && typeof error.message === "string")
+    return error.message;
+  return "the harness could not load this conversation; the message was not sent";
+}
+
 function extractPromptId(frame: unknown): string | null {
   if (!isNonNullObject(frame)) return null;
   const params = frame.params;
@@ -925,6 +1013,41 @@ function extractPromptId(frame: unknown): string | null {
   if (!isNonNullObject(platform)) return null;
   const promptId = platform.promptId;
   return typeof promptId === "string" && promptId.length > 0 ? promptId : null;
+}
+
+function extractUndeliveredId(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const id = params.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+const HANDOVER_PROMPT_CAP = 32;
+
+function extractUndeliveredPrompts(
+  frame: unknown,
+): PlatformUndeliveredPrompt[] | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const parsed = z
+    .array(platformUndeliveredPromptSchema)
+    .max(HANDOVER_PROMPT_CAP)
+    .safeParse(params.prompts);
+  return parsed.success ? parsed.data : null;
+}
+
+function extractRetryOf(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const retryOf = platform.retryOf;
+  return typeof retryOf === "string" && retryOf.length > 0 ? retryOf : null;
 }
 
 function extractPromptSurface(frame: unknown): string | null {

@@ -5,7 +5,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     agent-platform.ai/crd-schema-generation: "1"
-    controller-gen.kubebuilder.io/version: v0.21.0
+    controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: userbudgets.agent-platform.ai
 spec:

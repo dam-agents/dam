@@ -11,7 +11,7 @@ export function RenderToggle({ rendered, onToggle }: Props) {
   return (
     <Button variant="outline" size="xs" className="text-sm" onClick={onToggle}>
       {rendered ? <Code size={14} /> : <View size={14} />}
-      {rendered ? "Raw" : "Render"}
+      {rendered ? "Source" : "Preview"}
     </Button>
   );
 }

@@ -1,3 +1,4 @@
+import type { PromptBlock } from "api-server-api";
 import type { AgentKind, EnvVar } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -49,6 +50,7 @@ export type Attachment = ImagePart | UploadedFilePart;
 export interface RetryPayload {
   text: string;
   attachments?: Attachment[];
+  blocks?: PromptBlock[];
 }
 
 export interface VerdictPart {

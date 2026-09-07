@@ -50,7 +50,9 @@ One JSON key per action kind, arrays of self-contained entries:
 
 - **Self-contained entries**: everything the agent needs to act (ids, revisions, prior
   state, flags) is in the entry — the agent should not have to re-derive what the script
-  already knew. Include a `takeover` flag when a stale lock was overridden.
+  already knew. Include a `takeover` flag when a stale lock was overridden — and take a
+  lock over only when its holder is both past the TTL **and** silent in the events log,
+  since a long job that heartbeats its row is alive, not stale.
 - **Separate arrays per action kind** (process / cleanup / self-heal / retry / notify…),
   because each maps to a different `docs/` procedure and different safety re-checks.
 - **`logs`**: human-readable one-liners explaining every decision (including the skips) —
@@ -58,6 +60,11 @@ One JSON key per action kind, arrays of self-contained entries:
   reasoning.
 - An `error` field + `nothing_to_do: true` for "could not even list" failures — the agent
   just logs those.
+- **A failed read is never reported as an answer.** A scan that could not run emits
+  `null`/`unknown` for that field plus a warn in `checks`/`logs` — never `0`, never an
+  empty array, never "no marker found → not handled yet". A dedup scan that fails and
+  reads as absence is a double-post; a count that fails and reads as zero is a report
+  claiming a clean week it never measured.
 
 Emit with `jq -n` from arrays built during detection (see the template's `emit()` helper);
 never hand-concatenate JSON strings.
@@ -94,3 +101,6 @@ re-registered — the changelog's upgrade block says so).
    `nothing_to_do` on a quiet target.
 3. Pod-compatibility sweep: no `awk`, GNU-date-first with BSD fallback where the script
    might also run on macOS during development (`references/platform-dam.md`).
+4. Source `scripts/lib/toolpath.sh` first when the script execs a shimmed CLI in a loop —
+   on the pod `jq`/`gh` are `mise` shims and each exec costs ~250 ms
+   (`references/platform-dam.md` → Runtime environment).
