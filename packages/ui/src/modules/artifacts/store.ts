@@ -15,6 +15,8 @@ export interface ArtifactsSlice {
   ) => void;
 }
 
+const SECTION_OPEN_KEY = "platform-artifacts-open";
+
 export const createArtifactsSlice: StateCreator<
   PlatformStore,
   [],
@@ -22,13 +24,16 @@ export const createArtifactsSlice: StateCreator<
   ArtifactsSlice
 > = (set) => ({
   openArtifactId: null,
-  artifactsSectionOpen: false,
+  artifactsSectionOpen: localStorage.getItem(SECTION_OPEN_KEY) === "1",
   artifactFolderCollapse: {},
   setOpenArtifactId: (id) =>
     set(
       id ? { openArtifactId: id, openFilePath: null } : { openArtifactId: id },
     ),
-  setArtifactsSectionOpen: (open) => set({ artifactsSectionOpen: open }),
+  setArtifactsSectionOpen: (open) => {
+    localStorage.setItem(SECTION_OPEN_KEY, open ? "1" : "0");
+    set({ artifactsSectionOpen: open });
+  },
   setArtifactFolderCollapsed: (scopeId, folderKey, collapsed) =>
     set((state) => ({
       artifactFolderCollapse: {
