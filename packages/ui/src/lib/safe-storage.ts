@@ -1,7 +1,8 @@
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one localStorage boundary in the UI, used by
- * the session stores (drafts, undelivered sends) and by persisted user
- * preferences. Browsers throw on any localStorage touch when storage is
+ * UNIT_BOUNDARY_DESCRIPTION: the localStorage boundary for the session stores
+ * (drafts, undelivered sends) and for persisted user preferences. Theme,
+ * home-feed dismissals and the features menu still hold their own access and
+ * are not covered. Browsers throw on any localStorage touch when storage is
  * disabled or full, and these callers read and sweep on paths that must not
  * abort — sign-out, owner switch, session load, first render — so every
  * access here absorbs the throw instead of raising it.

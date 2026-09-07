@@ -181,13 +181,16 @@ export function ChatView() {
   const [leftW, setLeftW] = useState(() =>
     readPersistedNumber(LEFT_WIDTH_KEY, 220),
   );
+  const leftWRef = useRef(leftW);
   const [rightW, setRightW] = useState<number | null>(() =>
     readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
+  const rightWRef = useRef(rightW);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const [sessionsH, setSessionsH] = useState(() =>
     readPersistedNumber(SESSIONS_HEIGHT_KEY, 260),
   );
+  const sessionsHRef = useRef(sessionsH);
   const [resizingSections, setResizingSections] = useState(false);
   const sectionTransition = resizingSections
     ? undefined
@@ -582,11 +585,13 @@ export function ChatView() {
               orientation="vertical"
               onResize={(d) => {
                 setResizingSections(true);
-                setSessionsH((h) => {
-                  const v = Math.max(120, Math.min(600, h + d));
-                  writePersistedNumber(SESSIONS_HEIGHT_KEY, v);
-                  return v;
-                });
+                const v = Math.max(
+                  120,
+                  Math.min(600, sessionsHRef.current + d),
+                );
+                sessionsHRef.current = v;
+                writePersistedNumber(SESSIONS_HEIGHT_KEY, v);
+                setSessionsH(v);
               }}
               onDragEnd={() => setResizingSections(false)}
             />
@@ -608,13 +613,12 @@ export function ChatView() {
         </div>
         <ResizeHandle
           side="left"
-          onResize={(d) =>
-            setLeftW((w) => {
-              const v = Math.max(140, Math.min(400, w + d));
-              writePersistedNumber(LEFT_WIDTH_KEY, v);
-              return v;
-            })
-          }
+          onResize={(d) => {
+            const v = Math.max(140, Math.min(400, leftWRef.current + d));
+            leftWRef.current = v;
+            writePersistedNumber(LEFT_WIDTH_KEY, v);
+            setLeftW(v);
+          }}
         />
 
         {}
@@ -774,15 +778,15 @@ export function ChatView() {
             <div className="hidden md:flex">
               <ResizeHandle
                 side="right"
-                onResize={(d) =>
-                  setRightW((w) => {
-                    const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
-                    const max = Math.min(960, window.innerWidth - 500);
-                    const v = Math.max(240, Math.min(max, base + d));
-                    writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
-                    return v;
-                  })
-                }
+                onResize={(d) => {
+                  const base =
+                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0;
+                  const max = Math.min(960, window.innerWidth - 500);
+                  const v = Math.max(240, Math.min(max, base + d));
+                  rightWRef.current = v;
+                  writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
+                  setRightW(v);
+                }}
               />
             </div>
             <div
