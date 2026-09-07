@@ -53,11 +53,4 @@ describe("active-turn store", () => {
       { sessionId: "s1", startedAt: "t0001", attempts: 0 },
     ]);
   });
-
-  it("clearAll empties the document", () => {
-    const store = open();
-    store.record("s1");
-    store.clearAll();
-    expect(store.leftovers()).toEqual([]);
-  });
 });

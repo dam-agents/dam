@@ -81,18 +81,33 @@ export function pickVictim(
 
 const mib = (n: number) => Math.round(n / 1_048_576);
 
-function sumStat(path: string, keys: string[]): number {
+function sumStatKeys(path: string, keys: string[]): number | null {
   try {
     let total = 0;
+    let found = false;
     for (const line of readFileSync(path, "utf8").split("\n")) {
       const [key, value] = line.split(" ");
-      if (key !== undefined && keys.includes(key))
+      if (key !== undefined && keys.includes(key)) {
         total += Number.parseInt(value ?? "0", 10) || 0;
+        found = true;
+      }
     }
-    return total;
+    return found ? total : null;
   } catch {
-    return 0;
+    return null;
   }
+}
+
+function readReclaimableBytes(): number | null {
+  const v2 = sumStatKeys("/sys/fs/cgroup/memory.stat", [
+    "inactive_file",
+    "active_file",
+  ]);
+  if (v2 !== null) return v2;
+  return sumStatKeys("/sys/fs/cgroup/memory/memory.stat", [
+    "total_inactive_file",
+    "total_active_file",
+  ]);
 }
 
 export function startMemReaper(opts: {
@@ -115,10 +130,8 @@ export function startMemReaper(opts: {
         "/sys/fs/cgroup/memory/memory.usage_in_bytes",
       );
       if (cur === null) return;
-      const reclaimable = sumStat("/sys/fs/cgroup/memory.stat", [
-        "inactive_file",
-        "active_file",
-      ]);
+      const reclaimable = readReclaimableBytes();
+      if (reclaimable === null) return;
       const unreclaimable = Math.max(0, cur - reclaimable);
       if (unreclaimable / cgMax < opts.thresholdFraction) return;
       const usage = `cgroup ${mib(unreclaimable)}(+${mib(reclaimable)} cache)/${mib(cgMax)}MB`;

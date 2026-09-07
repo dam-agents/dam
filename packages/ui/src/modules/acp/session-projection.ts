@@ -276,6 +276,17 @@ export function settleReplay(
   return turnInFlight ? messages : finalizeAllStreaming(messages);
 }
 
+export function appendInterruptedNotice(
+  messages: Message[],
+  interruptedAt: string | undefined,
+): Message[] {
+  if (interruptedAt === undefined) return messages;
+  return appendNotice(
+    messages,
+    "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
+  );
+}
+
 function finalizeStreaming(m: Message): Message {
   return m.role === "assistant" && m.streaming
     ? { ...m, streaming: false, queued: false }

@@ -4,9 +4,10 @@ import type { TriggerSessionDriver } from "./trigger-session-driver.js";
 
 const INTERRUPTION_NOTICE = [
   "<turn-interrupted>",
-  "Your previous turn here was cut short: the sandbox ran out of memory and " +
-    "restarted mid-task. Some effects of your last actions may be partial — " +
-    "a file half-written, a command that never finished.",
+  "Your previous turn here was cut short: the sandbox restarted mid-task " +
+    "(most often because it ran out of memory). Some effects of your last " +
+    "actions may be partial — a file half-written, a command that never " +
+    "finished.",
   "Check the current state of the workspace before you continue, then carry " +
     "on with the task you were working on.",
   "</turn-interrupted>",
@@ -52,8 +53,9 @@ export async function recoverInterruptedTurns(deps: {
       });
       deps.log(`resumed interrupted session ${marker.sessionId}`);
     } catch (err) {
+      deps.store.remove(marker.sessionId);
       deps.log(
-        `failed to resume ${marker.sessionId}: ${(err as Error).message}`,
+        `failed to resume ${marker.sessionId}, gave up: ${(err as Error).message}`,
       );
     }
   }

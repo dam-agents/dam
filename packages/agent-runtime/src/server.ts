@@ -700,7 +700,6 @@ function gracefulShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stderr.write(`[shutdown] ${signal} received, closing\n`);
-  activeTurns.clearAll();
   server.close();
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
   acpRuntime.shutdown();

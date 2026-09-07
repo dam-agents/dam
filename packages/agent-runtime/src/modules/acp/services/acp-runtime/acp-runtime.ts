@@ -146,6 +146,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
   };
 
+  let shuttingDown = false;
+
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
@@ -154,6 +156,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.startRun(sessionId);
     },
     onTurnEnded: (sessionId) => {
+      if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
       deps.activeTurns.remove(sessionId);
     },
@@ -212,6 +215,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript,
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
+    },
+    interruptedAt(sessionId) {
+      if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
+      return deps.activeTurns.leftovers().find((m) => m.sessionId === sessionId)
+        ?.startedAt;
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
@@ -358,6 +366,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 
   function teardownRuntime(reason: HarnessTeardownReason): void {
+    shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
     for (const channel of engagedSessions.keys()) {
       channel.close(close.code, close.message);

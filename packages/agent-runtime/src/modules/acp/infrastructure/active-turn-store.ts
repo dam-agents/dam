@@ -25,23 +25,24 @@ export interface ActiveTurnStore {
   record(sessionId: string): void;
   remove(sessionId: string): void;
   bumpAttempts(sessionId: string): void;
-  clearAll(): void;
   leftovers(): ActiveTurnMarker[];
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Marks the session of every turn while it runs, on
  * this pod's own disk, so the next boot can tell which turns an abnormal death
- * cut short. A marker is written when a turn starts and removed on every turn
- * end agent-runtime observes — completed, or dropped in-process when the
- * harness recycles — and on session delete and graceful shutdown. So a marker
- * that survives to the next boot names precisely a turn whose end agent-runtime
- * never saw: the process was SIGKILLed (an OOM group-kill, an eviction) with
- * the turn still running. `attempts` counts recovery resumes so a continuation
- * that dies again cannot crash-loop the pod; a re-record of a still-marked
- * session preserves its count. Its own document, separate from session
- * metadata, so a corrupt write here cannot take run accounting or user text
- * with it.
+ * cut short. A marker is written when a turn starts and removed when the turn
+ * ends in-process — completed, or dropped because the harness recycled — and on
+ * session delete. It is deliberately NOT removed when the pod is shutting down
+ * (SIGTERM), since that shutdown may be an eviction that SIGKILLs after its
+ * grace period: the marker must outlive it so the next boot recovers the turn.
+ * So a surviving marker names precisely a turn whose in-process end agent-
+ * runtime never saw — the process went down (an OOM group-kill, an eviction)
+ * with the turn still running. `attempts` counts recovery resumes so a
+ * continuation that dies again cannot crash-loop the pod; a re-record of a
+ * still-marked session preserves its count. Its own document, separate from
+ * session metadata, so a corrupt write here cannot take run accounting or user
+ * text with it.
  */
 export function createActiveTurnStore(
   backend: DocumentStoreBackend,
@@ -80,10 +81,6 @@ export function createActiveTurnStore(
           [sessionId]: { ...existing, attempts: existing.attempts + 1 },
         },
       });
-    },
-    clearAll() {
-      if (Object.keys(store.read().sessions).length === 0) return;
-      store.write({ sessions: {} });
     },
     leftovers() {
       return Object.entries(store.read().sessions).map(

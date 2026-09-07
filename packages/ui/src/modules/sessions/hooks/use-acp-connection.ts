@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
 import {
+  appendInterruptedNotice,
   appendUndelivered,
   applyUpdate,
   dropSuperseded,
@@ -360,10 +361,15 @@ export function useAcpConnection(
           })
           .catch(() => {});
       }
-      const replayed = appendUndelivered(settled, [
-        ...(undelivered.success ? undelivered.data : []),
-        ...held,
-      ]);
+      const replayed = appendInterruptedNotice(
+        appendUndelivered(settled, [
+          ...(undelivered.success ? undelivered.data : []),
+          ...held,
+        ]),
+        turn.success && !turn.data.inFlight
+          ? turn.data.interruptedAt
+          : undefined,
+      );
       if (replayBefore === undefined && generation === generationRef.current) {
         bindEngagement(sid);
         pendingReloadRef.current = false;
