@@ -1048,6 +1048,12 @@ controller:
       # wait for a client to come back before they are recorded as undelivered
       # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
       # spec need not spend the full window in a real wait.
+      #
+      # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
+      # reaper: at the threshold fraction of the pod's memory limit (default
+      # 0.93) it SIGKILLs the largest tool process spawned under the harness,
+      # so the harness survives instead of the whole container being
+      # OOM-killed. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
 

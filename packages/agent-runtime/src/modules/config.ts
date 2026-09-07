@@ -13,6 +13,11 @@ const schema = z.object({
     .default("on")
     .transform((v) => v !== "off"),
   QUEUE_PARK_MS: z.coerce.number().int().positive().optional(),
+  MEM_REAPER: z
+    .string()
+    .default("on")
+    .transform((v) => v !== "off"),
+  MEM_REAPER_THRESHOLD: z.coerce.number().gt(0).lt(1).default(0.93),
 });
 
 export const config = schema.parse(process.env);

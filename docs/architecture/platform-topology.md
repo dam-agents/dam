@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-09-03
+Last verified: 2026-09-07
 
 ## Overview
 
@@ -65,6 +65,7 @@ The per-agent pod that runs the ACP WebSocket server and spawns the underlying a
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker on the agent volume, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion. A scheduled or running flush reports the pod busy so hibernation waits ([knowledge bases](knowledge-bases.md)).
 - Expose a scoped tRPC router — in-pod file operations, the composed session list, and the watch subscriptions behind the live panels — over HTTP and WebSocket: the UI reaches it through the api-server's WebSocket relay, non-browser callers through the HTTP proxy, and a channel worker dials this pod directly to place an inbound attachment in the workspace ([channels](channels.md)).
 - Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-agent PVC, then `rm`+`rename` each top-level entry into `<homeDir>/work` (top-level folders are atomic units; unrelated existing top-level entries in `work/` survive). One import per agent at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
+- Keep the agent alive under memory pressure and recover from it: near the pod's memory limit, SIGKILL the largest tool process under the harness so the container is not OOM-killed whole; and mark each running turn on the PVC so the next boot resumes a turn an out-of-memory kill or eviction cut short. See [agent-lifecycle](agent-lifecycle.md).
 
 The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod. Its `HTTPS_PROXY` value is the per-agent gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
