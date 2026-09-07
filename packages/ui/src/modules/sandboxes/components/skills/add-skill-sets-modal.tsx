@@ -48,7 +48,7 @@ function SetRow({
         ? "already all on"
         : null;
   return (
-    <div className="flex w-full items-start gap-2 px-5 py-3 transition-colors hover:bg-muted/40 md:px-7">
+    <div className="flex w-full items-start gap-2 px-5 py-3 transition-colors hover:bg-muted/40 md:px-6">
       <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left">
         <Checkbox
           checked={checked}
@@ -195,12 +195,12 @@ export function AddSkillSetsModal({
 
       <DialogBody flush className="py-0">
         {loadFailed ? (
-          <p className="px-5 py-4 text-sm text-danger md:px-7">
+          <p className="px-5 py-4 text-sm text-danger md:px-6">
             Couldn't load your saved skill sets. Reopen the Skills page to try
             again.
           </p>
         ) : sets.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
+          <p className="px-5 py-4 text-sm text-muted-foreground md:px-6">
             No saved skill sets yet — save one from this agent first.
           </p>
         ) : (
