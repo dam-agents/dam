@@ -31,7 +31,12 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
 
   it("yields an empty agentName for a bucket whose only in-window rows are child rows", async () => {
     const { client } = fakeClient([
-      { agentId: "root-driver", agentName: null, costUsd: "1.5" },
+      {
+        agentId: "root-driver",
+        agentName: null,
+        costUsd: "1.5",
+        credits: [[""], [0]],
+      },
     ]);
     const out = await createClickhouseReader(client).spendByAgent(
       ["root-driver"],

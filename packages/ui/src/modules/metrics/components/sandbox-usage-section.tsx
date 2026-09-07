@@ -100,16 +100,18 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
                   <ModelSpendBars rows={data.byModel} />
                 </Card>
               </section>
-              <section>
-                <SectionLabel spaced>Spend by day</SectionLabel>
-                <Card className="p-5">
-                  <SpendByDayChart
-                    days={daySeries(monthDays, null)}
-                    formatValue={formatUsd}
-                    formatAxis={formatAxisUsd}
-                  />
-                </Card>
-              </section>
+              {(sums.costUsd > 0 || sums.credits.length === 0) && (
+                <section>
+                  <SectionLabel spaced>Spend by day</SectionLabel>
+                  <Card className="p-5">
+                    <SpendByDayChart
+                      days={daySeries(monthDays, null)}
+                      formatValue={formatUsd}
+                      formatAxis={formatAxisUsd}
+                    />
+                  </Card>
+                </section>
+              )}
               {sums.credits.map((credit) => (
                 <section key={credit.unit}>
                   <SectionLabel spaced>

@@ -1,7 +1,12 @@
 import { ArrowRight } from "@carbon/icons-react";
 import type { TokenSpendByModel } from "api-server-api";
 
-import { formatSpend, formatTokens, spendBarPct } from "../lib/format.js";
+import {
+  formatSpend,
+  formatTokens,
+  spendBarPct,
+  spendBarScaleLabel,
+} from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SpendBar } from "./spend-bar.js";
 
@@ -16,6 +21,7 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
           color={seriesColor(i)}
           pct={pcts[i]}
           value={formatSpend(row.costUsd, row.credits)}
+          scaleLabel={spendBarScaleLabel(row)}
           caption={
             <>
               {}

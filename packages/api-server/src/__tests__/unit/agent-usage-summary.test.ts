@@ -24,6 +24,7 @@ function spend(model: string, costUsd: number): TokenSpendByModel {
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
     costUsd,
+    credits: [],
     durationMs: 100,
   };
 }
@@ -47,6 +48,7 @@ function reader(byModel: TokenSpendByModel[], sessions: number) {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
         costUsd: 0,
+        credits: [],
         firstAt: "",
         lastAt: "",
       }));

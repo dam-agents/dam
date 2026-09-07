@@ -22,6 +22,7 @@ import {
   formatAxisCount,
   formatAxisUsd,
   formatCredits,
+  formatCreditsExact,
   formatUsd,
   formatUsdCents,
 } from "../lib/format.js";
@@ -98,7 +99,7 @@ export function UsageView() {
             </div>
             {credits.length > 0 && (
               <div className="mt-2 font-mono text-xl font-semibold tabular-nums text-muted-foreground">
-                + {formatCredits(credits)}
+                + {formatCreditsExact(credits)}
               </div>
             )}
           </section>
@@ -111,16 +112,18 @@ export function UsageView() {
             </section>
           ) : (
             <>
-              <section>
-                <SectionLabel spaced>Spend by day</SectionLabel>
-                <Card className="p-5">
-                  <SpendByDayChart
-                    days={daySeries(dailyDays, null)}
-                    formatValue={formatUsd}
-                    formatAxis={formatAxisUsd}
-                  />
-                </Card>
-              </section>
+              {(total > 0 || credits.length === 0) && (
+                <section>
+                  <SectionLabel spaced>Spend by day</SectionLabel>
+                  <Card className="p-5">
+                    <SpendByDayChart
+                      days={daySeries(dailyDays, null)}
+                      formatValue={formatUsd}
+                      formatAxis={formatAxisUsd}
+                    />
+                  </Card>
+                </section>
+              )}
               {credits.map((credit) => (
                 <section key={credit.unit}>
                   <SectionLabel spaced>

@@ -1,6 +1,6 @@
 import type { SpendBySessionType } from "api-server-api";
 
-import { formatSpend, spendBarPct } from "../lib/format.js";
+import { formatSpend, spendBarPct, spendBarScaleLabel } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SESSION_TYPE_LABELS } from "../lib/session-type-label.js";
 import { SpendBar } from "./spend-bar.js";
@@ -16,6 +16,7 @@ export function SessionTypeSpendBars({ rows }: { rows: SpendBySessionType[] }) {
           color={seriesColor(i)}
           pct={pcts[i]}
           value={formatSpend(row.costUsd, row.credits)}
+          scaleLabel={spendBarScaleLabel(row)}
         />
       ))}
       {rows.some((row) => row.category === "unknown") && (

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { callsCte } from "../../modules/metrics/infrastructure/clickhouse-reader.js";
+import {
+  callsCte,
+  CreditPayloadError,
+  credits,
+} from "../../modules/metrics/infrastructure/clickhouse-reader.js";
 
 describe("callsCte", () => {
   it("unions both harness shapes under one owner-gated window", () => {
@@ -44,5 +48,32 @@ describe("callsCte", () => {
     const sql = callsCte({ hours: 24 });
     expect(sql).not.toContain("sessionId:String");
     expect(sql).toContain("toIntervalHour({hours:UInt32})");
+  });
+});
+
+describe("credit payload decoding", () => {
+  it("rejects a sumMap shape it does not recognise instead of reporting no credits", () => {
+    expect(credits([["bobcoin"], [12.5]])).toEqual([
+      { unit: "bobcoin", amount: 12.5 },
+    ]);
+    expect(
+      credits([
+        ["", "bobcoin"],
+        [0, 3],
+      ]),
+    ).toEqual([{ unit: "bobcoin", amount: 3 }]);
+    expect(() => credits(undefined)).toThrow(CreditPayloadError);
+    expect(() => credits([["bobcoin"]])).toThrow(CreditPayloadError);
+    expect(() => credits([["bobcoin"], []])).toThrow(CreditPayloadError);
+    expect(() => credits([["bobcoin"], ["nope"]])).toThrow(CreditPayloadError);
+    expect(() => credits([[7], [1]])).toThrow(CreditPayloadError);
+  });
+});
+
+describe("Bob latency unit", () => {
+  it("takes latency from the span duration, not the seconds-declared attribute", () => {
+    const sql = callsCte({ hours: 24 });
+    expect(sql).toContain("Duration / 1e6 AS durMs");
+    expect(sql).not.toContain("gen_ai.client.operation.duration");
   });
 });

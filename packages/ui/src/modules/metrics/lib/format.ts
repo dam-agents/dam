@@ -40,40 +40,97 @@ export const creditUnitLabel = (unit: string): string =>
 export const formatAxisCount = (value: number): string =>
   compactNumber.format(value);
 
-export function formatCredits(credits: CreditSpend[]): string {
+const exactCount = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+
+export function formatCredits(
+  credits: CreditSpend[],
+  amount: (n: number) => string = compactNumber.format.bind(compactNumber),
+): string {
   return credits
-    .map((c) => `${compactNumber.format(c.amount)} ${creditUnitLabel(c.unit)}`)
+    .map((c) => `${amount(c.amount)} ${creditUnitLabel(c.unit)}`)
     .join(" + ");
 }
+
+export const formatCreditsExact = (credits: CreditSpend[]): string =>
+  formatCredits(credits, exactCount.format.bind(exactCount));
 
 export function formatSpend(
   costUsd: number,
   credits: CreditSpend[],
   usd: (n: number) => string = formatUsd,
+  creditText: (c: CreditSpend[]) => string = formatCredits,
 ): string {
   if (credits.length === 0) return usd(costUsd);
-  const creditText = formatCredits(credits);
-  return costUsd > 0 ? `${usd(costUsd)} + ${creditText}` : creditText;
+  const text = creditText(credits);
+  return costUsd > 0 ? `${usd(costUsd)} + ${text}` : text;
 }
 
-export function spendBarPct(
-  rows: readonly { costUsd: number; credits: CreditSpend[] }[],
-): number[] {
-  const magnitude = (r: (typeof rows)[number]): [string, number] =>
-    r.costUsd > 0 || r.credits.length === 0
-      ? ["usd", r.costUsd]
-      : [r.credits[0].unit, r.credits[0].amount];
-  const max = new Map<string, number>();
+export const formatSpendExact = (
+  costUsd: number,
+  credits: CreditSpend[],
+): string => formatSpend(costUsd, credits, formatUsdCents, formatCreditsExact);
+
+export interface SpendRow {
+  costUsd: number;
+  credits: CreditSpend[];
+}
+
+const USD_SCALE = Symbol("usd");
+type ScaleKey = typeof USD_SCALE | string;
+
+export function spendScale(row: SpendRow): {
+  key: ScaleKey;
+  amount: number;
+  unit: string | null;
+} {
+  if (row.costUsd > 0 || row.credits.length === 0) {
+    return { key: USD_SCALE, amount: row.costUsd, unit: null };
+  }
+  const largest = row.credits.reduce((a, b) => (b.amount > a.amount ? b : a));
+  return { key: largest.unit, amount: largest.amount, unit: largest.unit };
+}
+
+export function spendBarPct(rows: readonly SpendRow[]): number[] {
+  const max = new Map<ScaleKey, number>();
   for (const row of rows) {
-    const [unit, amount] = magnitude(row);
-    max.set(unit, Math.max(max.get(unit) ?? 0, amount));
+    const { key, amount } = spendScale(row);
+    max.set(key, Math.max(max.get(key) ?? 0, amount));
   }
   return rows.map((row) => {
-    const [unit, amount] = magnitude(row);
-    const top = max.get(unit) ?? 0;
+    const { key, amount } = spendScale(row);
+    const top = max.get(key) ?? 0;
     return top > 0 ? (amount / top) * 100 : 0;
   });
 }
+
+export function topPerUnit<T extends SpendRow>(
+  rows: readonly T[],
+  limit: number,
+): T[] {
+  const byUnit = new Map<ScaleKey, T[]>();
+  for (const row of rows) {
+    const { key } = spendScale(row);
+    byUnit.set(key, [...(byUnit.get(key) ?? []), row]);
+  }
+  for (const group of byUnit.values()) {
+    group.sort((a, b) => spendScale(b).amount - spendScale(a).amount);
+  }
+  const groups = [...byUnit.values()];
+  const picked: T[] = [];
+  for (let rank = 0; picked.length < limit; rank++) {
+    const round = groups.flatMap((g) => (g[rank] ? [g[rank]] : []));
+    if (round.length === 0) break;
+    picked.push(...round.slice(0, limit - picked.length));
+  }
+  return picked;
+}
+
+export const spendBarScaleLabel = (row: SpendRow): string => {
+  const { unit } = spendScale(row);
+  return unit === null ? "dollars" : creditUnitLabel(unit);
+};
 
 export function durationSegments(
   ms: number,

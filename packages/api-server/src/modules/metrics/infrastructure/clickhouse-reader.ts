@@ -83,7 +83,7 @@ const bobCalls = (w: MetricsWindow): string => `
        ${spanAttr("gen_ai.usage.output_tokens")} AS tokOut,
        ${spanAttr("gen_ai.usage.cache_read.input_tokens")} AS tokCacheR,
        ${spanAttr("gen_ai.usage.cache_creation.input_tokens")} AS tokCacheC,
-       ${spanAttr("gen_ai.client.operation.duration")} AS durMs,
+       Duration / 1e6 AS durMs,
        toFloat64(0) AS usd,
        'bobcoin' AS creditUnit,
        toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS creditAmount
@@ -122,13 +122,39 @@ const CREDITS = "sumMap([creditUnit], [creditAmount]) AS credits";
 
 const n = (v: unknown): number => Number(v ?? 0);
 
-const credits = (v: unknown): CreditSpend[] => {
-  if (!Array.isArray(v)) return [];
-  const [units, amounts] = v as [unknown[], unknown[]];
-  if (!Array.isArray(units) || !Array.isArray(amounts)) return [];
+export class CreditPayloadError extends Error {}
+
+const finite = (v: unknown): number => {
+  const parsed = Number(v);
+  if (!Number.isFinite(parsed)) {
+    throw new CreditPayloadError(`credit amount is not a number: ${String(v)}`);
+  }
+  return parsed;
+};
+
+export const credits = (v: unknown): CreditSpend[] => {
+  if (!Array.isArray(v) || v.length !== 2) {
+    throw new CreditPayloadError(
+      `expected sumMap key/value pair, got ${JSON.stringify(v)}`,
+    );
+  }
+  const [units, amounts] = v;
+  if (!Array.isArray(units) || !Array.isArray(amounts)) {
+    throw new CreditPayloadError("sumMap halves are not both arrays");
+  }
+  if (units.length !== amounts.length) {
+    throw new CreditPayloadError(
+      `sumMap halves differ in length: ${units.length} vs ${amounts.length}`,
+    );
+  }
   return units.flatMap((unit, i) => {
-    const amount = n(amounts[i]);
-    return unit === "" || amount === 0 ? [] : [{ unit: String(unit), amount }];
+    if (typeof unit !== "string") {
+      throw new CreditPayloadError(
+        `credit unit is not a string: ${String(unit)}`,
+      );
+    }
+    const amount = finite(amounts[i]);
+    return unit === "" || amount === 0 ? [] : [{ unit, amount }];
   });
 };
 
