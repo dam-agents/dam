@@ -116,7 +116,7 @@ export function ConnectionCatalogModal({
           orientation="vertical"
           className="w-[200px] shrink-0 border-r border-border p-3"
         />
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
               {(byTab.get(activeTab) ?? []).map((group) => (
