@@ -108,6 +108,7 @@ export function toLibraryArtifact(
     sizeBytes: row.sizeBytes,
     version: row.version,
     folderId: row.folderId,
+    sourcePath: row.sourcePath,
     agentId: row.agentId,
     visibility: row.visibility as ArtifactVisibility,
     expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -328,6 +329,7 @@ export function createArtifactLibraryService(
         version: 1,
         visibility: input.visibility ?? "private",
         expiresAt: expiresAtFrom(input.expiresInHours),
+        sourcePath: input.sourcePath ?? null,
       });
       emit({
         type: EventType.ArtifactCreated,
@@ -354,6 +356,7 @@ export function createArtifactLibraryService(
       if (input.folderId != null) await requireOwnedFolder(input.folderId);
 
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
+      if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 

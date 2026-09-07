@@ -36,6 +36,7 @@ export interface LibraryArtifact {
   version: number;
   folderId: string | null;
   agentId: string | null;
+  sourcePath: string | null;
   visibility: ArtifactVisibility;
   expiresAt: string | null;
   viewCount: number;
@@ -76,6 +77,7 @@ export interface ArtifactCreateInput {
   folderId?: string;
   visibility?: ArtifactVisibility;
   expiresInHours?: number | null;
+  sourcePath?: string;
 }
 
 export interface ArtifactUpdateInput {
@@ -85,6 +87,7 @@ export interface ArtifactUpdateInput {
   uploadRef?: string;
   fileName?: string;
   contentType?: string;
+  sourcePath?: string;
 }
 
 export interface ArtifactSharingInput {

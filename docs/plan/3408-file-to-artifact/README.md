@@ -58,7 +58,7 @@ See [artifact-library](../../architecture/artifact-library.md). Three facts shap
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | The source link in the contract | `source_path` column + migration, `sourcePath` through create/update inputs and `LibraryArtifact`, optional `source_path` on the two MCP tools | — |
+| 01 ✅ | The source link in the contract | `source_path` column + migration, `sourcePath` through create/update inputs and `LibraryArtifact`, optional `source_path` on the two MCP tools | — |
 | 02 | Promote from the file panel | The Create artifact / Sync to artifact button, the panel switching to the artifact view on success, and the toolbar typography unification | 01 |
 | 03 | The link glyph | The chain icon on sidebar artifact rows carrying a `sourcePath`, tooltip naming the file | 01 |
 

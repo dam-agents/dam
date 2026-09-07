@@ -1,0 +1,1 @@
+ALTER TABLE "library_artifacts" ADD COLUMN "source_path" text;

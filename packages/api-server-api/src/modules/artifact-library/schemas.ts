@@ -45,6 +45,8 @@ const contentOrUploadRef = {
   uploadRef: z.string().min(1).max(1024).optional(),
 };
 
+const sourcePathSchema = z.string().trim().min(1).max(1024);
+
 export const artifactCreateInputSchema = z
   .object({
     title: titleSchema,
@@ -55,6 +57,7 @@ export const artifactCreateInputSchema = z
     folderId: z.string().min(1).optional(),
     visibility: artifactVisibilitySchema.optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
+    sourcePath: sourcePathSchema.optional(),
   })
   .refine((v) => (v.content == null) !== (v.uploadRef == null), {
     message: "provide exactly one of content or uploadRef",
@@ -69,6 +72,7 @@ export const artifactUpdateInputSchema = z
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
     contentType: z.string().trim().min(1).max(200).optional(),
+    sourcePath: sourcePathSchema.optional(),
   })
   .refine((v) => !(v.content != null && v.uploadRef != null), {
     message: "provide at most one of content or uploadRef",

@@ -117,6 +117,15 @@ export function registerArtifactLibraryTools(
         .describe(
           "Artifact lifetime in hours — after expiry (plus a grace week) the artifact is permanently deleted, even if private; omit to keep forever.",
         ),
+      source_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1024)
+        .optional()
+        .describe(
+          "Workspace path of the file this content came from, so the artifact records its origin.",
+        ),
       experiment_id: z
         .string()
         .optional()
@@ -133,6 +142,7 @@ export function registerArtifactLibraryTools(
       folder_id,
       visibility,
       expires_in_hours,
+      source_path,
       experiment_id,
     }) =>
       run(async () => {
@@ -146,6 +156,7 @@ export function registerArtifactLibraryTools(
             folderId: folder_id,
             visibility,
             expiresInHours: expires_in_hours ?? null,
+            sourcePath: source_path,
           },
           { agentId: deps.agentId },
         );
@@ -285,8 +296,17 @@ export function registerArtifactLibraryTools(
           "Renames the artifact — every version downloads under this name. Does not change its type.",
         ),
       folder_id: folderIdInput,
+      source_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1024)
+        .optional()
+        .describe(
+          "Workspace path of the file this revision came from, recorded on the artifact.",
+        ),
     },
-    ({ id, title, content, upload_ref, file_name, folder_id }) =>
+    ({ id, title, content, upload_ref, file_name, folder_id, source_path }) =>
       run(async () => {
         const artifact = await lib.update(id, {
           title,
@@ -294,6 +314,7 @@ export function registerArtifactLibraryTools(
           uploadRef: upload_ref,
           fileName: file_name,
           folderId: folder_id === "" ? null : folder_id,
+          sourcePath: source_path,
         });
         const publishedVersion =
           content !== undefined || upload_ref !== undefined;

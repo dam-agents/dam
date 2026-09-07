@@ -607,6 +607,7 @@ export const libraryArtifacts = pgTable(
     }),
     title: text("title").notNull(),
     slug: text("slug").notNull(),
+    sourcePath: text("source_path"),
     kind: text("kind").notNull(),
     contentType: text("content_type").notNull(),
     fileName: text("file_name").notNull(),

@@ -94,6 +94,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     owner: "o1",
     agentId: null,
     folderId: null,
+    sourcePath: null,
     title: "T",
     slug: "slug-a",
     kind: "html",
