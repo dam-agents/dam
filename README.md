@@ -11,15 +11,17 @@
 </h3>
 
 <p align="center">
-  DAM is the infrastructure no team should build themselves: isolated sandboxes, credentials the agent never holds, scheduled and Slack-native triggers, durable workspaces, and cost visibility. You build the use case. DAM runs it.
+  DAM provides the infrastructure for running agents securely and at scale:
+  isolated sandboxes, credential isolation, durable workspaces, orchestration,
+  scheduled and Slack based triggers, and cost visibility.
 </p>
 
 <p align="center">
-  <a href="#run-your-own"><strong>Run your own</strong></a>
+  <a href="https://ibm.biz/dam-docs"><strong>Documentation</strong></a>
   ·
-  <a href="docs/architecture.md"><strong>How it works</strong></a>
+  <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>
   ·
-  <a href="#for-ibmers"><strong>IBMers: use our deployment</strong></a>
+  <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
 </p>
 
 <p align="center">
@@ -29,79 +31,128 @@
 
 ---
 
-## Two ways to get DAM
+## Why DAM?
 
-DAM is Apache-2.0 licensed and self-hostable. Anyone can install it on a Kubernetes cluster. See [Run your own](#run-your-own).
+Every team running agents ends up building the same infrastructure. DAM provides it as a platform.
 
-IBM Research also operates a hosted deployment for IBM employees. See [For IBMers](#for-ibmers).
+* **🛡️ Security enforced by infrastructure.** Agents run in isolated sandboxes with no credentials or cluster access. A paired gateway injects credentials and is the only network exit, enforced by Kubernetes NetworkPolicy. Risky actions can require human approval.
+
+* **🔋 Always on.** Agents run in the cluster and continue working after your laptop closes. Persistent workspaces preserve files, memory, and learned context across restarts and long running sessions.
+
+* **🤝 Built for teams.** Agents can live in Slack or Telegram and be shared across teammates. The web UI and `dam` CLI connect to the same live sessions.
+
+* **🧠 Any harness, any model.** Use Claude Code, Codex, Pi Agent, Bob, or any ACP compatible runtime with your own model endpoints.
+
+* **💸 Know what agents cost.** See usage and cost by user, agent, harness, and model, with an activity trail showing what ran and when.
+
+* **🔀 Agents can work together.** Agents can spawn subagents on different harnesses or models, split work across them, and compare or review their results.
 
 ---
 
-## Why DAM?
+## One platform, many uses
 
-Every team that runs agents rebuilds the same infrastructure. DAM builds it once.
+DAM provides primitives that teams can combine for different workflows.
 
-- **🛡️ Agents run on your terms.** Your cluster, your model endpoints, your data. An agent pod holds no credentials and no cluster access. A paired gateway injects credentials and is the only network exit, enforced by Kubernetes NetworkPolicy rather than by the agent behaving well. Risky actions can wait for a human.
+### Software engineering
 
-- **🔋 Always on, and they remember.** Agents live in the cluster. They wake on a schedule or a message, keep working after your laptop closes, and keep files, memory, and learned context on a durable volume across restarts and months of use.
+Build software factories, PR review agents, automated debugging workflows, and cross harness evaluations.
 
-- **🤝 Your whole team, one agent.** Agents live in Slack or Telegram, so teammates can share the same agent and its context. The web UI and `dam` CLI connect to that same live session.
+The DAM team runs agents such as **software factory**, which takes a PRD through the backlog toward merged code, **code guardian**, which reviews pull requests and follows up on unresolved comments, and **buggy**, which turns obvious development issues into pull requests.
 
-- **Any harness, any model.** Claude Code, Codex, PI Agent, and IBM Bob ship as templates. Point them at Bedrock, an internal gateway, LiteLLM, or open-weight endpoints. Platform features are harness-agnostic, so swapping the agent does not cost you the platform.
+Agents can also collaborate directly. Give the same task to Claude Code and Codex, compare results and cost, or use one model to plan, another to implement, and another to review.
 
-- **💸 See what it costs.** Per-agent and per-model token and cost reporting from the bundled telemetry backend, plus an append-only activity log for "who ran what".
+### Experiments & research
+
+Run different harnesses and models side by side with persistent environments, isolation, telemetry, cost visibility, subagent workflows, and shareable artifacts.
+
+### Assistants
+
+Run personal and team agents in Slack that maintain context, respond to messages, file issues, and wake up on schedules.
+
+### Knowledge bases
+
+Use agents to maintain team knowledge instead of maintaining a wiki manually. Agents can turn meetings, feedback, and discussions into durable, linked knowledge.
 
 ---
 
 ## The building blocks
 
-| Block | What it gives you |
-|---|---|
-| **Harnesses** | Claude Code, Codex, Pi, Bob, or any [ACP](https://agentclientprotocol.com/get-started/introduction)-compatible runtime. One protocol, so every platform feature works on every harness. |
-| **Models** | Your endpoints: AWS Bedrock, internal gateways, open-weight models. Pick per agent, mix across agents, compare. |
-| **Security** | Agents hold no secrets and no cluster access. A gateway injects credentials and is the only network exit; humans approve risky actions; clusters that support it can give each agent its own VM. |
-| **Cost & budgets** | Per-user and per-agent spend visibility, budgets, and a full audit trail. |
-| **Subagents** | A running agent spawns agents on any harness and gets back typed, schema-checked results. A subagent can never carry more access than its parent. |
-| **Skills** | Your team's conventions and workflows, packaged once in git, installed by every agent, improved by pull request. |
-| **Workspaces & memory** | Every agent owns a persistent disk. Its files, memory, and learned context survive restarts, sleep, and months of use. |
-| **Artifacts** | Results that outlive the agent that made them: versioned, organized, shareable by link with people who have no account. |
-| **Schedules** | Agents that wake on a timer: nightly audits, daily reviews, continuous monitoring. |
-| **Channels** | Agents live in your team's Slack, and each teammate interacts with their own credentials. Web UI and CLI attach to the same live session. |
+| Block                   | What it provides                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| **Harnesses**           | Claude Code, Codex, Pi Agent, Bob, or any ACP compatible runtime                     |
+| **Models**              | AWS Bedrock, internal gateways, LiteLLM, open weight models, and other endpoints     |
+| **Security**            | Isolated agents, credential isolation, network controls, and optional human approval |
+| **Cost & budgets**      | Per user and per agent visibility, budgets, telemetry, and activity history          |
+| **Subagents**           | Spawn agents across harnesses and models with typed, schema checked results          |
+| **Skills**              | Team conventions and workflows packaged in git and shared across agents              |
+| **Workspaces & memory** | Persistent disks for files, memory, and learned context                              |
+| **Artifacts**           | Durable, organized results that can be shared independently of the agent             |
+| **Schedules**           | Agents that wake on timers for recurring work                                        |
+| **Channels**            | Slack, Telegram, web UI, and CLI access to live agent sessions                       |
 
-Deeper detail per subsystem: [`docs/architecture.md`](docs/architecture.md).
+---
+
+## Supported harnesses
+
+| Harness         | Description                                         |
+| --------------- | --------------------------------------------------- |
+| **Claude Code** | Coding agent for complex software engineering tasks |
+| **Codex**       | Coding agent for end to end implementation          |
+| **Pi Agent**    | Multi provider coding harness                       |
+| **Bob**         | Enterprise coding assistant for IBM workflows       |
+
+Bring your own harness with [ACP](https://agentclientprotocol.com/get-started/introduction). ACP compatible runtimes can use DAM's platform capabilities without a custom adapter.
 
 ---
 
 ## Run your own
 
-DAM installs on any Kubernetes cluster via Helm. Container images and the chart are public on `quay.io/dam-agents`.
+DAM is Apache 2.0 licensed and can be deployed on your own Kubernetes cluster using Helm.
 
 ```sh
 helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.16
 ```
 
-The chart brings its own Keycloak, Postgres and Redis, and an optional bundled telemetry backend. Configure harness templates, model endpoints, credential sets, per-user budgets and isolation level in [`values.yaml`](deploy/helm/platform/values.yaml) — it is the reference for every option, and it is heavily commented.
+The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
 
-Requires an Istio ambient mesh in the cluster. Read [`docs/architecture.md`](docs/architecture.md) before a production install; [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md) describes the trust boundary you are relying on.
+Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](deploy/helm/platform/values.yaml).
+
+DAM requires an Istio ambient mesh. Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
+
+---
+
+## For IBMers
+
+IBM Research operates a hosted DAM deployment, so IBM employees do not need to run their own cluster.
+
+|                    |                                                      |
+| ------------------ | ---------------------------------------------------- |
+| **Launch DAM**     | [ibm.biz/dam-agents](https://ibm.biz/dam-agents)     |
+| **Documentation**  | [ibm.biz/dam-docs](https://ibm.biz/dam-docs)         |
+| **Request access** | [ibm.biz/dam-waitlist](https://ibm.biz/dam-waitlist) |
+
+The hosted deployment provides IBM internal model endpoints and integrations that are not included in the open source deployment.
+
+---
 
 <details>
 <summary><strong>Developing DAM locally</strong></summary>
 
-For contributors working on the DAM platform itself.
-
 ### Prerequisites
 
-- [mise](https://mise.jdx.dev)
-- Docker-compatible runtime (Docker Desktop, Rancher Desktop, Colima, etc.) -- note that Podman is _not_ supported
-- macOS or Linux
-- on Linux, either:
-  - install QEMU if you want to run k3s in a VM (default), or
-  - set environment variable `IS_SANDBOX=1` if you want to operate directly in the current OS, typically if it is already a VM
+* [mise](https://mise.jdx.dev)
+* Docker compatible runtime such as Docker Desktop, Rancher Desktop, or Colima
+* macOS or Linux
 
-### Local Setup
+Podman is not supported.
+
+On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+
+### Setup
 
 ```sh
-git clone https://github.com/dam-agents/dam && cd dam
+git clone https://github.com/dam-agents/dam
+cd dam
 
 mise install
 mise run cluster:install
@@ -116,38 +167,14 @@ password: dev
 
 Create an instance from a template and start chatting with your agent.
 
-See [work process](docs/guidelines/work-process.md) for the contributor workflow, and [`CLAUDE.md`](CLAUDE.md) for engineering conventions. Commits use Conventional Commits and require a DCO sign-off (`git commit -s`).
+See [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md) for the contributor workflow and [`CLAUDE.md`](CLAUDE.md) for engineering conventions.
 
 </details>
 
 ---
 
-## For IBMers
-
-IBM Research runs a hosted DAM deployment. You do not need a cluster.
-
-| | |
-|---|---|
-| **Launch DAM** | [ibm.biz/dam-agents](https://ibm.biz/dam-agents) |
-| **Documentation** | [ibm.biz/dam-docs](https://ibm.biz/dam-docs) |
-| **Request access** | [ibm.biz/dam-waitlist](https://ibm.biz/dam-waitlist) |
-
-Create an agent from a template and start chatting. The deployment adds IBM-internal model endpoints and integrations that the open-source chart does not ship, and IBM Bob needs IBM entitlement.
-
----
-
 ## Built in the open
 
-Development happens here, in public. Issues, pull requests, and roadmap decisions are all part of the project.
+DAM is developed in the open. Issues, pull requests, roadmap decisions, and development all happen in this repository.
 
-Follow development, report issues, or start a discussion on [GitHub](https://github.com/dam-agents/dam/issues).
-
----
-
-## Maintainers
-
-This project is built and maintained by the DAM team.
-
-<a href="https://github.com/dam-agents/dam">
-  <img alt="DAM team" src="https://contrib.rocks/image?repo=dam-agents/dam" />
-</a>
+See the [GitHub issues](https://github.com/dam-agents/dam/issues) to follow the work, report problems, or contribute.
