@@ -81,7 +81,7 @@ touch the constant.** Slice 01 stops applying it in one place only.
 | #  | Done | Title | Scope | Depends on |
 |----|------|-------|-------|------------|
 | 01 | ✅ | [List row — visible share controls, badge as control](./01-list-row-share-controls.md) | Make the status badge interactive; stop hover-gating `Copy link` and the overflow trigger; give `Copy link` a label and show it only when public. | — |
-| 02 | — | [Preview dialog — share from the opened artifact](./02-preview-dialog-share.md) | Status badge into the toolbar, `Copy link` when public, an always-present **Share** in the footer that stacks the share dialog over the preview, and live artifact state so the badge stops lying after a save. | 01 |
+| 02 | ✅ | [Preview dialog — share from the opened artifact](./02-preview-dialog-share.md) | Status badge into the toolbar, `Copy link` when public, an always-present **Share** in the footer that stacks the share dialog over the preview, and live artifact state so the badge stops lying after a save. | 01 |
 
 02 reuses the interactive badge that 01 introduces, so the order is fixed.
 

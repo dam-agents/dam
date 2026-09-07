@@ -40,14 +40,18 @@ export function ArtifactStatusBadge({
   const label = isPublic ? "Public" : "Private";
 
   if (!onShare) {
-    return <Badge variant={variant}>{label}</Badge>;
+    return (
+      <Badge variant={variant} className="font-sans">
+        {label}
+      </Badge>
+    );
   }
   return (
     <Tooltip content={isPublic ? "Change sharing" : "Share this artifact"}>
       <Badge
         asChild
         variant={variant}
-        className="cursor-pointer hover:border-current"
+        className="cursor-pointer font-sans hover:border-current"
       >
         <button
           type="button"

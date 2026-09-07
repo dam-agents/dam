@@ -1,11 +1,4 @@
-import {
-  Box,
-  Checkmark,
-  Link,
-  OverflowMenuVertical,
-  Time,
-  View,
-} from "@carbon/icons-react";
+import { Box, OverflowMenuVertical, Time, View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useState } from "react";
 
@@ -17,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useCopy } from "@/hooks/use-copy";
 import { clickableProps } from "@/lib/clickable";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -31,9 +23,9 @@ import {
 } from "../hooks/use-artifact-row-drag.js";
 import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { toastCopyOutcome } from "../lib/share-link.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { CopyLinkButton } from "./copy-link-button.js";
 import { VersionBadge } from "./version-badge.js";
 
 export interface ArtifactRowActions {
@@ -131,7 +123,9 @@ export function ArtifactRow({
         className="ml-auto flex shrink-0 items-center gap-1.5"
         onClick={(e) => e.stopPropagation()}
       >
-        {artifact.shareUrl && <CopyLinkButton url={artifact.shareUrl} />}
+        {artifact.shareUrl && (
+          <CopyLinkButton url={artifact.shareUrl} variant="ghost" />
+        )}
         <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -178,23 +172,5 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
         <span className="truncate">{agentName}</span>
       </button>
     </Tooltip>
-  );
-}
-
-function CopyLinkButton({ url }: { url: string }) {
-  const { copy, copied } = useCopy();
-  return (
-    <Button
-      variant="ghost"
-      size="xs"
-      onClick={() => void copy(url).then(toastCopyOutcome)}
-    >
-      {copied ? (
-        <Checkmark size={14} className="text-success" />
-      ) : (
-        <Link size={14} />
-      )}
-      Copy link
-    </Button>
   );
 }

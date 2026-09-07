@@ -21,14 +21,7 @@ export function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef);
   useBodyScrollLock();
-  useEffect(() => {
-    if (!onClose) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  useEscapeWhenTopmost(labelId, onClose);
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
       <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
@@ -280,6 +273,33 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       previouslyFocused?.focus?.();
     };
   }, [containerRef]);
+}
+
+const openModalIds: string[] = [];
+
+function useEscapeWhenTopmost(id: string, onClose: (() => void) | undefined) {
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    openModalIds.push(id);
+    return () => {
+      const at = openModalIds.indexOf(id);
+      if (at !== -1) openModalIds.splice(at, 1);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    const closeIfTopmost = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (openModalIds[openModalIds.length - 1] !== id) return;
+      close.current?.();
+    };
+    window.addEventListener("keydown", closeIfTopmost);
+    return () => window.removeEventListener("keydown", closeIfTopmost);
+  }, [id]);
 }
 
 let bodyLockCount = 0;

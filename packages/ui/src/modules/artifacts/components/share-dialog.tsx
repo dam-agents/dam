@@ -53,7 +53,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={sharing.isPending ? undefined : onClose}>
       <DialogHeader
         title={`Share “${artifact.title}”`}
         onClose={onClose}
