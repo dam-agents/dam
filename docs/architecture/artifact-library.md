@@ -22,9 +22,22 @@ each carrying its session id — and reports the touch over its runtime
 channel. The write is scoped to the calling agent's own artifacts and never
 overwrites another session's attribution, so a failure anywhere leaves a
 version unattributed rather than misattributed. Terminal sessions bypass ACP
-and stay unattributed. Concurrent revision publishes are
+and stay unattributed.
+
+A version also records **who wrote it** — the owner, when a person edited it
+in the app, or the publishing agent. Only a caller that states this is
+recorded: versions the platform writes for its own bookkeeping, and versions
+from before the platform tracked authorship, name nobody rather than
+attributing a write to whoever happens to own the library.
+
+Concurrent revision publishes are
 detected — one wins, the other is refused with a conflict and leaves no
-partial version behind.
+partial version behind. An **interactive edit** is guarded further: it states
+the version it changed and is refused when the head has already moved on, so
+an owner editing in the app never silently replaces a newer agent revision.
+The owner is told instead, and may then overwrite deliberately. An agent's
+publish always appends and is never refused on these grounds — only a surface
+that can hold stale text on a screen claims a version.
 
 An artifact's **kind is settled when it is created** and no revision can move
 it — neither by declaring one nor by renaming into another extension. The

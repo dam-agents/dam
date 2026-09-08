@@ -474,6 +474,7 @@ describe("library service — createAgentDownloadUrl", () => {
                 contentType: "text/html",
                 sizeBytes: 3,
                 createdAt: new Date(),
+                author: null,
               }
             : null,
         ),
@@ -556,6 +557,7 @@ describe("expiry sweeper", () => {
             contentType: "text/html",
             sizeBytes: 1,
             createdAt: new Date(),
+            author: null,
           })),
         });
       },
