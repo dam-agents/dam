@@ -19,13 +19,18 @@ repo_root = "{{config_root}}"
 # their inputs changed or outputs are missing. `mise run setup` installs them
 # across all config roots; `--no-deps` skips them.
 [deps.corepack]
-description = "Enable corepack so pnpm resolves to package.json's packageManager"
+description = "Enable corepack so `pnpm exec …` in tasks resolves to package.json's packageManager"
+auto = true
 sources = ["package.json"]
 run = "corepack enable"
 
+# `corepack pnpm` needs no prior enable: on a fresh runner the pnpm shim is not
+# on PATH until the corepack provider has run, and provider order alone did not
+# save the install.
 [deps.pnpm]
 auto = true
 depends = ["corepack"]
+run = "corepack pnpm install"
 sources = [
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
