@@ -65,12 +65,12 @@ jobs:
         method: POST
         name: agents.create
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"zap-1\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"registryCredential\": {\"server\": \"zap\", \"username\": \"zap\", \"password\": \"zap\"}, \"egressPreset\": \"none\", \"hibernationTimeoutMin\": 0, \"gitRepo\": {\"url\": \"https://example.com/zap\", \"ref\": \"zap\"}, \"connectionIds\": [\"zap\"], \"size\": {\"cpu\": \"zap-1\", \"memory\": \"zap-1\"}, \"sweepable\": true, \"lifetimeMs\": 0}"
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"ZAP\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"registryCredential\": {\"server\": \"zap\", \"username\": \"zap\", \"password\": \"zap\"}, \"egressPreset\": \"none\", \"hibernationTimeoutMin\": 0, \"gitRepo\": {\"url\": \"https://example.com/zap\", \"ref\": \"zap\"}, \"connectionIds\": [\"zap\"], \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}, \"sweepable\": true, \"lifetimeMs\": 0}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.update"
         method: POST
         name: agents.update
         headers: ["Content-Type: application/json"]
-        data: "{\"id\": \"zap\", \"name\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"zap-1\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"hibernationTimeoutMin\": 0, \"size\": {\"cpu\": \"zap-1\", \"memory\": \"zap-1\"}}"
+        data: "{\"id\": \"zap\", \"name\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"ZAP\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"hibernationTimeoutMin\": 0, \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.delete"
         method: POST
         name: agents.delete
@@ -147,12 +147,12 @@ jobs:
         method: POST
         name: schedules.createRRule
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"zap-1\", \"endTime\": \"zap-1\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"09:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.updateRRule"
         method: POST
         name: schedules.updateRRule
         headers: ["Content-Type: application/json"]
-        data: "{\"id\": \"zap\", \"name\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"zap-1\", \"endTime\": \"zap-1\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+        data: "{\"id\": \"zap\", \"name\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"09:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.delete"
         method: POST
         name: schedules.delete
@@ -192,7 +192,7 @@ jobs:
         method: POST
         name: connections.startOAuth
         headers: ["Content-Type: application/json"]
-        data: "{\"connectionId\": \"zap\", \"returnTo\": \"zap-1\", \"popup\": true}"
+        data: "{\"connectionId\": \"zap\", \"returnTo\": \"/zap\", \"popup\": true}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.discoverMcp"
         method: POST
         name: connections.discoverMcp
@@ -387,7 +387,7 @@ jobs:
         method: POST
         name: experiments.createSandbox
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"zap-1\", \"memory\": \"zap-1\"}}"
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.list"
         method: GET
         name: experiments.list
@@ -419,7 +419,7 @@ jobs:
         method: POST
         name: knowledgeBases.create
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"zap-1\", \"memory\": \"zap-1\"}, \"kbTemplateId\": \"llm-wiki\"}"
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}, \"kbTemplateId\": \"llm-wiki\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.status?input=%7B%22agentId%22%3A%20%22zap%22%7D"
         method: GET
         name: kbShares.status
@@ -433,7 +433,7 @@ jobs:
         method: POST
         name: kbShares.create
         headers: ["Content-Type: application/json"]
-        data: "{\"agentId\": \"zap\", \"roots\": [\"zap-1\"]}"
+        data: "{\"agentId\": \"zap\", \"roots\": [\"zap\"]}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.reveal"
         method: POST
         name: kbShares.reveal
@@ -453,7 +453,7 @@ jobs:
         method: POST
         name: kbShares.refresh
         headers: ["Content-Type: application/json"]
-        data: "{\"agentId\": \"zap\", \"roots\": [\"zap-1\"]}"
+        data: "{\"agentId\": \"zap\", \"roots\": [\"zap\"]}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.setName"
         method: POST
         name: kbShares.setName

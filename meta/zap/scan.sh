@@ -6,6 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 REPO="$(cd ../.. && pwd)"
 export ZAP_REPORT_DIR="$PWD/reports"
+mkdir -p "$ZAP_REPORT_DIR"
+# cleanup.py deletes only what was created at or after this instant (plus sampler-literal matches).
+date -u +%Y-%m-%dT%H:%M:%SZ > "$ZAP_REPORT_DIR/started-at"
 Z=http://127.0.0.1:8090
 CHROME="$HOME/Library/Caches/ms-playwright/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
 CHROMEDRIVER=$(find "$PWD/browsers" -type f -name chromedriver | head -1)
