@@ -57,6 +57,20 @@ export function ChatArtifactsPanel({
   const loading = enabled && (isPending || foldersPending);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifactDirty = useStore((s) => s.openArtifactDirty);
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  const openRow = useCallback(
+    async (id: string) => {
+      if (
+        openArtifactDirty &&
+        !(await showConfirm("Discard unsaved changes?", "Unsaved changes"))
+      )
+        return;
+      setOpenArtifactId(id === openArtifactId ? null : id);
+    },
+    [openArtifactDirty, showConfirm, setOpenArtifactId, openArtifactId],
+  );
   const folderCollapse = useStore((s) =>
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );
@@ -121,11 +135,7 @@ export function ChatArtifactsPanel({
                     key={artifact.id}
                     artifact={artifact}
                     active={artifact.id === openArtifactId}
-                    onClick={() =>
-                      setOpenArtifactId(
-                        artifact.id === openArtifactId ? null : artifact.id,
-                      )
-                    }
+                    onClick={() => void openRow(artifact.id)}
                     drag={dropCallbacks}
                     onEdit={(a) => setOpenArtifactId(a.id, { edit: true })}
                     onRename={setRenameTarget}

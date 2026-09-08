@@ -1,6 +1,6 @@
 import { TRPCClientError } from "@trpc/client";
 import type { ArtifactContent, LibraryArtifact } from "api-server-api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { getErrorMessage } from "../../../lib/errors.js";
@@ -31,7 +31,8 @@ export function useArtifactEditor({
   const showConfirm = useStore((s) => s.showConfirm);
   const save = useSaveArtifactContent();
 
-  const editable = !!artifact && isEditableContent(content) && isHeadVersion;
+  const contentFits = useMemo(() => isEditableContent(content), [content]);
+  const editable = !!artifact && contentFits && isHeadVersion;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content?.content ?? "");
   const [baseVersion, setBaseVersion] = useState(artifact?.version);
@@ -48,16 +49,16 @@ export function useArtifactEditor({
     onEditConsumed?.();
   }, [initialEdit, content, editable, onEditConsumed]);
 
-  const dirty = editing && draft !== content?.content;
+  const dirty = editing && content != null && draft !== content.content;
   useUnsavedGuard(dirty);
 
   const runSave = useCallback(
-    async (expectedVersion?: number) => {
-      if (!artifact) return;
+    async (claim?: { expectedVersion: number }) => {
+      if (!artifact) throw new Error("The artifact is no longer available.");
       await save.mutateAsync({
         id: artifact.id,
         content: draft,
-        ...(expectedVersion != null ? { expectedVersion } : {}),
+        ...claim,
       });
       setEditing(false);
       emitToast({ kind: "success", message: `Saved ${artifact.title}` });
@@ -66,8 +67,15 @@ export function useArtifactEditor({
   );
 
   const commit = useCallback(async () => {
+    if (baseVersion == null) {
+      emitToast({
+        kind: "error",
+        message: "Can't tell which version you edited. Reload and try again.",
+      });
+      return;
+    }
     try {
-      await runSave(baseVersion);
+      await runSave({ expectedVersion: baseVersion });
     } catch (err) {
       if (!isConflict(err)) {
         emitToast({

@@ -1,4 +1,5 @@
 import type { ArtifactVersionInfo, LibraryArtifact } from "api-server-api";
+import { useMemo } from "react";
 
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
@@ -18,16 +19,22 @@ export function VersionList({
   onChange: (version: number) => void;
 }) {
   const agentName = useAgentDisplayName(artifact.agentId);
-  const head = versions.reduce((max, v) => Math.max(max, v.version), 0);
+  const agentLabel =
+    agentName && agentName !== artifact.agentId ? agentName : "Agent";
+  const newestFirst = useMemo(
+    () => [...versions].sort((a, b) => b.version - a.version),
+    [versions],
+  );
+  const head = newestFirst[0]?.version ?? 0;
 
   return (
     <ul className="max-h-[50vh] w-[260px] overflow-auto py-1">
-      {[...versions].reverse().map((version) => {
+      {newestFirst.map((version) => {
         const author =
           version.author === "user"
             ? "You"
             : version.author === "agent"
-              ? (agentName ?? "Agent")
+              ? agentLabel
               : null;
         return (
           <li key={version.version}>

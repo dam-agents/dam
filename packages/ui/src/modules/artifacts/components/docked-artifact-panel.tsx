@@ -8,7 +8,8 @@ import {
   Share,
   View,
 } from "@carbon/icons-react";
-import { useCallback, useState } from "react";
+import { INLINE_CONTENT_MAX_BYTES } from "api-server-api";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -22,7 +23,7 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
-import { isRenderedKind } from "../lib/kinds.js";
+import { isRenderedKind, isTextKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -34,6 +35,7 @@ export function DockedArtifactPanel() {
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const openArtifactEdit = useStore((s) => s.openArtifactEdit);
   const setOpenArtifactEdit = useStore((s) => s.setOpenArtifactEdit);
+  const setOpenArtifactDirty = useStore((s) => s.setOpenArtifactDirty);
   const {
     data: artifact,
     isPending: artifactPending,
@@ -52,8 +54,12 @@ export function DockedArtifactPanel() {
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
   const shownVersion = pinnedVersion ?? latest;
 
+  const couldEdit =
+    !!artifact &&
+    isTextKind(artifact.kind) &&
+    artifact.sizeBytes <= INLINE_CONTENT_MAX_BYTES;
   const content = useArtifactContent(
-    artifact ? artifact.id : null,
+    artifact && (!renderable || showSource || couldEdit) ? artifact.id : null,
     shownVersion,
   );
   const editor = useArtifactEditor({
@@ -67,10 +73,16 @@ export function DockedArtifactPanel() {
     ),
   });
 
+  const { confirmDiscard } = editor;
+  useEffect(() => {
+    setOpenArtifactDirty(editor.dirty);
+    return () => setOpenArtifactDirty(false);
+  }, [editor.dirty, setOpenArtifactDirty]);
+
   const closePanel = useCallback(async () => {
-    if (!(await editor.confirmDiscard())) return;
+    if (!(await confirmDiscard())) return;
     setOpenArtifactId(null);
-  }, [editor, setOpenArtifactId]);
+  }, [confirmDiscard, setOpenArtifactId]);
 
   const showFrame = renderable && !showSource && !editor.editing;
   const preview = useArtifactPreview(
