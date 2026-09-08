@@ -20,7 +20,7 @@ export function startAgentWatch(
   const debounceMs = opts.debounceMs ?? 300;
 
   let stopped = false;
-  let stopWatch: (() => void) | null = null;
+  let connection: { stop(): void } | null = null;
   let retryTimer: NodeJS.Timeout | null = null;
   let sweepTimer: NodeJS.Timeout | null = null;
   let seenSinceConnect: Set<string> | null = null;
@@ -93,7 +93,12 @@ export function startAgentWatch(
       }
     }, REPLAY_SWEEP_MS);
     sweepTimer.unref();
-    stopWatch = k8s.watchCustomObjects(opts.plural, onEvent, (err) => {
+    const link = { stop: () => {} };
+    connection = link;
+    link.stop = k8s.watchCustomObjects(opts.plural, onEvent, (err) => {
+      if (connection !== link) return;
+      connection = null;
+      link.stop();
       if (stopped) return;
       if (err) opts.log(`agent watch ended: ${String(err)}`);
       retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -105,7 +110,7 @@ export function startAgentWatch(
   return {
     stop() {
       stopped = true;
-      stopWatch?.();
+      connection?.stop();
       if (retryTimer) clearTimeout(retryTimer);
       if (sweepTimer) clearTimeout(sweepTimer);
       for (const timer of pending.values()) clearTimeout(timer);
