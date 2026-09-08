@@ -193,7 +193,7 @@ export function AddSkillSetsModal({
         divided={false}
       />
 
-      <DialogBody flush divided>
+      <DialogBody flush>
         {loadFailed ? (
           <p className="px-5 py-4 text-sm text-danger md:px-6">
             Couldn't load your saved skill sets. Reopen the Skills page to try
@@ -220,7 +220,7 @@ export function AddSkillSetsModal({
         )}
       </DialogBody>
 
-      <DialogFooter>
+      <DialogFooter divided>
         <span className="flex-1 text-sm text-muted-foreground">
           {picked.size === 0
             ? "No sets selected"

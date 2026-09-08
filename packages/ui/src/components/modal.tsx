@@ -139,15 +139,12 @@ export function DialogBody({
   children,
   className,
   flush,
-  divided,
-}: DialogRegionProps & { flush?: boolean; divided?: boolean }) {
+}: DialogRegionProps & { flush?: boolean }) {
   return (
     <div
       className={cn(
-        "flex-1 min-h-0 overflow-y-auto pt-5 md:pt-6 [&:last-child]:pb-5 md:[&:last-child]:pb-6",
+        "flex-1 min-h-0 overflow-y-auto py-5 md:py-6",
         !flush && "px-5 md:px-6",
-        divided &&
-          "pb-5 md:pb-6 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border",
         className,
       )}
     >
@@ -156,11 +153,16 @@ export function DialogBody({
   );
 }
 
-export function DialogFooter({ children, className }: DialogRegionProps) {
+export function DialogFooter({
+  children,
+  className,
+  divided,
+}: DialogRegionProps & { divided?: boolean }) {
   return (
     <div
       className={cn(
-        "px-5 py-5 md:px-6 md:py-6 flex items-center justify-end gap-3",
+        "flex items-center justify-end gap-3 px-5 pb-5 md:px-6 md:pb-6",
+        divided && "border-t border-border pt-5 md:pt-6",
         className,
       )}
     >
@@ -182,6 +184,7 @@ interface DialogActionsProps {
   onSubmit?: () => void;
   testId?: string;
   className?: string;
+  divided?: boolean;
 }
 
 export function DialogActions({
@@ -197,9 +200,10 @@ export function DialogActions({
   onSubmit,
   testId,
   className,
+  divided,
 }: DialogActionsProps) {
   return (
-    <DialogFooter className={className}>
+    <DialogFooter className={className} divided={divided}>
       {leading && <div className="mr-auto">{leading}</div>}
       <Button
         type="button"

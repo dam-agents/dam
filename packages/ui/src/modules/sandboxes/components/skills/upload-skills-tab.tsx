@@ -54,7 +54,7 @@ export function UploadSkillsTab({
 
   return (
     <>
-      <DialogBody divided className="flex flex-col gap-4">
+      <DialogBody className="flex flex-col gap-4">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -123,6 +123,7 @@ export function UploadSkillsTab({
       </DialogBody>
 
       <DialogActions
+        divided
         onCancel={onClose}
         label={submitLabel}
         pendingLabel="Adding…"

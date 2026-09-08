@@ -1,4 +1,4 @@
-import { EventSchedule } from "@carbon/icons-react";
+import { Calendar } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +72,9 @@ export function ArtifactStatusBadge({
 
 export function ArtifactDeletionChip({
   expiresAt,
-  iconSize = 12,
   className,
 }: {
   expiresAt: string | null;
-  iconSize?: number;
   className?: string;
 }) {
   const deletion = deletionState(expiresAt);
@@ -93,7 +91,7 @@ export function ArtifactDeletionChip({
         className,
       )}
     >
-      <EventSchedule size={iconSize} />
+      <Calendar size={12} />
       {deletion.label}
     </HintTooltip>
   );

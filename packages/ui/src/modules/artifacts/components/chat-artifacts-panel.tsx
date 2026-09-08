@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,6 @@ import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { SidebarFolderGroup } from "./sidebar-folder-group.js";
-import { VersionBadge } from "./version-badge.js";
 
 export function ChatArtifactsPanel({
   agentId,
@@ -226,13 +226,14 @@ function ArtifactListRow({
         animate={active || hovered}
         className="min-w-0 flex-1"
       />
-      {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
-        <span
-          role="img"
-          aria-label="Shared"
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-        />
+        <Tooltip content="Public">
+          <span
+            role="img"
+            aria-label="Public"
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+          />
+        </Tooltip>
       )}
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <Button

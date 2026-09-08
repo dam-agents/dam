@@ -23,15 +23,13 @@ export function deletionState(expiresAt: string | null): DeletionState {
     const restoreLeft = left > 0 ? largestUnit(left) : null;
     return {
       state: "expired",
-      label: restoreLeft
-        ? `deletion pending · ${restoreLeft} to restore`
-        : "deletion pending",
+      label: restoreLeft ? `${restoreLeft} to restore` : "deletion pending",
       restoreLeft,
     };
   }
   return {
     state: "active",
-    label: `deletes in ${largestUnit(delta)}`,
+    label: largestUnit(delta),
     soon: delta < 24 * 3_600_000,
   };
 }
@@ -43,11 +41,9 @@ export function deletionDate(expiresAt: string | null): string {
 export function deletionTooltip(expiresAt: string | null): string {
   const deletion = deletionState(expiresAt);
   if (deletion.state === "never") return "";
-  if (deletion.state === "active")
-    return `Deleting on ${deletionDate(expiresAt)}`;
-  return deletion.restoreLeft
-    ? `Deletion pending — ${deletion.restoreLeft} left to restore`
-    : "Deletion pending";
+  const date = deletionDate(expiresAt);
+  if (deletion.state === "active") return `Deletes on ${date}`;
+  return `Deletion pending since ${date}`;
 }
 
 export function deletionSummary(expiresAt: string | null): string {

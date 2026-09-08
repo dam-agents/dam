@@ -30,7 +30,6 @@ import {
 } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { CopyLinkButton } from "./copy-link-button.js";
-import { VersionBadge } from "./version-badge.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
@@ -98,7 +97,6 @@ export function ArtifactRow({
         </span>
         <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
-          {artifact.version > 1 && <VersionBadge version={artifact.version} />}
           {artifact.viewCount > 0 && (
             <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
               <View size={12} />
