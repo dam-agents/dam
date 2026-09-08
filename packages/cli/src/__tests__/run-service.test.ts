@@ -5,6 +5,7 @@ import { resolvePrompt } from "../modules/chat/commands/run.js";
 import { ok } from "../result.js";
 import {
   createRunService,
+  stallLine,
   type RunService,
 } from "../modules/chat/services/run-service.js";
 
@@ -318,6 +319,39 @@ describe("run service", () => {
     if (!result.ok) expect(result.error.kind).toBe("run-failed");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(cancels).toEqual([]);
+  });
+});
+
+describe("stallLine", () => {
+  /**
+   * TEST_SCENARIO: A stall message must name the approval and the command that clears it:
+   * a synthetic egress request carries its approval id inline, and a
+   * harness-native request's approvals row id is derived from agent, session
+   * and rpc id — the same scheme the api-server mirrors it under.
+   */
+  it("names the approval id and the approve command", () => {
+    expect(
+      stallLine("agent-1", {
+        rpcId: "appr-9",
+        params: {
+          sessionId: "_egress:appr-9",
+          toolCall: {
+            title: "GET api.example.com/v1",
+            rawInput: { approvalId: "appr-9" },
+          },
+        },
+      }),
+    ).toBe(
+      "run stalled on a permission request (GET api.example.com/v1) — resolve with: dam approval approve appr-9",
+    );
+    expect(
+      stallLine("agent-1", {
+        rpcId: 7,
+        params: { sessionId: "sess-1", toolCall: { title: "bash" } },
+      }),
+    ).toBe(
+      "run stalled on a permission request (bash) — resolve with: dam approval approve acpnative:agent-1:sess-1:7",
+    );
   });
 });
 

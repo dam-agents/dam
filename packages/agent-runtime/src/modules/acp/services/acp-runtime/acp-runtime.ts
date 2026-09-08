@@ -164,6 +164,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.sessionMetadata?.finishRun(sessionId);
       deps.activeTurns.remove(sessionId);
     },
+    onTurnInterrupted: (sessionId, turn) => {
+      if (!turn.runPrompt && !isRunSession(sessionId)) return;
+      const buffer = runTextBuffers.get(sessionId);
+      runTextBuffers.delete(sessionId);
+      deps.runResults?.record(sessionId, {
+        promptId: turn.promptId,
+        stopReason: null,
+        finalText: buffer?.text ?? "",
+        truncated: buffer?.truncated ?? false,
+        endedAt: new Date().toISOString(),
+      });
+    },
     canStart: (sessionId) =>
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
@@ -402,7 +414,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     engagedSessions.clear();
     transcript.clear();
-    runTextBuffers.clear();
     bootstrap.clear();
     pendingRequests.clear();
     for (const t of idleReapTimers.values()) clearTimeout(t);
@@ -412,6 +423,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
     promptScheduler.clear();
+    runTextBuffers.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
     deps.backgroundWork?.clear();
@@ -562,9 +574,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     transcript.forget(sessionId);
-    runTextBuffers.delete(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
+    runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
     lease.maybeRecycle();
@@ -682,10 +694,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
-          const { turnEnded, promptId } = promptScheduler.onPromptResponse(
-            sid,
-            outboundId,
-          );
+          const { turnEnded, promptId, runPrompt } =
+            promptScheduler.onPromptResponse(sid, outboundId);
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
@@ -699,7 +709,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               }),
             ),
           );
-          if (turnEnded && isRunSession(sid)) {
+          if (turnEnded && (runPrompt || isRunSession(sid))) {
             const buffer = runTextBuffers.get(sid);
             runTextBuffers.delete(sid);
             deps.runResults?.record(sid, {
@@ -733,7 +743,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         transcript.appendReplay(sessionId, line);
       } else {
         const text = extractAgentTextChunk(frame);
-        if (text !== null && isRunSession(sessionId))
+        if (
+          text !== null &&
+          (promptScheduler.isRunTurn(sessionId) || isRunSession(sessionId))
+        )
           accumulateRunText(sessionId, text);
         transcript.append(sessionId, line);
       }
@@ -804,11 +817,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/runResult" && paramsSid) {
         const record = deps.runResults?.readFor(paramsSid) ?? null;
-        const response = promptScheduler.hasWork(paramsSid)
-          ? { status: "pending" }
-          : record === null
-            ? { status: "none" }
-            : { status: "done", result: record };
+        const interrupted =
+          !promptScheduler.hasTurnInFlight(paramsSid) &&
+          deps.activeTurns
+            .leftovers()
+            .some((marker) => marker.sessionId === paramsSid);
+        const response =
+          promptScheduler.hasWork(paramsSid) || interrupted
+            ? { status: "pending" }
+            : record === null
+              ? { status: "none" }
+              : { status: "done", result: record };
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: response }),
@@ -946,6 +965,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           originalId: frame.id,
           frame: rewritten,
           promptId,
+          runPrompt: extractPromptSurface(frame) === "cli",
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);

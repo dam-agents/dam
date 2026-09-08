@@ -22,7 +22,10 @@ export interface RunConnection {
 export interface RunConnectionDeps {
   url: string;
   onNotification: (method: string, params: unknown) => void;
-  onPermissionRequest: () => void;
+  onPermissionRequest: (request: {
+    rpcId: number | string;
+    params: unknown;
+  }) => void;
 }
 
 const CLIENT_ANSWERED_REQUESTS: Record<string, unknown> = {
@@ -93,7 +96,10 @@ export async function connectRun(
     const method = typeof f.method === "string" ? f.method : "";
     if ("id" in f && f.id !== undefined && f.id !== null) {
       if (method === "session/request_permission") {
-        deps.onPermissionRequest();
+        deps.onPermissionRequest({
+          rpcId: f.id as number | string,
+          params: f.params,
+        });
         return;
       }
       const answer = CLIENT_ANSWERED_REQUESTS[method];

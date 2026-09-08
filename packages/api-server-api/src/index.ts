@@ -500,6 +500,7 @@ export {
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
   RuleVerdict,

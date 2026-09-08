@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  acpNativeRowId,
   platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
   platformRunResultResponseSchema,
@@ -142,6 +143,30 @@ function sessionIdOf(params: unknown): string | null {
   return typeof sid === "string" ? sid : null;
 }
 
+export function stallLine(
+  agentId: string,
+  request: { rpcId: number | string; params: unknown },
+): string {
+  const params = (request.params ?? {}) as {
+    sessionId?: unknown;
+    toolCall?: { title?: unknown; rawInput?: { approvalId?: unknown } };
+  };
+  const title =
+    typeof params.toolCall?.title === "string"
+      ? params.toolCall.title
+      : "tool call";
+  const egressId = params.toolCall?.rawInput?.approvalId;
+  const approvalId =
+    typeof egressId === "string"
+      ? egressId
+      : typeof params.sessionId === "string"
+        ? acpNativeRowId(agentId, params.sessionId, request.rpcId)
+        : null;
+  return approvalId === null
+    ? `run stalled on a permission request (${title}) — see: dam approval list`
+    : `run stalled on a permission request (${title}) — resolve with: dam approval approve ${approvalId}`;
+}
+
 function matchesPrompt(result: PlatformRunResult, promptId: string): boolean {
   return result.promptId === promptId || result.promptId === null;
 }
@@ -178,10 +203,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
     try {
       conn = await connectRun({
         url: acpUrl(ctx.host, ctx.agentId, ctx.token),
-        onPermissionRequest: () => {
-          deps.errOut(
-            "waiting on a permission request — approve it in the UI or with: dam approval list",
-          );
+        onPermissionRequest: (request) => {
+          deps.errOut(stallLine(ctx.agentId, request));
         },
         onNotification: (method, params) => {
           const sid = sessionIdOf(params);

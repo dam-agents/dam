@@ -170,6 +170,47 @@ describe("acp-runtime: headless runs", () => {
   });
 
   /**
+   * TEST_SCENARIO: `dam run --session` may continue a Session another surface created.
+   * The record guarantee follows the prompt, not the Session type: a turn
+   * whose prompt carries the CLI surface marker records its outcome even in a
+   * regular chat Session.
+   */
+  it("should record a run prompt's outcome in a foreign session", () => {
+    const client = world.connect();
+    client.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    client.send(promptWithId(2, SESSION, "continue here", "prompt-foreign"));
+    world.harness().emit(frames.agentMessage(SESSION, "continued"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    expect(runResults.readFor(SESSION)).toMatchObject({
+      promptId: "prompt-foreign",
+      stopReason: "end_turn",
+      finalText: "continued",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: A harness that dies mid-turn never answers the prompt, so no ordinary
+   * record is written — yet the run must not read as one that never existed.
+   * The dropped turn leaves a record with no stop reason and the text streamed
+   * so far.
+   */
+  it("should record an interrupted run when the harness dies mid-turn", async () => {
+    const client = world.connect();
+    startRun(client, "prompt-lost");
+    world.harness().emit(frames.agentMessage(SESSION, "half an "));
+    world.harness().exit();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runResults.readFor(SESSION)).toMatchObject({
+      promptId: "prompt-lost",
+      stopReason: null,
+      finalText: "half an ",
+    });
+  });
+
+  /**
    * TEST_SCENARIO: Only `cli_run` Sessions pay for run records. A regular chat turn must
    * leave nothing in the store.
    */
