@@ -1,8 +1,8 @@
 # Every package is a mise config root: its tasks live in <package>/mise.toml and
 # are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
 # `mise :check` from inside the package). Repo-level tasks (setup/check/test
-# aggregators, cluster ops, release) stay at the root — as [tasks] here, file
-# tasks under .mise/tasks/, or deploy/tasks.toml — and are
+# aggregators, cluster ops, release) stay at the root — as [tasks] here or file
+# tasks under .mise/tasks/ — and are
 # addressed bare (`mise run check`) or as //:<task> from a package. This file
 # is the root config (.mise/config.toml); mise.lock sits beside it.
 monorepo_root = true
@@ -65,9 +65,9 @@ postinstall = ["{{ mise_bin }} setup"]
 # executable is a task named by its path (.mise/tasks/check/version →
 # check:version); shared modules live non-executable under .mise/tasks/lib/.
 # Repo-level one-liners and aggregators are the [tasks] at the end of this file;
-# anything with a script body is a file task. deploy/tasks.toml holds the
-# cluster:* operations.
-includes = ["deploy/tasks.toml", ".mise/tasks"]
+# anything with a script body is a file task. the cluster:* operations are the
+# file tasks under .mise/tasks/cluster/.
+includes = [".mise/tasks"]
 
 # Artifact cache (repo-root tasks): a task with `sources` and `outputs` (or
 # `outputs = []` for pure checks) is keyed by source content + tool versions and
@@ -234,3 +234,10 @@ dir = "{{config_root}}"
 # -no-api keeps this purely syntactic: upstream retagging a release must
 # never fail a build that did not change. Bump pins with `pinact run -u`.
 run = "pinact run -fix=false -no-api"
+
+# -- Cluster --
+
+[tasks."cluster:helm"]
+description = "Redeploy chart only (no image rebuild, no image load, no pod restart). Use for values/template/secret changes. Forwards extra args to cluster:install."
+raw = true
+run = "exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install \"$@\""

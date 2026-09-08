@@ -32,7 +32,7 @@ if [ "$STREAK" -lt 3 ]; then
   echo "ERROR: e2e cluster is up but not stably routing on :5555 (UI + keycloak)." >&2
   echo "It does not auto-heal — reprovision with 'mise run e2e', or check" >&2
   echo "'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
-  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+  # Same signature the ztunnel-cert-watchdog keys on (cluster:install);
   # keep the regex in sync. Turns the generic advice above into a verdict.
   if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
       | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then

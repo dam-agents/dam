@@ -683,7 +683,7 @@ mesh.
 ## Dev cluster: SVID rotation resilience
 
 A dev-cluster constraint, not an architectural property. The local
-k3s/lima `cluster:install` ([`deploy/tasks.toml`](../../deploy/tasks.toml))
+k3s/lima [`cluster:install`](../../.mise/tasks/cluster/install)
 pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
 outlive a typical dev cluster's lifetime, and installs a
 `ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent

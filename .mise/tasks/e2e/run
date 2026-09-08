@@ -55,7 +55,7 @@ cleanup() {
     done
     echo ""
     echo "--- Mesh cert-expiry check (ztunnel) ---"
-    # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+    # Same signature the ztunnel-cert-watchdog keys on (cluster:install);
     # keep the regex in sync. Rules mesh certs in or out as the failure cause.
     CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
         -l app=ztunnel --since=6h --tail=5000 --prefix 2>/dev/null \

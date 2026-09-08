@@ -318,7 +318,7 @@ seaweedfs:
       memory: 1Gi
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
-# chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
+# chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 clickstack:
   enabled: false
