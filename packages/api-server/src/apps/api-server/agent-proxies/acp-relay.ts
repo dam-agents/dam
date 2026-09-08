@@ -8,7 +8,7 @@ import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import { acpNativeRowId } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
-import type { RelayActor } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
 import { boundedSet } from "../../../core/bounded-map.js";
 
@@ -121,6 +121,7 @@ export function createAcpRelay(
       .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null));
 
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  addUpgradeSecurityHeaders(wss);
 
   function handleUpgrade(
     req: IncomingMessage,

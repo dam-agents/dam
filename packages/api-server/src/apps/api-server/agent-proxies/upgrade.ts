@@ -1,3 +1,4 @@
+import type { WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { URLPattern } from "node:url";
@@ -129,6 +130,14 @@ export type UpgradeRouteHandler = (
   url: URL,
   params: Record<string, string | undefined>,
 ) => void | Promise<void>;
+
+export function addUpgradeSecurityHeaders(wss: WebSocketServer): void {
+  wss.on("headers", (headers) => {
+    headers.push(
+      "Strict-Transport-Security: max-age=31536000; includeSubDomains",
+    );
+  });
+}
 
 export function createUpgradeHandler(
   routes: Record<string, UpgradeRouteHandler>,

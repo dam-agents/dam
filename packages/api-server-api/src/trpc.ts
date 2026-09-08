@@ -22,9 +22,11 @@ function isTermsStaleCause(cause: unknown): boolean {
 }
 
 const PG_INVALID_TEXT_REPRESENTATION = "22P02";
+const PG_CHARACTER_NOT_IN_REPERTOIRE = "22021";
 const PG_UNIQUE_VIOLATION = "23505";
 const PG_ERROR_CODES: Record<string, TRPCError["code"]> = {
   [PG_INVALID_TEXT_REPRESENTATION]: "BAD_REQUEST",
+  [PG_CHARACTER_NOT_IN_REPERTOIRE]: "BAD_REQUEST",
   [PG_UNIQUE_VIOLATION]: "CONFLICT",
 };
 

@@ -34,6 +34,13 @@ describe("tRPC error mapping", () => {
     });
   });
 
+  /* TEST_SCENARIO: A NUL byte inside a string makes Postgres reject the value (SQLSTATE 22021); the caller must see BAD_REQUEST. */
+  it("maps character-not-in-repertoire to BAD_REQUEST", async () => {
+    await expect(caller().call.fail(pgError("22021"))).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
   /* TEST_SCENARIO: A duplicate row violates a unique index (SQLSTATE 23505); the caller must see CONFLICT. */
   it("maps unique violation to CONFLICT", async () => {
     await expect(caller().call.fail(pgError("23505"))).rejects.toMatchObject({
