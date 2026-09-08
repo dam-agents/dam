@@ -32,14 +32,14 @@ unchanged from the base; OpenEvolve customizes behavior via `AGENTS.md` + the
 ## Build
 
 ```sh
-mise run //packages/agents/openevolve:image            # plain docker build (pip-installs openevolve)
+mise run //packages/agents:image -- openevolve            # plain docker build (pip-installs openevolve)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned release with `OPENEVOLVE_VERSION`:
 
 ```sh
-OPENEVOLVE_VERSION=0.2.27 mise run //packages/agents/openevolve:image
+OPENEVOLVE_VERSION=0.2.27 mise run //packages/agents:image -- openevolve
 ```
 
 `values-local.yaml` points the openevolve template at the locally-built

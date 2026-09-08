@@ -15,8 +15,6 @@ fi
 DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
   | yq -r '.items[] | select(.metadata.name | test("-agent-templates$"))
            | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
-# `:::` separates tasks in a single `mise run` — without it the extra task
-# names are parsed as arguments to the first task and never built.
 AGENT_TASKS=()
 AGENT_IMAGES=()
 SEEN_COMPONENTS=()
@@ -32,12 +30,11 @@ while IFS=$'\t' read -r name image; do
   case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
   SEEN_COMPONENTS+=("$comp")
   if [ -d "packages/agents/$comp" ]; then
-    [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("//packages/agents/$comp:image")
+    AGENT_TASKS+=("$comp")
     AGENT_IMAGES+=("$image")
   elif [ -d "packages/e2e/agents/$comp" ]; then
     # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-    # have no //packages/agents/*:image task — build straight from their Dockerfile, root
+    # are not covered by //packages/agents:image — build straight from their Dockerfile, root
     # context so the platform-base FROM resolves.
     mise run //packages/platform-base:image
     docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
@@ -51,7 +48,7 @@ if [ -z "${AGENT_IMAGES[*]:-}" ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
-[ -n "${AGENT_TASKS[*]}" ] && mise run "${AGENT_TASKS[@]}"
+[ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"

@@ -501,8 +501,6 @@ else
       -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
              | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
-  # `:::` separates tasks in a single `mise run` — without it the extra task
-  # names are parsed as arguments to the first task and never built.
   AGENT_TASKS=()
   AGENT_IMAGES=()
   SEEN_COMPONENTS=()
@@ -518,12 +516,11 @@ else
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
-      [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-      AGENT_TASKS+=("//packages/agents/$comp:image")
+      AGENT_TASKS+=("$comp")
       AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-      # have no //packages/agents/*:image task — build straight from their Dockerfile, root
+      # are not covered by //packages/agents:image — build straight from their Dockerfile, root
       # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
       # the per-agent tasks; in CI the image is already in the daemon.
       if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
@@ -535,7 +532,7 @@ else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
   done <<< "$AGENTS_RENDERED"
-  [ -n "${AGENT_TASKS[*]}" ] && mise run "${AGENT_TASKS[@]}"
+  [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"

@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Build the claude-code-vm containerDisk (bootc → qcow2, hash-cached) from the claude-code image"
-#MISE depends=["//packages/agents/claude-code:image"]
-#MISE dir="{{vars.repo_root}}"
-set -euo pipefail
-packages/agents/claude-code-vm/build.sh "$@"

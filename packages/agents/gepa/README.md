@@ -49,14 +49,14 @@ holding keys (the provider-agnostic discover → wire → probe procedure).
 ## Build
 
 ```sh
-mise run //packages/agents/gepa:image                   # plain docker build (pip-installs gepa)
+mise run //packages/agents:image -- gepa                   # plain docker build (pip-installs gepa)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned release with `GEPA_VERSION`:
 
 ```sh
-GEPA_VERSION=0.1.4 mise run //packages/agents/gepa:image
+GEPA_VERSION=0.1.4 mise run //packages/agents:image -- gepa
 ```
 
 `values-local.yaml` points the gepa template at the locally-built

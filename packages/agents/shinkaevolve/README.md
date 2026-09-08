@@ -37,14 +37,14 @@ the embeddings default) is defined once in the `shinkaevolve` skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents/shinkaevolve:image           # plain docker build (pip-installs shinka-evolve)
+mise run //packages/agents:image -- shinkaevolve           # plain docker build (pip-installs shinka-evolve)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned release with `SHINKA_VERSION`:
 
 ```sh
-SHINKA_VERSION=0.0.7 mise run //packages/agents/shinkaevolve:image
+SHINKA_VERSION=0.0.7 mise run //packages/agents:image -- shinkaevolve
 ```
 
 `values-local.yaml` points the shinkaevolve template at the locally-built

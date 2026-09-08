@@ -155,14 +155,6 @@ sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/p
 outputs = []
 cache.enabled = true
 
-# Agent image on the platform-base layer. Component name = package dir name;
-# see .mise/tasks/image/resolve for the build-or-reuse decision.
-[task_templates."agent:image"]
-description = "Build the agent image, or reuse it from the registry when its source is unchanged"
-dir = "{{vars.repo_root}}"
-depends = ["//packages/platform-base:image"]
-run = "{{ mise_bin }} run image:resolve -- build-or-reuse {{ config_root | split(pat='/') | last }} -- packages/agents/{{ config_root | split(pat='/') | last }}"
-
 # -- Repo-level tasks -------------------------------------------------------
 
 # -- Aggregation --
