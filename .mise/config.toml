@@ -8,14 +8,6 @@ repo_root = "{{config_root}}"
 
 [deps.pnpm]
 auto = true
-sources = [
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  "packages/*/package.json",
-  "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
-  "package.json",
-]
-outputs = ["node_modules/.modules.yaml"]
 
 [tools]
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
