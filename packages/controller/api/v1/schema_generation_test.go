@@ -18,7 +18,7 @@ func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 		"agent-platform.ai_userbudgets.yaml": UserBudgetSchemaGeneration,
 	}
 	for file, want := range cases {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "deploy", "helm", "platform", "crds", file))
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "helm", "crds", file))
 		if err != nil {
 			t.Fatalf("reading generated CRD: %v", err)
 		}
