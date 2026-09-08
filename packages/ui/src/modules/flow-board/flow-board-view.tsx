@@ -17,6 +17,22 @@ function GrainDefs() {
           />
           <feColorMatrix type="saturate" values="0" in="n" />
         </filter>
+        <filter id="crayon" colorInterpolationFilters="sRGB">
+          <feTurbulence
+            type="turbulence"
+            baseFrequency="0.03"
+            numOctaves="4"
+            seed="2"
+            result="warp"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="warp"
+            scale="6"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
       </defs>
     </svg>
   );
@@ -83,7 +99,8 @@ function SwatchBlackOutline() {
         d="M12 4 C40 2, 80 5, 110 3 C116 3, 118 8, 117 14 C119 42, 116 80, 118 108 C118 114, 114 118, 108 117 C80 119, 40 116, 12 118 C6 118, 3 114, 3 108 C2 80, 4 40, 3 12 C3 6, 6 3, 12 4 Z"
         fill="none"
         stroke={BLACK}
-        strokeWidth="2.5"
+        strokeWidth="3"
+        filter="url(#crayon)"
       />
     </svg>
   );
@@ -121,7 +138,7 @@ function SwatchWhite() {
 function CompositionA() {
   return (
     <svg viewBox="0 0 400 280" fill="none" className="w-full">
-      <path d="M58 42 C100 39, 160 44, 218 40 C224 40, 226 44, 225 50 C228 110, 224 190, 226 248 C226 254, 222 256, 216 255 C160 258, 100 254, 58 256 C52 256, 50 252, 50 246 C48 190, 52 110, 50 50 C50 44, 52 41, 58 42 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-3 135 145)" />
+      <path d="M58 42 C100 39, 160 44, 218 40 C224 40, 226 44, 225 50 C228 110, 224 190, 226 248 C226 254, 222 256, 216 255 C160 258, 100 254, 58 256 C52 256, 50 252, 50 246 C48 190, 52 110, 50 50 C50 44, 52 41, 58 42 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-3 135 145)" />
       <rect x="160" y="70" width="130" height="150" rx="8" fill={BLACK} transform="rotate(2 225 145)" />
       <rect x="172" y="86" width="50" height="5" rx="2" fill="white" />
       <rect x="172" y="98" width="36" height="5" rx="2" fill="white" opacity="0.5" />
@@ -137,7 +154,7 @@ function CompositionA() {
 function CompositionB() {
   return (
     <svg viewBox="0 0 400 280" fill="none" className="w-full">
-      <path d="M200 30 C260 28, 310 60, 308 140 C312 200, 270 252, 200 250 C140 254, 88 210, 90 140 C88 70, 130 32, 200 30 Z" fill="none" stroke={BLACK} strokeWidth="2.5" />
+      <path d="M200 30 C260 28, 310 60, 308 140 C312 200, 270 252, 200 250 C140 254, 88 210, 90 140 C88 70, 130 32, 200 30 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" />
       <rect x="140" y="80" width="120" height="120" rx="8" fill={BLACK} transform="rotate(-2 200 140)" />
       <rect x="154" y="100" width="50" height="5" rx="2" fill="white" />
       <rect x="154" y="112" width="36" height="5" rx="2" fill="white" opacity="0.5" />
@@ -153,7 +170,7 @@ function CompositionB() {
 function CompositionC() {
   return (
     <svg viewBox="0 0 400 280" fill="none" className="w-full">
-      <path d="M38 52 C120 49, 260 54, 368 50 C374 50, 376 54, 375 60 C378 110, 374 190, 376 238 C376 244, 372 246, 366 245 C260 248, 120 244, 38 246 C32 246, 30 242, 30 236 C28 190, 32 110, 30 60 C30 54, 32 51, 38 52 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-1 200 145)" />
+      <path d="M38 52 C120 49, 260 54, 368 50 C374 50, 376 54, 375 60 C378 110, 374 190, 376 238 C376 244, 372 246, 366 245 C260 248, 120 244, 38 246 C32 246, 30 242, 30 236 C28 190, 32 110, 30 60 C30 54, 32 51, 38 52 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-1 200 145)" />
       <rect x="50" y="70" width="120" height="150" rx="6" fill={BLACK} transform="rotate(-2 110 145)" />
       <rect x="64" y="90" width="50" height="5" rx="2" fill="white" />
       <rect x="64" y="102" width="36" height="5" rx="2" fill="white" opacity="0.5" />
@@ -171,7 +188,7 @@ function CompositionC() {
 function CompositionD() {
   return (
     <svg viewBox="0 0 400 280" fill="none" className="w-full">
-      <path d="M50 32 C140 29, 260 35, 358 31 C364 31, 366 35, 365 42 C368 110, 364 190, 366 248 C366 254, 362 256, 356 255 C260 258, 140 254, 50 256 C44 256, 42 252, 42 246 C40 190, 44 110, 42 42 C42 36, 44 31, 50 32 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-1 200 140)" />
+      <path d="M50 32 C140 29, 260 35, 358 31 C364 31, 366 35, 365 42 C368 110, 364 190, 366 248 C366 254, 362 256, 356 255 C260 258, 140 254, 50 256 C44 256, 42 252, 42 246 C40 190, 44 110, 42 42 C42 36, 44 31, 50 32 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-1 200 140)" />
       <rect x="60" y="55" width="120" height="90" rx="6" fill={BLACK} />
       <rect x="72" y="70" width="50" height="5" rx="2" fill="white" />
       <rect x="72" y="82" width="36" height="5" rx="2" fill="white" opacity="0.6" />
@@ -197,7 +214,7 @@ function IconExample() {
       <circle cx="52" cy="78" r="8" fill={BLUE} />
       <circle cx="108" cy="24" r="3" fill={BLUE} />
 
-      <path d="M151 27 C165 25, 185 29, 207 26 C212 26, 213 30, 212 35 C214 55, 212 75, 213 91 C213 96, 210 97, 205 96 C185 98, 165 95, 151 97 C146 97, 144 94, 144 89 C143 75, 145 55, 143 35 C143 30, 145 26, 151 27 Z" fill="none" stroke={BLACK} strokeWidth="2" />
+      <path d="M151 27 C165 25, 185 29, 207 26 C212 26, 213 30, 212 35 C214 55, 212 75, 213 91 C213 96, 210 97, 205 96 C185 98, 165 95, 151 97 C146 97, 144 94, 144 89 C143 75, 145 55, 143 35 C143 30, 145 26, 151 27 Z" fill="none" stroke={BLACK} strokeWidth="2.5" filter="url(#crayon)" />
       <circle cx="150" cy="30" r="24" fill="white" filter="url(#grain)" />
       <circle cx="175" cy="50" r="12" fill={BLUE} />
       <circle cx="200" cy="100" r="2" fill={BLACK} />
@@ -207,7 +224,7 @@ function IconExample() {
       <circle cx="280" cy="60" r="14" fill={BLUE} />
       <circle cx="330" cy="26" r="3" fill="white" />
 
-      <path d="M355 31 C362 30, 374 33, 383 30 C387 30, 388 33, 387 37 C389 55, 387 75, 388 93 C388 97, 386 98, 382 97 C374 99, 362 96, 355 98 C351 98, 349 96, 349 92 C348 75, 350 55, 349 37 C349 33, 350 30, 355 31 Z" fill="none" stroke={BLACK} strokeWidth="2" transform="rotate(2 366 62)" />
+      <path d="M355 31 C362 30, 374 33, 383 30 C387 30, 388 33, 387 37 C389 55, 387 75, 388 93 C388 97, 386 98, 382 97 C374 99, 362 96, 355 98 C351 98, 349 96, 349 92 C348 75, 350 55, 349 37 C349 33, 350 30, 355 31 Z" fill="none" stroke={BLACK} strokeWidth="2.5" filter="url(#crayon)" transform="rotate(2 366 62)" />
       <ellipse cx="366" cy="50" rx="14" ry="10" fill="white" filter="url(#grain)" />
       <rect x="354" y="72" width="20" height="4" rx="2" fill={BLACK} />
       <circle cx="390" cy="100" r="3" fill={BLUE} />
@@ -218,7 +235,7 @@ function IconExample() {
 function IllustrationEmptyState() {
   return (
     <svg viewBox="0 0 600 300" fill="none" className="mx-auto w-full max-w-[600px]">
-      <path d="M131 33 C230 30, 370 36, 477 32 C483 32, 485 36, 484 42 C487 120, 483 210, 485 267 C485 273, 481 275, 475 274 C370 277, 230 273, 131 275 C125 275, 123 271, 123 265 C121 210, 125 120, 123 42 C123 36, 125 32, 131 33 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-2 300 150)" />
+      <path d="M131 33 C230 30, 370 36, 477 32 C483 32, 485 36, 484 42 C487 120, 483 210, 485 267 C485 273, 481 275, 475 274 C370 277, 230 273, 131 275 C125 275, 123 271, 123 265 C121 210, 125 120, 123 42 C123 36, 125 32, 131 33 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-2 300 150)" />
       <rect x="160" y="60" width="140" height="180" rx="8" fill={BLACK} transform="rotate(-1 230 150)" />
       <rect x="176" y="84" width="60" height="5" rx="2" fill="white" />
       <rect x="176" y="96" width="44" height="5" rx="2" fill="white" opacity="0.5" />
@@ -240,11 +257,11 @@ function IllustrationEmptyState() {
 function IllustrationConnected() {
   return (
     <svg viewBox="0 0 600 300" fill="none" className="mx-auto w-full max-w-[600px]">
-      <path d="M61 63 C100 60, 150 66, 197 62 C203 62, 205 66, 204 72 C207 130, 203 200, 205 237 C205 243, 201 245, 195 244 C150 247, 100 243, 61 245 C55 245, 53 241, 53 235 C51 200, 55 130, 53 72 C53 66, 55 62, 61 63 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-3 125 150)" />
+      <path d="M61 63 C100 60, 150 66, 197 62 C203 62, 205 66, 204 72 C207 130, 203 200, 205 237 C205 243, 201 245, 195 244 C150 247, 100 243, 61 245 C55 245, 53 241, 53 235 C51 200, 55 130, 53 72 C53 66, 55 62, 61 63 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-3 125 150)" />
       <rect x="251" y="51" width="148" height="198" rx="10" fill={BLACK} transform="rotate(2 325 150)" />
       <rect x="267" y="76" width="60" height="5" rx="2" fill="white" />
       <rect x="267" y="88" width="44" height="5" rx="2" fill="white" opacity="0.5" />
-      <path d="M431 73 C460 70, 510 76, 547 72 C553 72, 555 76, 554 82 C557 130, 553 190, 555 227 C555 233, 551 235, 545 234 C510 237, 460 233, 431 235 C425 235, 423 231, 423 225 C421 190, 425 130, 423 82 C423 76, 425 72, 431 73 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(4 485 150)" />
+      <path d="M431 73 C460 70, 510 76, 547 72 C553 72, 555 76, 554 82 C557 130, 553 190, 555 227 C555 233, 551 235, 545 234 C510 237, 460 233, 431 235 C425 235, 423 231, 423 225 C421 190, 425 130, 423 82 C423 76, 425 72, 431 73 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(4 485 150)" />
 
       <circle cx="140" cy="200" r="40" fill="white" filter="url(#grain)" />
       <ellipse cx="470" cy="190" rx="35" ry="28" fill="white" filter="url(#grain)" />
@@ -268,7 +285,7 @@ function IllustrationConnected() {
 function IllustrationUpload() {
   return (
     <svg viewBox="0 0 600 300" fill="none" className="mx-auto w-full max-w-[600px]">
-      <path d="M193 43 C270 40, 360 46, 437 42 C443 42, 445 46, 444 52 C447 130, 443 210, 445 257 C445 263, 441 265, 435 264 C360 267, 270 263, 193 265 C187 265, 185 261, 185 255 C183 210, 187 130, 185 52 C185 46, 187 42, 193 43 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-1 310 150)" />
+      <path d="M193 43 C270 40, 360 46, 437 42 C443 42, 445 46, 444 52 C447 130, 443 210, 445 257 C445 263, 441 265, 435 264 C360 267, 270 263, 193 265 C187 265, 185 261, 185 255 C183 210, 187 130, 185 52 C185 46, 187 42, 193 43 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-1 310 150)" />
 
       <rect x="210" y="70" width="100" height="130" rx="6" fill={BLACK} transform="rotate(2 260 135)" />
       <rect x="224" y="90" width="50" height="4" rx="2" fill="white" />
@@ -295,7 +312,7 @@ function IllustrationUpload() {
 function IllustrationSearch() {
   return (
     <svg viewBox="0 0 600 300" fill="none" className="mx-auto w-full max-w-[600px]">
-      <path d="M121 33 C230 30, 380 36, 487 32 C493 32, 495 36, 494 42 C497 120, 493 210, 495 267 C495 273, 491 275, 485 274 C380 277, 230 273, 121 275 C115 275, 113 271, 113 265 C111 210, 115 120, 113 42 C113 36, 115 32, 121 33 Z" fill="none" stroke={BLACK} strokeWidth="2.5" transform="rotate(-1 300 150)" />
+      <path d="M121 33 C230 30, 380 36, 487 32 C493 32, 495 36, 494 42 C497 120, 493 210, 495 267 C495 273, 491 275, 485 274 C380 277, 230 273, 121 275 C115 275, 113 271, 113 265 C111 210, 115 120, 113 42 C113 36, 115 32, 121 33 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" transform="rotate(-1 300 150)" />
 
       <rect x="140" y="56" width="200" height="32" rx="6" fill={BLACK} />
       <rect x="154" y="68" width="80" height="5" rx="2" fill="white" />
@@ -328,7 +345,7 @@ function IllustrationSearch() {
 function IllustrationSuccess() {
   return (
     <svg viewBox="0 0 600 300" fill="none" className="mx-auto w-full max-w-[600px]">
-      <path d="M300 31 C370 28, 420 70, 418 150 C422 220, 380 270, 300 268 C230 272, 178 230, 180 150 C178 70, 220 34, 300 31 Z" fill="none" stroke={BLACK} strokeWidth="2.5" />
+      <path d="M300 31 C370 28, 420 70, 418 150 C422 220, 380 270, 300 268 C230 272, 178 230, 180 150 C178 70, 220 34, 300 31 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" />
       <rect x="220" y="70" width="160" height="160" rx="10" fill={BLACK} transform="rotate(-2 300 150)" />
       <rect x="240" y="96" width="70" height="5" rx="2" fill="white" />
       <rect x="240" y="108" width="50" height="5" rx="2" fill="white" opacity="0.5" />
@@ -596,7 +613,7 @@ export function FlowBoardView() {
             <div>
               <div className="rounded-lg border border-gray-100 bg-white p-6">
                 <svg viewBox="0 0 400 240" fill="none" className="mx-auto w-full max-w-[400px]">
-                  <path d="M141 23 C190 20, 260 26, 307 22 C313 22, 315 26, 314 32 C317 90, 313 160, 315 197 C315 203, 311 205, 305 204 C260 207, 190 203, 141 205 C135 205, 133 201, 133 195 C131 160, 135 90, 133 32 C133 26, 135 22, 141 23 Z" fill="none" stroke={BLACK} strokeWidth="2.5" />
+                  <path d="M141 23 C190 20, 260 26, 307 22 C313 22, 315 26, 314 32 C317 90, 313 160, 315 197 C315 203, 311 205, 305 204 C260 207, 190 203, 141 205 C135 205, 133 201, 133 195 C131 160, 135 90, 133 32 C133 26, 135 22, 141 23 Z" fill="none" stroke={BLACK} strokeWidth="3" filter="url(#crayon)" />
                   <rect x="60" y="30" width="160" height="160" rx="10" fill="white" filter="url(#grain)" />
                 </svg>
               </div>
@@ -667,6 +684,7 @@ export function FlowBoardView() {
                         fill="none"
                         stroke={BLACK}
                         strokeWidth="1.5"
+                        filter="url(#crayon)"
                       />
                     </svg>
                   </td>
