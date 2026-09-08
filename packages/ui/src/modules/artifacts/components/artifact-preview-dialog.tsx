@@ -91,6 +91,8 @@ export function ArtifactPreviewDialog({
             <span className="flex-1" />
             {!editor.editing && (
               <VersionSwitcher
+                artifact={artifact}
+                versions={versions}
                 current={version}
                 total={total}
                 onChange={(v) => setPinnedVersion(v === head ? null : v)}

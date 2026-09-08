@@ -240,7 +240,12 @@ flowchart LR
   library grouped by folder, with search, upload, folder management, sharing
   controls, a separate delete-after (retention) control, and in-app previews
   that reuse the chat file-viewer stack (markdown prose, highlighted code,
-  inline images). Retention is reached from the artifact's own menu rather than
+  inline images). An owner can **change a text artifact's content** from the
+  preview they read it in, which publishes a version like any other revision,
+  so the artifact keeps its identity, its link and every earlier version. Only
+  the current version is editable; a past one is read-only. The version
+  history is readable rather than merely steppable — each version says when it
+  was written and who wrote it. Retention is reached from the artifact's own menu rather than
   the sharing dialog, and stays available whatever the artifact's visibility —
   it governs deletion, not the link. An artifact's visibility badge is also the
   control that opens the sharing dialog, so the state and the means to change it

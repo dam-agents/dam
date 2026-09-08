@@ -129,8 +129,10 @@ export function DockedArtifactPanel() {
           </>
         ) : (
           <>
-            {shownVersion !== undefined && (
+            {shownVersion !== undefined && artifact && (
               <VersionSwitcher
+                artifact={artifact}
+                versions={versions}
                 current={shownVersion}
                 total={total}
                 onChange={(v) => setPinnedVersion(v === latest ? null : v)}
