@@ -63,7 +63,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
         <span className="flex items-center gap-1.5 text-foreground">
           Compute resources
           <Tooltip
-            content="What your running agents reserve, not what they are using. Stop or pause an agent to free it."
+            content="What your running agents reserve, not what they are using. Stop or pause an agent to free up compute."
             side="bottom"
           >
             <Help size={14} className="cursor-help text-muted-foreground/60" />
