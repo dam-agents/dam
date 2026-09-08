@@ -54,9 +54,11 @@ The rules that follow from it:
   activity later than the seen mark; hidden means activity no later than the dismissed mark. New
   activity therefore returns a dismissed row without any explicit un-dismiss, and one user's
   dismissal hides nothing for another.
-- **Seen is derived from presence, not declared by the client.** A turn relayed while a viewer is
-  attached means the user was watching; a turn dispatched in-pod means they were not. Server-held
-  streams and passive reads are not viewers and mark nothing. The pod's own read state is retired.
+- **Seen is derived from presence, not declared by the client.** A turn relayed while a visible
+  viewer is attached means the user was watching; a turn dispatched in-pod, or relayed only to a
+  viewer whose page is hidden, means they were not. The browser reports visibility on the
+  attachment, and that is the client's only word in it. Server-held streams and passive reads are
+  not viewers and mark nothing. The pod's own read state is retired.
 - **In progress is never stored.** Whether an agent is working now is read live from awake pods, so
   a pod that dies without notice cannot leave phantom work on the page.
 - **The producer pulls; notices never carry state.** ADR-086's contract holds on the pod side too:
@@ -83,6 +85,9 @@ The rules that follow from it:
   dismissed from the next one.
 - **Keep read state in the pod** — the state is a property of the user and the session together,
   not of the session, and a sleeping pod cannot answer for it.
+- **Client-declared read receipts** — seen is a watermark on a live stream, so a truthful client
+  converges on per-turn receipts with visibility and unload handling in every viewing surface;
+  the relay already holds both operands (viewer attached, turn delivered) in one place.
 - **A transactional outbox for the writer** — [ADR-083](083-eventing-layering.md) reserves that for
   a consumer whose loss no reconcile can bound; the watcher re-reads every pod on lease failover
   and the upsert's no-op guard suppresses the unchanged, which is that reconcile.
@@ -109,7 +114,7 @@ The rules that follow from it:
   surfacing them needs a quiet-period rule, and they are excluded from unread entirely today.
 - **Committed-to:** The leader lease. A row-writing producer is the first consumer of ADR-086's
   surface where exactly-once matters, so the watcher is lease-elected — the trivial
-  single-holder kind, with failover healed by re-reading every pod. And presence stays the
+  single-holder kind, with failover healed by re-reading every pod. And visible presence stays the
   definition of "seen": a future surface that reads a session without attaching a viewer will not
   mark it, and the rule has to be revisited rather than patched at the call site.
 
