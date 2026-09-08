@@ -13,13 +13,16 @@ export function loadShippedSkillManifest(
     return undefined;
   }
   try {
-    const manifest = parseShippedSkillManifest(
+    const parsed = parseShippedSkillManifest(
       JSON.parse(readFileSync(file, "utf8")),
     );
-    if (!manifest) {
-      log(`shipped-skill manifest at ${file} failed validation; ignoring it`);
+    if (!parsed.ok) {
+      log(
+        `shipped-skill manifest at ${file} failed validation (${parsed.error.reason}); ignoring it`,
+      );
+      return undefined;
     }
-    return manifest;
+    return parsed.value;
   } catch {
     log(`shipped-skill manifest at ${file} is not JSON; ignoring it`);
     return undefined;

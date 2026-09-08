@@ -44,13 +44,13 @@ function baselineManifest(baseRev: string): ShippedSkillManifest | undefined {
   const parsed = parseShippedSkillManifest(
     JSON.parse(git(["show", `${baseRev}:${MANIFEST_REL}`])),
   );
-  if (!parsed) {
+  if (!parsed.ok) {
     console.error(
-      `baseline ${MANIFEST_REL} at ${baseRev.slice(0, 12)} failed schema validation`,
+      `baseline ${MANIFEST_REL} at ${baseRev.slice(0, 12)} failed schema validation: ${parsed.error.reason}`,
     );
     process.exit(1);
   }
-  return parsed;
+  return parsed.value;
 }
 
 function gitBuffer(args: string[]): Buffer {
@@ -96,8 +96,12 @@ function loadManifest(): ShippedSkillManifest {
   const parsed = parseShippedSkillManifest(
     JSON.parse(fs.readFileSync(manifestFile, "utf8")),
   );
-  if (!parsed) throw new Error(`${MANIFEST_REL} failed schema validation`);
-  return parsed;
+  if (!parsed.ok) {
+    throw new Error(
+      `${MANIFEST_REL} failed schema validation: ${parsed.error.reason}`,
+    );
+  }
+  return parsed.value;
 }
 
 function saveManifest(manifest: ShippedSkillManifest): void {
