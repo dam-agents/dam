@@ -132,7 +132,7 @@ export interface ExperimentsRepository {
   listSpans(experimentId: string): Promise<SpanRow[]>;
   endOpenSpans(
     experimentId: string,
-    status: SpanStatus,
+    status: Exclude<SpanStatus, "running">,
     endedAt: Date,
   ): Promise<void>;
 

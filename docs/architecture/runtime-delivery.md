@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-07
+Last verified: 2026-09-08
 
 ## Overview
 
