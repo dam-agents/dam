@@ -94,6 +94,7 @@ function writeSettings() {
     session,
     approval: { ...approval, outsideWorkspaceAllowed: true },
     bobShell: { ...section(existing, "bobShell"), autoUpdate: false },
+    telemetry: { ...section(existing, "telemetry"), excludePayload: true },
   };
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
