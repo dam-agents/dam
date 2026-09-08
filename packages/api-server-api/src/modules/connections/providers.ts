@@ -54,7 +54,7 @@ const BOB_PLACEHOLDER = "dummy-placeholder";
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
     { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
-    { envName: "BOB_GATEWAY_URL", placeholder: BOB_BASE_URL },
+    { envName: "BOB_DEFAULT_GATEWAY_URL", placeholder: BOB_BASE_URL },
   ];
   const push = (envName: string, value?: string) => {
     const trimmed = value?.trim();

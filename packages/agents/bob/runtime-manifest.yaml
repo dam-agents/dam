@@ -74,10 +74,14 @@ drivers:
     # Bob reads its model list from a LiteLLM-shaped /model/info under its own
     # inference prefix, so discovery follows the same path Bob itself calls —
     # the gateway rewrite that fronts a plain LiteLLM applies to both alike.
-    # BOB_GATEWAY_URL rides on the Bob Shell connection's env mappings, so the
-    # gateway asked is the one the agent was granted.
+    # Order is the priority: a connection that points Bob at another endpoint
+    # sets BOB_GATEWAY_URL, which is the variable Bob's own client reads, and
+    # the Bob Shell connection contributes BOB_DEFAULT_GATEWAY_URL for its own
+    # gateway. Two connections can be granted at once, so they must not compete
+    # for one name — the env rail resolves a duplicate by secret order.
     modelDiscovery:
       urlEnv:
         - BOB_GATEWAY_URL
+        - BOB_DEFAULT_GATEWAY_URL
       path: /inference/v1/model/info
       shape: litellm-model-info
