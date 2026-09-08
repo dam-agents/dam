@@ -16,7 +16,7 @@ import {
   PRESERVE_GO,
   COMMENT_TYPES,
   ts,
-} from '../../lib/strip-comments.mjs';
+} from '../lib/strip-comments.mjs';
 
 function firstContentLine(commentText) {
   const inner = commentText
