@@ -1,9 +1,11 @@
-[tasks.gen]
-description = "Generate kc.gen.tsx from current keycloakify config"
-run = "pnpm exec keycloakify update-kc-gen"
+# kc.gen.tsx is generated from the keycloakify config; tsc, eslint and
+# start-keycloak read it, so it is regenerated before any task in this root.
+[deps.kc-gen]
+description = "Generate kc.gen.tsx from the current keycloakify config"
+auto = true
 sources = ["vite.config.ts", "package.json"]
 outputs = ["src/kc.gen.tsx"]
-cache = { enabled = true }
+run = "pnpm exec keycloakify update-kc-gen"
 
 [tasks.build]
 description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
@@ -23,7 +25,6 @@ pnpm exec keycloakify build
 
 [tasks.run]
 description = "Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"
-depends = [":gen"]
 # Relies on the `build-keycloak-theme` script in package.json: start-keycloak
 # discovers the app-build step from it and refuses to run if it's absent.
 run = "pnpm exec keycloakify start-keycloak -p ./"
@@ -41,21 +42,17 @@ depends = [":fix:*"]
 [tasks.scan]
 depends = [":scan:*"]
 
-# tsc and eslint read the generated kc.gen.tsx, so they run after `gen`.
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
-depends = [":gen", { task = "^check:tsc", optional = true }]
 
 [tasks."check:lint"]
 extends = "ts:check:lint"
-depends = [":gen"]
 
 [tasks."check:format"]
 extends = "ts:check:format"
 
 [tasks."fix:lint"]
 extends = "ts:fix:lint"
-depends = [":gen"]
 
 [tasks."fix:format"]
 extends = "ts:fix:format"

@@ -21,7 +21,7 @@ Standalone scripts are tasks too: an executable under [`.mise/tasks/`](../../.mi
 
 ## Dependencies
 
-Project dependencies are not tasks. Each config root declares `[deps]` providers (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK, a custom `helm` provider for chart dependencies); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. `mise run setup` (= `mise deps --monorepo`) installs them all up front; `mise run --no-deps <task>` skips them; `mise -C <root> deps` targets one root. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
+Project dependencies are not tasks. Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen, Playwright's browser download); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. `mise run setup` (= `mise deps --monorepo`) installs them all up front; `mise run --no-deps <task>` skips them; `mise -C <root> deps` targets one root. A provider that is expensive and only some tasks need (the browser download) sets `auto = false` and those tasks run `mise deps install <provider>` first. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
 
 ## Templates
 
