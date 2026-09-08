@@ -16,7 +16,7 @@ emit() { # <crd-file> <TypeName> — the CRD's .spec subschema as a TS interface
 }
 
 {
-  echo "/* Code generated from the agent-platform.ai CRDs by \`mise run api-server-api:gen:crd-types\`. DO NOT EDIT. */"
+  echo "/* Code generated from the agent-platform.ai CRDs by \`mise run //packages/api-server-api:gen:crd-types\`. DO NOT EDIT. */"
   echo
   emit agent-platform.ai_agents.yaml AgentSpecCR
 } >"$out"

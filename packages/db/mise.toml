@@ -1,66 +1,50 @@
-["db:check"]
-depends = ["db:check:*"]
+[tasks.check]
+depends = ["//:common:setup:pnpm", ":check:*"]
 
-["db:check:tsc"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec tsc --noEmit"
-sources = ["src/**/*.ts", "tsconfig.json", "../dev-config/tsconfig.base.json"]
+[tasks.fix]
+depends = [":fix:*"]
 
-["db:check:lint"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec eslint ."
-sources = ["src/**/*.ts", "eslint.config.js", "../dev-config/eslint.base.js"]
+[tasks."check:tsc"]
+extends = "ts:check:tsc"
 
-["db:check:format"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec prettier --check 'src/**/*.ts'"
-sources = ["src/**/*.ts", "../../.prettierrc"]
+[tasks."check:lint"]
+extends = "ts:check:lint"
 
-["db:fix"]
-depends = ["db:fix:*"]
+[tasks."check:format"]
+extends = "ts:check:format"
 
-["db:fix:lint"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec eslint --fix ."
+[tasks."fix:lint"]
+extends = "ts:fix:lint"
 
-["db:fix:format"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec prettier --write 'src/**/*.ts'"
+[tasks."fix:format"]
+extends = "ts:fix:format"
 
 # Generate a migration for table/index/enum changes by diffing schema.ts against
 # the latest snapshot. Edit schema.ts, run this, commit. See packages/db/README.md.
-["db:generate"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
+[tasks.generate]
+depends = ["//:common:setup:pnpm"]
 run = "pnpm exec drizzle-kit generate"
 
-["db:migrate"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
+[tasks.migrate]
+depends = ["//:common:setup:pnpm"]
 run = "pnpm exec drizzle-kit migrate"
 
 # Scaffold a HAND-WRITTEN migration file + journal entry — for the reporting
-# views, which aren't in schema.ts so db:generate can't emit them. Table changes
-# use db:generate, not this. Usage: mise run db:new -- <name>
+# views, which aren't in schema.ts so `generate` can't emit them. Table changes
+# use `generate`, not this. Usage: mise run //packages/db:new -- <name>
 #
 # Wraps `drizzle-kit generate --custom`: it scaffolds the empty .sql, the journal
 # entry, AND a snapshot (a copy of the latest — a hand-written view migration
 # changes no tracked table). The snapshot matters: without it the next
-# db:generate can't find a base to diff against. We only slugify the name first,
+# `generate` can't find a base to diff against. We only slugify the name first,
 # since --custom otherwise puts spaces in the filename.
-["db:new"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
+[tasks.new]
+depends = ["//:common:setup:pnpm"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 slug=$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/^_//;s/_$//')
-[ -n "$slug" ] || { echo "Usage: mise run db:new -- <name>"; exit 1; }
+[ -n "$slug" ] || { echo "Usage: mise run //packages/db:new -- <name>"; exit 1; }
 pnpm exec drizzle-kit generate --custom --name "$slug"
 echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
 '''
@@ -68,12 +52,14 @@ echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
 # Guard: assert every schema.ts change has been generated into a
 # migration. Diffs schema.ts against the committed snapshots inside a throwaway
 # copy of drizzle/ — if `generate` would add a migration, the schema changed
-# without `mise run db:generate`. Pure files, no database, so it runs in `mise
-# run check`. Views aren't in schema.ts, so they're out of scope by design.
-["db:check:generated"]
-dir = "{{config_root}}/packages/db"
-depends = ["common:setup:pnpm"]
+# without `mise run //packages/db:generate`. Pure files, no database, so it runs
+# in `mise run check`. Views aren't in schema.ts, so they're out of scope by design.
+[tasks."check:generated"]
+wait_for = ["//:common:setup:pnpm"]
 sources = ["src/schema.ts", "drizzle/meta/*.json"]
+outputs = []
+cache = { enabled = true }
+deny_net = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -90,7 +76,7 @@ before=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
 pnpm exec drizzle-kit generate --dialect postgresql --schema ./src/schema.ts --out "$tmp" --name generated_check >/dev/null 2>&1
 after=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
 if [ "$before" != "$after" ]; then
-  echo "❌ schema.ts changed without a migration. Run: mise run db:generate"
+  echo "❌ schema.ts changed without a migration. Run: mise run //packages/db:generate"
   exit 1
 fi
 echo "✅ Schema is fully generated: snapshot matches schema.ts."

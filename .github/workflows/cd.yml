@@ -31,7 +31,7 @@ env:
   # mise-action installs latest and each new release rewrites platform entries
   # and the generated header, churning mise.lock on unrelated PRs. Bump this in
   # lockstep with a `mise run … lock` regeneration commit.
-  MISE_VERSION: "2026.7.15"
+  MISE_VERSION: "2026.9.3"
 
 jobs:
   check:
@@ -48,6 +48,14 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Keyed per commit so every
+      # run saves; restore-keys pull the newest prior entry set.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-
       - run: mise run setup
       - run: mise run check
 
@@ -63,6 +71,14 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Keyed per commit so every
+      # run saves; restore-keys pull the newest prior entry set.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-
       - run: mise run setup
       - run: mise run test
 
@@ -174,7 +190,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
-        run: mise run setup && mise run keycloak-theme:build
+        run: mise run setup && mise run //packages/keycloak-theme:build
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -707,7 +723,7 @@ jobs:
           fi
 
       - name: Build Helm chart dependencies
-        run: mise run helm:deps
+        run: mise run //deploy/helm:deps
 
       - name: Pin content-tagged image tags
         env:
@@ -727,7 +743,7 @@ jobs:
           NPM_TAG: ${{ steps.version.outputs.npmTag }}
         run: |
           mise run setup
-          mise run cli:build
+          mise run //packages/cli:build
           pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
   # Dev charts don't wait for the agent image chain — that wait is most of the
@@ -769,7 +785,7 @@ jobs:
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
 
       - name: Build Helm chart dependencies
-        run: mise run helm:deps
+        run: mise run //deploy/helm:deps
 
       - name: Pin content-tagged image tags
         env:
@@ -800,12 +816,12 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run controller:setup
+      - run: mise run //packages/controller:setup
 
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run controller:scan:govulncheck --json) || true
+          results=$(mise run //packages/controller:scan:govulncheck --json) || true
           out=$(printf '%s' "$results" | jq -s '
             [ .[]
               | select(.finding != null and .finding.trace[0].function != null)
@@ -918,7 +934,7 @@ jobs:
           retention-days: 1
 
   trivy-tasks:
-    name: mise tasks | grep ':scan:trivy$'
+    name: mise tasks --all | grep ':scan:trivy$'
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -934,7 +950,7 @@ jobs:
       - id: list
         run: |
           set -euo pipefail
-          tasks=$(mise tasks ls --json | jq -c '[.[].name | select(endswith(":scan:trivy"))]')
+          tasks=$(mise tasks ls --all --json | jq -c '[.[].name | select(endswith(":scan:trivy"))]')
           echo "Discovered trivy scan tasks: $tasks"
           echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
 
@@ -976,7 +992,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          echo "artifact=findings-$(echo "$TASK" | tr ':' '-')" >> "$GITHUB_OUTPUT"
+          echo "artifact=findings-$(echo "${TASK#//}" | tr ':/' '--')" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           if [ -n "${QUAY_USERNAME:-}" ] && [ -n "${QUAY_PASSWORD:-}" ]; then
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin

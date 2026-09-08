@@ -111,7 +111,7 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 ```sh
 mise run check              # lint + type-check
 mise run test               # run tests
-mise run ui:run             # start UI dev server
+mise run //packages/ui:run             # start UI dev server
 ```
 
 Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.

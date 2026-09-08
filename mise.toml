@@ -1,3 +1,18 @@
+# Every package is a mise config root: its tasks live in <package>/mise.toml and
+# are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
+# `mise :check` from inside the package). Repo-level tasks (setup/check/test
+# aggregators, cluster ops, release) stay in the root tasks.toml files and are
+# addressed bare (`mise run check`) or as //:<task> from a package.
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "deploy/helm"]
+
+[vars]
+# Inside a package, {{config_root}} is the package dir; templates and tasks that
+# run from the repo root use this instead.
+repo_root = "{{config_root}}"
+
 [tools]
 nodejs = "24"
 # The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
@@ -42,36 +57,114 @@ task.disable_spec_from_run_scripts = true
 [hooks]
 postinstall = ["{{ mise_bin }} setup"]
 
+
 [task_config]
-includes = [
-    "./tasks.toml",
-    "deploy/helm/tasks.toml",
-    "deploy/tasks.toml",
-    "packages/agent-runtime-api/tasks.toml",
-    "packages/agent-runtime/tasks.toml",
-    "packages/agents/bob/tasks.toml",
-    "packages/agents/claude-code-vm/tasks.toml",
-    "packages/agents/claude-code/tasks.toml",
-    "packages/agents/codex/tasks.toml",
-    "packages/agents/gepa/tasks.toml",
-    "packages/agents/k-search/tasks.toml",
-    "packages/agents/nous/tasks.toml",
-    "packages/agents/openevolve/tasks.toml",
-    "packages/agents/pi-agent/tasks.toml",
-    "packages/agents/shinkaevolve/tasks.toml",
-    "packages/agents/skydiscover/tasks.toml",
-    "packages/agents/tasks.toml",
-    "packages/api-server-api/tasks.toml",
-    "packages/api-server/tasks.toml",
-    "packages/cli/tasks.toml",
-    "packages/controller/tasks.toml",
-    "packages/db/tasks.toml",
-    "packages/driver-sdk/tasks.toml",
-    "packages/experiment-sdk/tasks.toml",
-    "packages/e2e/agents/mock-api/tasks.toml",
-    "packages/e2e/agents/mock/tasks.toml",
-    "packages/e2e/playwright/tasks.toml",
-    "packages/keycloak-theme/tasks.toml",
-    "packages/platform-base/tasks.toml",
-    "packages/ui/tasks.toml",
-]
+includes = ["tasks.toml", "deploy/tasks.toml"]
+
+# Artifact cache (repo-root tasks): a task with `sources` and `outputs` (or
+# `outputs = []` for pure checks) is keyed by source content + tool versions and
+# replayed on a hit. Package tasks opt in explicitly (task_config does not reach
+# other config roots) — the templates below do so.
+[task_config.cache]
+enabled = true
+
+# -- Task templates ----------------------------------------------------------
+# Shared shapes for the per-package mise.toml files (`extends = "<name>"`).
+# Local `run`/`depends`/`sources` replace the template's; `env`/`tools` merge.
+#
+# Sandboxing (checks only — test suites bind loopback sockets and write runner
+# caches, and the network sandbox blocks every inet socket, loopback included):
+# checks never need the network, and `deny_write` blocks every write outside
+# /tmp — the tree and $HOME (credentials, shell rc) alike — so it only goes on
+# tools that write nothing. Landlock (Linux) / Seatbelt (macOS); Windows runs
+# unsandboxed with a warning.
+#
+# Cached tasks `wait_for` (not `depends` on) the install step: a dependency
+# that runs without a cache key makes its dependents uncacheable, and pnpm
+# install is deliberately never cached. The lockfile is in every cache key via
+# `sources`; the aggregators pull the install in.
+#
+# `^check:tsc` = the same task in every upstream workspace package (pnpm
+# workspace graph). Internal packages export ./src/*.ts, so a downstream tsc
+# and vitest read upstream sources directly; running (and hashing) upstream
+# first is what keeps the artifact cache honest across package boundaries.
+
+[task_templates."ts:check:tsc"]
+wait_for = ["//:common:setup:pnpm"]
+depends = [{ task = "^check:tsc", optional = true }]
+run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache = { enabled = true }
+deny_net = true
+deny_write = true
+
+[task_templates."ts:check:lint"]
+wait_for = ["//:common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache = { enabled = true }
+deny_net = true
+deny_write = true
+
+[task_templates."ts:check:format"]
+wait_for = ["//:common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
+sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "{{vars.repo_root}}/.prettierrc"]
+outputs = []
+cache = { enabled = true }
+deny_net = true
+deny_write = true
+
+[task_templates."ts:fix:lint"]
+depends = ["//:common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+deny_net = true
+
+[task_templates."ts:fix:format"]
+depends = ["//:common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
+deny_net = true
+
+[task_templates."ts:test"]
+description = "Run the package's vitest suite"
+wait_for = ["//:common:setup:pnpm"]
+depends = [{ task = "^check:tsc", optional = true }]
+run = "pnpm exec vitest run"
+sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache = { enabled = true }
+
+# Agent image on the platform-base layer. Component name = package dir name;
+# see scripts/resolve-image.sh for the build-or-reuse decision.
+[task_templates."agent:image"]
+description = "Build the agent image, or reuse it from the registry when its source is unchanged"
+dir = "{{vars.repo_root}}"
+depends = ["//packages/platform-base:image"]
+run = "scripts/resolve-image.sh build-or-reuse {{ config_root | split(pat='/') | last }} -- packages/agents/{{ config_root | split(pat='/') | last }}"
+
+# Trivy scan of a component image. Registry name and local tag derive from the
+# package dir name; override with `vars = { image = "…", local_image = "…" }`
+# where they differ (keycloak-theme → keycloak, platform-base has no prefix).
+[task_templates."image:scan:trivy"]
+dir = "{{vars.repo_root}}"
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan the registry image at <tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+{% set name = config_root | split(pat='/') | last %}
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/{{ vars.image | default(value=name) }}:${usage_tag}"
+else
+  {{ mise_bin }} -C {{ config_root }} run :image
+  image="{{ vars.local_image | default(value="platform-" ~ name) }}:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''

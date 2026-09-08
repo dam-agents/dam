@@ -1,35 +1,13 @@
-[settings]
-experimental = true
-lockfile = true
-minimum_release_age = "7d"
-python.compile = false
+# config.toml next to this file is the *image's* /etc/mise/config.toml (tools
+# baked into platform-base), not project config — see the Dockerfile.
+[tasks.image]
+description = "Build the platform-base image (shared base layer for every agent image), or reuse it from the registry when its source is unchanged"
+dir = "{{vars.repo_root}}"
+run = "scripts/resolve-image.sh build-or-reuse platform-base -- -f packages/platform-base/Dockerfile ."
 
-[tools]
-node = "24"
-jq = "latest"
-fd = "latest"
-rg = "latest"
-# Pinned past the 7-day floor: 2.100.0 (2026-09-03) fixes CVE-2026-84304 and
-# CVE-2026-56855/78662 in the embedded grpc and x/crypto. Back to "latest"
-# once it ages past the floor.
-gh = "2.100.0"
-uv = "latest"
-python = "3.12"
-"npm:@googleworkspace/cli" = "latest"
-# Kubernetes/OpenShift connection (#2314): kubeconfig lands via a file
-# contribution; these make it usable out of the box.
-kubectl = "latest"
-oc = "latest"
+[tasks.scan]
+depends = [":scan:*"]
 
-[hooks]
-postinstall = '''
-mkdir -p /usr/local/share/tool-bin
-just=$(printf '%s' "${MISE_INSTALLED_TOOLS:-}" | sed 's/},{/}\n{/g' | sed -n 's/.*"name":"\([^"]*\)".*"version":"\([^"]*\)".*/\1@\2/p')
-bin_paths=$(mise bin-paths -C /etc/mise; { [ -z "$just" ] || mise bin-paths $just; } || true)
-for d in $bin_paths; do
-  for f in "$d"/*; do
-    if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
-  done
-done
-find /etc/mise -name '*.lock' -exec chmod 644 {} + 2>/dev/null || true
-'''
+[tasks."scan:trivy"]
+extends = "image:scan:trivy"
+vars = { local_image = "platform-base" }

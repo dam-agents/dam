@@ -10,7 +10,7 @@ import (
 )
 
 // The generated chart manifests must carry the schema-generation constants —
-// catches a bumped constant without `mise run controller:generate`, or a
+// catches a bumped constant without `mise run //packages/controller:generate`, or a
 // +kubebuilder:metadata:annotations marker out of sync with the constant.
 func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 	cases := map[string]int{
@@ -35,7 +35,7 @@ func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 			t.Fatalf("%s: %s annotation missing or not an int: %v", file, SchemaGenerationAnnotation, err)
 		}
 		if got != want {
-			t.Errorf("%s: schema generation %d in manifest, %d in code — bump both and run mise run controller:generate", file, got, want)
+			t.Errorf("%s: schema generation %d in manifest, %d in code — bump both and run mise run //packages/controller:generate", file, got, want)
 		}
 	}
 }

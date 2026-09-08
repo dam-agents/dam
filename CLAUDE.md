@@ -8,7 +8,7 @@ pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architectu
 
 ## Workflow
 
-mise is the task runner. All tasks are defined in `tasks.toml` files. **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break. `mise tasks` lists everything available.
+mise is the task runner, in monorepo mode: each package's tasks live in its `mise.toml` and are addressed as `//packages/<name>:<task>` (or `:<task>` from inside the package); repo-level tasks (`check`, `test`, `cluster:*`, …) live in `tasks.toml`. Shared task shapes are templates in the root `mise.toml`; checks are cached by their inputs and run sandboxed. Rules in [`docs/guidelines/mise-tasks.md`](docs/guidelines/mise-tasks.md). **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break. `mise tasks --all` lists everything available.
 
 For the local k3s cluster (lima), e2e test runs, and mesh/cert failures, use the [`cluster-ops`](.claude/skills/cluster-ops/SKILL.md) skill.
 

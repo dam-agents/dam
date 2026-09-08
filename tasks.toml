@@ -1,19 +1,21 @@
 # -- Aggregation --
+# `*:x` matches the repo-root tasks (common:x, docs:x), `//...:x` the same task
+# in every package config root.
 
 ["setup"]
-depends = ["*:setup"]
+depends = ["common:setup:pnpm", "//...:setup"]
 
 ["check"]
-depends = ["*:check"]
+depends = ["setup", "*:check", "//...:check"]
 
 ["fix"]
-depends = ["*:fix"]
+depends = ["setup", "//...:fix"]
 
 ["scan"]
-depends = ["*:scan"]
+depends = ["*:scan", "//...:scan"]
 
 ["test"]
-depends = ["*:test"]
+depends = ["setup", "//...:test"]
 
 ["e2e"]
 description = "Run Playwright e2e: spin up fresh test cluster, run the smoke suite, tear down. Options: --headed --full"
@@ -23,11 +25,11 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-PLAYWRIGHT_TASK="e2e-playwright:run"
+PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
 for arg in "$@"; do
   case "$arg" in
-    --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
-    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
+    --headed) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed" ;;
+    --full) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full" ;;
   esac
 done
 
@@ -294,16 +296,16 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 
-PLAYWRIGHT_TASK="e2e-playwright:run"
+PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
 REBUILD=""
 REBUILD_SET=false
 TEST_FILTER=""
 for arg in "$@"; do
   case "$arg" in
-    --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    --headed) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed" ;;
     # Full suite: smoke plus the slow on-demand specs under src/tests/full/.
     # The pipeline default is smoke only; this flag is the manual trigger.
-    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
+    --full) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
     # Positional Playwright filter (file/title substring or regex). It fully
     # narrows the run only for full-only projects, which have no dependencies
@@ -394,6 +396,7 @@ echo "$CLEANED" > "$FILE"
 ["common:setup:corepack"]
 run = "corepack enable"
 sources = ["package.json"]
+cache = { enabled = false }
 
 ["common:setup:pnpm"]
 depends = ["common:setup:corepack"]
@@ -405,6 +408,9 @@ sources = [
   "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
   "package.json",
 ]
+# Explicitly uncached (not merely ineligible): dependents can only be cached
+# when every dependency either has a cache key or opts out.
+cache = { enabled = false }
 
 ["common:setup:git-hooks"]
 run = '''
@@ -453,6 +459,10 @@ depends = ["common:check:*"]
 description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
 dir = "{{config_root}}"
 run = "node scripts/check-comment-types.mjs"
+sources = ["packages/**/*.{ts,tsx,go}", "!**/node_modules/**", "scripts/check-comment-types.mjs", "scripts/strip-comments.mjs"]
+outputs = []
+# Enumerates files through git — no network denial (git may run through a bridge).
+deny_write = true
 
 ["common:check:zizmor"]
 description = "Static security analysis for GitHub Actions workflows"
@@ -470,7 +480,10 @@ run = "pinact run -fix=false -no-api"
 description = "Assert the image dependency graph in scripts/resolve-image.sh (build-vs-reuse logic)"
 dir = "{{config_root}}"
 sources = ["scripts/resolve-image.sh"]
+outputs = []
 run = "scripts/resolve-image.sh --self-check"
+deny_net = true
+deny_write = true
 
 ["common:check:lockfile-age"]
 description = "Verify no lockfile dependency is newer than 7 days"
@@ -564,7 +577,10 @@ run = "node scripts/adr-index.mjs"
 ["docs:check:adr-index"]
 dir = "{{config_root}}"
 sources = ["docs/adrs/*.md", "scripts/adr-index.mjs"]
+outputs = []
 run = "node scripts/adr-index.mjs --check"
+deny_net = true
+deny_write = true
 
 # Guard: architecture docs stay within their character budget. The cap is a
 # forcing function (consolidate prose, push rationale into an ADR), not a byte
@@ -574,7 +590,10 @@ run = "node scripts/adr-index.mjs --check"
 ["docs:check:doc-size"]
 dir = "{{config_root}}"
 sources = ["docs/architecture.md", "docs/architecture/*.md", "scripts/doc-size.mjs"]
+outputs = []
 run = "node scripts/doc-size.mjs --check"
+deny_net = true
+deny_write = true
 
 # Deterministic, unbypassable gate for the one invariant the ADR read model
 # rests on: an accepted ADR's decision is never rewritten. Precommit diffs the

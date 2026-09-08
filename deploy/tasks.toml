@@ -55,7 +55,7 @@ esac
 
 ["cluster:install"]
 description = "Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true also creates the VM with nested virt and installs KubeVirt. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
-depends = ["controller:image", "api-server:image", "ui:image", "keycloak-theme:image"]
+depends = ["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -534,7 +534,7 @@ fi
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build deploy/helm/platform
 
-# 3. Load images into k3s (built by depends: image:*, or out-of-band in CI).
+# 3. Load images into k3s (built by depends: //packages/*:image, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
 # does NOT skip the load: buildx built the images out-of-band into the docker
@@ -569,15 +569,15 @@ else
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-      AGENT_TASKS+=("agents:$comp:image")
+      AGENT_TASKS+=("//packages/agents/$comp:image")
       AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-      # have no agents:*:image task — build straight from their Dockerfile, root
+      # have no //packages/agents/*:image task — build straight from their Dockerfile, root
       # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
       # the per-agent tasks; in CI the image is already in the daemon.
       if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-        {{ mise_bin }} run platform-base:image
+        {{ mise_bin }} run //packages/platform-base:image
         docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
       fi
       AGENT_IMAGES+=("$image")
@@ -698,7 +698,7 @@ exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
 
 ["cluster:build-apiserver"]
 description = "Build and load API server image into k3s, restart apiserver pod"
-depends = ["api-server:image"]
+depends = ["//packages/api-server:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -741,7 +741,7 @@ echo "Done."
 
 ["cluster:build-controller"]
 description = "Build and load controller image into k3s, restart controller pod"
-depends = ["controller:image"]
+depends = ["//packages/controller:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -781,7 +781,7 @@ echo "Done."
 
 ["cluster:build-ui"]
 description = "Build and load UI image into k3s, restart UI pod"
-depends = ["ui:image"]
+depends = ["//packages/ui:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -857,13 +857,13 @@ while IFS=$'\t' read -r name image; do
   SEEN_COMPONENTS+=("$comp")
   if [ -d "packages/agents/$comp" ]; then
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("agents:$comp:image")
+    AGENT_TASKS+=("//packages/agents/$comp:image")
     AGENT_IMAGES+=("$image")
   elif [ -d "packages/e2e/agents/$comp" ]; then
     # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-    # have no agents:*:image task — build straight from their Dockerfile, root
+    # have no //packages/agents/*:image task — build straight from their Dockerfile, root
     # context so the platform-base FROM resolves.
-    {{ mise_bin }} run platform-base:image
+    {{ mise_bin }} run //packages/platform-base:image
     docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
     AGENT_IMAGES+=("$image")
   else
@@ -911,7 +911,7 @@ echo "Done. Agent pods will restart with new image."
 
 ["cluster:build-keycloak"]
 description = "Build and load keycloak image into k3s, restart keycloak pod"
-depends = ["keycloak-theme:image"]
+depends = ["//packages/keycloak-theme:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash

@@ -65,14 +65,14 @@ skill's Step 1.
 ## Build
 
 ```sh
-mise run agents:skydiscover:image            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
+mise run //packages/agents/skydiscover:image            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned upstream commit with `SKYDISCOVER_REF`:
 
 ```sh
-SKYDISCOVER_REF=<commit-sha> mise run agents:skydiscover:image
+SKYDISCOVER_REF=<commit-sha> mise run //packages/agents/skydiscover:image
 ```
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
