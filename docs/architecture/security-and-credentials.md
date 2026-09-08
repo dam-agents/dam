@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-04
+Last verified: 2026-09-08
 
 ## Overview
 
@@ -158,15 +158,15 @@ There is no token exchange — credential storage is K8s-native and label-
 scoped, so the api-server enforces ownership directly when reading and
 writing.
 
-For headless / CI use, the CLI accepts a long-lived **API key** in the
-same `Authorization: Bearer` slot, distinguished by a `pk_` prefix. API
-keys carry the owner's `sub`, a subset of permission scopes, and an
-optional agent allowlist; the bearer middleware dispatches by prefix and
-produces the same downstream authenticated-principal shape — sub, scopes,
-agent binding, and an optional key id. API keys cannot mint or revoke
-other API keys — the management surface rejects any request whose
-principal was authenticated via a key, so exfiltrated keys cannot
-escalate.
+Headless / CI use: the CLI accepts a long-lived **API key** in the same
+`Authorization: Bearer` slot, marked by a `pk_` prefix. A key carries the
+owner's `sub`, a subset of permission scopes, and an optional agent
+allowlist; deleting an Agent drops it from every key, so a later
+same-named Agent is not covered. The bearer middleware dispatches by
+prefix and yields the same principal shape — sub, scopes, agent binding,
+optional key id. Keys cannot mint or revoke other keys: the management
+surface rejects any request authenticated via a key, so a leaked key
+cannot escalate.
 
 ## Keycloak event logging
 

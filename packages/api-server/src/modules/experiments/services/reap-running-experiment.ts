@@ -15,6 +15,7 @@ export async function reapRunningExperiment(
     error,
   });
   if (flipped) {
+    await repo.endOpenSpans(row.id, "error", at);
     emit({
       type: EventType.ExperimentChanged,
       experimentId: row.id,

@@ -130,6 +130,11 @@ export interface ExperimentsRepository {
     },
   ): Promise<void>;
   listSpans(experimentId: string): Promise<SpanRow[]>;
+  endOpenSpans(
+    experimentId: string,
+    status: SpanStatus,
+    endedAt: Date,
+  ): Promise<void>;
 
   listInactiveRunning(cutoff: Date, limit: number): Promise<ExperimentRow[]>;
   listRunningDrivers(): Promise<string[]>;
@@ -385,6 +390,18 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
         .where(eq(spansTable.experimentId, experimentId))
         .orderBy(asc(spansTable.startedAt), asc(spansTable.id));
       return rows.map(toSpanRow);
+    },
+
+    async endOpenSpans(experimentId, status, endedAt) {
+      await db
+        .update(spansTable)
+        .set({ status, endedAt })
+        .where(
+          and(
+            eq(spansTable.experimentId, experimentId),
+            isNull(spansTable.endedAt),
+          ),
+        );
     },
 
     async listInactiveRunning(cutoff, limit) {

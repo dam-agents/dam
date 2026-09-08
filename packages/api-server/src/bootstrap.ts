@@ -14,6 +14,7 @@ import {
   createKeycloakUserDirectory,
   startChannelCleanupSaga,
   allChannelAgentIds,
+  findChannelOwnerByAgent,
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
@@ -34,6 +35,7 @@ import {
   composeKbShareServing,
   createKbShareAgentCleanup,
   createShareHostApp,
+  findKbShareOwnerByAgent,
   listKbShareAgentIds,
   startKbShareSync,
   startKbSharesCleanupSaga,
@@ -161,6 +163,7 @@ import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose
 import {
   createAgentArtifactsSweeper,
   type AgentCleanupSource,
+  type AgentOrphanDetector,
 } from "./sagas/agent-artifacts-sweeper.js";
 import {
   composeExperimentInactivitySweep,
@@ -884,11 +887,9 @@ export async function bootstrap() {
       cleanup: createApiKeysCleanupHook(db),
     },
   ];
-  const agentCleanupHooks = agentCleanupSources.flatMap((s) =>
-    s.cleanup ? [s.cleanup] : [],
-  );
+  const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);
 
-  const deletionSubscriberSources: AgentCleanupSource[] = [
+  const deletionSubscriberDetectors: AgentOrphanDetector[] = [
     { name: "channels", listAgentIds: allChannelAgentIds(db) },
     {
       name: "telegram-conversations",
@@ -902,9 +903,22 @@ export async function bootstrap() {
     { name: "usage-agents", listAgentIds: () => listUsageAgentIds(db) },
   ];
 
+  const orphanOwnerLookups = [
+    findChannelOwnerByAgent(db),
+    (agentId: string) => schedulesBoot.repo.findOwnerByAgent(agentId),
+    findKbShareOwnerByAgent(db),
+  ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
     k8s: agentsCleanupK8s,
-    sources: [...agentCleanupSources, ...deletionSubscriberSources],
+    sources: agentCleanupSources,
+    detectors: deletionSubscriberDetectors,
+    resolveOwner: async (agentId) => {
+      for (const lookup of orphanOwnerLookups) {
+        const owner = await lookup(agentId);
+        if (owner) return owner;
+      }
+      return null;
+    },
     batchSize: 200,
   });
 

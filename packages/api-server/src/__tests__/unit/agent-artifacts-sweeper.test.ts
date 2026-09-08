@@ -45,6 +45,8 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
+      detectors: [],
+      resolveOwner: async () => null,
       batchSize: 100,
     });
 
@@ -71,6 +73,8 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
+      detectors: [],
+      resolveOwner: async () => null,
       batchSize: 2,
     });
 
@@ -102,6 +106,8 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
+      detectors: [],
+      resolveOwner: async () => null,
       batchSize: 100,
     });
 
@@ -130,6 +136,8 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
+      detectors: [],
+      resolveOwner: async () => null,
       batchSize: 100,
     });
 
@@ -140,16 +148,16 @@ describe("agent-artifacts-sweeper", () => {
   /**
    * TEST_SCENARIO: Record kinds maintained by deletion-event subscribers are
    * listed for detection only. Each confirmed orphan is announced once as an
-   * AgentDeleted event, after the direct cleanups ran, so every subscriber
-   * reacts as on an API delete. A candidate whose Agent still exists is never
-   * announced.
+   * AgentDeleted event carrying the owner the sweep could still resolve, after
+   * the direct cleanups ran, so every subscriber reacts as on an API delete.
+   * A candidate whose Agent still exists is never announced.
    */
-  it("announces each confirmed orphan once, after the direct cleanups", async () => {
+  it("announces each confirmed orphan once, with its owner, after the direct cleanups", async () => {
     const order: string[] = [];
     const sub = events$()
       .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
       .subscribe((e) => {
-        order.push(`deleted:${e.agentId}`);
+        order.push(`deleted:${e.agentId}:${e.ownerSub ?? "?"}`);
       });
     const sweeper = createAgentArtifactsSweeper({
       k8s: fakeK8s(["agent-live"], { appearsAfterList: ["agent-new"] }),
@@ -161,17 +169,23 @@ describe("agent-artifacts-sweeper", () => {
             order.push(`cleanup:${id}`);
           },
         },
+      ],
+      detectors: [
         {
           name: "channels",
           listAgentIds: async () => ["agent-orphan", "agent-new", "agent-live"],
         },
       ],
+      resolveOwner: async (id) => (id === "agent-orphan" ? "owner-1" : null),
       batchSize: 100,
     });
 
     await sweeper.tick();
     sub.unsubscribe();
-    expect(order).toEqual(["cleanup:agent-orphan", "deleted:agent-orphan"]);
+    expect(order).toEqual([
+      "cleanup:agent-orphan",
+      "deleted:agent-orphan:owner-1",
+    ]);
   });
 
   it("is a no-op when there are no orphans", async () => {
@@ -187,6 +201,8 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
+      detectors: [],
+      resolveOwner: async () => null,
       batchSize: 100,
     });
 

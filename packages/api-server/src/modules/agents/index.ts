@@ -56,6 +56,7 @@ export {
 } from "./domain/spec-assembly.js";
 export {
   allChannelAgentIds,
+  findChannelOwnerByAgent,
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,

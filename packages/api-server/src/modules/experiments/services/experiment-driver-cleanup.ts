@@ -9,14 +9,13 @@ export interface ReapedExperiment {
 
 export interface CreateExperimentDriverCleanupDeps {
   repo: ExperimentsRepository;
-  onReaped?: (row: ReapedExperiment) => Promise<void>;
-  now?: () => Date;
+  onReaped: (row: ReapedExperiment) => Promise<void>;
+  now: () => Date;
 }
 
 export function createExperimentDriverCleanup(
   deps: CreateExperimentDriverCleanupDeps,
 ): (driverAgentId: string) => Promise<void> {
-  const now = deps.now ?? (() => new Date());
   return async (driverAgentId) => {
     for (const row of await deps.repo.listRunningByDriver(driverAgentId)) {
       try {
@@ -24,10 +23,10 @@ export function createExperimentDriverCleanup(
           deps.repo,
           row,
           "driver agent deleted",
-          now(),
+          deps.now(),
         );
         if (!flipped) continue;
-        await deps.onReaped?.({
+        await deps.onReaped({
           id: row.id,
           owner: row.owner,
           driverAgentId: row.driverAgentId,

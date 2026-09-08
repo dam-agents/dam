@@ -6,15 +6,20 @@ export interface AgentArtifactsSweeper {
   tick(): Promise<void>;
 }
 
-export interface AgentCleanupSource {
+export interface AgentOrphanDetector {
   name: string;
   listAgentIds: () => Promise<string[]>;
-  cleanup?: (agentId: string) => Promise<void>;
+}
+
+export interface AgentCleanupSource extends AgentOrphanDetector {
+  cleanup: (agentId: string) => Promise<void>;
 }
 
 export interface CreateAgentArtifactsSweeperDeps {
   k8s: K8sClient;
   sources: ReadonlyArray<AgentCleanupSource>;
+  detectors: ReadonlyArray<AgentOrphanDetector>;
+  resolveOwner: (agentId: string) => Promise<string | null>;
   batchSize: number;
 }
 
@@ -30,7 +35,7 @@ export function createAgentArtifactsSweeper(
     );
 
     const orphans = new Set<string>();
-    for (const source of deps.sources) {
+    for (const source of [...deps.sources, ...deps.detectors]) {
       const ids = await source.listAgentIds();
       for (const id of ids) {
         if (!live.has(id)) orphans.add(id);
@@ -43,8 +48,8 @@ export function createAgentArtifactsSweeper(
     for (const agentId of [...orphans].slice(0, deps.batchSize)) {
       if (await deps.k8s.getCustomObject(AGENTS_PLURAL, agentId)) continue;
       reaped++;
+      const ownerSub = await deps.resolveOwner(agentId);
       for (const source of deps.sources) {
-        if (!source.cleanup) continue;
         try {
           await source.cleanup(agentId);
         } catch (err) {
@@ -53,7 +58,11 @@ export function createAgentArtifactsSweeper(
           );
         }
       }
-      emit({ type: EventType.AgentDeleted, agentId });
+      emit({
+        type: EventType.AgentDeleted,
+        agentId,
+        ...(ownerSub ? { ownerSub } : {}),
+      });
     }
     if (reaped === 0) return;
     process.stderr.write(

@@ -10,25 +10,24 @@ export interface CreateExperimentInactivitySweepDeps {
   repo: ExperimentsRepository;
   inactivityMs: number;
   batchSize: number;
-  onReaped?: (row: {
+  onReaped: (row: {
     id: string;
     owner: string;
     driverAgentId: string;
   }) => Promise<void>;
-  now?: () => Date;
+  now: () => Date;
 }
 
 export function createExperimentInactivitySweep(
   deps: CreateExperimentInactivitySweepDeps,
 ): ExperimentInactivitySweep {
-  const now = deps.now ?? (() => new Date());
   let running = false;
 
   async function tick(): Promise<void> {
     if (running) return;
     running = true;
     try {
-      const at = now();
+      const at = deps.now();
       const cutoff = new Date(at.getTime() - deps.inactivityMs);
       const silent = await deps.repo.listInactiveRunning(
         cutoff,
@@ -55,7 +54,7 @@ export function createExperimentInactivitySweep(
             "inactivity deadline exceeded",
             at,
           );
-          if (flipped && deps.onReaped) {
+          if (flipped) {
             await deps.onReaped({
               id: row.id,
               owner: row.owner,

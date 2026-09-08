@@ -47,9 +47,11 @@ function fakeRepo(
   repo: ExperimentsRepository;
   transitions: string[];
   draftsDeletedFor: string[];
+  spansEndedFor: string[];
 } {
   const transitions: string[] = [];
   const draftsDeletedFor: string[] = [];
+  const spansEndedFor: string[] = [];
   const repo = {
     listRunningByDriver: async (driverAgentId: string) =>
       rows.filter((r) => r.driverAgentId === driverAgentId),
@@ -60,23 +62,28 @@ function fakeRepo(
     deleteDraftsByDriver: async (driverAgentId: string) => {
       draftsDeletedFor.push(driverAgentId);
     },
+    endOpenSpans: async (experimentId: string) => {
+      spansEndedFor.push(experimentId);
+    },
   } as unknown as ExperimentsRepository;
-  return { repo, transitions, draftsDeletedFor };
+  return { repo, transitions, draftsDeletedFor, spansEndedFor };
 }
 
 describe("experiment driver cleanup", () => {
   /**
    * TEST_SCENARIO: Two running experiments for the deleted driver. Both flip to
-   * failed and both reach the follow-up, and the driver's drafts are removed.
+   * failed with their open spans ended, both reach the follow-up, and the
+   * driver's drafts are removed.
    */
   it("fails every running experiment of the driver and runs the follow-up", async () => {
-    const { repo, transitions, draftsDeletedFor } = fakeRepo(
+    const { repo, transitions, draftsDeletedFor, spansEndedFor } = fakeRepo(
       [runningRow("exp-1"), runningRow("exp-2")],
       async () => true,
     );
     const reaped: string[] = [];
     const cleanup = createExperimentDriverCleanup({
       repo,
+      now: () => new Date("2026-09-08T00:00:00Z"),
       onReaped: async (row) => {
         reaped.push(row.id);
       },
@@ -89,6 +96,7 @@ describe("experiment driver cleanup", () => {
       "exp-2:running->failed",
     ]);
     expect(reaped).toEqual(["exp-1", "exp-2"]);
+    expect(spansEndedFor).toEqual(["exp-1", "exp-2"]);
     expect(draftsDeletedFor).toEqual([DRIVER]);
   });
 
@@ -99,7 +107,11 @@ describe("experiment driver cleanup", () => {
   it("skips the follow-up when the transition did not apply", async () => {
     const { repo } = fakeRepo([runningRow("exp-1")], async () => false);
     const onReaped = vi.fn(async () => {});
-    const cleanup = createExperimentDriverCleanup({ repo, onReaped });
+    const cleanup = createExperimentDriverCleanup({
+      repo,
+      onReaped,
+      now: () => new Date("2026-09-08T00:00:00Z"),
+    });
 
     await cleanup(DRIVER);
 
@@ -124,6 +136,7 @@ describe("experiment driver cleanup", () => {
     const reaped: string[] = [];
     const cleanup = createExperimentDriverCleanup({
       repo,
+      now: () => new Date("2026-09-08T00:00:00Z"),
       onReaped: async (row) => {
         reaped.push(row.id);
       },

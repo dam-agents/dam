@@ -129,6 +129,17 @@ export function deleteChannelsByAgentIds(db: Db, owner: string) {
   };
 }
 
+export function findChannelOwnerByAgent(db: Db) {
+  return async (agentId: string): Promise<string | null> => {
+    const rows = await db
+      .select({ owner: channels.owner })
+      .from(channels)
+      .where(eq(channels.agentId, agentId))
+      .limit(1);
+    return rows[0]?.owner ?? null;
+  };
+}
+
 export function allChannelAgentIds(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db
