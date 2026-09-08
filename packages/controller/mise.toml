@@ -34,7 +34,7 @@ fi
 """
 sources = ["**/*.go"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 
@@ -187,21 +187,21 @@ exit $status
 run = "go vet ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 
 [tasks."check:staticcheck"]
 run = "staticcheck ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 
 [tasks."check:build"]
 run = "go build -o dist/ ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = ["dist/**"]
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 
 [tasks.fix]
@@ -215,7 +215,7 @@ run = "go test ./..."
 # schema_generation_test.go reads the chart CRDs.
 sources = ["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 
 [tasks.scan]
 depends = [":scan:*"]

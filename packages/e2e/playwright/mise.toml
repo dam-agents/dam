@@ -1,4 +1,4 @@
-# Deliberately a task, not a [deps] provider: `mise run setup` installs every
+# Deliberately a task, not a [deps] provider: `mise deps --monorepo` installs every
 # provider, and this one is a large download plus `sudo apt` on Linux that only
 # the e2e run tasks need.
 [tasks.install-browsers]

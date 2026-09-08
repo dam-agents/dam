@@ -14,14 +14,14 @@ depends = [":check:*"]
 run = "uv run --frozen --group dev ruff check src tests"
 sources = ["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 
 [tasks."check:format"]
 run = "uv run --frozen --group dev ruff format --check src tests"
 sources = ["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 
 [tasks.fix]
@@ -36,4 +36,4 @@ description = "Run the experiment SDK pytest suite against a stub platform endpo
 run = "uv run --frozen --group dev pytest -q"
 sources = ["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true

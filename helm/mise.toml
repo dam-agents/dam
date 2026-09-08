@@ -18,7 +18,7 @@ helm dependency build .
 run = "helm lint ."
 sources = ["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 
@@ -31,4 +31,4 @@ deny_write = true
 run = "helm template platform . --include-crds --set terms.version=test --set terms.text='Test Terms' --set clickstack.enabled=true | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity"
 sources = ["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true

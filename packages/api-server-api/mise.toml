@@ -32,7 +32,7 @@ run = "bash scripts/gen-crd-types.sh {{vars.repo_root}} src/crd-types.gen.ts"
 description = "Fail if the committed CRD types are stale vs the committed CRDs (drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
 sources = ["{{vars.repo_root}}/helm/crds/agent-platform.ai_agents.yaml", "src/crd-types.gen.ts", "scripts/gen-crd-types.sh", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 run = '''

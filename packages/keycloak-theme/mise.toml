@@ -11,7 +11,7 @@ run = "pnpm exec keycloakify update-kc-gen"
 description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
 sources = ["src/**/*", "public/**/*", "vite.config.ts", "package.json"]
 outputs = ["dist_keycloak/**/*"]
-cache = { enabled = true }
+cache.enabled = true
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail

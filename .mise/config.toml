@@ -80,7 +80,7 @@ postinstall = ["{{ mise_bin }} deps --monorepo"]
 [task_config]
 # Paths are relative to the repo root. .mise/tasks/ holds file tasks: each
 # executable is a task named by its path (.mise/tasks/check/version →
-# check:version); shared modules live non-executable under .mise/tasks/lib/.
+# check:version); nothing else lives there.
 # Repo-level one-liners and aggregators are the [tasks] at the end of this file;
 # anything with a script body is a file task. the cluster:* operations are the
 # file tasks under .mise/tasks/cluster/.
@@ -119,7 +119,7 @@ depends = ["^check:tsc"]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.{ts,tsx}", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 
@@ -127,7 +127,7 @@ deny_write = true
 run = "pnpm exec eslint ."
 sources = ["src/**/*.{ts,tsx}", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 
@@ -135,7 +135,7 @@ deny_write = true
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
 sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 
@@ -153,7 +153,7 @@ depends = ["^check:tsc"]
 run = "pnpm exec vitest run"
 sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 
 # Agent image on the platform-base layer. Component name = package dir name;
 # see .mise/tasks/image/resolve for the build-or-reuse decision.
@@ -214,7 +214,7 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under .mise/tasks (here and in the docs root) is executable"
 run = """
-bad=$(find .mise/tasks docs/.mise/tasks -type f -not -path '*/lib/*' -not -perm -u+x)
+bad=$(find .mise/tasks docs/.mise/tasks -type f -not -perm -u+x)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []

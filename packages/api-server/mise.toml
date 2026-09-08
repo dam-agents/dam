@@ -31,7 +31,7 @@ run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
 run = "node scripts/event-coverage.mjs"
 sources = ["src/**/*.ts", "tsconfig.json", "scripts/event-coverage.mjs"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 deny_write = true
 

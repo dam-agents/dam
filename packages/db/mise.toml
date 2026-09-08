@@ -54,7 +54,7 @@ echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
 [tasks."check:generated"]
 sources = ["src/schema.ts", "drizzle/meta/*.json"]
 outputs = []
-cache = { enabled = true }
+cache.enabled = true
 deny_net = true
 run = '''
 #!/usr/bin/env bash

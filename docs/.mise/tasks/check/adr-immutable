@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
-import { splitFrontmatter, parseFrontmatter } from "../lib/adr-index.mjs";
+import { splitFrontmatter, parseFrontmatter } from "../generate/adr-index";
 
 const ADR_DIR = "docs/adrs";
 

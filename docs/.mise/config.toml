@@ -1,7 +1,16 @@
-# Docs tasks (//docs:*): file tasks under .mise/tasks/, shared modules in
-# .mise/tasks/lib/. Sources are relative to this directory.
+# Docs tasks (//docs:*): file tasks under .mise/tasks/. Sources are relative to
+# this directory.
 [tasks.check]
 depends = [":check:*"]
+
+[tasks."check:adr-index"]
+description = "The committed ADR index must match what regeneration produces. Pure files, no services, fail closed on drift."
+run = "{{ mise_bin }} run //docs:generate:adr-index -- --check"
+sources = ["adrs/*.md", ".mise/tasks/generate/adr-index"]
+outputs = []
+cache.enabled = true
+deny_net = true
+deny_write = true
 
 # Regenerate docs/activity-events.md from the event registry. The table is a
 # projection of what the code emits, never hand-maintained — the ticket that
