@@ -150,7 +150,7 @@ exit $status
 # the api/ Go types — catches hand-edits to the "generated" YAML and Go-side
 # schema changes committed without `mise run //packages/controller:generate`. The Go doc
 # comments are part of the contract: they compile into the CRD descriptions,
-# which is why mise-tasks/lib/strip-comments.mjs exempts packages/controller/api/.
+# which is why .mise/tasks/lib/strip-comments.mjs exempts packages/controller/api/.
 [tasks."check:crd-generated"]
 deny_net = true
 sources = ["api/**/*.go", "{{vars.repo_root}}/deploy/helm/platform/crds/*.yaml"]

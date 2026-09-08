@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Strip comments from TS/JS/Go source files across the repo.
 //
-// Usage (task: mise-tasks/common/strip-comments):
+// Usage (task: .mise/tasks/common/strip-comments):
 //   mise run common:strip-comments              dry run, prints what would change
 //   mise run common:strip-comments -- --write   rewrite files in place
 //   mise run common:strip-comments -- [paths...] limit to files/dirs (tracked files only)
@@ -21,7 +21,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const require = createRequire(import.meta.url);
 
 export const ts = loadTypescript();
@@ -108,7 +108,7 @@ export function listFiles(scopes) {
       return TS_EXTENSIONS.has(ext) || ext === GO_EXTENSION;
     })
     .filter((f) => !/\.gen\.[cm]?[jt]sx?$/.test(f))
-    .filter((f) => f !== 'mise-tasks/lib/strip-comments.mjs')
+    .filter((f) => f !== '.mise/tasks/lib/strip-comments.mjs')
     // api/v1 doc comments are controller-gen INPUT: they compile into the CRD
     // descriptions (`kubectl explain`) and the api-server's generated TS
     // JSDoc. Stripping them deletes user-facing API documentation and makes

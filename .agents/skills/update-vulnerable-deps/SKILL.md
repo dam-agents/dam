@@ -36,7 +36,7 @@ Fix all items. Do not ask the user which ones to fix.
 Note: tools are configured to avoid releases younger than 7 days. Add an exclusion if necessary to install a fixed release. Review exclusions and remove ones that according to `git blame` were added more than 7 days ago.
 
 By ecosystem:
-- Mise: `mise use tool@version`, use `mise lock` to update `mise.lock`
+- Mise: `mise use tool@version`, use `mise lock` to update `.mise/mise.lock`
 - Node.js: use `pnpm`, with overrides in top-level `package.json` if necessary
 - GitHub Actions: use `pinact`
 - Go: fix manually, run `mise run //packages/controller:scan:govulncheck` to verify

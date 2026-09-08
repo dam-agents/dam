@@ -530,7 +530,7 @@ echo "OK: version $version"
 
 ["docs:check"]
 depends = ["docs:check:*"]
-# The docs:check:* / docs:generate:* leaves are file tasks under mise-tasks/docs/.
+# The docs:check:* / docs:generate:* leaves are file tasks under .mise/tasks/docs/.
 
 # Regenerate docs/activity-events.md from the event registry. The table is a
 # projection of what the code emits, never hand-maintained — the ticket that

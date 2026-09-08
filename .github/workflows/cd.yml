@@ -27,9 +27,9 @@ env:
   # this instant. It is deliberately a constant rather than the commit time —
   # a per-commit stamp would make every release differ again (#3495).
   SOURCE_DATE_EPOCH: "1735689600"
-  # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
+  # Pin mise so the lockfile (.mise/mise.lock) stays deterministic. Unpinned,
   # mise-action installs latest and each new release rewrites platform entries
-  # and the generated header, churning mise.lock on unrelated PRs. Bump this in
+  # and the generated header, churning the lockfile on unrelated PRs. Bump this in
   # lockstep with a `mise run … lock` regeneration commit.
   MISE_VERSION: "2026.9.3"
 
@@ -147,7 +147,7 @@ jobs:
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
           [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_WORKLOADS=1
           # By path: this job has no mise; the same file is the image:resolve task.
-          out="$(mise-tasks/image/resolve gha-outputs)"
+          out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
