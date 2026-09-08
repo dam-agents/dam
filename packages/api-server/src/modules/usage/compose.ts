@@ -57,7 +57,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const registerCreatedAgent = upsertAgent(deps.db, deps.subPseudonymizer, {
     resetRuntimeState: true,
   });
-  const markDeleted = markAgentDeleted(deps.db);
 
   const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
@@ -73,7 +72,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
       upsertAgent: registerCreatedAgent,
-      markAgentDeleted: markDeleted,
     });
     persistActorRolesSub = startPersistActorRolesSaga({
       upsertActorRole: upsertRole,
@@ -127,4 +125,10 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
 
 export function listUsageAgentIds(db: Db): Promise<string[]> {
   return listLiveAgentIds(db)();
+}
+
+export function createUsageAgentsCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
+  return markAgentDeleted(db);
 }

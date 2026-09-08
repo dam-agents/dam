@@ -139,7 +139,7 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), refuses untouched system skills (see [Skill Origin](agent-skills.md#skill-origin)), wakes a hibernated agent, calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the pod has caught up), and folds in the `agent_skill_publishes` rows.
-- **Cleanup saga** — subscribes to `AgentDeleted` and deletes both `agent_skills` and `agent_skill_publishes` rows for the deleted agent; the periodic orphan sweep runs the same deletion for an agent removed outside the API. User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
+- **Cleanup** — the module exports a delete-by-agent cleanup that removes both `agent_skills` and `agent_skill_publishes` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep. User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
 
 ## Flows
 
@@ -241,9 +241,9 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`. Both are computed at request time.
 
-The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup saga has nothing extra to do.
+The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup has nothing extra to do.
 
-The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` and `skill_sets` survive agent deletion — they are catalog connections and named selections, not agent state.
+The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup handles the row-side. User-owned `skill_sources` and `skill_sets` survive agent deletion — they are catalog connections and named selections, not agent state.
 
 ## Invariants
 

@@ -20,4 +20,3 @@ export {
   composeKbShareServing,
   createShareHostApp,
 } from "./serving/compose.js";
-export { startKbSharesCleanupSaga } from "./sagas/cleanup.js";

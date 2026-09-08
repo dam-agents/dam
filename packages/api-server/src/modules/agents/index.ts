@@ -22,7 +22,6 @@ export {
   createKeycloakUserDirectory,
   type KeycloakUserDirectory,
 } from "./infrastructure/keycloak-user-directory.js";
-export { startChannelCleanupSaga } from "./sagas/channel-cleanup.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export {
   createAgentSweep,

@@ -12,7 +12,6 @@ import {
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
-  startChannelCleanupSaga,
   allChannelAgentIds,
   findChannelOwnerByAgent,
   deleteChannelsByAgent,
@@ -29,7 +28,6 @@ import {
   connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
-  startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import {
   composeKbShareServing,
@@ -38,7 +36,6 @@ import {
   findKbShareOwnerByAgent,
   listKbShareAgentIds,
   startKbShareSync,
-  startKbSharesCleanupSaga,
 } from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
@@ -92,7 +89,10 @@ import {
 } from "./modules/secret-store/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
-import { listUsageAgentIds } from "./modules/usage/index.js";
+import {
+  createUsageAgentsCleanupHook,
+  listUsageAgentIds,
+} from "./modules/usage/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
@@ -163,7 +163,6 @@ import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose
 import {
   createAgentArtifactsSweeper,
   type AgentCleanupSource,
-  type AgentOrphanDetector,
 } from "./sagas/agent-artifacts-sweeper.js";
 import {
   composeExperimentInactivitySweep,
@@ -470,10 +469,6 @@ export async function bootstrap() {
     slack: fakeSlackGateway,
   });
 
-  const channelCleanupSub = startChannelCleanupSaga(
-    deleteChannelsByAgent(db),
-    deleteConversationsByAgent(db),
-  );
   const publicAgentPage = composePublicAgentPage({
     db,
     repo: agentsRepo,
@@ -495,15 +490,6 @@ export async function bootstrap() {
     },
   );
   const agentSkillsRepo = createAgentSkillsRepository(db);
-  const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
-    agentSkillsRepo.deleteByAgent(agentId),
-  );
-  const kbSharesCleanupSub = startKbSharesCleanupSaga(
-    createKbShareAgentCleanup({
-      db,
-      store: artifacts,
-    }),
-  );
   const kbShareAutoRefresh = startKbShareSync({
     db,
     namespace: config.namespace,
@@ -886,22 +872,33 @@ export async function bootstrap() {
       listAgentIds: () => listApiKeyAgentIds(db),
       cleanup: createApiKeysCleanupHook(db),
     },
-  ];
-  const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);
-
-  const deletionSubscriberDetectors: AgentOrphanDetector[] = [
-    { name: "channels", listAgentIds: allChannelAgentIds(db) },
+    {
+      name: "channels",
+      listAgentIds: allChannelAgentIds(db),
+      cleanup: deleteChannelsByAgent(db),
+    },
     {
       name: "telegram-conversations",
       listAgentIds: allConversationAgentIds(db),
+      cleanup: deleteConversationsByAgent(db),
     },
     {
       name: "agent-skills",
       listAgentIds: () => agentSkillsRepo.listAgentIds(),
+      cleanup: (agentId: string) => agentSkillsRepo.deleteByAgent(agentId),
     },
-    { name: "kb-shares", listAgentIds: () => listKbShareAgentIds(db) },
-    { name: "usage-agents", listAgentIds: () => listUsageAgentIds(db) },
+    {
+      name: "kb-shares",
+      listAgentIds: () => listKbShareAgentIds(db),
+      cleanup: createKbShareAgentCleanup({ db, store: artifacts }),
+    },
+    {
+      name: "usage-agents",
+      listAgentIds: () => listUsageAgentIds(db),
+      cleanup: createUsageAgentsCleanupHook(db),
+    },
   ];
+  const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);
 
   const orphanOwnerLookups = [
     findChannelOwnerByAgent(db),
@@ -911,7 +908,6 @@ export async function bootstrap() {
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
     k8s: agentsCleanupK8s,
     sources: agentCleanupSources,
-    detectors: deletionSubscriberDetectors,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
         const owner = await lookup(agentId);
@@ -1157,11 +1153,8 @@ export async function bootstrap() {
   void leaderLease.start();
 
   const cleanup = async (): Promise<void> => {
-    channelCleanupSub.unsubscribe();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
-    skillsCleanupSub.unsubscribe();
-    kbSharesCleanupSub.unsubscribe();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();

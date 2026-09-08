@@ -1,1 +1,1 @@
-export { listUsageAgentIds } from "./compose.js";
+export { createUsageAgentsCleanupHook, listUsageAgentIds } from "./compose.js";
