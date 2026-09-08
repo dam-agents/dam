@@ -176,9 +176,11 @@ that catches the failure and retries dies too. A loop doing pure local compute
 exits at its next report; the released pin lets the idle checker reclaim a
 truly silent one.
 
-This applies to **all three** terminal paths — Stop, the script's own `finish`
-(`completed` *and* `failed`), and the inactivity sweep — not Stop alone. The
-ledger is closed in every case, so a surviving target can no longer report into
+This applies to **all four** terminal paths — Stop, the script's own `finish`
+(`completed` *and* `failed`), the inactivity sweep, and driver deletion — not
+Stop alone. The two reaps additionally end every still-open span as `error`,
+since no script remains to end them; Stop and `finish` leave the script's own
+span bookkeeping alone. The ledger is closed in every case, so a surviving target can no longer report into
 the run; leaving it alive only holds its pod and its owner's budget until the
 invocation TTL, which is hours for a long campaign. `completed` is included
 deliberately: a loop that returns without awaiting a spawn orphans its target

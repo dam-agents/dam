@@ -550,6 +550,7 @@ export async function bootstrap() {
   };
 
   const { agents: systemAgents } = composeAgentsModule({
+    cleanupHooks: [],
     api,
     agentStateCache,
     namespace: config.namespace,
@@ -896,6 +897,11 @@ export async function bootstrap() {
       name: "usage-agents",
       listAgentIds: () => listUsageAgentIds(db),
       cleanup: createUsageAgentsCleanupHook(db),
+    },
+    {
+      name: "public-profiles",
+      listAgentIds: publicAgentPage.listLiveAgentIds,
+      cleanup: publicAgentPage.retireProfile,
     },
   ];
   const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);

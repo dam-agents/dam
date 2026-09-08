@@ -40,6 +40,7 @@ import {
   upsertProfile,
   tombstoneProfile,
   retireProfile,
+  listLiveProfileAgentIds,
   listProfileIdsForReconcile,
 } from "./infrastructure/public-agent-profile-repository.js";
 import {
@@ -73,7 +74,7 @@ export function composeAgentsModule(deps: {
   db: Db;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
-  cleanupHooks?: readonly AgentCleanupHook[];
+  cleanupHooks: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   telegramBinding?: TelegramBindingPort;
@@ -148,6 +149,8 @@ export function composePublicAgentPage(deps: {
   service: PublicAgentPageService;
   startSaga: () => Subscription;
   reconcileService: PublicAgentProfileReconcileService;
+  listLiveAgentIds: () => Promise<string[]>;
+  retireProfile: (agentId: string) => Promise<void>;
 } {
   const readAgent = async (
     agentId: string,
@@ -172,13 +175,14 @@ export function composePublicAgentPage(deps: {
         deps.userDirectory.resolveDisplayNameBySub(ownerSub),
       log: deps.log,
     }),
+    listLiveAgentIds: listLiveProfileAgentIds(deps.db),
+    retireProfile: retire,
     startSaga: () =>
       startPersistPublicAgentProfileSaga({
         hasAnyBinding: bound,
         readAgent,
         upsertProfile: upsert,
         tombstoneProfile: tombstone,
-        retireProfile: retire,
         log: deps.log,
       }),
     reconcileService: createPublicAgentProfileReconcileService({

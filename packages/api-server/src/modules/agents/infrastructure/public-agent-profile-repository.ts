@@ -79,6 +79,16 @@ export function retireProfile(db: Db) {
   };
 }
 
+export function listLiveProfileAgentIds(db: Db) {
+  return async (): Promise<string[]> => {
+    const rows = await db
+      .select({ agentId: agentPublicProfiles.agentId })
+      .from(agentPublicProfiles)
+      .where(isNull(agentPublicProfiles.deletedAt));
+    return rows.map((r) => r.agentId);
+  };
+}
+
 export function listProfileIdsForReconcile(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db

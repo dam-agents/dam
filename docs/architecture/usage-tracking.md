@@ -26,7 +26,7 @@ flowchart LR
   user-import[user imports a file bundle]
   user-entry[new user picks a way in]
 
-  agent-create[agent CM created / deleted]
+  agent-create[agent CM created]
 
   subgraph api-server[api-server]
     bus((event bus))
