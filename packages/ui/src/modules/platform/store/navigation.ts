@@ -20,7 +20,8 @@ type ParameterlessView =
   | "packs"
   | "knowledge-bases"
   | "knowledge-base-new"
-  | "setup-workbench";
+  | "setup-workbench"
+  | "flow-board";
 
 export interface NavigationSlice {
   view: View;

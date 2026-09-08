@@ -12,6 +12,7 @@ import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { FlowBoardView } from "./modules/flow-board/flow-board-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
@@ -101,6 +102,14 @@ function MainApp() {
       </>
     );
 
+  if (view === "flow-board")
+    return (
+      <>
+        <FlowBoardView />
+        <DialogOverlay />
+      </>
+    );
+
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -150,6 +159,12 @@ function MainApp() {
       <ConnectionBanner />
       <FloatingApprovalsPill />
       <DocsLauncher />
+      <button
+        onClick={() => useStore.getState().setView("flow-board")}
+        className="fixed bottom-4 right-4 z-50 rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-gray-800 print:hidden"
+      >
+        Design &rarr;
+      </button>
     </div>
   );
 }
