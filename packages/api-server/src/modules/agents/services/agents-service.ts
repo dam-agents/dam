@@ -1085,7 +1085,7 @@ export function createAgentsService(deps: {
 
     async ensureReady(id, opts) {
       if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
-        throw new Error(`agent ${id}: not found or not owned`);
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       await deps.repo.ensureReady(id, opts);
     },

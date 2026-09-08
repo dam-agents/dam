@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { TRPCError } from "@trpc/server";
 import type {
   Connection,
   ConnectionAuthConfig,
@@ -55,11 +56,12 @@ export function createOAuthFlowService(deps: {
   return {
     async startOAuth(connectionId, opts): Promise<{ authUrl: string }> {
       const conn = await deps.repo.get(connectionId, deps.ownerId);
-      if (!conn) throw new Error(`connection ${connectionId} not found`);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
       if (conn.auth.kind !== "oauth") {
-        throw new Error(
-          `connection ${connectionId} auth kind is ${conn.auth.kind}; not OAuth`,
-        );
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `connection auth kind is ${conn.auth.kind}; not OAuth`,
+        });
       }
       const provider = await buildProvider(conn, conn.auth, deps);
       const template = deps.templates.get(conn.templateId);

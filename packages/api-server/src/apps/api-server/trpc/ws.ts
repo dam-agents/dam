@@ -13,6 +13,7 @@ import {
   type Authenticate,
   type SurfaceAttribution,
 } from "../admission/auth.js";
+import { logInternalError } from "./log-internal-error.js";
 import { trpcDenial } from "./mappers.js";
 
 const API_KEY_REAUTH_MS = 5 * 60_000;
@@ -55,6 +56,7 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
   const handler = applyWSSHandler({
     wss,
     router: appRouter,
+    onError: logInternalError,
     keepAlive: { enabled: true, pingMs: 30_000, pongWaitMs: 10_000 },
     createContext: async ({ req, res, info }): Promise<ApiContext> => {
       const site = {
