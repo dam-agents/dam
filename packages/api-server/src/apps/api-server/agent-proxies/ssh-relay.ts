@@ -1,3 +1,4 @@
+import { addUpgradeSecurityHeaders } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -29,6 +30,7 @@ export function createSshRelay(
   presence: SessionPresence,
 ): SshRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  addUpgradeSecurityHeaders(wss);
   const lastActivity = new Map<string, number>();
   const bumpActivity = (id: string) => {
     const now = Date.now();

@@ -56,7 +56,7 @@ terms:
 links:
   # Where "Request more" next to the compute meter points — a chat channel,
   # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
-  # default.
+  # default, which is install-specific and slated for removal — set this.
   computeRequest: ""
 
 # -- Base domain for the app. UI and API share this host; the ingress
