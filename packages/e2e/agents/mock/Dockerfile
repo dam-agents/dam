@@ -4,9 +4,14 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS builder
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
+# pnpm at the version package.json pins, installed by mise from the npm registry
+# (the npm backend needs no GitHub API calls on rate-limited runners). Builder
+# stage only: the runtime image carries neither mise nor pnpm.
+COPY --from=ghcr.io/jdx/mise:2026.9@sha256:812f7860a2fb911e1d5dd3375834abb2a08f8c783a23f783fcbccaf7fc7357aa /usr/local/bin/mise /usr/local/bin/mise
+ENV MISE_DATA_DIR=/usr/local/share/mise \
+    PATH="/usr/local/share/mise/shims:$PATH"
 COPY package.json ./
-RUN install-pnpm
+RUN mise use -g "npm:pnpm@$(node -p "require('./package.json').packageManager.split('@')[1].split('+')[0]")" && mise reshim && pnpm --version
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/dev-config/package.json packages/dev-config/

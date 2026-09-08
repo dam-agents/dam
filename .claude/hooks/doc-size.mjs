@@ -3,9 +3,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { capFor, measure, overageReport } from "../docs/.mise/tasks/lib/doc-size.mjs";
+import { capFor, measure, overageReport } from "../../docs/.mise/tasks/lib/doc-size.mjs";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function allow() {
   process.exit(0);

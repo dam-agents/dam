@@ -33,7 +33,8 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
-RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node && \
+    MISE_CACHE_DIR=/root/.cache/mise mise install "npm:pnpm"
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
@@ -77,9 +78,7 @@ RUN dnf install \
 
 FROM base AS builder
 
-COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
 COPY package.json ./
-RUN install-pnpm && mise reshim
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/dev-config/package.json packages/dev-config/

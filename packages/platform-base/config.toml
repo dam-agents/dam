@@ -6,6 +6,9 @@ python.compile = false
 
 [tools]
 node = "24"
+# pnpm for the builder stage (workspace install) and for agents working in node
+# projects; keep in step with the repo package.json packageManager.
+"npm:pnpm" = "10.33.4"
 jq = "latest"
 fd = "latest"
 rg = "latest"

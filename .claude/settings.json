@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/doc-size-hook.mjs"
+            "command": "node .claude/hooks/doc-size.mjs"
           }
         ]
       }
