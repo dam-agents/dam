@@ -77,13 +77,6 @@ sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/p
 outputs = []
 cache.enabled = true
 
-# -- Repo-level tasks -------------------------------------------------------
-
-# -- Aggregation --
-# `x:*` matches the repo-root leaves (check:zizmor, …), `//...:x` the same task
-# in every package config root (`//...` never includes the root itself).
-# Dependencies are not tasks: the [deps] providers (here and in the package
-# configs) run before any `mise run`, so no task depends on an install step.
 [tasks.check]
 depends = ["check:*", "//...:check"]
 
@@ -93,10 +86,7 @@ depends = ["//...:fix"]
 [tasks.test]
 depends = ["//...:test"]
 
-# The one non-aggregator kept here on purpose: as a file task it would vanish
-# with its own executable bit, the exact failure it guards against.
-# A file task that loses its executable bit vanishes from the task list, and a
-# `check:*` wildcard then skips it silently instead of failing.
+# Kept on purpose in here, to guard other file-based tasks
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
