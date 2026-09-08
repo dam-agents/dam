@@ -1,5 +1,5 @@
 import { VIEWER_ALLOWLIST_MAX } from "api-server-api";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,37 +7,44 @@ import { Input } from "@/components/ui/input";
 import { normalizeViewerEmail } from "../lib/viewer-allowlist.js";
 import { ViewerRow } from "./viewer-row.js";
 
-const COUNTER_FROM = 40;
-
 interface Props {
   viewers: string[];
   onChange: (viewers: string[]) => void;
   disabled: boolean;
+  draft: string;
+  onDraftChange: (draft: string) => void;
 }
 
 function sharedWithCaption(count: number, full: boolean) {
-  if (count === 0) return "Not shared with anyone yet";
-  const users = count === 1 ? "user" : "users";
-  if (full) return `Currently shared with ${count} ${users} · the list is full`;
-  if (count >= COUNTER_FROM)
-    return `Currently shared with ${count} ${users} · ${count} / ${VIEWER_ALLOWLIST_MAX}`;
-  return `Currently shared with ${count} ${users}`;
+  if (count === 0) return "Only you can open the link. Add people to share it.";
+  return `${count} / ${VIEWER_ALLOWLIST_MAX} people on the list${full ? " · the list is full" : ""}`;
 }
 
-export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
-  const [draft, setDraft] = useState("");
-  const [invalid, setInvalid] = useState(false);
+export function ViewerListEditor({
+  viewers,
+  onChange,
+  disabled,
+  draft,
+  onDraftChange,
+}: Props) {
+  const errorId = useId();
+  const [error, setError] = useState<string | null>(null);
   const full = viewers.length >= VIEWER_ALLOWLIST_MAX;
 
   function handleAdd() {
+    if (disabled || full) return;
     const email = normalizeViewerEmail(draft);
     if (!email) {
-      setInvalid(draft.trim().length > 0);
+      setError(draft.trim().length > 0 ? "Enter a full email address" : null);
       return;
     }
-    if (!viewers.includes(email)) onChange([...viewers, email]);
-    setDraft("");
-    setInvalid(false);
+    if (viewers.includes(email)) {
+      setError("This person is already on the list");
+      return;
+    }
+    onChange([...viewers, email]);
+    onDraftChange("");
+    setError(null);
   }
 
   function handleRemove(email: string) {
@@ -53,11 +60,13 @@ export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
           placeholder="name@company.com"
           aria-label="Viewer email address"
           value={draft}
-          variant={invalid ? "invalid" : "standard"}
+          variant={error ? "invalid" : "standard"}
+          aria-invalid={error !== null}
+          aria-describedby={error ? errorId : undefined}
           disabled={disabled || full}
           onChange={(e) => {
-            setDraft(e.target.value);
-            setInvalid(false);
+            onDraftChange(e.target.value);
+            setError(null);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -77,8 +86,10 @@ export function ViewerListEditor({ viewers, onChange, disabled }: Props) {
           + Add
         </Button>
       </div>
-      {invalid && (
-        <p className="text-xs text-danger">Enter a full email address</p>
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-danger">
+          {error}
+        </p>
       )}
       <p className="text-xs text-muted-foreground tabular-nums">
         {sharedWithCaption(viewers.length, full)}

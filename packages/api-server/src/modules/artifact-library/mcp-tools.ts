@@ -3,23 +3,16 @@ import { z } from "zod";
 import {
   ARTIFACT_TOUCH_MARKER_VERSION,
   ARTIFACT_TITLE_MAX_LENGTH,
-  artifactInternalLink,
   artifactKindSchema,
-  type LibraryArtifact,
 } from "api-server-api";
 
+import { toAgentArtifact } from "./agent-artifact.js";
 import { securityLog } from "../../core/security-log.js";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
-function withInternalLink(
-  artifact: LibraryArtifact,
-): LibraryArtifact & { internal_link: string } {
-  return { ...artifact, internal_link: artifactInternalLink(artifact.id) };
-}
-
 function touched(
-  artifact: LibraryArtifact & { internal_link: string },
+  artifact: ReturnType<typeof toAgentArtifact>,
 ): Record<string, unknown> {
   return {
     ...artifact,
@@ -129,7 +122,7 @@ export function registerArtifactLibraryTools(
           { agentId: deps.agentId },
         );
         return json({
-          ...touched(withInternalLink(artifact)),
+          ...touched(toAgentArtifact(artifact)),
           ...(await experimentAttachment(artifact.id, experiment_id)),
         });
       }),
@@ -219,7 +212,7 @@ export function registerArtifactLibraryTools(
           search,
           ...(mine_only ? { agentId: deps.agentId } : {}),
         });
-        return json(artifacts.map(withInternalLink));
+        return json(artifacts.map(toAgentArtifact));
       }),
   );
 
@@ -236,7 +229,7 @@ export function registerArtifactLibraryTools(
         if (!artifact) return errorResult(`artifact ${id} not found`);
         const content = await lib.getContent(id, version);
         return json({
-          ...withInternalLink(artifact),
+          ...toAgentArtifact(artifact),
           content:
             content && !content.binary && !content.tooLarge
               ? content.content
@@ -278,8 +271,8 @@ export function registerArtifactLibraryTools(
           content !== undefined || upload_ref !== undefined;
         return json(
           publishedVersion
-            ? touched(withInternalLink(artifact))
-            : withInternalLink(artifact),
+            ? touched(toAgentArtifact(artifact))
+            : toAgentArtifact(artifact),
         );
       }),
   );
@@ -308,7 +301,7 @@ export function registerArtifactLibraryTools(
               }
             : {}),
         });
-        return json(artifact);
+        return json(toAgentArtifact(artifact));
       }),
   );
 

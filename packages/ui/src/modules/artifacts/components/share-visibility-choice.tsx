@@ -1,5 +1,7 @@
-import type { ArtifactVisibility } from "api-server-api";
-import type { ReactNode } from "react";
+import {
+  type ArtifactVisibility,
+  artifactVisibilitySchema,
+} from "api-server-api";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -7,7 +9,6 @@ interface Props {
   value: ArtifactVisibility;
   onChange: (value: ArtifactVisibility) => void;
   disabled: boolean;
-  restrictedPanel: ReactNode;
 }
 
 const OPTIONS: {
@@ -24,23 +25,15 @@ const OPTIONS: {
   { value: "public", label: "Public", description: "Anyone with the link" },
 ];
 
-function isVisibility(value: string): value is ArtifactVisibility {
-  return OPTIONS.some((option) => option.value === value);
-}
-
-export function ShareVisibilityChoice({
-  value,
-  onChange,
-  disabled,
-  restrictedPanel,
-}: Props) {
+export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
   return (
     <RadioGroup
       aria-label="Who can open this artifact"
       value={value}
       disabled={disabled}
       onValueChange={(next) => {
-        if (isVisibility(next)) onChange(next);
+        const parsed = artifactVisibilitySchema.safeParse(next);
+        if (parsed.success) onChange(parsed.data);
       }}
     >
       {OPTIONS.map((option) => (
@@ -52,9 +45,6 @@ export function ShareVisibilityChoice({
             testId={`share-visibility-${option.value}`}
             className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
           />
-          {option.value === "restricted" && value === "restricted" && (
-            <div className="pb-1 pl-[34px] pr-2">{restrictedPanel}</div>
-          )}
         </div>
       ))}
     </RadioGroup>

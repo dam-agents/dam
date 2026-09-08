@@ -1,4 +1,8 @@
 import {
+  artifactVisibilitySchema,
+  type ArtifactVisibility,
+} from "api-server-api";
+import {
   and,
   asc,
   desc,
@@ -30,7 +34,7 @@ export interface ArtifactRow {
   storageRef: string;
   sizeBytes: number;
   version: number;
-  visibility: string;
+  visibility: ArtifactVisibility;
   expiresAt: Date | null;
   viewCount: number;
   createdAt: Date;
@@ -153,6 +157,7 @@ export interface ArtifactLibraryRepository {
     owner: string,
     patch: SharingPatch,
     viewers: string[] | undefined,
+    authorize: (before: ArtifactRow) => void,
   ): Promise<SharingChange | null>;
 
   insertFolder(
@@ -189,7 +194,9 @@ export function createArtifactLibraryRepository(
     storageRef: artifactsTable.storageRef,
     sizeBytes: artifactsTable.sizeBytes,
     version: artifactsTable.version,
-    visibility: artifactsTable.visibility,
+    visibility: sql`${artifactsTable.visibility}`.mapWith((value) =>
+      artifactVisibilitySchema.parse(value),
+    ),
     expiresAt: artifactsTable.expiresAt,
     viewCount: artifactsTable.viewCount,
     createdAt: artifactsTable.createdAt,
@@ -472,7 +479,7 @@ export function createArtifactLibraryRepository(
       return byArtifact;
     },
 
-    async updateSharing(id, owner, patch, viewers) {
+    async updateSharing(id, owner, patch, viewers, authorize) {
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select(artifactColumns)
@@ -482,17 +489,30 @@ export function createArtifactLibraryRepository(
           )
           .for("update");
         if (!before) return null;
+        authorize(before);
         const [after] = await tx
           .update(artifactsTable)
           .set({ ...patch, updatedAt: new Date() })
           .where(eq(artifactsTable.id, id))
           .returning(artifactColumns);
         if (viewers !== undefined) {
-          await tx.delete(viewersTable).where(eq(viewersTable.artifactId, id));
-          if (viewers.length > 0) {
+          const existing = await selectViewers(tx, id);
+          const removed = existing.filter((email) => !viewers.includes(email));
+          const added = viewers.filter((email) => !existing.includes(email));
+          if (removed.length > 0) {
+            await tx
+              .delete(viewersTable)
+              .where(
+                and(
+                  eq(viewersTable.artifactId, id),
+                  inArray(viewersTable.email, removed),
+                ),
+              );
+          }
+          if (added.length > 0) {
             await tx
               .insert(viewersTable)
-              .values(viewers.map((email) => ({ artifactId: id, email })));
+              .values(added.map((email) => ({ artifactId: id, email })));
           }
         }
         return {

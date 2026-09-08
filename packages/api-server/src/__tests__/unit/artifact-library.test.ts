@@ -165,10 +165,11 @@ function fakeRepo(
             .map((id) => [id, viewers.get(id)!]),
         ),
       ),
-    updateSharing: (id, owner, patch, emails) => {
+    updateSharing: (id, owner, patch, emails, authorize) => {
       const row = artifacts.find((a) => a.id === id && a.owner === owner);
       if (!row) return Promise.resolve(null);
       const before = { ...row };
+      authorize(before);
       Object.assign(row, patch, { updatedAt: new Date() });
       if (emails !== undefined) viewers.set(id, [...emails]);
       return Promise.resolve({
@@ -600,5 +601,114 @@ describe("expiry sweeper", () => {
       "library/o1/a1/v0/old.html",
       "library/o1/a1/v1/t.html",
     ]);
+  });
+});
+
+describe("restricted sharing permissions", () => {
+  async function serviceFor(
+    surface: import("../../modules/artifact-library/services/artifact-library-service.js").ArtifactSurface,
+    repo: ArtifactLibraryRepository,
+  ) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      surface,
+      repo,
+      owner: "o1",
+      shareBaseUrl: "https://share.example.com",
+      artifacts: stubArtifacts({}),
+    });
+  }
+
+  it("normalizes and deduplicates emails on direct service writes", async () => {
+    const row = artifactRow({});
+    const repo = fakeRepo([row]);
+    const service = await serviceFor("ui", repo);
+    const saved = await service.setSharing(row.id, {
+      visibility: "restricted",
+      viewers: [" Alice@Example.com ", "alice@example.com"],
+    });
+    expect(saved.viewers).toEqual(["alice@example.com"]);
+    const viewer = createShareViewerService({
+      repo,
+      artifacts: stubArtifacts({}),
+    });
+    await expect(
+      viewer.canView(row, {
+        sub: "viewer",
+        email: "ALICE@example.com",
+        emailVerified: true,
+        createdAt: Date.now(),
+      }),
+    ).resolves.toBe("allow");
+  });
+
+  it.each(["mcp", "cli", "system", "other"] as const)(
+    "refuses restricted sharing from %s",
+    async (surface) => {
+      const row = artifactRow({ visibility: "public" });
+      const service = await serviceFor(surface, fakeRepo([row]));
+      await expect(
+        service.setSharing(row.id, { visibility: "restricted" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        service.setSharing(row.id, { viewers: ["viewer@example.com"] }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      row.visibility = "restricted";
+      await expect(
+        service.setSharing(row.id, { visibility: "public" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(row.visibility).toBe("restricted");
+    },
+  );
+
+  it("checks the row locked for writing when the owner restricts it concurrently", async () => {
+    const row = artifactRow({ visibility: "public" });
+    const repo = fakeRepo([row]);
+    const service = await serviceFor("mcp", {
+      ...repo,
+      updateSharing: (...args) => {
+        row.visibility = "restricted";
+        return repo.updateSharing(...args);
+      },
+    });
+    await expect(
+      service.setSharing(row.id, { visibility: "public" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(row.visibility).toBe("restricted");
+  });
+
+  it("keeps private and public sharing available to agents", async () => {
+    const row = artifactRow({ visibility: "private" });
+    const service = await serviceFor("mcp", fakeRepo([row]));
+    await expect(
+      service.setSharing(row.id, { visibility: "public" }),
+    ).resolves.toMatchObject({ visibility: "public" });
+    await expect(
+      service.setSharing(row.id, { visibility: "private" }),
+    ).resolves.toMatchObject({ visibility: "private" });
+  });
+
+  it("projects agent metadata without viewer emails or future owner-only fields", async () => {
+    const { toAgentArtifact } =
+      await import("../../modules/artifact-library/agent-artifact.js");
+    const { toLibraryArtifact } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    const artifact = {
+      ...toLibraryArtifact(
+        artifactRow({ visibility: "restricted" }),
+        "https://share.example.com",
+        ["private@example.com"],
+      ),
+      futurePrivateField: "private value",
+    };
+    const projected = toAgentArtifact(artifact);
+    expect(projected).not.toHaveProperty("viewers");
+    expect(projected).not.toHaveProperty("futurePrivateField");
+    expect(projected).toMatchObject({
+      id: artifact.id,
+      visibility: "restricted",
+      internal_link: `platform://artifacts/${artifact.id}`,
+    });
   });
 });

@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { ARTIFACT_RESTORE_WINDOW_DAYS } from "api-server-api";
 
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
@@ -52,8 +53,6 @@ export interface ShareViewerService {
   recordView(artifact: ArtifactRow): void;
 }
 
-const SHAREABLE = new Set(["public", "restricted"]);
-
 export function createShareViewerService(deps: {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
@@ -91,14 +90,19 @@ export function createShareViewerService(deps: {
   return {
     async resolveArtifact(slug) {
       const row = await repo.getArtifactBySlug(slug);
-      if (!row || !SHAREABLE.has(row.visibility)) return { state: "not-found" };
+      if (!row) return { state: "not-found" };
+      if (row.visibility === "private") return { state: "not-found" };
       const expiry = expiryState(row);
       if (expiry.expired) {
         return { state: "expired", withinGrace: expiry.withinGrace };
       }
-      return row.visibility === "restricted"
-        ? { state: "restricted", artifact: row }
-        : { state: "ok", artifact: row };
+      return match(row.visibility)
+        .with("public", () => ({ state: "ok", artifact: row }) as const)
+        .with(
+          "restricted",
+          () => ({ state: "restricted", artifact: row }) as const,
+        )
+        .exhaustive();
     },
 
     async canView(artifact, session) {

@@ -288,6 +288,18 @@ describe("content app", () => {
 });
 
 describe("by-link host gate", () => {
+  it.each([
+    ["https://share.example.com", "https://share.example.com"],
+    ["https://SHARE.example.com", "http://share.example.com:8080"],
+  ])("rejects colliding hostnames %s and %s", (shareUrl, contentUrl) => {
+    expect(() =>
+      createByLinkHostGate({
+        share: { baseUrl: shareUrl, app: new Hono() },
+        content: { baseUrl: contentUrl, app: new Hono() },
+      }),
+    ).toThrow("different hostnames");
+  });
+
   function gatedApp() {
     const viewer = new Hono();
     viewer.get("/a/:slug", (c) => c.text("viewer"));
@@ -479,7 +491,7 @@ describe("restricted artifacts on the share host", () => {
       const res = await app.request("/a/slug-a?v=1", withCookie(sid));
       expect(res.status).toBe(403);
       const html = await res.text();
-      expect(html).toContain("you don't have access");
+      expect(html).toContain("You don't have access");
       expect(html).not.toContain("Weekly digest");
       expect(html).toContain('<form method="post" action="/auth/logout">');
       expect(html).toContain('name="next" value="/a/slug-a?v=1"');

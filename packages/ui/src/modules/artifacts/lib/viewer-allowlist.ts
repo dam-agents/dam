@@ -6,5 +6,9 @@ export function normalizeViewerEmail(raw: string): string | null {
 }
 
 export function sameViewers(a: readonly string[], b: readonly string[]) {
-  return a.length === b.length && a.every((email, i) => email === b[i]);
+  const left = new Set(a);
+  const right = new Set(b);
+  return (
+    left.size === right.size && [...left].every((email) => right.has(email))
+  );
 }

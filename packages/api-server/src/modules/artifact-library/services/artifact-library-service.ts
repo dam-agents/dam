@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { match } from "ts-pattern";
+import { artifactSharingInputSchema } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type {
   ArtifactContent,
@@ -42,7 +44,7 @@ import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
-const AGENT_SURFACE = "mcp";
+export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
 
 export interface ArtifactAgentDownloadTicket {
   url: string;
@@ -84,7 +86,7 @@ export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
   owner: string;
-  surface: string;
+  surface: ArtifactSurface;
   shareBaseUrl: string;
 }
 
@@ -96,8 +98,12 @@ export function folderShareUrlFor(shareBaseUrl: string, slug: string): string {
   return `${shareBaseUrl.replace(/\/+$/, "")}/f/${slug}`;
 }
 
-function hasShareLink(visibility: string): boolean {
-  return visibility === "public" || visibility === "restricted";
+function hasShareLink(visibility: ArtifactVisibility): boolean {
+  return match(visibility)
+    .with("private", () => false)
+    .with("public", () => true)
+    .with("restricted", () => true)
+    .exhaustive();
 }
 
 export function toLibraryArtifact(
@@ -116,7 +122,7 @@ export function toLibraryArtifact(
     version: row.version,
     folderId: row.folderId,
     agentId: row.agentId,
-    visibility: row.visibility as ArtifactVisibility,
+    visibility: row.visibility,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
@@ -167,11 +173,18 @@ export function createArtifactLibraryService(
     return toLibraryArtifact(row, shareBaseUrl, await repo.listViewers(row.id));
   }
 
-  function refuseAgentOnRestricted(
+  function requireSharingPermission(
     before: ArtifactRow,
     input: ArtifactSharingInput,
   ): void {
-    if (surface !== AGENT_SURFACE) return;
+    const mayManageRestricted = match(surface)
+      .with("ui", () => true)
+      .with("cli", () => false)
+      .with("mcp", () => false)
+      .with("system", () => false)
+      .with("other", () => false)
+      .exhaustive();
+    if (mayManageRestricted) return;
     if (before.visibility === "restricted")
       throw new TRPCError({
         code: "FORBIDDEN",
@@ -451,13 +464,18 @@ export function createArtifactLibraryService(
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      const current = await requireArtifact(id);
-      refuseAgentOnRestricted(current, input);
+      const parsed = artifactSharingInputSchema.parse({ ...input, id });
       const patch: SharingPatch = {};
-      if (input.visibility !== undefined) patch.visibility = input.visibility;
-      if (input.expiresInHours !== undefined)
-        patch.expiresAt = expiresAtFrom(input.expiresInHours);
-      const change = await repo.updateSharing(id, owner, patch, input.viewers);
+      if (parsed.visibility !== undefined) patch.visibility = parsed.visibility;
+      if (parsed.expiresInHours !== undefined)
+        patch.expiresAt = expiresAtFrom(parsed.expiresInHours);
+      const change = await repo.updateSharing(
+        id,
+        owner,
+        patch,
+        parsed.viewers,
+        (before) => requireSharingPermission(before, parsed),
+      );
       if (!change) throw new TRPCError({ code: "NOT_FOUND" });
       const { before, after, viewers } = change;
       emit({

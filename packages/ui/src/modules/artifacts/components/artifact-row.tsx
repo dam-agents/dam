@@ -128,16 +128,20 @@ export function ArtifactRow({
       <div
         draggable={false}
         className="ml-auto flex shrink-0 items-center gap-2"
-        onClick={(e) => e.stopPropagation()}
       >
         {artifact.shareUrl && (
-          <CopyLinkButton
-            shareUrl={artifact.shareUrl}
-            restricted={artifact.visibility === "restricted"}
-          />
+          <span onClick={(e) => e.stopPropagation()}>
+            <CopyLinkButton
+              shareUrl={artifact.shareUrl}
+              restricted={artifact.visibility === "restricted"}
+            />
+          </span>
         )}
         <ArtifactStatusBadge artifact={artifact} />
-        <div className={cn("flex gap-0.5", HOVER_ACTION)}>
+        <div
+          className={cn("flex gap-0.5", HOVER_ACTION)}
+          onClick={(e) => e.stopPropagation()}
+        >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="More actions">

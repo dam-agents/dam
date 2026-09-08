@@ -76,6 +76,12 @@ export function useUpdateArtifact() {
 export function useSetArtifactSharing() {
   return useMutation({
     ...trpc.artifactLibrary.setSharing.mutationOptions(),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(
+        trpc.artifactLibrary.get.queryKey({ id: saved.id }),
+        saved,
+      );
+    },
     meta: {
       invalidates: invalidatesLibraryAndArtifact,
       errorToast: "Failed to update sharing",

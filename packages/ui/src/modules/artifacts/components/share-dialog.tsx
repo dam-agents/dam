@@ -24,6 +24,7 @@ interface Props {
 export function ShareDialog({ artifact, onClose }: Props) {
   const { form, shareUrl, needsPublicConfirm, submit, isPending } =
     useShareForm(artifact, onClose);
+  const [draftEmail, setDraftEmail] = useState("");
   const [confirmingPublic, setConfirmingPublic] = useState(false);
   const visibility = form.watch("visibility");
   const hasLink = visibility !== "private" && shareUrl !== null;
@@ -42,6 +43,8 @@ export function ShareDialog({ artifact, onClose }: Props) {
           viewers={field.value}
           onChange={field.onChange}
           disabled={isPending}
+          draft={draftEmail}
+          onDraftChange={setDraftEmail}
         />
       )}
     />
@@ -53,7 +56,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
         <>
           <DialogHeader
             title={PUBLIC_SHARE_TITLE}
-            onClose={onClose}
+            onClose={() => setConfirmingPublic(false)}
             closeDisabled={isPending}
             divided={false}
           />
@@ -88,10 +91,10 @@ export function ShareDialog({ artifact, onClose }: Props) {
                     value={field.value}
                     onChange={field.onChange}
                     disabled={isPending}
-                    restrictedPanel={viewerEditor}
                   />
                 )}
               />
+              {visibility === "restricted" && viewerEditor}
               {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
             </div>
           </DialogBody>

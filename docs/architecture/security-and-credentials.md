@@ -123,7 +123,7 @@ theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
 and a pod roll — no theme rebuild, no realm change. The same page also
 knows which client started the sign-in: when it is the artifact share
-host's client (`keycloak.shareClientId`), the heading and lead paragraph
+host's client, the heading and lead paragraph
 tell the visitor they need to sign in to view a shared artifact instead
 of the general product pitch. Upstream identity
 providers themselves (e.g. w3id) are realm configuration managed outside
@@ -139,7 +139,7 @@ The user agent flow:
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
 
-The realm holds a **second public client** for the artifact share host
+The realm holds a **dedicated public client** for the artifact share host
 ([artifact-library](artifact-library.md#the-share-host--trust-boundary)):
 PKCE-only, redirect pinned to that host's sign-in callback, and no
 `platform-api` audience, so its tokens are rejected by the api-server. A

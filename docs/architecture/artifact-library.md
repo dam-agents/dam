@@ -54,8 +54,9 @@ two that have one, so switching between them never changes the link.
 - **Restricted** opens the link to a named group. The owner keeps a **viewer
   allowlist** of email addresses — emails, not user ids, because a listed
   person may exist only in the identity provider and never have signed in to
-  the platform. A visitor is asked to sign in with the platform's identity
-  provider; the artifact renders when the verified email from that sign-in
+  the platform. Viewers need an account admitted by that identity provider;
+  an email address alone does not create one. An empty list leaves the link
+  accessible only to the owner. A visitor signs in with that provider; the artifact renders when the verified email from that sign-in
   matches a listed one (normalised once, at the boundary: trimmed and
   lowercased), or when the visitor is the owner. Anyone else lands on a plain
   no-access page naming the email they signed in with and offering to switch
@@ -63,7 +64,8 @@ two that have one, so switching between them never changes the link.
   *locates* the artifact — the share session authorizes. Only a person sets
   restricted, in the Share dialog: agent tools offer private and public, and
   refuse any sharing change on an artifact that is already restricted, so an
-  agent can neither widen a restricted link nor edit who is on it.
+  agent can neither widen a restricted link nor edit who is on it. Agent
+  responses omit the viewer allowlist.
 - **Public** opens the link to anyone. For a public artifact the slug is the
   *entire* access control: there is no account, token, or password on the
   public side — whoever holds the link may view, and guarding the link is the
@@ -114,8 +116,8 @@ exist on its origin.
 
 **Share session.** A restricted artifact needs a viewer identity on the share
 host, and that identity is deliberately not the app's. The share host signs
-the visitor in through a second, dedicated public Keycloak client
-(authorization code with PKCE, asking only for the email scope, see
+the visitor in through a dedicated public Keycloak client
+(authorization code with PKCE, asking for OpenID identity and email, see
 [identity](security-and-credentials.md#identity)). Its redirect is pinned to
 the share host's callback and its tokens carry no api audience, so a token
 minted for it is useless against the api-server. The code is redeemed
@@ -133,17 +135,19 @@ navigation, source download); the inner document is the user content, loaded
 from the content host in an iframe. The browser's same-origin rule is the
 boundary: artifact code runs as the content origin, so it can neither read the
 share session cookie nor call the share host as the signed-in viewer. The
-sandbox attribute stays as a second layer but is no longer what holds the
-line. The content host agrees to be framed only by the share origin, and
+sandbox blocks top-level navigation and forms, but permits scripts,
+same-origin access and unsandboxed popups: it does not provide an independent
+origin boundary. The content host agrees to be framed only by the share origin, and
 serves raw bytes under a sandbox directive so a document opened directly
 cannot run either.
 
 The content host cannot see the share session, so a restricted frame carries
 a **render token**: minted by the share page for exactly one artifact and
-version after the viewer passed, valid for one minute, redeemed by the
+version after the viewer passed, with a short expiry, redeemed by the
 content host on the document and on its raw bytes. It is a short-lived,
-single-purpose grant — not a session and not an identity; after its minute a
-pasted frame address answers unauthorized. A public frame needs no token, and
+single-purpose bearer grant — not a session and not an identity; anyone
+holding it can replay it until expiry, after which a pasted frame address
+answers unauthorized. A public frame needs no token, and
 the source download on the share host never does: it is gated by the share
 session like the page itself.
 
@@ -163,8 +167,8 @@ user content, it only wraps it:
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned
 to the share origin) but deliberately no restrictive content CSP: the
-dedicated content origin plus the sandbox attribute are the actual
-isolation.
+dedicated content origin provides origin isolation; the sandbox restricts
+specific browser capabilities.
 
 Blob bytes relay through the api-server with constant memory: raw views
 stream store → response without ever buffering the object (the store is

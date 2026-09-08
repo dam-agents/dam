@@ -13,7 +13,10 @@ export function createByLinkHostGate(hosts: {
 }): MiddlewareHandler {
   const byHostname = new Map<string, Fetchable>();
   for (const host of [hosts.share, hosts.content]) {
-    byHostname.set(new URL(host.baseUrl).hostname.toLowerCase(), host.app);
+    const hostname = new URL(host.baseUrl).hostname.toLowerCase();
+    if (byHostname.has(hostname))
+      throw new Error("Share and content hosts must use different hostnames");
+    byHostname.set(hostname, host.app);
   }
   return async (c, next) => {
     const hostname = c.req.header("host")?.split(":")[0]?.toLowerCase();

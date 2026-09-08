@@ -45,9 +45,7 @@ export default function Login(
       classes={classes}
       displayMessage={!usernameError}
       headerNode={
-        isShareSignIn
-          ? `Well ${brand}, you don't have access.`
-          : `Sign in to ${brand}`
+        isShareSignIn ? "Sign in to view this artifact" : `Sign in to ${brand}`
       }
     >
       <p className="mt-6 text-base leading-relaxed text-pretty md:text-xl">

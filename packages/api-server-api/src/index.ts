@@ -231,6 +231,7 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  artifactSharingInputSchema,
   artifactCreateVisibilitySchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,

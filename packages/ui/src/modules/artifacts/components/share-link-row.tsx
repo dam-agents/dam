@@ -12,6 +12,7 @@ export function ShareLinkRow({ shareUrl }: { shareUrl: string }) {
     <div className="flex items-center gap-2">
       <Input
         readOnly
+        aria-label="Artifact share link"
         value={shareUrl}
         size="sm"
         variant="monospace"

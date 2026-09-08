@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import { createRemoteJWKSet } from "jose";
@@ -54,7 +55,10 @@ export function composeArtifactLibraryForOwner(
       repo: createArtifactLibraryRepository(opts.db),
       artifacts: opts.artifacts,
       owner: opts.owner,
-      surface: opts.surface,
+      surface: z
+        .enum(["ui", "cli", "mcp", "system", "other"])
+        .catch("other")
+        .parse(opts.surface),
       shareBaseUrl: opts.shareBaseUrl,
     }),
   };
