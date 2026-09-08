@@ -21,6 +21,7 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   owner: string;
   surface: string;
   shareBaseUrl: string;
+  agentExists?: (agentId: string) => Promise<boolean>;
 }
 
 export function composeArtifactLibraryForOwner(
@@ -33,6 +34,7 @@ export function composeArtifactLibraryForOwner(
       owner: opts.owner,
       surface: opts.surface,
       shareBaseUrl: opts.shareBaseUrl,
+      ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),
   };
 }

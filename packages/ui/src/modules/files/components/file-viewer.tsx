@@ -220,7 +220,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               className="text-sm font-normal"
               disabled={!promotion.promotable || promotion.pending}
               tooltip={
-                promotion.promotable
+                promotion.promotable || !promotion.linkReady
                   ? undefined
                   : "Binary and oversized files can't be promoted from the panel"
               }

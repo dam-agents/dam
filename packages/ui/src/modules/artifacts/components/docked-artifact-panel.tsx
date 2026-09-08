@@ -22,6 +22,7 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { isRenderedKind } from "../lib/kinds.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -106,7 +107,9 @@ export function DockedArtifactPanel() {
               variant="outline"
               size="xs"
               className="text-sm font-normal"
-              onClick={() => void copy(artifact.shareUrl ?? "")}
+              onClick={() =>
+                void copy(artifact.shareUrl ?? "").then(toastCopyOutcome)
+              }
             >
               <Link size={14} />
               {copied ? "Copied" : "Copy link"}

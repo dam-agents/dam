@@ -200,6 +200,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifacts,
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
+      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
     const { experiments } = composeExperimentsForOwner({
       db,

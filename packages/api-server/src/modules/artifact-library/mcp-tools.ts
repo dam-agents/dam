@@ -103,7 +103,7 @@ export function registerArtifactLibraryTools(
         .max(1024)
         .optional()
         .describe(
-          "Workspace path of the file this content came from, so the artifact records its origin.",
+          "Workspace-relative path of the file this content came from (as shown in the file browser), so the artifact records its origin.",
         ),
       experiment_id: z
         .string()
@@ -282,7 +282,7 @@ export function registerArtifactLibraryTools(
         .max(1024)
         .optional()
         .describe(
-          "Workspace path of the file this revision came from, recorded on the artifact.",
+          "Workspace-relative path of the file this revision came from (as shown in the file browser), recorded on the artifact.",
         ),
     },
     ({ id, title, content, upload_ref, file_name, folder_id, source_path }) =>

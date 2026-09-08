@@ -84,6 +84,7 @@ export interface ArtifactLibraryDeps {
   owner: string;
   surface: string;
   shareBaseUrl: string;
+  agentExists?: (agentId: string) => Promise<boolean>;
 }
 
 export function shareUrlFor(shareBaseUrl: string, slug: string): string {
@@ -140,6 +141,15 @@ export function createArtifactLibraryService(
   deps: ArtifactLibraryDeps,
 ): ArtifactLibraryServiceImpl {
   const { repo, artifacts, owner, shareBaseUrl, surface } = deps;
+
+  async function ensureAgent(agentId: string): Promise<void> {
+    if (!deps.agentExists) return;
+    if (!(await deps.agentExists(agentId)))
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Agent "${agentId}" not found`,
+      });
+  }
 
   async function requireOwnedFolder(folderId: string): Promise<FolderRow> {
     const folder = await repo.getFolder(folderId, owner);
@@ -294,6 +304,7 @@ export function createArtifactLibraryService(
 
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
+      if (attribution) await ensureAgent(attribution.agentId);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;

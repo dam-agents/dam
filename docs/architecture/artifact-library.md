@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-07
+Last verified: 2026-09-08
 
 ## Overview
 
@@ -151,6 +151,17 @@ flowchart LR
   authenticated upload route on the app origin (avoiding browser↔store CORS),
   then the same create call. Downloads answer with a presigned direct link
   when the store has a browser-reachable endpoint, a relayed blob otherwise.
+- **Workspace files** promote into artifacts from the chat file panel: the
+  browser already holds the file's text, so publishing is the ordinary user
+  create/update call (with the upload route for content over the inline cap)
+  plus two extra facts — the create attributes the artifact to the sandbox's
+  agent (validated against the owner's agents), and both calls record the
+  file's workspace-relative path as the artifact's `source_path`. The path is
+  a plain label: the server never dereferences or validates it, and the UI
+  uses it only to decide between creating a new artifact and publishing a new
+  version of an existing one (among the agent's artifacts with a matching
+  path, the most recently updated wins). The same label is settable through
+  the MCP artifact tools.
 
 ## UI surfaces
 
@@ -174,6 +185,9 @@ flowchart LR
 - The Home feed's session cards carry **artifact chips** — what the session
   touched since the card was last dismissed, opening the preview dialog in
   place.
+- The chat file panel's toolbar carries a **Create artifact / Sync to
+  artifact** action that publishes the open file as above and switches the
+  dock to the resulting artifact; binary and oversized files are excluded.
 - The chat view carries the same library twice over: an **Artifacts section**
   in the session sidebar, scoped to the sandbox's agent, grouped by folder and
   offering the same per-artifact actions plus drag-to-folder filing, and a
