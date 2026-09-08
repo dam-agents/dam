@@ -1,7 +1,11 @@
+import { EventSchedule } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
+import { HintTooltip, Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+
+import { deletionState, deletionTooltip } from "../lib/format.js";
 
 const KIND_PRESENTATION: Record<
   ArtifactKind,
@@ -56,11 +60,41 @@ export function ArtifactStatusBadge({
         <button
           type="button"
           aria-haspopup="dialog"
+          aria-label={`${label} — ${isPublic ? "change sharing" : "share this artifact"}`}
           onClick={() => onShare(artifact)}
         >
           {label}
         </button>
       </Badge>
     </Tooltip>
+  );
+}
+
+export function ArtifactDeletionChip({
+  expiresAt,
+  iconSize = 12,
+  className,
+}: {
+  expiresAt: string | null;
+  iconSize?: number;
+  className?: string;
+}) {
+  const deletion = deletionState(expiresAt);
+  if (deletion.state === "never") return null;
+  const hint = deletionTooltip(expiresAt);
+  return (
+    <HintTooltip
+      label={hint}
+      content={hint}
+      className={cn(
+        "shrink-0 gap-1 whitespace-nowrap",
+        deletion.state === "expired" && "text-danger",
+        deletion.state === "active" && deletion.soon && "text-warning",
+        className,
+      )}
+    >
+      <EventSchedule size={iconSize} />
+      {deletion.label}
+    </HintTooltip>
   );
 }

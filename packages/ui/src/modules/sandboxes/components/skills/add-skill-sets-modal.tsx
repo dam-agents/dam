@@ -193,7 +193,7 @@ export function AddSkillSetsModal({
         divided={false}
       />
 
-      <DialogBody flush>
+      <DialogBody flush divided>
         {loadFailed ? (
           <p className="px-5 py-4 text-sm text-danger md:px-6">
             Couldn't load your saved skill sets. Reopen the Skills page to try
@@ -204,7 +204,7 @@ export function AddSkillSetsModal({
             No saved skill sets yet — save one from this agent first.
           </p>
         ) : (
-          <div className="divide-y divide-border border-y border-border">
+          <div className="divide-y divide-border border-t border-border">
             {previews.map((preview) => (
               <SetRow
                 key={preview.set.id}
@@ -220,7 +220,7 @@ export function AddSkillSetsModal({
         )}
       </DialogBody>
 
-      <DialogFooter className="border-t border-border">
+      <DialogFooter>
         <span className="flex-1 text-sm text-muted-foreground">
           {picked.size === 0
             ? "No sets selected"

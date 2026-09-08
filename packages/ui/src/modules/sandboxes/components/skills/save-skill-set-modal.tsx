@@ -104,7 +104,7 @@ export function SaveSkillSetModal({
         }}
       >
         {}
-        <DialogBody flush>
+        <DialogBody flush divided>
           <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-6">
             {omittedCount > 0 && (
               <p className="pb-2 text-sm text-warning-fg">
@@ -195,7 +195,6 @@ export function SaveSkillSetModal({
         </DialogBody>
 
         <DialogActions
-          className="border-t border-border"
           onCancel={onClose}
           label="Create"
           pendingLabel="Creating…"

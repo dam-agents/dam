@@ -21,7 +21,10 @@ import {
 } from "../api/queries.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
-import { ArtifactStatusBadge } from "./artifact-badges.js";
+import {
+  ArtifactDeletionChip,
+  ArtifactStatusBadge,
+} from "./artifact-badges.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -66,6 +69,15 @@ export function ArtifactPreviewDialog({
             <span className="truncate">{artifact.fileName}</span>
             <span>·</span>
             <span>{formatBytes(artifact.sizeBytes)}</span>
+            {artifact.expiresAt && (
+              <>
+                <span>·</span>
+                <ArtifactDeletionChip
+                  expiresAt={artifact.expiresAt}
+                  iconSize={14}
+                />
+              </>
+            )}
             <span className="flex-1" />
             <VersionSwitcher
               current={version}

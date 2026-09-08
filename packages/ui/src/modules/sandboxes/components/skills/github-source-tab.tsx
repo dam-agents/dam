@@ -19,7 +19,7 @@ export function GithubSourceTab({
 
   return (
     <form onSubmit={github.onSubmit}>
-      <DialogBody className="flex flex-col gap-5">
+      <DialogBody divided className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <SectionLabel>Skill group name</SectionLabel>
           <Input
@@ -60,7 +60,6 @@ export function GithubSourceTab({
       </DialogBody>
 
       <DialogActions
-        className="border-t border-border"
         onCancel={onClose}
         label="Add source"
         pendingLabel="Adding…"

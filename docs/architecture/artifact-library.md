@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-07
+Last verified: 2026-09-08
 
 ## Overview
 
@@ -162,10 +162,11 @@ flowchart LR
   the sharing dialog, and stays available whatever the artifact's visibility —
   it governs deletion, not the link. An artifact's visibility badge is also the
   control that opens the sharing dialog, so the state and the means to change it
-  sit in one place; artifact rows therefore show their share actions at rest,
-  while the other list surfaces keep row actions behind a hover reveal. The
-  in-app preview carries the same entry point, so opening an artifact is a place
-  to start sharing it rather than a dead end. Folder membership is mutable and
+  sit in one place; the library's artifact rows therefore show their share
+  actions at rest, while every other row — folders here, and artifacts in the
+  chat side panel — keeps its actions behind a hover reveal. The in-app preview
+  carries the same entry point, so opening an artifact is a place to start
+  sharing it rather than a dead end. Folder membership is mutable and
   advisory: any artifact can be filed into any folder, moved to another, or
   taken out again from the library itself, so organising a library is not tied
   to the moment each artifact was published. Nothing reads membership as a

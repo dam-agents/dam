@@ -139,12 +139,15 @@ export function DialogBody({
   children,
   className,
   flush,
-}: DialogRegionProps & { flush?: boolean }) {
+  divided,
+}: DialogRegionProps & { flush?: boolean; divided?: boolean }) {
   return (
     <div
       className={cn(
         "flex-1 min-h-0 overflow-y-auto pt-5 md:pt-6 [&:last-child]:pb-5 md:[&:last-child]:pb-6",
         !flush && "px-5 md:px-6",
+        divided &&
+          "pb-5 md:pb-6 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border",
         className,
       )}
     >
