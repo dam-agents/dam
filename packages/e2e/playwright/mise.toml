@@ -1,9 +1,8 @@
-# Chromium (+ OS libs on Linux) for the specs. Not auto: it is a large download
-# the check tasks in this root never need, so the run tasks install it
-# explicitly. The lockfile pins the playwright version the browser must match.
-[deps.browsers]
+# Deliberately a task, not a [deps] provider: `mise run setup` installs every
+# provider, and this one is a large download plus `sudo apt` on Linux that only
+# the e2e run tasks need.
+[tasks.install-browsers]
 description = "Download the Chromium binary Playwright drives (+ OS libs on Linux)"
-sources = ["package.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -21,22 +20,26 @@ fi
 [tasks."run"]
 description = "Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier"
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
-run = ["{{ mise_bin }} deps install browsers", "pnpm exec playwright test"]
+depends = [":install-browsers"]
+run = "pnpm exec playwright test"
 
 [tasks."run-full"]
 description = "Run the FULL suite: smoke plus the slow on-demand specs under src/tests/full/"
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
-run = ["{{ mise_bin }} deps install browsers", "E2E_FULL=1 pnpm exec playwright test"]
+depends = [":install-browsers"]
+run = "E2E_FULL=1 pnpm exec playwright test"
 
 [tasks."run-headed"]
 description = "Run Playwright with a visible browser window"
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
-run = ["{{ mise_bin }} deps install browsers", "pnpm exec playwright test --headed"]
+depends = [":install-browsers"]
+run = "pnpm exec playwright test --headed"
 
 [tasks."run-ui"]
 description = "Open Playwright UI mode (time-travel debugger, watch mode)"
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
-run = ["{{ mise_bin }} deps install browsers", "pnpm exec playwright test --ui"]
+depends = [":install-browsers"]
+run = "pnpm exec playwright test --ui"
 
 [tasks.check]
 depends = [":check:*"]

@@ -316,32 +316,25 @@ version = "3.9.16"
 backend = "aqua:apache/maven"
 
 [tools.maven."platforms.linux-arm64"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.linux-arm64-musl"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.linux-x64"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.linux-x64-musl"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.macos-arm64"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.macos-x64"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ""
 
 [tools.maven."platforms.windows-x64"]
-checksum = "sha512:831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
-url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
+url = ".exe"
 
 [[tools.node]]
 version = "24.19.0"
@@ -424,6 +417,45 @@ checksum = "sha256:bbfb23eb2219cbdd20c9c33cfb39263ce6cd638b4f8268093ce969ff2cfac
 url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0-2/pinact_windows_amd64.zip"
 url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/438728594"
 provenance = "github-attestations"
+
+[[tools.pnpm]]
+version = "10.33.4"
+backend = "aqua:pnpm/pnpm"
+
+[tools.pnpm."platforms.linux-arm64"]
+checksum = "sha256:d29649c7380b5cd522f574208fbd35335846686498f45004604d3f5b8658b5cb"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534380"
+
+[tools.pnpm."platforms.linux-arm64-musl"]
+checksum = "sha256:d29649c7380b5cd522f574208fbd35335846686498f45004604d3f5b8658b5cb"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534380"
+
+[tools.pnpm."platforms.linux-x64"]
+checksum = "sha256:ff1795595535a10d0dfe327303f3dd02377be141190b1f5756de68edde2cf813"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534376"
+
+[tools.pnpm."platforms.linux-x64-musl"]
+checksum = "sha256:ff1795595535a10d0dfe327303f3dd02377be141190b1f5756de68edde2cf813"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534376"
+
+[tools.pnpm."platforms.macos-arm64"]
+checksum = "sha256:7aae186a04e1ffaa0047d43cd07d68a98dec303304f28be52234ba955d26c671"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-macos-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534374"
+
+[tools.pnpm."platforms.macos-x64"]
+checksum = "sha256:3b0c97b9f794cdda293949a8ee0e0151ca08f512f4a832408386221c7c73eec6"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-macos-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534373"
+
+[tools.pnpm."platforms.windows-x64"]
+checksum = "sha256:3268b2f29defe0dce8a3a26c0ef01488f0d4aa4872923173186ef618ab7d68ef"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-win-x64.exe"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534378"
 
 [[tools.trivy]]
 version = "0.72.0"

@@ -18,19 +18,8 @@ repo_root = "{{config_root}}"
 # Project dependencies (`mise deps`): run before every `mise run`/`mise x` when
 # their inputs changed or outputs are missing. `mise run setup` installs them
 # across all config roots; `--no-deps` skips them.
-[deps.corepack]
-description = "Enable corepack so `pnpm exec …` in tasks resolves to package.json's packageManager"
-auto = true
-sources = ["package.json"]
-run = "corepack enable"
-
-# `corepack pnpm` needs no prior enable: on a fresh runner the pnpm shim is not
-# on PATH until the corepack provider has run, and provider order alone did not
-# save the install.
 [deps.pnpm]
 auto = true
-depends = ["corepack"]
-run = "corepack pnpm install"
 sources = [
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
@@ -42,6 +31,9 @@ outputs = ["node_modules/.modules.yaml"]
 
 [tools]
 nodejs = "24"
+# Same version as package.json's packageManager (the Dockerfiles install from
+# that field); mise provides the binary, no corepack.
+pnpm = "10.33.4"
 # The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
 # declared here so CI runners get the binary; uv manages python itself.
 uv = "0.9"
