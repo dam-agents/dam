@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the lease-elected K8s agent watch projects resource transitions into per-owner invalidation hints, including deletions that happened while the watch was disconnected.
+// TEST_OVERVIEW: the lease-elected K8s agent watch projects resource transitions into per-owner invalidation hints, including deletions that happened while the watch was disconnected. Its reconnect holds at most one live connection and one pending retry timer, and stop() releases whatever exists.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startAgentWatch } from "../../modules/live-events/infrastructure/k8s-agent-watch.js";
 import type { LiveEventsBus } from "../../modules/live-events/services/live-events-service.js";
@@ -23,13 +23,20 @@ describe("k8s agent watch", () => {
       publish: (ownerSub: string, hint: { agentId?: string }) =>
         void hints.push({ ownerSub, agentId: hint.agentId }),
     } as unknown as LiveEventsBus;
-    const conns: { onEvent: OnEvent; onEnd: OnEnd }[] = [];
+    const conns: { onEvent: OnEvent; onEnd: OnEnd; stopCalls: number }[] = [];
     const watch = startAgentWatch(
       bus,
       {
         watchCustomObjects: (_plural, onEvent, onEnd) => {
-          conns.push({ onEvent: onEvent as OnEvent, onEnd: onEnd as OnEnd });
-          return () => {};
+          const conn = {
+            onEvent: onEvent as OnEvent,
+            onEnd: onEnd as OnEnd,
+            stopCalls: 0,
+          };
+          conns.push(conn);
+          return () => {
+            conn.stopCalls += 1;
+          };
         },
       },
       { plural: "agents", ownerLabel: "owner", log: () => {}, debounceMs: 1 },
@@ -68,5 +75,42 @@ describe("k8s agent watch", () => {
 
     expect(hints).toEqual([]);
     watch.stop();
+  });
+
+  // TEST_SCENARIO: one connection reports its end twice — only one reconnect may follow, the ended connection must be released, and the duplicate end must not schedule a second retry.
+  it("reconnects once per ended connection, even when the end is reported twice", async () => {
+    const { conns, watch } = harness();
+
+    conns[0]!.onEnd(new Error("gone"));
+    conns[0]!.onEnd(new Error("gone"));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(conns).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(conns).toHaveLength(2);
+    expect(conns[0]!.stopCalls).toBe(1);
+    watch.stop();
+  });
+
+  // TEST_SCENARIO: after a reconnect, stop() must reach the connection that is live now, not the one that ended.
+  it("stop() closes the reconnected connection", async () => {
+    const { conns, watch } = harness();
+
+    conns[0]!.onEnd(new Error("gone"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(conns).toHaveLength(2);
+
+    watch.stop();
+    expect(conns[1]!.stopCalls).toBe(1);
+  });
+
+  // TEST_SCENARIO: stop() while a retry is pending must cancel it, so no connection opens after shutdown.
+  it("stop() cancels a pending reconnect", async () => {
+    const { conns, watch } = harness();
+
+    conns[0]!.onEnd(new Error("gone"));
+    watch.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(conns).toHaveLength(1);
   });
 });
