@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Strip comments from TS/JS/Go source files across the repo.
 //
-// Usage (task: .mise/tasks/common/strip-comments):
-//   mise run common:strip-comments              dry run, prints what would change
-//   mise run common:strip-comments -- --write   rewrite files in place
-//   mise run common:strip-comments -- [paths...] limit to files/dirs (tracked files only)
-//   mise run common:strip-comments -- --verbose print every removed comment
+// Usage (task: .mise/tasks/strip-comments):
+//   mise run strip-comments              dry run, prints what would change
+//   mise run strip-comments -- --write   rewrite files in place
+//   mise run strip-comments -- [paths...] limit to files/dirs (tracked files only)
+//   mise run strip-comments -- --verbose print every removed comment
 //
 // TS/JS files are lexed with the real TypeScript parser (regex literals,
 // template strings, and JSX make naive regex stripping unsafe). Go files use a
@@ -31,7 +31,7 @@ const GO_EXTENSION = '.go';
 
 // Registered comment types (see "Code comments" in CLAUDE.md). Comments
 // carrying one of these prefixes are the only prose comments allowed to exist,
-// so the stripper keeps them and common:check:comment-types requires them.
+// so the stripper keeps them and check:comment-types requires them.
 export const COMMENT_TYPES = ['TEST_OVERVIEW', 'TEST_SCENARIO', 'UNIT_BOUNDARY_DESCRIPTION'];
 const TYPED_COMMENT = new RegExp(`^(?:\\/\\/|\\/\\*+)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
 

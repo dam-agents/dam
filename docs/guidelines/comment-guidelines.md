@@ -1,6 +1,6 @@
 # Comment Guidelines
 
-Rules for comments in TS/JS/Go source. Enforced twice: `mise run common:strip-comments -- --write` deletes every comment that carries no registered type, and `mise run common:check:comment-types` fails when one slips in.
+Rules for comments in TS/JS/Go source. Enforced twice: `mise run strip-comments -- --write` deletes every comment that carries no registered type, and `mise run check:comment-types` fails when one slips in.
 
 ## The rule
 

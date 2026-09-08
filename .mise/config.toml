@@ -62,8 +62,8 @@ postinstall = ["{{ mise_bin }} setup"]
 
 [task_config]
 # Paths are relative to the repo root. .mise/tasks/ holds file tasks: each
-# executable is a task named by its path (.mise/tasks/common/check/version →
-# common:check:version); shared modules live non-executable under .mise/tasks/lib/.
+# executable is a task named by its path (.mise/tasks/check/version →
+# check:version); shared modules live non-executable under .mise/tasks/lib/.
 # Repo-level one-liners and aggregators are the [tasks] at the end of this file;
 # anything with a script body is a file task. deploy/tasks.toml holds the
 # cluster:* operations.
@@ -98,7 +98,7 @@ enabled = true
 # first is what keeps the artifact cache honest across package boundaries.
 
 [task_templates."ts:check:tsc"]
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 depends = [{ task = "^check:tsc", optional = true }]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -108,7 +108,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:lint"]
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 run = "pnpm exec eslint ."
 sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -117,7 +117,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:format"]
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
 sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "{{vars.repo_root}}/.prettierrc"]
 outputs = []
@@ -126,18 +126,18 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:fix:lint"]
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "pnpm exec eslint --fix ."
 deny_net = true
 
 [task_templates."ts:fix:format"]
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
 deny_net = true
 
 [task_templates."ts:test"]
 description = "Run the package's vitest suite"
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 depends = [{ task = "^check:tsc", optional = true }]
 run = "pnpm exec vitest run"
 sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -180,19 +180,19 @@ exec trivy image --quiet --exit-code 1 "$image"
 # -- Repo-level tasks -------------------------------------------------------
 
 # -- Aggregation --
-# `*:x` matches the repo-root tasks (common:x, docs:x), `//...:x` the same task
-# in every package config root.
+# `x:*` matches the repo-root leaves (check:zizmor, …), `//...:x` the same task
+# in every package config root (`//...` never includes the root itself).
 [tasks.setup]
-depends = ["common:setup:pnpm", "//...:setup"]
+depends = ["setup:pnpm", "//...:setup"]
 
 [tasks.check]
-depends = ["setup", "*:check", "//...:check"]
+depends = ["setup", "check:*", "//...:check"]
 
 [tasks.fix]
 depends = ["setup", "//...:fix"]
 
 [tasks.scan]
-depends = ["*:scan", "//...:scan"]
+depends = ["scan:*", "//...:scan"]
 
 [tasks.test]
 depends = ["setup", "//...:test"]
@@ -203,13 +203,13 @@ hide = true
 depends = ["check"]
 
 # -- Setup --
-[tasks."common:setup:corepack"]
+[tasks."setup:corepack"]
 run = "corepack enable"
 sources = ["package.json"]
 cache = { enabled = false }
 
-[tasks."common:setup:pnpm"]
-depends = ["common:setup:corepack"]
+[tasks."setup:pnpm"]
+depends = ["setup:corepack"]
 run = "pnpm install"
 sources = [
   "pnpm-lock.yaml",
@@ -223,18 +223,12 @@ sources = [
 cache = { enabled = false }
 
 # -- Common --
-[tasks."common:scan"]
-depends = ["common:scan:*"]
-
-[tasks."common:check"]
-depends = ["common:check:*"]
-
-[tasks."common:check:zizmor"]
+[tasks."check:zizmor"]
 description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"
 run = "zizmor --min-confidence medium .github/workflows/"
 
-[tasks."common:check:pinact"]
+[tasks."check:pinact"]
 description = "Every GitHub Actions `uses:` must be pinned to a full commit SHA"
 dir = "{{config_root}}"
 # -no-api keeps this purely syntactic: upstream retagging a release must

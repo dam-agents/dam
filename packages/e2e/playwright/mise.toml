@@ -1,6 +1,6 @@
 [tasks.install-browsers]
 description = "Download the Chromium binary Playwright drives (+ OS libs on Linux)"
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -17,30 +17,30 @@ fi
 # same via --host-resolver-rules in the config.
 [tasks."run"]
 description = "Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier"
-depends = ["//:common:setup:pnpm", ":install-browsers"]
+depends = ["//:setup:pnpm", ":install-browsers"]
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test"
 
 [tasks."run-full"]
 description = "Run the FULL suite: smoke plus the slow on-demand specs under src/tests/full/"
-depends = ["//:common:setup:pnpm", ":install-browsers"]
+depends = ["//:setup:pnpm", ":install-browsers"]
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "E2E_FULL=1 pnpm exec playwright test"
 
 [tasks."run-headed"]
 description = "Run Playwright with a visible browser window"
-depends = ["//:common:setup:pnpm", ":install-browsers"]
+depends = ["//:setup:pnpm", ":install-browsers"]
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test --headed"
 
 [tasks."run-ui"]
 description = "Open Playwright UI mode (time-travel debugger, watch mode)"
-depends = ["//:common:setup:pnpm", ":install-browsers"]
+depends = ["//:setup:pnpm", ":install-browsers"]
 env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test --ui"
 
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]

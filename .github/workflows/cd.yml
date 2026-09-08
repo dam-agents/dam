@@ -846,7 +846,7 @@ jobs:
           retention-days: 1
 
   npm-audit:
-    name: mise common:scan:npm-audit
+    name: mise scan:npm-audit
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -859,11 +859,11 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run common:setup:pnpm
+      - run: mise run setup:pnpm
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run common:scan:npm-audit --json) || true
+          results=$(mise run scan:npm-audit --json) || true
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),

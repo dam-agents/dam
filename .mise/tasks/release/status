@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Show current release status and latest remote release information"
-#MISE depends=["common:check:version"]
+#MISE depends=["check:version"]
 set -euo pipefail
 
 git fetch origin --tags --quiet

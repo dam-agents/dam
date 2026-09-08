@@ -3,4 +3,4 @@
 #MISE sources=[".mise/tasks/image/resolve"]
 #MISE outputs=[]
 #MISE cache={ enabled = true }
-exec "$(dirname "$0")/../../image/resolve" --self-check
+exec "$(dirname "$0")/../image/resolve" --self-check

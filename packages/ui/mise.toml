@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -29,7 +29,7 @@ extends = "ts:test"
 run = "pnpm exec vite"
 
 [tasks.preview]
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "pnpm exec vite preview"
 
 [tasks.image]

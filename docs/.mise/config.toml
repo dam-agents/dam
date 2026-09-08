@@ -10,12 +10,12 @@ depends = [":check:*"]
 # event moved.
 [tasks."generate:activity-events"]
 dir = "{{vars.repo_root}}/packages/api-server"
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "node scripts/event-coverage.mjs --doc"
 
 # Guard: the committed table must match regeneration. Same fail-closed shape as
 # check:adr-index.
 [tasks."check:activity-events"]
 dir = "{{vars.repo_root}}/packages/api-server"
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "node scripts/event-coverage.mjs --check-doc"

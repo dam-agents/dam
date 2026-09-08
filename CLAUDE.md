@@ -30,7 +30,7 @@ Language-level coding rules are indexed in [`docs/guidelines/code/index.md`](doc
 
 - Before writing any code comment, follow [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md).
 - Tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are not comments.
-- Always run `mise run common:check:comment-types` after changing code.
+- Always run `mise run check:comment-types` after changing code.
 
 ## Documentation
 

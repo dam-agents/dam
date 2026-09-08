@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -28,7 +28,7 @@ run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
 # an emit site and a subscriber. Both halves drift silently past tsc and lint,
 # because a declared-but-unsubscribed event is perfectly well-typed.
 [tasks."check:events"]
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 run = "node scripts/event-coverage.mjs"
 sources = ["src/**/*.ts", "tsconfig.json", "scripts/event-coverage.mjs"]
 outputs = []
@@ -53,7 +53,7 @@ extends = "ts:test"
 run = "pnpm exec vitest run --config vitest.unit.config.ts"
 
 [tasks.dev]
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "pnpm exec tsx watch --env-file=.env src/index.ts"
 
 [tasks.image]

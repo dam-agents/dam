@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]

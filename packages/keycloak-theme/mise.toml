@@ -1,6 +1,6 @@
 [tasks.gen]
 description = "Generate kc.gen.tsx from current keycloakify config"
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 run = "pnpm exec keycloakify update-kc-gen"
 sources = ["vite.config.ts", "package.json"]
 outputs = ["src/kc.gen.tsx"]
@@ -8,7 +8,7 @@ cache = { enabled = true }
 
 [tasks.build]
 description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 sources = ["src/**/*", "public/**/*", "vite.config.ts", "package.json"]
 outputs = ["dist_keycloak/**/*"]
 cache = { enabled = true }
@@ -32,11 +32,11 @@ run = "pnpm exec keycloakify start-keycloak -p ./"
 
 [tasks.eject-page]
 description = "Eject a Keycloak page into src/login/pages/ to customize it"
-depends = ["//:common:setup:pnpm"]
+depends = ["//:setup:pnpm"]
 run = "pnpm exec keycloakify eject-page"
 
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]

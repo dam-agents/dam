@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:common:setup:pnpm", ":check:*"]
+depends = ["//:setup:pnpm", ":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -23,14 +23,14 @@ extends = "ts:fix:format"
 description = "Regenerate the Agent CR spec TS types from the controller's CRDs. AgentSpec derives from AgentSpecCR, so the Go-authored types are the single source."
 # Chain: api/v1/*.go --(controller:generate)--> CRD yaml --(here)--> crd-types.gen.ts
 # Not cached: it depends on controller:generate, which has no cache key.
-depends = ["//packages/controller:generate", "//:common:setup:pnpm"]
+depends = ["//packages/controller:generate", "//:setup:pnpm"]
 sources = ["{{vars.repo_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml", "scripts/gen-crd-types.sh", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = ["src/crd-types.gen.ts"]
 run = "bash scripts/gen-crd-types.sh {{vars.repo_root}} src/crd-types.gen.ts"
 
 [tasks."check:gen"]
 description = "Fail if the committed CRD types are stale vs the committed CRDs (drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
-wait_for = ["//:common:setup:pnpm"]
+wait_for = ["//:setup:pnpm"]
 sources = ["{{vars.repo_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml", "src/crd-types.gen.ts", "scripts/gen-crd-types.sh", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache = { enabled = true }
