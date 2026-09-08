@@ -211,14 +211,8 @@ depends = ["scan:*", "//...:scan"]
 [tasks.test]
 depends = ["//...:test"]
 
-# -- Common --
-[tasks."check:comment-types"]
-description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
-# Not cached: it walks every tracked TS/JS/Go file, and a sources glob wide
-# enough to match that has to traverse node_modules.
-run = "{{ mise_bin }} run strip-comments -- --check"
-deny_write = true
-
+# The one non-aggregator kept here on purpose: as a file task it would vanish
+# with its own executable bit, the exact failure it guards against.
 # A file task that loses its executable bit vanishes from the task list, and a
 # `check:*` wildcard then skips it silently instead of failing.
 [tasks."check:task-files"]
@@ -230,22 +224,3 @@ bad=$(find .mise/tasks docs/.mise/tasks -type f -not -path '*/lib/*' -not -perm 
 outputs = []
 deny_net = true
 deny_write = true
-
-[tasks."check:zizmor"]
-description = "Static security analysis for GitHub Actions workflows"
-dir = "{{config_root}}"
-run = "zizmor --min-confidence medium .github/workflows/"
-
-[tasks."check:pinact"]
-description = "Every GitHub Actions `uses:` must be pinned to a full commit SHA"
-dir = "{{config_root}}"
-# -no-api keeps this purely syntactic: upstream retagging a release must
-# never fail a build that did not change. Bump pins with `pinact run -u`.
-run = "pinact run -fix=false -no-api"
-
-# -- Cluster --
-
-[tasks."cluster:helm"]
-description = "Redeploy chart only (no image rebuild, no image load, no pod restart). Use for values/template/secret changes. Forwards extra args to cluster:install."
-raw = true
-run = "exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install \"$@\""

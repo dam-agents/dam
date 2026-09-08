@@ -1,7 +1,3 @@
 #!/usr/bin/env bash
 #USAGE flag "--json" help="Emit pnpm audit JSON instead of text"
-set -uo pipefail
-if [[ "${usage_json:-false}" == "true" ]]; then
-  exec pnpm audit --prod --json
-fi
-exec pnpm audit --prod
+exec pnpm audit --prod "$@"

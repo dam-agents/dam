@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE description="Static security analysis for GitHub Actions workflows"
+exec zizmor --min-confidence medium .github/workflows/
