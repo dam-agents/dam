@@ -431,7 +431,7 @@ export function createAgentsService(deps: {
     id: string,
   ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
   presetSeeder?: PresetSeeder;
-  cleanupHooks?: readonly AgentCleanupHook[];
+  cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
@@ -942,7 +942,7 @@ export function createAgentsService(deps: {
     async delete(id) {
       const deleted = await deps.repo.delete(id, deps.owner);
       if (!deleted) return;
-      for (const hook of deps.cleanupHooks ?? []) {
+      for (const hook of deps.cleanupHooks) {
         try {
           await hook(id);
         } catch (err) {

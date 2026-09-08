@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-07
+Last verified: 2026-09-08
 
 ## Overview
 
@@ -135,11 +135,11 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent. A **batch** variant takes many installs and uninstalls together and is the path every bulk action uses: because install is declarative, N changes cost N row writes but **one** outbox bump, so a bulk action settles once instead of once per skill. The security log stays per skill — "what did this agent install, from where" has to remain answerable after an incident, and one aggregate line loses that. A batch naming the same skill in both directions is refused outright rather than resolved to a winner.
 - **Create Local orchestration** — wakes a hibernated agent via `ensureReady`, delegates the write to agent-runtime `writeLocal`, and security-logs it. Records no catalog row: an uploaded skill is a standalone Local Skill by design, so the reconciled `state` read picks it up on the next poll — no `agent_skills` row, no outbox bump. A pod-side collision comes back as `CONFLICT` and is passed through with its message (the offending names) intact.
 - **Read Local passthrough** — wakes a hibernated agent, then forwards agent-runtime's files and caps verdict unchanged (the pod's `NOT_FOUND` / `PAYLOAD_TOO_LARGE` surface as-is). Persists nothing and is deliberately unlogged — the Files panel already serves arbitrary pod file content unlogged, so a skill read is strictly less. The browser has two consumers for that result: a download — a single `.md` for a lone `SKILL.md`, else a `.zip` whose entries sit under the skill's directory — and the in-product preview of a Local Skill, standalone or image-shipped, which renders the `SKILL.md` out of the same files. That makes a Local Skill the expensive half of preview: it pays for the whole skill directory where a source-backed preview reads one pinned file, and a directory over the caps refuses the preview outright rather than degrading it.
-- **Delete Local orchestration** — wakes a hibernated agent via `ensureReady`, refuses a name tracked in `agent_skills` with `CONFLICT` (uninstall is that skill's removal path), delegates the removal to agent-runtime `deleteLocal`, and security-logs it. Records no catalog row — no row write, no outbox bump, and `agent_skill_publishes` rows are left intact: a publish record logs an event that really happened and a PR that still exists upstream, reaped only by the `AgentDeleted` cleanup saga. Returns the remaining standalone list so the UI renders from an authoritative result.
+- **Delete Local orchestration** — wakes a hibernated agent via `ensureReady`, refuses a name tracked in `agent_skills` with `CONFLICT` (uninstall is that skill's removal path), delegates the removal to agent-runtime `deleteLocal`, and security-logs it. Records no catalog row — no row write, no outbox bump, and `agent_skill_publishes` rows are left intact: a publish record logs an event that really happened and a PR that still exists upstream, reaped only by the agent cleanup on Agent deletion. Returns the remaining standalone list so the UI renders from an authoritative result.
 - **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), refuses untouched system skills (see [Skill Origin](agent-skills.md#skill-origin)), wakes a hibernated agent, calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the pod has caught up), and folds in the `agent_skill_publishes` rows.
-- **Cleanup saga** — subscribes to `AgentDeleted` and deletes both `agent_skills` and `agent_skill_publishes` rows for the deleted agent. User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
+- **Cleanup** — the module exports a delete-by-agent cleanup that removes both `agent_skills` and `agent_skill_publishes` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep. User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
 
 ## Flows
 
@@ -241,9 +241,9 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`. Both are computed at request time.
 
-The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup saga has nothing extra to do.
+The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup has nothing extra to do.
 
-The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` and `skill_sets` survive agent deletion — they are catalog connections and named selections, not agent state.
+The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup handles the row-side. User-owned `skill_sources` and `skill_sets` survive agent deletion — they are catalog connections and named selections, not agent state.
 
 ## Invariants
 

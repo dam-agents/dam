@@ -12,7 +12,8 @@ import {
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
-  startChannelCleanupSaga,
+  allChannelAgentIds,
+  findChannelOwnerByAgent,
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
@@ -27,14 +28,14 @@ import {
   connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
-  startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import {
   composeKbShareServing,
   createKbShareAgentCleanup,
   createShareHostApp,
+  findKbShareOwnerByAgent,
+  listKbShareAgentIds,
   startKbShareSync,
-  startKbSharesCleanupSaga,
 } from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
@@ -65,6 +66,7 @@ import {
   bindConversation,
   listConversationsByAgent,
   unbindConversation,
+  allConversationAgentIds,
   deleteConversationsByAgent,
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
 import {
@@ -77,13 +79,20 @@ import {
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
-import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import {
+  composeSchedulesAtBoot,
+  createSchedulesCleanupHook,
+} from "./modules/schedules/index.js";
 import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import {
+  createUsageAgentsCleanupHook,
+  listUsageAgentIds,
+} from "./modules/usage/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
@@ -111,7 +120,11 @@ import {
   type SurfaceAttribution,
 } from "./apps/api-server/admission/index.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/index.js";
-import { composeApiKeysModule } from "./modules/api-keys/index.js";
+import {
+  composeApiKeysModule,
+  createApiKeysCleanupHook,
+  listApiKeyAgentIds,
+} from "./modules/api-keys/index.js";
 import {
   composeShareViewer,
   createShareHostGate,
@@ -147,9 +160,14 @@ import {
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
-import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
+import {
+  createAgentArtifactsSweeper,
+  type AgentCleanupSource,
+} from "./sagas/agent-artifacts-sweeper.js";
 import {
   composeExperimentInactivitySweep,
+  createExperimentsCleanupHook,
+  listOpenExperimentDriverIds,
   reconcileExperimentPins,
 } from "./modules/experiments/index.js";
 import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
@@ -451,10 +469,6 @@ export async function bootstrap() {
     slack: fakeSlackGateway,
   });
 
-  const channelCleanupSub = startChannelCleanupSaga(
-    deleteChannelsByAgent(db),
-    deleteConversationsByAgent(db),
-  );
   const publicAgentPage = composePublicAgentPage({
     db,
     repo: agentsRepo,
@@ -475,15 +489,7 @@ export async function bootstrap() {
         );
     },
   );
-  const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
-    createAgentSkillsRepository(db).deleteByAgent(agentId),
-  );
-  const kbSharesCleanupSub = startKbSharesCleanupSaga(
-    createKbShareAgentCleanup({
-      db,
-      store: artifacts,
-    }),
-  );
+  const agentSkillsRepo = createAgentSkillsRepository(db);
   const kbShareAutoRefresh = startKbShareSync({
     db,
     namespace: config.namespace,
@@ -544,6 +550,7 @@ export async function bootstrap() {
   };
 
   const { agents: systemAgents } = composeAgentsModule({
+    cleanupHooks: [],
     api,
     agentStateCache,
     namespace: config.namespace,
@@ -789,59 +796,131 @@ export async function bootstrap() {
 
   const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
   const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
-  const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
 
-  const agentEnvCleanupHook = (agentId: string) =>
-    agentEnvRepo.deleteForAgent(agentId);
-
-  const invocationsCleanupHook = createInvocationsCleanupHook({
+  const schedulesBoot = composeSchedulesAtBoot({
     db,
-    agentsFor: (owner) => harnessAgentsServiceFor(owner),
+    bullConnection,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    wakeAgent: async (agentId) => {
+      await agentsRepo.wakeIfHibernated(agentId);
+    },
   });
+  const artifactLibraryForSystem = (owner: string) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      surface: "system",
+      shareBaseUrl: config.shareBaseUrl,
+    }).artifactLibrary;
 
-  const agentCleanupHooks = [
-    createEgressRulesCleanupHook(db),
-    createApprovalsCleanupHook(db),
-    (agentId: string) => registrySecretPort.delete(agentId),
-    connectionGrantsCleanupHook,
-    agentEnvCleanupHook,
-    invocationsCleanupHook,
+  const agentCleanupSources: AgentCleanupSource[] = [
+    {
+      name: "egress-rules",
+      listAgentIds: () => listEgressRuleAgentIds(db),
+      cleanup: createEgressRulesCleanupHook(db),
+    },
+    {
+      name: "pending-approvals",
+      listAgentIds: () => listPendingApprovalAgentIds(db),
+      cleanup: createApprovalsCleanupHook(db),
+    },
+    {
+      name: "registry-pull-secrets",
+      listAgentIds: () => registrySecretPort.listAgentIds(),
+      cleanup: (agentId: string) => registrySecretPort.delete(agentId),
+    },
+    {
+      name: "connection-grants",
+      listAgentIds: () => listConnectionGrantAgentIds(db),
+      cleanup: createConnectionGrantsCleanupHook(db),
+    },
+    {
+      name: "agent-env",
+      listAgentIds: () => agentEnvRepo.listAgentIds(),
+      cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
+    },
+    {
+      name: "schedules",
+      listAgentIds: () => schedulesBoot.repo.listAgentIds(),
+      cleanup: createSchedulesCleanupHook(schedulesBoot),
+    },
+    {
+      name: "runtime-delivery",
+      listAgentIds: () => runtimeDelivery.outboxRepo.listAgentIds(),
+      cleanup: (agentId: string) =>
+        runtimeDelivery.outboxRepo.deleteForAgent(agentId),
+    },
+    {
+      name: "experiments",
+      listAgentIds: () => listOpenExperimentDriverIds(db),
+      cleanup: createExperimentsCleanupHook({
+        db,
+        artifactLibraryFor: artifactLibraryForSystem,
+        agentsFor: (owner) => harnessAgentsServiceFor(owner),
+      }),
+    },
+    {
+      name: "invocations",
+      listAgentIds: () => listInvocationAgentIds(db),
+      cleanup: createInvocationsCleanupHook({
+        db,
+        agentsFor: (owner) => harnessAgentsServiceFor(owner),
+      }),
+    },
+    {
+      name: "api-keys",
+      listAgentIds: () => listApiKeyAgentIds(db),
+      cleanup: createApiKeysCleanupHook(db),
+    },
+    {
+      name: "channels",
+      listAgentIds: allChannelAgentIds(db),
+      cleanup: deleteChannelsByAgent(db),
+    },
+    {
+      name: "telegram-conversations",
+      listAgentIds: allConversationAgentIds(db),
+      cleanup: deleteConversationsByAgent(db),
+    },
+    {
+      name: "agent-skills",
+      listAgentIds: () => agentSkillsRepo.listAgentIds(),
+      cleanup: (agentId: string) => agentSkillsRepo.deleteByAgent(agentId),
+    },
+    {
+      name: "kb-shares",
+      listAgentIds: () => listKbShareAgentIds(db),
+      cleanup: createKbShareAgentCleanup({ db, store: artifacts }),
+    },
+    {
+      name: "usage-agents",
+      listAgentIds: () => listUsageAgentIds(db),
+      cleanup: createUsageAgentsCleanupHook(db),
+    },
+    {
+      name: "public-profiles",
+      listAgentIds: publicAgentPage.listLiveAgentIds,
+      cleanup: publicAgentPage.retireProfile,
+    },
   ];
+  const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);
 
+  const orphanOwnerLookups = [
+    findChannelOwnerByAgent(db),
+    (agentId: string) => schedulesBoot.repo.findOwnerByAgent(agentId),
+    findKbShareOwnerByAgent(db),
+  ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
     k8s: agentsCleanupK8s,
-    sources: [
-      {
-        name: "egress-rules",
-        listAgentIds: () => listEgressRuleAgentIds(db),
-        cleanup: agentCleanupHooks[0]!,
-      },
-      {
-        name: "pending-approvals",
-        listAgentIds: () => listPendingApprovalAgentIds(db),
-        cleanup: agentCleanupHooks[1]!,
-      },
-      {
-        name: "registry-pull-secrets",
-        listAgentIds: () => registrySecretPort.listAgentIds(),
-        cleanup: agentCleanupHooks[2]!,
-      },
-      {
-        name: "connection-grants",
-        listAgentIds: () => listConnectionGrantAgentIds(db),
-        cleanup: connectionGrantsCleanupHook,
-      },
-      {
-        name: "agent-env",
-        listAgentIds: () => agentEnvRepo.listAgentIds(),
-        cleanup: agentEnvCleanupHook,
-      },
-      {
-        name: "invocations",
-        listAgentIds: () => listInvocationAgentIds(db),
-        cleanup: invocationsCleanupHook,
-      },
-    ],
+    sources: agentCleanupSources,
+    resolveOwner: async (agentId) => {
+      for (const lookup of orphanOwnerLookups) {
+        const owner = await lookup(agentId);
+        if (owner) return owner;
+      }
+      return null;
+    },
     batchSize: 200,
   });
 
@@ -857,14 +936,7 @@ export async function bootstrap() {
     inactivityMs: experimentInactivityMs,
     batchSize: 200,
     pin: experimentPin,
-    artifactLibraryFor: (owner) =>
-      composeArtifactLibraryForOwner({
-        db,
-        artifacts,
-        owner,
-        surface: "system",
-        shareBaseUrl: config.shareBaseUrl,
-      }).artifactLibrary,
+    artifactLibraryFor: artifactLibraryForSystem,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
   });
   await periodicJobs.register(
@@ -920,14 +992,6 @@ export async function bootstrap() {
   );
   periodicJobs.start();
 
-  const schedulesBoot = composeSchedulesAtBoot({
-    db,
-    bullConnection,
-    runtimeMutator: runtimeDelivery.runtimeMutator,
-    wakeAgent: async (agentId) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    },
-  });
   schedulesBoot.runner.restoreAll().catch((err) => {
     process.stderr.write(
       `[schedules] restoreAll failed: ${(err as Error).message}\n`,
@@ -1095,11 +1159,8 @@ export async function bootstrap() {
   void leaderLease.start();
 
   const cleanup = async (): Promise<void> => {
-    channelCleanupSub.unsubscribe();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
-    skillsCleanupSub.unsubscribe();
-    kbSharesCleanupSub.unsubscribe();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
