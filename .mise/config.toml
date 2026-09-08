@@ -1,4 +1,5 @@
-# Every package is a mise config root: its tasks live in <package>/mise.toml and
+# Every package is a mise config root: its tasks live in <package>/.mise/ (config.toml
+# for aggregators, template extends and deps providers; tasks/ for scripts) and
 # are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
 # `mise :check` from inside the package). Repo-level tasks (check/test
 # aggregators, cluster ops, release) stay at the root — as [tasks] here or file
@@ -92,7 +93,7 @@ includes = [".mise/tasks"]
 enabled = true
 
 # -- Task templates ----------------------------------------------------------
-# Shared shapes for the per-package mise.toml files (`extends = "<name>"`).
+# Shared shapes for the per-package .mise/config.toml files (`extends = "<name>"`).
 # Local `run`/`depends`/`sources` replace the template's; `env`/`tools` merge.
 #
 # Sandboxing (checks only — test suites bind loopback sockets and write runner
@@ -210,9 +211,9 @@ depends = ["//...:test"]
 # A file task that loses its executable bit vanishes from the task list, and a
 # `check:*` wildcard then skips it silently instead of failing.
 [tasks."check:task-files"]
-description = "Every file task under .mise/tasks (here and in the docs root) is executable"
+description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(find .mise/tasks docs/.mise/tasks -type f -not -perm -u+x)
+bad=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -not -perm -u+x -print)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []

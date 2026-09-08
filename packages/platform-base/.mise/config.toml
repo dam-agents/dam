@@ -1,0 +1,6 @@
+[tasks.scan]
+depends = [":scan:*"]
+
+[tasks."scan:trivy"]
+extends = "image:scan:trivy"
+vars = { local_image = "platform-base" }

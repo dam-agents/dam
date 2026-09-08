@@ -4,7 +4,7 @@ Rules for defining and running tasks. mise runs everything (`mise tasks --all` l
 
 ## Layout
 
-The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with `mise.lock` beside it). Every package directory listed under `[monorepo].config_roots` is a config root with its own `mise.toml`, and its tasks are addressed by path:
+The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with `mise.lock` beside it). Every package directory listed under `[monorepo].config_roots` is a config root with its own `.mise/config.toml` (aggregators, template `extends`, `[deps]` providers) and `.mise/tasks/` (every scripted task), and its tasks are addressed by path:
 
 | Where | Address | Example |
 |---|---|---|
@@ -17,7 +17,7 @@ Repo-level tasks (aggregators and their `check:*`/`scan:*` leaves, `release:*`, 
 
 ## File tasks
 
-Standalone scripts are tasks too: an executable under [`.mise/tasks/`](../../.mise/tasks/) is a task named by its path (`.mise/tasks/check/version` → `check:version`; in a package, `docs/.mise/tasks/check/adr-index` → `//docs:check:adr-index`), so `:check:*` picks it up like any TOML task. Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`. Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); a task file that also serves as a module (the ADR index generator, the doc-size measurer) guards its entry point so importing it runs nothing. Arguments pass through verbatim after the first `--` (`mise run image:resolve -- build-or-reuse codex -- packages/agents/codex`). Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead. [`scripts/`](../../scripts/) keeps only what is not a task: the Dockerfile pnpm installer and the Claude Code doc-size hook.
+Standalone scripts are tasks too: an executable under a root's `.mise/tasks/` is a task named by its path (`.mise/tasks/check/version` → `check:version`; `packages/db/.mise/tasks/new` → `//packages/db:new`), so `:check:*` picks it up like any TOML task. Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`. Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); a task file that also serves as a module (the ADR index generator, the doc-size measurer) guards its entry point so importing it runs nothing. Arguments pass through verbatim after the first `--` (`mise run image:resolve -- build-or-reuse codex -- packages/agents/codex`). Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead. [`scripts/`](../../scripts/) keeps only what is not a task: the Dockerfile pnpm installer and the Claude Code doc-size hook.
 
 ## Dependencies
 

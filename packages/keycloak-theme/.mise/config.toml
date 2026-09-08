@@ -1,0 +1,38 @@
+# kc.gen.tsx is generated from the keycloakify config; tsc, eslint and
+# start-keycloak read it, so it is regenerated before any task in this root.
+[deps.kc-gen]
+description = "Generate kc.gen.tsx from the current keycloakify config"
+auto = true
+# keycloakify comes from the root node_modules; order the providers explicitly.
+depends = ["//:pnpm"]
+sources = ["vite.config.ts", "package.json"]
+outputs = ["src/kc.gen.tsx"]
+run = "pnpm exec keycloakify update-kc-gen"
+
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]
+
+[tasks.scan]
+depends = [":scan:*"]
+
+[tasks."check:tsc"]
+extends = "ts:check:tsc"
+
+[tasks."check:lint"]
+extends = "ts:check:lint"
+
+[tasks."check:format"]
+extends = "ts:check:format"
+
+[tasks."fix:lint"]
+extends = "ts:fix:lint"
+
+[tasks."fix:format"]
+extends = "ts:fix:format"
+
+[tasks."scan:trivy"]
+extends = "image:scan:trivy"
+vars = { image = "keycloak", local_image = "platform-keycloak" }

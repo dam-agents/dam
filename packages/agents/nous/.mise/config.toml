@@ -1,0 +1,19 @@
+[tasks.image]
+extends = "agent:image"
+description = "Build the nous agent image (Nous orchestrator from its public GitHub repo on the claude-code base), or reuse it from the registry when its source is unchanged"
+depends = ["//packages/agents/claude-code:image"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# The Dockerfile pins a default; override it here with NOUS_REF=<value>.
+build_args=()
+[ -n "${NOUS_REF:-}" ] && build_args+=(--build-arg "NOUS_REF=${NOUS_REF}")
+# ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
+exec {{ mise_bin }} run image:resolve -- build-or-reuse nous -- ${build_args[@]+"${build_args[@]}"} packages/agents/nous
+'''
+
+[tasks.scan]
+depends = [":scan:*"]
+
+[tasks."scan:trivy"]
+extends = "image:scan:trivy"

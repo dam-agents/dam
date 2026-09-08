@@ -1,0 +1,14 @@
+[tasks.check]
+depends = [":check:*"]
+
+# Chart dependencies (the clickstack telemetry subchart + its nested
+# opentelemetry-collector) build into charts/ from Chart.lock before any task
+# runs. `helm repo add` is idempotent.
+[deps.helm]
+auto = true
+sources = ["Chart.yaml", "Chart.lock"]
+outputs = ["charts/*.tgz"]
+run = """
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
+helm dependency build .
+"""

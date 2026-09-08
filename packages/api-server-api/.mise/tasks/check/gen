@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Fail if the committed CRD types are stale vs the committed CRDs (drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
+#MISE sources=["{{vars.repo_root}}/helm/crds/agent-platform.ai_agents.yaml", "src/crd-types.gen.ts", "scripts/gen-crd-types.sh", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -eo pipefail
+# /tmp is the only writable path under deny_write; $TMPDIR is elsewhere on macOS.
+tmp="$(TMPDIR=/tmp mktemp -d)/crd-types.gen.ts"
+bash scripts/gen-crd-types.sh "$MISE_CONFIG_ROOT/../.." "$tmp"
+if ! diff -u src/crd-types.gen.ts "$tmp"; then
+  echo "crd-types.gen.ts is stale — run: mise run //packages/api-server-api:gen:crd-types" >&2
+  exit 1
+fi

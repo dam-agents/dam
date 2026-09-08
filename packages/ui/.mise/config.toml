@@ -1,0 +1,29 @@
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]
+
+[tasks.scan]
+depends = [":scan:*"]
+
+[tasks."check:tsc"]
+extends = "ts:check:tsc"
+
+[tasks."check:lint"]
+extends = "ts:check:lint"
+
+[tasks."check:format"]
+extends = "ts:check:format"
+
+[tasks."fix:lint"]
+extends = "ts:fix:lint"
+
+[tasks."fix:format"]
+extends = "ts:fix:format"
+
+[tasks.test]
+extends = "ts:test"
+
+[tasks."scan:trivy"]
+extends = "image:scan:trivy"
