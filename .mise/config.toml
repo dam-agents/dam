@@ -1,6 +1,6 @@
 # Every package is a mise config root: its tasks live in <package>/mise.toml and
 # are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
-# `mise :check` from inside the package). Repo-level tasks (setup/check/test
+# `mise :check` from inside the package). Repo-level tasks (check/test
 # aggregators, cluster ops, release) stay at the root — as [tasks] here or file
 # tasks under .mise/tasks/ — and are
 # addressed bare (`mise run check`) or as //:<task> from a package. This file
@@ -16,7 +16,7 @@ config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e
 repo_root = "{{config_root}}"
 
 # Project dependencies (`mise deps`): run before every `mise run`/`mise x` when
-# their inputs changed or outputs are missing. `mise run setup` installs them
+# their inputs changed or outputs are missing. `mise deps --monorepo` installs them
 # across all config roots; `--no-deps` skips them.
 [deps.pnpm]
 auto = true
@@ -74,7 +74,7 @@ experimental = true
 task.disable_spec_from_run_scripts = true
 
 [hooks]
-postinstall = ["{{ mise_bin }} setup"]
+postinstall = ["{{ mise_bin }} deps --monorepo"]
 
 
 [task_config]
@@ -195,10 +195,6 @@ exec trivy image --quiet --exit-code 1 "$image"
 # in every package config root (`//...` never includes the root itself).
 # Dependencies are not tasks: the [deps] providers (here and in the package
 # configs) run before any `mise run`, so no task depends on an install step.
-[tasks.setup]
-description = "Install every project dependency ([deps] providers in all config roots)"
-run = "{{ mise_bin }} deps --monorepo"
-
 [tasks.check]
 depends = ["check:*", "//...:check"]
 

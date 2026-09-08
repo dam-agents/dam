@@ -56,7 +56,7 @@ jobs:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
           restore-keys: mise-task-artifacts-${{ runner.os }}-
-      - run: mise run setup
+      - run: mise deps --monorepo
       - run: mise run check
 
   test:
@@ -79,7 +79,7 @@ jobs:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
           restore-keys: mise-task-artifacts-${{ runner.os }}-
-      - run: mise run setup
+      - run: mise deps --monorepo
       - run: mise run test
 
   appversion:
@@ -191,7 +191,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
-        run: mise run setup && mise run //packages/keycloak-theme:build
+        run: mise deps --monorepo && mise run //packages/keycloak-theme:build
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -662,7 +662,7 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run setup
+      - run: mise deps --monorepo
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
@@ -743,7 +743,7 @@ jobs:
         env:
           NPM_TAG: ${{ steps.version.outputs.npmTag }}
         run: |
-          mise run setup
+          mise deps --monorepo
           mise run //packages/cli:build
           pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
