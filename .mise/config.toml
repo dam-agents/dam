@@ -211,11 +211,6 @@ depends = ["scan:*", "//...:scan"]
 [tasks.test]
 depends = ["//...:test"]
 
-# -- Git hooks --
-[tasks."git-hooks:pre-commit"]
-hide = true
-depends = ["check"]
-
 # -- Common --
 [tasks."check:comment-types"]
 description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"

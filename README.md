@@ -93,6 +93,12 @@ password: dev
 
 Create an instance from a template and start chatting with your agent.
 
+Optionally have git run the checks before every commit:
+
+```sh
+mise generate git-pre-commit --write --task=check
+```
+
 See [work process](docs/guidelines/work-process.md) for the contributor workflow.
 
 </details>
