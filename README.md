@@ -110,7 +110,7 @@ Bring your own harness with [ACP](https://agentclientprotocol.com/get-started/in
 DAM is Apache 2.0 licensed and can be deployed on your own Kubernetes cluster using Helm.
 
 ```sh
-helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.16
+helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
 ```
 
 The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
