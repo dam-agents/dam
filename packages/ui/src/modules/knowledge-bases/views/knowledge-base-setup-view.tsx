@@ -1,9 +1,12 @@
+import { useCallback } from "react";
+
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { CardGrid } from "../../sandboxes/components/card-list.js";
+import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -11,11 +14,16 @@ import {
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
+import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { ConnectedKnowledgeBasesSetup } from "../components/connected-knowledge-bases-setup.js";
+import {
+  buildKnowledgeBaseCreateInput,
+  isKnowledgeBaseSetupComplete,
+  type KnowledgeBaseSetupDraft,
+} from "../lib/create-knowledge-base-input.js";
 import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 
 const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
@@ -23,37 +31,38 @@ const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
 export function KnowledgeBaseSetupView() {
   const { form, update, toggleConnection, reset } = useSetupForm(
     "knowledge-base",
-    {
-      templateId: KINDED_HARNESS_TEMPLATE_ID,
-      kbTemplateId: DEFAULT_KB_TEMPLATE_ID,
-    },
+    { kbTemplateId: DEFAULT_KB_TEMPLATE_ID },
     RETURN_PATH,
   );
   const createKnowledgeBase = useCreateKnowledgeBase();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
 
+  const onTemplateIdChange = useCallback(
+    (templateId: string | null) => update({ templateId }),
+    [update],
+  );
+  const catalogue = useHarnessCatalogue({
+    templateId: form.templateId,
+    allowNone: false,
+    onTemplateIdChange,
+  });
+
+  const draft: KnowledgeBaseSetupDraft = {
+    name: form.name,
+    templateId: form.templateId,
+    kbTemplateId: form.kbTemplateId,
+    providerRef: form.providerRef,
+    connectionIds: form.connectionIds,
+  };
   const canCreate =
-    form.name.trim().length > 0 &&
-    form.providerRef !== null &&
-    form.kbTemplateId !== null &&
-    !createKnowledgeBase.isPending;
+    isKnowledgeBaseSetupComplete(draft) && !createKnowledgeBase.isPending;
 
   const create = async () => {
     if (!canCreate) return;
-    const connectionIds = [
-      ...new Set([
-        ...form.connectionIds,
-        ...(form.providerRef ? [form.providerRef.id] : []),
-      ]),
-    ];
     try {
-      const agent = await createKnowledgeBase.mutateAsync({
-        name: form.name.trim(),
-        templateId: form.templateId ?? KINDED_HARNESS_TEMPLATE_ID,
-        kbTemplateId: form.kbTemplateId ?? DEFAULT_KB_TEMPLATE_ID,
-        egressPreset: "trusted",
-        ...(connectionIds.length ? { connectionIds } : {}),
-      });
+      const agent = await createKnowledgeBase.mutateAsync(
+        buildKnowledgeBaseCreateInput(draft),
+      );
       reset();
       openKnowledgeBase(agent.id);
     } catch {}
@@ -62,7 +71,7 @@ export function KnowledgeBaseSetupView() {
   return (
     <SetupPageShell
       title="Setup your knowledge base agent"
-      subtitle="Name your agent, choose a template, and add connections."
+      subtitle="Name your agent, choose a template and harness, select a provider, and add connections."
       footer={
         <Button onClick={() => void create()} disabled={!canCreate}>
           {createKnowledgeBase.isPending
@@ -85,6 +94,18 @@ export function KnowledgeBaseSetupView() {
             />
           ))}
         </CardGrid>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Harness</SectionLabel>
+        <HarnessGrid
+          harnesses={catalogue.harnesses}
+          loading={catalogue.isLoading}
+          error={catalogue.isError}
+          onRetry={catalogue.refetch}
+          templateId={form.templateId}
+          onPick={(templateId) => update({ templateId })}
+        />
       </section>
 
       <ProviderSection

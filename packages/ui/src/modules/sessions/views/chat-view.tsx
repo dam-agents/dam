@@ -70,6 +70,8 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
+import { useTemplates } from "../../templates/api/queries.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -212,10 +214,12 @@ export function ChatView() {
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
+  const templatesQuery = useTemplates();
   useKnowledgeBaseGreeting({
     agentId: selectedAgent,
     active: view === "knowledge-base-chat",
     idle: chatIdle,
+    harness: resolveAgentHarness(agentView?.templateId ?? null, templatesQuery),
     sendPrompt,
   });
   useExperimentGreeting({
