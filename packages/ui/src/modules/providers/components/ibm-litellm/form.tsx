@@ -3,22 +3,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
-import {
-  IBM_LITELLM_BOB_MODEL_EXAMPLE,
-  IBM_LITELLM_BOB_MODEL_HINT,
-  IBM_LITELLM_BOB_MODEL_LABEL,
-} from "../../../../types.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const ibmLitellmCredentialSchema = z
-  .object({ value: z.string(), bobModel: z.string() })
+  .object({ value: z.string() })
   .superRefine((data, ctx) => {
     if (stripWhitespace(data.value).length === 0) {
       ctx.addIssue({
@@ -37,24 +31,21 @@ export function IbmLitellmForm({
   onCancel,
 }: {
   variant: "wizard" | "edit";
-  onSave: (input: { value: string; bobModel: string }) => Promise<void>;
+  onSave: (input: { value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(ibmLitellmCredentialSchema),
     mode: "onChange",
-    defaultValues: { value: "", bobModel: "" },
+    defaultValues: { value: "" },
   });
-  const { errors, isSubmitting, isValid } = formState;
+  const { isSubmitting, isValid } = formState;
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
 
   const onSubmit = handleSubmit(async (values) => {
-    await onSave({
-      value: stripWhitespace(values.value),
-      bobModel: values.bobModel.trim(),
-    });
+    await onSave({ value: stripWhitespace(values.value) });
   });
 
   return (
@@ -87,24 +78,6 @@ export function IbmLitellmForm({
           className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
         />
       </a>
-
-      {!isEdit && (
-        <FormField
-          label={IBM_LITELLM_BOB_MODEL_LABEL}
-          hint={IBM_LITELLM_BOB_MODEL_HINT}
-          error={errors.bobModel?.message}
-        >
-          <Input
-            type="text"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
-            placeholder={IBM_LITELLM_BOB_MODEL_EXAMPLE}
-            className="font-mono text-sm"
-            {...register("bobModel")}
-          />
-        </FormField>
-      )}
 
       <div className="flex gap-3">
         <Input

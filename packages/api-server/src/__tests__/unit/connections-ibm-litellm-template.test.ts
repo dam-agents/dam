@@ -4,13 +4,13 @@ import { buildConnection } from "../../modules/connections/domain/build-connecti
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
-// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads, the path rewrite that turns Bob's /inference/v1 calls into plain /v1, and a model only when the user names one.
+// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads and the path rewrite that turns Bob's /inference/v1 calls into plain /v1, while leaving the model to the agent's Config panel.
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
 }
 
-async function buildIbmLitellm(configInputs?: Record<string, string>) {
+async function buildIbmLitellm() {
   const template = buildCatalog().find((t) => t.id === "ibm-litellm");
   if (!template) throw new Error("ibm-litellm template missing from catalog");
   return buildConnection(
@@ -20,7 +20,6 @@ async function buildIbmLitellm(configInputs?: Record<string, string>) {
       name: "litellm",
       authKind: "header",
       value: "sk-real-token",
-      ...(configInputs ? { configInputs } : {}),
     },
     mintRef,
     "https://cb.example/oauth/callback",
@@ -45,15 +44,10 @@ describe("ibm-litellm connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: the Bob template contributes the same env name from its own model input, so this one must stay silent unless the user names a model here — otherwise granting both connections would pick a winner by creation order.
-  it("contributes a Bob model only when the connection names one", async () => {
+  // TEST_SCENARIO: the Bob connection pins the same env name, and an agent can hold both, so this one must never claim it — the model belongs to the agent's Config panel, which reads the list from this very proxy.
+  it("never contributes a Bob model", async () => {
     const { contributions } = await buildIbmLitellm();
     expect(envOf(contributions, "BOB_SHELL_MODEL")).toBeUndefined();
-
-    const named = await buildIbmLitellm({ bobModel: "aws/claude-sonnet-4-6" });
-    expect(envOf(named.contributions, "BOB_SHELL_MODEL")).toMatchObject({
-      placeholder: "aws/claude-sonnet-4-6",
-    });
   });
 
   // TEST_SCENARIO: the rewrite reaches Envoy only through the Secret annotation, which is the contract the controller reads.
