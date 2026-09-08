@@ -18,6 +18,7 @@ import {
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   type AgentRuntimeContext,
+  type ApplyStateInput,
 } from "agent-runtime-api";
 import {
   OP_INPUT,
@@ -52,6 +53,8 @@ import {
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
+  pluginStateRoot,
+  readSkillInstallBootState,
 } from "./modules/runtime-channel/index.js";
 import {
   loadManifest,
@@ -107,17 +110,29 @@ const kbPublish = composeKbPublish({
 });
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
-const pristineSkillPaths = [
-  ...skillRefPaths(runtimeManifest, config.IMAGE_WORKSPACE_DIR).filter(
-    (p) => !readSideSet.has(p),
-  ),
-  STAGED_SKILLS_DIR,
-];
-const skillsService = composeSkills({
-  skillPaths: readSidePaths,
-  pristineSkillPaths,
-  log: (msg) => process.stderr.write(`[skills] ${msg}\n`),
-});
+const seedRoots = skillRefPaths(
+  runtimeManifest,
+  config.IMAGE_WORKSPACE_DIR,
+).filter((p) => !readSideSet.has(p));
+const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
+const stateBackend = createFileDocumentStoreBackend(homeDir);
+const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
+const { service: skillsService, reconciler: imageSkillReconciler } =
+  composeSkills({
+    skillPaths: readSidePaths,
+    pristineSkillPaths,
+    ...(config.PLATFORM_IMAGE_SKILL_RECONCILE
+      ? {
+          reconcile: {
+            seedRoots,
+            stagedRoots: [STAGED_SKILLS_DIR],
+            manifestFile: config.SKILL_MANIFEST_FILE,
+            stateBackend,
+          },
+        }
+      : {}),
+    log: skillsLog,
+  });
 const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
@@ -127,8 +142,6 @@ const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
-
-const stateBackend = createFileDocumentStoreBackend(homeDir);
 
 const envStore = createEnvStateStore(homeDir);
 
@@ -183,6 +196,16 @@ function scheduleRecovery(): void {
   }, 5_000).unref();
 }
 
+const reconcileOnState = imageSkillReconciler
+  ? (contributions: ApplyStateInput["state"]["contributions"]) => {
+      const names = new Set<string>();
+      for (const c of contributions) {
+        if (c.kind === "skill-ref") names.add(c.name);
+      }
+      void imageSkillReconciler.run(names);
+    }
+  : undefined;
+
 const runtimeChannel = await composeRuntimeChannel({
   manifestPath,
   agentHome: homeDir,
@@ -212,7 +235,21 @@ const runtimeChannel = await composeRuntimeChannel({
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
+  ...(reconcileOnState ? { onSnapshotProcessed: reconcileOnState } : {}),
 });
+
+if (imageSkillReconciler) {
+  const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
+  if (bootState.kind === "corrupt") {
+    skillsLog(
+      "skipping boot image-skill reconcile: skill-install state unreadable",
+    );
+  } else {
+    void imageSkillReconciler.run(
+      new Set(bootState.kind === "ok" ? bootState.installed : []),
+    );
+  }
+}
 
 const preparedSshd = await prepareSshd(homeDir, (msg) =>
   process.stderr.write(`[ssh] ${msg}\n`),
