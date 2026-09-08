@@ -3,3 +3,8 @@
 .worktrees
 docs
 **/node_modules
+# Package task configs are for the repo's mise, not the images: copied into an
+# image (or pnpm-deployed to /deploy) they are read by the image's mise shims
+# as an untrusted config and every tool call fails.
+**/mise.toml
+.mise
