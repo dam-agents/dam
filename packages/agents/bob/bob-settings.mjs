@@ -31,7 +31,7 @@ function isNonNullObject(value) {
 }
 
 function normalizeMode(mode) {
-  const trimmed = mode?.trim();
+  const trimmed = firstNonBlank(mode);
   if (!trimmed) return null;
   const mapped = LEGACY_MODES[trimmed] ?? trimmed;
   return MODES.includes(mapped) ? mapped : null;
@@ -56,7 +56,8 @@ function section(existing, key) {
 
 function firstNonBlank(...values) {
   for (const value of values) {
-    const trimmed = value?.trim();
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
     if (trimmed) return trimmed;
   }
   return null;

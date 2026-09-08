@@ -84,9 +84,11 @@ Two consequences worth knowing:
 
 The panel's Model choices are not a list this repo maintains — the manifest declares a `modelDiscovery` source and agent-runtime reads the list live, so what the dropdown offers is what the granted key and tenant actually serve.
 
-Discovery asks the same endpoint Bob itself asks, `/inference/v1/model/info` on the gateway, and reads the LiteLLM-shaped `data[].model_name` out of it. Which gateway that is follows from the connection: with one that points Bob at another endpoint the URL comes from `BOB_GATEWAY_URL`, and without it discovery falls back to the gateway Bob's own bundle defaults to. The request leaves the pod through `HTTPS_PROXY` like every other, so the credential is injected at the sidecar and the agent container never holds it.
+Discovery asks the same endpoint Bob itself asks, `/inference/v1/model/info` on the gateway, and reads the LiteLLM-shaped `data[].model_name` out of it, skipping every entry the gateway marks as something other than a chat model. Which gateway that is follows from the connection: the Bob Shell secret's `envMappings` carry `BOB_GATEWAY_URL`, so discovery and Bob resolve models through the same host the key was granted for. The request leaves the pod through `HTTPS_PROXY` like every other, so the credential is injected at the sidecar and the agent container never holds it.
 
-A list that cannot be read — no route to the gateway, an auth failure, or an empty list — leaves the panel on its last known list and the rest of the panel usable; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for agents that make no panel choice, with the same precedence as Mode: panel over pin.
+A Bob Shell connection made before `BOB_GATEWAY_URL` was added to the preset does not carry it — re-save the provider in Settings → Providers once to pick it up, otherwise the Model option stays absent and the rest of the panel keeps working.
+
+A list that cannot be read — no gateway URL granted, no route to it, an auth failure, or an empty list — leaves the panel on its last known list and the rest of the panel usable; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for agents that make no panel choice, with the same precedence as Mode: panel over pin.
 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 
@@ -95,6 +97,7 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 | Env var | Translated to | Effect |
 |---|---|---|
 | `BOBSHELL_API_KEY` | n/a (env-only) | API key the Envoy sidecar swaps to the real value on the wire. Always emitted. |
+| `BOB_GATEWAY_URL` | n/a (env-only) | Gateway the Config panel's model list is read from. Always emitted, pinned to the host the secret is scoped to. |
 | `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks, unless the agent's Config panel sets one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
 | `BOB_CHAT_MODE` | `session.defaultMode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
 | `BOB_MAX_COINS` | `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |

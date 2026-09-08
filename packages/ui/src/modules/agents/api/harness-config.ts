@@ -67,7 +67,12 @@ export function useResolvedHarnessConfig(
   const pending = snapshotPending;
 
   if (operable) {
-    const values = live ?? recorded?.snapshot ?? null;
+    const recent = recorded?.snapshot;
+    const read = live ?? recent ?? null;
+    const values =
+      read && read.availableModels === undefined && recent?.availableModels
+        ? { ...read, availableModels: recent.availableModels }
+        : read;
     return {
       values,
       origin: values ? "live" : "none",

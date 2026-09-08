@@ -74,11 +74,10 @@ drivers:
     # Bob reads its model list from a LiteLLM-shaped /model/info under its own
     # inference prefix, so discovery follows the same path Bob itself calls —
     # the gateway rewrite that fronts a plain LiteLLM applies to both alike.
-    # BOB_GATEWAY_URL is set only when a connection points Bob elsewhere;
-    # without it, discovery asks the gateway Bob's own bundle defaults to.
+    # BOB_GATEWAY_URL rides on the Bob Shell connection's env mappings, so the
+    # gateway asked is the one the agent was granted.
     modelDiscovery:
       urlEnv:
         - BOB_GATEWAY_URL
-      defaultUrl: "https://api.us-east.bob.ibm.com"
       path: /inference/v1/model/info
       shape: litellm-model-info

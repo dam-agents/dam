@@ -1,13 +1,7 @@
 import type { HarnessConfigChoice } from "agent-runtime-api";
+import type { ModelDiscoverySpec } from "../manifest.js";
 
-export type ModelListShape = "openai-models" | "litellm-model-info";
-
-export interface ModelDiscoverySpec {
-  urlEnv: string[];
-  defaultUrl?: string;
-  path?: string;
-  shape?: ModelListShape;
-}
+type ModelListShape = NonNullable<ModelDiscoverySpec["shape"]>;
 
 export type ModelDiscoveryOutcome =
   | { status: "not-configured" }
@@ -21,6 +15,8 @@ export type ModelDiscovery = (
 
 const DISCOVERY_TIMEOUT_MS = 5_000;
 
+const CONVERSATIONAL_MODES = new Set(["chat", "completion", "responses"]);
+
 function discoveryUrl(spec: ModelDiscoverySpec, base: string): string {
   const trimmed = base.replace(/\/+$/, "");
   if (spec.path) return `${trimmed}${spec.path}`;
@@ -28,10 +24,26 @@ function discoveryUrl(spec: ModelDiscoverySpec, base: string): string {
   return `${root}/models`;
 }
 
-function modelIdOf(entry: unknown, shape: ModelListShape): string | null {
-  const field = shape === "litellm-model-info" ? "model_name" : "id";
-  const value = (entry as Record<string, unknown> | null)?.[field];
-  return typeof value === "string" && value.length > 0 ? value : null;
+function openAiModelId(entry: Record<string, unknown>): string | null {
+  const { id } = entry;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+function liteLlmModelName(entry: Record<string, unknown>): string | null {
+  const mode = (entry.model_info as Record<string, unknown> | null)?.mode;
+  if (typeof mode === "string" && !CONVERSATIONAL_MODES.has(mode)) return null;
+  const name = entry.model_name;
+  return typeof name === "string" && name.length > 0 ? name : null;
+}
+
+function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
+  if (entry === null || typeof entry !== "object") return null;
+  const record = entry as Record<string, unknown>;
+  const id =
+    shape === "litellm-model-info"
+      ? liteLlmModelName(record)
+      : openAiModelId(record);
+  return id && !/embedding/i.test(id) ? id : null;
 }
 
 export function createModelDiscovery(deps: {
@@ -41,12 +53,12 @@ export function createModelDiscovery(deps: {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
   return async (spec, env) => {
     if (!spec) return { status: "not-configured" };
-    const base =
-      spec.urlEnv
-        .map((name) => env[name]?.trim())
-        .find((v): v is string => !!v) ?? spec.defaultUrl;
+    const base = spec.urlEnv
+      .map((name) => env[name]?.trim())
+      .find((v): v is string => !!v);
     if (!base) return { status: "unavailable" };
 
+    const shape = spec.shape ?? "openai-models";
     const url = discoveryUrl(spec, base);
     try {
       const res = await doFetch(url, {
@@ -63,8 +75,8 @@ export function createModelDiscovery(deps: {
       const ids = [
         ...new Set(
           data.flatMap((m): string[] => {
-            const id = modelIdOf(m, spec.shape ?? "openai-models");
-            return id && !/embedding/i.test(id) ? [id] : [];
+            const id = chatModelIdOf(m, shape);
+            return id ? [id] : [];
           }),
         ),
       ].sort();

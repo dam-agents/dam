@@ -137,29 +137,31 @@ describe("createModelDiscovery", () => {
     ]);
   });
 
-  // TEST_SCENARIO: no connection points the harness elsewhere, so discovery falls back to the gateway the harness itself defaults to rather than reporting nothing.
-  it("falls back to the declared default URL when no env var is set", async () => {
-    const { fetchImpl, urls } = stubFetch({
-      body: { data: [{ model_name: "premium-ide" }] },
+  // TEST_SCENARIO: a LiteLLM gateway lists every deployment it fronts, so an entry the provider marks as anything but conversational must stay out of the model list no matter what its alias is called.
+  it("keeps only the conversational entries of a LiteLLM listing", async () => {
+    const { fetchImpl } = stubFetch({
+      body: {
+        data: [
+          { model_name: "premium-ide", model_info: { mode: "chat" } },
+          { model_name: "bge-large", model_info: { mode: "embedding" } },
+          { model_name: "rank-v3", model_info: { mode: "rerank" } },
+          { model_name: "legacy-no-mode" },
+        ],
+      },
     });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover(
-        {
-          urlEnv: ["BOB_GATEWAY_URL"],
-          defaultUrl: "https://api.example.ibm.com",
-          path: "/inference/v1/model/info",
-          shape: "litellm-model-info",
-        },
-        {},
+        { urlEnv: ["U"], shape: "litellm-model-info" },
+        { U: "https://p" },
       ),
     ).toEqual({
       status: "observed",
-      models: [{ value: "premium-ide", name: "premium-ide" }],
+      models: [
+        { value: "legacy-no-mode", name: "legacy-no-mode" },
+        { value: "premium-ide", name: "premium-ide" },
+      ],
     });
-    expect(urls).toEqual([
-      "https://api.example.ibm.com/inference/v1/model/info",
-    ]);
   });
 
   it("reports unavailable on a non-2xx response", async () => {
