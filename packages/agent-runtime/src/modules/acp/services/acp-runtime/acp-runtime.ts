@@ -38,6 +38,7 @@ import {
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
+import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
@@ -100,6 +101,7 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
+  activeTurns: ActiveTurnStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -139,15 +141,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return channels;
   }
 
+  const isMachineSession = (sessionId: string): boolean => {
+    const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+    return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
+  };
+
+  let shuttingDown = false;
+
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
-      if (!nonViewerChannels.has(channel)) return;
-      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
-      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+      deps.activeTurns.record(sessionId);
+      if (nonViewerChannels.has(channel) && isMachineSession(sessionId))
         deps.sessionMetadata?.startRun(sessionId);
     },
-    onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
+    onTurnEnded: (sessionId) => {
+      if (shuttingDown) return;
+      deps.sessionMetadata?.finishRun(sessionId);
+      deps.activeTurns.remove(sessionId);
+    },
     canStart: (sessionId) =>
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
@@ -203,6 +215,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript,
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
+    },
+    interruptedAt(sessionId) {
+      if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
+      return deps.activeTurns.leftovers().find((m) => m.sessionId === sessionId)
+        ?.startedAt;
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
@@ -349,6 +366,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 
   function teardownRuntime(reason: HarnessTeardownReason): void {
+    shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
     for (const channel of engagedSessions.keys()) {
       channel.close(close.code, close.message);
@@ -737,6 +755,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
+        deps.activeTurns.remove(paramsSid);
         supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,

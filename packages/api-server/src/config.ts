@@ -86,6 +86,8 @@ const configSchema = z.object({
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
+  caseStudiesRetentionDays: z.coerce.number().int().positive().default(365),
+  caseStudiesTombstoneGraceDays: z.coerce.number().int().positive().default(30),
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
   defaultGithubAppSlug: adminAppSlugSchema,
@@ -214,6 +216,9 @@ export function loadConfig(): Config {
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
+    caseStudiesRetentionDays: process.env.CASE_STUDIES_RETENTION_DAYS,
+    caseStudiesTombstoneGraceDays:
+      process.env.CASE_STUDIES_TOMBSTONE_GRACE_DAYS,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret:
       process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,

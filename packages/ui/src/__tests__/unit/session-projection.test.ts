@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  appendInterruptedNotice,
   applyUpdate,
   failQueuedOnDisconnect,
   finalizeAllStreaming,
@@ -551,6 +552,23 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
     expect(hasStreamingAssistant([assistantMsg("a1", "", true, true)])).toBe(
       true,
     );
+  });
+});
+
+describe("appendInterruptedNotice", () => {
+  test("appends one notice bubble when a turn was interrupted", () => {
+    const out = appendInterruptedNotice(
+      [userMsg("u1", "hi")],
+      "2026-09-07T00:00:00Z",
+    );
+    expect(out).toHaveLength(2);
+    expect(out[1].notice).toBe(true);
+    expect(out[1].parts[0]).toMatchObject({ kind: "text" });
+  });
+
+  test("no-op when the session was not interrupted", () => {
+    const start = [userMsg("u1", "hi")];
+    expect(appendInterruptedNotice(start, undefined)).toBe(start);
   });
 });
 

@@ -1,0 +1,9 @@
+export const METRICS_MAX_SINCE_HOURS = 720;
+
+export const METRICS_MAX_LIMIT = 1000;
+
+export const METRICS_DEFAULT_LIMIT = 100;
+
+export const USAGE_SUMMARY_MAX_DAYS = 30;
+
+export const USAGE_SUMMARY_DEFAULT_DAYS = 7;
