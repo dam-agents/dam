@@ -3,8 +3,6 @@ import {
   type Contribution,
   type EnvMapping,
   BOB_INFERENCE_PREFIX_REWRITE,
-  IBM_LITELLM_BOB_MODEL_HINT,
-  IBM_LITELLM_BOB_MODEL_LABEL,
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
@@ -162,14 +160,6 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
       pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
-    },
-  ],
-  configInputs: [
-    {
-      inputName: "bobModel",
-      envName: "BOB_SHELL_MODEL",
-      label: IBM_LITELLM_BOB_MODEL_LABEL,
-      hint: IBM_LITELLM_BOB_MODEL_HINT,
     },
   ],
 };

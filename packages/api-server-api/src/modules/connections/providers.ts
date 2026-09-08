@@ -22,10 +22,6 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
   replacement: "/v1/",
 } as const;
 
-export const IBM_LITELLM_BOB_MODEL_EXAMPLE = "aws/claude-opus-4-8";
-export const IBM_LITELLM_BOB_MODEL_LABEL = "Bob model";
-export const IBM_LITELLM_BOB_MODEL_HINT = `Model Bob asks this proxy for, e.g. ${IBM_LITELLM_BOB_MODEL_EXAMPLE}. Bob's own default names a model this proxy does not serve, so Bob needs one set here to run against it.`;
-
 export function ibmLitellmEnvMappings(): EnvMapping[] {
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
