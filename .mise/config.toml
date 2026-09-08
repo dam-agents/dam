@@ -223,6 +223,18 @@ sources = [
 cache = { enabled = false }
 
 # -- Common --
+# A file task that loses its executable bit vanishes from the task list, and a
+# `check:*` wildcard then skips it silently instead of failing.
+[tasks."check:task-files"]
+description = "Every file task under .mise/tasks (here and in the docs root) is executable"
+run = """
+bad=$(find .mise/tasks docs/.mise/tasks -type f -not -path '*/lib/*' -not -perm -u+x)
+[ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
+"""
+outputs = []
+deny_net = true
+deny_write = true
+
 [tasks."check:zizmor"]
 description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"
