@@ -1,0 +1,117 @@
+import { TRPCClientError } from "@trpc/client";
+import type { ArtifactContent, LibraryArtifact } from "api-server-api";
+import { useCallback, useEffect, useState } from "react";
+
+import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
+import { getErrorMessage } from "../../../lib/errors.js";
+import { emitToast } from "../../../lib/toast.js";
+import { useStore } from "../../../store.js";
+import { useSaveArtifactContent } from "../api/mutations.js";
+import { isEditableContent } from "../lib/editable.js";
+
+interface Options {
+  artifact: LibraryArtifact;
+  content: ArtifactContent | null | undefined;
+  isHeadVersion: boolean;
+  initialEdit?: boolean;
+  onEditConsumed?: () => void;
+}
+
+function isConflict(err: unknown): boolean {
+  return err instanceof TRPCClientError && err.data?.code === "CONFLICT";
+}
+
+export function useArtifactEditor({
+  artifact,
+  content,
+  isHeadVersion,
+  initialEdit,
+  onEditConsumed,
+}: Options) {
+  const showConfirm = useStore((s) => s.showConfirm);
+  const save = useSaveArtifactContent();
+
+  const editable = isEditableContent(content) && isHeadVersion;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(content?.content ?? "");
+  const [baseVersion, setBaseVersion] = useState(artifact.version);
+
+  useEffect(() => {
+    if (editing) return;
+    setDraft(content?.content ?? "");
+    setBaseVersion(artifact.version);
+  }, [content?.content, artifact.version, editing]);
+
+  useEffect(() => {
+    if (!initialEdit || !content) return;
+    if (editable) setEditing(true);
+    onEditConsumed?.();
+  }, [initialEdit, content, editable, onEditConsumed]);
+
+  const dirty = editing && draft !== content?.content;
+  useUnsavedGuard(dirty);
+
+  const runSave = useCallback(
+    async (expectedVersion?: number) => {
+      await save.mutateAsync({
+        id: artifact.id,
+        content: draft,
+        ...(expectedVersion != null ? { expectedVersion } : {}),
+      });
+      setEditing(false);
+      emitToast({ kind: "success", message: `Saved ${artifact.title}` });
+    },
+    [save, artifact.id, artifact.title, draft],
+  );
+
+  const commit = useCallback(async () => {
+    try {
+      await runSave(baseVersion);
+    } catch (err) {
+      if (!isConflict(err)) {
+        emitToast({
+          kind: "error",
+          message: getErrorMessage(err, "Save failed"),
+        });
+        return;
+      }
+      const overwrite = await showConfirm(
+        "This artifact has a newer version. Overwrite it with your changes?",
+        "Artifact changed",
+      );
+      if (!overwrite) return;
+      try {
+        await runSave();
+      } catch (retryErr) {
+        emitToast({
+          kind: "error",
+          message: getErrorMessage(retryErr, "Save failed"),
+        });
+      }
+    }
+  }, [runSave, baseVersion, showConfirm]);
+
+  const cancelEdit = useCallback(async () => {
+    if (dirty) {
+      const discard = await showConfirm(
+        "Discard unsaved changes?",
+        "Unsaved changes",
+      );
+      if (!discard) return;
+    }
+    setDraft(content?.content ?? "");
+    setEditing(false);
+  }, [dirty, content?.content, showConfirm]);
+
+  return {
+    editable,
+    editing,
+    draft,
+    dirty,
+    saving: save.isPending,
+    setDraft,
+    startEdit: useCallback(() => setEditing(true), []),
+    cancelEdit,
+    save: commit,
+  };
+}

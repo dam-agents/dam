@@ -1,4 +1,13 @@
-import { Code, Download, Maximize, Share, View } from "@carbon/icons-react";
+import {
+  Close,
+  Code,
+  Download,
+  Edit,
+  Maximize,
+  Save,
+  Share,
+  View,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
@@ -19,6 +28,7 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
@@ -31,35 +41,47 @@ import { VersionSwitcher } from "./version-switcher.js";
 interface Props {
   artifact: LibraryArtifact;
   onClose: () => void;
+  initialEdit?: boolean;
 }
 
 export function ArtifactPreviewDialog({
   artifact: initialArtifact,
   onClose,
+  initialEdit,
 }: Props) {
   const artifact = useArtifact(initialArtifact.id).data ?? initialArtifact;
   const renderable = isRenderedKind(artifact.kind);
   const [showSource, setShowSource] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [version, setVersion] = useState(initialArtifact.version);
+  const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
 
-  const { data: versions } = useArtifactVersions(
-    artifact.version > 1 ? artifact.id : null,
-  );
-  const total = versions?.length ?? artifact.version;
+  const head = artifact.version;
+  const version = pinnedVersion ?? head;
+
+  const { data: versions } = useArtifactVersions(head > 1 ? artifact.id : null);
+  const total = versions?.length ?? head;
 
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
   const latestFeedPost = useDashboardFeedPost(artifact.id);
-  const experimentFeedPost =
-    version === artifact.version ? latestFeedPost : undefined;
-  const wantSource = !renderable || showSource;
-  const content = useArtifactContent(wantSource ? artifact.id : null, version);
+  const experimentFeedPost = version === head ? latestFeedPost : undefined;
+  const content = useArtifactContent(artifact.id, version);
+
+  const editor = useArtifactEditor({
+    artifact,
+    content: content.data,
+    isHeadVersion: pinnedVersion === null,
+    initialEdit,
+  });
+  const wantSource = !renderable || showSource || editor.editing;
 
   return (
     <>
       <Modal widthClass="w-[860px]" onClose={onClose}>
-        <DialogHeader title={artifact.title} onClose={onClose} />
+        <DialogHeader
+          title={editor.dirty ? `● ${artifact.title}` : artifact.title}
+          onClose={onClose}
+        />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">
             <ArtifactStatusBadge artifact={artifact} />
@@ -67,40 +89,70 @@ export function ArtifactPreviewDialog({
             <span>·</span>
             <span>{formatBytes(artifact.sizeBytes)}</span>
             <span className="flex-1" />
-            <VersionSwitcher
-              current={version}
-              total={total}
-              onChange={setVersion}
-            />
+            {!editor.editing && (
+              <VersionSwitcher
+                current={version}
+                total={total}
+                onChange={(v) => setPinnedVersion(v === head ? null : v)}
+              />
+            )}
             {artifact.shareUrl && (
               <CopyLinkButton url={artifact.shareUrl} variant="outline" />
             )}
-            {renderable && (
+            {editor.editing ? (
               <>
+                <Button variant="ghost" size="xs" onClick={editor.cancelEdit}>
+                  <Close size={14} /> Cancel
+                </Button>
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={() => setShowSource((s) => !s)}
+                  onClick={editor.save}
+                  disabled={!editor.dirty || editor.saving}
+                  tooltip="Save (Cmd/Ctrl+S)"
                 >
-                  {showSource ? <View size={14} /> : <Code size={14} />}
-                  {showSource ? "Preview" : "Source"}
+                  <Save size={14} /> {editor.saving ? "Saving…" : "Save"}
                 </Button>
-                {!showSource && (
+              </>
+            ) : (
+              <>
+                {editor.editable && (
                   <Button
                     variant="outline"
-                    size="icon-sm"
-                    aria-label="Fullscreen"
-                    tooltip="Fullscreen"
-                    onClick={() => setFullscreen(true)}
+                    size="xs"
+                    onClick={editor.startEdit}
                   >
-                    <Maximize size={14} />
+                    <Edit size={14} /> Edit
                   </Button>
+                )}
+                {renderable && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => setShowSource((s) => !s)}
+                    >
+                      {showSource ? <View size={14} /> : <Code size={14} />}
+                      {showSource ? "Preview" : "Source"}
+                    </Button>
+                    {!showSource && (
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="Fullscreen"
+                        tooltip="Fullscreen"
+                        onClick={() => setFullscreen(true)}
+                      >
+                        <Maximize size={14} />
+                      </Button>
+                    )}
+                  </>
                 )}
               </>
             )}
           </div>
 
-          {renderable && !showSource ? (
+          {!wantSource ? (
             <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
               {!preview.isLoading && !preview.data ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
@@ -119,11 +171,17 @@ export function ArtifactPreviewDialog({
               )}
             </div>
           ) : (
-            <ArtifactSourceView
-              artifact={artifact}
-              content={content.data}
-              isLoading={content.isLoading}
-            />
+            <div className={editor.editing ? "h-[58vh] overflow-hidden" : ""}>
+              <ArtifactSourceView
+                artifact={artifact}
+                content={content.data}
+                isLoading={content.isLoading}
+                editMode={editor.editing}
+                draft={editor.draft}
+                onDraftChange={editor.setDraft}
+                onSave={editor.save}
+              />
+            </div>
           )}
         </DialogBody>
         <DialogFooter>
