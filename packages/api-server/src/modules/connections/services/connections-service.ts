@@ -622,7 +622,10 @@ export function createConnectionsService(deps: {
             target: id,
             detail: { surface: "connection.grants_set" },
           });
-          throw new Error(`connection ${id} not owned by caller`);
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "connection not owned by caller",
+          });
         }
       }
 
@@ -665,7 +668,10 @@ export function createConnectionsService(deps: {
     async createFromTemplate(input): Promise<string> {
       const template = deps.templates.get(input.templateId);
       if (!template) {
-        throw new Error(`unknown template ${input.templateId}`);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `unknown template ${input.templateId}`,
+        });
       }
       let sharedKbInputs: Record<string, string> = {};
       let connectionName = input.name;
@@ -735,7 +741,10 @@ export function createConnectionsService(deps: {
       if (auth.kind === "client-credentials" && secretPath) {
         const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
         if (!clientSecret) {
-          throw new Error(`template ${template.id}: missing clientSecret`);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `template ${template.id}: missing clientSecret`,
+          });
         }
         const minted = await mintClientCredentialsToken(deps.oauthEngine, {
           connectionRef: `connection:${id}:${template.id}`,
@@ -765,7 +774,10 @@ export function createConnectionsService(deps: {
       if (auth.kind === "github-app" && secretPath) {
         const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
         if (!privateKeyPem) {
-          throw new Error(`template ${template.id}: missing privateKey`);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `template ${template.id}: missing privateKey`,
+          });
         }
         const minted = await mintGitHubAppToken(deps.githubAppEngine, {
           connectionRef: `connection:${id}:${template.id}`,
