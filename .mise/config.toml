@@ -1,25 +1,11 @@
-# Every package is a mise config root: its tasks live in <package>/.mise/ (config.toml
-# for aggregators, template extends and deps providers; tasks/ for scripts) and
-# are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
-# `mise :check` from inside the package). Repo-level tasks (check/test
-# aggregators, cluster ops, release) stay at the root — as [tasks] here or file
-# tasks under .mise/tasks/ — and are
-# addressed bare (`mise run check`) or as //:<task> from a package. This file
-# is the root config (.mise/config.toml); mise.lock sits beside it.
 monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "helm", "docs"]
 
 [vars]
-# Inside a package, {{config_root}} is the package dir; templates and tasks that
-# run from the repo root use this instead.
 repo_root = "{{config_root}}"
 
-# Project dependencies (`mise deps`): run before every `mise run`/`mise x` when
-# their inputs changed or outputs are missing, across all config roots — so a
-# fresh clone needs no install step before its first `mise run`. `--no-deps`
-# skips them; `mise deps --monorepo` installs everything without running a task.
 [deps.pnpm]
 auto = true
 sources = [
@@ -32,87 +18,31 @@ sources = [
 outputs = ["node_modules/.modules.yaml"]
 
 [tools]
-nodejs = "24"
-# Same version as package.json's packageManager (the Dockerfiles install from
-# that field); mise provides the binary, no corepack.
-pnpm = "10.33.4"
-# The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
-# declared here so CI runners get the binary; uv manages python itself.
-uv = "0.9"
-
-# Go
-go = "1.26"
-"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
-
-# Generates the api-server's Agent CR spec TS type from the controller's CRD
-# (api-server:gen:crd-types) — keeps the Go-authored schema the single source.
-"npm:json-schema-to-typescript" = "latest"
-
-# Java + Maven — required by keycloakify to package the theme JAR (packages/keycloak-theme)
-java = "21"
-maven = "latest"
-
-# Kubernetes
-helm = "4.2.0"
-kubeconform = "latest"
-"lima" = "2"
 "go:sigs.k8s.io/crdify" = "latest"
-
-# Security scanning: run by cd.yml only (trivy over the published images,
-# govulncheck, pnpm audit); no scan tasks exist locally.
-"zizmor" = "latest"
-"trivy" = "latest"
-
-# misc
+"npm:json-schema-to-typescript" = "latest"
 fd = "latest"
-yq = "latest"
-gum = "latest"
 gh = "latest"
+go = "1.26"
+gum = "latest"
+helm = "4.2.0"
+java = "21"
+kubeconform = "latest"
+lima = "2"
+maven = "latest"
+nodejs = "24"
 pinact = "latest"
+pnpm = "10.33.4" # Same version as package.json's packageManager
+trivy = "latest"
+uv = "0.9"
+yq = "latest"
+zizmor = "latest"
 
 [settings]
 experimental = true
 task.disable_spec_from_run_scripts = true
-
-
-[task_config]
-# Paths are relative to the repo root. .mise/tasks/ holds file tasks: each
-# executable is a task named by its path (.mise/tasks/check/version →
-# check:version); nothing else lives there.
-# Repo-level one-liners and aggregators are the [tasks] at the end of this file;
-# anything with a script body is a file task. the cluster:* operations are the
-# file tasks under .mise/tasks/cluster/.
-includes = [".mise/tasks"]
-
-# Artifact cache (repo-root tasks): a task with `sources` and `outputs` (or
-# `outputs = []` for pure checks) is keyed by source content + tool versions and
-# replayed on a hit. Package tasks opt in explicitly (task_config does not reach
-# other config roots) — the templates below do so.
-[task_config.cache]
-enabled = true
-
-# -- Task templates ----------------------------------------------------------
-# Shared shapes for the per-package .mise/config.toml files (`extends = "<name>"`).
-# Local `run`/`depends`/`sources` replace the template's; `env`/`tools` merge.
-#
-# Sandboxing (checks only — test suites bind loopback sockets and write runner
-# caches, and the network sandbox blocks every inet socket, loopback included):
-# checks never need the network, and `deny_write` blocks every write outside
-# /tmp — the tree and $HOME (credentials, shell rc) alike — so it only goes on
-# tools that write nothing. Landlock (Linux) / Seatbelt (macOS); Windows runs
-# unsandboxed with a warning.
-#
-# No task depends on an install step: node_modules comes from the [deps.pnpm]
-# provider, which runs before `mise run` (a dependency without a cache key
-# would make every dependent uncacheable). The lockfile is in every cache key
-# via `sources`.
-#
-# `^check:tsc` = the same task in every upstream workspace package (pnpm
-# workspace graph). Internal packages export ./src/*.ts, so a downstream tsc
-# and vitest read upstream sources directly; running (and hashing) upstream
-# first is what keeps the artifact cache honest across package boundaries.
 
 [task_templates."ts:check:tsc"]
 depends = ["^check:tsc"]
