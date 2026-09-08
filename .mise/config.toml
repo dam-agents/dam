@@ -117,7 +117,7 @@ enabled = true
 [task_templates."ts:check:tsc"]
 depends = ["^check:tsc"]
 run = "pnpm exec tsc --noEmit"
-sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+sources = ["src/**/*.{ts,tsx}", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache = { enabled = true }
 deny_net = true
@@ -125,7 +125,7 @@ deny_write = true
 
 [task_templates."ts:check:lint"]
 run = "pnpm exec eslint ."
-sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
+sources = ["src/**/*.{ts,tsx}", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache = { enabled = true }
 deny_net = true
@@ -133,7 +133,7 @@ deny_write = true
 
 [task_templates."ts:check:format"]
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
-sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "{{vars.repo_root}}/.prettierrc"]
+sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc"]
 outputs = []
 cache = { enabled = true }
 deny_net = true

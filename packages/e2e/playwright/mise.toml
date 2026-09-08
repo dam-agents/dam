@@ -49,7 +49,7 @@ depends = [":fix:*"]
 
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
-sources = ["src/**/*.ts", "playwright.config.ts", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json"]
+sources = ["{src/**/*,playwright.config}.ts", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json"]
 
 [tasks."check:lint"]
 extends = "ts:check:lint"
@@ -57,7 +57,7 @@ extends = "ts:check:lint"
 [tasks."check:format"]
 extends = "ts:check:format"
 run = "pnpm exec prettier --check 'src/**/*.ts' 'playwright.config.ts'"
-sources = ["src/**/*.ts", "playwright.config.ts", "{{vars.repo_root}}/.prettierrc"]
+sources = ["{src/**/*,playwright.config}.ts", "{{vars.repo_root}}/.prettierrc"]
 
 [tasks."fix:lint"]
 extends = "ts:fix:lint"
