@@ -11,9 +11,3 @@ build_args=()
 # ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
 exec {{ mise_bin }} run image:resolve -- build-or-reuse gepa -- ${build_args[@]+"${build_args[@]}"} packages/agents/gepa
 '''
-
-[tasks.scan]
-depends = [":scan:*"]
-
-[tasks."scan:trivy"]
-extends = "image:scan:trivy"

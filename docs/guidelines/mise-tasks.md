@@ -13,7 +13,7 @@ The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../
 | Same task in every package | `//...:<task>` | `mise run '//...:test'` |
 | Repo-level task | bare name, or `//:<task>` from a package | `mise run check`, `mise run cluster:install` |
 
-Repo-level tasks (aggregators and their `check:*`/`scan:*` leaves, `release:*`, `cluster:*`, `e2e*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included). Documentation checks are their own config root, `//docs:*`. The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself). `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`, `scan` on `:scan:*`.
+Repo-level tasks (aggregators and their `check:*` leaves, `release:*`, `cluster:*`, `e2e*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included). Documentation checks are their own config root, `//docs:*`. The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself). `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`.
 
 ## File tasks
 
@@ -34,7 +34,7 @@ extends = "ts:check:tsc"
 
 Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge. Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root. Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
 
-Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`, `agent:image`, `image:scan:trivy`.
+Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`, `agent:image`. Security scanners (trivy, govulncheck, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles.
 
 ## Artifact cache
 

@@ -802,7 +802,7 @@ jobs:
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
   go-vuln:
-    name: mise //packages/controller:scan:govulncheck
+    name: govulncheck
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -819,7 +819,7 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run //packages/controller:scan:govulncheck --json) || true
+          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || true
           out=$(printf '%s' "$results" | jq -s '
             [ .[]
               | select(.finding != null and .finding.trace[0].function != null)
@@ -843,7 +843,7 @@ jobs:
           retention-days: 1
 
   npm-audit:
-    name: mise scan:npm-audit
+    name: pnpm audit
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -859,7 +859,7 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run scan:npm-audit --json) || true
+          results=$(mise x -- pnpm audit --prod --json) || true
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -930,32 +930,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-  trivy-tasks:
-    name: mise tasks --all | grep ':scan:trivy$'
+  trivy-components:
+    name: image:resolve list-components
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
-      tasks: ${{ steps.list.outputs.tasks }}
+      components: ${{ steps.list.outputs.components }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          version: ${{ env.MISE_VERSION }}
       - id: list
         run: |
           set -euo pipefail
-          tasks=$(mise tasks ls --all --json | jq -c '[.[].name | select(endswith(":scan:trivy"))]')
-          echo "Discovered trivy scan tasks: $tasks"
-          echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
+          components=$(.mise/tasks/image/resolve list-components | tr ' ' '\n' | jq -cR . | jq -cs .)
+          echo "Images to scan: $components"
+          echo "components=$components" >> "$GITHUB_OUTPUT"
 
   container-scan:
-    name: mise run ${{ matrix.task }}
+    name: trivy ${{ matrix.component }}
     needs:
       [
-        trivy-tasks,
+        trivy-components,
         merge-images,
         merge-platform-base,
         merge-agents,
@@ -971,7 +968,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: ${{ fromJSON(needs.trivy-tasks.outputs.tasks) }}
+        component: ${{ fromJSON(needs.trivy-components.outputs.components) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -985,17 +982,19 @@ jobs:
         env:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
-          TASK: ${{ matrix.task }}
+          COMPONENT: ${{ matrix.component }}
           SHA: ${{ github.sha }}
+          IMAGE_PREFIX: quay.io/dam-agents
         run: |
           set -euo pipefail
-          echo "artifact=findings-$(echo "${TASK#//}" | tr ':/' '--')" >> "$GITHUB_OUTPUT"
+          echo "artifact=findings-trivy-${COMPONENT}" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           if [ -n "${QUAY_USERNAME:-}" ] && [ -n "${QUAY_PASSWORD:-}" ]; then
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
-          report=$(mise run "$TASK" --json --tag="$SHA") || {
-            echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — reused unchanged, or its build failed); see log"
+          # trivy.yaml at the repo root sets ignore-unfixed.
+          report=$(mise x -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
+            echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
             exit 0
           }
           out=$(echo "$report" | jq '
@@ -1010,7 +1009,7 @@ jobs:
             | unique_by(.id + "|" + .pkg)
           ')
           printf '%s\n' "${out:-[]}" > findings.json
-          echo "::notice::Trivy (${TASK}): $(jq length findings.json) finding(s)"
+          echo "::notice::Trivy (${COMPONENT}): $(jq length findings.json) finding(s)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

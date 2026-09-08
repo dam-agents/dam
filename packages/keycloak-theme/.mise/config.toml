@@ -15,9 +15,6 @@ depends = [":check:*"]
 [tasks.fix]
 depends = [":fix:*"]
 
-[tasks.scan]
-depends = [":scan:*"]
-
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
 
@@ -32,7 +29,3 @@ extends = "ts:fix:lint"
 
 [tasks."fix:format"]
 extends = "ts:fix:format"
-
-[tasks."scan:trivy"]
-extends = "image:scan:trivy"
-vars = { image = "keycloak", local_image = "platform-keycloak" }

@@ -39,4 +39,4 @@ By ecosystem:
 - Mise: `mise use tool@version`, use `mise lock` to update `.mise/mise.lock`
 - Node.js: use `pnpm`, with overrides in top-level `package.json` if necessary
 - GitHub Actions: use `pinact`
-- Go: fix manually, run `mise run //packages/controller:scan:govulncheck` to verify
+- Go: fix manually, run `mise -C packages/controller x -- govulncheck ./...` to verify

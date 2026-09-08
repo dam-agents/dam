@@ -60,7 +60,8 @@ kubeconform = "latest"
 "lima" = "2"
 "go:sigs.k8s.io/crdify" = "latest"
 
-# Security scanning
+# Security scanning: run by cd.yml only (trivy over the published images,
+# govulncheck, pnpm audit); no scan tasks exist locally.
 "zizmor" = "latest"
 "trivy" = "latest"
 
@@ -162,31 +163,6 @@ dir = "{{vars.repo_root}}"
 depends = ["//packages/platform-base:image"]
 run = "{{ mise_bin }} run image:resolve -- build-or-reuse {{ config_root | split(pat='/') | last }} -- packages/agents/{{ config_root | split(pat='/') | last }}"
 
-# Trivy scan of a component image. Registry name and local tag derive from the
-# package dir name; override with `vars = { image = "…", local_image = "…" }`
-# where they differ (keycloak-theme → keycloak, platform-base has no prefix).
-[task_templates."image:scan:trivy"]
-dir = "{{vars.repo_root}}"
-usage = '''
-flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
-flag "--tag <tag>" help="Scan the registry image at <tag> instead of building locally"
-'''
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-{% set name = config_root | split(pat='/') | last %}
-if [ -n "${usage_tag:-}" ]; then
-  image="quay.io/dam-agents/{{ vars.image | default(value=name) }}:${usage_tag}"
-else
-  {{ mise_bin }} -C {{ config_root }} run :image
-  image="{{ vars.local_image | default(value="platform-" ~ name) }}:latest"
-fi
-if [[ "${usage_json:-false}" == "true" ]]; then
-  exec trivy image --quiet --format json "$image"
-fi
-exec trivy image --quiet --exit-code 1 "$image"
-'''
-
 # -- Repo-level tasks -------------------------------------------------------
 
 # -- Aggregation --
@@ -199,9 +175,6 @@ depends = ["check:*", "//...:check"]
 
 [tasks.fix]
 depends = ["//...:fix"]
-
-[tasks.scan]
-depends = ["scan:*", "//...:scan"]
 
 [tasks.test]
 depends = ["//...:test"]

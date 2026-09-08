@@ -4,9 +4,6 @@ depends = [":check:*"]
 [tasks.fix]
 depends = [":fix:*"]
 
-[tasks.scan]
-depends = [":scan:*"]
-
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
 
@@ -27,6 +24,3 @@ run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
 [tasks.test]
 extends = "ts:test"
 run = "pnpm exec vitest run --config vitest.unit.config.ts"
-
-[tasks."scan:trivy"]
-extends = "image:scan:trivy"

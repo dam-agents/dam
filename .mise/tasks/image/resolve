@@ -17,6 +17,7 @@
 #   mise run image:resolve -- build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
+#   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
@@ -197,7 +198,8 @@ case "${1:-}" in
   build-or-reuse) shift; build_or_reuse "$@" ;;
   gha-outputs)    gha_outputs ;;
   list-workloads) echo $WORKLOADS ;;
+  list-components) echo api-server ui controller platform-base keycloak claude-code codex pi-agent bob k-search $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-workloads|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-workloads|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac

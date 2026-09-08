@@ -1,5 +1,2 @@
 [tasks.image]
 depends = ["./...:image"]
-
-[tasks.scan]
-depends = ["./...:scan"]

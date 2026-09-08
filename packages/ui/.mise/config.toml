@@ -4,9 +4,6 @@ depends = [":check:*"]
 [tasks.fix]
 depends = [":fix:*"]
 
-[tasks.scan]
-depends = [":scan:*"]
-
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
 
@@ -24,6 +21,3 @@ extends = "ts:fix:format"
 
 [tasks.test]
 extends = "ts:test"
-
-[tasks."scan:trivy"]
-extends = "image:scan:trivy"

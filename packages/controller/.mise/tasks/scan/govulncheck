@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Check the Go call graph against the vuln DB"
-#MISE sources=["**/*.go", "go.mod", "go.sum"]
-#USAGE flag "--json" help="Emit govulncheck streaming JSON instead of text"
-set -uo pipefail
-if [[ "${usage_json:-false}" == "true" ]]; then
-  exec govulncheck -format json ./...
-fi
-exec govulncheck ./...

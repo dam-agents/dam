@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-#USAGE flag "--json" help="Emit pnpm audit JSON instead of text"
-exec pnpm audit --prod "$@"
