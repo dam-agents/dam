@@ -263,6 +263,19 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 | Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
 | Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
 
+## Case Studies (bounded context)
+
+Agent-written, sanitized weekly self-accounts and the platform store behind them. See [`docs/architecture/case-studies.md`](architecture/case-studies.md).
+
+| Term | Definition |
+|------|-----------|
+| Case Study | A sanitized, plain-English, one-page account an agent writes about itself — use case, workflow, delivered value, cost, and platform friction — produced by the agent-case-study skill from the agent's real history |
+| Edition | One stored Case Study, identified by `(agent, week start)` — the Monday (UTC) of the submitting week, stamped from the server clock. Resubmitting within the week replaces the edition and resets it to Pending |
+| Pending | The state every submission lands in: visible to the owner only, never served by any inspector surface. The default and the fallback — content changes always return here |
+| Release | The owner's explicit consent event: a status flip from Pending to Released, the only state inspector surfaces serve. Hidden and Deleted (tombstone) are the reserved opt-out and withdrawal states |
+| Submission | The `submit_case_study` MCP write: agent id bound by the mesh-verified session, harness image stamped from the Agent CR, week start from the server clock — the agent declares only content, window, and its own artifact reference |
+| Platform Friction | The Case Study section naming what the platform itself put in the way — goal, obstacle, workaround — where platform feature names are expected and company specifics are not |
+
 ## Metrics (bounded context)
 
 The user-facing spend read path over agent telemetry — owner-scoped reads that back the Settings Usage tab. Distinct from Usage Tracking, which is activity analytics (who did what, when): tokens and cost are Spend, and live here. See [`docs/architecture/metrics.md`](architecture/metrics.md).
