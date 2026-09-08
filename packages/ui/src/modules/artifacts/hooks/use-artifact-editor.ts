@@ -10,7 +10,7 @@ import { useSaveArtifactContent } from "../api/mutations.js";
 import { isEditableContent } from "../lib/editable.js";
 
 interface Options {
-  artifact: LibraryArtifact;
+  artifact: LibraryArtifact | null | undefined;
   content: ArtifactContent | null | undefined;
   isHeadVersion: boolean;
   initialEdit?: boolean;
@@ -31,16 +31,16 @@ export function useArtifactEditor({
   const showConfirm = useStore((s) => s.showConfirm);
   const save = useSaveArtifactContent();
 
-  const editable = isEditableContent(content) && isHeadVersion;
+  const editable = !!artifact && isEditableContent(content) && isHeadVersion;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content?.content ?? "");
-  const [baseVersion, setBaseVersion] = useState(artifact.version);
+  const [baseVersion, setBaseVersion] = useState(artifact?.version);
 
   useEffect(() => {
     if (editing) return;
     setDraft(content?.content ?? "");
-    setBaseVersion(artifact.version);
-  }, [content?.content, artifact.version, editing]);
+    setBaseVersion(artifact?.version);
+  }, [content?.content, artifact?.version, editing]);
 
   useEffect(() => {
     if (!initialEdit || !content) return;
@@ -53,6 +53,7 @@ export function useArtifactEditor({
 
   const runSave = useCallback(
     async (expectedVersion?: number) => {
+      if (!artifact) return;
       await save.mutateAsync({
         id: artifact.id,
         content: draft,
@@ -61,7 +62,7 @@ export function useArtifactEditor({
       setEditing(false);
       emitToast({ kind: "success", message: `Saved ${artifact.title}` });
     },
-    [save, artifact.id, artifact.title, draft],
+    [save, artifact, draft],
   );
 
   const commit = useCallback(async () => {
@@ -91,17 +92,16 @@ export function useArtifactEditor({
     }
   }, [runSave, baseVersion, showConfirm]);
 
+  const confirmDiscard = useCallback(async () => {
+    if (!dirty) return true;
+    return showConfirm("Discard unsaved changes?", "Unsaved changes");
+  }, [dirty, showConfirm]);
+
   const cancelEdit = useCallback(async () => {
-    if (dirty) {
-      const discard = await showConfirm(
-        "Discard unsaved changes?",
-        "Unsaved changes",
-      );
-      if (!discard) return;
-    }
+    if (!(await confirmDiscard())) return;
     setDraft(content?.content ?? "");
     setEditing(false);
-  }, [dirty, content?.content, showConfirm]);
+  }, [confirmDiscard, content?.content]);
 
   return {
     editable,
@@ -112,6 +112,7 @@ export function useArtifactEditor({
     setDraft,
     startEdit: useCallback(() => setEditing(true), []),
     cancelEdit,
+    confirmDiscard,
     save: commit,
   };
 }

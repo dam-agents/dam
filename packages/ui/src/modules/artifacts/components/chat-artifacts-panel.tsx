@@ -127,6 +127,7 @@ export function ChatArtifactsPanel({
                       )
                     }
                     drag={dropCallbacks}
+                    onEdit={(a) => setOpenArtifactId(a.id, { edit: true })}
                     onRename={setRenameTarget}
                     onMove={setMoveTarget}
                     onShare={setShareTarget}
@@ -171,6 +172,7 @@ function ArtifactListRow({
   active,
   onClick,
   drag,
+  onEdit,
   onRename,
   onMove,
   onShare,
@@ -180,6 +182,7 @@ function ArtifactListRow({
   active: boolean;
   onClick: () => void;
   drag?: ArtifactDragCallbacks;
+  onEdit: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
@@ -269,6 +272,7 @@ function ArtifactListRow({
           <DropdownMenuContent align="end">
             <ArtifactRowMenuItems
               artifact={artifact}
+              onEdit={onEdit}
               onRename={onRename}
               onMove={onMove}
               onShare={onShare}

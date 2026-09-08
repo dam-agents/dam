@@ -76,7 +76,7 @@ preview dialog imports `FullscreenPreviewDialog` from the files module today.
 |----|-------|-------|------------|------|
 | 01 | [Version authorship and the stale-save guard](./01-version-authorship-and-stale-save-guard.md) | Author column and migration; `expectedVersion` on the update contract; the service refuses a stale save; the MCP path attributes to the agent and the tRPC path to the owner | — | ✅ |
 | 02 | [Editable source view and the preview dialog](./02-editable-source-view-and-preview-dialog.md) | Editability helper, the `use-artifact-editor` hook, an editable `ArtifactSourceView`, and edit mode in the preview dialog | 01 | ✅ |
-| 03 | [Editing from the chat panel and the row menu](./03-editing-from-chat-panel-and-row-menu.md) | Edit mode in the docked panel, an Edit entry in the row overflow menu, and the wiring that opens a preview straight into edit mode | 02 | |
+| 03 | [Editing from the chat panel and the row menu](./03-editing-from-chat-panel-and-row-menu.md) | Edit mode in the docked panel, an Edit entry in the row overflow menu, and the wiring that opens a preview straight into edit mode | 02 |✅ |
 | 04 | [Version history with author and time](./04-version-history-with-author-and-time.md) | A version list showing which version, when, and who wrote it, on both preview surfaces | 01, 02 | |
 
 Order is linear. 04 needs 01's data and 02's surfaces, so it comes last even

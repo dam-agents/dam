@@ -2,11 +2,13 @@ import {
   Close,
   Code,
   Download,
+  Edit,
   Maximize,
+  Save,
   Share,
   View,
 } from "@carbon/icons-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -19,6 +21,7 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
@@ -29,6 +32,8 @@ import { VersionSwitcher } from "./version-switcher.js";
 export function DockedArtifactPanel() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifactEdit = useStore((s) => s.openArtifactEdit);
+  const setOpenArtifactEdit = useStore((s) => s.setOpenArtifactEdit);
   const {
     data: artifact,
     isPending: artifactPending,
@@ -40,7 +45,6 @@ export function DockedArtifactPanel() {
   const [showSource, setShowSource] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const showFrame = renderable && !showSource;
 
   const { data: versions } = useArtifactVersions(openArtifactId);
   const latest = artifact?.version;
@@ -48,12 +52,29 @@ export function DockedArtifactPanel() {
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
   const shownVersion = pinnedVersion ?? latest;
 
-  const preview = useArtifactPreview(
-    showFrame && artifact ? artifact.id : null,
+  const content = useArtifactContent(
+    artifact ? artifact.id : null,
     shownVersion,
   );
-  const content = useArtifactContent(
-    artifact && !showFrame ? artifact.id : null,
+  const editor = useArtifactEditor({
+    artifact,
+    content: content.data,
+    isHeadVersion: pinnedVersion === null,
+    initialEdit: openArtifactEdit,
+    onEditConsumed: useCallback(
+      () => setOpenArtifactEdit(false),
+      [setOpenArtifactEdit],
+    ),
+  });
+
+  const closePanel = useCallback(async () => {
+    if (!(await editor.confirmDiscard())) return;
+    setOpenArtifactId(null);
+  }, [editor, setOpenArtifactId]);
+
+  const showFrame = renderable && !showSource && !editor.editing;
+  const preview = useArtifactPreview(
+    showFrame && artifact ? artifact.id : null,
     shownVersion,
   );
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
@@ -88,62 +109,87 @@ export function DockedArtifactPanel() {
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={artifact?.title}
         >
+          {editor.dirty ? "\u25cf " : ""}
           {artifact?.title ?? "Artifact"}
         </span>
-        {shownVersion !== undefined && (
-          <VersionSwitcher
-            current={shownVersion}
-            total={total}
-            onChange={(v) => setPinnedVersion(v === latest ? null : v)}
-          />
-        )}
-        {artifact && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share size={14} />
-            Share
-          </Button>
-        )}
-        {renderable && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => setShowSource((s) => !s)}
-          >
-            {showSource ? <View size={14} /> : <Code size={14} />}
-            {showSource ? "Preview" : "Source"}
-          </Button>
-        )}
-        {artifact && (
-          <Button
-            variant="outline"
-            size="icon-xs"
-            aria-label="Download"
-            tooltip="Download"
-            onClick={() => void downloadArtifact(artifact.id)}
-          >
-            <Download size={14} />
-          </Button>
-        )}
-        {frameShowing && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open fullscreen"
-            tooltip="Open fullscreen"
-            onClick={() => setFullscreen(true)}
-          >
-            <Maximize size={16} />
-          </Button>
+        {editor.editing ? (
+          <>
+            <Button variant="ghost" size="xs" onClick={editor.cancelEdit}>
+              <Close size={14} /> Cancel
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={editor.save}
+              disabled={!editor.dirty || editor.saving}
+              tooltip="Save (Cmd/Ctrl+S)"
+            >
+              <Save size={14} /> {editor.saving ? "Saving…" : "Save"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {shownVersion !== undefined && (
+              <VersionSwitcher
+                current={shownVersion}
+                total={total}
+                onChange={(v) => setPinnedVersion(v === latest ? null : v)}
+              />
+            )}
+            {editor.editable && (
+              <Button variant="outline" size="xs" onClick={editor.startEdit}>
+                <Edit size={14} /> Edit
+              </Button>
+            )}
+            {artifact && (
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => setShareOpen(true)}
+              >
+                <Share size={14} />
+                Share
+              </Button>
+            )}
+            {renderable && (
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => setShowSource((s) => !s)}
+              >
+                {showSource ? <View size={14} /> : <Code size={14} />}
+                {showSource ? "Preview" : "Source"}
+              </Button>
+            )}
+            {artifact && (
+              <Button
+                variant="outline"
+                size="icon-xs"
+                aria-label="Download"
+                tooltip="Download"
+                onClick={() => void downloadArtifact(artifact.id)}
+              >
+                <Download size={14} />
+              </Button>
+            )}
+            {frameShowing && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open fullscreen"
+                tooltip="Open fullscreen"
+                onClick={() => setFullscreen(true)}
+              >
+                <Maximize size={16} />
+              </Button>
+            )}
+          </>
         )}
         <Button
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
-          onClick={() => setOpenArtifactId(null)}
+          onClick={() => void closePanel()}
         >
           <Close size={16} />
         </Button>
@@ -180,11 +226,21 @@ export function DockedArtifactPanel() {
             (frame ?? frameFallback)
           )
         ) : (
-          <div className="h-full overflow-auto p-4">
+          <div
+            className={
+              editor.editing
+                ? "h-full overflow-hidden p-2"
+                : "h-full overflow-auto p-4"
+            }
+          >
             <ArtifactSourceView
               artifact={artifact}
               content={content.data}
               isLoading={content.isLoading}
+              editMode={editor.editing}
+              draft={editor.draft}
+              onDraftChange={editor.setDraft}
+              onSave={editor.save}
             />
           </div>
         )}

@@ -10,9 +10,11 @@ export const ARTIFACTS_SECTION_OPEN_STORAGE_KEY = "platform-artifacts-open";
 
 export interface ArtifactsSlice {
   openArtifactId: string | null;
+  openArtifactEdit: boolean;
   artifactsSectionOpen: boolean;
   artifactFolderCollapse: Record<string, Record<string, boolean>>;
-  setOpenArtifactId: (id: string | null) => void;
+  setOpenArtifactId: (id: string | null, opts?: { edit?: boolean }) => void;
+  setOpenArtifactEdit: (edit: boolean) => void;
   setArtifactsSectionOpen: (open: boolean) => void;
   setArtifactFolderCollapsed: (
     scopeId: string,
@@ -28,15 +30,23 @@ export const createArtifactsSlice: StateCreator<
   ArtifactsSlice
 > = (set) => ({
   openArtifactId: null,
+  openArtifactEdit: false,
   artifactsSectionOpen: readPersistedFlag(
     ARTIFACTS_SECTION_OPEN_STORAGE_KEY,
     true,
   ),
   artifactFolderCollapse: {},
-  setOpenArtifactId: (id) =>
+  setOpenArtifactId: (id, opts) =>
     set(
-      id ? { openArtifactId: id, openFilePath: null } : { openArtifactId: id },
+      id
+        ? {
+            openArtifactId: id,
+            openArtifactEdit: opts?.edit ?? false,
+            openFilePath: null,
+          }
+        : { openArtifactId: id, openArtifactEdit: false },
     ),
+  setOpenArtifactEdit: (edit) => set({ openArtifactEdit: edit }),
   setArtifactsSectionOpen: (open) => {
     writePersistedFlag(ARTIFACTS_SECTION_OPEN_STORAGE_KEY, open);
     set({ artifactsSectionOpen: open });
