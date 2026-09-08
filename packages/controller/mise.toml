@@ -216,7 +216,8 @@ run = "gofmt -s -w ."
 [tasks.test]
 wait_for = [":setup"]
 run = "go test ./..."
-sources = ["**/*.go", "go.mod", "go.sum"]
+# schema_generation_test.go reads the chart CRDs.
+sources = ["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/deploy/helm/platform/crds/*.yaml"]
 outputs = []
 cache = { enabled = true }
 

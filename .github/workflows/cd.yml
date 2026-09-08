@@ -804,7 +804,7 @@ jobs:
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
   go-vuln:
-    name: mise controller:scan:govulncheck
+    name: mise //packages/controller:scan:govulncheck
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

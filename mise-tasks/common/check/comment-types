@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 //MISE description="Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
-//MISE sources=["packages/**/*.ts", "packages/**/*.tsx", "packages/**/*.go", "!**/node_modules/**", "mise-tasks/lib/strip-comments.mjs"]
-//MISE outputs=[]
-//MISE cache={ enabled = true }
+// Not cached: it walks every tracked TS/JS/Go file, and a sources glob wide
+// enough to match that has to traverse node_modules.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
