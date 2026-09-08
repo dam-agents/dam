@@ -1,9 +1,7 @@
 # Go reads its module and build caches from $HOME, so checks deny only the
-# network; `setup` (pulled in by the check aggregator) pre-downloads modules.
-[tasks.setup]
-run = "go mod download"
-sources = ["go.mod", "go.sum"]
-cache = { enabled = false }
+# network; the go deps provider pre-downloads modules before any task runs.
+[deps.go]
+auto = true
 
 # Regenerate deepcopy methods and CRD manifests from the api/ Go types
 # (controller-gen). Run after editing any type under api/. CRDs land in the
@@ -23,7 +21,7 @@ done
 """
 
 [tasks.check]
-depends = [":setup", ":check:*"]
+depends = [":check:*"]
 
 [tasks."check:fmt"]
 run = """
@@ -186,7 +184,6 @@ exit $status
 '''
 
 [tasks."check:vet"]
-wait_for = [":setup"]
 run = "go vet ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = []
@@ -194,7 +191,6 @@ cache = { enabled = true }
 deny_net = true
 
 [tasks."check:staticcheck"]
-wait_for = [":setup"]
 run = "staticcheck ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = []
@@ -202,7 +198,6 @@ cache = { enabled = true }
 deny_net = true
 
 [tasks."check:build"]
-wait_for = [":setup"]
 run = "go build -o dist/ ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 outputs = ["dist/**"]
@@ -216,7 +211,6 @@ depends = [":fix:*"]
 run = "gofmt -s -w ."
 
 [tasks.test]
-wait_for = [":setup"]
 run = "go test ./..."
 # schema_generation_test.go reads the chart CRDs.
 sources = ["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml"]

@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:setup:pnpm", ":check:*"]
+depends = [":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -24,7 +24,6 @@ extends = "ts:test"
 
 [tasks.build]
 description = "Build the dam CLI to dist/bin.js"
-depends = ["//:setup:pnpm"]
 run = "pnpm exec tsup"
 
 [tasks.run]

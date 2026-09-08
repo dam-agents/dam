@@ -1,20 +1,19 @@
 [tasks.check]
 depends = [":check:*"]
 
-# Build chart dependencies (the clickstack telemetry subchart + its nested
-# opentelemetry-collector) into charts/ from Chart.lock. lint and render both need the
-# dependency present, so they depend on this. `helm repo add` is idempotent.
-[tasks.deps]
+# Chart dependencies (the clickstack telemetry subchart + its nested
+# opentelemetry-collector) build into charts/ from Chart.lock before any task
+# runs. `helm repo add` is idempotent.
+[deps.helm]
+auto = true
+sources = ["Chart.yaml", "Chart.lock"]
+outputs = ["charts/*.tgz"]
 run = """
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build .
 """
-sources = ["Chart.yaml", "Chart.lock"]
-outputs = ["charts/*.tgz"]
-cache = { enabled = true }
 
 [tasks."check:lint"]
-depends = [":deps"]
 
 run = "helm lint ."
 sources = ["**/*.yaml", "**/*.yml", "**/*.tpl", "charts/*.tgz"]
@@ -28,7 +27,6 @@ deny_write = true
 # MongoDBCommunity) that kubeconform has no schema for — skip them alongside the existing
 # CRD/Istio kinds. Not network-sandboxed: kubeconform fetches its schemas.
 [tasks."check:render"]
-depends = [":deps"]
 
 run = "helm template platform . --include-crds --set terms.version=test --set terms.text='Test Terms' --set clickstack.enabled=true | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity"
 sources = ["**/*.yaml", "**/*.yml", "**/*.tpl", "charts/*.tgz"]

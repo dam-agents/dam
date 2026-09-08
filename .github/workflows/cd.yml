@@ -724,7 +724,7 @@ jobs:
           fi
 
       - name: Build Helm chart dependencies
-        run: mise run //helm:deps
+        run: mise -C helm deps
 
       - name: Pin content-tagged image tags
         env:
@@ -786,7 +786,7 @@ jobs:
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
 
       - name: Build Helm chart dependencies
-        run: mise run //helm:deps
+        run: mise -C helm deps
 
       - name: Pin content-tagged image tags
         env:
@@ -817,7 +817,7 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run //packages/controller:setup
+      - run: mise -C packages/controller deps
 
       - name: Detect vulnerabilities
         run: |
@@ -859,7 +859,7 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run setup:pnpm
+      - run: mise deps
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail

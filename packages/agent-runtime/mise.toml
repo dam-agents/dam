@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:setup:pnpm", ":check:*"]
+depends = [":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -24,5 +24,4 @@ extends = "ts:test"
 
 [tasks.dev]
 description = "Run agent-runtime in watch mode (tsx, loads .env)"
-depends = ["//:setup:pnpm"]
 run = "pnpm exec tsx watch --env-file=.env src/server.ts"

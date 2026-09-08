@@ -1,5 +1,5 @@
 [tasks.check]
-depends = ["//:setup:pnpm", ":check:*"]
+depends = [":check:*"]
 
 [tasks.fix]
 depends = [":fix:*"]
@@ -22,11 +22,9 @@ extends = "ts:fix:format"
 # Generate a migration for table/index/enum changes by diffing schema.ts against
 # the latest snapshot. Edit schema.ts, run this, commit. See packages/db/README.md.
 [tasks.generate]
-depends = ["//:setup:pnpm"]
 run = "pnpm exec drizzle-kit generate"
 
 [tasks.migrate]
-depends = ["//:setup:pnpm"]
 run = "pnpm exec drizzle-kit migrate"
 
 # Scaffold a HAND-WRITTEN migration file + journal entry — for the reporting
@@ -39,7 +37,6 @@ run = "pnpm exec drizzle-kit migrate"
 # `generate` can't find a base to diff against. We only slugify the name first,
 # since --custom otherwise puts spaces in the filename.
 [tasks.new]
-depends = ["//:setup:pnpm"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -55,7 +52,6 @@ echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
 # without `mise run //packages/db:generate`. Pure files, no database, so it runs
 # in `mise run check`. Views aren't in schema.ts, so they're out of scope by design.
 [tasks."check:generated"]
-wait_for = ["//:setup:pnpm"]
 sources = ["src/schema.ts", "drizzle/meta/*.json"]
 outputs = []
 cache = { enabled = true }

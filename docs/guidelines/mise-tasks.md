@@ -13,11 +13,15 @@ The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../
 | Same task in every package | `//...:<task>` | `mise run '//...:test'` |
 | Repo-level task | bare name, or `//:<task>` from a package | `mise run check`, `mise run cluster:install` |
 
-Repo-level tasks (aggregators and their `check:*`/`scan:*`/`setup:*` leaves, `release:*`, `cluster:*`, `e2e*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included). Documentation checks are their own config root, `//docs:*`. The aggregators fan out: `check` = `setup` + the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself). `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`, `scan` on `:scan:*`.
+Repo-level tasks (aggregators and their `check:*`/`scan:*`/`setup:*` leaves, `release:*`, `cluster:*`, `e2e*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included). Documentation checks are their own config root, `//docs:*`. The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself). `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`, `scan` on `:scan:*`.
 
 ## File tasks
 
 Standalone scripts are tasks too: an executable under [`.mise/tasks/`](../../.mise/tasks/) is a task named by its path (`.mise/tasks/check/version` → `check:version`; in a package, `docs/.mise/tasks/check/adr-index` → `//docs:check:adr-index`), so `:check:*` picks it up like any TOML task. Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`. Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); shared code lives non-executable in `.mise/tasks/lib/*.mjs` so mise does not list it. Arguments pass through verbatim after the first `--` (`mise run image:resolve -- build-or-reuse codex -- packages/agents/codex`). Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead. [`scripts/`](../../scripts/) keeps only what is not a task: the Dockerfile pnpm installer and the Claude Code doc-size hook.
+
+## Dependencies
+
+Project dependencies are not tasks. Each config root declares `[deps]` providers (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK, a custom `helm` provider for chart dependencies); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. `mise run setup` (= `mise deps --monorepo`) installs them all up front; `mise run --no-deps <task>` skips them; `mise -C <root> deps` targets one root. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
 
 ## Templates
 
@@ -37,7 +41,7 @@ Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`, `age
 A task with `sources` and `outputs` (`outputs = []` for a pure check) and `cache = { enabled = true }` is keyed by the content of its sources, its definition, resolved tool versions, platform, and its dependencies' cache keys. A hit restores the outputs and replays the log. Rules that keep hits honest:
 
 - **Declare every input.** Cross-package reads are covered by depending on the upstream package's task (`^check:tsc` = the same task in every pnpm workspace dependency); `pnpm-lock.yaml` is in every TypeScript key.
-- **Install steps are `cache = { enabled = false }` and referenced with `wait_for`, not `depends`.** A dependency that runs without a cache key makes every dependent uncacheable. Aggregators pull the install step in.
+- **Never depend on an install step.** Installs are `[deps]` providers, not tasks; a dependency that runs without a cache key makes every dependent uncacheable.
 - **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster.
 
 Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`. Flags go before the task name. CI restores the artifact directory between runs; there is no remote cache yet (`task.cache.remote_url` is the upgrade path).

@@ -15,6 +15,26 @@ config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e
 # run from the repo root use this instead.
 repo_root = "{{config_root}}"
 
+# Project dependencies (`mise deps`): run before every `mise run`/`mise x` when
+# their inputs changed or outputs are missing. `mise run setup` installs them
+# across all config roots; `--no-deps` skips them.
+[deps.corepack]
+description = "Enable corepack so pnpm resolves to package.json's packageManager"
+sources = ["package.json"]
+run = "corepack enable"
+
+[deps.pnpm]
+auto = true
+depends = ["corepack"]
+sources = [
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "packages/*/package.json",
+  "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
+  "package.json",
+]
+outputs = ["node_modules/.modules.yaml"]
+
 [tools]
 nodejs = "24"
 # The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
@@ -87,10 +107,10 @@ enabled = true
 # tools that write nothing. Landlock (Linux) / Seatbelt (macOS); Windows runs
 # unsandboxed with a warning.
 #
-# Cached tasks `wait_for` (not `depends` on) the install step: a dependency
-# that runs without a cache key makes its dependents uncacheable, and pnpm
-# install is deliberately never cached. The lockfile is in every cache key via
-# `sources`; the aggregators pull the install in.
+# No task depends on an install step: node_modules comes from the [deps.pnpm]
+# provider, which runs before `mise run` (a dependency without a cache key
+# would make every dependent uncacheable). The lockfile is in every cache key
+# via `sources`.
 #
 # `^check:tsc` = the same task in every upstream workspace package (pnpm
 # workspace graph). Internal packages export ./src/*.ts, so a downstream tsc
@@ -98,7 +118,6 @@ enabled = true
 # first is what keeps the artifact cache honest across package boundaries.
 
 [task_templates."ts:check:tsc"]
-wait_for = ["//:setup:pnpm"]
 depends = [{ task = "^check:tsc", optional = true }]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -108,7 +127,6 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:lint"]
-wait_for = ["//:setup:pnpm"]
 run = "pnpm exec eslint ."
 sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -117,7 +135,6 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:format"]
-wait_for = ["//:setup:pnpm"]
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
 sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "{{vars.repo_root}}/.prettierrc"]
 outputs = []
@@ -126,18 +143,15 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:fix:lint"]
-depends = ["//:setup:pnpm"]
 run = "pnpm exec eslint --fix ."
 deny_net = true
 
 [task_templates."ts:fix:format"]
-depends = ["//:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
 deny_net = true
 
 [task_templates."ts:test"]
 description = "Run the package's vitest suite"
-wait_for = ["//:setup:pnpm"]
 depends = [{ task = "^check:tsc", optional = true }]
 run = "pnpm exec vitest run"
 sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -182,45 +196,28 @@ exec trivy image --quiet --exit-code 1 "$image"
 # -- Aggregation --
 # `x:*` matches the repo-root leaves (check:zizmor, …), `//...:x` the same task
 # in every package config root (`//...` never includes the root itself).
+# Dependencies are not tasks: the [deps] providers (here and in the package
+# configs) run before any `mise run`, so no task depends on an install step.
 [tasks.setup]
-depends = ["setup:pnpm", "//...:setup"]
+description = "Install every project dependency ([deps] providers in all config roots)"
+run = "{{ mise_bin }} deps --monorepo"
 
 [tasks.check]
-depends = ["setup", "check:*", "//...:check"]
+depends = ["check:*", "//...:check"]
 
 [tasks.fix]
-depends = ["setup", "//...:fix"]
+depends = ["//...:fix"]
 
 [tasks.scan]
 depends = ["scan:*", "//...:scan"]
 
 [tasks.test]
-depends = ["setup", "//...:test"]
+depends = ["//...:test"]
 
 # -- Git hooks --
 [tasks."git-hooks:pre-commit"]
 hide = true
 depends = ["check"]
-
-# -- Setup --
-[tasks."setup:corepack"]
-run = "corepack enable"
-sources = ["package.json"]
-cache = { enabled = false }
-
-[tasks."setup:pnpm"]
-depends = ["setup:corepack"]
-run = "pnpm install"
-sources = [
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  "packages/*/package.json",
-  "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
-  "package.json",
-]
-# Explicitly uncached (not merely ineligible): dependents can only be cached
-# when every dependency either has a cache key or opts out.
-cache = { enabled = false }
 
 # -- Common --
 # A file task that loses its executable bit vanishes from the task list, and a
