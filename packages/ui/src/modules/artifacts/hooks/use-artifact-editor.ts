@@ -43,11 +43,17 @@ export function useArtifactEditor({
     setBaseVersion(artifact?.version);
   }, [content?.content, artifact?.version, editing]);
 
+  const [editIntent, setEditIntent] = useState(!!initialEdit);
   useEffect(() => {
-    if (!initialEdit || !content) return;
+    if (initialEdit) setEditIntent(true);
+  }, [initialEdit]);
+
+  useEffect(() => {
+    if (!editIntent || !content) return;
+    setEditIntent(false);
     if (editable) setEditing(true);
     onEditConsumed?.();
-  }, [initialEdit, content, editable, onEditConsumed]);
+  }, [editIntent, content, editable, onEditConsumed]);
 
   const dirty = editing && content != null && draft !== content.content;
   useUnsavedGuard(dirty);

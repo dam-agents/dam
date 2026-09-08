@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { useArtifactDeletion } from "../hooks/use-artifact-deletion.js";
-import { isTextKind } from "../lib/kinds.js";
+import { isEditableArtifact } from "../lib/editable.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
 export function ArtifactRowMenuItems({
@@ -28,7 +28,7 @@ export function ArtifactRowMenuItems({
 
   return (
     <>
-      {isTextKind(artifact.kind) && (
+      {isEditableArtifact(artifact) && (
         <DropdownMenuItem onSelect={() => onEdit(artifact)}>
           Edit
         </DropdownMenuItem>

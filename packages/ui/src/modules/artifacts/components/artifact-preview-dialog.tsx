@@ -8,7 +8,7 @@ import {
   Share,
   View,
 } from "@carbon/icons-react";
-import { INLINE_CONTENT_MAX_BYTES, type LibraryArtifact } from "api-server-api";
+import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import {
@@ -29,7 +29,8 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
-import { isRenderedKind, isTextKind } from "../lib/kinds.js";
+import { isEditableArtifact } from "../lib/editable.js";
+import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
@@ -65,8 +66,7 @@ export function ArtifactPreviewDialog({
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
   const latestFeedPost = useDashboardFeedPost(artifact.id);
   const experimentFeedPost = version === head ? latestFeedPost : undefined;
-  const couldEdit =
-    isTextKind(artifact.kind) && artifact.sizeBytes <= INLINE_CONTENT_MAX_BYTES;
+  const couldEdit = isEditableArtifact(artifact);
   const content = useArtifactContent(
     !renderable || showSource || couldEdit ? artifact.id : null,
     version,

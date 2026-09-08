@@ -40,12 +40,13 @@ export const createArtifactsSlice: StateCreator<
   ),
   artifactFolderCollapse: {},
   setOpenArtifactId: (id, opts) =>
-    set(
+    set((state) =>
       id
         ? {
             openArtifactId: id,
             openArtifactEdit: opts?.edit ?? false,
-            openArtifactDirty: false,
+            openArtifactDirty:
+              id === state.openArtifactId ? state.openArtifactDirty : false,
             openFilePath: null,
           }
         : {

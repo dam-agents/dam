@@ -25,6 +25,7 @@ import {
   useArtifactRowDrag,
 } from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
+import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
@@ -56,20 +57,11 @@ export function ChatArtifactsPanel({
     useArtifactFolders(enabled);
   const loading = enabled && (isPending || foldersPending);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
-  const openArtifactDirty = useStore((s) => s.openArtifactDirty);
-  const showConfirm = useStore((s) => s.showConfirm);
+  const openArtifact = useOpenArtifact();
 
   const openRow = useCallback(
-    async (id: string) => {
-      if (
-        openArtifactDirty &&
-        !(await showConfirm("Discard unsaved changes?", "Unsaved changes"))
-      )
-        return;
-      setOpenArtifactId(id === openArtifactId ? null : id);
-    },
-    [openArtifactDirty, showConfirm, setOpenArtifactId, openArtifactId],
+    (id: string) => openArtifact(id === openArtifactId ? null : id),
+    [openArtifact, openArtifactId],
   );
   const folderCollapse = useStore((s) =>
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
@@ -137,7 +129,7 @@ export function ChatArtifactsPanel({
                     active={artifact.id === openArtifactId}
                     onClick={() => void openRow(artifact.id)}
                     drag={dropCallbacks}
-                    onEdit={(a) => setOpenArtifactId(a.id, { edit: true })}
+                    onEdit={(a) => void openArtifact(a.id, { edit: true })}
                     onRename={setRenameTarget}
                     onMove={setMoveTarget}
                     onShare={setShareTarget}

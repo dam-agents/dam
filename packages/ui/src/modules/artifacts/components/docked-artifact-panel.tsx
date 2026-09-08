@@ -8,7 +8,6 @@ import {
   Share,
   View,
 } from "@carbon/icons-react";
-import { INLINE_CONTENT_MAX_BYTES } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,8 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
-import { isRenderedKind, isTextKind } from "../lib/kinds.js";
+import { isEditableArtifact } from "../lib/editable.js";
+import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -54,10 +54,7 @@ export function DockedArtifactPanel() {
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
   const shownVersion = pinnedVersion ?? latest;
 
-  const couldEdit =
-    !!artifact &&
-    isTextKind(artifact.kind) &&
-    artifact.sizeBytes <= INLINE_CONTENT_MAX_BYTES;
+  const couldEdit = !!artifact && isEditableArtifact(artifact);
   const content = useArtifactContent(
     artifact && (!renderable || showSource || couldEdit) ? artifact.id : null,
     shownVersion,
