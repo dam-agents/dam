@@ -4,7 +4,7 @@ Rules for comments in TS/JS/Go source. Enforced twice: `mise run strip-comments 
 
 ## The rule
 
-Code carries no prose comments. What a comment would say, the code says instead — a better name, a narrower type, a smaller function. The one exception is a **typed comment**: prose prefixed with a type from the `COMMENT_TYPES` registry in [`.mise/tasks/lib/strip-comments.mjs`](../../.mise/tasks/lib/strip-comments.mjs).
+Code carries no prose comments. What a comment would say, the code says instead — a better name, a narrower type, a smaller function. The one exception is a **typed comment**: prose prefixed with a type from the `COMMENT_TYPES` registry in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments).
 
 ## Typed comments
 
@@ -24,4 +24,4 @@ A new kind of comment starts by registering its type in `COMMENT_TYPES` — an u
 
 ## Tool directives
 
-`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`) live in [`.mise/tasks/lib/strip-comments.mjs`](../../.mise/tasks/lib/strip-comments.mjs); a new directive pattern is added there.
+`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`) live in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments); a new directive pattern is added there.

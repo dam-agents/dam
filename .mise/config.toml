@@ -217,6 +217,13 @@ hide = true
 depends = ["check"]
 
 # -- Common --
+[tasks."check:comment-types"]
+description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+# Not cached: it walks every tracked TS/JS/Go file, and a sources glob wide
+# enough to match that has to traverse node_modules.
+run = "{{ mise_bin }} run strip-comments -- --check"
+deny_write = true
+
 # A file task that loses its executable bit vanishes from the task list, and a
 # `check:*` wildcard then skips it silently instead of failing.
 [tasks."check:task-files"]
