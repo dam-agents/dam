@@ -23,6 +23,7 @@ function isTermsStaleCause(cause: unknown): boolean {
 
 const PG_INVALID_TEXT_REPRESENTATION = "22P02";
 const PG_CHARACTER_NOT_IN_REPERTOIRE = "22021";
+const PG_UNTRANSLATABLE_CHARACTER = "22P05";
 const PG_UNIQUE_VIOLATION = "23505";
 const PG_ERRORS: Record<string, { code: TRPCError["code"]; message: string }> =
   {
@@ -31,6 +32,10 @@ const PG_ERRORS: Record<string, { code: TRPCError["code"]; message: string }> =
       message: "malformed identifier",
     },
     [PG_CHARACTER_NOT_IN_REPERTOIRE]: {
+      code: "BAD_REQUEST",
+      message: "unsupported character in input",
+    },
+    [PG_UNTRANSLATABLE_CHARACTER]: {
       code: "BAD_REQUEST",
       message: "unsupported character in input",
     },

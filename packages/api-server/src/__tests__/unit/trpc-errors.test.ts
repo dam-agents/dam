@@ -41,6 +41,13 @@ describe("tRPC error mapping", () => {
     });
   });
 
+  /* TEST_SCENARIO: A NUL byte inside a jsonb value is rejected as an unsupported Unicode escape (SQLSTATE 22P05); the caller must see BAD_REQUEST. */
+  it("maps untranslatable-character to BAD_REQUEST", async () => {
+    await expect(caller().call.fail(pgError("22P05"))).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
   /* TEST_SCENARIO: A duplicate row violates a unique index (SQLSTATE 23505); the caller must see CONFLICT. */
   it("maps unique violation to CONFLICT", async () => {
     await expect(caller().call.fail(pgError("23505"))).rejects.toMatchObject({
