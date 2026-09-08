@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. The PreToolUse hook (scripts/doc-size-hook.mjs) shares this measurement front-line; this gate is the authoritative, unbypassable layer."
-//MISE sources=["docs/architecture.md", "docs/architecture/*.md", ".mise/tasks/lib/doc-size.mjs"]
+//MISE sources=["architecture.md", "architecture/*.md", ".mise/tasks/lib/doc-size.mjs"]
 //MISE outputs=[]
 //MISE cache={ enabled = true }
-import { check } from "../../lib/doc-size.mjs";
+import { check } from "../lib/doc-size.mjs";
 check();

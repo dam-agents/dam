@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#MISE description="Wait until the e2e cluster stably serves UI + Keycloak on :5555. Shared by `e2e` (via e2e:install) and `e2e:loop`'s warm path."
+#MISE hide=true
+#MISE raw=true
+set -eo pipefail
+
+VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+# The install (or a warm --rebuild) rolls traefik, keycloak, and the
+# apiserver, and their routes come up at different moments — a single lucky
+# 200 on the UI root is not "serving". Require the UI root AND the keycloak
+# realm to answer on three consecutive ticks before any spec dials in;
+# otherwise the auth specs die at ERR_CONNECTION_REFUSED mid-login-redirect.
+echo "Waiting for the cluster to serve UI + Keycloak on :5555 ..."
+STREAK=0
+for _ in $(seq 1 100); do
+  if curl -fsS -o /dev/null --max-time 3 http://localhost:5555/ 2>/dev/null &&
+     curl -fsS -o /dev/null --max-time 3 http://keycloak.localhost:5555/realms/platform 2>/dev/null; then
+    STREAK=$((STREAK + 1))
+    [ "$STREAK" -ge 3 ] && break
+  else
+    STREAK=0
+  fi
+  sleep 3
+done
+if [ "$STREAK" -lt 3 ]; then
+  echo "ERROR: e2e cluster is up but not stably routing on :5555 (UI + keycloak)." >&2
+  echo "It does not auto-heal — reprovision with 'mise run e2e', or check" >&2
+  echo "'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
+  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+  # keep the regex in sync. Turns the generic advice above into a verdict.
+  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
+      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun." >&2
+  fi
+  exit 1
+fi

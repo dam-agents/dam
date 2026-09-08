@@ -1,13 +1,14 @@
 # Every package is a mise config root: its tasks live in <package>/mise.toml and
 # are addressed as //<path>:<task> (e.g. `mise run //packages/ui:check`, or
 # `mise :check` from inside the package). Repo-level tasks (setup/check/test
-# aggregators, cluster ops, release) stay in the root tasks.toml files and are
+# aggregators, cluster ops, release) stay at the root — as [tasks] here, file
+# tasks under .mise/tasks/, or deploy/tasks.toml — and are
 # addressed bare (`mise run check`) or as //:<task> from a package. This file
 # is the root config (.mise/config.toml); mise.lock sits beside it.
 monorepo_root = true
 
 [monorepo]
-config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "deploy/helm"]
+config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "deploy/helm", "docs"]
 
 [vars]
 # Inside a package, {{config_root}} is the package dir; templates and tasks that
@@ -61,9 +62,12 @@ postinstall = ["{{ mise_bin }} setup"]
 
 [task_config]
 # Paths are relative to the repo root. .mise/tasks/ holds file tasks: each
-# executable is a task named by its path (.mise/tasks/docs/check/adr-index →
-# docs:check:adr-index); shared modules live non-executable under .mise/tasks/lib/.
-includes = ["tasks.toml", "deploy/tasks.toml", ".mise/tasks"]
+# executable is a task named by its path (.mise/tasks/common/check/version →
+# common:check:version); shared modules live non-executable under .mise/tasks/lib/.
+# Repo-level one-liners and aggregators are the [tasks] at the end of this file;
+# anything with a script body is a file task. deploy/tasks.toml holds the
+# cluster:* operations.
+includes = ["deploy/tasks.toml", ".mise/tasks"]
 
 # Artifact cache (repo-root tasks): a task with `sources` and `outputs` (or
 # `outputs = []` for pure checks) is keyed by source content + tool versions and
@@ -172,3 +176,67 @@ if [[ "${usage_json:-false}" == "true" ]]; then
 fi
 exec trivy image --quiet --exit-code 1 "$image"
 '''
+
+# -- Repo-level tasks -------------------------------------------------------
+
+# -- Aggregation --
+# `*:x` matches the repo-root tasks (common:x, docs:x), `//...:x` the same task
+# in every package config root.
+[tasks.setup]
+depends = ["common:setup:pnpm", "//...:setup"]
+
+[tasks.check]
+depends = ["setup", "*:check", "//...:check"]
+
+[tasks.fix]
+depends = ["setup", "//...:fix"]
+
+[tasks.scan]
+depends = ["*:scan", "//...:scan"]
+
+[tasks.test]
+depends = ["setup", "//...:test"]
+
+# -- Git hooks --
+[tasks."git-hooks:pre-commit"]
+hide = true
+depends = ["check"]
+
+# -- Setup --
+[tasks."common:setup:corepack"]
+run = "corepack enable"
+sources = ["package.json"]
+cache = { enabled = false }
+
+[tasks."common:setup:pnpm"]
+depends = ["common:setup:corepack"]
+run = "pnpm install"
+sources = [
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "packages/*/package.json",
+  "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
+  "package.json",
+]
+# Explicitly uncached (not merely ineligible): dependents can only be cached
+# when every dependency either has a cache key or opts out.
+cache = { enabled = false }
+
+# -- Common --
+[tasks."common:scan"]
+depends = ["common:scan:*"]
+
+[tasks."common:check"]
+depends = ["common:check:*"]
+
+[tasks."common:check:zizmor"]
+description = "Static security analysis for GitHub Actions workflows"
+dir = "{{config_root}}"
+run = "zizmor --min-confidence medium .github/workflows/"
+
+[tasks."common:check:pinact"]
+description = "Every GitHub Actions `uses:` must be pinned to a full commit SHA"
+dir = "{{config_root}}"
+# -no-api keeps this purely syntactic: upstream retagging a release must
+# never fail a build that did not change. Bump pins with `pinact run -u`.
+run = "pinact run -fix=false -no-api"

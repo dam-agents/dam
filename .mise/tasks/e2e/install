@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#MISE description="Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`. VM via E2E_VM_NAME (default platform-k3s-test)."
+#MISE hide=true
+#MISE raw=true
+set -eo pipefail
+
+VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+export E2E_MOCK_ONLY=1
+
+INSTALL_ARGS=(
+  --lima-template=deploy/lima-k3s-test.yaml
+  --helm-values=deploy/helm/platform/values-e2e.yaml
+  --set=domain=localhost
+  --set=port=5555
+  --set=controller.agent.templateDefaults.storageSize=1Gi
+  --no-restart
+)
+# domain=localhost (NOT localtest.me): Chromium treats *.localhost as a
+# secure context per the URL spec, so window.crypto.subtle is available
+# and oidc-client-ts can generate PKCE state in signinRedirect(). On
+# *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
+# the OIDC redirect throws silently, and the SPA hangs on a blank screen.
+if [ -z "${IS_SANDBOX:-}" ]; then
+  INSTALL_ARGS+=(--vm-name="$VM_NAME")
+fi
+mise run cluster:install -- "${INSTALL_ARGS[@]}"
+
+# Targeted apiserver rollout: on a fresh cluster the apiserver pod starts in
+# parallel with postgres and loses a race against postgres's init-databases.sh
+# (creates keycloak + platform DBs, then restarts postgres). The Drizzle
+# migration's CREATE SCHEMA dies with ECONNRESET and the pod crash-loops.
+# Bouncing just apiserver after postgres is settled lets the second pod
+# generation migrate cleanly. UI/controller don't share this race, and
+# restarting the UI introduces a transient Traefik-endpoint 502 window that
+# breaks Playwright's first asset fetch — leave them alone.
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
+
+# Readiness gate — shared task, see e2e:gate.
+mise run e2e:gate

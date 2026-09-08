@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //MISE description="The committed ADR index must match what regeneration produces. Pure files, no services, fail closed on drift."
-//MISE sources=["docs/adrs/*.md", ".mise/tasks/lib/adr-index.mjs"]
+//MISE sources=["adrs/*.md", ".mise/tasks/lib/adr-index.mjs"]
 //MISE outputs=[]
 //MISE cache={ enabled = true }
-import { run } from "../../lib/adr-index.mjs";
+import { run } from "../lib/adr-index.mjs";
 run({ check: true });

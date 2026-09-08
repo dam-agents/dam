@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Update version fields in all release-participating packages and commit"
+#USAGE arg "<version>" help="The new version to set (format: X.Y.Z or X.Y.Z-rcW)"
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+  echo "ERROR: Invalid version format: $usage_version"
+  echo "Expected format: X.Y.Z or X.Y.Z-rcW (e.g., 1.2.3 or 1.2.3-rc1)"
+  exit 1
+fi
+
+set -x
+yq -i ".version = \"$usage_version\""    deploy/helm/platform/Chart.yaml
+yq -i ".appVersion = \"$usage_version\"" deploy/helm/platform/Chart.yaml
+yq -i ".version = \"$usage_version\""    packages/cli/package.json
+git add .
+git commit --signoff --no-verify -m "bump: v$usage_version"
+set +x
+
+echo -e "Pending version in \x1b[36m$(git branch --show-current)\x1b[0m bumped to $usage_version"

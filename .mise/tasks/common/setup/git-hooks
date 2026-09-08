@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+MISE_BIN=$(which mise)
+
+mkdir -p .git/hooks
+
+cat > .git/hooks/pre-commit << HOOK
+#!/bin/sh
+$MISE_BIN run git-hooks:pre-commit
+HOOK
+chmod +x .git/hooks/pre-commit
+
+cat > .git/hooks/commit-msg << HOOK
+#!/bin/sh
+$MISE_BIN run git-hooks:commit-msg -- "\$1"
+HOOK
+chmod +x .git/hooks/commit-msg
+
+echo "Git hooks installed."
