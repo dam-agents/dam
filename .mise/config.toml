@@ -115,7 +115,7 @@ enabled = true
 # first is what keeps the artifact cache honest across package boundaries.
 
 [task_templates."ts:check:tsc"]
-depends = [{ task = "^check:tsc", optional = true }]
+depends = ["^check:tsc"]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -149,7 +149,7 @@ deny_net = true
 
 [task_templates."ts:test"]
 description = "Run the package's vitest suite"
-depends = [{ task = "^check:tsc", optional = true }]
+depends = ["^check:tsc"]
 run = "pnpm exec vitest run"
 sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
