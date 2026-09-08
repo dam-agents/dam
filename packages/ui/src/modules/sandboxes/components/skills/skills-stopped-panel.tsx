@@ -60,6 +60,7 @@ export function SkillsStoppedPanel({
   visibilityBySource,
   scannedAtBySource,
   loadingBySource,
+  revalidatingBySource,
   errorBySource,
   addSourceButton,
   callout,
@@ -76,6 +77,7 @@ export function SkillsStoppedPanel({
   visibilityBySource: Record<string, "public" | "private">;
   scannedAtBySource: Record<string, string>;
   loadingBySource: Record<string, boolean>;
+  revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
   callout?: ReactNode;
@@ -158,6 +160,7 @@ export function SkillsStoppedPanel({
           visibilityBySource={visibilityBySource}
           scannedAtBySource={scannedAtBySource}
           loadingBySource={loadingBySource}
+          revalidatingBySource={revalidatingBySource}
           errorBySource={errorBySource}
           onRescan={onRescan}
           onRemove={onRemove}

@@ -91,7 +91,9 @@ function SourceListRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+            <DropdownMenuItem disabled={scanning} onSelect={onRescan}>
+              Re-scan
+            </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() =>
                 window.open(source.gitUrl, "_blank", "noopener,noreferrer")
@@ -147,6 +149,7 @@ export function SkillSourceList({
   visibilityBySource,
   scannedAtBySource,
   loadingBySource,
+  revalidatingBySource,
   errorBySource,
   onRescan,
   onRemove,
@@ -157,6 +160,7 @@ export function SkillSourceList({
   visibilityBySource: Record<string, "public" | "private">;
   scannedAtBySource: Record<string, string>;
   loadingBySource: Record<string, boolean>;
+  revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   onRescan: (source: SkillSource) => void;
   onRemove: (source: SkillSource) => void;
@@ -178,7 +182,9 @@ export function SkillSourceList({
           source={source}
           visibility={visibilityBySource[source.id]}
           scannedAt={scannedAtBySource[source.id]}
-          scanning={!!loadingBySource[source.id]}
+          scanning={
+            !!loadingBySource[source.id] || !!revalidatingBySource[source.id]
+          }
           error={errorBySource[source.id] ?? null}
           divided={i > 0}
           onRescan={() => onRescan(source)}

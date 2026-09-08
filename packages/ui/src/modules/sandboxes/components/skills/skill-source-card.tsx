@@ -46,7 +46,11 @@ function ScanFreshness({
 }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-      {rescanning ? <Spinner size={13} /> : <Time size={13} />}
+      {rescanning ? (
+        <Spinner size={13} label="Re-scanning this source" />
+      ) : (
+        <Time size={13} />
+      )}
       <span title={formatTimestamp(scannedAt)}>
         scanned {timeAgo(scannedAt)}
       </span>
@@ -55,6 +59,7 @@ function ScanFreshness({
         size="icon-sm"
         aria-label="Re-scan this source"
         tooltip="Re-scan this source"
+        disabled={rescanning}
         onClick={onRescan}
         className="text-muted-foreground"
       >
@@ -184,7 +189,9 @@ export function SkillSourceCard({
               onRescan={onRescan}
             />
           )}
-          {!scannedAt && loading && <Spinner size={15} />}
+          {!scannedAt && loading && (
+            <Spinner size={15} label="Scanning this source" />
+          )}
           {}
           {onToggleAll && !readOnly && loaded && (
             <Button
@@ -216,7 +223,12 @@ export function SkillSourceCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={loading || revalidating}
+                onSelect={onRescan}
+              >
+                Re-scan
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() =>
                   window.open(source.gitUrl, "_blank", "noopener,noreferrer")

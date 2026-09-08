@@ -104,6 +104,7 @@ export function SkillsSurface({
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
       loadingBySource={surface.loadingBySource}
+      revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       callout={
@@ -156,6 +157,7 @@ export function SkillsSurface({
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
       loadingBySource={surface.loadingBySource}
+      revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       comingUp={!!comingUp}
