@@ -2,7 +2,7 @@ import type { AcpPermissionOption } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
-import { acpNativeRowId } from "../domain/ids.js";
+import { acpNativeRowId } from "api-server-api";
 import {
   injectChannelOf,
   SYNTHETIC_SESSION_PREFIX,

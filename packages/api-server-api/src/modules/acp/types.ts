@@ -6,6 +6,8 @@ export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
 export const platformTurnEndedParamsSchema = z.object({
   sessionId: z.string().min(1),
+  promptId: z.string().min(1).optional(),
+  stopReason: z.string().min(1).optional(),
 });
 export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema
@@ -130,6 +132,24 @@ export function buildPlatformPromptAcceptedNotification(
     params,
   });
 }
+
+export const platformRunResultSchema = z.object({
+  promptId: z.string().nullable(),
+  stopReason: z.string().nullable(),
+  finalText: z.string(),
+  truncated: z.boolean(),
+  endedAt: z.string(),
+});
+export type PlatformRunResult = z.infer<typeof platformRunResultSchema>;
+
+export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("done"), result: platformRunResultSchema }),
+  z.object({ status: z.literal("pending") }),
+  z.object({ status: z.literal("none") }),
+]);
+export type PlatformRunResultResponse = z.infer<
+  typeof platformRunResultResponseSchema
+>;
 
 export const platformPromptStartedParamsSchema = z.object({
   sessionId: z.string().min(1),

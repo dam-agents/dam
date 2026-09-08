@@ -535,6 +535,7 @@ export {
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
   RuleVerdict,
@@ -581,6 +582,8 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformRunResultSchema,
+  platformRunResultResponseSchema,
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
   promptBlockSchema,
@@ -599,6 +602,8 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformRunResult,
+  PlatformRunResultResponse,
   PlatformClippedReplayMeta,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,

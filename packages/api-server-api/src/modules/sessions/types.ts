@@ -6,6 +6,7 @@ export const SessionType = {
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
   ExperimentExecute: "experiment_execute",
+  CliRun: "cli_run",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -56,6 +57,7 @@ export const SESSION_CATEGORIES = [
   "experiments",
   "scheduled",
   "channels",
+  "runs",
   "terminal",
 ] as const;
 
@@ -73,5 +75,6 @@ export function sessionCategoryOf(session: {
     return "channels";
   if (session.type === SessionType.ScheduleCron) return "scheduled";
   if (session.type === SessionType.ExperimentExecute) return "experiments";
+  if (session.type === SessionType.CliRun) return "runs";
   return "chats";
 }

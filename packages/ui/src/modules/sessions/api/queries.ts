@@ -109,6 +109,7 @@ export function useAcpSessions(
           const allowed: string[] = [
             SessionType.Regular,
             SessionType.ExperimentExecute,
+            SessionType.CliRun,
           ];
           if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);

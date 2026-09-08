@@ -8,6 +8,7 @@ export const podSessionTypeSchema = z.enum([
   "channel_telegram",
   "schedule_cron",
   "experiment_execute",
+  "cli_run",
 ]);
 
 export const podSessionSchema = z.object({
