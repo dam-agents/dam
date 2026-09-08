@@ -1261,7 +1261,7 @@ export function createSlackWorker(
 
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
-      threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
+      threadTs: ctx.threadTs,
       eventTs: m.eventTs,
       forwarded: ctx.forwardedFrom !== undefined,
       text: m.text,
@@ -2362,9 +2362,7 @@ export function createSlackWorker(
         for (const msg of batch) {
           const ref: TurnRef = {
             channel: conversation.channelId,
-            threadTs: conversation.hasThread
-              ? conversation.threadTs
-              : msg.eventTs,
+            threadTs: conversation.threadTs,
             eventTs: msg.eventTs,
             text: msg.text,
             slackUserId: msg.slackUserId,
