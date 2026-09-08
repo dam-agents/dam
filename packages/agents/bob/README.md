@@ -114,6 +114,7 @@ Less common toggles, not surfaced on the provider card.
 | `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)). |
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
+| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. |
 
 Gone, and silently ignored if an old agent still sets them: `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` and `BOB_SHIM_TRACE` (both belonged to the bridge — resume is native and there are no shim frames to trace).
 

@@ -174,13 +174,16 @@ describe("acp-runtime: session-history provider", () => {
 
     const first = world.connect();
     first.send(frames.initialize(1));
-    world.harness().replyTo("initialize", {
+    const claimedResume = world.harness();
+    claimedResume.replyTo("initialize", {
       agentCapabilities: { sessionCapabilities: { resume: {} } },
     });
 
     world.runtime.refreshEnv({ force: false });
+    expect(claimedResume.killed()).toBe(true);
 
     const second = world.connect();
+    expect(world.harness()).not.toBe(claimedResume);
     second.send(frames.loadSession(2, SESSION));
     await settle();
 

@@ -164,7 +164,7 @@ export function BobForm({
           />
           <PinField
             label="Team ID"
-            hint="BOB_TEAM_ID → --team-id."
+            hint="BOB_TEAM_ID → --team-id. For general-type API keys; applies to terminal (TUI) sessions, chat sessions ignore it."
             error={errors.teamId?.message}
             register={register("teamId")}
           />
