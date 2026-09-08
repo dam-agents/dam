@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ADR_DIR = process.env.ADR_INDEX_DIR
   ? resolve(process.env.ADR_INDEX_DIR)
   : join(REPO_ROOT, "docs", "adrs");
@@ -212,8 +212,7 @@ function render({ records }) {
   ).replace(/\n+$/, "\n");
 }
 
-function main() {
-  const check = process.argv.includes("--check");
+export function run({ check }) {
   const generated = render(loadAdrs());
 
   if (!check) {
@@ -235,8 +234,4 @@ function main() {
     process.exit(1);
   }
   process.stdout.write("✅ docs/adrs/index.md matches the generated projection.\n");
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
 }

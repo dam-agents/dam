@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Strip comments from TS/JS/Go source files across the repo.
 //
-// Usage:
-//   node scripts/strip-comments.mjs              dry run, prints what would change
-//   node scripts/strip-comments.mjs --write      rewrite files in place
-//   node scripts/strip-comments.mjs [paths...]   limit to files/dirs (tracked files only)
-//   node scripts/strip-comments.mjs --verbose    print every removed comment
+// Usage (task: mise-tasks/common/strip-comments):
+//   mise run common:strip-comments              dry run, prints what would change
+//   mise run common:strip-comments -- --write   rewrite files in place
+//   mise run common:strip-comments -- [paths...] limit to files/dirs (tracked files only)
+//   mise run common:strip-comments -- --verbose print every removed comment
 //
 // TS/JS files are lexed with the real TypeScript parser (regex literals,
 // template strings, and JSX make naive regex stripping unsafe). Go files use a
@@ -19,9 +19,9 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
-export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
 
 export const ts = loadTypescript();
@@ -31,7 +31,7 @@ const GO_EXTENSION = '.go';
 
 // Registered comment types (see "Code comments" in CLAUDE.md). Comments
 // carrying one of these prefixes are the only prose comments allowed to exist,
-// so the stripper keeps them and check-comment-types.mjs requires them.
+// so the stripper keeps them and common:check:comment-types requires them.
 export const COMMENT_TYPES = ['TEST_OVERVIEW', 'TEST_SCENARIO', 'UNIT_BOUNDARY_DESCRIPTION'];
 const TYPED_COMMENT = new RegExp(`^(?:\\/\\/|\\/\\*+)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
 
@@ -108,7 +108,7 @@ export function listFiles(scopes) {
       return TS_EXTENSIONS.has(ext) || ext === GO_EXTENSION;
     })
     .filter((f) => !/\.gen\.[cm]?[jt]sx?$/.test(f))
-    .filter((f) => f !== 'scripts/strip-comments.mjs')
+    .filter((f) => f !== 'mise-tasks/lib/strip-comments.mjs')
     // api/v1 doc comments are controller-gen INPUT: they compile into the CRD
     // descriptions (`kubectl explain`) and the api-server's generated TS
     // JSDoc. Stripping them deletes user-facing API documentation and makes
@@ -307,7 +307,7 @@ function processGoFile(file, text) {
 // Main
 // ---------------------------------------------------------------------------
 
-function main() {
+export function main() {
 const argv = process.argv.slice(2);
 const write = argv.includes('--write');
 const verbose = argv.includes('--verbose');
@@ -366,5 +366,3 @@ if (write) {
   console.log('\nNow run the repo format/check tasks (prettier + gofmt) to clean up spacing.');
 }
 }
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

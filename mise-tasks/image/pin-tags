@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Rewrite the chart's @ci-pin markers to content tags before packaging (CI publish jobs)"
 # Rewrite the chart's `@ci-pin` markers to content tags before packaging.
 #
 # A marker line looks like:
@@ -14,7 +15,7 @@
 # Both publish jobs call this, so the marker set and the component list can't
 # drift apart between the dev and release paths.
 #
-# Usage: pin-image-tags.sh <source-shas-json> [values-file]
+# Usage: mise run image:pin-tags -- <source-shas-json> [values-file]
 # Written for bash 3.2 (macOS) and portable sed — no GNU-only \s or `sed -i`.
 set -euo pipefail
 
@@ -24,7 +25,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 [ -f "$VALUES" ] || { echo "no such values file: $VALUES" >&2; exit 1; }
 
-for comp in keycloak $("$here/resolve-image.sh" list-workloads); do
+for comp in keycloak $("$here/resolve" list-workloads); do
   tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
   [ -n "$tag" ] || { echo "empty source sha for $comp" >&2; exit 1; }
   tmp="$(mktemp)"

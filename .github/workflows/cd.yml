@@ -146,7 +146,8 @@ jobs:
           set -euo pipefail
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
           [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_WORKLOADS=1
-          out="$(scripts/resolve-image.sh gha-outputs)"
+          # By path: this job has no mise; the same file is the image:resolve task.
+          out="$(mise-tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
@@ -728,7 +729,7 @@ jobs:
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
+        run: mise run image:pin-tags -- "$SOURCE_SHAS"
 
       - name: Push Helm chart
         env:
@@ -790,7 +791,7 @@ jobs:
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
+        run: mise run image:pin-tags -- "$SOURCE_SHAS"
 
       - name: Push Helm chart
         env:

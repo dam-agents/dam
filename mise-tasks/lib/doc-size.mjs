@@ -1,10 +1,8 @@
-#!/usr/bin/env node
-
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export const CAPS = { page: 40000, index: 8000 };
 
@@ -49,7 +47,7 @@ function checkFile(absPath) {
   return { path: relative(REPO_ROOT, absPath), size, cap: info.cap, kind: info.kind };
 }
 
-function main() {
+export function check() {
   const violations = [INDEX_PATH, ...listPages()].map(checkFile).filter(Boolean);
   if (violations.length) {
     process.stderr.write("❌ check:doc-size: architecture docs over budget.\n\n");
@@ -57,8 +55,4 @@ function main() {
     process.exit(1);
   }
   process.stdout.write("✅ check:doc-size: all architecture docs within budget.\n");
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
 }

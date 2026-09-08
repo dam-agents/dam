@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+//MISE description="Regenerate docs/adrs/index.md from ADR frontmatter. The index is a projection of the ADR log, never hand-maintained: edit an ADR, run this, commit both."
+import { run } from "../../lib/adr-index.mjs";
+run({ check: false });

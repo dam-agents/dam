@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+//MISE description="Delete every code comment without a registered type prefix. Dry run by default; pass -- --write to rewrite, [paths...] to narrow, --verbose to list each removal"
+import { main } from "../lib/strip-comments.mjs";
+main();

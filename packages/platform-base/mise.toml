@@ -3,7 +3,7 @@
 [tasks.image]
 description = "Build the platform-base image (shared base layer for every agent image), or reuse it from the registry when its source is unchanged"
 dir = "{{vars.repo_root}}"
-run = "scripts/resolve-image.sh build-or-reuse platform-base -- -f packages/platform-base/Dockerfile ."
+run = "{{ mise_bin }} run image:resolve -- build-or-reuse platform-base -- -f packages/platform-base/Dockerfile ."
 
 [tasks.scan]
 depends = [":scan:*"]

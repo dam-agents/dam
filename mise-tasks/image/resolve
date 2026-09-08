@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+#MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
 # Decide whether a container image must be built or can be reused from the
-# registry. Single source of truth shared by the local `*:image` mise tasks and
+# registry. Single source of truth shared by the per-package `image` mise tasks and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.
 #
 # An image is REUSABLE when its effective source (its own paths PLUS its base's,
@@ -12,12 +13,13 @@
 # just falls back to BUILD.
 #
 # Usage:
-#   resolve-image.sh resolve <component>        -> "BUILD" | "REUSE <full-ref>"
-#   resolve-image.sh build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
-#   resolve-image.sh gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
-#   resolve-image.sh list-workloads             -> the claude-code-derived workload components
-#   resolve-image.sh paths <component>          -> effective source paths (debug)
-#   resolve-image.sh --self-check               -> run assertions (no docker/network; git optional)
+#   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
+#   mise run image:resolve -- build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
+#   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
+#   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
+#   mise run image:resolve -- paths <component>          -> effective source paths (debug)
+#   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
+# (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
@@ -70,7 +72,7 @@ base_of() {
   esac
 }
 
-# Local docker tag the *:image tasks build/pull to (mirrors values-local.yaml).
+# Local docker tag the `image` tasks build/pull to (mirrors values-local.yaml).
 local_tag() { case "$1" in platform-base) echo "platform-base" ;; *) echo "platform-$1:latest" ;; esac; }
 
 effective_paths() {

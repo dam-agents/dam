@@ -59,7 +59,10 @@ postinstall = ["{{ mise_bin }} setup"]
 
 
 [task_config]
-includes = ["tasks.toml", "deploy/tasks.toml"]
+# mise-tasks/ holds file tasks: each executable is a task named by its path
+# (mise-tasks/docs/check/adr-index → docs:check:adr-index); shared modules
+# live non-executable under mise-tasks/lib/.
+includes = ["tasks.toml", "deploy/tasks.toml", "mise-tasks"]
 
 # Artifact cache (repo-root tasks): a task with `sources` and `outputs` (or
 # `outputs = []` for pure checks) is keyed by source content + tool versions and
@@ -137,12 +140,12 @@ outputs = []
 cache = { enabled = true }
 
 # Agent image on the platform-base layer. Component name = package dir name;
-# see scripts/resolve-image.sh for the build-or-reuse decision.
+# see mise-tasks/image/resolve for the build-or-reuse decision.
 [task_templates."agent:image"]
 description = "Build the agent image, or reuse it from the registry when its source is unchanged"
 dir = "{{vars.repo_root}}"
 depends = ["//packages/platform-base:image"]
-run = "scripts/resolve-image.sh build-or-reuse {{ config_root | split(pat='/') | last }} -- packages/agents/{{ config_root | split(pat='/') | last }}"
+run = "{{ mise_bin }} run image:resolve -- build-or-reuse {{ config_root | split(pat='/') | last }} -- packages/agents/{{ config_root | split(pat='/') | last }}"
 
 # Trivy scan of a component image. Registry name and local tag derive from the
 # package dir name; override with `vars = { image = "…", local_image = "…" }`

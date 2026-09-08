@@ -9,7 +9,7 @@ set -euo pipefail
 build_args=()
 [ -n "${OPENEVOLVE_VERSION:-}" ] && build_args+=(--build-arg "OPENEVOLVE_VERSION=${OPENEVOLVE_VERSION}")
 # ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
-exec scripts/resolve-image.sh build-or-reuse openevolve -- ${build_args[@]+"${build_args[@]}"} packages/agents/openevolve
+exec {{ mise_bin }} run image:resolve -- build-or-reuse openevolve -- ${build_args[@]+"${build_args[@]}"} packages/agents/openevolve
 '''
 
 [tasks.scan]

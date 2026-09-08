@@ -9,7 +9,7 @@ set -euo pipefail
 build_args=()
 [ -n "${SHINKA_VERSION:-}" ] && build_args+=(--build-arg "SHINKA_VERSION=${SHINKA_VERSION}")
 # ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
-exec scripts/resolve-image.sh build-or-reuse shinkaevolve -- ${build_args[@]+"${build_args[@]}"} packages/agents/shinkaevolve
+exec {{ mise_bin }} run image:resolve -- build-or-reuse shinkaevolve -- ${build_args[@]+"${build_args[@]}"} packages/agents/shinkaevolve
 '''
 
 [tasks.scan]

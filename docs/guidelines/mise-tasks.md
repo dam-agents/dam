@@ -15,6 +15,10 @@ The repo is a mise monorepo (`monorepo_root = true` in [`mise.toml`](../../mise.
 
 Repo-level tasks (aggregators, `common:*`, `docs:*`, `release:*`, `cluster:*`, `e2e*`) live in [`tasks.toml`](../../tasks.toml) and [`deploy/tasks.toml`](../../deploy/tasks.toml). The aggregators fan out: `check` = `setup` + every `*:check` at the root + `//...:check`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`, `scan` on `:scan:*`.
 
+## File tasks
+
+Standalone scripts are tasks too: an executable under [`mise-tasks/`](../../mise-tasks/) is a task named by its path (`mise-tasks/docs/check/adr-index` → `docs:check:adr-index`), so `docs:check:*` picks it up like any TOML task. Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`. Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); shared code lives non-executable in `mise-tasks/lib/*.mjs` so mise does not list it. Arguments pass through verbatim after the first `--` (`mise run image:resolve -- build-or-reuse codex -- packages/agents/codex`). Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead. [`scripts/`](../../scripts/) keeps only what is not a task: the Dockerfile pnpm installer and the Claude Code doc-size hook.
+
 ## Templates
 
 Repeated task shapes are `[task_templates]` in the root `mise.toml`; a package task picks one with `extends`. A TypeScript package is typically five one-liners:

@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+//MISE description="Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+//MISE sources=["packages/**/*.ts", "packages/**/*.tsx", "packages/**/*.go", "!**/node_modules/**", "mise-tasks/lib/strip-comments.mjs"]
+//MISE outputs=[]
+//MISE cache={ enabled = true }
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -13,9 +17,7 @@ import {
   PRESERVE_GO,
   COMMENT_TYPES,
   ts,
-} from './strip-comments.mjs';
-
-const SELF = 'scripts/check-comment-types.mjs';
+} from '../../lib/strip-comments.mjs';
 
 function firstContentLine(commentText) {
   const inner = commentText
@@ -40,7 +42,6 @@ const scopes = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const violations = [];
 
 for (const file of listFiles(scopes)) {
-  if (file === SELF) continue;
   const text = readFileSync(path.join(repoRoot, file), 'utf8');
   if (isGenerated(text)) continue;
   if (file.endsWith('.go') && text.includes('import "C"')) continue;
