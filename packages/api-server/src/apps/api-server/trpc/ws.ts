@@ -13,6 +13,7 @@ import {
   type Authenticate,
   type SurfaceAttribution,
 } from "../admission/auth.js";
+import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
 import { logInternalError } from "./log-internal-error.js";
 import { trpcDenial } from "./mappers.js";
 
@@ -29,6 +30,7 @@ export interface TrpcWsDeps {
 
 export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
   const wss = new WebSocketServer({ noServer: true });
+  addUpgradeSecurityHeaders(wss);
 
   function attachCredentialLifecycle(
     ws: WebSocket,
