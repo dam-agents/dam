@@ -97,3 +97,20 @@ bad=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -n
 outputs = []
 deny_net = true
 deny_write = true
+
+# Not cached: the append-only comparison reads git history (merge-base with
+# origin/main), which no sources glob can key.
+[tasks."check:skill-manifest"]
+description = "Every currently shipped image skill's content hash is in the shipped-skill manifest, and the manifest is append-only"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts check"
+deny_net = true
+
+[tasks."skills:manifest:generate"]
+description = "Append the current image skills' content hashes to the shipped-skill manifest"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts generate"
+deny_net = true
+
+[tasks."skills:manifest:backfill"]
+description = "Append every historical image-skill content hash from git history to the shipped-skill manifest"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts backfill"
+deny_net = true
