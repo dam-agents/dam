@@ -16,8 +16,9 @@ config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e
 repo_root = "{{config_root}}"
 
 # Project dependencies (`mise deps`): run before every `mise run`/`mise x` when
-# their inputs changed or outputs are missing. `mise deps --monorepo` installs them
-# across all config roots; `--no-deps` skips them.
+# their inputs changed or outputs are missing, across all config roots — so a
+# fresh clone needs no install step before its first `mise run`. `--no-deps`
+# skips them; `mise deps --monorepo` installs everything without running a task.
 [deps.pnpm]
 auto = true
 sources = [
@@ -72,9 +73,6 @@ pinact = "latest"
 [settings]
 experimental = true
 task.disable_spec_from_run_scripts = true
-
-[hooks]
-postinstall = ["{{ mise_bin }} deps --monorepo"]
 
 
 [task_config]

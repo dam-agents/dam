@@ -56,7 +56,6 @@ jobs:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
           restore-keys: mise-task-artifacts-${{ runner.os }}-
-      - run: mise deps --monorepo
       - run: mise run check
 
   test:
@@ -79,7 +78,6 @@ jobs:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
           restore-keys: mise-task-artifacts-${{ runner.os }}-
-      - run: mise deps --monorepo
       - run: mise run test
 
   appversion:
@@ -191,7 +189,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
-        run: mise deps --monorepo && mise run //packages/keycloak-theme:build
+        run: mise run //packages/keycloak-theme:build
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -662,7 +660,6 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise deps --monorepo
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
@@ -724,6 +721,7 @@ jobs:
           fi
 
       - name: Build Helm chart dependencies
+        # helm package below is not a mise task, so the chart deps provider does not run on its own.
         run: mise -C helm deps
 
       - name: Pin content-tagged image tags
@@ -743,7 +741,6 @@ jobs:
         env:
           NPM_TAG: ${{ steps.version.outputs.npmTag }}
         run: |
-          mise deps --monorepo
           mise run //packages/cli:build
           pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
@@ -786,6 +783,7 @@ jobs:
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
 
       - name: Build Helm chart dependencies
+        # helm package below is not a mise task, so the chart deps provider does not run on its own.
         run: mise -C helm deps
 
       - name: Pin content-tagged image tags
@@ -817,7 +815,6 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise -C packages/controller deps
 
       - name: Detect vulnerabilities
         run: |
@@ -859,7 +856,6 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise deps
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
