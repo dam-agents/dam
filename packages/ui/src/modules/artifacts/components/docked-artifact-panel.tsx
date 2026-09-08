@@ -2,6 +2,7 @@ import {
   Close,
   Code,
   Download,
+  Link,
   Maximize,
   Share,
   View,
@@ -10,6 +11,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import { useCopy } from "../../../hooks/use-copy.js";
 import { useStore } from "../../../store.js";
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
@@ -39,6 +41,7 @@ export function DockedArtifactPanel() {
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [showSource, setShowSource] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const { copy, copied } = useCopy();
   const [fullscreen, setFullscreen] = useState(false);
   const showFrame = renderable && !showSource;
 
@@ -97,20 +100,33 @@ export function DockedArtifactPanel() {
             onChange={(v) => setPinnedVersion(v === latest ? null : v)}
           />
         )}
-        {artifact && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share size={14} />
-            Share
-          </Button>
-        )}
+        {artifact &&
+          (artifact.visibility === "public" && artifact.shareUrl ? (
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-sm font-normal"
+              onClick={() => void copy(artifact.shareUrl ?? "")}
+            >
+              <Link size={14} />
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-sm font-normal"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share size={14} />
+              Share
+            </Button>
+          ))}
         {renderable && (
           <Button
             variant="outline"
             size="xs"
+            className="text-sm font-normal"
             onClick={() => setShowSource((s) => !s)}
           >
             {showSource ? <View size={14} /> : <Code size={14} />}

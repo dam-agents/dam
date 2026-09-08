@@ -58,7 +58,7 @@ See [artifact-library](../../architecture/artifact-library.md). Three facts shap
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | The source link in the contract | `source_path` column + migration, `sourcePath` through create/update inputs and `LibraryArtifact`, optional `source_path` on the two MCP tools | — |
-| 02 | Promote from the file panel | The Create artifact / Sync to artifact button, the panel switching to the artifact view on success, and the toolbar typography unification | 01 |
+| 02 ✅ | Promote from the file panel | The Create artifact / Sync to artifact button, the panel switching to the artifact view on success, and the toolbar typography unification | 01 |
 
 The icon beside artifact titles in the designs is the app's existing shared-artifact
 indicator, not a new file-link glyph — no sidebar change ships with this feature.

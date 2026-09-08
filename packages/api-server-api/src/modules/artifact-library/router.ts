@@ -61,7 +61,13 @@ export const artifactLibraryRouter = t.router({
 
   create: manageAgentsProcedure
     .input(artifactCreateInputSchema)
-    .mutation(({ ctx, input }) => ctx.artifactLibrary.create(input)),
+    .mutation(({ ctx, input: { agentId, ...rest } }) => {
+      if (agentId !== undefined) checkAgentBinding(ctx, agentId);
+      return ctx.artifactLibrary.create(
+        rest,
+        agentId === undefined ? undefined : { agentId },
+      );
+    }),
 
   update: manageAgentsProcedure
     .input(artifactUpdateInputSchema)

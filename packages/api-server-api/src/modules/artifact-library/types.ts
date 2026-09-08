@@ -78,6 +78,7 @@ export interface ArtifactCreateInput {
   visibility?: ArtifactVisibility;
   expiresInHours?: number | null;
   sourcePath?: string;
+  agentId?: string;
 }
 
 export interface ArtifactUpdateInput {

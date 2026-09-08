@@ -1,4 +1,11 @@
-import { Close, Download, Edit, Maximize, Save } from "@carbon/icons-react";
+import {
+  Close,
+  DocumentExport,
+  Download,
+  Edit,
+  Maximize,
+  Save,
+} from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +15,7 @@ import { TruncateStart } from "../../../components/truncate-start.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
+import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import {
   fetchFileContent,
   type FileContent,
@@ -35,6 +43,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const editable = !binary && !tooLarge;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
+  const promotion = useFilePromotion(selectedAgent, file);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showConfirm = useStore((s) => s.showConfirm);
   const openFileEdit = useStore((s) => s.openFileEdit);
@@ -187,7 +196,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Button
               variant="ghost"
               size="xs"
-              className="text-sm"
+              className="text-sm font-normal"
               onClick={cancelEdit}
             >
               <Close size={14} /> Cancel
@@ -195,7 +204,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Button
               variant="outline"
               size="xs"
-              className="text-sm"
+              className="text-sm font-normal"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
               tooltip="Save (Cmd/Ctrl+S)"
@@ -205,11 +214,30 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </>
         ) : (
           <>
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-sm font-normal"
+              disabled={!promotion.promotable || promotion.pending}
+              tooltip={
+                promotion.promotable
+                  ? undefined
+                  : "Binary and oversized files can't be promoted from the panel"
+              }
+              onClick={() => void promotion.promote()}
+            >
+              <DocumentExport size={14} />
+              {promotion.pending
+                ? "Publishing…"
+                : promotion.linked
+                  ? "Sync to artifact"
+                  : "Create artifact"}
+            </Button>
             {editable && (
               <Button
                 variant="outline"
                 size="xs"
-                className="text-sm"
+                className="text-sm font-normal"
                 onClick={() => setEditMode(true)}
               >
                 <Edit size={14} /> Edit
@@ -219,7 +247,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <Button
                 variant="outline"
                 size="xs"
-                className="text-sm"
+                className="text-sm font-normal"
                 onClick={downloadFile}
               >
                 <Download size={14} /> Download

@@ -58,6 +58,7 @@ export const artifactCreateInputSchema = z
     visibility: artifactVisibilitySchema.optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
     sourcePath: sourcePathSchema.optional(),
+    agentId: z.string().min(1).optional(),
   })
   .refine((v) => (v.content == null) !== (v.uploadRef == null), {
     message: "provide exactly one of content or uploadRef",
