@@ -67,6 +67,23 @@ describe("tRPC error mapping", () => {
     expect(shape.data.code).toBe("INTERNAL_SERVER_ERROR");
   });
 
+  /* TEST_SCENARIO: tRPC's own 415 quotes the request's Content-Type header; the client must not get that header echoed back. */
+  it("redacts the echoed content-type of UNSUPPORTED_MEDIA_TYPE", () => {
+    const { ctx } = caller();
+    const shape = getErrorShape({
+      config: router._def._config,
+      error: new TRPCError({
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        message: 'Unsupported content-type "<script>"',
+      }),
+      type: "mutation",
+      path: "fail",
+      input: undefined,
+      ctx,
+    });
+    expect(shape.message).toBe("unsupported content-type");
+  });
+
   /* TEST_SCENARIO: Client errors keep their message so validation feedback still reaches the UI. */
   it("keeps the message of client errors", () => {
     const { ctx } = caller();

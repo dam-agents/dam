@@ -39,15 +39,17 @@ function pgErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
+const REDACTED_MESSAGES: Partial<Record<TRPCError["code"], string>> = {
+  INTERNAL_SERVER_ERROR: "internal server error",
+  UNSUPPORTED_MEDIA_TYPE: "unsupported content-type",
+};
+
 const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
     return {
       ...shape,
-      message:
-        error.code === "INTERNAL_SERVER_ERROR"
-          ? "internal server error"
-          : shape.message,
+      message: REDACTED_MESSAGES[error.code] ?? shape.message,
       data: {
         ...shape.data,
         stack: undefined,
