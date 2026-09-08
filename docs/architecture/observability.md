@@ -92,4 +92,4 @@ This subsystem is distinct from two neighbours, and overlaps one of them on purp
 
 Telemetry here is the OpenTelemetry-native, explorable signal pipeline: a different store (columnar, not Postgres), a different shape (OTLP logs/traces/metrics), and a different read surface (the exploration UI). Postgres remains the right home for coarse usage analytics; it cannot serve high-volume telemetry, which is the reason this subsystem exists at all.
 
-See [`deploy/helm/platform/`](../../deploy/helm/platform/) for the chart shape — the `clickstack` values block, and the collector and authorization policy under `templates/clickstack/`.
+See [`helm/`](../../helm/) for the chart shape — the `clickstack` values block, and the collector and authorization policy under `templates/clickstack/`.

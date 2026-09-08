@@ -240,4 +240,4 @@ counting them would report the platform's own writes as user activity.
 - Implementation (service, repository, viewer app, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
 - Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
 - UI destination: [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
-- Share host wiring (ingress rule, env): [`deploy/helm/platform/`](../../deploy/helm/platform/)
+- Share host wiring (ingress rule, env): [`helm/`](../../helm/)

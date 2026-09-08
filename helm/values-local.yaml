@@ -29,7 +29,7 @@ controller:
   # the nous target in OverBudget for hours (the deadline clock kept running),
   # but the fix here is the VM's capacity, not the stock default.
   #
-  # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml) with
+  # Must stay inside what the lima VM can schedule (etc/lima/k3s.yaml) with
   # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
   # admitted workers drove the load average past 20 — kubelet probes timed
   # out, the node flapped NotReady, Keycloak crash-looped on liveness kills

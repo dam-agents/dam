@@ -103,7 +103,7 @@ jobs:
           if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
             composite="${REF_NAME#v}"
           else
-            appver="$(grep -E '^appVersion:' deploy/helm/platform/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            appver="$(grep -E '^appVersion:' helm/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
             composite="${appver}-dev-${short}"
           fi
           echo "composite=$composite" >> "$GITHUB_OUTPUT"
@@ -724,7 +724,7 @@ jobs:
           fi
 
       - name: Build Helm chart dependencies
-        run: mise run //deploy/helm:deps
+        run: mise run //helm:deps
 
       - name: Pin content-tagged image tags
         env:
@@ -736,7 +736,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
+          helm package helm --version "$VERSION" --app-version "$COMPOSITE"
           helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
 
       - name: Publish CLI to npm
@@ -786,7 +786,7 @@ jobs:
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
 
       - name: Build Helm chart dependencies
-        run: mise run //deploy/helm:deps
+        run: mise run //helm:deps
 
       - name: Pin content-tagged image tags
         env:
@@ -798,9 +798,9 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
+          helm package helm --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
-          helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
+          helm package helm --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
   go-vuln:

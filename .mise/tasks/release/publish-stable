@@ -17,7 +17,7 @@ set -x
 git pull
 set +x
 
-current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+current_version=$(yq -r '.version' helm/Chart.yaml)
 publish_version="${current_version%-rc*}"
 
 echo ""

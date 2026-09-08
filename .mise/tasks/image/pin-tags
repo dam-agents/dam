@@ -20,7 +20,7 @@
 set -euo pipefail
 
 SOURCE_SHAS="${1:?source-shas JSON required}"
-VALUES="${2:-deploy/helm/platform/values.yaml}"
+VALUES="${2:-helm/values.yaml}"
 here="$(cd "$(dirname "$0")" && pwd)"
 
 [ -f "$VALUES" ] || { echo "no such values file: $VALUES" >&2; exit 1; }

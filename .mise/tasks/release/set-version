@@ -15,8 +15,8 @@ if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
 fi
 
 set -x
-yq -i ".version = \"$usage_version\""    deploy/helm/platform/Chart.yaml
-yq -i ".appVersion = \"$usage_version\"" deploy/helm/platform/Chart.yaml
+yq -i ".version = \"$usage_version\""    helm/Chart.yaml
+yq -i ".appVersion = \"$usage_version\"" helm/Chart.yaml
 yq -i ".version = \"$usage_version\""    packages/cli/package.json
 git add .
 git commit --signoff --no-verify -m "bump: v$usage_version"

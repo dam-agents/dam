@@ -3,8 +3,8 @@
 set -euo pipefail
 version=$(
   {
-    yq -r .version    deploy/helm/platform/Chart.yaml
-    yq -r .appVersion deploy/helm/platform/Chart.yaml
+    yq -r .version    helm/Chart.yaml
+    yq -r .appVersion helm/Chart.yaml
     yq -r .version    packages/cli/package.json
   } | sort -u
 )

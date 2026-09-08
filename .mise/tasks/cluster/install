@@ -13,11 +13,11 @@
 set -eo pipefail
 
 LIMA_INSTANCE="platform-k3s"
-LIMA_TEMPLATE="deploy/lima-k3s.yaml"
+LIMA_TEMPLATE="etc/lima/k3s.yaml"
 HELM_VALUES=""
 HELM_EXTRA_ARGS=()
 NO_RESTART=false
-DEV_VALUES="deploy/helm/platform/values-dev.yaml"
+DEV_VALUES="helm/values-dev.yaml"
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
@@ -482,7 +482,7 @@ fi
 # Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
 # clickstack.enabled=false.
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
-helm dependency build deploy/helm/platform
+helm dependency build helm
 
 # 3. Load images into k3s (built by depends: //packages/*:image, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
@@ -497,8 +497,8 @@ else
   # values (--set/--helm-values honored). Capture first so a failed render aborts
   # rather than silently building none. Templates are one ConfigMap keyed by
   # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry.
-  AGENTS_RENDERED=$(helm template platform deploy/helm/platform \
-      -f deploy/helm/platform/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
+  AGENTS_RENDERED=$(helm template platform helm \
+      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
              | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
   # `:::` separates tasks in a single `mise run` — without it the extra task
@@ -558,8 +558,8 @@ echo "Installing/upgrading Platform chart..."
 # this single-env local cluster the freeze has no value, so apply them directly.
 # The explicit Established wait keeps the helm install below race-free even if
 # the chart ever grows a CR instance (today it deliberately ships none).
-kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f deploy/helm/platform/crds/
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f deploy/helm/platform/crds/
+kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f helm/crds/
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f helm/crds/
 
 # ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
 # CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
@@ -587,7 +587,7 @@ fi
 # --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
-helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+helm --kubeconfig="$KUBECONFIG" upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then

@@ -17,7 +17,7 @@ set -x
 git pull
 set +x
 
-current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+current_version=$(yq -r '.version' helm/Chart.yaml)
 if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$ ]]; then
   echo "ERROR: Current version must be an RC version (X.Y.Z-rcN)"
   echo "Current version: $current_version"

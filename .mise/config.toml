@@ -8,7 +8,7 @@
 monorepo_root = true
 
 [monorepo]
-config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "deploy/helm", "docs"]
+config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "helm", "docs"]
 
 [vars]
 # Inside a package, {{config_root}} is the package dir; templates and tasks that

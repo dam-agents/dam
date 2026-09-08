@@ -14,8 +14,8 @@ fi
 export E2E_MOCK_ONLY=1
 
 INSTALL_ARGS=(
-  --lima-template=deploy/lima-k3s-test.yaml
-  --helm-values=deploy/helm/platform/values-e2e.yaml
+  --lima-template=etc/lima/k3s-test.yaml
+  --helm-values=helm/values-e2e.yaml
   --set=domain=localhost
   --set=port=5555
   --set=controller.agent.templateDefaults.storageSize=1Gi

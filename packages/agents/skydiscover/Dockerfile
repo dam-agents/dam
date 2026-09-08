@@ -2,7 +2,7 @@
 # to `skydiscover-run`; the inherited harness brings the model gateway and CA
 # trust, so the pod holds no model key. One image backs two curated presets —
 # AdaEvolve and EvoX — which differ only in the SKYDISCOVER_SEARCH env the
-# agent template injects (see deploy/helm/platform/values.yaml).
+# agent template injects (see helm/values.yaml).
 ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 

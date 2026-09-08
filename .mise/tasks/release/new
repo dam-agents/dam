@@ -12,7 +12,7 @@ git checkout main
 git pull
 set +x
 
-current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+current_version=$(yq -r '.version' helm/Chart.yaml)
 if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
   echo "ERROR: Invalid version format: $current_version. Expected format: X.Y.Z"
   exit 1
