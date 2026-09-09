@@ -294,6 +294,7 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   BOB_HOST,
+  BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   providerTypeForTemplateId,

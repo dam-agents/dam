@@ -1387,6 +1387,9 @@ agentTemplates:
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
     harness: bob
+    # Bob exports OTLP traces rather than the per-call log records Claude Code
+    # writes, so it rides its own env rail — see docs/architecture/observability.md.
+    telemetry: bob
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob
