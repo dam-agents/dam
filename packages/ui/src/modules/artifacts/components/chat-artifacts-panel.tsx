@@ -227,7 +227,7 @@ function ArtifactListRow({
         className="min-w-0 flex-1"
       />
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
-      {artifact.visibility === "public" && (
+      {artifact.shareUrl !== null && (
         <span
           role="img"
           aria-label="Shared"

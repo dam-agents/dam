@@ -35,6 +35,7 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
+  libraryArtifactViewers,
   invocations,
   kbShares,
   agentCaseStudies,
