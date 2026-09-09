@@ -164,20 +164,20 @@ export function BobForm({
           />
           <PinField
             label="Team ID"
-            hint="BOB_TEAM_ID → --team-id."
+            hint="BOB_TEAM_ID → --team-id. For general-type API keys; applies to terminal (TUI) sessions, chat sessions ignore it."
             error={errors.teamId?.message}
             register={register("teamId")}
           />
           <PinField
             label="Max cost"
-            hint="BOB_MAX_COINS → --max-cost. Per-task cost cap; Bob stops the task when exceeded."
+            hint="BOB_MAX_COINS → session.maxCost. Per-task cost cap; Bob stops the task when exceeded."
             placeholder="(no cap)"
             error={errors.maxCost?.message}
             register={register("maxCost")}
           />
           <PinField
             label="Mode"
-            hint={`BOB_CHAT_MODE → --mode. One of: ${BOB_CHAT_MODES.join(", ")}.`}
+            hint={`BOB_CHAT_MODE → session.defaultMode. Starting mode unless the agent Config panel sets one. One of: ${BOB_CHAT_MODES.join(", ")}.`}
             placeholder="(Bob default)"
             list="bob-chat-modes"
             error={errors.chatMode?.message}

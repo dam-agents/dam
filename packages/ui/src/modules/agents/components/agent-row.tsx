@@ -21,6 +21,7 @@ import {
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 
 interface Props {
@@ -140,6 +141,13 @@ export function AgentRow({
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
+              {display.state === "running" && (
+                <FreeUpComputeItems
+                  agent={agent}
+                  onPause={onPause}
+                  onStop={onStop}
+                />
+              )}
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={onWake}>
                   {}
@@ -152,16 +160,6 @@ export function AgentRow({
                 >
                   Restart
                 </DropdownMenuItem>
-              )}
-              {display.state === "running" && (
-                <>
-                  <DropdownMenuItem onSelect={onPause}>
-                    Pause — wakes on next use
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={onStop}>
-                    Stop — until started again
-                  </DropdownMenuItem>
-                </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem

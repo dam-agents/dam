@@ -12,11 +12,12 @@ import type {
 } from "agent-runtime-api";
 import {
   createSkillInstallStateStore,
+  SKILL_INSTALL_PLUGIN_NAME,
   type SkillInstallStateStore,
 } from "../infrastructure/skill-install-state-store.js";
 import { expandHome } from "../../../core/expand-home.js";
 
-const IMPL_NAME = "skill-install";
+const IMPL_NAME = SKILL_INSTALL_PLUGIN_NAME;
 
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),

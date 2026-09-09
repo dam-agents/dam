@@ -32,6 +32,9 @@ export interface LocalSkillRepository {
     pristinePaths?: SkillPath[],
     hashNames?: ReadonlySet<string>,
   ) => Promise<LocalSkill[]>;
+  listSkillDirs: (
+    skillPaths: SkillPath[],
+  ) => Promise<{ dir: SkillName; absDir: string }[]>;
   readLocal: (
     name: SkillName,
     skillPaths: SkillPath[],
@@ -93,6 +96,11 @@ export function createLocalSkillRepository(): LocalSkillRepository {
         hashNames,
         contentHashCache,
       ),
+    listSkillDirs: async (skillPaths) =>
+      (await listEntries(skillPaths)).map((e) => ({
+        dir: e.dir,
+        absDir: path.join(e.skillPath, e.dir),
+      })),
     readLocal: read,
     resolveLocalSkillDir,
     writeFromDir: write,
@@ -552,7 +560,7 @@ async function readSkillManifest(
   return parseFrontmatter(content);
 }
 
-async function hashSkillDir(absDir: string): Promise<string> {
+export async function hashSkillDir(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();
   const h = createHash("sha256");
   for (const abs of files) {

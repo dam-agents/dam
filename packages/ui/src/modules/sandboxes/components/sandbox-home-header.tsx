@@ -15,6 +15,7 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
@@ -116,6 +117,13 @@ export function SandboxHomeHeader({ agent, display }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              {display.state === "running" && (
+                <FreeUpComputeItems
+                  agent={agent}
+                  onPause={() => suspend.pause(agent.id)}
+                  onStop={() => void onStop()}
+                />
+              )}
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
                   Wake
@@ -127,16 +135,6 @@ export function SandboxHomeHeader({ agent, display }: Props) {
                 >
                   Restart
                 </DropdownMenuItem>
-              )}
-              {display.state === "running" && (
-                <>
-                  <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
-                    Pause — wakes on next use
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void onStop()}>
-                    Stop — until started again
-                  </DropdownMenuItem>
-                </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem

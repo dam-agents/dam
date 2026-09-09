@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-03
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -12,7 +12,7 @@ agent-runtime owns the files and nothing else. It scans a source, materializes a
 
 ### Local Skill
 
-A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there — installed from a Source, authored in place, uploaded, seeded from the image at first boot, or copied in by an Agent Kind's Install Command. The pod reports them; splitting them into installed and standalone, and reconciling that against the catalog, happens on the [api-server side](skills.md#skill-installed-skill-ref-local-skill).
+A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there — installed from a Source, authored in place, uploaded, seeded from the image (and managed per skill thereafter — [Image-Skill Lifecycle](#image-skill-lifecycle)), or copied in by an Agent Kind's Install Command. The pod reports them; splitting them into installed and standalone, and reconciling that against the catalog, happens on the [api-server side](skills.md#skill-installed-skill-ref-local-skill).
 
 A Local Skill's name **on the wire is its frontmatter `name:` when it has one**, and the pod resolves that name to a directory: exact `<skillPath>/<name>` first, then the first directory whose frontmatter `name:` matches, first-wins in Skill Path order. Write Local is what makes the two diverge — it writes a slug directory and forces the frontmatter name to the confirmed display name — so every name-keyed operation goes through the shared resolver rather than treating the name as a directory. Because Publish reads through the same resolver, a Local Skill whose frontmatter name differs from its directory is publishable. Read Local returns the resolved directory basename alongside the files, so a caller names a download from the on-disk identity instead of re-slugging the display name.
 
@@ -26,16 +26,26 @@ Install writes the skill directory into **every** configured Skill Path; uninsta
 
 ### Skill Origin
 
-Every Local Skill carries a **provenance** verdict, judged by the agent-runtime at read time. The reference is the set of **pristine roots** in the image — exactly two sanctioned locations, both immutable and always in-pod, so no build-time manifest or on-PVC marker is needed (a marker was tried and reverted — third-party baked skills aren't ours to stamp, and the PVC is agent-writable anyway):
+Every Local Skill carries a **provenance** verdict, judged by the agent-runtime at read time. The reference is the set of **pristine roots** in the image — exactly two sanctioned locations, both immutable and always in-pod, so origin classification consults no build-time manifest and no on-PVC marker (a marker was tried and reverted — third-party baked skills aren't ours to stamp, and the PVC is agent-writable anyway):
 
-1. the **pristine workspace copy** — the directory the image's first-boot seed copies onto the PVC and never touches again, and
+1. the **pristine workspace copy** — the workspace payload inside the image, whose skills [image-skill reconciliation](#image-skill-lifecycle) seeds onto the volume and keeps at the shipped version while untouched (the whole-workspace first-boot seed covers everything that isn't a skill), and
 2. the **staged-skills dir** — the one place images put system skills that must *not* reach every agent, either copied onto the PVC at create by an Agent Kind's Install Command or invoked in place from the image path and never copied ([case-studies](case-studies.md)); the shared constant lives in the agent-runtime contract package.
 
 This is a deliberate convention, not a growing list: an image-shipped skill anywhere else will misclassify as user-authored, so new features ship their skills through one of these two locations.
 
 A Local Skill whose directory (with a `SKILL.md`) also exists in a pristine root is **system** when the content hashes match, **system-modified** when they differ (the user edited it, or a template upgrade moved the image ahead of the seeded copy); one with no pristine counterpart is **user**. Identity is the directory name — the same identity install and dedupe key on. A local copy that cannot be hashed (unreadable file, deletion racing the listing) degrades to system-modified rather than failing the listing. The verdict is what lets a reader separate what the user authored from what the image shipped, and it is the gate the api-server publishes behind: it refuses to publish **any** image-shipped skill, modified or not — divergence (a user edit, or an image upgrade) doesn't transfer ownership, so the gate cannot be disarmed by editing a file or by a routine image bump. A skill tracked as an Installed Skill Ref is exempt from that gate: install overwrites its directory, so it always diverges from a same-named baked copy, and it is governed by its Source relationship — publish back to the source keeps working. A pod predating origin classification reports no origin, which readers treat as user — the pre-provenance behavior.
 
+A skill the image once shipped and no longer does also has no pristine counterpart. An untouched copy of it is removed by [image-skill reconciliation](#image-skill-lifecycle) on its next pass; an edited copy reads `user` **by decision**: once the image stops shipping a skill, what remains of an edited copy is the user's derivative work, publishable like anything else the user wrote.
+
 Some image-shipped skills exist to make a platform feature usable. Naming those apart from the image's own built-ins is a reading over this verdict, owned by the catalog side — see [Platform Skill](skills.md#platform-skill).
+
+### Image-Skill Lifecycle
+
+Image-shipped skills are managed per skill, not per volume: a local copy whose content matches a version the platform ever shipped is the platform's — seeded once per volume, overwritten when the image ships a newer version, deleted when the image stops shipping the name — and the moment it diverges it is the user's, never touched again. Three pieces carry that rule:
+
+- The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`packages/platform-base/`](../../packages/platform-base/)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
+- The **Seed Ledger** — a per-volume record of which shipped skill names have been seeded, so each is copied into the Skill Paths exactly once and a skill the user then deletes is never resurrected. Retiring clears the entry — the platform's own removal must not count as the user's — so a skill re-shipped after retirement seeds again. It sits on the agent-writable volume, which is safe because it only ever suppresses copies of image content. Only pristine-workspace skills seed; staged skills never do. The whole-workspace first-boot seed ([persistence](persistence.md)) stays for everything that isn't a skill.
+- **Reconciliation** — runs when the pod applies a runtime-channel snapshot, and once at boot from the install driver's persisted set, because an image-only upgrade delivers no snapshot. A local skill whose hash appears in the manifest is updated or removed as above; anything else — including a copy that cannot be hashed — is left alone. A skill tracked as an Installed Skill Ref is exempt: its Source governs it. `PLATFORM_IMAGE_SKILL_RECONCILE=off` disables the whole pass on a pod, and the pass degrades to a logged no-op on its own when an input is missing: an image with no readable Shipped-Skill Manifest, or a pod whose runtime manifest yields no pristine workspace root distinct from the Skill Paths, leaves image skills unmanaged; a corrupt Seed Ledger heals in place — the next pass records every currently-shipped skill as already seeded without copying anything, so nothing the user deleted can resurrect, at the cost that a skill first shipped while the ledger was corrupt never auto-seeds on that volume.
 
 ## The service
 
@@ -72,5 +82,6 @@ The same path lets `git clone` of a private repo work without any credential bei
 ## Invariants
 
 - **Origin is judged at read time against the image, never recorded as authority.** Nothing on the PVC or in Postgres is ever *consulted* to decide provenance — the pristine image copy is the only reference, so it works retroactively on every existing agent and survives the PVC being adversarial ([persistence § threat model](persistence.md)). The dated snapshot a stopped agent serves carries the verdict from the last live read purely so the panel can group what it shows; the next read re-judges from the image and replaces it.
+- **Reconciliation touches only byte-matched copies.** Image-skill reconciliation acts only when a local skill's content hash appears in the Shipped-Skill Manifest — never on a name match — so it can never overwrite or delete user work, and a retired name is never banned from reuse.
 - **agent-runtime never holds a GitHub credential.** Every authenticated GitHub call leaves the agent unauthenticated; Envoy in the paired gateway pod injects the owner's OAuth token from a K8s Secret on the wire. A compromised agent pod cannot exfiltrate that token because it is never mounted into the agent pod — only the gateway pod, and the agent pod's NetworkPolicy admits no route to GitHub other than through that gateway.
 - **Publish is REST-only.** No `git push` on the publish path. `git` is used only for cloning non-GitHub sources during install and scan, and that path also routes through the gateway pod's credential injector.

@@ -126,8 +126,12 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  composeShareAuth,
+  composeShareRenderTokens,
   composeShareViewer,
-  createShareHostGate,
+  createByLinkHostGate,
+  createContentApp,
+  createShareAuthRoutes,
   createShareViewerApp,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -314,22 +318,52 @@ export async function bootstrap() {
     cliClientId: config.keycloakCliClientId,
     coreRole: config.keycloakInspectorRole,
   };
-  const shareHostGate = createShareHostGate(
-    config.shareBaseUrl,
-    createShareHostApp({
-      viewer: createShareViewerApp({
-        viewer: composeShareViewer({ db, artifacts }),
-        brandName: config.brand.name,
-        uiBaseUrl: config.uiBaseUrl,
+  const shareViewer = composeShareViewer({ db, artifacts });
+  const shareRenderTokens = composeShareRenderTokens({ redis: sharedRedis });
+  const shareAuth = composeShareAuth({
+    redis: sharedRedis,
+    keycloak: {
+      externalUrl: config.keycloakExternalUrl,
+      internalUrl: config.keycloakUrl,
+      realm: config.keycloakRealm,
+      clientId: config.keycloakShareClientId,
+    },
+    shareBaseUrl: config.shareBaseUrl,
+  });
+  const shareHostGate = createByLinkHostGate({
+    share: {
+      baseUrl: config.shareBaseUrl,
+      app: createShareHostApp({
+        auth: createShareAuthRoutes({
+          auth: shareAuth,
+          brandName: config.brand.name,
+          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+        }),
+        viewer: createShareViewerApp({
+          viewer: shareViewer,
+          auth: shareAuth,
+          renderTokens: shareRenderTokens,
+          brandName: config.brand.name,
+          uiBaseUrl: config.uiBaseUrl,
+          contentBaseUrl: config.contentBaseUrl,
+        }),
+        kbMcp: composeKbShareServing({
+          db,
+          store: artifacts,
+          k8s: k8sClient,
+          grepDeadlineMs: config.kbShareGrepDeadlineMs,
+        }),
       }),
-      kbMcp: composeKbShareServing({
-        db,
-        store: artifacts,
-        k8s: k8sClient,
-        grepDeadlineMs: config.kbShareGrepDeadlineMs,
+    },
+    content: {
+      baseUrl: config.contentBaseUrl,
+      app: createContentApp({
+        viewer: shareViewer,
+        renderTokens: shareRenderTokens,
+        shareBaseUrl: config.shareBaseUrl,
       }),
-    }),
-  );
+    },
+  });
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),

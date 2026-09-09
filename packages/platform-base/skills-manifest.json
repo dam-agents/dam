@@ -1,0 +1,48 @@
+{
+  "manifestVersion": 1,
+  "skills": {
+    "agent-case-study": [
+      "89de1762a9c515e2aee30af59edee909f0cea1cfa65e6198612b03c727661f5d"
+    ],
+    "dam-experiment": [
+      "defed4453890a3ee618050345965ff9bf0d1b02d4bb779f7b5ae59b5129803dc",
+      "b868f30dbb6e97bb33d3b93ad48ac6de1ebe0b8548bf1bce29bd7cc49b487643",
+      "04cc335976d51631cc3b97515effa759ccfa2fa1d9ef958b3903434ee9389b30",
+      "0e7e58f7ca6bbc38f72b5edde4020cf7b987dcccb9ffd00de501ca0662ef8089"
+    ],
+    "dam-invoke": [
+      "5c783f6eaae5514d1af2a95396658dbba4bdd5ecaf1f0c863c80d4b0232a3f41"
+    ],
+    "gepa": [
+      "45e1c825305a70a5a9a878fa739de1d64a0e9d42b94a5869af185ced1f255bef"
+    ],
+    "nous": [
+      "717d62775311c58273742320ecd12021bfde290ca9fdad940e6fc71c8bfff651",
+      "ab6babb2dc24022afe4dfdd7e8076f7dd901b2752469ce1db1253a1c846989a6",
+      "ba2ac31d771e8393f2be4fd58e2ad17a0d0ef19e08f1feb47f5424236df9b455",
+      "ff0cede819bb08256e1a12e94f0c1ccc49837a2fad50142b6f0d477bcd15cd8d"
+    ],
+    "openevolve": [
+      "6efb02a84e7703c009aa19f82a8f0b947a343d3a9480e76881171115460e26e2"
+    ],
+    "platform-models": [
+      "8eba4a81178fc5465bdda605cdbd4af09b9818a503a2346d74bdcfa1ce7aba7b"
+    ],
+    "platform-schedules": [
+      "a8f4e05c553d984db20674664e2fab142040bf26e67122fb78bd8002255aab74",
+      "dd0126869d8c9ccd804dc21e66b5e5575092b0aad0c011a7be39b7049d0a175e"
+    ],
+    "shinkaevolve": [
+      "0a4691713bfca1d5d4caa3644f8501e7d7f61158225b8a74e5b03dc95dd810e4"
+    ],
+    "skydiscover": [
+      "8ec914ee1fdb8720e5d3343cb6f539c6e0cfb0cf6d1f50950acf2390046d5f90"
+    ],
+    "webfetch": [
+      "6630594a1b50020e427a65e7c2350aab21c382084078e1a5430183e2d16d5c41"
+    ],
+    "websearch": [
+      "4f11b7558287d2ba13da60599a4135994b894a81398fb45da9ca712494896930"
+    ]
+  }
+}

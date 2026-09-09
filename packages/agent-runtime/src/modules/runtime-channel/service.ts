@@ -15,6 +15,9 @@ export interface ApplyStateDeps {
   eventDispatcher: EventDispatcher;
   stateStore: StateStore;
   readHarnessConfig: () => Promise<HarnessConfigCurrent | undefined>;
+  onSnapshotProcessed?: (
+    contributions: ApplyStateInput["state"]["contributions"],
+  ) => void;
   log: (msg: string) => void;
 }
 
@@ -78,6 +81,7 @@ export function createRuntimeChannelService(
     );
 
     const harnessConfigCurrent = await deps.readHarnessConfig();
+    deps.onSnapshotProcessed?.(input.state.contributions);
 
     if (failures.length > 0) {
       const summary = failures.map((f) => `${f.kind}: ${f.message}`).join("; ");

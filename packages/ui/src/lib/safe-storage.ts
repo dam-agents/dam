@@ -1,11 +1,17 @@
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one localStorage boundary for the session
- * stores (drafts, undelivered sends). Browsers throw on any localStorage
- * touch when storage is disabled or full, and these stores are read and
- * swept on paths that must not abort — sign-out, owner switch, session
- * load — so every access here absorbs the throw instead of raising it.
- * setItem is deliberately not wrapped: writers handle their own quota
- * failures, and how (shed records, warn) differs per store.
+ * UNIT_BOUNDARY_DESCRIPTION: the localStorage boundary for the session stores
+ * (drafts, undelivered sends) and for persisted user preferences. Theme,
+ * home-feed dismissals and the features menu still hold their own access and
+ * are not covered. Browsers throw on any localStorage touch when storage is
+ * disabled or full, and these callers read and sweep on paths that must not
+ * abort — sign-out, owner switch, session load, first render — so every
+ * access here absorbs the throw instead of raising it.
+ *
+ * Writes split by what a lost write costs. The session stores call setItem
+ * directly and handle their own quota failures, because how (shed records,
+ * warn) differs per store and losing a record the user typed matters.
+ * Preferences use safeSetItem, where the worst outcome is a panel returning
+ * to its default and a toast would be noise.
  */
 export interface KeyValueStore {
   keys(): string[];
@@ -35,6 +41,16 @@ export function safeGetItem(store: KeyValueStore, key: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function safeSetItem(
+  store: KeyValueStore,
+  key: string,
+  value: string,
+): void {
+  try {
+    store.setItem(key, value);
+  } catch {}
 }
 
 export function safeRemoveItem(store: KeyValueStore, key: string): void {

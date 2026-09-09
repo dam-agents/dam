@@ -6,14 +6,14 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
-import type { Attachment } from "../../../types.js";
 import {
   browserStorage,
   type KeyValueStore,
   removeAllWithPrefix,
   safeGetItem,
   safeRemoveItem,
-} from "./safe-storage.js";
+} from "../../../lib/safe-storage.js";
+import type { Attachment } from "../../../types.js";
 
 export const UNDELIVERED_STORAGE_PREFIX = "platform-undelivered:";
 
