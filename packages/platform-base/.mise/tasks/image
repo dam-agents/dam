@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Build the platform-base image (shared base layer for every agent image), or reuse it from the registry when its source is unchanged"
+#MISE dir="{{vars.repo_root}}"
+# config.toml next to this file is the *image's* /etc/mise/config.toml (tools
+# baked into platform-base), not project config — see the Dockerfile.
+set -euo pipefail
+mise run image:resolve -- build-or-reuse platform-base -- -f packages/platform-base/Dockerfile . "$@"

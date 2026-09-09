@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#MISE description="Checkout the latest release branch"
+set -euo pipefail
+
+git fetch origin --tags --quiet
+
+branch=$(git branch -r --sort=-version:refname --format "%(refname:short)" | grep 'origin/release-v' | head -n1 | sed 's|origin/||')
+
+if [[ -z "$branch" ]]; then
+  echo "ERROR: No release branch found"
+  exit 1
+fi
+
+if git rev-parse "${branch/release-/}" >/dev/null 2>&1; then
+  echo "Latest release $branch already finalized!"
+fi
+
+git checkout "$branch"

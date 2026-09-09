@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -117,7 +117,7 @@ with any identity-provider buttons offered below it) and SSO-first
 (identity-provider CTAs only, for deployments where corporate SSO is the
 expected sign-in path; the page falls back to the password form when the
 realm has no identity provider configured). The chart's `keycloak.login`
-values ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml))
+values ([`helm/values.yaml`](../../helm/values.yaml))
 select the variant and an optional "Request access" link; they reach the
 theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
@@ -200,7 +200,7 @@ Persistence is split by event class:
   source of truth.
 
 The event knobs, log format, and realm import live in the Keycloak Helm
-values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
+values under [`helm/`](../../helm/).
 
 ## Resource ownership
 
@@ -683,7 +683,7 @@ mesh.
 ## Dev cluster: SVID rotation resilience
 
 A dev-cluster constraint, not an architectural property. The local
-k3s/lima `cluster:install` ([`deploy/tasks.toml`](../../deploy/tasks.toml))
+k3s/lima [`cluster:install`](../../.mise/tasks/cluster/install)
 pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
 outlive a typical dev cluster's lifetime, and installs a
 `ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent

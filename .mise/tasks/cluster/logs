@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Show api-server pod logs"
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
+fi
+kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=apiserver --all-containers --tail=50

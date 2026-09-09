@@ -65,14 +65,14 @@ skill's Step 1.
 ## Build
 
 ```sh
-mise run agents:skydiscover:image            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
+mise run //packages/agents:image -- skydiscover            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned upstream commit with `SKYDISCOVER_REF`:
 
 ```sh
-SKYDISCOVER_REF=<commit-sha> mise run agents:skydiscover:image
+SKYDISCOVER_REF=<commit-sha> mise run //packages/agents:image -- skydiscover
 ```
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
@@ -88,7 +88,7 @@ matrixed `build-workloads` job runs after `merge-agents` — it builds `FROM`
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/skydiscover` (no `imagePullSecret`). Registering the
-component in `scripts/resolve-image.sh`'s `WORKLOADS` list is what enrolls it
+component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it
 in that matrix. Both templates (`adaevolve`, `evox`) are enabled in
 `values.yaml` under "Pre-configured Images" (`category: preconfigured`,
 `experimental: true`).

@@ -37,14 +37,14 @@ the embeddings default) is defined once in the `shinkaevolve` skill's Step 1.
 ## Build
 
 ```sh
-mise run agents:shinkaevolve:image           # plain docker build (pip-installs shinka-evolve)
+mise run //packages/agents:image -- shinkaevolve           # plain docker build (pip-installs shinka-evolve)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned release with `SHINKA_VERSION`:
 
 ```sh
-SHINKA_VERSION=0.0.7 mise run agents:shinkaevolve:image
+SHINKA_VERSION=0.0.7 mise run //packages/agents:image -- shinkaevolve
 ```
 
 `values-local.yaml` points the shinkaevolve template at the locally-built
@@ -58,6 +58,6 @@ matrixed `build-workloads` job runs after `merge-agents` — it builds `FROM`
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/shinkaevolve` (no `imagePullSecret`). Registering the
-component in `scripts/resolve-image.sh`'s `WORKLOADS` list is what enrolls it
+component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it
 in that matrix. The template is enabled in `values.yaml` under "Pre-configured
 Images" (`category: preconfigured`, `experimental: true`).

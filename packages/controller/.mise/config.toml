@@ -1,0 +1,10 @@
+# Go reads its module and build caches from $HOME, so checks deny only the
+# network; the go deps provider pre-downloads modules before any task runs.
+[deps.go]
+auto = true
+
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]

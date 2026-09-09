@@ -54,16 +54,62 @@ trustPolicyExclude:
   # lockfile and is unaffected.
   - "tinyexec@1.2.2"
 allowBuilds:
-  # argon2 (node-argon2) resolves its prebuilt native binding in install;
-  # without it, artifact-library password hashing fails at require time.
+  '@carbon/icon-helpers': false
+  '@carbon/icons-react': false
+  '@google/genai': true
+  '@ibm/plex': false
   argon2: true
-  # grpc-tools downloads the protoc binary in a postinstall step; needed
-  # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).
+  esbuild: true
   grpc-tools: true
   koffi: true
+  msgpackr-extract: false
   protobufjs: true
   sharp: true
-  # esbuild's postinstall extracts the per-platform native binary; without
-  # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
-  # scripts even when `--frozen-lockfile`, so we have to list it.
-  esbuild: true
+overrides:
+  "@anthropic-ai/sdk@<0.91.1": "0.91.1"
+  "@babel/core@<7.29.6": "7.29.6"
+  "@hono/node-server@<2.0.10": "2.0.12"
+  "@humanfs/node@<0.16.8": "0.16.8"
+  "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0"
+  "axios@<1.18.0": "1.18.0"
+  "baseline-browser-mapping@<2.11.0": "2.11.0"
+  "body-parser@<2.3.0": "2.3.0"
+  "brace-expansion@2": "2.1.4"
+  "brace-expansion@5": "5.0.9"
+  "browserslist@<4.28.7": "4.28.7"
+  "esbuild@<0.25.0": "0.25.12"
+  "esbuild@>=0.27.3 <0.28.1": "0.28.1"
+  "fast-uri@<3.1.7": "3.1.7"
+  "form-data@<4.0.6": "4.0.6"
+  "ip-address@<10.3.1": "10.3.1"
+  "js-yaml@<4.3.2": "4.3.2"
+  "nanoid@3": "3.3.18"
+  "postcss@<8.5.23": "8.5.23"
+  "protobufjs@<7.6.5": "7.6.5"
+  "qs@<6.16.0": "6.16.0"
+  "serialize-javascript@<7.0.5": "7.0.5"
+  "tar@<7.5.21": "7.5.21"
+  "undici@8": "8.9.0"
+  "ws@<8.21.0": "8.21.0"
+
+packageExtensions:
+  "drizzle-kit":
+    "peerDependencies":
+      "drizzle-orm": "*"
+  "@hookform/resolvers":
+    "peerDependencies":
+      "zod": "*"
+    "peerDependenciesMeta":
+      "zod":
+        "optional": true
+  "keycloakify":
+    "peerDependencies":
+      "react": "*"
+      "react-dom": "*"
+      "@types/react": "*"
+      "@types/react-dom": "*"
+    "peerDependenciesMeta":
+      "@types/react":
+        "optional": true
+      "@types/react-dom":
+        "optional": true

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# Render with the telemetry backend enabled so its manifests are schema-checked too. The
+# clickstack subchart emits operator custom resources (ClickHouseCluster/KeeperCluster/
+# MongoDBCommunity) that kubeconform has no schema for — skip them alongside the existing
+# CRD/Istio kinds. Not network-sandboxed: kubeconform fetches its schemas.
+set -euo pipefail
+helm template platform . --include-crds --set terms.version=test --set terms.text='Test Terms' --set clickstack.enabled=true | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity "$@"

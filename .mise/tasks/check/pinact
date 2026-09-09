@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Every GitHub Actions `uses:` must be pinned to a full commit SHA"
+# -no-api keeps this purely syntactic: upstream retagging a release must
+# never fail a build that did not change. Bump pins with `pinact run -u`.
+exec pinact run -fix=false -no-api

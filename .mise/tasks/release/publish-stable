@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#MISE description="Publish the current release branch as a stable release"
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+release_branch="$(git branch --show-current)"
+if [[ "$release_branch" != "release-v"* ]]; then
+  echo "ERROR: Not on a 'release-v*' branch"
+  exit 1
+fi
+
+set -x
+git pull
+set +x
+
+current_version=$(yq -r '.version' helm/Chart.yaml)
+publish_version="${current_version%-rc*}"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m branch will be bumped to \x1b[36m$publish_version\x1b[0m."
+echo -e "  - Tip of the \x1b[36m$release_branch\x1b[0m branch will be tagged \x1b[36mv$publish_version\x1b[0m and pushed to GitHub."
+echo -e "  - GitHub Action triggered by the tag will publish a stable release \x1b[36m$publish_version\x1b[0m."
+gum confirm "Proceed?"
+
+mise run release:set-version "$publish_version"
+
+set -x
+git tag "v$publish_version"
+git push --atomic origin $release_branch "v$publish_version"
+set +x
+echo -e "Pushed tag v$publish_version to \x1b[36morigin/$release_branch\x1b[0m"
+
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/cd.yml"

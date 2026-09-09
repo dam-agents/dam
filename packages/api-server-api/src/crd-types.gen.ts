@@ -1,4 +1,4 @@
-/* Code generated from the agent-platform.ai CRDs by `mise run api-server-api:gen:crd-types`. DO NOT EDIT. */
+/* Code generated from the agent-platform.ai CRDs by `mise run //packages/api-server-api:gen:crd-types`. DO NOT EDIT. */
 
 /**
  * AgentSpec is the desired state of an Agent — the sole durable per-agent

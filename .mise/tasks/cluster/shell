@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Open a shell inside the k3s VM (or run command directly in sandbox mode)"
+#MISE raw=true
+if [ -n "${IS_SANDBOX:-}" ]; then
+  if [ $# -eq 0 ]; then
+    exec bash
+  else
+    exec "$@"
+  fi
+else
+  exec limactl shell platform-k3s "$@"
+fi

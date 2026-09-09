@@ -79,7 +79,7 @@ A `running` Experiment whose script sends no trace event for `EXPERIMENT_INACTIV
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. A Slack channel binds to at most one instance globally; the binding routes every mention in that channel.
 
-1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `reactions:read`, `commands`, `users:read`, `users:read.email`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel. The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`. `reactions:read` lets an agent look up who reacted to a message and with what emoji. All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`deploy/slack-app-manifest.yaml`](../deploy/slack-app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
+1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `reactions:read`, `commands`, `users:read`, `users:read.email`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel. The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`. `reactions:read` lets an agent look up who reacted to a message and with what emoji. All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
 2. Add slash command `/platform` pointing to your app.
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
 
@@ -111,7 +111,7 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 ```sh
 mise run check              # lint + type-check
 mise run test               # run tests
-mise run ui:run             # start UI dev server
+mise run //packages/ui:run             # start UI dev server
 ```
 
 Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.

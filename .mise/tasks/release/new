@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#MISE description="Open a new release by creating a release branch from current main"
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+set -x
+git checkout main
+git pull
+set +x
+
+current_version=$(yq -r '.version' helm/Chart.yaml)
+if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  echo "ERROR: Invalid version format: $current_version. Expected format: X.Y.Z"
+  exit 1
+fi
+next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((${BASH_REMATCH[3]} + 1))"
+release_branch="release-v$current_version"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Nothing will be published yet."
+echo -e "  - Tip of the \x1b[36mmain\x1b[0m branch will be prepared for release $current_version in \x1b[36m$release_branch\x1b[0m branch."
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be bumped to ${current_version}-rc1."
+echo -e "  - A PR bumping pending version in \x1b[36mmain\x1b[0m to $next_version will be opened — it needs one approval, then merge it. (This can be bumped more if the next release needs to be minor/major.)"
+echo -e "Want to release a different version than $current_version? Cancel, run \x1b[36mmise run release:set-version <version>\x1b[0m on the \x1b[36mmain\x1b[0m branch and then re-run this task."
+gum confirm "Proceed?"
+
+set -x
+git checkout -B $release_branch main
+mise run release:set-version "${current_version}-rc1"
+git push --set-upstream origin $release_branch
+set +x
+echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
+
+bump_branch="bump/v$next_version"
+bump_namespace="${bump_branch%%/*}"
+set -x
+if git show-ref --verify --quiet "refs/heads/$bump_namespace"; then
+  git branch -D "$bump_namespace"
+fi
+if git ls-remote --exit-code --heads origin "$bump_namespace" >/dev/null 2>&1; then
+  git push origin --delete "$bump_namespace"
+fi
+git checkout -B "$bump_branch" main
+mise run release:set-version "$next_version"
+git push --force --set-upstream origin "$bump_branch"
+set +x
+pr_url=$(gh pr create --base main --head "$bump_branch" --title "bump: v$next_version" --body "Bump pending version on \`main\` to $next_version after opening \`$release_branch\`." \
+  || gh pr view "$bump_branch" --json url --jq .url)
+echo -e "Opened $pr_url bumping \x1b[36mmain\x1b[0m pending version to $next_version. Merge it once approved."
+
+git checkout $release_branch
+
+echo -e "Now you can use \x1b[36mmise run release:publish-rc\x1b[0m to publish a release candidate ${current_version}-rc1, or \x1b[36mmise run release:publish-stable\x1b[0m to publish stable $current_version."

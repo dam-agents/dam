@@ -76,9 +76,9 @@ each one:
 4. **Hand off to the user:** present a brief summary of what changed and the manual smoke-test
    guide from the sub-issue. **Wait** for the user to smoke-test and give review feedback.
 5. **Incorporate** the user's feedback, then make **one clean atomic commit** — conventional
-   `type(scope): summary`, `git commit -s`, body line `Refs #NNN`. The pre-commit hook runs the
+   `type(scope): summary`, `git commit -s`, body line `Refs #NNN`. The pre-commit hook (`mise generate git-pre-commit --write --task=check`) runs the
    full `mise run check`; **never** bypass it with `--no-verify`, and never add the attribution
-   trailer by hand (the hook does it).
+   trailer by hand (the `attribution` setting in `.claude/settings.json` does it).
 6. **Mark progress:** check the sub-issue off in the README's sub-issue table (the plan folder
    is the resume state).
 

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+helm lint . "$@"

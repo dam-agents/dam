@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate ts-proto types from proto/external_auth.proto"
+set -euo pipefail
+mkdir -p src/proto-gen
+node_modules/.bin/grpc_tools_node_protoc \
+  --plugin=protoc-gen-ts_proto=node_modules/.bin/protoc-gen-ts_proto \
+  --ts_proto_out=src/proto-gen \
+  --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true,useExactTypes=false,unknownFields=true,outputJsonMethods=false,outputClientImpl=false,fileSuffix=.gen \
+  --proto_path=proto \
+  proto/external_auth.proto

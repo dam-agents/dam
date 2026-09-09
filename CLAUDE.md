@@ -8,7 +8,7 @@ pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architectu
 
 ## Workflow
 
-mise is the task runner. All tasks are defined in `tasks.toml` files. **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break. `mise tasks` lists everything available.
+mise is the task runner, in monorepo mode: each package's tasks live in its `.mise/` directory and are addressed as `//packages/<name>:<task>` (or `:<task>` from inside the package); repo-level tasks (`check`, `test`, `cluster:*`, …) live in the root `.mise/`. Shared task shapes are templates in `.mise/config.toml`; checks are cached by their inputs and run sandboxed. Rules in [`docs/guidelines/mise-tasks.md`](docs/guidelines/mise-tasks.md). **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break. `mise tasks --all` lists everything available.
 
 For the local k3s cluster (lima), e2e test runs, and mesh/cert failures, use the [`cluster-ops`](.claude/skills/cluster-ops/SKILL.md) skill.
 
@@ -30,7 +30,7 @@ Language-level coding rules are indexed in [`docs/guidelines/code/index.md`](doc
 
 - Before writing any code comment, follow [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md).
 - Tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are not comments.
-- Always run `mise run common:check:comment-types` after changing code.
+- Always run `mise run check:comment-types` after changing code.
 
 ## Documentation
 
@@ -51,7 +51,7 @@ Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`]
 
 ## Branding
 
-Never hardcode the brand (`Dam`, `dam`, or any replacement) in code. The codename `platform` is permanent; user-visible brand flows through Helm `brand.*` ([`deploy/helm/platform/values.yaml`](deploy/helm/platform/values.yaml)) → api-server `config.brand` → UI `getBrand()` ([`packages/ui/src/brand.ts`](packages/ui/src/brand.ts)).
+Never hardcode the brand (`Dam`, `dam`, or any replacement) in code. The codename `platform` is permanent; user-visible brand flows through Helm `brand.*` ([`helm/values.yaml`](helm/values.yaml)) → api-server `config.brand` → UI `getBrand()` ([`packages/ui/src/brand.ts`](packages/ui/src/brand.ts)).
 
 ## Worktrees
 

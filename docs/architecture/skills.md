@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -69,7 +69,7 @@ The api-server scans **public** GitHub catalogs directly (no credentials needed)
 A connection to an external git repository, addressable by id. Three kinds, all merged into a single list at read time and badged in the UI:
 
 - **User source** — a row in Postgres (`skill_sources`), owner-scoped. Created and deleted by the user via tRPC.
-- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
+- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`helm/values.yaml`](../../helm/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
 - **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every agent derived from that template. Badged "Agent".
 
 Listing dedupes on `gitUrl` with first-wins precedence: user → system → template. A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.

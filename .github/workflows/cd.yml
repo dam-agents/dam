@@ -27,11 +27,11 @@ env:
   # this instant. It is deliberately a constant rather than the commit time —
   # a per-commit stamp would make every release differ again (#3495).
   SOURCE_DATE_EPOCH: "1735689600"
-  # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
+  # Pin mise so the lockfile (.mise/mise.lock) stays deterministic. Unpinned,
   # mise-action installs latest and each new release rewrites platform entries
-  # and the generated header, churning mise.lock on unrelated PRs. Bump this in
+  # and the generated header, churning the lockfile on unrelated PRs. Bump this in
   # lockstep with a `mise run … lock` regeneration commit.
-  MISE_VERSION: "2026.7.15"
+  MISE_VERSION: "2026.9.3"
 
 jobs:
   check:
@@ -48,7 +48,14 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run setup
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Keyed per commit so every
+      # run saves; restore-keys pull the newest prior entry set.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-
       - run: mise run check
 
   test:
@@ -63,7 +70,14 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run setup
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Keyed per commit so every
+      # run saves; restore-keys pull the newest prior entry set.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-
       - run: mise run test
 
   appversion:
@@ -87,7 +101,7 @@ jobs:
           if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
             composite="${REF_NAME#v}"
           else
-            appver="$(grep -E '^appVersion:' deploy/helm/platform/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            appver="$(grep -E '^appVersion:' helm/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
             composite="${appver}-dev-${short}"
           fi
           echo "composite=$composite" >> "$GITHUB_OUTPUT"
@@ -130,7 +144,8 @@ jobs:
           set -euo pipefail
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
           [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_WORKLOADS=1
-          out="$(scripts/resolve-image.sh gha-outputs)"
+          # By path: this job has no mise; the same file is the image:resolve task.
+          out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
@@ -174,7 +189,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
-        run: mise run setup && mise run keycloak-theme:build
+        run: mise run //packages/keycloak-theme:build
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -645,7 +660,6 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run setup
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
@@ -707,27 +721,27 @@ jobs:
           fi
 
       - name: Build Helm chart dependencies
-        run: mise run helm:deps
+        # helm package below is not a mise task, so the chart deps provider does not run on its own.
+        run: mise -C helm deps
 
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
+        run: mise run image:pin-tags -- "$SOURCE_SHAS"
 
       - name: Push Helm chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
+          helm package helm --version "$VERSION" --app-version "$COMPOSITE"
           helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
 
       - name: Publish CLI to npm
         env:
           NPM_TAG: ${{ steps.version.outputs.npmTag }}
         run: |
-          mise run setup
-          mise run cli:build
+          mise run //packages/cli:build
           pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
   # Dev charts don't wait for the agent image chain — that wait is most of the
@@ -769,25 +783,26 @@ jobs:
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
 
       - name: Build Helm chart dependencies
-        run: mise run helm:deps
+        # helm package below is not a mise task, so the chart deps provider does not run on its own.
+        run: mise -C helm deps
 
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
+        run: mise run image:pin-tags -- "$SOURCE_SHAS"
 
       - name: Push Helm chart
         env:
           RUN_NUMBER: ${{ github.run_number }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
+          helm package helm --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
-          helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
+          helm package helm --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
   go-vuln:
-    name: mise controller:scan:govulncheck
+    name: govulncheck
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -800,12 +815,11 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run controller:setup
 
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run controller:scan:govulncheck --json) || true
+          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || true
           out=$(printf '%s' "$results" | jq -s '
             [ .[]
               | select(.finding != null and .finding.trace[0].function != null)
@@ -829,7 +843,7 @@ jobs:
           retention-days: 1
 
   npm-audit:
-    name: mise common:scan:npm-audit
+    name: pnpm audit
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -842,11 +856,10 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: ${{ env.MISE_VERSION }}
-      - run: mise run common:setup:pnpm
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise run common:scan:npm-audit --json) || true
+          results=$(mise x -- pnpm audit --prod --json) || true
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -917,32 +930,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-  trivy-tasks:
-    name: mise tasks | grep ':scan:trivy$'
+  trivy-components:
+    name: image:resolve list-components
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
-      tasks: ${{ steps.list.outputs.tasks }}
+      components: ${{ steps.list.outputs.components }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          version: ${{ env.MISE_VERSION }}
       - id: list
         run: |
           set -euo pipefail
-          tasks=$(mise tasks ls --json | jq -c '[.[].name | select(endswith(":scan:trivy"))]')
-          echo "Discovered trivy scan tasks: $tasks"
-          echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
+          components=$(.mise/tasks/image/resolve list-components | tr ' ' '\n' | jq -cR . | jq -cs .)
+          echo "Images to scan: $components"
+          echo "components=$components" >> "$GITHUB_OUTPUT"
 
   container-scan:
-    name: mise run ${{ matrix.task }}
+    name: trivy ${{ matrix.component }}
     needs:
       [
-        trivy-tasks,
+        trivy-components,
         merge-images,
         merge-platform-base,
         merge-agents,
@@ -958,7 +968,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: ${{ fromJSON(needs.trivy-tasks.outputs.tasks) }}
+        component: ${{ fromJSON(needs.trivy-components.outputs.components) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -972,17 +982,19 @@ jobs:
         env:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
-          TASK: ${{ matrix.task }}
+          COMPONENT: ${{ matrix.component }}
           SHA: ${{ github.sha }}
+          IMAGE_PREFIX: quay.io/dam-agents
         run: |
           set -euo pipefail
-          echo "artifact=findings-$(echo "$TASK" | tr ':' '-')" >> "$GITHUB_OUTPUT"
+          echo "artifact=findings-trivy-${COMPONENT}" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           if [ -n "${QUAY_USERNAME:-}" ] && [ -n "${QUAY_PASSWORD:-}" ]; then
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
-          report=$(mise run "$TASK" --json --tag="$SHA") || {
-            echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — reused unchanged, or its build failed); see log"
+          # trivy.yaml at the repo root sets ignore-unfixed.
+          report=$(mise x -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
+            echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
             exit 0
           }
           out=$(echo "$report" | jq '
@@ -997,7 +1009,7 @@ jobs:
             | unique_by(.id + "|" + .pkg)
           ')
           printf '%s\n' "${out:-[]}" > findings.json
-          echo "::notice::Trivy (${TASK}): $(jq length findings.json) finding(s)"
+          echo "::notice::Trivy (${COMPONENT}): $(jq length findings.json) finding(s)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

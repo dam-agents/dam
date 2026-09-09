@@ -4,14 +4,15 @@ USER root
 WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-ARG MISE_VERSION=v2026.6.3
+# Keep in step with MISE_VERSION in .github/workflows/cd.yml.
+ARG MISE_VERSION=v2026.9.3
 # `set -eu` first, or a failed step exits 0 via the trailing `rm` and caches a
 # mise-less layer; `mise --version` last so the layer can't lie about it.
 RUN set -eu; \
     dnf install -y git tar gzip; dnf clean all; \
     case "$(uname -m)" in \
-    x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
-    aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
+    x86_64) arch=x64 sha=72de46e58238e3ae860e449adb9a35f4aba53679621c214dec03d68955fa4de8 ;; \
+    aarch64) arch=arm64 sha=d1918155164a7e4ae4ae306e259b186065c0cfc1b993a954d6e033af0fa4fc5a ;; \
     *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
@@ -22,7 +23,7 @@ RUN set -eu; \
     mise --version
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
-COPY packages/platform-base/mise.toml /etc/mise/config.toml
+COPY packages/platform-base/config.toml /etc/mise/config.toml
 RUN --mount=type=cache,target=/root/.cache/mise \
     --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
     set -eu; \
@@ -30,7 +31,8 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
-RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node && \
+    MISE_CACHE_DIR=/root/.cache/mise mise install "npm:pnpm"
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
@@ -74,9 +76,7 @@ RUN dnf install \
 
 FROM base AS builder
 
-COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
 COPY package.json ./
-RUN install-pnpm && mise reshim
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/dev-config/package.json packages/dev-config/

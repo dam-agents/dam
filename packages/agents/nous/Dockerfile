@@ -6,7 +6,7 @@
 # no Anthropic key, exactly like the Claude Code harness.
 #
 # Nous is installed straight from its public GitHub repo with pip (no vendoring):
-# `mise run agents:nous:image` is a plain `docker build`. Override the pinned
+# `mise run //packages/agents:image -- nous` is a plain `docker build`. Override the pinned
 # release with `--build-arg NOUS_REF=<tag|branch|sha>`.
 ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
