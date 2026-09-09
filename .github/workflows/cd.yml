@@ -859,7 +859,10 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise x -- pnpm audit --prod --json) || true
+          # `deps.pnpm.auto` makes the first `mise x` in this config root run a
+          # pnpm install and print its summary to stdout; slice from the JSON
+          # object's opening brace so that banner never reaches jq.
+          results=$(mise x -- pnpm audit --prod --json | sed -n '/^{/,$p') || true
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -993,11 +996,14 @@ jobs:
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
           # trivy.yaml at the repo root sets ignore-unfixed.
-          report=$(mise x -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
+          # `deps.pnpm.auto` makes the first `mise x` in this config root run a
+          # pnpm install and print its summary to stdout; slice from the JSON
+          # object's opening brace so that banner never reaches jq.
+          report=$(mise x -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}" | sed -n '/^{/,$p') || {
             echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
             exit 0
           }
-          out=$(echo "$report" | jq '
+          out=$(printf '%s' "$report" | jq '
             ((.ArtifactName // "") | split("/") | last | split(":") | first) as $component
             | [ (.Results // [])[] | (.Vulnerabilities // [])[]
                 | { id: .VulnerabilityID,
