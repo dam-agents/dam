@@ -8,8 +8,10 @@ The **Artifact Library** is where agents and users publish work products —
 HTML pages, React/JSX components, markdown, code, plain text, and binary
 files — organize them into **Folders**, and share them with people outside
 the platform. An **Artifact** is owner-scoped like every other resource, is
-attributed to the Agent that published it (or to the user, for manual
-uploads), and outlives both the sandbox and the agent that produced it.
+attributed to the Agent it came from — the Agent that published it, or the
+sandbox's Agent when a person promotes a workspace file (or to the user, for
+manual uploads) — and outlives both the sandbox and the agent that produced
+it.
 Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through. The history
 holds every version including the current one — creation writes the first row,
@@ -317,9 +319,13 @@ moment can produce both:
   they raise the same event. That rule is what keeps machine activity out of
   every number on this page.
 
-A publish carries the producing agent, and whether a person or an agent filed
-it is the question worth asking of this feature — so the two are distinguished
-rather than merged. Artifacts the platform writes for its own bookkeeping
+A publish carries the agent it is attributed to and the surface it came
+through, and the two answer different questions. Attribution says whose
+library section the artifact lands in — a person promoting a workspace file
+publishes with the sandbox's agent attached. The surface says who filed it:
+agent publishes arrive over the per-agent MCP server, person-driven ones over
+the browser's tRPC surface, so the person-or-agent question is asked of the
+surface, never of the attribution. Artifacts the platform writes for its own bookkeeping
 (an experiment's dashboard, script clone, or results snapshot) are marked
 internal by the caller and raise no publish at all: they are machinery, and
 counting them would report the platform's own writes as user activity.

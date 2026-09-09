@@ -2,7 +2,6 @@ import {
   Close,
   Code,
   Download,
-  Link,
   Maximize,
   Share,
   View,
@@ -11,7 +10,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { useCopy } from "../../../hooks/use-copy.js";
 import { useStore } from "../../../store.js";
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
@@ -22,9 +20,10 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { toastCopyOutcome } from "../lib/share-link.js";
 import { downloadArtifact } from "../lib/transfer.js";
+import { ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
+import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
@@ -42,7 +41,6 @@ export function DockedArtifactPanel() {
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [showSource, setShowSource] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const { copy, copied } = useCopy();
   const [fullscreen, setFullscreen] = useState(false);
   const showFrame = renderable && !showSource;
 
@@ -101,20 +99,15 @@ export function DockedArtifactPanel() {
             onChange={(v) => setPinnedVersion(v === latest ? null : v)}
           />
         )}
-        {artifact &&
-          (artifact.visibility === "public" && artifact.shareUrl ? (
-            <Button
-              variant="outline"
-              size="xs"
-              className="text-sm font-normal"
-              onClick={() =>
-                void copy(artifact.shareUrl ?? "").then(toastCopyOutcome)
-              }
-            >
-              <Link size={14} />
-              {copied ? "Copied" : "Copy link"}
-            </Button>
-          ) : (
+        {artifact && (
+          <>
+            <ArtifactStatusBadge
+              artifact={artifact}
+              onShare={() => setShareOpen(true)}
+            />
+            {artifact.shareUrl && (
+              <CopyLinkButton url={artifact.shareUrl} variant="outline" />
+            )}
             <Button
               variant="outline"
               size="xs"
@@ -124,7 +117,8 @@ export function DockedArtifactPanel() {
               <Share size={14} />
               Share
             </Button>
-          ))}
+          </>
+        )}
         {renderable && (
           <Button
             variant="outline"
