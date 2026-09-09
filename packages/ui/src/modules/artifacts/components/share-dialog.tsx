@@ -28,8 +28,11 @@ export function ShareDialog({ artifact, onClose }: Props) {
   const [confirmingPublic, setConfirmingPublic] = useState(false);
   const visibility = form.watch("visibility");
   const hasLink = visibility !== "private" && shareUrl !== null;
+  const hasPendingViewer =
+    visibility === "restricted" && draftEmail.trim().length > 0;
 
   const onSave = () => {
+    if (hasPendingViewer) return;
     if (needsPublicConfirm) setConfirmingPublic(true);
     else void submit();
   };
@@ -95,6 +98,11 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 )}
               />
               {visibility === "restricted" && viewerEditor}
+              {hasPendingViewer && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Add the email address to the list or clear it before saving.
+                </p>
+              )}
               {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
             </div>
           </DialogBody>
@@ -105,7 +113,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
             pendingLabel="Saving…"
             pending={isPending}
             cancelDisabled={isPending}
-            disabled={!form.formState.isDirty}
+            disabled={!form.formState.isDirty || hasPendingViewer}
             onSubmit={onSave}
           />
         </>
