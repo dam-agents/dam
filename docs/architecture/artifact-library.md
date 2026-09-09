@@ -244,7 +244,10 @@ flowchart LR
   inline images). An owner can **change a text artifact's content** from the
   preview they read it in, which publishes a version like any other revision,
   so the artifact keeps its identity, its link and every earlier version. Only
-  the current version is editable; a past one is read-only. The version
+  the current version is editable; a past one is read-only. Editing is bounded
+  further by what the platform accepts in one inline write, which is less than
+  it hands back to read — a document past that bound stays readable but offers
+  no Edit, so no surface advertises an action the save would refuse. The version
   history is readable rather than merely steppable — each version says when it
   was written and who wrote it. Retention is reached from the artifact's own
   menu rather than the sharing dialog, and stays available whatever the
@@ -273,7 +276,10 @@ flowchart LR
   in the session sidebar, scoped to the sandbox's agent, grouped by folder and
   offering the same per-artifact actions plus drag-to-folder filing, and a
   **docked preview** beside the conversation that renders the selected
-  artifact and follows new versions as they are published. Deleting the
+  artifact, hosts the same editor, and follows new versions as they are
+  published. That preview shares one slot with the sandbox file viewer, so
+  opening either evicts the other; both ask before they displace an unsaved
+  edit, and so does every dismissal of a surface holding one. Deleting the
   artifact a preview is showing closes that preview.
 - On the two agent-scoped surfaces a folder shows only that agent's artifacts,
   every user folder is listed even when empty (so there is always a filing

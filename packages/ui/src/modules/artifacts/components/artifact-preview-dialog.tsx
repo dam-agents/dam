@@ -9,7 +9,7 @@ import {
   View,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   DialogBody,
@@ -80,12 +80,26 @@ export function ArtifactPreviewDialog({
   });
   const wantSource = !renderable || showSource || editor.editing;
 
+  const { confirmDiscard } = editor;
+  const asking = useRef(false);
+  const requestClose = useCallback(async () => {
+    if (asking.current) return;
+    asking.current = true;
+    try {
+      if (!(await confirmDiscard())) return;
+      onClose();
+    } finally {
+      asking.current = false;
+    }
+  }, [confirmDiscard, onClose]);
+  const dismiss = useCallback(() => void requestClose(), [requestClose]);
+
   return (
     <>
-      <Modal widthClass="w-[860px]" onClose={onClose}>
+      <Modal widthClass="w-[860px]" onClose={dismiss}>
         <DialogHeader
           title={editor.dirty ? `● ${artifact.title}` : artifact.title}
-          onClose={onClose}
+          onClose={dismiss}
         />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">

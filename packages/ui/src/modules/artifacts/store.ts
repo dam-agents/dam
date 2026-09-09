@@ -48,6 +48,7 @@ export const createArtifactsSlice: StateCreator<
             openArtifactDirty:
               id === state.openArtifactId ? state.openArtifactDirty : false,
             openFilePath: null,
+            openFileDirty: false,
           }
         : {
             openArtifactId: id,
