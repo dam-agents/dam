@@ -127,7 +127,7 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
             seedRoots,
             stagedRoots: [STAGED_SKILLS_DIR],
             manifestFile: config.SKILL_MANIFEST_FILE,
-            stateBackend,
+            stateDir: join(homeDir, ".platform"),
           },
         }
       : {}),

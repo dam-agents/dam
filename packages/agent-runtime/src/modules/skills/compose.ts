@@ -1,5 +1,4 @@
 import type { SkillsService } from "agent-runtime-api";
-import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { makeSkillPaths, type SkillPath } from "./domain/skill-path.js";
 import { createGitHubRestClient } from "./infrastructure/github-rest-client.js";
 import { createGitProtocolClient } from "./infrastructure/git-protocol-client.js";
@@ -7,7 +6,7 @@ import {
   createLocalSkillRepository,
   type LocalSkillRepository,
 } from "./infrastructure/local-skill-repository.js";
-import { createSeedLedger } from "./infrastructure/seed-ledger.js";
+import { openSeedLedger } from "./infrastructure/seed-ledger.js";
 import { loadShippedSkillManifest } from "./infrastructure/shipped-manifest-loader.js";
 import {
   createImageSkillReconciler,
@@ -19,7 +18,7 @@ export interface ReconcileOptions {
   seedRoots: string[];
   stagedRoots: string[];
   manifestFile: string;
-  stateBackend: DocumentStoreBackend;
+  stateDir: string;
 }
 
 export interface ComposeSkillsOptions {
@@ -72,13 +71,19 @@ function buildReconciler(
     );
     return undefined;
   }
+  const opened = openSeedLedger(reconcile.stateDir);
+  if (opened.kind === "corrupt") {
+    log(
+      `seed ledger at ${opened.file} is corrupt; image-skill seeding disabled on this volume (delete the file to re-enable), update and retire reconciliation still runs`,
+    );
+  }
   return createImageSkillReconciler({
     repo,
     skillPaths,
     seedRoots,
     stagedRoots: validated(reconcile.stagedRoots, "staged root"),
     manifest: loadShippedSkillManifest(reconcile.manifestFile, log),
-    ledger: createSeedLedger(reconcile.stateBackend),
+    ledger: opened.kind === "ok" ? opened.ledger : undefined,
     log,
   });
 }

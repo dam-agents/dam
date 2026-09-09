@@ -13,7 +13,7 @@ export interface ImageSkillReconcilerDeps {
   seedRoots: SkillPath[];
   stagedRoots: SkillPath[];
   manifest: ShippedSkillManifest | undefined;
-  ledger: SeedLedger;
+  ledger: SeedLedger | undefined;
   log: (msg: string) => void;
 }
 
@@ -39,7 +39,7 @@ export function createImageSkillReconciler(
     running = true;
     activeExempt = new Set(exemptNames);
     try {
-      await seedPass(deps, isExempt);
+      if (deps.ledger) await seedPass(deps, deps.ledger, isExempt);
       await managePass(deps, deps.manifest, isExempt);
     } catch (err) {
       deps.log(`image-skill reconcile failed: ${errorMessage(err)}`);
@@ -56,12 +56,13 @@ export function createImageSkillReconciler(
 
 async function seedPass(
   deps: ImageSkillReconcilerDeps,
+  ledger: SeedLedger,
   isExempt: (name: string) => boolean,
 ): Promise<void> {
   const shipped = await deps.repo.listSkillDirs(deps.seedRoots);
   const seeded: string[] = [];
   for (const { dir, absDir } of shipped) {
-    if (isExempt(dir) || deps.ledger.has(dir)) continue;
+    if (isExempt(dir) || ledger.has(dir)) continue;
     try {
       if (!(await deps.repo.existsInAnyPath(dir, deps.skillPaths))) {
         await deps.repo.writeFromDir(dir, deps.skillPaths, absDir);
@@ -72,7 +73,7 @@ async function seedPass(
       deps.log(`seeding "${dir}" failed: ${errorMessage(err)}`);
     }
   }
-  deps.ledger.addAll(seeded);
+  ledger.addAll(seeded);
 }
 
 async function managePass(
@@ -98,7 +99,7 @@ async function managePass(
         const pristineDir = pristineByDir.get(dir);
         if (pristineDir === undefined) {
           await deps.repo.remove(dir, [skillPath]);
-          deps.ledger.remove(dir);
+          deps.ledger?.remove(dir);
           deps.log(`removed retired image skill "${dir}" from ${skillPath}`);
           continue;
         }
