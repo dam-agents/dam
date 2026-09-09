@@ -175,7 +175,7 @@ function AgentScheduleGroup({
       <button
         type="button"
         onClick={() => openAgentSession(group.agentId)}
-        className="mb-3 text-sm font-semibold text-foreground transition-colors hover:text-primary"
+        className="mb-3 text-base font-semibold text-foreground transition-colors hover:text-primary"
       >
         {group.agentName}
       </button>
@@ -262,44 +262,27 @@ function ScheduleRow({
             </p>
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
-            {lastRunTime && (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="font-medium text-foreground/80">
-                  Last run:
-                </span>
-                {lastRunTime}
-                {runStatus && (
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1",
-                      runStatus.className,
-                    )}
-                  >
-                    {runStatus.label === "Succeeded" ? (
-                      <CheckmarkFilled size={14} />
+          {(lastRunTime || (nextRunTime && enabled)) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              {lastRunTime && (
+                <span className="inline-flex items-center gap-1.5">
+                  {runStatus &&
+                    (runStatus.label === "Succeeded" ? (
+                      <CheckmarkFilled
+                        size={14}
+                        className="text-emerald-600 dark:text-emerald-400"
+                      />
                     ) : (
-                      <ErrorFilled size={14} />
-                    )}
-                    <span className="text-[13px]">{runStatus.label}</span>
-                  </span>
-                )}
-              </span>
-            )}
-            {nextRunTime && enabled && (
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground/80">
-                  Next run:
-                </span>{" "}
-                {nextRunTime}
-              </span>
-            )}
-          </div>
-
-          {schedule.task && (
-            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground/80">
-              {schedule.task}
-            </p>
+                      <ErrorFilled
+                        size={14}
+                        className="text-red-600 dark:text-red-400"
+                      />
+                    ))}
+                  {lastRunTime}
+                </span>
+              )}
+              {nextRunTime && enabled && <span>Next: {nextRunTime}</span>}
+            </div>
           )}
         </div>
 

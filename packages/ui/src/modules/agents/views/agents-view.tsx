@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
-import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
@@ -48,12 +47,7 @@ export function AgentsView() {
   const isEmpty = initialLoaded && visible.length === 0;
 
   return (
-    <div
-      className={cn(
-        "mx-auto w-full px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10",
-        isEmpty ? "max-w-[1200px]" : "max-w-[960px]",
-      )}
-    >
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
       <PageHeader
         title={visible.length > 0 ? "Agents" : "Choose how to get started"}
         description={

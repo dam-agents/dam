@@ -44,7 +44,7 @@ export interface AgentRowProps {
 }
 
 const BLUE_BADGE =
-  "border-transparent bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400";
+  "border-transparent bg-blue-50 text-blue-600 hover:bg-blue-50 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-950";
 
 function formatCpu(raw: string): string {
   const m = raw.match(/^(\d+)m$/);
@@ -134,7 +134,7 @@ export function AgentRow({
       {...clickableProps(onSelect)}
       className={cn(
         CARD_SURFACE,
-        "group max-w-[960px] cursor-pointer anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40",
+        "group cursor-pointer anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40",
       )}
     >
       <div className="flex items-start gap-4 p-5">

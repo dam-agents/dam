@@ -19,7 +19,11 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <header className={cn("mb-8", className)}>
-      {actions && <div className="mb-4 flex items-center justify-end gap-2">{actions}</div>}
+      {actions && (
+        <div className="mb-1 flex items-center justify-end gap-2">
+          {actions}
+        </div>
+      )}
       <div className="flex min-h-10 min-w-0 items-center gap-3">
         <h1
           title={typeof title === "string" ? title : undefined}

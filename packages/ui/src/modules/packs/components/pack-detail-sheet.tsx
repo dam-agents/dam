@@ -46,7 +46,7 @@ interface Props {
   onClose: () => void;
   onBack?: () => void;
   onCreateFromPack: (pack: Pack) => void;
-  onStartFromScratch: () => void;
+  onStartFromScratch?: () => void;
 }
 
 export function PackDetailSheet({
@@ -54,7 +54,6 @@ export function PackDetailSheet({
   onClose,
   onBack,
   onCreateFromPack,
-  onStartFromScratch,
 }: Props) {
   if (!pack) return null;
 

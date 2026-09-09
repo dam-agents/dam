@@ -1,9 +1,9 @@
 import {
-  Box,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
   Folders,
+  Gift,
   Home,
   Settings,
   Time,
@@ -23,6 +23,7 @@ interface Destination {
   active: boolean;
   badge: number;
   navigate: () => void;
+  iconClassName?: string;
 }
 
 export function IconRail({
@@ -44,10 +45,11 @@ export function IconRail({
   };
   const starterKits: Destination = {
     label: "Starter Kits",
-    icon: Box,
+    icon: Gift,
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
+    iconClassName: "text-purple-600 dark:text-purple-400",
   };
   const schedules: Destination = {
     label: "Schedules",
@@ -131,9 +133,9 @@ export function IconRail({
         </div>
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...starterKits} expanded={expandedNav} />
           <RailItem {...schedules} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
+          <RailItem {...starterKits} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
@@ -143,7 +145,7 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, starterKits, schedules, artifacts].map((destination) => (
+          {[sandboxes, schedules, artifacts, starterKits].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>
@@ -159,6 +161,7 @@ function RailItem({
   badge,
   navigate,
   expanded,
+  iconClassName,
 }: Destination & { expanded: boolean }) {
   const button = (
     <button
@@ -170,9 +173,16 @@ function RailItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
-        active
-          ? "text-primary bg-muted"
-          : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        iconClassName
+          ? cn(
+              iconClassName,
+              active
+                ? "bg-purple-100/50 dark:bg-purple-950/50"
+                : "bg-purple-100/50 hover:bg-purple-200/50 dark:bg-purple-950/50 dark:hover:bg-purple-900/50",
+            )
+          : active
+            ? "text-primary bg-muted"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} size={16} />
@@ -195,6 +205,7 @@ function BottomBarItem({
   active,
   badge,
   navigate,
+  iconClassName,
 }: Destination) {
   return (
     <button
@@ -202,7 +213,7 @@ function BottomBarItem({
       onClick={navigate}
       className={cn(
         "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
-        active ? "text-primary" : "text-muted-foreground",
+        iconClassName ?? (active ? "text-primary" : "text-muted-foreground"),
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} />
