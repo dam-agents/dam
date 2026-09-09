@@ -10,10 +10,6 @@ minimumReleaseAgeExclude:
   # and CVE-2026-84394, and it is younger than the 7-day floor. Drop this
   # entry once the release ages past the floor.
   - "fast-uri@3.1.7"
-  # qs@6.16.0 (2026-08-29) is the only release fixing CVE-2026-82417 and
-  # CVE-2026-82562, and it is younger than the 7-day floor. Drop this entry
-  # once the release ages past the floor.
-  - "qs@6.16.0"
   # The pi-agent image pins @earendil-works/pi-coding-agent 0.85.0 (2026-09-04)
   # and the pi-dynamic-providers extension type-checks against the same
   # version; the fork publishes all its packages in lockstep. Drop these once
