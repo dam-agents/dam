@@ -1,4 +1,9 @@
 [settings]
+# npm: tools install through the npm CLI, not mise's embedded aube: aube stops
+# for a confirmation on "unpopular" packages (pi-memory) and skips postinstall
+# scripts (pnpm 12 ships as a placeholder its postinstall replaces), and the
+# agent Dockerfiles link into the npm layout (lib/node_modules/<pkg>).
+npm.package_manager = "npm"
 experimental = true
 lockfile = true
 minimum_release_age = "7d"
@@ -7,8 +12,8 @@ python.compile = false
 [tools]
 node = "24"
 # pnpm for the builder stage (workspace install) and for agents working in node
-# projects; keep in step with the repo package.json packageManager.
-"npm:pnpm" = "10.33.4"
+# projects; keep in step with the pnpm pin in the repo .mise/config.toml.
+"npm:pnpm" = "12.3.4"
 jq = "latest"
 fd = "latest"
 rg = "latest"

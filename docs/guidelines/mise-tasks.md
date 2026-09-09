@@ -21,6 +21,8 @@ Standalone scripts are tasks too: an executable under a root's `.mise/tasks/` is
 
 ## Dependencies
 
+pnpm itself is a mise tool (`pnpm = "…"` in `.mise/config.toml`, the single pin; the Docker builder stages read it from there), so `package.json` carries no `packageManager` field and a `corepack enable` shim on the machine must be removed (`corepack disable`) or it shadows the pinned version.
+
 Project dependencies are not tasks. Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. Nothing needs to call them explicitly before a `mise run`; `mise deps --monorepo` installs them all without running a task (CI uses `mise -C helm deps` where a bare `helm package` follows), and `mise run --no-deps <task>` skips them. `mise deps --monorepo` installs every provider, so something only a few tasks need and expensive to fetch (Playwright's Chromium) stays a task those tasks depend on. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
 
 ## Templates

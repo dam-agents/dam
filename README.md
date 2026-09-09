@@ -93,6 +93,12 @@ password: dev
 
 Create an instance from a template and start chatting with your agent.
 
+pnpm comes from mise (pinned in `.mise/config.toml`). If you ever ran `corepack enable` here, remove its shim first or it shadows the pinned version:
+
+```sh
+corepack disable
+```
+
 Optionally have git run the checks before every commit:
 
 ```sh
