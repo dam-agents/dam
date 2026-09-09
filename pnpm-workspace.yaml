@@ -54,31 +54,22 @@ trustPolicyExclude:
   # lockfile and is unaffected.
   - "tinyexec@1.2.2"
 allowBuilds:
-  # argon2 (node-argon2) resolves its prebuilt native binding in install;
-  # without it, artifact-library password hashing fails at require time.
-  argon2: true
-  # grpc-tools downloads the protoc binary in a postinstall step; needed
-  # by `mise run //packages/api-server:gen:proto` (ts-proto codegen for ext_authz).
-  grpc-tools: true
-  koffi: true
-  protobufjs: true
-  sharp: true
-  # esbuild's postinstall extracts the per-platform native binary; without
-  # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
-  # scripts even when `--frozen-lockfile`, so we have to list it.
-  esbuild: true
-
-  '@google/genai': true
-  # msgpackr-extract ships prebuilt optional bindings; never built here.
-  msgpackr-extract: false
-  # Never built before pnpm 12 required a decision: telemetry/asset postinstalls.
   '@carbon/icon-helpers': false
   '@carbon/icons-react': false
+  '@google/genai': true
   '@ibm/plex': false
-# Moved here from package.json "pnpm": pnpm 12 no longer reads that field.
+  argon2: true
+  esbuild: true
+  grpc-tools: true
+  koffi: true
+  msgpackr-extract: false
+  protobufjs: true
+  sharp: true
 overrides:
   "@anthropic-ai/sdk@<0.91.1": "0.91.1"
   "@babel/core@<7.29.6": "7.29.6"
+  "@hono/node-server@<2.0.10": "2.0.12"
+  "@humanfs/node@<0.16.8": "0.16.8"
   "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0"
   "axios@<1.18.0": "1.18.0"
   "baseline-browser-mapping@<2.11.0": "2.11.0"
@@ -90,8 +81,6 @@ overrides:
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
   "fast-uri@<3.1.7": "3.1.7"
   "form-data@<4.0.6": "4.0.6"
-  "@humanfs/node@<0.16.8": "0.16.8"
-  "@hono/node-server@<2.0.10": "2.0.12"
   "ip-address@<10.3.1": "10.3.1"
   "js-yaml@<4.3.2": "4.3.2"
   "nanoid@3": "3.3.18"
