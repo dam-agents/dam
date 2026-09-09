@@ -375,10 +375,10 @@ export function useAcpConnection(
           ? turn.data.interruptedAt
           : undefined,
       );
-      if (turn.success && !turn.data.inFlight)
-        idleSessionsRef.current.set(sid, Date.now());
-      else idleSessionsRef.current.delete(sid);
       if (replayBefore === undefined && generation === generationRef.current) {
+        if (turn.success && !turn.data.inFlight)
+          idleSessionsRef.current.set(sid, Date.now());
+        else idleSessionsRef.current.delete(sid);
         bindEngagement(sid);
         pendingReloadRef.current = false;
         setState("live");
