@@ -1,8 +1,15 @@
-import type { SpendByDay } from "api-server-api";
-
-import { formatAxisUsd, formatUsd } from "../lib/format.js";
-
 export const CHART_HEIGHT_CLASS = "h-[240px]";
+
+export interface DayValue {
+  day: string;
+  value: number;
+}
+
+interface Props {
+  days: DayValue[];
+  formatValue: (value: number) => string;
+  formatAxis: (value: number, step: number) => string;
+}
 
 function niceScale(max: number, ticks = 4): { top: number; step: number } {
   if (max <= 0) return { top: 1, step: 0.25 };
@@ -13,28 +20,36 @@ function niceScale(max: number, ticks = 4): { top: number; step: number } {
   return { top: Math.ceil(max / niceStep) * niceStep, step: niceStep };
 }
 
-function DayColumn({ day, top }: { day: SpendByDay; top: number }) {
+function DayColumn({
+  day,
+  top,
+  formatValue,
+}: {
+  day: DayValue;
+  top: number;
+  formatValue: (value: number) => string;
+}) {
   const dayNum = Number(day.day.slice(8, 10));
-  const pct = top > 0 ? (day.costUsd / top) * 100 : 0;
+  const pct = top > 0 ? (day.value / top) * 100 : 0;
   return (
     <div
-      title={`${day.day}: ${formatUsd(day.costUsd)}`}
+      title={`${day.day}: ${formatValue(day.value)}`}
       className="group flex h-full min-w-0 flex-1 items-end justify-center"
     >
       <div
         className="w-[58%] rounded-t-[2px] bg-accent group-hover:bg-accent-hover"
-        style={{ height: day.costUsd > 0 ? `max(${pct}%, 3px)` : "0px" }}
+        style={{ height: day.value > 0 ? `max(${pct}%, 3px)` : "0px" }}
       />
       {}
       <span className="sr-only">
-        Day {dayNum}: {formatUsd(day.costUsd)}
+        Day {dayNum}: {formatValue(day.value)}
       </span>
     </div>
   );
 }
 
-export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
-  const max = days.reduce((m, d) => Math.max(m, d.costUsd), 0);
+export function SpendByDayChart({ days, formatValue, formatAxis }: Props) {
+  const max = days.reduce((m, d) => Math.max(m, d.value), 0);
   const { top, step } = niceScale(max);
   const nTicks = Math.round(top / step);
   const ticks = Array.from(
@@ -50,7 +65,7 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
       >
         {ticks.map((t) => (
           <span key={t} className="leading-none">
-            {formatAxisUsd(t, step)}
+            {formatAxis(t, step)}
           </span>
         ))}
       </div>
@@ -65,7 +80,12 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
           {}
           <div className="absolute inset-0 flex items-end gap-1">
             {days.map((d) => (
-              <DayColumn key={d.day} day={d} top={top} />
+              <DayColumn
+                key={d.day}
+                day={d}
+                top={top}
+                formatValue={formatValue}
+              />
             ))}
           </div>
         </div>
