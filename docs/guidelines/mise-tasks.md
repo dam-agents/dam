@@ -4,7 +4,7 @@ Rules for defining and running tasks. mise runs everything (`mise tasks --all` l
 
 ## Layout
 
-The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with `mise.lock` beside it). Every package directory listed under `[monorepo].config_roots` is a config root with its own `.mise/config.toml` (aggregators, template `extends`, `[deps]` providers) and `.mise/tasks/` (every scripted task), and its tasks are addressed by path:
+The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with `mise.lock` beside it). Every package directory listed under `[monorepo].config_roots` is a config root: `.mise/tasks/` holds its scripted tasks, and `.mise/config.toml` exists only when there is something declarative to hold (aggregators, template `extends`, `[deps]` providers). Its tasks are addressed by path:
 
 | Where | Address | Example |
 |---|---|---|
