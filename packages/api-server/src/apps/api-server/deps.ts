@@ -84,6 +84,7 @@ export interface ApiServerDeps {
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
+  mountCaseStudiesRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   metricsReader: MetricsReader | null;
   sessionDirectory: SessionDirectory;

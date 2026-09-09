@@ -167,9 +167,13 @@ password: dev
 
 Create an instance from a template and start chatting with your agent.
 
-See [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md) for the contributor workflow and [`CLAUDE.md`](CLAUDE.md) for engineering conventions.
+If you want to have Git run checks before every commit, run:
 
-</details>
+```sh
+mise generate git-pre-commit --write --task=check
+```
+
+See [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md) for the contributor workflow and [`CLAUDE.md`](CLAUDE.md) for engineering conventions.
 
 ---
 

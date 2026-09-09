@@ -59,6 +59,7 @@ export interface AgentSkillsRepository {
   ): Promise<void>;
 
   deleteByAgent(agentId: string): Promise<void>;
+  listAgentIds(): Promise<string[]>;
 }
 
 const standaloneSnapshotSchema = z.object({
@@ -282,6 +283,16 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           .delete(agentSkillPublishes)
           .where(eq(agentSkillPublishes.agentId, agentId)),
       ]);
+    },
+
+    async listAgentIds() {
+      const [skills, publishes] = await Promise.all([
+        db.selectDistinct({ agentId: agentSkills.agentId }).from(agentSkills),
+        db
+          .selectDistinct({ agentId: agentSkillPublishes.agentId })
+          .from(agentSkillPublishes),
+      ]);
+      return [...new Set([...skills, ...publishes].map((r) => r.agentId))];
     },
   };
 }

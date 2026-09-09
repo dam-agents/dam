@@ -106,7 +106,7 @@ For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's
 }
 ```
 
-Then create a generic secret on the platform with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate-workarounds-15); the Envoy sidecar rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
+Then create a generic secret on the platform with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate); the Envoy sidecar rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
 
 For non-Bearer auth, override `injectionConfig` on the secret instead of changing `models.json`:
 
@@ -139,10 +139,9 @@ To make RITS the default model, edit `settings.json`:
 "defaultModel": "<value of RITS_MODEL>"
 ```
 
-### pi-acp auth-gate workarounds ([#15](https://github.com/svkozak/pi-acp/issues/15))
+### pi-acp auth gate
 
-1. *Startup gate* — `pi-acp` refuses to spawn `pi` unless a recognized credential exists. Satisfied by the dummy `ENV OPENCODE_API_KEY=pi-acp-auth-gate-bypass` in the Dockerfile (allow-listed name, unused by any pi provider).
-2. *Per-session gate* — `pi-acp` re-checks `models.json.providers[*].apiKey` on every `session/prompt`. Satisfied by either (a) the placeholder env var for built-in providers, (b) the placeholder `apiKey` in `models.json` for custom OpenAI-compatible servers, or (c) the extension mirroring its `registerProvider` config to `models.json` on load. In every case the `apiKey` is a placeholder; the real credential is sidecar-injected on the wire.
+`pi-acp` treats a new session as unauthenticated when `pi` reports no available models, and mid-session it turns provider errors mentioning API keys, `401`, or `403` into ACP auth-required errors. Both are satisfied without a real credential because every provider carries a *placeholder* key: the seeded `auth.json` entry, the placeholder env var for built-in providers, a placeholder `apiKey` in `models.json` for custom OpenAI-compatible servers, or the extension mirroring its `registerProvider` config to `models.json` on load. The real credential is sidecar-injected on the wire, so a `401` from the provider means the generic secret's host pattern did not match the request — not that the placeholder is wrong.
 
 Pi system prompt conventions:
 

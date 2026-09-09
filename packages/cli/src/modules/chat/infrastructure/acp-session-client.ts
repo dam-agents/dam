@@ -64,7 +64,7 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
-function acpUrl(host: string, agentId: string, token: string): string {
+export function acpUrl(host: string, agentId: string, token: string): string {
   const proto = host.startsWith("https://") ? "wss:" : "ws:";
   const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
   return `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/acp?token=${encodeURIComponent(token)}`;

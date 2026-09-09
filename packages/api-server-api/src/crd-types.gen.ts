@@ -1,4 +1,4 @@
-/* Code generated from the agent-platform.ai CRDs by `mise run api-server-api:gen:crd-types`. DO NOT EDIT. */
+/* Code generated from the agent-platform.ai CRDs by `mise run //packages/api-server-api:gen:crd-types`. DO NOT EDIT. */
 
 /**
  * AgentSpec is the desired state of an Agent — the sole durable per-agent
@@ -36,6 +36,8 @@ export interface AgentSpecCR {
   description?: string;
   /**
    * Env are plain environment variables projected into the agent container.
+   *
+   * Items: EnvVar is a plain name/value environment variable.
    */
   env?: {
     name: string;
@@ -98,6 +100,8 @@ export interface AgentSpecCR {
   l7Hosts?: string[];
   /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
+   *
+   * Items: Mount declares a volume mounted into the agent container.
    */
   mounts?: {
     /**

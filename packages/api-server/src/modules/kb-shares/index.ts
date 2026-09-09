@@ -4,6 +4,8 @@ export {
   composeKbSharesForOwner,
   createKbShareResolver,
   createKbShareAgentCleanup,
+  findKbShareOwnerByAgent,
+  listKbShareAgentIds,
   startKbShareSync,
   type KbShareAgentOps,
   type KbShareStorePort,
@@ -18,4 +20,3 @@ export {
   composeKbShareServing,
   createShareHostApp,
 } from "./serving/compose.js";
-export { startKbSharesCleanupSaga } from "./sagas/cleanup.js";

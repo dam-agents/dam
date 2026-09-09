@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-03
+Last verified: 2026-09-08
 
 ## System context
 
@@ -68,9 +68,10 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
-- [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, prepare→Execute workflow, dashboard-artifact live view.
+- [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, dashboard-artifact live view. GUI surfaces hidden pending a rethink; created over the API.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
-- [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link on a dedicated share host, with folders, a retention date, and versions.
+- [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link — to anyone, or to a named list of viewers who sign in — across a dedicated share host and content host, with folders, a retention date, and versions.
+- [case-studies](architecture/case-studies.md) — the agent-case-study skill and the edition store behind it: agents write sanitized weekly accounts of their own use case, submitted as owner-only pending editions that the owner releases to inspector-gated read surfaces.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [metrics](architecture/metrics.md) — the user-facing spend read path: owner-scoped tRPC reads over the telemetry store backing the global and per-agent Usage surfaces, failing closed when the backend is disabled.

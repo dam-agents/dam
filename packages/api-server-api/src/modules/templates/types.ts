@@ -1,4 +1,6 @@
+import type { z } from "zod";
 import type { EnvVar } from "../shared.js";
+import type { harnessFamilySchema } from "./schemas.js";
 
 export interface Mount {
   path: string;
@@ -15,6 +17,8 @@ export const SPEC_VERSION = "agent-platform.ai/v1";
 
 export type TemplateCategory = "harness" | "preconfigured";
 
+export type HarnessFamily = z.infer<typeof harnessFamilySchema>;
+
 export interface SkillSourceSeed {
   name: string;
   gitUrl: string;
@@ -27,6 +31,7 @@ export interface TemplateSpec {
   name?: string;
   description?: string;
   category?: TemplateCategory;
+  harness?: HarnessFamily;
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;

@@ -126,7 +126,7 @@ OpenAI endpoint is left alone).
 ## Build
 
 ```sh
-mise run agents:nous:image          # plain docker build (pip-installs nous from GitHub)
+mise run //packages/agents:image -- nous          # plain docker build (pip-installs nous from GitHub)
 mise run cluster:build-agent        # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -134,8 +134,8 @@ The build pip-installs Nous from its public GitHub repo — no local clone or
 vendoring. Override the pinned release with `NOUS_REF`:
 
 ```sh
-NOUS_REF=main mise run agents:nous:image     # track a branch
-NOUS_REF=v0.4.1 mise run agents:nous:image   # or a different tag
+NOUS_REF=main mise run //packages/agents:image -- nous     # track a branch
+NOUS_REF=v0.4.1 mise run //packages/agents:image -- nous   # or a different tag
 ```
 
 `values-local.yaml` points the nous template at the locally-built

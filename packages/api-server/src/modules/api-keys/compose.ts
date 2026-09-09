@@ -4,6 +4,8 @@ import {
   findActiveApiKeyByHash,
   insertApiKey,
   listApiKeysByOwner,
+  listScopedAgentIds,
+  removeAgentIdFromScopes,
   revokeApiKey,
   touchApiKeyLastUsed,
 } from "./infrastructure/api-keys-repository.js";
@@ -59,4 +61,14 @@ export function composeApiKeysModule(deps: {
         isAgentOwnedBy,
       }),
   };
+}
+
+export function createApiKeysCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
+  return removeAgentIdFromScopes(db);
+}
+
+export function listApiKeyAgentIds(db: Db): Promise<string[]> {
+  return listScopedAgentIds(db)();
 }

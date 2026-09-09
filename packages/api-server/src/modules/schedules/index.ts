@@ -1,4 +1,8 @@
-export { composeSchedulesAtBoot, composeSchedulesForOwner } from "./compose.js";
+export {
+  composeSchedulesAtBoot,
+  composeSchedulesForOwner,
+  createSchedulesCleanupHook,
+} from "./compose.js";
 export type {
   SchedulesBoot,
   ComposeSchedulesAtBootOpts,

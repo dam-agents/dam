@@ -2,11 +2,8 @@ import type { SessionView } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TokenProvider } from "../../auth/index.js";
-import {
-  createAgentResolver,
-  type AgentService,
-  type ResolveError,
-} from "../../agent/index.js";
+import type { AgentService } from "../../agent/index.js";
+import { createBootstrap, type BootstrapError } from "./bootstrap.js";
 import type { SessionsPort, TerminalStrategy } from "./sessions-service.js";
 import {
   connectTerminalBridge,
@@ -14,10 +11,7 @@ import {
 } from "../infrastructure/terminal-bridge.js";
 
 export type ChatError =
-  | ResolveError
-  | { kind: "no-server" }
-  | { kind: "malformed-config"; reason: string }
-  | { kind: "below-floor"; localCli: string; serverMinClient: string }
+  | BootstrapError
   | { kind: "not-a-tty" }
   | { kind: "session-failed"; reason: string }
   | { kind: "mode-switch-declined" }
@@ -47,50 +41,13 @@ export function createChatService(deps: {
   confirmModeSwitch: () => Promise<boolean>;
   isTty: boolean;
 }): ChatService {
+  const bare = createBootstrap(deps);
   async function bootstrap(agentRef: string, serverFlag?: string) {
-    const flag = serverFlag ? { server: serverFlag } : undefined;
-    const config = await deps.configService.getResolved({ flag });
-    if (!config.ok) {
-      return config.error.kind === "malformed-config"
-        ? err({
-            kind: "malformed-config" as const,
-            reason: config.error.reason,
-          })
-        : err({ kind: "no-server" as const });
-    }
-    const host = config.value.server;
-
-    const compat = await deps.compatService.check({ flag });
-    if (!compat.ok)
-      return err({
-        kind: "transport" as const,
-        reason:
-          compat.error.kind === "probe-error"
-            ? compat.error.message
-            : compat.error.kind,
-      });
-    if (compat.value.kind === "below-floor") {
-      return err({
-        kind: "below-floor" as const,
-        localCli: compat.value.localCli,
-        serverMinClient: compat.value.serverMinClient,
-      });
-    }
-
-    const resolved = await createAgentResolver({
-      agentService: deps.createAgentService(host),
-    }).resolve(agentRef);
-    if (!resolved.ok) return resolved;
-
-    const tok = await deps.tokenProvider.getValidAccessToken(host);
-    if (!tok.ok)
-      return err({ kind: "auth-required" as const, reason: tok.error.kind });
-
+    const ctx = await bare(agentRef, serverFlag);
+    if (!ctx.ok) return ctx;
     return ok({
-      host,
-      token: tok.value,
-      agentId: resolved.value.id,
-      sessions: deps.createSessionsPort(host, tok.value),
+      ...ctx.value,
+      sessions: deps.createSessionsPort(ctx.value.host, ctx.value.token),
     });
   }
 

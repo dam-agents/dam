@@ -17,36 +17,21 @@ import {
   createExperimentInactivitySweep,
   type ExperimentInactivitySweep,
 } from "./services/experiment-inactivity-sweep.js";
+import { createExperimentDriverCleanup } from "./services/experiment-driver-cleanup.js";
+import {
+  cancelExperimentInvocations,
+  createReapFollowUp,
+  type ExperimentPinPort,
+} from "./services/reap-follow-up.js";
 
-export interface ExperimentPinPort {
-  set(driverAgentId: string): Promise<void>;
-  clear(driverAgentId: string): Promise<void>;
-}
+export type { ExperimentPinPort } from "./services/reap-follow-up.js";
 
 const FEED_INVOCATIONS_MAX = 500;
 
-async function cancelExperimentInvocations(deps: {
-  invocationsRepo: ReturnType<typeof createInvocationsRepository>;
-  agents: AgentsService | undefined;
-  driverAgentId: string;
-  experimentId: string;
-  reason: string;
-}): Promise<void> {
-  const failed = await deps.invocationsRepo.failAllRunningByExperiment(
-    deps.driverAgentId,
-    deps.experimentId,
-    deps.reason,
-  );
-  for (const invocationId of failed) {
-    try {
-      await deps.agents?.delete(invocationId);
-    } catch (err) {
-      process.stderr.write(
-        `[experiments] target reap ${invocationId} failed: ${err instanceof Error ? err.message : err}\n`,
-      );
-    }
-  }
-}
+const NO_PIN: ExperimentPinPort = {
+  set: async () => {},
+  clear: async () => {},
+};
 
 export function composeExperimentsForOwner(opts: {
   db: Db;
@@ -129,59 +114,46 @@ export function composeExperimentInactivitySweep(opts: {
   db: Db;
   inactivityMs: number;
   batchSize: number;
-  pin?: ExperimentPinPort;
-  artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
-  agentsFor?: (owner: string) => AgentsService;
+  pin: ExperimentPinPort;
+  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  agentsFor: (owner: string) => AgentsService;
 }): ExperimentInactivitySweep {
   const repo = createExperimentsRepository(opts.db);
-  const invocationsRepo = createInvocationsRepository(opts.db);
-  const snapshot = opts.artifactLibraryFor
-    ? createDashboardSnapshotter({
-        db: opts.db,
-        artifactLibraryFor: opts.artifactLibraryFor,
-        repo,
-      })
-    : null;
   return createExperimentInactivitySweep({
     repo,
     inactivityMs: opts.inactivityMs,
     batchSize: opts.batchSize,
-    onReaped: async ({
-      id,
-      owner,
-      driverAgentId,
-    }: {
-      id: string;
-      owner: string;
-      driverAgentId: string;
-    }) => {
-      try {
-        await cancelExperimentInvocations({
-          invocationsRepo,
-          agents: opts.agentsFor?.(owner),
-          driverAgentId,
-          experimentId: id,
-          reason: "experiment reaped for inactivity",
-        });
-      } catch (err) {
-        process.stderr.write(
-          `[experiment-inactivity] invocation cancel ${id} failed: ${err instanceof Error ? err.message : err}\n`,
-        );
-      }
-      if (opts.pin && !(await repo.hasRunningForDriver(driverAgentId))) {
-        await opts.pin.clear(driverAgentId);
-      }
-      if (snapshot) {
-        try {
-          await snapshot(id, owner);
-        } catch (err) {
-          process.stderr.write(
-            `[experiment-inactivity] dashboard snapshot ${id} failed: ${err instanceof Error ? err.message : err}\n`,
-          );
-        }
-      }
-    },
+    now: () => new Date(),
+    onReaped: createReapFollowUp({
+      ...opts,
+      repo,
+      reason: "experiment reaped for inactivity",
+      logTag: "experiment-inactivity",
+    }),
   });
+}
+
+export function createExperimentsCleanupHook(opts: {
+  db: Db;
+  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  agentsFor: (owner: string) => AgentsService;
+}): (agentId: string) => Promise<void> {
+  const repo = createExperimentsRepository(opts.db);
+  return createExperimentDriverCleanup({
+    repo,
+    now: () => new Date(),
+    onReaped: createReapFollowUp({
+      ...opts,
+      repo,
+      pin: NO_PIN,
+      reason: "driver agent deleted",
+      logTag: "experiments-cleanup",
+    }),
+  });
+}
+
+export function listOpenExperimentDriverIds(db: Db): Promise<string[]> {
+  return createExperimentsRepository(db).listOpenDriverIds();
 }
 
 export async function reconcileExperimentPins(opts: {

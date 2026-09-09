@@ -12,6 +12,7 @@ export interface BudgetsServiceDeps {
   listAgents(): Promise<BudgetedAgent[]>;
   readCeilingOverride(): Promise<{ cpu: string; memory: string } | null>;
   defaultCeiling: { cpu: string; memory: string };
+  slotSize: { cpu: string; memory: string };
 }
 
 export interface ResizeGate {
@@ -21,7 +22,9 @@ export interface ResizeGate {
   ): Promise<void>;
 }
 
-export function createResizeGate(deps: BudgetsServiceDeps): ResizeGate {
+export function createResizeGate(
+  deps: Omit<BudgetsServiceDeps, "slotSize">,
+): ResizeGate {
   return {
     async assertResizeFits(agent, newSize) {
       const current = agent.spec.resources?.limits;
@@ -117,6 +120,10 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         memory: {
           reservedBytes: memoryBytes,
           ceilingBytes: parseMemoryBytes(ceiling.memory),
+        },
+        slot: {
+          cpuMilli: parseCpuMilli(deps.slotSize.cpu),
+          memoryBytes: parseMemoryBytes(deps.slotSize.memory),
         },
       };
     },

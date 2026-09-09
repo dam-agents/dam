@@ -37,7 +37,7 @@ other's filesystems:
 
 - the **docker daemon VM** (colima, or Docker Desktop) — builds the images; holds the
   buildkit cache and the local `platform-*:latest` tags
-- the **k3s VM** (`platform-k3s`, 200 GiB per `deploy/lima-k3s.yaml`) — runs the cluster
+- the **k3s VM** (`platform-k3s`, 200 GiB per `etc/lima/k3s.yaml`) — runs the cluster
   and has its **own** containerd
 
 Images cross the gap by copy, not by mount: `docker save` to a tar, `limactl copy` into

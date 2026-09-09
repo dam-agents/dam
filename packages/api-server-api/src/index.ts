@@ -13,12 +13,14 @@ export { podSessionsNoticeSchema } from "./modules/events/schemas.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
+  harnessFamilySchema,
   mountSchema,
   resourcesSchema,
   skillSourceSeedSchema,
   templateSpecSchema,
 } from "./modules/templates/schemas.js";
 export type {
+  HarnessFamily,
   Template,
   TemplateSpec,
   TemplatesService,
@@ -211,6 +213,7 @@ export {
 export type {
   ArtifactKind,
   ArtifactVisibility,
+  ArtifactCreateVisibility,
   ArtifactFolder,
   LibraryArtifact,
   ArtifactVersionInfo,
@@ -228,10 +231,14 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  artifactSharingInputSchema,
+  artifactCreateVisibilitySchema,
+  viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
+  VIEWER_ALLOWLIST_MAX,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
@@ -287,6 +294,7 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   BOB_HOST,
+  BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   providerTypeForTemplateId,
@@ -294,6 +302,39 @@ export {
 } from "./modules/connections/providers.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
+
+export type {
+  CaseStudyStatus,
+  CaseStudyContentSource,
+  CaseStudySubmitInput,
+  CaseStudyInspectionFilter,
+  CaseStudyInspectionFilterInput,
+  CaseStudyEditionSummary,
+  CaseStudyEdition,
+  CaseStudiesService,
+} from "./modules/case-studies/types.js";
+export {
+  caseStudyStatusSchema,
+  caseStudyContentSourceSchema,
+  caseStudyContentSchema,
+  caseStudySubmitInputSchema,
+  caseStudyInspectionFilterSchema,
+  toCaseStudyInspectionFilter,
+} from "./modules/case-studies/schemas.js";
+export {
+  CASE_STUDY_CONTENT_MAX_CHARS,
+  CASE_STUDY_SKILL_PATH,
+  CASE_STUDY_SCHEDULE_TASK,
+} from "./modules/case-studies/constants.js";
+
+export { usageSummaryInputSchema } from "./modules/metrics/schemas.js";
+export {
+  METRICS_MAX_SINCE_HOURS,
+  METRICS_MAX_LIMIT,
+  METRICS_DEFAULT_LIMIT,
+  USAGE_SUMMARY_MAX_DAYS,
+  USAGE_SUMMARY_DEFAULT_DAYS,
+} from "./modules/metrics/constants.js";
 
 export type {
   MetricsService,
@@ -500,6 +541,7 @@ export {
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
   RuleVerdict,
@@ -546,6 +588,8 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformRunResultSchema,
+  platformRunResultResponseSchema,
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
   promptBlockSchema,
@@ -564,6 +608,8 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformRunResult,
+  PlatformRunResultResponse,
   PlatformClippedReplayMeta,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,

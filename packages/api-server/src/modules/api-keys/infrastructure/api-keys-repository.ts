@@ -91,3 +91,21 @@ export function touchApiKeyLastUsed(db: Db) {
       .where(eq(apiKeys.id, id));
   };
 }
+
+export function removeAgentIdFromScopes(db: Db) {
+  return async (agentId: string): Promise<void> => {
+    await db
+      .update(apiKeys)
+      .set({ agentIds: sql`array_remove(${apiKeys.agentIds}, ${agentId})` })
+      .where(sql`${agentId} = ANY(${apiKeys.agentIds})`);
+  };
+}
+
+export function listScopedAgentIds(db: Db) {
+  return async (): Promise<string[]> => {
+    const rows = await db
+      .selectDistinct({ agentId: sql<string>`unnest(${apiKeys.agentIds})` })
+      .from(apiKeys);
+    return rows.map((r) => r.agentId);
+  };
+}

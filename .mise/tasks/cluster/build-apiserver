@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#MISE description="Build and load API server image into k3s, restart apiserver pod"
+#MISE depends=["//packages/api-server:image"]
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/platform-api-server.tar"
+docker save platform-api-server:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting apiserver pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
+# Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
+# ~240s), so a fresh pod whose mesh egress is still converging needs headroom
+# past that bound before it reports Ready.
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=300s
+
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo "Done."

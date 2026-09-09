@@ -5,12 +5,12 @@ import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
+import { ComputeUsage } from "../../budgets/components/compute-usage.js";
 import {
   type ArtifactTouched,
   useFeed,
   useFeedArtifacts,
 } from "../api/queries.js";
-import { ComputeWidget } from "../components/compute-widget.js";
 import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
@@ -40,6 +40,7 @@ const EMPTY_ARTIFACTS: readonly ArtifactTouched[] = [];
 export function HomeView() {
   const {
     items,
+    workingAgentIds,
     agents,
     runningAgents,
     hasAgents,
@@ -107,9 +108,6 @@ export function HomeView() {
   const visible = filterFeed(live, status, included);
   const stats = feedStats(visible);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
-  const workingAgentIds = new Set(
-    live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
-  );
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -214,10 +212,9 @@ export function HomeView() {
             </Modal>
           ))}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
-          <ComputeWidget
-            runningAgents={runningAgents}
-            workingAgentIds={workingAgentIds}
-          />
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <ComputeUsage agents={agents} workingAgentIds={workingAgentIds} />
+          </div>
           <SpendWidget />
           <SchedulesWidget />
         </aside>

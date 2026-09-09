@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Build the dependency-free driver-sdk.mjs bundle (tsup)"
+set -euo pipefail
+pnpm exec tsup "$@"

@@ -318,6 +318,16 @@ export function revokeShareByAgent(db: Db) {
   };
 }
 
+export function listActiveShareAgentIds(db: Db) {
+  return async (): Promise<string[]> => {
+    const rows = await db
+      .selectDistinct({ agentId: kbShares.agentId })
+      .from(kbShares)
+      .where(eq(kbShares.status, "active"));
+    return rows.map((r) => r.agentId);
+  };
+}
+
 export function listDirtyActiveShares(db: Db) {
   return async (): Promise<KbShareRow[]> => {
     const rows = await db

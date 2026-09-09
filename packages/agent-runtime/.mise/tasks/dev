@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run agent-runtime in watch mode (tsx, loads .env)"
+set -euo pipefail
+pnpm exec tsx watch --env-file=.env src/server.ts "$@"

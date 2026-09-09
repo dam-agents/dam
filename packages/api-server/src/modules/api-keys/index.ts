@@ -1,4 +1,8 @@
-export { composeApiKeysModule } from "./compose.js";
+export {
+  composeApiKeysModule,
+  createApiKeysCleanupHook,
+  listApiKeyAgentIds,
+} from "./compose.js";
 export {
   type ApiKeyValidator,
   type ApiKeyValidationFailure,

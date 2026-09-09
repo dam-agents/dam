@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Scaffold a HAND-WRITTEN migration file + journal entry — for the reporting
+# views, which aren't in schema.ts so `generate` can't emit them. Table changes
+# use `generate`, not this. Usage: mise run //packages/db:new -- <name>
+#
+# Wraps `drizzle-kit generate --custom`: it scaffolds the empty .sql, the journal
+# entry, AND a snapshot (a copy of the latest — a hand-written view migration
+# changes no tracked table). The snapshot matters: without it the next
+# `generate` can't find a base to diff against. We only slugify the name first,
+# since --custom otherwise puts spaces in the filename.
+set -euo pipefail
+slug=$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/^_//;s/_$//')
+[ -n "$slug" ] || { echo "Usage: mise run //packages/db:new -- <name>"; exit 1; }
+pnpm exec drizzle-kit generate --custom --name "$slug"
+echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"

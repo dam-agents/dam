@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#MISE alias="e2e"
+#MISE description="Run Playwright e2e: spin up fresh test cluster, run the smoke suite, tear down. Options: --headed --full"
+#MISE raw=true
+set -eo pipefail
+
+PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
+for arg in "$@"; do
+  case "$arg" in
+    --headed) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed" ;;
+    --full) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full" ;;
+  esac
+done
+
+VM_NAME="platform-k3s-test"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ] && [ -f "$KUBECONFIG" ]; then
+    echo ""
+    echo "=== FAILURE: dumping cluster diagnostics ==="
+    echo ""
+    echo "--- Nodes ---"
+    kubectl --kubeconfig="$KUBECONFIG" get nodes -o wide 2>&1 || true
+    echo ""
+    echo "--- Pods (all namespaces) ---"
+    kubectl --kubeconfig="$KUBECONFIG" get pods -A -o wide 2>&1 || true
+    echo ""
+    echo "--- Events (recent, all namespaces) ---"
+    kubectl --kubeconfig="$KUBECONFIG" get events -A --sort-by=.lastTimestamp 2>&1 | tail -50 || true
+    echo ""
+    echo "--- Describe not-ready pods ---"
+    kubectl --kubeconfig="$KUBECONFIG" get pods -A -o json 2>/dev/null \
+      | jq -r '.items[] | select(.status.phase != "Running" or ([.status.containerStatuses[]?.ready] | all | not)) | "\(.metadata.namespace) \(.metadata.name)"' \
+      | while read -r ns name; do
+          echo "### $ns/$name ###"
+          kubectl --kubeconfig="$KUBECONFIG" describe pod -n "$ns" "$name" 2>&1 || true
+          echo ""
+        done
+    echo ""
+    echo "--- Logs from Platform pods ---"
+    for ns in default platform-agents; do
+      for pod in $(kubectl --kubeconfig="$KUBECONFIG" get pods -n "$ns" -o name 2>/dev/null); do
+        echo "### $ns/$pod (current) ###"
+        kubectl --kubeconfig="$KUBECONFIG" logs -n "$ns" "$pod" --all-containers --tail=200 2>&1 || true
+        echo "### $ns/$pod (previous) ###"
+        kubectl --kubeconfig="$KUBECONFIG" logs -n "$ns" "$pod" --all-containers --tail=200 --previous 2>&1 || true
+        echo ""
+      done
+    done
+    echo ""
+    echo "--- Mesh cert-expiry check (ztunnel) ---"
+    # Same signature the ztunnel-cert-watchdog keys on (cluster:install);
+    # keep the regex in sync. Rules mesh certs in or out as the failure cause.
+    CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
+        -l app=ztunnel --since=6h --tail=5000 --prefix 2>/dev/null \
+      | grep -iE 'certificate expired|AlertReceived\(CertificateExpired\)' | tail -5 || true)
+    if [ -n "$CERT_HITS" ]; then
+      echo "expired-cert signature PRESENT — mesh certs are a likely failure cause:"
+      printf '%s\n' "$CERT_HITS"
+    else
+      echo "no expired-cert signature (mesh certs are not the failure cause)"
+    fi
+    echo "=== End diagnostics ==="
+  fi
+
+  if [ -z "${IS_SANDBOX:-}" ]; then
+    echo ""
+    echo "=== Tearing down test cluster ==="
+    mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
+  fi
+
+  exit $exit_code
+}
+trap cleanup EXIT
+
+# Skip pre-nuke in sandbox/CI — the runner starts clean. Locally, a prior
+# run may have died before teardown fired, leaving a half-provisioned VM.
+if [ -z "${IS_SANDBOX:-}" ]; then
+  echo "Nuking any pre-existing test cluster..."
+  mise run cluster:delete -- --vm-name="$VM_NAME" --force
+fi
+
+# Provision a fresh e2e cluster. Install args + the apiserver race-fix live in
+# e2e:install, shared with e2e:loop so the two never drift.
+E2E_VM_NAME="$VM_NAME" mise run e2e:install
+
+# Wipe data to the specs' expected clean slate. On lima/CI the cluster is
+# brand new and this is a fast no-op; in a sandbox the cluster persists
+# between runs and still carries the previous run's data (the specs'
+# clean-slate assertions fail on it). Re-gate afterwards — the reset
+# bounces the apiserver.
+E2E_VM_NAME="$VM_NAME" mise run e2e:reset
+E2E_VM_NAME="$VM_NAME" mise run e2e:gate
+
+PLATFORM_BASE_URL="http://localhost:5555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+  mise run "$PLAYWRIGHT_TASK"

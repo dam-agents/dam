@@ -1,0 +1,121 @@
+{{/*
+Agent templates. One ConfigMap in the RELEASE namespace with a
+`<name>.yaml` data key per enabled `.Values.agentTemplates` entry. It is
+mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
+boot — the api-server no longer reads templates dynamically via the K8s API,
+so this CM needs no label selector and no agent-namespace placement.
+
+Only fields the template differs on are rendered. Anything omitted falls
+through at reconcile time to `controller.agent.templateDefaults.*` (chart
+fallback) or `controller.agent.base.*` (chart-only policy).
+
+The literal string `$HOME` in mount paths is substituted
+HERE (chart render time) with the fixed agent home (/home/agent). The
+rendered spec ships absolute paths — the controller and agent-runtime
+never see `$HOME`.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-templates
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+data:
+  {{- range $name, $tmpl := .Values.agentTemplates }}
+  {{- if and $tmpl $tmpl.enabled }}
+  {{- /* backend access must stay behind the nil guard above — a nulled
+         template entry (`agentTemplates.foo: null`) has no fields. */}}
+  {{- $isVM := and $tmpl.backend (eq ($tmpl.backend.type | default "") "vm") }}
+  {{- if or (not $isVM) $.Values.virtualization.enabled }}
+  {{- $home := "/home/agent" }}
+  {{ $name }}.yaml: |
+    version: agent-platform.ai/v1
+    image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
+    description: {{ $tmpl.description | quote }}
+    {{- with $tmpl.displayName }}
+    name: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.category }}
+    category: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.harness }}
+    harness: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.tags }}
+    tags:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.docsUrl }}
+    docsUrl: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.releaseNotesUrl }}
+    releaseNotesUrl: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.setupNote }}
+    setupNote:
+      title: {{ .title | quote }}
+      body: {{ .body | quote }}
+    {{- end }}
+    {{- if $tmpl.experimental }}
+    experimental: true
+    {{- end }}
+    {{- with $tmpl.image.pullPolicy }}
+    imagePullPolicy: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.storageSize }}
+    storageSize: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.hibernationTimeout }}
+    hibernationTimeout: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.backend }}
+    backend:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.runtimeClassName }}
+    runtimeClassName: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
+    {{- fail (printf "agentTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
+    {{- end }}
+    {{- if $tmpl.imagePullSecret }}
+    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
+    {{- end }}
+    {{- with $tmpl.imagePullSecretRef }}
+    imagePullSecretRef: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.mounts }}
+    mounts:
+      {{- range . }}
+      - path: {{ .path | replace "$HOME" $home | quote }}
+        persist: {{ .persist }}
+        {{- with .size }}
+        size: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- $env := $tmpl.env | default list }}
+    {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}
+    {{- $env = concat $env (include "platform.agentTelemetry.env" (dict "root" $ "templateName" $name "rail" $tmpl.telemetry) | fromYamlArray) }}
+    {{- end }}
+    {{- with $env }}
+    env:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.skillSources }}
+    skillSources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- end }}

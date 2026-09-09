@@ -1,8 +1,19 @@
 # Experiments
 
-Last verified: 2026-08-28
+Last verified: 2026-09-08
 
 ## Overview
+
+The GUI currently hides this subsystem, pending a rethink of how optimization
+frameworks surface. The destination and the setup flow are removed from the
+code (git history holds them); lineage folders render as ordinary folders in
+the artifact library (the agent-scoped artifact lists show one only while it
+holds that agent's artifacts — see [artifact-library](artifact-library.md));
+no interface path creates an experiment agent. The data
+and every procedure stay live, and the chat view still renders a running
+experiment's dock and gates the onboarding greeting. Mentions of the
+destination below describe the design the hidden surfaces implemented, kept
+as the reference for their return.
 
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the
@@ -165,9 +176,11 @@ that catches the failure and retries dies too. A loop doing pure local compute
 exits at its next report; the released pin lets the idle checker reclaim a
 truly silent one.
 
-This applies to **all three** terminal paths — Stop, the script's own `finish`
-(`completed` *and* `failed`), and the inactivity sweep — not Stop alone. The
-ledger is closed in every case, so a surviving target can no longer report into
+This applies to **all four** terminal paths — Stop, the script's own `finish`
+(`completed` *and* `failed`), the inactivity sweep, and driver deletion — not
+Stop alone. The two reaps additionally end every still-open span as `error`,
+since no script remains to end them; Stop and `finish` leave the script's own
+span bookkeeping alone. The ledger is closed in every case, so a surviving target can no longer report into
 the run; leaving it alive only holds its pod and its owner's budget until the
 invocation TTL, which is hours for a long campaign. `completed` is included
 deliberately: a loop that returns without awaiting a spawn orphans its target
@@ -275,7 +288,11 @@ the sweep runs with a jittered start. A running Experiment also **pins** its
 driver Agent against the idle checker's hibernation (the
 `agent-platform.ai/experiment-active` annotation, subordinate to a user hard
 stop); reaching any terminal state releases the pin — the sweep is therefore
-also what un-pins a crashed run's driver.
+also what un-pins a crashed run's driver. Deleting the driver Agent closes its
+running Experiments the same way — reaped to `failed`, Invocations shed,
+results artifact minted — and removes its drafts, which cannot run without
+their driver; the periodic orphan sweep does the same for a deletion that
+bypassed the API ([persistence § Lifetime](persistence.md#lifetime)).
 
 ## Domain events
 
@@ -305,4 +322,4 @@ publishes either — [artifact-library](artifact-library.md) owns that rule.
 - Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
 - Authoring kit staged in the image: [`packages/agents/claude-code/dam-skills/`](../../packages/agents/claude-code/dam-skills/)
 - Shared kinded-create rail: [`packages/api-server/src/modules/agents/services/kinded-agent-create.ts`](../../packages/api-server/src/modules/agents/services/kinded-agent-create.ts)
-- UI destination: [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)
+- UI module (chat dock, store, API bindings): [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

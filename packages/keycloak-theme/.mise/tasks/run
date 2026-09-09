@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"
+set -euo pipefail
+pnpm exec keycloakify start-keycloak -p ./ "$@"

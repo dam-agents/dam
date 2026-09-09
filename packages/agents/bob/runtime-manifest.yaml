@@ -27,3 +27,45 @@ drivers:
     impl: skill-install
     paths:
       - "$HOME/.agents/skills"
+
+  # The Config panel writes into a `platform` section Bob itself ignores, not
+  # into `session.*`: bob-settings.mjs owns Bob's own keys on every harness
+  # start, and two writers on one key would fight. It resolves panel value over
+  # provider pin and translates the result — see the agent README.
+  #
+  # Model is deliberately absent: Bob's list comes from a LiteLLM-shaped
+  # /model/info under its own path prefix, which neither the static catalog nor
+  # modelDiscovery can serve yet.
+  harness-config:
+    file: "$HOME/.bob/settings/settings.json"
+    keys:
+      mode: "platform.mode"
+      configOptions:
+        approvals: "platform.approvals"
+    catalog:
+      options:
+        - id: mode
+          name: Mode
+          description: Which persona Bob starts a session in
+          category: mode
+          choices:
+            - value: agent
+              name: "Agent"
+              description: "Takes an idea or a plan and implements it"
+            - value: plan
+              name: "Plan"
+              description: "Analyzes requirements and designs the steps, without implementing"
+            - value: ask
+              name: "Ask"
+              description: "Answers questions and explains, without changing the workspace"
+        - id: approvals
+          name: Approvals
+          description: Whether Bob asks before a tool call
+          category: approvals
+          choices:
+            - value: auto
+              name: "Auto-approve"
+              description: "Runs every tool without asking. Bob's ACP offers no middle setting — its safe-command allowlist is reachable from the terminal only."
+            - value: ask
+              name: "Ask every time"
+              description: "Prompts for every tool except file reads, including each shell command. Takes effect on the next harness start, and an unattended session has nobody to answer."

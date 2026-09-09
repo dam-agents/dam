@@ -61,6 +61,7 @@ export interface SessionBootstrapDeps {
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
+  interruptedAt(sessionId: string): string | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
   supersededFor(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
@@ -84,7 +85,7 @@ export interface SessionBootstrapDeps {
  * suppresses the session's frames until it settles. A later request may
  * refill from the provider, which needs no harness, but never sends a second
  * harness load for the same session: two overlapping loads produce frames
- * nothing can attribute. session/resume never reaches the harness
+ * nothing can attribute. A client's session/resume never reaches the harness
  * at all: the runtime answers it here, which hides harnesses that cannot
  * resume. requestPage serves older transcript ranges for a load that carries a
  * replayBefore cursor; the cursor names one transcript generation, so a cursor
@@ -173,7 +174,14 @@ export function createSessionBootstrap(
       result: withReplayMeta(
         metadata.value,
         clip,
-        kind === "load" ? { inFlight: deps.turnInFlight(sessionId) } : null,
+        kind === "load"
+          ? {
+              inFlight: deps.turnInFlight(sessionId),
+              ...(deps.interruptedAt(sessionId) !== undefined && {
+                interruptedAt: deps.interruptedAt(sessionId),
+              }),
+            }
+          : null,
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
         kind === "load" ? deps.supersededFor(sessionId) : [],
       ),

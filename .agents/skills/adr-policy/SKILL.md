@@ -2,7 +2,7 @@
 name: adr-policy
 description: >
   Review-time policy check for pull requests that touch `docs/adrs/`. Surfaces the
-  deterministic ADR immutability gate (`scripts/adr-immutable.mjs`) and adds the
+  deterministic ADR immutability gate (`mise run //docs:check:adr-immutable`) and adds the
   judgment checks a script cannot own: re-litigation of settled decisions, `supersedes`
   pointer correctness, and summary honesty. Scope is ADR log integrity and decision
   judgment only — the ADR files, their frontmatter, and git history. Docs-match-the-code
@@ -47,7 +47,7 @@ owned by a standalone deterministic script, never by an LLM. Run it and surface 
 result verbatim:
 
 ```bash
-node scripts/adr-immutable.mjs --merge-base
+mise run //docs:check:adr-immutable -- --merge-base
 ```
 
 Report its pass/fail as the first line of the ADR section so everything lands in one

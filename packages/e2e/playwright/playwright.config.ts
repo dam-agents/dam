@@ -159,6 +159,11 @@ export default defineConfig({
             testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
+          {
+            name: "skills-full",
+            testMatch: /full\/skill-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
         ]
       : []),
   ],

@@ -1,0 +1,26 @@
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]
+
+[tasks."check:tsc"]
+extends = "ts:check:tsc"
+
+[tasks."check:lint"]
+extends = "ts:check:lint"
+
+[tasks."check:format"]
+extends = "ts:check:format"
+run = "pnpm exec prettier --check 'src/**/*.ts' '!src/proto-gen/**'"
+
+[tasks."fix:lint"]
+extends = "ts:fix:lint"
+
+[tasks."fix:format"]
+extends = "ts:fix:format"
+run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
+
+[tasks.test]
+extends = "ts:test"
+run = "pnpm exec vitest run --config vitest.unit.config.ts"

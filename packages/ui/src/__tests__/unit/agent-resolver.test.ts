@@ -87,6 +87,7 @@ describe("transitionRestartingAgents", () => {
   const NOW = 1_000_000_000_000;
   const entry = (seen: boolean, ageMs = 0) => ({
     seenNonRunning: seen,
+    parkedAtClick: false,
     clickedAt: NOW - ageMs,
   });
 

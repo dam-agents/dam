@@ -1,0 +1,14 @@
+# ruff/pytest run from the locked dev group (uv run --frozen), never uvx-latest:
+# an unpinned linter changes its ruleset under CI whenever a release ships.
+# The uv deps provider syncs the locked dev group before any task runs, so the
+# checks can deny the network. uv writes its cache outside the tree, so writes
+# are not denied.
+[deps.uv]
+auto = true
+run = "uv sync --frozen --group dev"
+
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]

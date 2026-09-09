@@ -27,7 +27,6 @@ export function startupTips(sandbox: string): readonly string[] {
     "Scheduled runs wake the agent automatically — no need to keep it running between jobs.",
     "Template updates roll out new images without losing your agent's persistent state.",
     "Network egress is deny-by-default. Connections allowlist only the hosts your agent needs.",
-    "Run one goal across several variants at once and watch them chart live with Experiments.",
     "Point a knowledge base at your docs and ask it questions in chat.",
     "Artifact previews open beside the chat, so you can read the result and keep talking.",
     "Set “Delete after…” on an artifact and it is deleted permanently on that date, public or private.",

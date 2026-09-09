@@ -35,14 +35,17 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
+  libraryArtifactViewers,
   invocations,
   kbShares,
+  agentCaseStudies,
 } from "./schema.js";
 export {
   eq,
   and,
   or,
   gt,
+  gte,
   ilike,
   inArray,
   asc,
