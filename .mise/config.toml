@@ -1,3 +1,4 @@
+min_version = "2026.9.3"
 monorepo_root = true
 
 [monorepo]
