@@ -23,7 +23,6 @@ export function createPublicAgentRoutes(deps: PublicAgentRoutesDeps): Hono {
 
   routes.get("/agents/:agentId", async (c) => {
     const agent = await deps.service.get(c.req.param("agentId"));
-    c.header("Cache-Control", "no-store");
     return c.json({ agent } satisfies PublicAgentResponse);
   });
 

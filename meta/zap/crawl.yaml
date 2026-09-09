@@ -14,6 +14,7 @@ env:
           loginPageUrl: https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/
           loginPageWait: 8
           browserId: chrome-headless
+          diagnostics: true
         verification:
           method: autodetect
       sessionManagement:
@@ -39,7 +40,15 @@ jobs:
       maxDuration: 15
       maxCrawlDepth: 10
       runOnlyIfModern: false
+      # Keycloak is out of scope; Strict blocks the OIDC redirect in the spider's browser, so login never happens.
+      scopeCheck: Flexible
+      logoutAvoidance: true
   - type: passiveScan-wait
+  - type: report
+    parameters:
+      template: auth-report-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: crawl-auth
   - type: report
     parameters:
       template: traditional-html-plus
