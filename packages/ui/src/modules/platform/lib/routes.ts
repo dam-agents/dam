@@ -38,7 +38,8 @@ export type Route =
   | { view: "knowledge-bases" }
   | { view: "setup-workbench" }
   | { view: "presets" }
-  | { view: "schedules" };
+  | { view: "schedules" }
+  | { view: "card-gallery" };
 
 export type View = Route["view"];
 

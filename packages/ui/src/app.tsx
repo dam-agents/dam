@@ -6,6 +6,7 @@ import { DocsLauncher } from "./components/docs-launcher.js";
 import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
+import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
@@ -129,6 +130,8 @@ function MainApp() {
                 <SettingsView />
               ) : view === "setup-workbench" ? (
                 <SetupWorkbenchView />
+              ) : view === "card-gallery" ? (
+                <AgentCardGallery />
               ) : (
                 <HomeView />
               )}

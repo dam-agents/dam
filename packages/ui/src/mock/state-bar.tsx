@@ -42,6 +42,11 @@ function useReviewScreens(): ReviewScreen[] {
       note: "Iterate on setup section interactions — normal vs preset.",
       go: () => setView("setup-workbench"),
     },
+    {
+      label: "Card gallery",
+      note: "Agent card design — every state side by side.",
+      go: () => setView("card-gallery"),
+    },
   ];
 }
 
@@ -126,7 +131,8 @@ export function MockStateBar() {
                 (s.label === "Starter Kits" && view === "presets") ||
                 (s.label === "Schedules" && view === "schedules") ||
                 (s.label === "Agent setup" && view === "agent-new") ||
-                (s.label === "Setup workbench" && view === "setup-workbench");
+                (s.label === "Setup workbench" && view === "setup-workbench") ||
+                (s.label === "Card gallery" && view === "card-gallery");
               return (
                 <button
                   key={s.label}
