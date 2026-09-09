@@ -18,7 +18,6 @@ export function createTrpcHttpHandler(deps: {
       req: c.req.raw,
       router: appRouter,
       onError: logInternalError,
-      responseMeta: () => ({ headers: { "Cache-Control": "no-store" } }),
       createContext: () => {
         const ctx = deps.composeApiContext(c.get("user"), c.get("surface"));
         markTermsProven(ctx);
