@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Download the Chromium binary Playwright drives (+ OS libs on Linux)"
+# Deliberately a task, not a [deps] provider: `mise deps --monorepo` installs every
+# provider, and this one is a large download plus `sudo apt` on Linux that only
+# the e2e run tasks need.
+set -euo pipefail
+if [ "$(uname)" = "Linux" ]; then
+  pnpm exec playwright install --with-deps chromium
+else
+  pnpm exec playwright install chromium
+fi

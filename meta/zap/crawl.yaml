@@ -1,0 +1,53 @@
+env:
+  contexts:
+    - name: dam-dev
+      urls:
+        - https://dam-dev.apps.dam-cl.fmaas.res.ibm.com
+      includePaths:
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/.*
+      excludePaths:
+        - .*logout.*
+        - .*/assets/.*
+      authentication:
+        method: browser
+        parameters:
+          loginPageUrl: https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/
+          loginPageWait: 8
+          browserId: chrome-headless
+        verification:
+          method: autodetect
+      sessionManagement:
+        method: autodetect
+      users:
+        - name: zap
+          credentials:
+            username: zap
+            password: zap
+  parameters:
+    failOnError: false
+    failOnWarning: false
+    progressToStdout: true
+jobs:
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+  - type: spiderAjax
+    parameters:
+      context: dam-dev
+      user: zap
+      browserId: chrome-headless
+      maxDuration: 15
+      maxCrawlDepth: 10
+      runOnlyIfModern: false
+  - type: passiveScan-wait
+  - type: report
+    parameters:
+      template: traditional-html-plus
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: crawl-passive
+      reportTitle: DAM dev - crawl + passive scan
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: crawl-passive

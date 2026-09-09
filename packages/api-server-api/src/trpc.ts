@@ -22,11 +22,25 @@ function isTermsStaleCause(cause: unknown): boolean {
 }
 
 const PG_INVALID_TEXT_REPRESENTATION = "22P02";
+const PG_CHARACTER_NOT_IN_REPERTOIRE = "22021";
+const PG_UNTRANSLATABLE_CHARACTER = "22P05";
 const PG_UNIQUE_VIOLATION = "23505";
-const PG_ERROR_CODES: Record<string, TRPCError["code"]> = {
-  [PG_INVALID_TEXT_REPRESENTATION]: "BAD_REQUEST",
-  [PG_UNIQUE_VIOLATION]: "CONFLICT",
-};
+const PG_ERRORS: Record<string, { code: TRPCError["code"]; message: string }> =
+  {
+    [PG_INVALID_TEXT_REPRESENTATION]: {
+      code: "BAD_REQUEST",
+      message: "malformed identifier",
+    },
+    [PG_CHARACTER_NOT_IN_REPERTOIRE]: {
+      code: "BAD_REQUEST",
+      message: "unsupported character in input",
+    },
+    [PG_UNTRANSLATABLE_CHARACTER]: {
+      code: "BAD_REQUEST",
+      message: "unsupported character in input",
+    },
+    [PG_UNIQUE_VIOLATION]: { code: "CONFLICT", message: "already exists" },
+  };
 
 function pgErrorCode(err: unknown): string | undefined {
   let e = err;
@@ -37,15 +51,17 @@ function pgErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
+const REDACTED_MESSAGES: Partial<Record<TRPCError["code"], string>> = {
+  INTERNAL_SERVER_ERROR: "internal server error",
+  UNSUPPORTED_MEDIA_TYPE: "unsupported content-type",
+};
+
 const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
     return {
       ...shape,
-      message:
-        error.code === "INTERNAL_SERVER_ERROR"
-          ? "internal server error"
-          : shape.message,
+      message: REDACTED_MESSAGES[error.code] ?? shape.message,
       data: {
         ...shape.data,
         stack: undefined,
@@ -67,13 +83,9 @@ export function markTermsProven(ctx: ApiContext): void {
 const mapPgErrors = tBase.middleware(async ({ next }) => {
   const result = await next();
   if (result.ok) return result;
-  const code = PG_ERROR_CODES[pgErrorCode(result.error.cause) ?? ""];
-  if (!code) return result;
-  throw new TRPCError({
-    code,
-    message: code === "CONFLICT" ? "already exists" : "malformed identifier",
-    cause: result.error.cause,
-  });
+  const mapped = PG_ERRORS[pgErrorCode(result.error.cause) ?? ""];
+  if (!mapped) return result;
+  throw new TRPCError({ ...mapped, cause: result.error.cause });
 });
 
 const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {

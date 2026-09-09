@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -235,7 +235,7 @@ BullMQ retries cover transport failures (network blip, agent crash mid-call) and
 
 Every `applyState` call carries a deadline of about a minute. An agent that accepts the request but never answers — a pod wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot until the transport gives up on its own, which takes minutes. Together with per-agent coalescing, this bounds what one unresponsive agent can hold to one active job per key. The worker's concurrency is sized far above what that bound allows the live agent population to occupy at once, so a slot is never the scarce resource and no delivery waits behind another agent's; the cap protects the process from a burst, it does not schedule agents. A handler holds nothing else for the duration of the call — the Postgres reads finish before the request goes out and the outcome is recorded after it returns — so a stalled agent ties up its own socket and nothing shared.
 
-Slots are not the only shared resource, and the other one is scarce: a single Postgres pool serves both these handlers and the request path. It is sized explicitly rather than left at the client's default, and deliberately far below the slot count — a handler borrows a connection for its short queries and never across the call to the agent, so the pool has to cover the handlers querying at any instant, not the ones parked on a slow agent. Both the pool size and the slot count are deployment values ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml)), and the pool is per replica: scaling replicas multiplies it against the database server's own connection limit.
+Slots are not the only shared resource, and the other one is scarce: a single Postgres pool serves both these handlers and the request path. It is sized explicitly rather than left at the client's default, and deliberately far below the slot count — a handler borrows a connection for its short queries and never across the call to the agent, so the pool has to cover the handlers querying at any instant, not the ones parked on a slow agent. Both the pool size and the slot count are deployment values ([`helm/values.yaml`](../../helm/values.yaml)), and the pool is per replica: scaling replicas multiplies it against the database server's own connection limit.
 
 ### Cron sweep
 
@@ -284,6 +284,8 @@ A harness that needs custom code for a kind — contribution or event — rebind
 3. Returns per-driver outcome.
 
 Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite` and `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode.
+
+Applying a snapshot ends with a post-apply hook: after contributions dispatch and events settle, the runtime hands the snapshot's contribution list to a composition-time subscriber — on every non-stale apply, driver failures included, so a consumer that must err toward acting sees failed installs too. Image-skill reconciliation rides it ([agent-skills](agent-skills.md#image-skill-lifecycle)).
 
 ### Event handler loop
 

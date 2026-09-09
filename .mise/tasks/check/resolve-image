@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Assert the image dependency graph in .mise/tasks/image/resolve (build-vs-reuse logic)"
+#MISE sources=[".mise/tasks/image/resolve"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+exec "$(dirname "$0")/../image/resolve" --self-check

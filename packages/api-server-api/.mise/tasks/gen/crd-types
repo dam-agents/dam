@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate the Agent CR spec TS types from the controller's CRDs. AgentSpec derives from AgentSpecCR, so the Go-authored types are the single source."
+#MISE depends=["//packages/controller:generate"]
+#MISE sources=["{{vars.repo_root}}/helm/crds/agent-platform.ai_agents.yaml", "scripts/gen-crd-types.sh", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
+#MISE outputs=["src/crd-types.gen.ts"]
+set -euo pipefail
+bash scripts/gen-crd-types.sh $MISE_CONFIG_ROOT/../.. src/crd-types.gen.ts "$@"

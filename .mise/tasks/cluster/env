@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#MISE description="Open a subshell with env for local cluster"
+#MISE raw=true
+#MISE quiet=true
+
+export KUBECONFIG="$(mise run cluster:kubeconfig)"
+
+CALLER=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+CALLER="${CALLER:-$SHELL}"
+CALLER="${CALLER#-}" # login shells report argv[0] as "-zsh"/"-bash"; drop the leading dash
+case "$(basename -- "$CALLER")" in
+  bash) exec bash --rcfile <(echo 'source ~/.bashrc; PS1="(platform) $PS1"') ;;
+  zsh)
+    ZDOTDIR=$(mktemp -d)
+    cat > "$ZDOTDIR/.zshrc" <<'ZRC'
+[[ -f ~/.zshenv ]] && source ~/.zshenv
+[[ -f ~/.zshrc ]]  && source ~/.zshrc
+PS1="(platform) $PS1"
+command rm -rf "$ZDOTDIR"
+ZRC
+    export ZDOTDIR
+    exec zsh
+    ;;
+  fish) exec fish -C 'functions -c fish_prompt _orig_fish_prompt; function fish_prompt; echo -n "(platform) "; _orig_fish_prompt; end' ;;
+  *)    exec "$CALLER" ;;
+esac

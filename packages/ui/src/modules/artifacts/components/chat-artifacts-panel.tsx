@@ -226,11 +226,17 @@ function ArtifactListRow({
         animate={active || hovered}
         className="min-w-0 flex-1"
       />
-      {artifact.visibility === "public" && (
-        <Tooltip content="Public">
+      {artifact.shareUrl !== null && (
+        <Tooltip
+          content={
+            artifact.visibility === "restricted" ? "Restricted" : "Public"
+          }
+        >
           <span
             role="img"
-            aria-label="Public"
+            aria-label={
+              artifact.visibility === "restricted" ? "Restricted" : "Public"
+            }
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
           />
         </Tooltip>

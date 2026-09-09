@@ -34,6 +34,20 @@ describe("tRPC error mapping", () => {
     });
   });
 
+  /* TEST_SCENARIO: A NUL byte inside a string makes Postgres reject the value (SQLSTATE 22021); the caller must see BAD_REQUEST. */
+  it("maps character-not-in-repertoire to BAD_REQUEST", async () => {
+    await expect(caller().call.fail(pgError("22021"))).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  /* TEST_SCENARIO: A NUL byte inside a jsonb value is rejected as an unsupported Unicode escape (SQLSTATE 22P05); the caller must see BAD_REQUEST. */
+  it("maps untranslatable-character to BAD_REQUEST", async () => {
+    await expect(caller().call.fail(pgError("22P05"))).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
   /* TEST_SCENARIO: A duplicate row violates a unique index (SQLSTATE 23505); the caller must see CONFLICT. */
   it("maps unique violation to CONFLICT", async () => {
     await expect(caller().call.fail(pgError("23505"))).rejects.toMatchObject({
@@ -58,6 +72,23 @@ describe("tRPC error mapping", () => {
     expect(shape.message).toBe("internal server error");
     expect(shape.data.stack).toBeUndefined();
     expect(shape.data.code).toBe("INTERNAL_SERVER_ERROR");
+  });
+
+  /* TEST_SCENARIO: tRPC's own 415 quotes the request's Content-Type header; the client must not get that header echoed back. */
+  it("redacts the echoed content-type of UNSUPPORTED_MEDIA_TYPE", () => {
+    const { ctx } = caller();
+    const shape = getErrorShape({
+      config: router._def._config,
+      error: new TRPCError({
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        message: 'Unsupported content-type "<script>"',
+      }),
+      type: "mutation",
+      path: "fail",
+      input: undefined,
+      ctx,
+    });
+    expect(shape.message).toBe("unsupported content-type");
   });
 
   /* TEST_SCENARIO: Client errors keep their message so validation feedback still reaches the UI. */

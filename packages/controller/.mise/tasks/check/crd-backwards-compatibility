@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#MISE sources=["helm/crds/*.yaml"]
+#MISE dir="{{vars.repo_root}}"
+#USAGE flag "--baseline <ref>" help="Git ref to compare against (default: latest v* tag)"
+set -euo pipefail
+baseline="${usage_baseline:-$(git tag -l 'v*' --sort=-v:refname | head -1)}"
+if [ -z "$baseline" ]; then
+  echo "crd-compat: no v* tag found for a baseline; run git fetch --tags or pass --baseline" >&2
+  exit 1
+fi
+if ! git rev-parse -q --verify "$baseline^{commit}" >/dev/null; then
+  echo "crd-compat: baseline ref '$baseline' does not resolve to a commit" >&2
+  exit 1
+fi
+crds=helm/crds
+legacy="deploy/helm/platform/crds deploy/helm/platform/files/crds" # chart locations at older baselines
+config=packages/controller/crdify.yaml # downgrades description-only diffs to advisory
+status=0
+# CRDs deliberately retired from the platform. A removal here must ship with
+# an explicit in-cluster cleanup (the retired definition carries
+# helm.sh/resource-policy: keep, so Helm never deletes it itself).
+removed_ok="agent-platform.ai_forks.yaml agent-platform.ai_runs.yaml" # #2987: person-scoped forks removed; runs: dam-run executor removed (local exec shim)
+for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" $legacy); do
+  if [ ! -f "$crds/$(basename "$f")" ]; then
+    case " $removed_ok " in
+      *" $(basename "$f") "*)
+        echo "crd-compat: $f removed deliberately — allowed"
+        continue ;;
+    esac
+    echo "crd-compat: $f shipped in $baseline but was removed" >&2
+    status=1
+  fi
+done
+# Schema-generation bumps are enforced per-PR by check:crd-schema-generation
+# (baseline = origin/main, not a release tag) so a schema change can't slip
+# through against a v* tag that predates the CRDs.
+for f in "$crds"/*.yaml; do
+  base=""
+  for dir in "$crds" $legacy; do
+    if git cat-file -e "$baseline:$dir/$(basename "$f")" 2>/dev/null; then base="$baseline:$dir/$(basename "$f")"; break; fi
+  done
+  if [ -z "$base" ]; then
+    echo "crd-compat: $f is new since $baseline — skipped"
+    continue
+  fi
+  if ! crdify --config "$config" "git://${base%%:*}?path=${base#*:}" "file://$f"; then
+    echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
+    status=1
+  fi
+done
+exit $status

@@ -1,0 +1,1666 @@
+# -- Brand customization — display name, slash-command identifier, and UI
+# theme accent colors. Surfaced to the UI at runtime via `GET /api/brand`
+# (the api-server reads these from BRAND_* env vars set below). The
+# internal codename ("platform") and the K8s annotation domain
+# ("agent-platform.ai/...") are permanent and unrelated to brand; this
+# section is the only knob users see.
+brand:
+  # Display name shown in the PWA manifest, OAuth dynamic client_name,
+  # skill-publish git author, and the Keycloak realm display name (sign-in
+  # heading).
+  name: DAM
+  # Lowercase identifier (DNS/URL-safe). Used for the Slack slash command
+  # (`/<short> login`), GitHub publish branch prefix, and git-author email
+  # local-part.
+  short: dam
+  # Browser tab title of the web app and the Keycloak sign-in pages. Set a
+  # per-environment variant here (e.g. "IBM Research DAM - Staging"). Empty
+  # string falls back to `name`.
+  title: "IBM Research DAM"
+  # Organisation that runs this install. The Public Agent Page uses it to tell
+  # a visitor arriving from Slack that the platform is open to them. Empty
+  # string drops that sentence.
+  vendor: "IBM Research"
+  # UI theme — applied at runtime as CSS custom properties so a brand
+  # change requires no UI rebuild.
+  theme:
+    light:
+      accent: "#0F62FE"
+      accentHover: "#0353E9"
+      accentLight: "#edf5ff"
+    dark:
+      accent: "#4589FF"
+      accentHover: "#78A9FF"
+      accentLight: "#0f1f3a"
+  # Optional SVG override for the brand icon. The api-server serves it at
+  # `/api/brand/icon.svg` and rasterizes on demand for the favicon, PWA
+  # install icons, and apple-touch-icon. Empty string falls back to the
+  # bundled default. Use `helm install --set-file brand.icon=./my-logo.svg`
+  # for the easiest override workflow.
+  icon: ""
+
+# -- Terms of Use shown at the api-server acceptance gate. Both fields are
+# required; the chart refuses to install when either is unset. Bump
+# `terms.version` on every material change to re-prompt every user; the
+# server records `sha256(text)` on each Acceptance row as proof binding.
+terms:
+  # Markdown content rendered at /terms and on the login page. Supply via
+  # `helm install --set-file terms.text=./TERMS.md`.
+  text: ""
+  # Free-form re-prompt trigger (e.g. "2026-05-25", "v1"). Operator
+  # judgment — whitespace edits don't bump this.
+  version: ""
+
+# -- Outbound links surfaced in the UI, changeable per install without a
+# rebuild (the api-server serves them over `links.all`).
+links:
+  # Where "Request more" next to the compute meter points — a chat channel,
+  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
+  # default, which is install-specific and slated for removal — set this.
+  computeRequest: ""
+
+# -- Base domain for the app. UI and API share this host; the ingress
+# splits `/api/*` to the api-server and everything else to the UI. Keycloak
+# lives at `keycloak.{domain}`.
+# Override for production, e.g. "example.com"
+domain: localhost
+# -- Port appended to public URLs (empty for standard 80/443)
+port: "4444"
+# -- URL scheme (http for local dev, https for production)
+scheme: http
+
+# -- Explicit external URLs.
+#
+# `urls.ui` overrides the app host (UI + API). `urls.api` is honored as a
+# back-compat fallback when `urls.ui` is unset. `urls.keycloak` overrides
+# the Keycloak host.
+#
+# Each override must be a complete URL including scheme. The hostname is
+# what the cluster expects in the Host header (used as the rule host when
+# `ingress.enabled: true`); Keycloak uses the full URL as its issuer and as
+# `KC_HOSTNAME`, and the API server uses it for browser-facing redirects.
+#
+# If you keep the bundled Ingress enabled with TLS, remember to align
+# `ingress.tls[].hosts` with the override hostnames — see the note on
+# `ingress.tls` below.
+urls:
+  ui: "" # default: {scheme}://{domain}{:port}
+  api: "" # back-compat fallback for urls.ui; same host
+  keycloak: "" # default: {scheme}://keycloak.{domain}{:port}
+  # Public share host for the artifact library (and a by-link knowledge-base
+  # MCP endpoint kept for external use). Always served from its own origin so
+  # user-generated content never shares the app origin's cookies or tokens;
+  # routed to the api-server, which host-gates it onto the share-host app.
+  # This host is browser-facing only — consumer agents read shared knowledge
+  # bases over the in-cluster harness channel, never by dialing this host, so
+  # it does not need to be resolvable from agent pods.
+  share: "" # default: {scheme}://share.{domain}{:port}
+  # Content host that serves only artifact documents and raw bytes, framed by
+  # the share host. A second origin so artifact code can never act on the
+  # share host (no cookie, no sign-in, no app route there). Routed to the
+  # api-server, which host-gates it onto the content app.
+  content: "" # default: {scheme}://content.{domain}{:port}
+
+# -- Pull secrets for all pods managed by this chart.
+# Agent pods (managed by the controller) also inherit these secrets.
+# Example:
+#   imagePullSecrets:
+#     - name: my-registry-secret
+imagePullSecrets: []
+
+# -- Annotations added to every chart-managed workload (Deployments,
+# StatefulSets and the setup/migration Jobs). Use for cluster-wide policy or
+# tooling that targets workload objects. Per-component `annotations` override
+# these on collision; chart-internal annotations (e.g. Helm hooks) always win.
+commonAnnotations: {}
+
+# -- Annotations added to the pod template of every chart-managed workload.
+# This is what injection operators read — e.g. set
+# `instrumentation.opentelemetry.io/inject-sdk: "true"` here to opt the whole
+# platform into OpenTelemetry auto-instrumentation. Per-component
+# `podAnnotations` override these; chart-internal annotations (config
+# checksums) always win.
+commonPodAnnotations: {}
+
+# -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
+# postgres, redis) AND controller-managed agent / executor pods. Set
+# `enabled: false` to drop all readiness/liveness/startup probes — escape
+# hatch for clusters where the kubelet's probe behavior is causing churn
+# (false-positive restarts, slow rollouts). Plumbed into the controller via
+# `AGENT_PROBES_ENABLED` so newly reconciled pods follow the same setting.
+probes:
+  enabled: true
+
+# -- Istio ambient mesh settings. Istio is a hard prerequisite of
+# this chart — `validate-istio.yaml` fails install if the mesh is missing.
+# `mise run cluster:install` provisions Istio out-of-band (mirroring how
+# cert-manager is treated). There is no `enabled: false` mode; an
+# unauthenticated harness port is not a supported configuration.
+istio:
+  # SPIFFE trust domain. Default for an istioctl ambient install.
+  trustDomain: cluster.local
+  # Name of the waypoint Gateway that fronts the api-server's harness
+  # Service. Istio's mesh-controller synthesises the waypoint Deployment
+  # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
+  waypointName: apiserver-waypoint
+
+# -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
+# agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
+# StatefulSet. Requires KubeVirt in the cluster (dev k3s: cluster:install
+# sets it up when this flag is on; prod: OpenShift Virtualization).
+# Off = vm-backend templates are not rendered and vm agents fail reconcile.
+virtualization:
+  enabled: false
+  # emptyDisk scratch capacity attached to every VM (serial "scratch") for the
+  # guest's docker/k3s image stores. Global knob by design; contents die with
+  # hibernation like the rest of the guest rootfs.
+  scratchGi: 30
+  # virt-launcher pod placement — KVM-capable nodes (e.g.
+  # node-role.kubernetes.io/virtualization on OpenShift). Applied instead of
+  # controller.agent.base scheduling; a template's nodeSelector merges on top.
+  nodeSelector: {}
+  tolerations: []
+
+# -- Target namespace for agent workloads (agents, templates, runs)
+agentNamespace: platform-agents
+
+# -- Whether to create the agent namespace (disable if it already exists or is managed externally)
+createAgentNamespace: true
+
+# -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
+openshift:
+  scc:
+    # Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on
+    # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
+    # init container can run as root; the agent container itself stays at
+    # image USER 65532), with NET_ADMIN + NET_RAW added to
+    # allowedCapabilities. Renders a cluster-scoped SCC + RoleBinding to
+    # all SAs in `agentNamespace`. Default ON — required for
+    # `iptablesInit`, harmless otherwise (OpenShift admission still
+    # prefers more restrictive SCCs when the pod doesn't request the
+    # extra capabilities).
+    anyuidCapNet:
+      enabled: false
+
+# -- Shared local PostgreSQL instance
+# Set enabled: false when using external/cloud DBs for all services.
+postgres:
+  enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image: registry.access.redhat.com/hi/postgresql:18
+
+  # -- Three Postgres login roles: one per service plus a dedicated SUPERUSER
+  # for DBA work. The two app roles are NOSUPERUSER and own only their own
+  # database, so a leaked app credential is bounded to one service's data.
+  # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
+  # holds SELECT on the usage_src_* source passthrough views and grants
+  # nobody anything until an operator adds a member. The api-server
+  # reconciles those grants after every migration run, naming this role, so
+  # the name is fixed rather than configurable.
+  # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
+  # DBA sessions are statement-logged by default. Passwords are
+  # auto-generated on first install if left null.
+  #
+  # `adminUser` is the cluster's bootstrap superuser (Postgres `POSTGRES_USER`
+  # at init). It defaults to `platform` — the name an existing single-role
+  # cluster already bootstrapped with — so an upgrade reuses that superuser
+  # in place rather than renaming it (Postgres forbids renaming the role you
+  # are connected as, and the bootstrap superuser cannot be demoted anyway).
+  #
+  # The role/database layout is applied by the idempotent SQL in
+  # `postgres.yaml` (ConfigMap key `01-roles.sql`), run both on first PGDATA
+  # init and by the post-install/post-upgrade migration Job
+  # (`postgres-migrate-roles.yaml`); the latter converges an existing
+  # single-superuser cluster with no manual SQL.
+  apiserverUser: platform_apiserver
+  apiserverPassword: null
+  keycloakUser: platform_keycloak
+  keycloakPassword: null
+  adminUser: platform
+  adminPassword: null
+
+  storage: 5Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # -- Event logging. Authentication events (connect, disconnect, failed
+  # auth) and admin events (DDL — CREATE/ALTER/DROP, GRANT/REVOKE, ROLE
+  # changes) are surfaced on the pod's stderr so the external log
+  # collector picks them up. The image's default logging-collector +
+  # file output is disabled in favor of plain stderr (kubectl logs).
+  # These are passed to the server as `-c` flags (see postgres.yaml)
+  # because the image's postgresql.conf has no drop-in include dir.
+  #
+  # JSON-format logs aren't used: PG's `jsonlog` destination requires
+  # the file-based logging_collector, which writes to files instead of
+  # stderr. Plain text with a structured prefix is the canonical
+  # Postgres-in-K8s pattern; the external log shipper parses the
+  # prefix.
+  log:
+    # -- Prefix on every log line. Default is a key=value-ish layout:
+    # timestamp, pid, user@db (only on backend processes via %q), client
+    # host, application_name.
+    linePrefix: "%m [%p] %q%u@%d from %h app=%a "
+
+    # -- Authentication events (PG 18 enum). Comma-separated subset of:
+    # receipt, authentication, authorization, setup_durations. Failed
+    # auth is always logged regardless of this setting.
+    connections: "authentication,authorization"
+
+    # -- Log session-close events (with session duration).
+    disconnections: "on"
+
+    # -- Admin-statement audit. `ddl` covers CREATE / ALTER / DROP
+    # including roles and grants. Set to `all` for full query log
+    # (very noisy), `mod` to also catch INSERT/UPDATE/DELETE.
+    statement: "ddl"
+
+# -- Shared Redis instance.
+# Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
+# wake-ups. Persistence uses AOF with `everysec`; the
+# platform tolerates losing recent ephemeral data on restart (Postgres remains
+# the source of truth for anything durable).
+redis:
+  enabled: true
+  # -- Use an external Redis instead of the bundled single-replica one:
+  # set `enabled: false` and point this at it (redis://host:port). Auth, if
+  # any, goes in the URL — the bundled auth Secret is not created when
+  # disabled. Required when disabling: the api-server refuses to boot
+  # without a Redis.
+  externalUrl: ""
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image: registry.access.redhat.com/hi/valkey:9.0
+  port: 6379
+  storage: 1Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# -- Shared SeaweedFS object store (Apache-2.0), single node. Holds
+# artifact-library content; agents upload and browsers download
+# directly, using short-lived links the api-server mints after ownership
+# checks. Disable to use an external store (`apiServer.objectStorage`) or
+# none at all (artifact uploads are then unavailable).
+seaweedfs:
+  enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image: docker.io/chrislusf/seaweedfs:4.39
+  # -- S3 identity of the api-server. Secret key auto-generated on first
+  # install if null, persisted across upgrades in a Secret.
+  accessKeyId: platform
+  secretAccessKey: null
+  storage: 10Gi
+  storageClass: ""
+  # Measured at 283Mi idle on a store holding little content, so the old 128Mi
+  # request under-accounted it by more than half and left it high on the
+  # kubelet's eviction order. The footprint grows with what the library holds.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 320Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
+# chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
+# Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
+clickstack:
+  enabled: false
+
+  # Our own OTLP collector (replaces the subchart's OpAMP/token-gated one): static config,
+  # no auth, gated by the AuthorizationPolicy in templates/clickstack/.
+  collector:
+    annotations: {}
+    podAnnotations: {}
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
+    # Retention for the otel_* tables, matching the ClickStack bundled collector's
+    # default. Only applied when the exporter creates the tables — changing it later
+    # requires ALTER TABLE ... MODIFY TTL by hand.
+    ttl: 720h
+    # The memory_limiter processor refuses OTLP ingest above its soft limit,
+    # which upstream defines as limit_percentage minus spike_limit_percentage
+    # of this limit — 55% with the values in templates/clickstack/collector.yaml.
+    # At 512Mi that put refusal at 281Mi with the collector idling at 387Mi,
+    # which is how it accumulated 99 SIGKILLs. At 1Gi the soft limit is 563Mi.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 448Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+  # --- forwarded to the clickstack subchart ---
+  # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
+  #   hyperdx:2.27.0                 <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+  #   clickhouse-server:25.7-alpine  <- clickhouse/clickhouse-server:25.7-alpine
+  #   clickhouse-keeper:25.7-alpine  <- clickhouse/clickhouse-keeper:25.7-alpine
+  #   busybox:1.37.0                 <- busybox
+  # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
+
+  otel-collector:
+    enabled: false # we run our own collector (above)
+
+  hyperdx:
+    deployment:
+      image:
+        repository: quay.io/dam-agents/hyperdx
+        tag: "2.27.0"
+      waitForMongodb:
+        image: "quay.io/dam-agents/busybox:1.37.0"
+
+  clickhouse:
+    # Without an explicit image the operator injects its built-in default
+    # (docker.io/clickhouse/clickhouse-keeper:latest) — pin to the mirror and
+    # match the server tag. Merges over the subchart's keeper.spec defaults.
+    keeper:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-keeper
+            tag: "25.7-alpine"
+    cluster:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-server
+            tag: "25.7-alpine"
+        dataVolumeClaimSpec:
+          resources:
+            requests:
+              storage: 20Gi
+
+# -- Keycloak (OIDC identity provider)
+keycloak:
+  enabled: true
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  # The Keycloak image is a first-party build that bakes the
+  # Keycloakify theme JAR on top of upstream Keycloak. The upstream
+  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  # In published charts CI replaces the empty tag with the image's content
+  # tag (the commit that last touched its inputs — see cd.yml `publish`),
+  # so a release that doesn't change the image doesn't roll the pod.
+  # Empty falls back to .Chart.AppVersion.
+  image:
+    repository: quay.io/dam-agents/keycloak
+    tag: "" # @ci-pin keycloak-image-tag
+    pullPolicy: IfNotPresent
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
+  port: 8080
+
+  # -- Additional Keycloak server features. The chart always enables a required
+  # base — `token-exchange` (the API server depends on it) and
+  # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
+  # single `--features=` arg (a second `--features` would override, not merge).
+  # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  extraFeatures: []
+
+  # -- Admin credentials (for Keycloak admin console)
+  admin:
+    user: admin
+    # password is auto-generated if not set
+    password: null
+
+  # -- Realm and OIDC client configuration
+  realm: platform
+  clientId: platform-ui
+  apiAudience: platform-api
+  # -- Realm role required to access the API. Users without this role get 403.
+  # Leave empty to allow all authenticated users.
+  requiredRole: ""
+  # -- Realm role granting read access to the inspector endpoints
+  # (`GET /api/usage`, `GET /api/usage/report`). The chart auto-creates this role
+  # plus an `inspectors` group mapped to it; grant access by adding users to
+  # the group via the Keycloak admin UI. For bulk assignment use `kcadm.sh`
+  # or the Keycloak admin REST API; for SSO-federated installs, map your
+  # upstream group to the `inspectors` group. Set to empty string to disable
+  # usage-data access entirely (the endpoint will not be mounted).
+  inspectorRole: "platform-inspector"
+  # -- Confidential client for API server
+  apiClientId: platform-api
+  apiClientSecret: ""
+  # -- Public client for the dam CLI (Device Authorization Grant, RFC 8628).
+  # Surfaced to the CLI via `/api/auth/config` as `cliClientId`.
+  cliClientId: platform-cli
+  # -- Public client for the artifact share host's viewer sign-in
+  # (authorization code + PKCE). Its only redirect is
+  # `{urls.share}/auth/callback`; post-logout returns to
+  # `{urls.share}/auth/login`. No api audience mapper: its tokens are
+  # rejected by the api-server on purpose.
+  shareClientId: platform-share
+
+  # -- Additional redirect URIs and web origins to register on the public
+  # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite
+  # dev port; use these to register extra dev hosts (e.g. `127.0.0.1:4444`,
+  # tunnel URLs) without editing the realm template. Each entry is passed
+  # through verbatim — wildcards (`/*`) are supported by Keycloak.
+  extraRedirectUris: []
+  extraWebOrigins: []
+
+  # -- Login page presentation. With `allowPassword: false` the page shows
+  # only the identity-provider CTA(s) — for deployments (e.g. w3id) where
+  # SSO is the expected sign-in path; it falls back to the password form
+  # when no identity provider is configured on the realm. The default keeps
+  # the username/password form, with any identity-provider buttons offered
+  # below it. `requestAccessUrl` renders a "Request access" link on the
+  # login page when set.
+  login:
+    allowPassword: true
+    requestAccessUrl: ""
+
+  # -- Event logging. Login + admin events are emitted to stdout via the
+  # built-in `jboss-logging` event listener so they ride the cluster log
+  # pipeline to whatever external log service is collecting pod logs.
+  #
+  # Login events are NOT persisted to the Keycloak DB (eventsEnabled: false
+  # in the realm import) — pod logs are the source of truth. Admin-event
+  # metadata IS persisted (low volume), but request-body detail is NOT
+  # (adminEventsDetailsEnabled: false in the realm import): those bodies can
+  # carry plaintext credentials on user-create/update and Keycloak keeps
+  # them indefinitely (no built-in expiration), while the log pipeline is
+  # the audit source of truth regardless. Set `adminEventsEnabled: false`
+  # in the realm import to stop admin events firing on the listener too.
+  #
+  # The listener emits successes at `debug` and errors at `warn` by
+  # default. We raise success-level to `info` so successful logins appear
+  # under the default root log level without touching log categories.
+  # See https://www.keycloak.org/server/all-provider-config (search for
+  # `spi-events-listener-jboss-logging`).
+  events:
+    # -- Log level for successful auth / admin events.
+    successLevel: "info"
+    # -- Log level for error events (LOGIN_ERROR, etc.).
+    errorLevel: "warn"
+
+  # -- Keycloak logging output.
+  log:
+    # -- Console output format. Only `default` and `json` are valid;
+    # Keycloak rejects any other value at startup. `default` is
+    # human-readable plain text; `json` is structured one-record-per-line,
+    # friendlier for external log aggregators (Loki / ELK / Datadog).
+    # Local dev overrides this to `default` in `values-local.yaml` for
+    # readable `kubectl logs`.
+    consoleOutput: "json"
+
+  # -- Extra environment variables appended verbatim to the Keycloak container.
+  # The chart does not model Keycloak's still-evolving OpenTelemetry options, so
+  # wire observability here. All signals push over OTLP to a collector — traces,
+  # metrics, and logs share one endpoint and one auth header:
+  #   extraEnv:
+  #     - name: KC_TRACING_ENABLED
+  #       value: "true"
+  #     - name: KC_TRACING_ENDPOINT
+  #       value: "http://otel-collector:4317"
+  #     - name: KC_TELEMETRY_HEADER_AUTHORIZATION  # token from a Secret, never inline
+  #       valueFrom:
+  #         secretKeyRef: { name: otel-creds, key: authorization }
+  # Each entry is a raw corev1.EnvVar (name/value or name/valueFrom). Appended
+  # after the chart's own env, so an entry reusing a built-in KC_ name overrides
+  # it (Kubernetes env is last-wins).
+  extraEnv: []
+
+  # -- Test user bootstrapped via realm import.
+  # DISABLED by default — production deployments must not ship a known credential.
+  # Local dev and e2e tests (via values-local.yaml) enable it.
+  testUser:
+    enabled: false
+    username: null
+    password: null
+
+  # -- Database connection (empty host = use shared local postgres)
+  db:
+    host: ""
+    port: 5432
+    user: platform_keycloak
+    password: null
+    database: keycloak
+    # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
+    # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
+    sslmode: null
+    # CA certificate (PEM) used to verify the external DB's TLS certificate.
+    # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
+    caCert: ""
+
+  # Idles at 623Mi, above the old 512Mi request, which put it high on the
+  # kubelet's eviction order. No explicit heap size is set, so the JVM sizes
+  # its heap as a percentage of the limit and non-heap has to fit in what is
+  # left — at a 1Gi limit a filled heap leaves too little for metaspace,
+  # threads and code cache.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 768Mi
+    limits:
+      cpu: "1"
+      memory: 1536Mi
+
+# -- Ingress (hostnames derived from `domain` and `urls` values above)
+#
+# Set `enabled: false` to skip rendering the bundled Ingress entirely — useful
+# when you're routing traffic via an external Ingress controller, Gateway API,
+# service mesh, or LoadBalancer that you manage outside the chart. In that
+# mode you should populate the `urls:` block above so the chart's internal
+# config (Keycloak issuer, OAuth redirect URIs, NEXTAUTH_URL, KC_HOSTNAME,
+# API server browser-facing URLs) matches the hostnames your external router
+# actually serves.
+#
+# When `enabled: true`, the Ingress generates one rule per service:
+#   - If a `urls.{service}` override is set, the override hostname is routed.
+#   - Otherwise `{prefix}.{domain}` (and any `aliasDomains`) are routed.
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  # -- Extra alias domains that mirror convention-based subdomain routes
+  # (hostname only, no port). Ignored for any service with an explicit
+  # `urls.{service}` override.
+  aliasDomains: ["localtest.me"]
+  # -- When true, adds a host-less Ingress rule for the app (UI + `/api/*`)
+  # that matches *any* Host header — including IP literals (`127.0.0.1`)
+  # which the K8s Ingress validator otherwise rejects in `host:` fields.
+  # Useful for local dev where you want to reach the cluster by IP or by
+  # an unplanned alias. Off by default — convention-based hostnames cover
+  # production, and a catch-all weakens host-based isolation.
+  catchAllAppHost: false
+  # -- TLS rules passed through verbatim to `Ingress.spec.tls`. The chart does
+  # NOT auto-derive `hosts` from rules — when you set any `urls.{service}`
+  # override, you must also list those hostnames here (or reference them via
+  # cert-manager annotations on the Ingress) so the certificate covers what
+  # the Ingress actually serves. Mismatches will not be caught at lint time.
+  tls: []
+  # For production with TLS (convention-based hostnames):
+  #   aliasDomains: []
+  #   tls:
+  #     - secretName: platform-tls
+  #       hosts: ["example.com", "keycloak.example.com", "share.example.com", "content.example.com"]
+  #
+  # For production with TLS + URL overrides — list the override hostnames:
+  #   aliasDomains: []
+  #   tls:
+  #     - secretName: platform-tls
+  #       hosts: ["app.example.com", "api.example.com", "auth.example.com", "share.example.com", "content.example.com"]
+
+# -- UI (nginx serving static SPA, reverse-proxies /api to API server)
+ui:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image:
+    repository: quay.io/dam-agents/ui
+    tag: "" # defaults to appVersion
+    pullPolicy: IfNotPresent
+  port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -- API Server
+apiServer:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image:
+    repository: quay.io/dam-agents/api-server
+    tag: ""
+    pullPolicy: IfNotPresent
+  port: 4000
+  harnessServerPort: 4001
+  # -- api-server replica count. Cross-replica coordination runs through
+  # Redis/Postgres: periodic jobs, session presence, OAuth handoff state and
+  # refresh backoff, terminal supersede, and a Redis lease that elects the one
+  # replica running the Slack/Telegram channel workers (their transports admit
+  # a single consumer per install; other replicas marshal outbound channel
+  # calls to the holder). The per-agent MCP endpoint is stateless, so any
+  # replica serves any harness call.
+  replicas: 1
+  # -- Minimum severity emitted by the structured logger
+  # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at
+  # common levels (denials → warn, allowed/successful actions → info), so the
+  # default `info` keeps the full trail on; raise to `warn` to keep only
+  # denials/failures, or `error` to silence the trail. There is no separate
+  # audit on/off switch — visibility is governed here as usual.
+  logLevel: info
+  # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate.
+  # Single endpoint: Envoy's HTTP filter (L7,
+  # TLS-terminated chains) and network filter (L4, catch-all chain) both
+  # call this port; the handler reads whichever attributes are populated.
+  # Cluster-internal only; never routed via ingress.
+  extAuthzPort: 4002
+  # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
+  slackBotToken: ""
+  # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
+  slackAppToken: ""
+  # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
+  # Leave empty to disable Telegram. Chat admins connect a chat to an agent
+  # by sending the bind command in the chat and picking the agent in the web
+  # UI, or via a one-time connect link created in the UI.
+  telegramBotToken: ""
+  # -- The bot's @handle without the @ (e.g. "dam_ibm_bot"). Used to build
+  # t.me connect links and for mention detection; when empty the api-server
+  # discovers it at startup via the Bot API.
+  telegramBotName: ""
+  # -- Activity tracking saga: when enabled, the api-server captures user
+  # logins and channel turns into the `activity_events` table for the
+  # usage reporting endpoints. Disable to stop all writes (the read
+  # endpoints are independently gated by `keycloak.inspectorRole`).
+  activityTracking:
+    enabled: true
+    # -- HMAC key used to pseudonymize Keycloak `sub` values written to
+    # `activity_events`, `actor_roles`, and `instances.owner_sub` (GDPR
+    # Art. 32 risk reduction). Leave empty to have the chart generate and
+    # persist one in a Secret; rotating breaks every existing row, so it
+    # must remain stable. Provide your own (≥32 chars) for cross-cluster
+    # consistency or compliance audit trails.
+    hmacKey: ""
+  # -- Agent case-study editions (submitted by the agent-case-study skill).
+  caseStudies:
+    # -- Days an edition is kept past the end of the week it covers before
+    # the retention sweep deletes it. Editions are weekly, so one agent
+    # produces roughly 52 rows a year.
+    # Pending final retention rules from the data-collection legal review
+    # (#3262).
+    retentionDays: 365
+    # -- Days a withdrawn (tombstoned) edition is kept before the same sweep
+    # purges it for good. Shorter than retentionDays: withdrawal is an explicit
+    # owner action, and the grace window exists only to make it recoverable.
+    # Retention stays the outer bound — a withdrawal near the retention
+    # horizon is purged by age rather than kept the full grace.
+    tombstoneGraceDays: 30
+  # -- API keys for headless / CI use.
+  apiKeys:
+    # -- HMAC pepper for at-rest API-key token digests. Leave empty to have
+    # the chart generate and persist one in a Secret; rotating it invalidates
+    # every existing API key, so it must remain stable. Provide your own
+    # (≥32 chars) for cross-cluster consistency.
+    hmacKey: ""
+  # -- Knowledge base sharing: caps for the published read-only snapshots.
+  # Consumers read them over the in-cluster harness route
+  # (/api/agents/:id/kb); the same serving app is also reachable on the share
+  # host as a by-link endpoint. Needs object storage to be configured.
+  kbShares:
+    # -- Largest single text file a publish includes (bytes).
+    perFileMaxBytes: 2097152
+    # -- Total text content cap per published snapshot (bytes).
+    totalMaxBytes: 209715200
+    # -- Most files a publish includes before it fails loudly.
+    maxFiles: 5000
+    # -- Hard deadline for one consumer grep call; the worker thread running
+    # the consumer-supplied regex is terminated when it lapses (ms).
+    grepDeadlineMs: 2000
+    # -- Most shared-knowledge-base connections one account may hold.
+    maxConnectionsPerOwner: 20
+  # -- Default hold window (seconds) for HITL ext_authz approvals. The held
+  # call resolves on user verdict or denies on timeout; the durable
+  # pending_approvals row outlives the hold and is consumed by the agent's
+  # next retry. Default 30 minutes. Per-CLI read
+  # timeouts are an external ceiling.
+  approvalHoldSeconds: 1800
+
+  # -- Absolute per-turn ceiling (seconds) for the ACP sendPrompt path
+  # (Slack/Telegram). Turn liveness is a ws ping/pong signal, so a
+  # silent-but-alive turn stays connected; this only caps a wedged agent.
+  # Must be >= approvalHoldSeconds so a turn blocked on an egress approval
+  # outlives the hold. Default 1 hour.
+  acpTurnCeilingSeconds: 3600
+
+  # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
+  # the api-server proxy boundary (rejects oversized Content-Length AND
+  # destroys the upstream pipe when streamed bytes pass the cap). The
+  # default 5 GiB is generous enough for a `.git/`-bearing project import
+  # while sitting below the controller-default agent PVC of 10 GiB.
+  # **Lower this on clusters with smaller per-agent PVCs** — e.g. the
+  # bundled `claude-code` template ships with `homeMountSize: 5Gi`, so a
+  # 5 GiB import could fill the disk.
+  maxImportBundleBytes: 5368709120
+
+  # -- Hard ceiling (bytes) for a single stored artifact object.
+  # null = 50 MiB default.
+  maxArtifactBytes: null
+
+  # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
+  # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
+  # if the CLI is behind the current server version). Set this to retire a
+  # known-broken older client.
+  minClientCliVersion: ""
+
+  # -- Ingress NetworkPolicy for the api-server pod.
+  # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
+  # pods carrying `agent-platform.ai/agent` (agent + executor pods) in agentNamespace.
+  # The HTTP port stays open so the UI / ingress controller can reach it;
+  # JWT auth at the application layer protects that one. Disable in
+  # environments without NetworkPolicy support (e.g. some bare clusters).
+  networkPolicy:
+    enabled: true
+
+  # -- Hosts seeded into the `trusted` egress preset.
+  # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
+  # row when an agent is created with `egressPreset: trusted`. Values are
+  # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
+  # matches are exact; a `pkg.go.dev` rule does not cover `proxy.golang.org`.
+  #
+  # Curated to mirror Anthropic's published default-allowed-domain list for
+  # Claude Code so harnesses with "claude --trust-defaults" behavior keep
+  # working without per-host inbox prompts:
+  #   https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains
+  #
+  # Operators can append, remove, or replace entries here; rules are seeded
+  # once at agent-create time, so editing this list does not retroactively
+  # touch existing agents (they keep whatever was seeded for them).
+  trustedHosts:
+    # Anthropic
+    - api.anthropic.com
+    - statsig.anthropic.com
+    - claude.ai
+    # NPM / Yarn / pnpm
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    # Python
+    - pypi.org
+    - files.pythonhosted.org
+    # GitHub
+    - github.com
+    - api.github.com
+    - codeload.github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    - release-assets.githubusercontent.com
+    # Container registries
+    - quay.io
+    - registry-1.docker.io
+    # Go modules
+    - proxy.golang.org
+    - sum.golang.org
+    - go.dev
+    # Rust
+    - crates.io
+    - static.crates.io
+    - sh.rustup.rs
+    # CDNs commonly used by toolchains
+    - cdn.jsdelivr.net
+    - unpkg.com
+    # Mise (toolchain manager)
+    - mise.jdx.dev
+    - cdn.mise.run
+    # Bob Shell (IBM)
+    - api.us-east.bob.ibm.com
+    # arXiv API
+    - export.arxiv.org
+
+  # -- Optional platform-wide defaults for OAuth app credentials. When a field
+  # is set the connect form for the matching app collapses the corresponding
+  # input behind an "override" toggle — every user shares the admin-registered
+  # app by default, but can still substitute their own credentials when needed.
+  # Leave empty to require each user to supply their own client id / secret.
+  #
+  # `appSlug` is only relevant when the registered app is a GitHub App (not
+  # an OAuth App). The slug is the URL-friendly identifier from the app's
+  # GitHub URL (`https://github.com/apps/{slug}`). When set, the platform
+  # offers users a one-click installation step after authorizing the app —
+  # GitHub Apps see no private data without an installation, so without this
+  # the user would only have access to public repos. Leave empty for OAuth
+  # Apps.
+  oauthAppDefaults:
+    github:
+      clientId: ""
+      clientSecret: ""
+      appSlug: ""
+    githubEnterprise:
+      host: ""
+      clientId: ""
+      clientSecret: ""
+      appSlug: ""
+    # The Slack app must be registered out of band (Slack offers no dynamic
+    # client registration) with the platform OAuth callback as a redirect URL
+    # and the Slack MCP user-token scopes enabled.
+    slack:
+      clientId: ""
+      clientSecret: ""
+
+  # -- Database connection (empty host = use shared local postgres)
+  db:
+    host: ""
+    port: 5432
+    user: platform_apiserver
+    password: null
+    database: platform
+    # -- Connection-pool size, per replica. One pool serves both request
+    # handlers and the runtime-delivery worker; delivery jobs hold a
+    # connection only for their short queries, never across the call to the
+    # agent, so this sits far below `runtimeDelivery.concurrency`. Raise the
+    # server's `max_connections` (Postgres defaults to 100, shared with
+    # Keycloak) before scaling `replicas` past 100 / poolMax.
+    poolMax: 32
+    # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
+    # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
+    sslmode: null
+    # CA certificate (PEM) used to verify the external DB's TLS certificate.
+    # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
+    caCert: ""
+  # -- Runtime-state delivery to agent pods.
+  runtimeDelivery:
+    # -- Concurrent deliveries per replica. A job parked on a slow agent holds
+    # a worker slot and nothing else, so this is sized to exceed the agents
+    # that can be mid-delivery at once: no agent's delivery waits on another's
+    # for a slot. Lower it only to roll back that guarantee.
+    concurrency: 256
+
+  # -- Object-store connection (empty endpoint = use shared local seaweedfs)
+  objectStorage:
+    endpoint: ""
+    # -- Endpoint as agent pods dial it (upload links are signed against it;
+    # plain-HTTP values need an explicit port). Empty derives it: the shared
+    # store's cluster-DNS FQDN, or `endpoint`. Only for unusual topologies.
+    agentEndpoint: ""
+    # -- Browser-reachable endpoint for direct download links. Empty relays
+    # downloads through the api-server (buffered — pair a raised
+    # maxArtifactBytes with this). Usually `endpoint` for external stores;
+    # the shared store would need its S3 port exposed via ingress.
+    publicEndpoint: ""
+    region: "us-east-1"
+    # -- Created by the api-server at startup when missing (pre-create it
+    # to run with credentials lacking CreateBucket).
+    bucket: "platform-artifacts"
+    # -- Static credentials for an external endpoint — both set or both
+    # empty (empty = AWS SDK default provider chain, e.g. IRSA). The shared
+    # local store uses its own chart-generated credentials.
+    accessKeyId: ""
+    secretAccessKey: null
+    # -- Path-style addressing, needed by SeaweedFS and most self-hosted
+    # stores. Set false for AWS S3.
+    forcePathStyle: true
+  # Every session stream, agent status poll and driver request funnels through
+  # this one pod, so it is sized as a control plane and not as a chat backend.
+  # Half a core let the event loop miss its health probe under load, and the
+  # kubelet restart took every in-flight request with it.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+# -- Controller (Go reconciler + scheduler)
+controller:
+  # -- Extra annotations for the controller Deployment object / its pod
+  # template (merged over commonAnnotations / commonPodAnnotations). These
+  # apply to the controller pod itself, not the agent pods it launches (those
+  # have their own knobs under controller.agent).
+  annotations: {}
+  podAnnotations: {}
+  image:
+    repository: quay.io/dam-agents/controller
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # -- slog level for the controller: debug | info | warn | error.
+  logLevel: info
+
+  # -- Agent pod configuration. Three layers, applied at reconcile time:
+  #   1. `base`             — chart-only platform policy, applied verbatim
+  #                           to every agent + executor pod.
+  #   2. `templateDefaults` — chart-wide fallbacks for fields a template
+  #                           can override (template wins when set).
+  #   3. agentTemplates.*   — per-template values (further down).
+  # Use the literal string `$HOME` in mount paths; the chart substitutes
+  # it at render time with the fixed agent home (/home/agent).
+  agent:
+    base:
+      # Cluster details (immutable per-agent)
+      imagePullSecrets: [] # must exist in agentNamespace
+      # storageClass for workspace volumes; empty = cluster default. Any
+      # ordinary RWO-capable class works — workspace volumes are always
+      # ReadWriteOnce (#2988), the agent pod is the volume's only writer.
+      # (accessMode is retired: a value still set here is ignored with a
+      # startup warning.)
+      storageClass: ""
+
+      # Lifecycle
+      idleTimeout: "1h" # hibernate idle agents; "0s" disables
+      terminationGracePeriod: 5 # gateway pods have a hardcoded drain
+
+      # Pod metadata + scheduling
+      extraLabels: {}
+      extraAnnotations: {}
+      nodeSelector: {}
+      # If a GPU node is tainted, add a matching toleration here (applies to
+      # every agent pod, but only the GPU pod requests nvidia.com/gpu).
+      tolerations: []
+      affinity: {}
+      topologySpreadConstraints: []
+      priorityClassName: ""
+      runtimeClassName: "" # e.g. "kata" for sandboxed runtimes
+
+      # Probes (each sub-field overrides the controller's built-in probe).
+      # Gated by top-level `probes.enabled`.
+      probes: {}
+
+      # ━━━ SECURITY DEFAULTS — DO NOT CHANGE WITHOUT REVIEW ━━━
+      # These ship the cluster-enforced sandbox boundary the platform relies on.
+      # Relaxing them gives the agent container privileges that bypass the
+      # paired-pod credential split and the L7 ext_authz gate.
+      # Agent ConfigMaps cannot set these — chart-only by design.
+      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      podSecurityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        # fsGroup makes a freshly provisioned block volume writable to the
+        # agent: the kubelet chowns the volume root to this group and marks
+        # it setgid at mount -- the standard mechanism for non-root pods on
+        # RWO storage (file/NFS classes and hostPath ignore it). Without it
+        # a new agent's init dies on a root-owned volume root.
+        # OnRootMismatch confines that to the FIRST mount: a volume whose
+        # root already matches is left entirely alone, so neither a large
+        # workspace on wake nor a freshly MIGRATED volume (whose root the
+        # copy Job shapes to match, and whose interior is verified
+        # byte-exact) is ever rewritten. On OpenShift the agents' SCC must
+        # permit fsGroup 65532.
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      containerSecurityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+
+      # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
+      # Two mutually-exclusive layers (the chart validates). Both ride
+      # on top of HTTPS_PROXY (IP-direct), the per-pair NetworkPolicy,
+      # and the namespace deny-all baseline.
+      #
+      #   - iptablesInit: privileged init container, plain OCI runtime.
+      #     Requires netfilter modules in the guest.
+      #
+      #   - npGateInit: unprivileged init container, works on guests
+      #     without netfilter (Kata/CoCo on OpenShift Sandboxed Containers).
+      iptablesInit:
+        enabled: true
+        # SIG Release distroless-iptables — same image kube-proxy uses.
+        # Ships sh + iptables-wrapper; pinned by tag.
+        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+
+      # -- Userspace init container that blocks the agent's main
+      # container until the egress NetworkPolicy is verifiably enforced.
+      # Runs a small shell+curl probe; no caps, works against any guest kernel.
+      npGateInit:
+        enabled: false
+        # Hardened curl image for the probe. The probe is a `sh` loop, so it
+        # needs a shell — use the `-builder` variant (the distroless curl image
+        # has no shell). Any image works as long as it provides /bin/sh + curl.
+        image: registry.access.redhat.com/hi/curl:8.20-builder
+        # Hard deadline before the init container fails the pod. OVN-K
+        # typically converges in well under a second; 30s is generous
+        # for cold node churn / controller restart scenarios.
+        timeoutSeconds: 30
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    templateDefaults:
+      # (agentHome is retired: the agent home is fixed at /home/agent; a value
+      # still set here is ignored with a startup warning.)
+
+      # Left unset so Kubernetes applies its native, tag-based pull policy:
+      # `Always` for a mutable `:latest` (so a repushed tag is actually
+      # re-pulled, not served stale from the node cache) and `IfNotPresent`
+      # for the immutable sha/digest tags the harness images use. Hardcoding a
+      # value here forces it for ALL tags and silently strands `:latest` agents
+      # on a cached image. A template or agent can still set its own override.
+      imagePullPolicy: ""
+      storageSize: "10Gi"
+      # Default agent Size when neither the user's slider nor the template
+      # chooses one. Limits are the user-facing concept (#1900): the Budget
+      # bounds Σ limits of a user's running agents, so limits ARE the
+      # agent's "power". Requests are derived at render from
+      # `controller.requestsFromLimits` below; setting `requests` here (or in
+      # a template) overrides the derivation — an operator escape hatch, not
+      # a user concept.
+      #
+      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
+      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
+      # an existing sandbox — NEW sandboxes get it directly, existing ones are
+      # backfilled at the identical `legacyAgentSize` below. One thing still
+      # changed from the pre-Sizes chart: the derived default CPU request is
+      # 500m (limit × 0.5) where it used to be an explicit 250m, so a packed
+      # cluster fits fewer default-size agents. Tune
+      # `requestsFromLimits.fraction` if density matters more than burst
+      # headroom.
+      resources:
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+      mounts:
+        - path: $HOME
+          persist: true
+        - path: /tmp
+          persist: false
+      # No default env. `PORT` is baked into agent-runtime (defaults to 8080).
+      # Platform-injected envs (HOME, HTTPS_PROXY, API_SERVER_URL, etc.) are
+      # set unconditionally by the controller.
+      #
+      # `QUEUE_PARK_MS` is settable here: how long a session's queued prompts
+      # wait for a client to come back before they are recorded as undelivered
+      # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
+      # spec need not spend the full window in a real wait.
+      #
+      # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
+      # reaper: at the threshold fraction of the pod's memory limit (default
+      # 0.93) it SIGKILLs the largest tool process spawned under the harness,
+      # so the harness survives instead of the whole container being
+      # OOM-killed. Set `MEM_REAPER=off` to disable.
+      env: []
+      skillSources: []
+
+    # -- Size the controller materializes into any Agent spec that lacks a
+    # limits dimension (#1900): fill-if-absent on reconcile, never touching
+    # a set value — this is what makes `spec.resources.limits` effectively
+    # required without schema-level enforcement. Defaults to the limits
+    # pre-Sizes agents were actually running with under the old chart
+    # defaults (1 CPU / 2Gi), so an upgrade never shrinks an existing
+    # sandbox out from under its workload — a workload that used 1–2Gi
+    # would otherwise OOM on its next wake. Operators who overrode the old
+    # `templateDefaults.resources.limits` should mirror that override here
+    # before upgrading.
+    legacyAgentSize:
+      cpu: "1"
+      memory: "2Gi"
+
+  # -- Per-user compute Ceiling defaults (#1900): the maximum CPU and memory
+  # one user's running agents can use concurrently, as the sum of their Sizes
+  # (`spec.resources.limits`, which hard-cap usage; the uniform per-agent
+  # gateway overhead is deliberately not counted — price it into these
+  # defaults). Enforced by the controller at the 0→1 scale-up; a user at the
+  # ceiling must pause, stop, or shrink a running sandbox before starting
+  # another. Raise (or lower) per user with a UserBudget CR named
+  # `budget-<keycloak-sub>` in the agent namespace.
+  userBudgets:
+    defaultCpu: "8"
+    defaultMemory: "16Gi"
+
+  # -- How pod requests are derived from an agent's limits (#1900). Requests
+  # are scheduling internals, never a user concept: the scheduler packs on
+  # `limit × fraction` (a deterministic 1/fraction overcommit), the floors
+  # keep tiny agents schedulable and fairly weighted under contention. A
+  # template that sets `resources.requests` explicitly bypasses derivation.
+  requestsFromLimits:
+    fraction: "0.5"
+    minCpu: "100m"
+    minMemory: "128Mi"
+
+  # -- Warm PVC pool (#692). A background buffer of pre-provisioned,
+  # already-Bound spare workspace volumes that a newly created agent claims
+  # instantly, instead of waiting tens of seconds to minutes for dynamic
+  # provisioning on first start. Refills in the background. Disabled by default;
+  # when off the controller behaves exactly as before.
+  warmPool:
+    enabled: false
+    # -- StorageClass for spare PVCs. MUST be an Immediate-binding class
+    # (volumeBindingMode: Immediate) so a spare provisions the instant it is
+    # created and sits ready — a WaitForFirstConsumer class (most clusters'
+    # default) will NOT pre-warm, since a spare would sit Pending until
+    # mounted. Point this at an Immediate RWO-capable class.
+    storageClass: ""
+    # -- How often the manager reconciles inventory toward target.
+    replenishInterval: "30s"
+    # -- How long a spare may sit provisioning before it's treated as stuck and
+    # reclaimed. Must exceed the worst-case healthy provisioning time on your
+    # storage, or a slow-but-healthy spare gets reaped and recreated in a loop.
+    maxProvisioningTime: "30m"
+    # -- Per-size buffers. Each entry is an independent pool: keep `target`
+    # ready spares of `size`. An agent claims from the pool matching its
+    # effective workspace size; sizes with no pool fall back to dynamic
+    # provisioning. Size the pools to your templates' storageSize values.
+    sizes: []
+    #  - size: "10Gi"
+    #    target: 3
+    #  - size: "5Gi"
+    #    target: 2
+
+  # -- One-time workspace-volume migration onto ordinary single-writer storage
+  # (#2988). A workspace is migrated when it is still ReadWriteMany, OR when it
+  # sits on a storage class other than `targetStorageClass` below — the second
+  # trigger is what moves a volume that was flipped to ReadWriteOnce but left
+  # on the shared filesystem. The controller forces the agent
+  # down, copies the volume onto a fresh ReadWriteOnce PVC in a Job
+  # (content- and metadata-verified), re-points the StatefulSet, deletes the
+  # old volume, and restores the agent's prior run state. Interrupt-safe and
+  # resumable; a no-op once no RWX workspace volume remains. Keep the old
+  # storage backend (e.g. nfsProvisioner, or your managed shared filesystem)
+  # available until the controller stops logging migrations, then decommission
+  # it.
+  #
+  # Enabled by default: the fleet drains itself on upgrade with no owner
+  # action, which is the point. Turning it off is safe at any point and is the
+  # escape hatch if an install's storage semantics (root squash, foreign file
+  # ownership, an unexpected class) stall the copy — a disabled manager
+  # releases every agent it had gated, bins the half-copied targets, and
+  # leaves each agent on the volume it started from. Watch the controller log
+  # through the first drain; `concurrency: 1` makes that easy to follow.
+  storageMigration:
+    enabled: false
+    # -- Storage class migrated workspaces land on: the DESTINATION of the
+    # migration. Empty (default) = the cluster's default class, i.e. ordinary
+    # storage, which is the point of the exercise.
+    #
+    # Deliberately NOT `controller.agent.base.storageClass`: on an install
+    # that has not migrated yet, that field still names the shared filesystem
+    # being drained, so inheriting it would force-restart every agent and copy
+    # every byte only to arrive back on NFS with a different access mode. Set
+    # this to the block class agents should end on, or leave it empty for the
+    # cluster default — and fix `agent.base.storageClass` (and
+    # `warmPool.storageClass`) too, or newly-created agents keep landing on
+    # the old backend.
+    #
+    # An Agent that pins its own storage class (`spec.storageClass` on the
+    # Agent CR) migrates onto — and stays on — its pin instead: pinning the
+    # class a workspace already sits on exempts that agent from the drain.
+    targetStorageClass: ""
+    # -- Permit a migration whose target class is the class the workspace is
+    # already on. Refused by default: it changes the access mode and nothing
+    # else, at the cost of a forced restart and a full copy per agent.
+    allowSameStorageClass: false
+    # -- Floor for a migrated volume's size; empty keeps the source's request.
+    # Set this when the target class prices IOPS PER GIGABYTE (IBM's block
+    # tiers do): a faithfully-sized 1Gi volume then inherits a 1Gi share of
+    # IOPS, and a copy that is bound by per-file operations crawls. Such
+    # classes usually have a minimum volume size anyway, which a smaller
+    # request is silently rounded up to. "10Gi" suits IBM VPC block.
+    minTargetSize: ""
+    # -- How many agents migrate at once. Each migration walks its source
+    # once and reads it twice (copy + checksum), so this cap is the trade
+    # between fleet drain time and pressure on the shared filesystem being
+    # drained — lower it if the filer struggles. Duration is driven by FILE
+    # COUNT, not bytes: every entry is a round-trip and, on an IOPS-capped
+    # class, an IOP. The copy Job logs `phase:` lines with elapsed seconds so
+    # a slow drain can be attributed rather than guessed at.
+    concurrency: 10
+    # -- Reconcile pass interval.
+    interval: "30s"
+    # -- Deprecated, ignored: the copy preserves ownership exactly (the
+    # writer side runs privileged on the target), so no remap consent is
+    # needed. Kept so existing values files keep parsing.
+    allowOwnershipRemap: false
+    # -- Image for the copy Job. Needs bash, GNU tar, GNU coreutils
+    # (find -printf, md5sum) and util-linux (setpriv) — the stock
+    # debian-slim default has all of them.
+    #
+    # The Job runs AS ROOT with split identity inside: every source read is
+    # dropped to the agent uid via setpriv (a root-squashing source share
+    # never honors uid 0), while the target side uses root to own the fresh
+    # volume root, restore exact ownership, and wipe retry residue. On
+    # OpenShift this requires binding an SCC that permits uid 0 (e.g.
+    # anyuid) to the `platform-migration` ServiceAccount in the agents
+    # namespace — an ops-side grant, out of band like all cluster-scoped
+    # security objects:
+    #   oc adm policy add-scc-to-user anyuid -z platform-migration -n <agents-ns>
+    # Without it, the copy pod is rejected at admission, loudly, and the
+    # gated agent waits. The Job never mounts a token, joins no mesh, and
+    # deliberately does not inherit the agents' runtimeClassName (Kata
+    # virtiofs refuses guest chown regardless of uid).
+    jobImage: mirror.gcr.io/library/debian:stable-slim
+  replicas: 1
+  # -- Image for the Envoy credential-injector sidecar.
+  # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
+  # pull-through cache, higher anonymous rate limits) — byte-identical to
+  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
+  # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
+  envoyPort: 10000
+  # -- TLS interception support for the credential injector. The chart
+  # provisions a self-signed CA via cert-manager and a CA ClusterIssuer
+  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-agent leaf
+  # certs for Envoy to terminate the agent's TLS and inject credential headers.
+  # Requires cert-manager to be installed in the cluster (platform's cluster:install
+  # task does this).
+  envoyMitm:
+    enabled: true
+    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
+    # collisions with other charts.
+    bootstrapIssuerName: platform-selfsigned-bootstrap
+    caIssuerName: platform-mitm-ca-issuer
+    # -- Where the CA Secret lives. Must equal cert-manager's
+    # --cluster-resource-namespace flag (default `cert-manager`).
+    caSecretNamespace: cert-manager
+    caSecretName: platform-mitm-ca
+    # -- CA validity. cert-manager will renew before expiry automatically.
+    caDuration: 87600h # 10y
+    caRenewBefore: 720h # 30d
+    # -- Per-agent leaf cert validity.
+    leafDuration: 2160h # 90d
+    leafRenewBefore: 360h # 15d
+  # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
+  # data plane no SDK or zero-code instrumentation can reach, so the controller
+  # configures it natively in the rendered bootstrap — the exporter target
+  # comes from PLATFORM_GATEWAY_OTLP_* (chart-set to the collector's gRPC port
+  # under `clickstack.enabled`), falling back to the controller's inherited
+  # OTEL_* env for BYO collectors; sampling always comes from the relayed
+  # OTEL_TRACES_SAMPLER. With no OTLP endpoint present, gateways emit nothing.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Agent templates, keyed by template name. Override values files merge
+# per entry; set an entry to `null` to drop it. Fields named identically to
+# `controller.agent.templateDefaults.*` override the chart-wide default for
+# agents created from this template.
+# The rendered image ref (`repository:tag`, tag defaulting to the chart
+# appVersion) is the template's version identity: existing agents are offered
+# an upgrade when it differs from what they captured at create. Pinning `tag`
+# across releases therefore opts that template out of upgrade detection, and
+# non-image drift (mounts/env/resources) is never detected.
+# `$HOME` in mount paths is substituted at chart render time
+# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+# `category` sorts the entry: "harness" (base coding harnesses; the default when
+# omitted) or "preconfigured" (curated workload images, e.g. Bugstone). Only
+# harnesses are offered in the UI today — a "preconfigured" entry is installed
+# but reachable from no creation flow, pending the specialized-sandbox redesign,
+# so an entry users must be able to pick should take the default category.
+# `experimental: true` badges the image as alpha.
+# `harness` names the harness family running inside the image — which CLI the
+# template wraps, independent of the entry's key. It must be one of
+# claude-code, codex, pi, bob; any other value fails template validation and
+# the entry is skipped at api-server boot (logged), rather than silently
+# installing without harness wiring. Knowledge-base creation passes it to the
+# KB template's installer so the installed tooling (manual, commands, skill)
+# lands where that harness reads it. Omit it for images that wrap none of the
+# known families — the installer then falls back to its own harness detection.
+#
+# To predefine an *experimental external agent* (a private-registry image users
+# just pick from the template list, with no manual "Private registry" entry),
+# add an entry with `imagePullSecret`:
+#
+#   bugstone:
+#     enabled: true
+#     experimental: true
+#     description: "Experimental DAM bug-hunting agent"
+#     image:
+#       repository: icr.io/dam-agents/bugstone
+#       tag: ""
+#     storageSize: "5Gi"
+#     imagePullSecret:                 # renders a dockerconfigjson Secret in agentNamespace
+#       server: icr.io
+#       username: iamapikey
+#       password: "<registry-api-key>" # keep out of plaintext values in prod (sealed/SOPS/external secret)
+#
+# Or, to reference a pull Secret you manage yourself (it must already exist in
+# `agentNamespace`), set `imagePullSecretRef` instead — mutually exclusive with
+# `imagePullSecret`:
+#
+#   bugstone:
+#     # ...
+#     imagePullSecretRef: "icr-pull-secret"
+#
+agentTemplates:
+  claude-code:
+    enabled: true
+    displayName: "Claude Code"
+    description: "Default Claude Code agent"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
+    telemetry: true
+    harness: claude-code
+    tags: ["Anthropic"]
+    image:
+      repository: quay.io/dam-agents/claude-code
+      tag: ""
+    storageSize: "5Gi"
+
+  # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
+  # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
+  # inside the sandbox. Rendered only when `virtualization.enabled`; the image
+  # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
+  claude-code-vm:
+    enabled: true
+    displayName: "Claude Code VM"
+    description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
+    experimental: true
+    harness: claude-code
+    tags: ["Anthropic", "VM"]
+    backend:
+      type: vm
+    image:
+      repository: quay.io/dam-agents/claude-code-vm
+      tag: ""
+    storageSize: "5Gi"
+
+  codex:
+    enabled: true
+    displayName: "Codex"
+    description: "OpenAI Codex coding agent"
+    releaseNotesUrl: "https://github.com/openai/codex/releases"
+    harness: codex
+    tags: ["OpenAI"]
+    image:
+      repository: quay.io/dam-agents/codex
+      tag: ""
+    storageSize: "5Gi"
+
+  pi-agent:
+    enabled: true
+    displayName: "PI Agent"
+    description: "Pi coding agent with multi-LLM support"
+    harness: pi
+    tags: ["Any provider"]
+    image:
+      repository: quay.io/dam-agents/pi-agent
+      tag: ""
+    storageSize: "5Gi"
+
+  bob:
+    enabled: true
+    displayName: "IBM Bob"
+    description: "Bob shell agent"
+    releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
+    harness: bob
+    tags: ["Anthropic", "Mistral", "Granite"]
+    image:
+      repository: quay.io/dam-agents/bob
+      tag: ""
+    # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
+    # dir + workspace (the bundle lives in the image), so the agent default
+    # of 2 Gi is plenty.
+    storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  k-search:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "5Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  # Same image as k-search, evaluating on an in-cluster NVIDIA GPU
+  # (KSEARCH_EVAL_MODE=local). Disabled by default — stays Pending without a GPU.
+  # GPU passthrough under Kata needs a GPU-capable runtime class set per-template
+  # below (the chart-wide class can't carry the GPU VM config for every agent).
+  k-search-local:
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "10Gi"
+    # GPU Kata runtime class (cluster-specific; e.g. "kata-nvidia-gpu" on
+    # OpenShift). Adds a podFixed overhead (~1 CPU / 4Gi).
+    # runtimeClassName: "kata-nvidia-gpu"
+    # Optional — the GPU request already pins to the GPU node.
+    # nodeSelector:
+    #   nvidia.com/gpu.present: "true"
+    env:
+      - name: KSEARCH_EVAL_MODE
+        value: "local"
+      - name: KSEARCH_TARGET_GPU
+        value: "A100"
+    resources:
+      requests:
+        cpu: "1"
+        memory: "8Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "2"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+
+  # Published by CI (build-workloads / merge-workloads in cd.yml); the
+  # published chart pins each workload tag to its source sha (@ci-pin), so an
+  # unchanged workload keeps last deploy's tag and never rebuilds just for a
+  # deploy. Experimental: the harness drives long-running Nous campaigns —
+  # see packages/agents/nous/README.md.
+  nous:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "NOUS"
+    description: "Nous hypothesis-driven experimentation agent"
+    # The image is claude-code-based and Nous drives campaigns through the
+    # Claude Agent SDK, whose subprocesses inherit the pod env — so the
+    # standard telemetry env rail covers campaign turns, not just chat.
+    telemetry: true
+    tags: ["Any provider"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
+    image:
+      repository: quay.io/dam-agents/nous
+      tag: "" # @ci-pin nous-image-tag
+    # Never auto-hibernate ("0s"). A Nous campaign runs as a background process
+    # detached from any session, which the idle checker can't see (see the
+    # "background work" blind spot in docs/architecture/agent-lifecycle.md), so
+    # it would otherwise hibernate the pod mid-campaign and kill the run. The
+    # cost is no scale-to-zero: a nous agent holds CPU/memory until deleted or
+    # its timeout is raised by hand. Users can still override this per agent.
+    hibernationTimeout: "0s"
+    # Campaigns clone, build, and run target systems (plus per-arm git
+    # worktrees and a Python venv), so give it more disk than a chat agent.
+    storageSize: "10Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  openevolve:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "OpenEvolve"
+    description: "OpenEvolve — evolutionary code-optimization agent"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md"
+    image:
+      repository: quay.io/dam-agents/openevolve
+      tag: "" # @ci-pin openevolve-image-tag
+    storageSize: "5Gi"
+
+  shinkaevolve:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "ShinkaEvolve"
+    description: "ShinkaEvolve — sample-efficient evolutionary program-optimization agent"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md"
+    image:
+      repository: quay.io/dam-agents/shinkaevolve
+      tag: "" # @ci-pin shinkaevolve-image-tag
+    storageSize: "5Gi"
+
+  gepa:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "GEPA"
+    description: "GEPA — reflective prompt & text-optimization agent"
+    tags: ["Any provider"]
+    setupNote:
+      title: "Model provider connection required"
+      body: >-
+        GEPA's optimization loop needs a model-provider connection with
+        API-key-style credentials — the IBM LiteLLM proxy is the recommended
+        choice (it also powers the agent's own chat); an Anthropic API key
+        works too. An Anthropic OAuth-token connection only covers the chat
+        and cannot drive the optimization loop.
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md"
+    image:
+      repository: quay.io/dam-agents/gepa
+      tag: "" # @ci-pin gepa-image-tag
+    storageSize: "5Gi"
+
+  # AdaEvolve and EvoX are SkyDiscover's two own search strategies, exposed as
+  # two presets over the single skydiscover image (same one-image/N-templates
+  # pattern as k-search/k-search-local): each bakes its default `--search` via
+  # the SKYDISCOVER_SEARCH env.
+  adaevolve:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "AdaEvolve"
+    description: "AdaEvolve — multi-island adaptive code & algorithm optimization (SkyDiscover)"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
+    image:
+      repository: quay.io/dam-agents/skydiscover
+      tag: "" # @ci-pin skydiscover-image-tag
+    storageSize: "5Gi"
+    env:
+      - name: SKYDISCOVER_SEARCH
+        value: "adaevolve"
+
+  evox:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "EvoX"
+    description: "EvoX — self-evolving code & algorithm optimization (SkyDiscover)"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
+    image:
+      repository: quay.io/dam-agents/skydiscover
+      tag: "" # @ci-pin skydiscover-image-tag
+    storageSize: "5Gi"
+    env:
+      - name: SKYDISCOVER_SEARCH
+        value: "evox"
+
+# -- E2E test affordances. Gated test-only surface: the api-server
+# registers a control tRPC namespace that drives the mock Agent harness over
+# the existing ACP relay. Default off — flipped on by the e2e/local install.
+e2e:
+  enabled: false
+
+# -- Platform-wide skill sources (shared catalog visible to all users).
+# Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
+# `{name, gitUrl, path?}` shape works for per-template sources under
+# `<templateKey>.skillSources`. `path` is an optional repo-relative
+# subdirectory to scan; omit it to scan `skills/` then the repo root.
+skills:
+  skillSources: []
+  # Example:
+  # skillSources:
+  #   - name: "Anthropic Skills"
+  #     gitUrl: "https://github.com/anthropics/skills"
+  #   - name: "Acme Monorepo Skills"
+  #     gitUrl: "https://github.com/acme/monorepo"
+  #     path: ".claude/skills"
+
+# -- Curated catalog of public git repos an agent's working directory can be
+# seeded from at creation (cloned once into /home/agent/work, shortly after the
+# agent starts, via a one-shot `workspace-seed` event — never tracked or pushed
+# afterward). Rendered into the `git-repos` ConfigMap and loaded by the
+# api-server at boot. Each entry maps to the harness template names it's
+# compatible with; the Add Agent dialog filters by the chosen harness (omit
+# `compatibleTemplates` to disable an entry). Public repos only.
+gitRepos:
+  - id: google-workspace
+    name: Google Workspace
+    url: https://github.com/dam-agents/google-workspace.git
+    description: "Tools and skills for working with Google Workspace"
+    compatibleTemplates: [claude-code]
+  - id: spotify-dj
+    name: Spotify DJ
+    url: https://github.com/dam-agents/spotify-dj.git
+    description: "Build sets, run playback, curate playlists, and discover music on Spotify"
+    compatibleTemplates: [claude-code]
+  - id: link-guardian
+    name: Link Guardian
+    url: https://github.com/dam-agents/link-guardian.git
+    description: "Monitor and validate links to guard against broken or malicious URLs"
+    compatibleTemplates: [claude-code, bob]
+  - id: arxiv-scanner
+    name: arXiv Scanner
+    url: https://github.com/willallstet/arxiv-scanner.git
+    description: "Onboards a GitHub repo and scans arXiv for related work"
+    compatibleTemplates: [claude-code]
+
+# -- DEPRECATED in-cluster NFS server + external provisioner (#2988). Nothing
+# needs shared-writable storage any more: workspace volumes are ReadWriteOnce
+# and the storage migration (controller.storageMigration) drains existing RWX
+# volumes. Keep this enabled on an install whose agent volumes still live on
+# it, ONLY until the migration completes (no RWX PVC left in the agent
+# namespace) — then disable it. The whole block is removed in a future
+# release. The bundled nfs-ganesha image is archived upstream and breaks on
+# btrfs-backed exports.
+nfsProvisioner:
+  enabled: false
+  # Break-glass annotations for admission controllers (e.g. StackRox) since
+  # the upstream image is old and needs elevated capabilities.
+  annotations: {}
+  podAnnotations: {}
+  image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
+  # Name of the RWX StorageClass created here. Reference it from
+  # `controller.agent.base.storageClass`.
+  storageClassName: platform-rwx
+  # Immediate-binding RWX StorageClass for the warm PVC pool (#692). The default
+  # platform-rwx class binds WaitForFirstConsumer (correct for agent PVCs, which
+  # provision when their pod schedules) but useless for pre-warming, since a
+  # spare would sit Pending until mounted. This variant binds Immediate so
+  # spares provision the moment they're created. Reference its name from
+  # `controller.warmPool.storageClass`.
+  warmPoolClass:
+    enabled: false
+    name: platform-rwx-immediate
+  # Single backing volume that hosts all NFS exports; individual agent PVCs
+  # are carved out as subdirectories.
+  size: 20Gi
+  # StorageClass for the NFS server's own PVC. Empty = cluster default (RWO is fine).
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

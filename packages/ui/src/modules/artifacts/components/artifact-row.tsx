@@ -118,7 +118,11 @@ export function ArtifactRow({
         onClick={(e) => e.stopPropagation()}
       >
         {artifact.shareUrl && (
-          <CopyLinkButton url={artifact.shareUrl} variant="ghost" />
+          <CopyLinkButton
+            url={artifact.shareUrl}
+            variant="ghost"
+            restricted={artifact.visibility === "restricted"}
+          />
         )}
         <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
         <DropdownMenu>

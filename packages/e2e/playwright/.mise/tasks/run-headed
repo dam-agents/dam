@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Run Playwright with a visible browser window"
+#MISE depends=[":install-browsers"]
+#MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
+set -euo pipefail
+pnpm exec playwright test --headed "$@"

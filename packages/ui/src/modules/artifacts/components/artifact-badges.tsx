@@ -1,5 +1,6 @@
 import { Calendar } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
+import { match } from "ts-pattern";
 
 import { Badge } from "@/components/ui/badge";
 import { HintTooltip, Tooltip } from "@/components/ui/tooltip";
@@ -39,9 +40,23 @@ export function ArtifactStatusBadge({
   artifact: LibraryArtifact;
   onShare?: (artifact: LibraryArtifact) => void;
 }) {
-  const isPublic = artifact.visibility === "public";
-  const variant = isPublic ? "success" : "muted";
-  const label = isPublic ? "Public" : "Private";
+  const { label, variant, action } = match(artifact.visibility)
+    .with("private", () => ({
+      label: "Private",
+      variant: "muted" as const,
+      action: "Share this artifact",
+    }))
+    .with("restricted", () => ({
+      label: "Restricted",
+      variant: "info" as const,
+      action: "Change sharing",
+    }))
+    .with("public", () => ({
+      label: "Public",
+      variant: "success" as const,
+      action: "Change sharing",
+    }))
+    .exhaustive();
 
   if (!onShare) {
     return (
@@ -51,7 +66,7 @@ export function ArtifactStatusBadge({
     );
   }
   return (
-    <Tooltip content={isPublic ? "Change sharing" : "Share this artifact"}>
+    <Tooltip content={action}>
       <Badge
         asChild
         variant={variant}
@@ -60,7 +75,7 @@ export function ArtifactStatusBadge({
         <button
           type="button"
           aria-haspopup="dialog"
-          aria-label={`${label} — ${isPublic ? "change sharing" : "share this artifact"}`}
+          aria-label={`${label} — ${action.toLowerCase()}`}
           onClick={() => onShare(artifact)}
         >
           {label}

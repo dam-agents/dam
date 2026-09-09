@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Run the experiment SDK pytest suite against a stub platform endpoint"
+#MISE sources=["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+uv run --frozen --group dev pytest -q "$@"

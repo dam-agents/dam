@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Redeploy chart only (no image rebuild, no image load, no pod restart). Use for values/template/secret changes. Forwards extra args to cluster:install."
+#MISE raw=true
+exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"

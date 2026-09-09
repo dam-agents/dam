@@ -25,18 +25,24 @@ const PRESENTATION: Record<
 export function CopyLinkButton({
   url,
   variant,
+  restricted = false,
 }: {
   url: string;
   variant: "ghost" | "outline";
+  restricted?: boolean;
 }) {
   const { copy, state } = useCopy();
   const { label, Icon, tone } = PRESENTATION[state];
+  const reach = restricted
+    ? "Opens only for people on the list"
+    : "Anyone with the link can open it";
   return (
     <>
       <Button
         variant={variant}
         size="xs"
         aria-label={label}
+        tooltip={state === "idle" ? reach : label}
         className={tone}
         onClick={() => void copy(url)}
       >

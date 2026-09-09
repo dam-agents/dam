@@ -1,3 +1,4 @@
+import type { WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { URLPattern } from "node:url";
@@ -130,6 +131,14 @@ export type UpgradeRouteHandler = (
   params: Record<string, string | undefined>,
 ) => void | Promise<void>;
 
+const HSTS = "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+
+export function addUpgradeSecurityHeaders(wss: WebSocketServer): void {
+  wss.on("headers", (headers) => {
+    headers.push(HSTS);
+  });
+}
+
 export function createUpgradeHandler(
   routes: Record<string, UpgradeRouteHandler>,
 ) {
@@ -181,7 +190,9 @@ export function relayRoute(
 
     const admitted = await admission(req, url, agentId, relayKind);
     if (!admitted.ok) {
-      socket.write(`HTTP/1.1 ${upgradeDenial[admitted.kind]}\r\n\r\n`);
+      socket.write(
+        `HTTP/1.1 ${upgradeDenial[admitted.kind]}\r\n${HSTS}\r\n\r\n`,
+      );
       socket.destroy();
       return;
     }

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Stop the k3s VM (preserves data)"
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo systemctl stop k3s
+else
+  limactl stop platform-k3s
+fi

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Verify all release-participating packages share the same version"
+set -euo pipefail
+version=$(
+  {
+    yq -r .version    helm/Chart.yaml
+    yq -r .appVersion helm/Chart.yaml
+    yq -r .version    packages/cli/package.json
+  } | sort -u
+)
+if [[ $(wc -l <<<"$version") -ne 1 ]]; then echo "ERROR: Version mismatch detected: $(echo $version)" >&2; exit 1; fi
+if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then echo "ERROR: $version is not valid semver (X.Y.Z or X.Y.Z-rcN)" >&2; exit 1; fi
+if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$version" ]]; then echo "ERROR: GITHUB_REF '$GITHUB_REF' does not match 'refs/tags/v$version'" >&2; exit 1; fi
+echo "OK: version $version"
