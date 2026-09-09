@@ -162,7 +162,8 @@ export function DialogFooter({
     <div
       className={cn(
         "flex items-center justify-end gap-3 px-5 pb-5 md:px-6 md:pb-6",
-        divided && "border-t border-border pt-5 md:pt-6",
+        "[&.border-t]:pt-5 md:[&.border-t]:pt-6",
+        divided && "border-t border-border",
         className,
       )}
     >
