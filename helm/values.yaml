@@ -1343,6 +1343,8 @@ agentTemplates:
   # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
   # inside the sandbox. Rendered only when `virtualization.enabled`; the image
   # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
+  # Pinned by source sha like the workloads (@ci-pin): the disk is rebuilt
+  # only when its source moved, so a deploy never rolls VMs for nothing.
   claude-code-vm:
     enabled: true
     displayName: "Claude Code VM"
@@ -1355,7 +1357,7 @@ agentTemplates:
       type: vm
     image:
       repository: quay.io/dam-agents/claude-code-vm
-      tag: ""
+      tag: "" # @ci-pin claude-code-vm-image-tag
     storageSize: "5Gi"
 
   codex:
