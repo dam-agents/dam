@@ -31,7 +31,7 @@ import { createExtensionLoader } from "./infrastructure/extension-loader.js";
 import { createHarnessClient, type HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
 import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
-import { createOpenAiModelDiscovery } from "./infrastructure/model-discovery.js";
+import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { runHello } from "./hello.js";
 import {
   createSessionDirectoryReporter,
@@ -49,11 +49,13 @@ export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   manifest: RuntimeManifest;
   harnessConfig: HarnessConfigService;
+  seedHarnessModel(): Promise<boolean>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
 export interface ComposeRuntimeChannelOpts {
+  onHarnessConfigApplied?: () => void;
   manifestPath: string;
   agentHome: string;
   workDir: string;
@@ -108,12 +110,15 @@ export async function composeRuntimeChannel(
 
   const harnessConfigRaw = resolved["harness-config"];
   const harnessConfigPlugin = createHarnessConfigPlugin({
+    ...(opts.onHarnessConfigApplied
+      ? { onApplied: opts.onHarnessConfigApplied }
+      : {}),
     binding: harnessConfigRaw
       ? harnessConfigBinding.parse(harnessConfigRaw)
       : undefined,
     agentHome: opts.agentHome,
     envReader: opts.envReader,
-    discoverModels: createOpenAiModelDiscovery({ log }),
+    discoverModels: createModelDiscovery({ log }),
     log,
   });
   if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);
@@ -167,6 +172,7 @@ export async function composeRuntimeChannel(
     service,
     manifest,
     harnessConfig: harnessConfigPlugin,
+    seedHarnessModel: harnessConfigPlugin.seedModel,
     sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {

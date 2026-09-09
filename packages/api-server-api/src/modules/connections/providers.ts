@@ -55,11 +55,13 @@ export interface BobModelPins {
 }
 
 export const BOB_HOST = "api.us-east.bob.ibm.com";
+const BOB_BASE_URL = `https://${BOB_HOST}`;
 const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
     { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
+    { envName: "BOB_DEFAULT_GATEWAY_URL", placeholder: BOB_BASE_URL },
   ];
   const push = (envName: string, value?: string) => {
     const trimmed = value?.trim();
