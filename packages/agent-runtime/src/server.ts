@@ -181,7 +181,13 @@ const {
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
-  beforeFirstSpawn: () => seedHarnessModel?.() ?? Promise.resolve(),
+  beforeFirstSpawn: () => {
+    if (seedHarnessModel) return seedHarnessModel();
+    process.stderr.write(
+      "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
+    );
+    return Promise.resolve();
+  },
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 

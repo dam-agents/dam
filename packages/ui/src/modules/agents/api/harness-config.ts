@@ -166,6 +166,13 @@ export function useApplyHarnessConfig() {
       rollback.current = null;
       if (error && pending) {
         queryClient.setQueryData(pending.key, pending.previous);
+        return;
+      }
+      if (pending) {
+        void queryClient.invalidateQueries({
+          queryKey: pending.key,
+          refetchType: "none",
+        });
       }
     },
   });

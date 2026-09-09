@@ -94,12 +94,14 @@ export function createHarnessConfigPlugin(deps: {
     log(
       `[harness-config] → ${targetPath} (${format}): set ${[...toSet.keys()].join(", ") || "<none>"}${toUnset.length ? `; unset ${toUnset.join(", ")}` : ""}`,
     );
+    const before = readCurrentValues(binding, agentHome, log);
     await fileOps.apply(new Map([[targetPath, fragments]]), {
       agentHome,
       log,
       onUnparseable: "throw",
     });
-    deps.onApplied?.();
+    const after = readCurrentValues(binding, agentHome, log);
+    if (JSON.stringify(before) !== JSON.stringify(after)) deps.onApplied?.();
   };
 
   const readCurrent = async (opts?: {

@@ -55,6 +55,9 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let envReady = deps.envReadyAtBoot;
   const readyWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
+  let bootWorkStarted = false;
+  let bootWorkDone = deps.beforeFirstSpawn === undefined;
+  let bootTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRecycle:
     | "config-recycle"
     | "env-recycle"
@@ -67,24 +70,49 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       clearTimeout(warmTimer);
       warmTimer = null;
     }
+    if (bootTimer) {
+      clearTimeout(bootTimer);
+      bootTimer = null;
+    }
     for (const release of [...readyWaiters]) release();
     readyWaiters.clear();
+  }
+
+  function releaseIfReady(): void {
+    if (envReady && bootWorkDone) releaseWaiters();
+  }
+
+  function finishBootWork(): void {
+    bootWorkDone = true;
+    releaseIfReady();
+  }
+
+  function startBootWork(): void {
+    if (bootWorkStarted || bootWorkDone || !envReady) return;
+    bootWorkStarted = true;
+    const hold = deps.beforeFirstSpawn?.();
+    if (!hold) {
+      finishBootWork();
+      return;
+    }
+    bootTimer = setTimeout(() => {
+      bootWorkDone = true;
+      releaseWaiters();
+    }, deps.warmStartTimeoutMs);
+    void hold.catch(() => {}).then(finishBootWork);
   }
 
   function markEnvReady(): void {
     if (envReady) return;
     envReady = true;
-    const hold = deps.beforeFirstSpawn?.();
-    if (!hold) {
-      releaseWaiters();
-      return;
-    }
-    void hold.catch(() => {}).then(releaseWaiters);
+    startBootWork();
+    releaseIfReady();
   }
 
   if (!envReady) {
     warmTimer = setTimeout(() => {
       envReady = true;
+      bootWorkDone = true;
       releaseWaiters();
     }, deps.warmStartTimeoutMs);
   }
@@ -101,6 +129,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     if (warmTimer) {
       clearTimeout(warmTimer);
       warmTimer = null;
+    }
+    if (bootTimer) {
+      clearTimeout(bootTimer);
+      bootTimer = null;
     }
     readyWaiters.clear();
   }
@@ -145,7 +177,8 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     },
 
     whenReady(cb) {
-      if (envReady) {
+      startBootWork();
+      if (envReady && bootWorkDone) {
         cb();
         return () => {};
       }

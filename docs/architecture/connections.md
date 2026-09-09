@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -193,12 +193,13 @@ to offer for this to work is the OpenAI-shaped chat-completion route, a
 model-information route reporting a non-empty model list (Bob treats an
 empty list as an error), and no region hint of its own — a gateway
 answering the profile route with one would redirect Bob's inference calls
-off the configured host. A model still has to be set somewhere, because
-Bob's built-in default resolves to one only its own gateway serves — but
-not on this Connection, which contributes no model of its own: the Bob
-Connection claims the same variable from its own input, an agent can
-hold both, and two contributors for one name would leave the winner to
-grant order. It rides the provider pin or a per-agent override instead.
+off the configured host. This Connection contributes no model of its
+own, and Bob's built-in default resolves to one only its own gateway
+serves — so a model has to come from somewhere else. Nobody has to pin
+one by hand: because this Connection redirects Bob, the platform seeds
+the first model the endpoint's own listing offers before the harness
+starts ([runtime-delivery](runtime-delivery.md#concepts)). A provider pin
+or a per-agent override still wins over it.
 
 ### Custom Header credential
 
