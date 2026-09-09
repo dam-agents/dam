@@ -19,7 +19,11 @@
 ARG AGENT_IMAGE=platform-claude-code:latest
 FROM ${AGENT_IMAGE} AS agent
 
-FROM quay.io/fedora/fedora-bootc:44
+# Pinned by digest, and k3s by version below: the same commit must build the
+# same guest. dnf packages stay unpinned on purpose — Fedora mirrors drop
+# superseded NVRs within weeks, so pinning them breaks the build instead of
+# fixing it. Bump the pins deliberately, together with a full VM test.
+FROM quay.io/fedora/fedora-bootc:44@sha256:1bc549cb2909ebd1bb69e05088797dd602eee691f7deaa40f5b9914c3ce84b36
 
 # runc explicitly: install_weak_deps=False drops it, and dockerd then dies on
 # startup — "failed to find runc binary" while initialising buildkit — so the
@@ -32,11 +36,13 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       chromium && \
     dnf clean all
 
-# k3s: binary in /usr (immutable bootc area), unit written by the installer;
-# stable channel resolved at build time. Airgap images seed
+# k3s: binary in /usr (immutable bootc area), unit written by the installer.
+# Airgap images seed
 # /var/lib/rancher/k3s/agent/images so the cluster comes up without any egress
 # approvals (pause/coredns/traefik would otherwise hang on gated pulls).
+ARG K3S_VERSION=v1.36.4+k3s1
 RUN curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_VERSION="$K3S_VERSION" \
       INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_ENABLE=true \
       INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_BIN_DIR=/usr/bin sh - && \
     ver=$(/usr/bin/k3s --version | awk 'NR==1{print $3}') && \

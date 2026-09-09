@@ -25,7 +25,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 [ -f "$VALUES" ] || { echo "no such values file: $VALUES" >&2; exit 1; }
 
-for comp in keycloak $("$here/resolve" list-workloads); do
+for comp in keycloak $("$here/resolve" list-slow-builds); do
   tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
   [ -n "$tag" ] || { echo "empty source sha for $comp" >&2; exit 1; }
   tmp="$(mktemp)"

@@ -117,6 +117,7 @@ jobs:
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
       workloads: ${{ steps.d.outputs.workloads }}
+      claude_code_vm: ${{ steps.d.outputs.claude_code_vm }}
       claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
       source_shas: ${{ steps.d.outputs.source_shas }}
     steps:
@@ -499,9 +500,14 @@ jobs:
   # amd64 only: the feature is behind a hidden flag and its consumers are x86_64
   # clusters. Add the arch matrix here when it graduates — the build is ~15 min
   # per arch, so paying for arm64 now buys nothing.
+  #
+  # Gated like the workloads (changes.claude_code_vm): built only when its
+  # effective source moved, since the qcow2 is never byte-reproducible and a
+  # rebuild always means a new digest. The published chart pins the source-sha
+  # tag (@ci-pin), so an unchanged VM keeps the image it already has.
   build-claude-code-vm:
     needs: [merge-agents, appversion, changes]
-    if: ${{ contains(needs.changes.outputs.agents, 'claude-code') && !cancelled() && !failure() }}
+    if: ${{ needs.changes.outputs.claude_code_vm == 'true' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -523,6 +529,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['claude-code-vm'] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Build containerDisk and push
         env:
           AGENT_IMAGE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
@@ -677,12 +684,12 @@ jobs:
 
   # Releases wait for every image the chart names. A v* chart pins content tags
   # and is immutable once pushed, so it must never reference a tag that was
-  # never built. merge-workloads is spelled out rather than left to the implicit
-  # success() (see e2e); on a tag it always runs, so the skipped branch is only
-  # defensive.
+  # never built. merge-workloads and build-claude-code-vm are spelled out rather
+  # than left to the implicit success() (see e2e); on a tag they always run, so
+  # the skipped branches are only defensive.
   publish:
     name: publish release
-    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
+    needs: [changes, merge-images, merge-agents, merge-workloads, build-claude-code-vm, appversion]
     if: >-
       ${{ github.event_name == 'push' &&
           startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
@@ -690,7 +697,8 @@ jobs:
           needs.appversion.result == 'success' &&
           needs.merge-images.result == 'success' &&
           needs.merge-agents.result == 'success' &&
-          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
+          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') &&
+          (needs.build-claude-code-vm.result == 'success' || needs.build-claude-code-vm.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
