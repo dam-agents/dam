@@ -1,0 +1,9 @@
+# Managed hooks are trusted by policy, so no per-user review prompt. Codex mints
+# its thread id on the first turn, so the terminal harness can't pass one in;
+# this hook records it under the platform session id for harness-terminal to resume.
+[[hooks.SessionStart]]
+matcher = "startup"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '''if [ -n "$HARNESS_SESSION_ID" ]; then mkdir -p "$HOME/.codex/platform-sessions" && sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p' > "$HOME/.codex/platform-sessions/$HARNESS_SESSION_ID"; fi'''
