@@ -34,7 +34,7 @@ export function PageHeader({
         {adornment}
       </div>
       {description && (
-        <p className="mt-3 max-w-[640px] text-sm text-balance text-muted-foreground">
+        <p className="mt-3 max-w-[75%] text-[15px] leading-relaxed text-balance text-muted-foreground">
           {description}
         </p>
       )}

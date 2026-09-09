@@ -1,7 +1,7 @@
 export const brand = {
   name: "DAM",
   short: "dam",
-  title: "First Time Experience",
+  title: "Notifications / Compute",
   vendor: "DAM",
   theme: {
     light: {

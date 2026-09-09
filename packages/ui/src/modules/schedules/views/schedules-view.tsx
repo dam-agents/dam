@@ -105,7 +105,7 @@ export function SchedulesView() {
     <div className="anim-in">
       <PageHeader
         title="Schedules"
-        description="Schedules wake your agents on a cadence and give them a task. Each run creates a session you can review."
+        description="Automated tasks that run your agents on a cadence."
         actions={
           <Button
             disabled={agents.length === 0}
