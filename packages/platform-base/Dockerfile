@@ -173,6 +173,7 @@ COPY --chown=65532:0 packages/platform-base/skills/ /app/working-dir/.agents/ski
 # a sandbox's skill paths; it is invoked in place — a schedule task or slash
 # command references the absolute staged path (see #3286).
 COPY --chown=65532:0 packages/platform-base/dam-skills/ /usr/local/share/dam-skills/
+COPY --chown=65532:0 packages/platform-base/skills-manifest.json /usr/local/share/dam-skill-manifest.json
 COPY --chown=65532:0 packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY --chown=65532:0 packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
 COPY --chown=65532:0 packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml

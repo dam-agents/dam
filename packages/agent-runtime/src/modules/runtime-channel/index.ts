@@ -1,4 +1,4 @@
-export { composeRuntimeChannel } from "./compose.js";
+export { composeRuntimeChannel, pluginStateRoot } from "./compose.js";
 export {
   createArtifactTouchReporter,
   type ArtifactTouchReporter,
@@ -18,3 +18,7 @@ export {
   createSkillInstallPlugin,
   type SkillInstallFn,
 } from "./drivers/skill-install-plugin.js";
+export {
+  readSkillInstallBootState,
+  type SkillInstallBootState,
+} from "./infrastructure/skill-install-state-store.js";

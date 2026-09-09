@@ -81,6 +81,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 085 | [Usage passthrough access via a reconciled group role](085-usage-passthrough-grants.md) |  | usage-tracking | A credential-less group role holds SELECT on the usage source passthrough views, reconciled by the api-server after each migration run rather than granted inside migrations, with operators granting membership; the startup path it rides on is made safe for concurrent replicas. |
 | 086 | [Pod-owned live updates over the agent's own tRPC surface](086-pod-owned-live-updates.md) |  | platform-topology | Pod-owned state is read and watched over the agent-runtime's own tRPC surface relayed over WebSocket; a Watch lives only as long as its subscriber and emits topic-plus-ids notices, never state. |
 | 087 | [Knowledge-base sharing via a published read-only MCP snapshot](087-knowledge-base-mcp-share.md) |  | knowledge-bases | Serve knowledge-base shares from a published object-store snapshot over a read-only aggregate MCP endpoint consumed in-cluster, not by proxying the live agent. |
+| 088 | [Image-shipped skills are platform-managed while untouched](088-image-skill-lifecycle.md) |  | agent-skills | The image carries hashes of every skill version it ever shipped; local copies matching that history are seeded, updated, and removed with the image, and a diverged copy becomes the user's. |
 
 ## Superseded
 

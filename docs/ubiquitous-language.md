@@ -150,6 +150,9 @@ Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../do
 | Scan | Enumerating Scanned Skills in a Source |
 | Write Local | Materializing user-supplied Markdown as a standalone Local Skill (one skill per file); rejects name collisions with existing Local Skills |
 | Delete Local | Removing a standalone Local Skill's directory from every Skill Path; a name that resolves to no directory is a no-op |
+| Shipped-Skill Manifest | The append-only content-hash history of every skill version any platform image ever shipped, baked into every image; the reference deciding whether a Local Skill copy is platform-managed |
+| Seed Ledger | Per-volume record of which image skills were already seeded; a seeded name is never copied again, so a user's deletion of an image skill is final |
+| Image-Skill Reconciliation | The pod-side pass that seeds, updates, and removes platform-managed Local Skills against the Shipped-Skill Manifest; a diverged copy is the user's and is never touched, and Installed Skill Refs are exempt |
 | Read Local | Reading every file in a Local Skill's directory, size-capped per file and per skill; returns the resolved directory basename with the files |
 
 ## Approvals (bounded context)

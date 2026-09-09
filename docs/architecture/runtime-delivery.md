@@ -285,6 +285,8 @@ A harness that needs custom code for a kind — contribution or event — rebind
 
 Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite` and `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode.
 
+Applying a snapshot ends with a post-apply hook: after contributions dispatch and events settle, the runtime hands the snapshot's contribution list to a composition-time subscriber — on every non-stale apply, driver failures included, so a consumer that must err toward acting sees failed installs too. Image-skill reconciliation rides it ([agent-skills](agent-skills.md#image-skill-lifecycle)).
+
 ### Event handler loop
 
 After contribution reconciliation, the agent processes events in order:
