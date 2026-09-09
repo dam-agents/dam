@@ -430,10 +430,14 @@ export function createExperimentsService(
         if (!input.dashboard) return existingId;
         if (existingId) {
           try {
-            await artifactLibrary.update(existingId, {
-              content: input.dashboard.content,
-              fileName: "dashboard.html",
-            });
+            await artifactLibrary.update(
+              existingId,
+              {
+                content: input.dashboard.content,
+                fileName: "dashboard.html",
+              },
+              { agentId: driverAgentId },
+            );
             return existingId;
           } catch {}
         }
@@ -457,10 +461,14 @@ export function createExperimentsService(
       if (draft) {
         let version = draft.scriptVersion;
         if (draft.scriptSha256 !== input.script.sha256) {
-          const updated = await artifactLibrary.update(draft.scriptArtifactId, {
-            content: input.script.content,
-            fileName,
-          });
+          const updated = await artifactLibrary.update(
+            draft.scriptArtifactId,
+            {
+              content: input.script.content,
+              fileName,
+            },
+            { agentId: driverAgentId },
+          );
           version = updated.version;
         }
         const dashboardArtifactId =
@@ -489,10 +497,14 @@ export function createExperimentsService(
               });
               const fresh = injectFeedSnapshot(STOCK_DASHBOARD_HTML, draftFeed);
               if (fresh !== stored.content) {
-                await artifactLibrary.update(dashboardArtifactId, {
-                  content: fresh,
-                  fileName: "dashboard.html",
-                });
+                await artifactLibrary.update(
+                  dashboardArtifactId,
+                  {
+                    content: fresh,
+                    fileName: "dashboard.html",
+                  },
+                  { agentId: driverAgentId },
+                );
               }
             }
           } catch {}
@@ -616,6 +628,7 @@ export function createExperimentsService(
                   content: event.scriptContent,
                   fileName: scriptFileName(experiment.scriptPath),
                 },
+                { agentId: driverAgentId },
               );
               await repo.patchScript(experimentId, {
                 scriptSha256: event.scriptSha256,

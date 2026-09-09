@@ -74,6 +74,7 @@ export interface VersionRow {
   contentType: string;
   sizeBytes: number;
   createdAt: Date;
+  author: string | null;
 }
 
 export interface ArtifactListQuery {
@@ -114,6 +115,7 @@ export interface SharingChange {
 export interface ArtifactLibraryRepository {
   insertArtifact(
     row: Omit<ArtifactRow, "createdAt" | "updatedAt" | "viewCount">,
+    author: string | null,
   ): Promise<ArtifactRow>;
   getArtifact(id: string, owner: string): Promise<ArtifactRow | null>;
   getArtifactBySlug(slug: string): Promise<ArtifactRow | null>;
@@ -148,6 +150,7 @@ export interface ArtifactLibraryRepository {
     owner: string,
     expectedVersion: number,
     patch: ArtifactPatch,
+    author: string | null,
   ): Promise<ArtifactRow | null>;
   listVersions(artifactId: string): Promise<VersionRow[]>;
   getVersion(artifactId: string, version: number): Promise<VersionRow | null>;
@@ -219,7 +222,7 @@ export function createArtifactLibraryRepository(
   }
 
   return {
-    async insertArtifact(row) {
+    async insertArtifact(row, author) {
       return db.transaction(async (tx) => {
         const [inserted] = await tx
           .insert(artifactsTable)
@@ -231,6 +234,7 @@ export function createArtifactLibraryRepository(
           storageRef: inserted!.storageRef,
           contentType: inserted!.contentType,
           sizeBytes: inserted!.sizeBytes,
+          author,
         });
         return inserted!;
       });
@@ -414,7 +418,7 @@ export function createArtifactLibraryRepository(
       );
     },
 
-    async advanceVersion(id, owner, expectedVersion, patch) {
+    async advanceVersion(id, owner, expectedVersion, patch, author) {
       return db.transaction(async (tx) => {
         const [row] = await tx
           .update(artifactsTable)
@@ -434,6 +438,7 @@ export function createArtifactLibraryRepository(
           storageRef: row.storageRef,
           contentType: row.contentType,
           sizeBytes: row.sizeBytes,
+          author,
         });
         return row;
       });

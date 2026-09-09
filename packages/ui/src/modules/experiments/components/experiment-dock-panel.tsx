@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
+import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
 import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
 import { useStartRun, useStopExperiment } from "../api/mutations.js";
 import { useExperimentFeed } from "../api/queries.js";
@@ -300,7 +301,7 @@ function RunArtifacts({
   experiment: Experiment;
   feed: TraceFeed | undefined;
 }) {
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifact = useOpenArtifact();
   const { data: artifacts } = useArtifacts();
   const runArtifacts = useMemo(() => {
     if (!artifacts) return [];
@@ -321,7 +322,7 @@ function RunArtifacts({
         <button
           key={artifact.id}
           type="button"
-          onClick={() => setOpenArtifactId(artifact.id)}
+          onClick={() => void openArtifact(artifact.id)}
           className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
           title={artifact.title}
         >

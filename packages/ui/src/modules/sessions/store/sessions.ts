@@ -202,6 +202,7 @@ export const createSessionsSlice: StateCreator<
         openFilePath: null,
         openArtifactId: null,
         openFileDirty: false,
+        openArtifactDirty: false,
         openFileEdit: false,
         pendingPermissions: [],
         pendingResumeSessionId: null,

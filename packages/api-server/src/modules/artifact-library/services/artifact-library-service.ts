@@ -13,8 +13,10 @@ import type {
   ArtifactSharingInput,
   ArtifactUpdateInput,
   ArtifactUploadTicket,
+  ArtifactVersionAuthor,
   ArtifactVersionInfo,
   ArtifactVisibility,
+  ArtifactWriteAttribution,
   FolderUpdateInput,
   LibraryArtifact,
 } from "api-server-api";
@@ -345,6 +347,7 @@ export function createArtifactLibraryService(
         contentType: v.contentType,
         sizeBytes: v.sizeBytes,
         createdAt: v.createdAt.toISOString(),
+        author: v.author as ArtifactVersionAuthor | null,
       }));
     },
 
@@ -371,23 +374,27 @@ export function createArtifactLibraryService(
         contentType,
       });
 
-      const row = await repo.insertArtifact({
-        id,
-        owner,
-        agentId: attribution?.agentId ?? null,
-        folderId: input.folderId ?? null,
-        title: input.title,
-        slug: generateSlug(),
-        kind,
-        contentType: stored.contentType,
-        fileName,
-        storageRef: stored.storageRef,
-        sizeBytes: stored.sizeBytes,
-        version: 1,
-        visibility: input.visibility ?? "private",
-        expiresAt: expiresAtFrom(input.expiresInHours),
-        sourcePath: input.sourcePath ?? null,
-      });
+      const agentId = attribution?.agentId ?? null;
+      const row = await repo.insertArtifact(
+        {
+          id,
+          owner,
+          agentId,
+          folderId: input.folderId ?? null,
+          title: input.title,
+          slug: generateSlug(),
+          kind,
+          contentType: stored.contentType,
+          fileName,
+          storageRef: stored.storageRef,
+          sizeBytes: stored.sizeBytes,
+          version: 1,
+          visibility: input.visibility ?? "private",
+          expiresAt: expiresAtFrom(input.expiresInHours),
+          sourcePath: input.sourcePath ?? null,
+        },
+        agentId ? "agent" : "user",
+      );
       emit({
         type: EventType.ArtifactCreated,
         artifactId: id,
@@ -408,9 +415,29 @@ export function createArtifactLibraryService(
       return toLibraryArtifact(row, shareBaseUrl, []);
     },
 
-    async update(id, input: ArtifactUpdateInput) {
+    async update(
+      id,
+      input: ArtifactUpdateInput,
+      attribution?: ArtifactWriteAttribution,
+    ) {
       const row = await requireArtifact(id);
+      if (
+        input.expectedVersion != null &&
+        input.expectedVersion !== row.version
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This artifact has a newer version. Reload before saving.",
+        });
+      }
       if (input.folderId != null) await requireOwnedFolder(input.folderId);
+
+      const author: ArtifactVersionAuthor | null =
+        attribution == null
+          ? null
+          : "agentId" in attribution
+            ? "agent"
+            : "user";
 
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
@@ -445,6 +472,7 @@ export function createArtifactLibraryService(
           owner,
           row.version,
           patch,
+          author,
         );
         if (!advanced) {
           await artifacts.delete(stored.storageRef).catch(() => {});

@@ -1,6 +1,6 @@
 {
-  "id": "ab8c3cea-1cc3-4f97-ba54-e8985ac5bf8a",
-  "prevId": "67e2bced-a9ae-4895-85de-5edaf37dab01",
+  "id": "905f038d-d2e3-4a39-b9e7-93ff3c9dcaf8",
+  "prevId": "ab8c3cea-1cc3-4f97-ba54-e8985ac5bf8a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2368,6 +2368,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "source_path": {
+          "name": "source_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "kind": {
           "name": "kind",
