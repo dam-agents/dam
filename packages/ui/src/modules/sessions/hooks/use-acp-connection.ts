@@ -28,6 +28,8 @@ import { draftKey } from "../lib/draft-key.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
+const REPLAY_IDLE_WINDOW_MS = 3000;
+
 export interface LiveConnection {
   connection: ClientSideConnection;
   ws: WebSocket;
@@ -284,7 +286,7 @@ export function useAcpConnection(
   }, [selectedAgent, makeUpdateHandler, attachCloseHandler]);
 
   const loadChainRef = useRef<Promise<unknown>>(Promise.resolve());
-  const idleSessionsRef = useRef(new Set<string>());
+  const idleSessionsRef = useRef(new Map<string, number>());
 
   const runSessionLoad = useCallback(
     async (sid: string, replayBefore?: string): Promise<Message[]> => {
@@ -373,7 +375,8 @@ export function useAcpConnection(
           ? turn.data.interruptedAt
           : undefined,
       );
-      if (turn.success && !turn.data.inFlight) idleSessionsRef.current.add(sid);
+      if (turn.success && !turn.data.inFlight)
+        idleSessionsRef.current.set(sid, Date.now());
       else idleSessionsRef.current.delete(sid);
       if (replayBefore === undefined && generation === generationRef.current) {
         bindEngagement(sid);
@@ -513,10 +516,13 @@ export function useAcpConnection(
     reset();
   }, [sessionId, sessionMode, reset]);
 
-  const runtimeIdle = useCallback(
-    (sid: string): boolean => idleSessionsRef.current.has(sid),
-    [],
-  );
+  const runtimeIdle = useCallback((sid: string): boolean => {
+    const answeredAt = idleSessionsRef.current.get(sid);
+    if (answeredAt === undefined) return false;
+    if (Date.now() - answeredAt <= REPLAY_IDLE_WINDOW_MS) return true;
+    idleSessionsRef.current.delete(sid);
+    return false;
+  }, []);
 
   const clearRuntimeIdle = useCallback((sid: string): void => {
     idleSessionsRef.current.delete(sid);

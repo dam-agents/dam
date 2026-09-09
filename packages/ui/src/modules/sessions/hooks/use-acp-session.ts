@@ -108,12 +108,13 @@ export function useAcpSession(
     if (!sessionId || !runtimeIdle(sessionId)) return;
     if (!hasStreamingAssistant(useStore.getState().messages)) return;
     const settle = setTimeout(() => {
+      clearRuntimeIdle(sessionId);
       setMessages((p) => finalizeAllStreaming(p));
     }, REPLAY_SETTLE_MS);
     return () => {
       clearTimeout(settle);
     };
-  }, [sessionId, messages, runtimeIdle, setMessages]);
+  }, [sessionId, messages, runtimeIdle, clearRuntimeIdle, setMessages]);
 
   useEffect(() => {
     if (!selectedAgent || sessionId !== null) return;
