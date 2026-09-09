@@ -965,9 +965,14 @@ jobs:
         merge-platform-base,
         merge-agents,
         merge-workloads,
+        build-claude-code-vm,
       ]
-    # !failure()/!cancelled(): merge-workloads skips on main pushes where every
-    # workload was reused — the implicit success() would skip all scans with it.
+    # Every list-components image has its producing job here, so a missing
+    # <sha> tag below can only mean "reused unchanged", never a race with a
+    # still-running build.
+    # !failure()/!cancelled(): merge-workloads and build-claude-code-vm skip on
+    # main pushes where everything they cover was reused — the implicit
+    # success() would skip all scans with them.
     if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:

@@ -40,9 +40,8 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 # Airgap images seed
 # /var/lib/rancher/k3s/agent/images so the cluster comes up without any egress
 # approvals (pause/coredns/traefik would otherwise hang on gated pulls).
-ARG K3S_VERSION=v1.36.4+k3s1
 RUN curl -sfL https://get.k3s.io | \
-      INSTALL_K3S_VERSION="$K3S_VERSION" \
+      INSTALL_K3S_VERSION=v1.36.4+k3s1 \
       INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_ENABLE=true \
       INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_BIN_DIR=/usr/bin sh - && \
     ver=$(/usr/bin/k3s --version | awk 'NR==1{print $3}') && \
