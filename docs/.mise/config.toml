@@ -5,7 +5,7 @@ depends = [":check:*"]
 
 [tasks."check:adr-index"]
 description = "The committed ADR index must match what regeneration produces. Pure files, no services, fail closed on drift."
-run = "{{ mise_bin }} run //docs:generate:adr-index -- --check"
+run = { task = "//docs:generate:adr-index", args = ["--check"] }
 sources = ["adrs/*.md", ".mise/tasks/generate/adr-index"]
 outputs = []
 cache.enabled = true
