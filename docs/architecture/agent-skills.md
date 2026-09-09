@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -12,7 +12,7 @@ agent-runtime owns the files and nothing else. It scans a source, materializes a
 
 ### Local Skill
 
-A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there — installed from a Source, authored in place, uploaded, seeded from the image at first boot, or copied in by an Agent Kind's Install Command. The pod reports them; splitting them into installed and standalone, and reconciling that against the catalog, happens on the [api-server side](skills.md#skill-installed-skill-ref-local-skill).
+A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there — installed from a Source, authored in place, uploaded, seeded from the image (and managed per skill thereafter — [Image-Skill Lifecycle](#image-skill-lifecycle)), or copied in by an Agent Kind's Install Command. The pod reports them; splitting them into installed and standalone, and reconciling that against the catalog, happens on the [api-server side](skills.md#skill-installed-skill-ref-local-skill).
 
 A Local Skill's name **on the wire is its frontmatter `name:` when it has one**, and the pod resolves that name to a directory: exact `<skillPath>/<name>` first, then the first directory whose frontmatter `name:` matches, first-wins in Skill Path order. Write Local is what makes the two diverge — it writes a slug directory and forces the frontmatter name to the confirmed display name — so every name-keyed operation goes through the shared resolver rather than treating the name as a directory. Because Publish reads through the same resolver, a Local Skill whose frontmatter name differs from its directory is publishable. Read Local returns the resolved directory basename alongside the files, so a caller names a download from the on-disk identity instead of re-slugging the display name.
 
@@ -28,7 +28,7 @@ Install writes the skill directory into **every** configured Skill Path; uninsta
 
 Every Local Skill carries a **provenance** verdict, judged by the agent-runtime at read time. The reference is the set of **pristine roots** in the image — exactly two sanctioned locations, both immutable and always in-pod, so origin classification consults no build-time manifest and no on-PVC marker (a marker was tried and reverted — third-party baked skills aren't ours to stamp, and the PVC is agent-writable anyway):
 
-1. the **pristine workspace copy** — the directory the image's first-boot seed copies onto the PVC and never touches again, and
+1. the **pristine workspace copy** — the workspace payload inside the image, whose skills [image-skill reconciliation](#image-skill-lifecycle) seeds onto the volume and keeps at the shipped version while untouched (the whole-workspace first-boot seed covers everything that isn't a skill), and
 2. the **staged-skills dir** — the one place images put system skills that must *not* reach every agent, either copied onto the PVC at create by an Agent Kind's Install Command or invoked in place from the image path and never copied ([case-studies](case-studies.md)); the shared constant lives in the agent-runtime contract package.
 
 This is a deliberate convention, not a growing list: an image-shipped skill anywhere else will misclassify as user-authored, so new features ship their skills through one of these two locations.
@@ -45,7 +45,7 @@ Image-shipped skills are managed per skill, not per volume: a local copy whose c
 
 - The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`packages/platform-base/`](../../packages/platform-base/)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
 - The **Seed Ledger** — a per-volume record of which shipped skill names have been seeded, so each is copied into the Skill Paths exactly once and a skill the user then deletes is never resurrected. Retiring clears the entry — the platform's own removal must not count as the user's — so a skill re-shipped after retirement seeds again. It sits on the agent-writable volume, which is safe because it only ever suppresses copies of image content. Only pristine-workspace skills seed; staged skills never do. The whole-workspace first-boot seed ([persistence](persistence.md)) stays for everything that isn't a skill.
-- **Reconciliation** — runs when the pod applies a runtime-channel snapshot, and once at boot from the install driver's persisted set, because an image-only upgrade delivers no snapshot. A local skill whose hash appears in the manifest is updated or removed as above; anything else — including a copy that cannot be hashed — is left alone. A skill tracked as an Installed Skill Ref is exempt: its Source governs it. `PLATFORM_IMAGE_SKILL_RECONCILE=off` disables the whole pass on a pod.
+- **Reconciliation** — runs when the pod applies a runtime-channel snapshot, and once at boot from the install driver's persisted set, because an image-only upgrade delivers no snapshot. A local skill whose hash appears in the manifest is updated or removed as above; anything else — including a copy that cannot be hashed — is left alone. A skill tracked as an Installed Skill Ref is exempt: its Source governs it. `PLATFORM_IMAGE_SKILL_RECONCILE=off` disables the whole pass on a pod, and the pass degrades to a logged no-op on its own when an input is missing: an image with no readable Shipped-Skill Manifest, or a pod whose runtime manifest yields no pristine workspace root distinct from the Skill Paths, leaves image skills unmanaged; a corrupt Seed Ledger disables seeding alone — never guessed at, so nothing the user deleted can resurrect — while update and retire reconciliation keeps running.
 
 ## The service
 
