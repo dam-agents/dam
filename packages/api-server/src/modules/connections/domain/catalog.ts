@@ -216,7 +216,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "maxCost",
       envName: "BOB_MAX_COINS",
       label: "Max cost",
-      hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
+      hint: "Per-task cost cap, written to session.maxCost; Bob stops the task when exceeded.",
       pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
       patternHint: "a positive amount, e.g. 0.50 or 5",
     },
