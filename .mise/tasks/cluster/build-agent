@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+#MISE description="Rebuild the deployed agents' images, load into k3s, restart agent pods"
+set -eo pipefail
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+
+# Rebuild only the agents the cluster has deployed — their entries in the
+# agent-templates ConfigMap (one CM keyed by "<name>.yaml"). Capture
+# first so a kubectl failure aborts rather than looking like "nothing deployed".
+DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
+  | yq -r '.items[] | select(.metadata.name | test("-agent-templates$"))
+           | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
+AGENT_TASKS=()
+AGENT_IMAGES=()
+SEEN_COMPONENTS=()
+while IFS=$'\t' read -r name image; do
+  [ -z "$name" ] && continue
+  name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
+  # Templates can share one image (presets, e.g. adaevolve/evox over the
+  # skydiscover image, or k-search-local over k-search), so resolve the
+  # build component from the image repository basename
+  # ("platform-<component>" locally), not the template key — and dedup so
+  # a shared image builds and loads once. Mirrors cluster:install.
+  comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+  case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+  SEEN_COMPONENTS+=("$comp")
+  if [ -d "packages/agents/$comp" ]; then
+    AGENT_TASKS+=("$comp")
+    AGENT_IMAGES+=("$image")
+  elif [ -d "packages/e2e/agents/$comp" ]; then
+    # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+    # are not covered by //packages/agents:image — build straight from their Dockerfile, root
+    # context so the platform-base FROM resolves.
+    mise run //packages/platform-base:image
+    docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
+    AGENT_IMAGES+=("$image")
+  else
+    echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
+  fi
+done <<< "$DEPLOYED_AGENTS"
+
+if [ -z "${AGENT_IMAGES[*]:-}" ]; then
+  echo "No agent templates deployed — nothing to build."
+  exit 0
+fi
+[ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+
+echo "Loading into k3s..."
+tar="/tmp/platform-agent-images.tar"
+docker save "${AGENT_IMAGES[@]}" -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s ctr images import "$tar"
+else
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting agent pods..."
+kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all 2>/dev/null || true
+
+# Prune dangling layers: old `:latest` SHAs that just lost their tag to the
+# freshly imported one. Skip `crictl rmi --prune` here — when no instance
+# pods are running, our just-loaded agent images are unpinned and would
+# get wiped. (issue #244)
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo "Done. Agent pods will restart with new image."

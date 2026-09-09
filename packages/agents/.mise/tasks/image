@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#MISE description="Build (or reuse from the registry) the agent images — all of them, or the ones named as arguments. Bases first (platform-base, then claude-code), the rest in parallel. --dry-run prints the plan."
+#MISE dir="{{vars.repo_root}}"
+set -euo pipefail
+
+resolve=.mise/tasks/image/resolve
+workloads=" $($resolve list-workloads) "
+dry=false; agents=()
+for a in "$@"; do case "$a" in --dry-run) dry=true ;; *) agents+=("$a") ;; esac; done
+if [ ${#agents[@]} -eq 0 ]; then
+  for d in packages/agents/*/; do agents+=("$(basename "$d")"); done
+fi
+for a in "${agents[@]}"; do [ -d "packages/agents/$a" ] || { echo "no such agent: $a" >&2; exit 2; }; done
+
+# Build-time overrides the Dockerfiles pin defaults for (see each agent's README).
+build_arg_var() {
+  case "$1" in
+    nous) echo NOUS_REF ;; gepa) echo GEPA_VERSION ;; openevolve) echo OPENEVOLVE_VERSION ;;
+    shinkaevolve) echo SHINKA_VERSION ;; skydiscover) echo SKYDISCOVER_REF ;; *) echo "" ;;
+  esac
+}
+
+build() {
+  local a="$1" var args=()
+  case "$a" in
+    claude-code-vm) exec packages/agents/claude-code-vm/build.sh ;;
+  esac
+  var="$(build_arg_var "$a")"
+  [ -n "$var" ] && [ -n "${!var:-}" ] && args+=(--build-arg "$var=${!var}")
+  # ${args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
+  exec "$resolve" build-or-reuse "$a" -- ${args[@]+"${args[@]}"} "packages/agents/$a"
+}
+
+# Stage 1: claude-code, when requested or when anything requested sits on it.
+stage1=(); stage2=()
+for a in "${agents[@]}"; do
+  case "$workloads" in *" $a "*) needs_cc=true ;; *) needs_cc=false ;; esac
+  [ "$a" = claude-code-vm ] && needs_cc=true
+  if [ "$a" = claude-code ]; then stage1=(claude-code)
+  else stage2+=("$a"); [ "$needs_cc" = true ] && stage1=(claude-code); fi
+done
+
+if [ "$dry" = true ]; then
+  echo "stage 0 (serial):   platform-base"
+  echo "stage 1 (serial):   ${stage1[*]:-—}"
+  echo "stage 2 (parallel): ${stage2[*]:-—}"
+  exit 0
+fi
+
+# Not a header dependency, so --dry-run stays a dry run.
+mise run //packages/platform-base:image
+
+for a in ${stage1[@]+"${stage1[@]}"}; do build "$a" & wait "$!"; done
+
+pids=(); names=()
+for a in ${stage2[@]+"${stage2[@]}"}; do
+  build "$a" 2>&1 | sed "s/^/[$a] /" &
+  pids+=("$!"); names+=("$a")
+done
+failed=()
+for i in ${pids[@]+"${!pids[@]}"}; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
+if [ ${#failed[@]} -gt 0 ]; then echo "failed: ${failed[*]}" >&2; exit 1; fi

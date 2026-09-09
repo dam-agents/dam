@@ -1,6 +1,10 @@
 import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
+import {
+  readPersistedFlag,
+  writePersistedFlag,
+} from "../../../lib/persisted-prefs.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
@@ -15,6 +19,8 @@ import {
   SESSION_CATEGORIES,
   type SessionCategory,
 } from "../lib/session-category.js";
+
+export const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
 export interface SessionError {
   sessionId: string;
@@ -31,11 +37,13 @@ export interface SessionsSlice {
   busy: boolean;
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
+  sessionsSectionOpen: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (id: string | null) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
+  setSessionsSectionOpen: (open: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
@@ -103,11 +111,19 @@ export const createSessionsSlice: StateCreator<
     busy: false,
     terminalPaused: false,
     pendingResumeSessionId: null,
+    sessionsSectionOpen: readPersistedFlag(
+      SESSIONS_SECTION_OPEN_STORAGE_KEY,
+      true,
+    ),
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
+    setSessionsSectionOpen: (open) => {
+      writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
+      set({ sessionsSectionOpen: open });
+    },
     setMessages: (updater) =>
       set((s) => ({
         messages: typeof updater === "function" ? updater(s.messages) : updater,

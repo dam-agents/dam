@@ -14,7 +14,12 @@ export type ArtifactKind =
   | "text"
   | "binary";
 
-export type ArtifactVisibility = "private" | "public";
+export type ArtifactVisibility = "private" | "restricted" | "public";
+
+export type ArtifactCreateVisibility = Exclude<
+  ArtifactVisibility,
+  "restricted"
+>;
 
 export interface ArtifactFolder {
   id: string;
@@ -41,6 +46,7 @@ export interface LibraryArtifact {
   expiresAt: string | null;
   viewCount: number;
   shareUrl: string | null;
+  viewers: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -75,7 +81,7 @@ export interface ArtifactCreateInput {
   kind?: ArtifactKind;
   contentType?: string;
   folderId?: string;
-  visibility?: ArtifactVisibility;
+  visibility?: ArtifactCreateVisibility;
   expiresInHours?: number | null;
   sourcePath?: string;
   agentId?: string;
@@ -94,6 +100,7 @@ export interface ArtifactUpdateInput {
 export interface ArtifactSharingInput {
   visibility?: ArtifactVisibility;
   expiresInHours?: number | null;
+  viewers?: string[];
 }
 
 export interface FolderUpdateInput {

@@ -137,7 +137,7 @@ export function SchedulesWidget() {
             title={`All schedules (${schedules.length})`}
             onClose={() => setListOpen(false)}
           />
-          <DialogBody className="max-h-[60vh] overflow-y-auto px-2 py-2">
+          <DialogBody className="max-h-[60vh]">
             {rows(schedules, false)}
           </DialogBody>
         </Modal>

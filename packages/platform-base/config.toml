@@ -1,0 +1,43 @@
+[settings]
+# npm: tools install through the npm CLI, not mise's embedded aube: aube stops
+# for a confirmation on "unpopular" packages (pi-memory) and skips postinstall
+# scripts (pnpm 12 ships as a placeholder its postinstall replaces), and the
+# agent Dockerfiles link into the npm layout (lib/node_modules/<pkg>).
+npm.package_manager = "npm"
+experimental = true
+lockfile = true
+minimum_release_age = "7d"
+python.compile = false
+
+[tools]
+node = "24"
+# pnpm for the builder stage (workspace install) and for agents working in node
+# projects; keep in step with the pnpm pin in the repo .mise/config.toml.
+"npm:pnpm" = "12.3.4"
+jq = "latest"
+fd = "latest"
+rg = "latest"
+# Pinned past the 7-day floor: 2.100.0 (2026-09-03) fixes CVE-2026-84304 and
+# CVE-2026-56855/78662 in the embedded grpc and x/crypto. Back to "latest"
+# once it ages past the floor.
+gh = "2.100.0"
+uv = "latest"
+python = "3.12"
+"npm:@googleworkspace/cli" = "latest"
+# Kubernetes/OpenShift connection (#2314): kubeconfig lands via a file
+# contribution; these make it usable out of the box.
+kubectl = "latest"
+oc = "latest"
+
+[hooks]
+postinstall = '''
+mkdir -p /usr/local/share/tool-bin
+just=$(printf '%s' "${MISE_INSTALLED_TOOLS:-}" | sed 's/},{/}\n{/g' | sed -n 's/.*"name":"\([^"]*\)".*"version":"\([^"]*\)".*/\1@\2/p')
+bin_paths=$(mise bin-paths -C /etc/mise; { [ -z "$just" ] || mise bin-paths $just; } || true)
+for d in $bin_paths; do
+  for f in "$d"/*; do
+    if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
+  done
+done
+find /etc/mise -name '*.lock' -exec chmod 644 {} + 2>/dev/null || true
+'''

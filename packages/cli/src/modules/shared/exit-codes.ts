@@ -17,4 +17,8 @@ export const EXIT_SCHEDULE_NOT_FOUND = 9;
 
 export const EXIT_TERMS_NOT_ACCEPTED = 10;
 
+export const EXIT_RUN_STOPPED = 11;
+
+export const EXIT_RUN_TIMEOUT = 12;
+
 export const EXIT_SIGINT = 130;

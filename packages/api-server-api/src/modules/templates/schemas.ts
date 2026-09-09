@@ -31,6 +31,13 @@ export const templateCategorySchema = z
   .enum(["harness", "preconfigured"])
   .default("harness");
 
+export const harnessFamilySchema = z.enum([
+  "claude-code",
+  "codex",
+  "pi",
+  "bob",
+]);
+
 export const templateSpecSchema = z
   .object({
     version: z.string(),
@@ -38,6 +45,7 @@ export const templateSpecSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     category: templateCategorySchema,
+    harness: harnessFamilySchema.optional(),
     tags: z.array(z.string()).optional(),
     docsUrl: z.string().optional(),
     releaseNotesUrl: z.string().optional(),

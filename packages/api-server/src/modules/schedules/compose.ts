@@ -64,6 +64,17 @@ export function composeSchedulesAtBoot(
   };
 }
 
+export function createSchedulesCleanupHook(
+  boot: SchedulesBoot,
+): (agentId: string) => Promise<void> {
+  return async (agentId) => {
+    for (const id of await boot.repo.listIdsByAgent(agentId)) {
+      await boot.runner.cancel(id);
+    }
+    await boot.repo.deleteByAgent(agentId);
+  };
+}
+
 export interface ComposeSchedulesForOwnerOpts {
   boot: SchedulesBoot;
   owner: string;

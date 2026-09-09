@@ -171,6 +171,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       surface,
       agents,
+      readTemplateSpec,
       runtimeMutator,
       wakeAgent: async (agentId) => {
         await agentsRepo.wakeIfHibernated(agentId);

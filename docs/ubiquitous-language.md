@@ -150,6 +150,9 @@ Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../do
 | Scan | Enumerating Scanned Skills in a Source |
 | Write Local | Materializing user-supplied Markdown as a standalone Local Skill (one skill per file); rejects name collisions with existing Local Skills |
 | Delete Local | Removing a standalone Local Skill's directory from every Skill Path; a name that resolves to no directory is a no-op |
+| Shipped-Skill Manifest | The append-only content-hash history of every skill version any platform image ever shipped, baked into every image; the reference deciding whether a Local Skill copy is platform-managed |
+| Seed Ledger | Per-volume record of which image skills were already seeded; a seeded name is never copied again, so a user's deletion of an image skill is final |
+| Image-Skill Reconciliation | The pod-side pass that seeds, updates, and removes platform-managed Local Skills against the Shipped-Skill Manifest; a diverged copy is the user's and is never touched, and Installed Skill Refs are exempt |
 | Read Local | Reading every file in a Local Skill's directory, size-capped per file and per skill; returns the resolved directory basename with the files |
 
 ## Approvals (bounded context)
@@ -224,7 +227,8 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 | Term | Definition |
 |------|-----------|
 | Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, bootstrapped by an Install Command at create. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
-| KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which v1 pins and hides). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command; a new procedure is a new id plus a new mapping, and its bootstrap must install a `/wiki-onboard` command (the greeting depends on it) |
+| KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which the user picks as for a coding agent). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command and tells the bootstrap which Harness Family the sandbox runs; a new procedure is a new id plus a new mapping, and its bootstrap must be harness-aware and install the onboarding command (the greeting depends on it) |
+| Harness Family | Which agent CLI runs inside a Template's image — a closed vocabulary owned by the templates contract, declared per Template and validated at load. A Knowledge Base's Install Command names it so the bootstrap lands its tooling where that harness reads it, and the greeting issues the onboarding command in the form that harness expands |
 
 ## Secrets (bounded context)
 
@@ -317,3 +321,10 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 | CLI Client | The Platform CLI's public OAuth client registered in Keycloak (`platform-cli` by default, advertised as `cliClientId` on `/api/auth/config`); device-grant only, no client secret, no redirect URIs |
 | Agent Ref | The user-supplied string that addresses an Agent from the CLI — either an Agent ID (anything starting with the Reserved ID Prefix `agent-`) or an Agent name, disambiguated syntactically |
 | Agent Resolver | The cross-module application service every Agent-targeted CLI verb consumes to convert an Agent Ref into the owner's Agent; exact case-sensitive name match; returns a typed not-found / ambiguous / transport / auth-required error |
+## Artifact Library (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Visibility | Who may open an Artifact's share link: `private` (in-app only, no link), `restricted` (the link opens only for the owner and for people on the Artifact's Viewer Allowlist, after they sign in), or `public` (anyone holding the link, no sign-in). One field, three values; "public" always means anyone |
+| Viewer Allowlist | The set of email addresses an Artifact owner names on a `restricted` Artifact. Stored as emails, not user ids, because a listed person may exist only in the connected identity provider and never have signed in to the Platform. Matched at sign-in time against the identity provider's verified email |
+| Restricted Share | An Artifact whose Visibility is `restricted`. Same share link as public; the link stays stable when Visibility changes |

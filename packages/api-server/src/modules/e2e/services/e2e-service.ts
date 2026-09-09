@@ -1,4 +1,5 @@
 import { createTRPCClient, createWSClient, wsLink } from "@trpc/client";
+import { TRPCError } from "@trpc/server";
 import type {
   E2eService,
   SlackFireCommandInput,
@@ -24,7 +25,10 @@ export function createE2eService(deps: {
 }): E2eService {
   function requireSlack(): SlackE2eControl {
     if (!deps.slack) {
-      throw new Error("slack e2e control is not available on this deployment");
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "slack e2e control is not available on this deployment",
+      });
     }
     return deps.slack;
   }

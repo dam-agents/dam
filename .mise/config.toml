@@ -1,0 +1,116 @@
+min_version = "2026.9.3"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "helm", "docs"]
+
+[vars]
+repo_root = "{{config_root}}"
+
+[deps.pnpm]
+auto = true
+
+[tools]
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
+"go:sigs.k8s.io/crdify" = "latest"
+"npm:json-schema-to-typescript" = "latest"
+fd = "latest"
+gh = "latest"
+go = "1.26"
+gum = "latest"
+helm = "4.2.0"
+java = "21"
+kubeconform = "latest"
+lima = "2"
+maven = "latest"
+nodejs = "24"
+pinact = "latest"
+pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
+trivy = "latest"
+uv = "0.9"
+yq = "latest"
+zizmor = "latest"
+
+[settings]
+experimental = true
+task.disable_spec_from_run_scripts = true
+
+[task_templates."ts:check:tsc"]
+depends = ["^check:tsc"]
+run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.{ts,tsx}", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache.enabled = true
+deny_net = true
+deny_write = true
+
+[task_templates."ts:check:lint"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.{ts,tsx}", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache.enabled = true
+deny_net = true
+deny_write = true
+
+[task_templates."ts:check:format"]
+run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
+sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc"]
+outputs = []
+cache.enabled = true
+deny_net = true
+deny_write = true
+
+[task_templates."ts:fix:lint"]
+run = "pnpm exec eslint --fix ."
+deny_net = true
+
+[task_templates."ts:fix:format"]
+run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
+deny_net = true
+
+[task_templates."ts:test"]
+description = "Run the package's vitest suite"
+depends = ["^check:tsc"]
+run = "pnpm exec vitest run"
+sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+cache.enabled = true
+
+[tasks.check]
+depends = ["check:*", "//...:check"]
+
+[tasks.fix]
+depends = ["//...:fix"]
+
+[tasks.test]
+depends = ["//...:test"]
+
+# Kept on purpose in here, to guard other file-based tasks
+[tasks."check:task-files"]
+description = "Every file task under a .mise/tasks directory is executable"
+run = """
+bad=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -not -perm -u+x -print)
+[ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
+"""
+outputs = []
+deny_net = true
+deny_write = true
+
+# Not cached: the append-only comparison reads git history (merge-base with
+# origin/main), which no sources glob can key.
+[tasks."check:skill-manifest"]
+description = "Every currently shipped image skill's content hash is in the shipped-skill manifest, and the manifest is append-only"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts check"
+deny_net = true
+
+[tasks."skills:manifest:generate"]
+description = "Append the current image skills' content hashes to the shipped-skill manifest"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts generate"
+deny_net = true
+
+[tasks."skills:manifest:backfill"]
+description = "Append every historical image-skill content hash from git history to the shipped-skill manifest"
+run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts backfill"
+deny_net = true

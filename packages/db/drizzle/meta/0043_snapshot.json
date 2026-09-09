@@ -1,5 +1,5 @@
 {
-  "id": "4cfb44cc-6f2b-4a59-90fd-784ad5d288ea",
+  "id": "67e2bced-a9ae-4895-85de-5edaf37dab01",
   "prevId": "392b2981-147d-4317-b189-73d08b3c56d8",
   "version": "7",
   "dialect": "postgresql",
@@ -2269,6 +2269,60 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.library_artifact_viewers": {
+      "name": "library_artifact_viewers",
+      "schema": "",
+      "columns": {
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "library_artifact_viewers_artifact_id_library_artifacts_id_fk": {
+          "name": "library_artifact_viewers_artifact_id_library_artifacts_id_fk",
+          "tableFrom": "library_artifact_viewers",
+          "tableTo": "library_artifacts",
+          "columnsFrom": [
+            "artifact_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "library_artifact_viewers_artifact_id_email_pk": {
+          "name": "library_artifact_viewers_artifact_id_email_pk",
+          "columns": [
+            "artifact_id",
+            "email"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.library_artifacts": {
       "name": "library_artifacts",
       "schema": "",
@@ -2308,12 +2362,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "source_path": {
-          "name": "source_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "kind": {
           "name": "kind",

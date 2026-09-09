@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#MISE description="Publish the current release branch as a release candidate"
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+release_branch="$(git branch --show-current)"
+if [[ "$release_branch" != "release-v"* ]]; then
+  echo "ERROR: Not on a 'release-v*' branch"
+  exit 1
+fi
+
+set -x
+git pull
+set +x
+
+current_version=$(yq -r '.version' helm/Chart.yaml)
+if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$ ]]; then
+  echo "ERROR: Current version must be an RC version (X.Y.Z-rcN)"
+  echo "Current version: $current_version"
+  exit 1
+fi
+
+next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}-rc$((${BASH_REMATCH[4]} + 1))"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Tip of the \x1b[36m$release_branch\x1b[0m branch will be tagged \x1b[36mv$current_version\x1b[0m and pushed to GitHub."
+echo -e "  - GitHub Action triggered by the tag will publish a release candidate \x1b[36m$current_version\x1b[0m."
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m branch will be bumped to \x1b[36m$next_version\x1b[0m."
+gum confirm "Proceed?"
+
+set -x
+git tag "v$current_version"
+git push --atomic origin $release_branch "v$current_version"
+set +x
+echo -e "Pushed tag v$current_version to \x1b[36morigin/$release_branch\x1b[0m"
+
+mise run release:set-version "$next_version"
+git push
+
+git checkout $release_branch
+
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/cd.yml"

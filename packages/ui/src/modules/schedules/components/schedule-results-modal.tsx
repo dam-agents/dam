@@ -18,7 +18,7 @@ function ResultRow({ session, onOpen }: RowProps) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-3 border-t border-border px-5 py-3 text-left hover:bg-muted md:px-7"
+      className="flex w-full items-center gap-3 border-t border-border px-5 py-3 text-left hover:bg-muted md:px-6"
     >
       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
         {summary}
@@ -61,14 +61,14 @@ export function ScheduleResultsModal({
       />
       <DialogBody flush className="min-h-[50vh]">
         {sessionsQuery.isError && (
-          <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-7">
+          <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-6">
             Couldn't load past runs — the agent may be asleep.
           </p>
         )}
         {!sessionsQuery.isPending &&
           !sessionsQuery.isError &&
           sessions.length === 0 && (
-            <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-7">
+            <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-6">
               No runs yet.
             </p>
           )}

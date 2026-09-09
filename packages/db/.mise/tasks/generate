@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Generate a migration for table/index/enum changes by diffing schema.ts against
+# the latest snapshot. Edit schema.ts, run this, commit. See packages/db/README.md.
+set -euo pipefail
+pnpm exec drizzle-kit generate "$@"

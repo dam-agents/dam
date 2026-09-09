@@ -3,23 +3,16 @@ import { z } from "zod";
 import {
   ARTIFACT_TOUCH_MARKER_VERSION,
   ARTIFACT_TITLE_MAX_LENGTH,
-  artifactInternalLink,
   artifactKindSchema,
-  type LibraryArtifact,
 } from "api-server-api";
 
+import { toAgentArtifact } from "./agent-artifact.js";
 import { securityLog } from "../../core/security-log.js";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
-function withInternalLink(
-  artifact: LibraryArtifact,
-): LibraryArtifact & { internal_link: string } {
-  return { ...artifact, internal_link: artifactInternalLink(artifact.id) };
-}
-
 function touched(
-  artifact: LibraryArtifact & { internal_link: string },
+  artifact: ReturnType<typeof toAgentArtifact>,
 ): Record<string, unknown> {
   return {
     ...artifact,
@@ -71,7 +64,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact",
-    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); set `expires_in_hours` only if the platform should permanently delete the artifact after that time. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
+    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
     {
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
       content: z
@@ -140,7 +133,7 @@ export function registerArtifactLibraryTools(
           { agentId: deps.agentId },
         );
         return json({
-          ...touched(withInternalLink(artifact)),
+          ...touched(toAgentArtifact(artifact)),
           ...(await experimentAttachment(artifact.id, experiment_id)),
         });
       }),
@@ -230,7 +223,7 @@ export function registerArtifactLibraryTools(
           search,
           ...(mine_only ? { agentId: deps.agentId } : {}),
         });
-        return json(artifacts.map(withInternalLink));
+        return json(artifacts.map(toAgentArtifact));
       }),
   );
 
@@ -247,7 +240,7 @@ export function registerArtifactLibraryTools(
         if (!artifact) return errorResult(`artifact ${id} not found`);
         const content = await lib.getContent(id, version);
         return json({
-          ...withInternalLink(artifact),
+          ...toAgentArtifact(artifact),
           content:
             content && !content.binary && !content.tooLarge
               ? content.content
@@ -299,15 +292,15 @@ export function registerArtifactLibraryTools(
           content !== undefined || upload_ref !== undefined;
         return json(
           publishedVersion
-            ? touched(withInternalLink(artifact))
-            : withInternalLink(artifact),
+            ? touched(toAgentArtifact(artifact))
+            : toAgentArtifact(artifact),
         );
       }),
   );
 
   server.tool(
     "set_artifact_sharing",
-    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private.",
+    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted.",
     {
       id: z.string().min(1),
       visibility: z.enum(["private", "public"]).optional(),
@@ -329,7 +322,7 @@ export function registerArtifactLibraryTools(
               }
             : {}),
         });
-        return json(artifact);
+        return json(toAgentArtifact(artifact));
       }),
   );
 

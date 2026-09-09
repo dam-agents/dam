@@ -4,9 +4,12 @@ import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { AgentService } from "../agent/index.js";
 import { buildChatCommand } from "./commands/chat.js";
+import { buildRunCommand, trackStdout } from "./commands/run.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
 import { createAcpSessionClient } from "./infrastructure/acp-session-client.js";
+import { createBootstrap } from "./services/bootstrap.js";
 import { createChatService } from "./services/chat-service.js";
+import { createRunService } from "./services/run-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
 export const buildSessionsPort = (host: string, token: string) =>
@@ -46,6 +49,21 @@ export function composeChatModule({
     isTty: Boolean(process.stdin.isTTY),
   });
 
+  const runService = createRunService({
+    bootstrap: createBootstrap({
+      compatService,
+      configService,
+      tokenProvider,
+      createAgentService,
+    }),
+    out: trackStdout,
+    errOut: (line) => process.stderr.write(`${line}\n`),
+    onInterrupt: (handler) => {
+      process.once("SIGINT", handler);
+      return () => process.removeListener("SIGINT", handler);
+    },
+  });
+
   const sessionParent = new Command("session").description(
     "Manage sessions for an Agent",
   );
@@ -54,6 +72,10 @@ export function composeChatModule({
   });
 
   return {
-    commands: [buildChatCommand({ chatService }), sessionParent],
+    commands: [
+      buildChatCommand({ chatService }),
+      buildRunCommand({ runService }),
+      sessionParent,
+    ],
   };
 }

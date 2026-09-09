@@ -55,6 +55,15 @@ export function listConversationsByAgent(db: Db) {
   };
 }
 
+export function allConversationAgentIds(db: Db) {
+  return async (): Promise<string[]> => {
+    const rows = await db
+      .selectDistinct({ agentId: telegramConversations.agentId })
+      .from(telegramConversations);
+    return rows.map((r) => r.agentId);
+  };
+}
+
 export function deleteConversationsByAgent(db: Db) {
   return async (agentId: string): Promise<void> => {
     await db

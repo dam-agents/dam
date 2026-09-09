@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier"
+#MISE depends=[":install-browsers"]
+#MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
+# Defensive: the sandbox k3s ingress binds IPv4 only, so the specs' own
+# fetches (Keycloak token mint, tRPC clients) resolve `*.localhost` v4-first
+# instead of depending on happy-eyeballs fallback. The browser side gets the
+# same via --host-resolver-rules in the config.
+set -euo pipefail
+pnpm exec playwright test "$@"

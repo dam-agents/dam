@@ -9,7 +9,21 @@ export const artifactKindSchema = z.enum([
   "binary",
 ]);
 
-export const artifactVisibilitySchema = z.enum(["private", "public"]);
+export const artifactVisibilitySchema = z.enum([
+  "private",
+  "restricted",
+  "public",
+]);
+
+export const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
+
+export const VIEWER_ALLOWLIST_MAX = 50;
+
+export const viewerEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email().max(254));
 
 export const ARTIFACT_TITLE_MAX_LENGTH = 300;
 
@@ -55,7 +69,7 @@ export const artifactCreateInputSchema = z
     kind: artifactKindSchema.optional(),
     contentType: z.string().trim().min(1).max(200).optional(),
     folderId: z.string().min(1).optional(),
-    visibility: artifactVisibilitySchema.optional(),
+    visibility: artifactCreateVisibilitySchema.optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
     sourcePath: sourcePathSchema.optional(),
     agentId: z.string().min(1).optional(),
@@ -84,6 +98,14 @@ export const artifactSharingInputSchema = z.object({
   id: z.string().min(1),
   visibility: artifactVisibilitySchema.optional(),
   expiresInHours: expiresInHoursSchema.nullish(),
+  viewers: z
+    .array(viewerEmailSchema)
+    .max(VIEWER_ALLOWLIST_MAX)
+    .transform((emails) => [...new Set(emails)])
+    .optional()
+    .describe(
+      "The whole Viewer Allowlist. Replaces the stored list; omit to leave it as is.",
+    ),
 });
 
 export const artifactUploadUrlInputSchema = z.object({

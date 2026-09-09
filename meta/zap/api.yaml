@@ -1,0 +1,615 @@
+env:
+  contexts:
+    - name: dam-api
+      urls:
+        - https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api
+      includePaths:
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/.*
+      excludePaths:
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc/e2e\..*
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc/egressRules\.applyPreset.*
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc-ws.*
+      authentication:
+        method: form
+        parameters:
+          loginPageUrl: https://keycloak-dam-dev.apps.dam-cl.fmaas.res.ibm.com/realms/platform/protocol/openid-connect/token
+          loginRequestUrl: https://keycloak-dam-dev.apps.dam-cl.fmaas.res.ibm.com/realms/platform/protocol/openid-connect/token
+          loginRequestBody: "grant_type=password&client_id=platform-ui&scope=openid&username={%username%}&password={%password%}"
+        verification:
+          method: poll
+          pollFrequency: 20
+          pollUnits: requests
+          pollUrl: https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.list
+          loggedInRegex: "\\QHTTP/1.1 200\\E"
+          loggedOutRegex: "\\QHTTP/1.1 401\\E"
+      sessionManagement:
+        method: headers
+        parameters:
+          Authorization: "Bearer {%json:access_token%}"
+      users:
+        - name: zap
+          credentials:
+            username: zap
+            password: zap
+  parameters:
+    failOnError: false
+    failOnWarning: false
+    progressToStdout: true
+jobs:
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+  - type: requestor
+    parameters:
+      user: zap
+    requests:
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/templates.list"
+        method: GET
+        name: templates.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/templates.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: templates.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/repos.list"
+        method: GET
+        name: repos.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.list"
+        method: GET
+        name: agents.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: agents.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.backgroundWork?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: agents.backgroundWork
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.create"
+        method: POST
+        name: agents.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"ZAP\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"registryCredential\": {\"server\": \"zap\", \"username\": \"zap\", \"password\": \"zap\"}, \"egressPreset\": \"none\", \"hibernationTimeoutMin\": 0, \"gitRepo\": {\"url\": \"https://example.com/zap\", \"ref\": \"zap\"}, \"connectionIds\": [\"zap\"], \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}, \"sweepable\": true, \"lifetimeMs\": 0}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.update"
+        method: POST
+        name: agents.update
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"name\": \"zap\", \"description\": \"zap\", \"env\": [{\"name\": \"ZAP\", \"value\": \"zap\"}], \"secretRef\": \"zap\", \"hibernationTimeoutMin\": 0, \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.delete"
+        method: POST
+        name: agents.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.restart"
+        method: POST
+        name: agents.restart
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.wake"
+        method: POST
+        name: agents.wake
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.stop"
+        method: POST
+        name: agents.stop
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.pause"
+        method: POST
+        name: agents.pause
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.upgrade"
+        method: POST
+        name: agents.upgrade
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"expectedToImage\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.connectSlack"
+        method: POST
+        name: agents.connectSlack
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"slackChannelId\": \"zap\", \"ambient\": true}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.disconnectSlack"
+        method: POST
+        name: agents.disconnectSlack
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"slackChannelId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.bindSlackChannel"
+        method: POST
+        name: agents.bindSlackChannel
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"flowId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.listTelegramChats?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: agents.listTelegramChats
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.unbindTelegramChat"
+        method: POST
+        name: agents.unbindTelegramChat
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"conversationId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.bindTelegramChat"
+        method: POST
+        name: agents.bindTelegramChat
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"flowId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.list?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: schedules.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.listForOwner?input=%7B%22limit%22%3A%201%7D"
+        method: GET
+        name: schedules.listForOwner
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: schedules.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.createCron"
+        method: POST
+        name: schedules.createCron
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"cron\": \"zap\", \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.createRRule"
+        method: POST
+        name: schedules.createRRule
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"10:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.updateRRule"
+        method: POST
+        name: schedules.updateRRule
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"name\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"10:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.delete"
+        method: POST
+        name: schedules.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.toggle"
+        method: POST
+        name: schedules.toggle
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.resetSession"
+        method: POST
+        name: schedules.resetSession
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/channels.available"
+        method: GET
+        name: channels.available
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/channels.telegramBot"
+        method: GET
+        name: channels.telegramBot
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.listTemplates"
+        method: GET
+        name: connections.listTemplates
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.list"
+        method: GET
+        name: connections.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: connections.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.create"
+        method: POST
+        name: connections.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"templateId\": \"zap\", \"name\": \"zap-1\", \"authKind\": \"oauth\", \"url\": \"https://example.com/zap\", \"host\": \"zap\", \"clientId\": \"zap\", \"clientSecret\": \"zap\", \"appSlug\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.startOAuth"
+        method: POST
+        name: connections.startOAuth
+        headers: ["Content-Type: application/json"]
+        data: "{\"connectionId\": \"zap\", \"returnTo\": \"/zap\", \"popup\": true}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.discoverMcp"
+        method: POST
+        name: connections.discoverMcp
+        headers: ["Content-Type: application/json"]
+        data: "{\"url\": \"https://example.com/zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.probeClusterCa"
+        method: POST
+        name: connections.probeClusterCa
+        headers: ["Content-Type: application/json"]
+        data: "{\"host\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.probeGitHubAppInstallation"
+        method: POST
+        name: connections.probeGitHubAppInstallation
+        headers: ["Content-Type: application/json"]
+        data: "{\"templateId\": \"zap\", \"appId\": \"zap\", \"installationId\": \"zap\", \"privateKey\": \"zap\", \"host\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.probeGitHubAppInstallationForConnection"
+        method: POST
+        name: connections.probeGitHubAppInstallationForConnection
+        headers: ["Content-Type: application/json"]
+        data: "{\"connectionId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.updateGitHubAppScope"
+        method: POST
+        name: connections.updateGitHubAppScope
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"repositories\": \"zap\", \"repositoryIds\": \"zap\", \"permissions\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.update"
+        method: POST
+        name: connections.update
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"value\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.delete"
+        method: POST
+        name: connections.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.testAnthropic"
+        method: POST
+        name: connections.testAnthropic
+        headers: ["Content-Type: application/json"]
+        data: "{\"value\": \"zap\", \"envName\": \"ANTHROPIC_API_KEY\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.getAgentConnections?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: connections.getAgentConnections
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/connections.setAgentConnections"
+        method: POST
+        name: connections.setAgentConnections
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"connectionIds\": [\"zap\"]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sources.list?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.sources.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sources.create"
+        method: POST
+        name: skills.sources.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"gitUrl\": \"https://example.com/zap\", \"path\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sources.delete"
+        method: POST
+        name: skills.sources.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sources.refresh"
+        method: POST
+        name: skills.sources.refresh
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.list?input=%7B%22sourceId%22%3A%20%22zap%22%2C%20%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.listWithScan?input=%7B%22sourceId%22%3A%20%22zap%22%2C%20%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.listWithScan
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.getSkillContent?input=%7B%22sourceId%22%3A%20%22zap%22%2C%20%22name%22%3A%20%22zap%22%2C%20%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.getSkillContent
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.install"
+        method: POST
+        name: skills.install
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"source\": \"https://example.com/zap\", \"name\": \"zap\", \"version\": \"zap\", \"contentHash\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.uninstall"
+        method: POST
+        name: skills.uninstall
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"source\": \"https://example.com/zap\", \"name\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.applyBatch"
+        method: POST
+        name: skills.applyBatch
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"install\": [{\"source\": \"https://example.com/zap\", \"name\": \"zap\", \"version\": \"zap\", \"contentHash\": \"zap\"}], \"uninstall\": [{\"source\": \"https://example.com/zap\", \"name\": \"zap\"}]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sets.list"
+        method: GET
+        name: skills.sets.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sets.create"
+        method: POST
+        name: skills.sets.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap-1\", \"skills\": [{\"source\": \"https://example.com/zap\", \"name\": \"zap\"}]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sets.delete"
+        method: POST
+        name: skills.sets.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.sets.applyToAgent"
+        method: POST
+        name: skills.sets.applyToAgent
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"setIds\": [\"zap\"]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.createLocal"
+        method: POST
+        name: skills.createLocal
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"skills\": [{\"name\": \"zap\", \"content\": \"zap\"}]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.deleteLocal"
+        method: POST
+        name: skills.deleteLocal
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"name\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.listLocal?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.listLocal
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.readLocal?input=%7B%22agentId%22%3A%20%22zap%22%2C%20%22name%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.readLocal
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.state?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: skills.state
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/skills.publish"
+        method: POST
+        name: skills.publish
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"sourceId\": \"zap\", \"name\": \"zap\", \"title\": \"zap\", \"body\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.listForOwner?input=%7B%22limit%22%3A%201%2C%20%22status%22%3A%20%22pending%22%7D"
+        method: GET
+        name: approvals.listForOwner
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.listForInstance?input=%7B%22limit%22%3A%201%2C%20%22status%22%3A%20%22pending%22%2C%20%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: approvals.listForInstance
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.approveOnce"
+        method: POST
+        name: approvals.approveOnce
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.approvePermanent"
+        method: POST
+        name: approvals.approvePermanent
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.approveHost"
+        method: POST
+        name: approvals.approveHost
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.denyForever"
+        method: POST
+        name: approvals.denyForever
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/approvals.dismiss"
+        method: POST
+        name: approvals.dismiss
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.listForAgent?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: egressRules.listForAgent
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: egressRules.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.currentPreset?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: egressRules.currentPreset
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.create"
+        method: POST
+        name: egressRules.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"host\": \"zap\", \"port\": 1, \"method\": \"zap\", \"pathPattern\": \"zap\", \"verdict\": \"allow\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.update"
+        method: POST
+        name: egressRules.update
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"method\": \"zap\", \"pathPattern\": \"zap\", \"verdict\": \"allow\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.revoke"
+        method: POST
+        name: egressRules.revoke
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/egressRules.trustedHosts"
+        method: GET
+        name: egressRules.trustedHosts
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.createSandbox"
+        method: POST
+        name: experiments.createSandbox
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.list"
+        method: GET
+        name: experiments.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.driverSummaries"
+        method: GET
+        name: experiments.driverSummaries
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: experiments.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.feed?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: experiments.feed
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.startRun"
+        method: POST
+        name: experiments.startRun
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.stop"
+        method: POST
+        name: experiments.stop
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/experiments.delete"
+        method: POST
+        name: experiments.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/knowledgeBases.create"
+        method: POST
+        name: knowledgeBases.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}, \"kbTemplateId\": \"llm-wiki\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.status?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: kbShares.status
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.list"
+        method: GET
+        name: kbShares.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.defaults?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: kbShares.defaults
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.create"
+        method: POST
+        name: kbShares.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"roots\": [\"zap\"]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.reveal"
+        method: POST
+        name: kbShares.reveal
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.rotate"
+        method: POST
+        name: kbShares.rotate
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.revoke"
+        method: POST
+        name: kbShares.revoke
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.refresh"
+        method: POST
+        name: kbShares.refresh
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"roots\": [\"zap\"]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.setName"
+        method: POST
+        name: kbShares.setName
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"name\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.resolveLink"
+        method: POST
+        name: kbShares.resolveLink
+        headers: ["Content-Type: application/json"]
+        data: "{\"shareString\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.touches?input=%7B%22agentId%22%3A%20%22zap%22%2C%20%22sessionIds%22%3A%20%5B%22zap%22%5D%2C%20%22limit%22%3A%201%7D"
+        method: GET
+        name: artifactLibrary.touches
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.list?input=%7B%22folderId%22%3A%20%22zap%22%2C%20%22agentId%22%3A%20%22zap%22%2C%20%22search%22%3A%20%22zap%22%7D"
+        method: GET
+        name: artifactLibrary.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: artifactLibrary.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.getContent?input=%7B%22id%22%3A%20%22zap%22%2C%20%22version%22%3A%201%7D"
+        method: GET
+        name: artifactLibrary.getContent
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.preview?input=%7B%22id%22%3A%20%22zap%22%2C%20%22version%22%3A%201%7D"
+        method: GET
+        name: artifactLibrary.preview
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.listVersions?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: artifactLibrary.listVersions
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.create"
+        method: POST
+        name: artifactLibrary.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"title\": \"zap\", \"content\": \"zap\", \"fileName\": \"zap\", \"kind\": \"html\", \"contentType\": \"zap\", \"folderId\": \"zap\", \"visibility\": \"private\", \"expiresInHours\": 1}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.update"
+        method: POST
+        name: artifactLibrary.update
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"title\": \"zap\", \"folderId\": \"zap\", \"content\": \"zap\", \"fileName\": \"zap\", \"contentType\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.setSharing"
+        method: POST
+        name: artifactLibrary.setSharing
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"visibility\": \"private\", \"expiresInHours\": 1}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.delete"
+        method: POST
+        name: artifactLibrary.delete
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.createUploadUrl"
+        method: POST
+        name: artifactLibrary.createUploadUrl
+        headers: ["Content-Type: application/json"]
+        data: "{\"fileName\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.listFolders"
+        method: GET
+        name: artifactLibrary.listFolders
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.createFolder"
+        method: POST
+        name: artifactLibrary.createFolder
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.updateFolder"
+        method: POST
+        name: artifactLibrary.updateFolder
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\", \"name\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.deleteFolder"
+        method: POST
+        name: artifactLibrary.deleteFolder
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.folderShareUrl?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: artifactLibrary.folderShareUrl
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/caseStudies.list"
+        method: GET
+        name: caseStudies.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/caseStudies.get?input=%7B%22id%22%3A%20%22zap%22%7D"
+        method: GET
+        name: caseStudies.get
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/caseStudies.release"
+        method: POST
+        name: caseStudies.release
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/features.flags"
+        method: GET
+        name: features.flags
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/features.setFlag"
+        method: POST
+        name: features.setFlag
+        headers: ["Content-Type: application/json"]
+        data: "{\"feature\": \"advanced-connections\", \"enabled\": true}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/files.upload"
+        method: POST
+        name: files.upload
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"path\": \"zap\", \"contentBase64\": \"zap\", \"contentType\": \"zap\", \"overwrite\": true}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/links.all"
+        method: GET
+        name: links.all
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/metrics.overview?input=%7B%22agentId%22%3A%20%22zap%22%2C%20%22sessionId%22%3A%20%22zap%22%2C%20%22sinceHours%22%3A%201%2C%20%22limit%22%3A%201%7D"
+        method: GET
+        name: metrics.overview
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/metrics.spendBreakdown?input=%7B%22from%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22to%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22agentId%22%3A%20%22zap%22%2C%20%22timeZone%22%3A%20%22UTC%22%7D"
+        method: GET
+        name: metrics.spendBreakdown
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/terms.current"
+        method: GET
+        name: terms.current
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/terms.latestAcceptance"
+        method: GET
+        name: terms.latestAcceptance
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/terms.accept"
+        method: POST
+        name: terms.accept
+        headers: ["Content-Type: application/json"]
+        data: "{\"version\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/usage.entryPointChosen"
+        method: POST
+        name: usage.entryPointChosen
+        headers: ["Content-Type: application/json"]
+        data: "{\"choice\": \"sandbox\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/apiKeys.list"
+        method: GET
+        name: apiKeys.list
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/apiKeys.create"
+        method: POST
+        name: apiKeys.create
+        headers: ["Content-Type: application/json"]
+        data: "{\"name\": \"zap\", \"scopes\": [\"agents:read\"], \"agentIds\": \"*\", \"expiresAt\": \"2026-01-01T00:00:00.000Z\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/apiKeys.revoke"
+        method: POST
+        name: apiKeys.revoke
+        headers: ["Content-Type: application/json"]
+        data: "{\"id\": \"zap\"}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/harnessConfig.status?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: harnessConfig.status
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/harnessConfig.settled?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: harnessConfig.settled
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/harnessConfig.snapshot?input=%7B%22agentId%22%3A%20%22zap%22%7D"
+        method: GET
+        name: harnessConfig.snapshot
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/harnessConfig.set"
+        method: POST
+        name: harnessConfig.set
+        headers: ["Content-Type: application/json"]
+        data: "{\"agentId\": \"zap\", \"model\": \"zap\", \"mode\": \"zap\", \"configOptions\": {}, \"unset\": [\"zap\"]}"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/budgets.reserved"
+        method: GET
+        name: budgets.reserved
+  - type: passiveScan-wait
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: api-passive

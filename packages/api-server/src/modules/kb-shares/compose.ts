@@ -27,6 +27,8 @@ import {
   finishPublishFailure,
   finishPublishSuccess,
   insertShare,
+  findLatestShareByAgent,
+  listActiveShareAgentIds,
   listActiveSharesByOwner,
   listDirtyActiveShares,
   releasePublishClaim,
@@ -230,6 +232,17 @@ export function startKbShareSync(opts: {
     listDirtyActive: listDirtyActiveShares(opts.db),
     attemptSync: (agentId) => nudge.attemptSync(agentId),
   });
+}
+
+export function findKbShareOwnerByAgent(
+  db: Db,
+): (agentId: string) => Promise<string | null> {
+  const find = findLatestShareByAgent(db);
+  return async (agentId) => (await find(agentId))?.owner ?? null;
+}
+
+export function listKbShareAgentIds(db: Db): Promise<string[]> {
+  return listActiveShareAgentIds(db)();
 }
 
 export function createKbShareAgentCleanup(opts: {

@@ -14,6 +14,7 @@ export const SESSION_CATEGORY_LABELS: Record<SessionCategory, string> = {
   experiments: "Experiment runs",
   scheduled: "Scheduled",
   channels: "Channels",
+  runs: "Runs",
   terminal: "Terminal",
 };
 

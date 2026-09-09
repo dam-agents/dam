@@ -1,0 +1,6 @@
+browsers/
+zaphome/
+sessions/
+*.log
+procedures.json
+scan.pid

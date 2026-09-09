@@ -107,7 +107,6 @@ function harness(options: {
       readAgent,
       upsertProfile: repo.upsertProfile,
       tombstoneProfile: repo.tombstoneProfile,
-      retireProfile: repo.retireProfile,
       log,
     });
 
@@ -358,44 +357,50 @@ describe("public agent profile saga", () => {
   });
 
   /**
-   * TEST_SCENARIO: A deleted agent must stop being named, and a stale link to
-   * it has to keep landing on the generic page rather than a 404.
+   * TEST_SCENARIO: Retiring a deleted agent's row is the agent cleanup's job,
+   * run on every deletion path. The deletion event is only a notification, so
+   * the saga neither flips an existing row nor inserts a tombstone for an agent
+   * that never had one, and it reads nothing from K8s.
    */
-  it("marks the row deleted on AgentDeleted", async () => {
+  it("ignores AgentDeleted: retirement belongs to the agent cleanup", async () => {
     const h = harness({
+      boundAgentIds: ["agent-1", "agent-2"],
       profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
     });
     const sub = h.startSaga();
 
     emit({ type: EventType.AgentDeleted, agentId: "agent-1" });
+    emit({ type: EventType.AgentDeleted, agentId: "agent-2" });
     await flushMicrotasks();
     sub.unsubscribe();
 
-    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: false });
+    expect(h.profileIds()).toEqual(["agent-1"]);
     expect(h.k8sReads()).toBe(0);
   });
 
   /**
-   * TEST_SCENARIO: Most agents are deleted without ever having a row, and
-   * nothing in this system removes one, so a tombstone per delete would grow the
-   * table for the life of the install. The delete only flips a row that exists.
-   * The one id that can still be viewed after the delete - a channels row left
-   * behind by a failed cleanup - costs one K8s read, because the first view
-   * writes the tombstone itself.
+   * TEST_SCENARIO: The cleanup retires a row that exists and inserts nothing
+   * for an agent that never had one: nothing removes a row here, so a tombstone
+   * per delete would grow the table for the life of the install. The one id
+   * that can still be viewed afterwards - a binding left behind by a failed
+   * cleanup - costs one K8s read, because the first view writes the tombstone.
    */
-  it("inserts no row on AgentDeleted when there is none to flip", async () => {
-    const h = harness({ boundAgentIds: ["agent-1"] });
-    const sub = h.startSaga();
+  it("retires only an existing row and lets the first view tombstone the rest", async () => {
+    const h = harness({
+      boundAgentIds: ["agent-1", "agent-2"],
+      profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
+    });
 
-    emit({ type: EventType.AgentDeleted, agentId: "agent-1" });
-    await flushMicrotasks();
-    sub.unsubscribe();
+    await h.repo.retireProfile("agent-1");
+    await h.repo.retireProfile("agent-2");
 
-    expect(h.profileIds()).toEqual([]);
+    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+    expect(h.profileIds()).toEqual(["agent-1"]);
     expect(h.k8sReads()).toBe(0);
 
-    expect(await h.service.get("agent-1")).toBeNull();
-    expect(await h.service.get("agent-1")).toBeNull();
+    expect(await h.service.get("agent-2")).toBeNull();
+    expect(await h.service.get("agent-2")).toBeNull();
     expect(h.k8sReads()).toBe(1);
   });
 });

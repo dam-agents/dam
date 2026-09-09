@@ -13,12 +13,14 @@ export { podSessionsNoticeSchema } from "./modules/events/schemas.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
+  harnessFamilySchema,
   mountSchema,
   resourcesSchema,
   skillSourceSeedSchema,
   templateSpecSchema,
 } from "./modules/templates/schemas.js";
 export type {
+  HarnessFamily,
   Template,
   TemplateSpec,
   TemplatesService,
@@ -211,6 +213,7 @@ export {
 export type {
   ArtifactKind,
   ArtifactVisibility,
+  ArtifactCreateVisibility,
   ArtifactFolder,
   LibraryArtifact,
   ArtifactVersionInfo,
@@ -228,10 +231,14 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  artifactSharingInputSchema,
+  artifactCreateVisibilitySchema,
+  viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
+  VIEWER_ALLOWLIST_MAX,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
@@ -287,6 +294,7 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   BOB_HOST,
+  BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   providerTypeForTemplateId,
@@ -533,6 +541,7 @@ export {
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
   RuleVerdict,
@@ -579,6 +588,8 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformRunResultSchema,
+  platformRunResultResponseSchema,
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
   promptBlockSchema,
@@ -597,6 +608,8 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformRunResult,
+  PlatformRunResultResponse,
   PlatformClippedReplayMeta,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,

@@ -49,14 +49,14 @@ holding keys (the provider-agnostic discover → wire → probe procedure).
 ## Build
 
 ```sh
-mise run agents:gepa:image                   # plain docker build (pip-installs gepa)
+mise run //packages/agents:image -- gepa                   # plain docker build (pip-installs gepa)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
 Override the pinned release with `GEPA_VERSION`:
 
 ```sh
-GEPA_VERSION=0.1.4 mise run agents:gepa:image
+GEPA_VERSION=0.1.4 mise run //packages/agents:image -- gepa
 ```
 
 `values-local.yaml` points the gepa template at the locally-built
@@ -70,6 +70,6 @@ The gepa image is published by CI (`.github/workflows/cd.yml`): the matrixed
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/gepa` (no `imagePullSecret`). Registering the component in
-`scripts/resolve-image.sh`'s `WORKLOADS` list is what enrolls it in that
+`.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it in that
 matrix. The template is enabled in `values.yaml` under "Pre-configured Images"
 (`category: preconfigured`, `experimental: true`).
