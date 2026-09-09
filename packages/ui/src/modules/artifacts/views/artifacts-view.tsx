@@ -1,4 +1,4 @@
-import { Search } from "@carbon/icons-react";
+import { FolderAdd, Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -123,17 +123,9 @@ export function ArtifactsView() {
         }
         actions={
           hasContent ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setDialog({ kind: "folder", folder: null })}
-              >
-                New folder
-              </Button>
-              <Button onClick={() => setDialog({ kind: "upload" })}>
-                Upload artifact
-              </Button>
-            </>
+            <Button onClick={() => setDialog({ kind: "upload" })}>
+              Upload artifact
+            </Button>
           ) : undefined
         }
       />
@@ -182,6 +174,15 @@ export function ArtifactsView() {
               {...rowActions}
             />
           ))}
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start border-dashed text-muted-foreground hover:border-solid hover:text-foreground"
+            onClick={() => setDialog({ kind: "folder", folder: null })}
+          >
+            <FolderAdd size={16} />
+            New folder
+          </Button>
         </div>
       )}
 

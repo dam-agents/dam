@@ -63,7 +63,7 @@ export function AddSkillSourceModal({
         tabs={TABS}
         value={tab}
         onValueChange={setTab}
-        className="px-5 md:px-7"
+        className="px-5 md:px-6"
       />
 
       {tab === "github" ? (

@@ -60,7 +60,7 @@ export function GithubSourceTab({
       </DialogBody>
 
       <DialogActions
-        className="border-t border-border"
+        divided
         onCancel={onClose}
         label="Add source"
         pendingLabel="Adding…"

@@ -54,7 +54,15 @@ export function ShareDialog({ artifact, onClose }: Props) {
   );
 
   return (
-    <Modal>
+    <Modal
+      onClose={
+        isPending
+          ? undefined
+          : confirmingPublic
+            ? () => setConfirmingPublic(false)
+            : onClose
+      }
+    >
       {confirmingPublic ? (
         <>
           <DialogHeader
