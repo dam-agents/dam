@@ -87,5 +87,7 @@ drivers:
         - BOB_DEFAULT_GATEWAY_URL
       redirectEnv:
         - BOB_GATEWAY_URL
+      pinEnv:
+        - BOB_SHELL_MODEL
       path: /inference/v1/model/info
       shape: litellm-model-info

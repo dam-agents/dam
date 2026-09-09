@@ -71,16 +71,19 @@ export function useResolvedHarnessConfig(
   if (operable) {
     const recent = recorded?.snapshot;
     const read = live ?? recent ?? null;
-    const values =
-      read && read.availableModels === undefined && recent?.availableModels
-        ? { ...read, availableModels: recent.availableModels }
-        : read;
+    const backFilled =
+      read !== null &&
+      read.availableModels === undefined &&
+      !!recent?.availableModels;
+    const values = backFilled
+      ? { ...read, availableModels: recent.availableModels }
+      : read;
     return {
       values,
       origin: values ? "live" : "none",
       capturedAt: null,
       hasRun,
-      modelsPaired: true,
+      modelsPaired: !backFilled,
       pending,
     };
   }

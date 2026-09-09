@@ -44,3 +44,6 @@ drivers:
       redirectEnv:
         - OPENAI_PROXY_URL
         - OPENAI_BASE_URL
+      pinEnv:
+        - OPENAI_PROXY_MODEL
+        - OPENAI_MODEL

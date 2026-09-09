@@ -20,6 +20,7 @@ const BINDING: HarnessConfigBinding = {
   modelDiscovery: {
     urlEnv: ["REDIRECT_URL", "OWN_GATEWAY_URL"],
     redirectEnv: ["REDIRECT_URL"],
+    pinEnv: ["PINNED_MODEL"],
   },
 };
 
@@ -81,6 +82,16 @@ describe("seeding a discovered model", () => {
   it("leaves the harness's own provider alone", async () => {
     expect(
       await seedWith({ OWN_GATEWAY_URL: "https://own" }, "OWN_GATEWAY_URL"),
+    ).toBe(false);
+    expect(() => readFileSync(settingsPath, "utf8")).toThrow();
+  });
+
+  it("yields to a model pinned on the provider", async () => {
+    expect(
+      await seedWith(
+        { REDIRECT_URL: "https://proxy", PINNED_MODEL: "operator/choice" },
+        "REDIRECT_URL",
+      ),
     ).toBe(false);
     expect(() => readFileSync(settingsPath, "utf8")).toThrow();
   });

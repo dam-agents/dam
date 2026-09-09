@@ -57,6 +57,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let bootWorkStarted = false;
   let bootWorkDone = deps.beforeFirstSpawn === undefined;
+  let gateOpen = envReady && bootWorkDone;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRecycle:
     | "config-recycle"
@@ -78,8 +79,13 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     readyWaiters.clear();
   }
 
+  function openGate(): void {
+    gateOpen = true;
+    releaseWaiters();
+  }
+
   function releaseIfReady(): void {
-    if (envReady && bootWorkDone) releaseWaiters();
+    if (envReady && bootWorkDone) openGate();
   }
 
   function finishBootWork(): void {
@@ -95,16 +101,17 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       finishBootWork();
       return;
     }
-    bootTimer = setTimeout(() => {
-      bootWorkDone = true;
-      releaseWaiters();
-    }, deps.warmStartTimeoutMs);
+    bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
     void hold.catch(() => {}).then(finishBootWork);
   }
 
   function markEnvReady(): void {
     if (envReady) return;
     envReady = true;
+    if (warmTimer) {
+      clearTimeout(warmTimer);
+      warmTimer = null;
+    }
     startBootWork();
     releaseIfReady();
   }
@@ -112,8 +119,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   if (!envReady) {
     warmTimer = setTimeout(() => {
       envReady = true;
-      bootWorkDone = true;
-      releaseWaiters();
+      openGate();
     }, deps.warmStartTimeoutMs);
   }
 
@@ -178,7 +184,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     whenReady(cb) {
       startBootWork();
-      if (envReady && bootWorkDone) {
+      if (gateOpen) {
         cb();
         return () => {};
       }

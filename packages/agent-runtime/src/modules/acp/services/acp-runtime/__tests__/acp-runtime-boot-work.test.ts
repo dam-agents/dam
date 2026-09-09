@@ -49,6 +49,38 @@ describe("acp-runtime: boot work before the first spawn", () => {
   });
 
   /**
+   * TEST_SCENARIO: A cold boot, where the environment arrives late. The wait
+   * for the environment and the wait for the boot work are separate deadlines:
+   * the env one must not still be running once the env has arrived, or it
+   * fires part-way through the boot work and starts the harness on a config
+   * the seed has not finished writing.
+   */
+  it("does not let the env deadline cut the boot work short", async () => {
+    vi.useFakeTimers();
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const world = createWorld({
+      envReadyAtBoot: false,
+      warmStartTimeoutMs: 1_000,
+      beforeFirstSpawn: () => held,
+    });
+
+    world.connect();
+    vi.advanceTimersByTime(900);
+    world.runtime.refreshEnv({ force: false });
+
+    vi.advanceTimersByTime(200);
+    expect(world.harnessStarted()).toBe(false);
+
+    release();
+    await vi.runAllTimersAsync();
+    expect(world.harnessStarted()).toBe(true);
+  });
+
+  /**
    * TEST_SCENARIO: The boot work never settles — an unreachable provider with
    * no timeout of its own. The warm-start ceiling releases the caller so the
    * harness still starts; the agent then runs without the seeded value rather

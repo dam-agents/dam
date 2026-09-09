@@ -131,7 +131,14 @@ export function createHarnessConfigPlugin(deps: {
     const current = readCurrentValues(binding, agentHome, log);
     if (current.model) return false;
 
-    const outcome = await discoverModels(spec, envReader.current());
+    const env = envReader.current();
+    const pinned = spec.pinEnv?.find((name) => !!env[name]?.trim());
+    if (pinned) {
+      log(`[harness-config] no model seeded: ${pinned} pins one already`);
+      return false;
+    }
+
+    const outcome = await discoverModels(spec, env);
     if (outcome.status !== "observed") return false;
     if (!spec.redirectEnv?.includes(outcome.via)) {
       log(

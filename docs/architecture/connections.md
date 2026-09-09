@@ -195,11 +195,13 @@ empty list as an error), and no region hint of its own — a gateway
 answering the profile route with one would redirect Bob's inference calls
 off the configured host. This Connection contributes no model of its
 own, and Bob's built-in default resolves to one only its own gateway
-serves — so a model has to come from somewhere else. Nobody has to pin
-one by hand: because this Connection redirects Bob, the platform seeds
-the first model the endpoint's own listing offers before the harness
-starts ([runtime-delivery](runtime-delivery.md#concepts)). A provider pin
-or a per-agent override still wins over it.
+serves — so a model has to come from somewhere else. A provider pin or a
+per-agent override supplies one, and when neither does, nobody has to
+step in: because this Connection redirects Bob, the platform seeds one
+before the harness starts, taking the first of the names the endpoint
+lists once they are ordered ([runtime-delivery](runtime-delivery.md#concepts)).
+The seed yields to a pin rather than overriding it — it fills an empty
+slot only, so a chosen model is never swapped for one nobody picked.
 
 ### Custom Header credential
 

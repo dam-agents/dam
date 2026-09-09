@@ -37,13 +37,18 @@ function liteLlmModelName(entry: Record<string, unknown>): string | null {
   return typeof name === "string" && name.length > 0 ? name : null;
 }
 
+const modelIdReaders: Record<
+  ModelListShape,
+  (entry: Record<string, unknown>) => string | null
+> = {
+  "litellm-model-info": liteLlmModelName,
+  "openai-models": openAiModelId,
+};
+
 function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as Record<string, unknown>;
-  const id =
-    shape === "litellm-model-info"
-      ? liteLlmModelName(record)
-      : openAiModelId(record);
+  const id = modelIdReaders[shape](record);
   return id && !/embedding/i.test(id) ? id : null;
 }
 
