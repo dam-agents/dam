@@ -120,7 +120,6 @@ export function SandboxHomeHeader({ agent, display }: Props) {
               {display.state === "running" && (
                 <FreeUpComputeItems
                   agent={agent}
-                  configureLabel="the setup section below"
                   onPause={() => suspend.pause(agent.id)}
                   onStop={() => void onStop()}
                 />

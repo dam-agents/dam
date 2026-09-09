@@ -9,16 +9,16 @@ import type { AgentView } from "../../../types.js";
 
 export function FreeUpComputeItems({
   agent,
-  configureLabel,
   onPause,
   onStop,
 }: {
   agent: AgentView;
-  configureLabel: string;
   onPause: () => void;
   onStop: () => void;
 }) {
   const neverHibernates = agent.hibernationTimeoutMin === 0;
+  const pauseUnavailableReason =
+    "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Agent Setup.";
   return (
     <>
       <DropdownMenuLabel>Free up compute</DropdownMenuLabel>
@@ -37,17 +37,16 @@ export function FreeUpComputeItems({
         disabled={neverHibernates}
         onSelect={onPause}
         data-testid="agent-pause"
-        title={
-          neverHibernates
-            ? `This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in ${configureLabel}.`
-            : undefined
-        }
+        title={neverHibernates ? pauseUnavailableReason : undefined}
       >
         <MenuItemBody
           title="Pause"
           tag={neverHibernates ? "Unavailable" : undefined}
           description="Wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
         />
+        {neverHibernates && (
+          <span className="sr-only">{pauseUnavailableReason}</span>
+        )}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
     </>
