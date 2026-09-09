@@ -74,7 +74,7 @@ function buildReconciler(
   const opened = openSeedLedger(reconcile.stateDir);
   if (opened.kind === "corrupt") {
     log(
-      `seed ledger at ${opened.file} is corrupt; image-skill seeding disabled on this volume (delete the file to re-enable), update and retire reconciliation still runs`,
+      `seed ledger at ${opened.file} is corrupt; the next pass records shipped skills as already seeded without copying`,
     );
   }
   return createImageSkillReconciler({
@@ -83,7 +83,8 @@ function buildReconciler(
     seedRoots,
     stagedRoots: validated(reconcile.stagedRoots, "staged root"),
     manifest: loadShippedSkillManifest(reconcile.manifestFile, log),
-    ledger: opened.kind === "ok" ? opened.ledger : undefined,
+    ledger: opened.ledger,
+    recoverSeedLedger: opened.kind === "corrupt",
     log,
   });
 }

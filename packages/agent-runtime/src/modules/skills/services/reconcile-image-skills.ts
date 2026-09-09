@@ -13,7 +13,8 @@ export interface ImageSkillReconcilerDeps {
   seedRoots: SkillPath[];
   stagedRoots: SkillPath[];
   manifest: ShippedSkillManifest | undefined;
-  ledger: SeedLedger | undefined;
+  ledger: SeedLedger;
+  recoverSeedLedger: boolean;
   log: (msg: string) => void;
 }
 
@@ -26,6 +27,7 @@ export function createImageSkillReconciler(
 ): ImageSkillReconciler {
   let running = false;
   let queued: ReadonlySet<string> | undefined;
+  let recoverLedger = deps.recoverSeedLedger;
   let activeExempt = new Set<string>();
   const isExempt = (name: string) => activeExempt.has(name);
 
@@ -39,7 +41,12 @@ export function createImageSkillReconciler(
     running = true;
     activeExempt = new Set(exemptNames);
     try {
-      if (deps.ledger) await seedPass(deps, deps.ledger, isExempt);
+      if (recoverLedger) {
+        await recoverPass(deps);
+        recoverLedger = false;
+      } else {
+        await seedPass(deps, isExempt);
+      }
       await managePass(deps, deps.manifest, isExempt);
     } catch (err) {
       deps.log(`image-skill reconcile failed: ${errorMessage(err)}`);
@@ -54,15 +61,22 @@ export function createImageSkillReconciler(
   return { run };
 }
 
+async function recoverPass(deps: ImageSkillReconcilerDeps): Promise<void> {
+  const shipped = await deps.repo.listSkillDirs(deps.seedRoots);
+  deps.ledger.addAll(shipped.map((s) => s.dir));
+  deps.log(
+    `seed ledger recovered: marked ${shipped.length} shipped skill(s) as already seeded without copying`,
+  );
+}
+
 async function seedPass(
   deps: ImageSkillReconcilerDeps,
-  ledger: SeedLedger,
   isExempt: (name: string) => boolean,
 ): Promise<void> {
   const shipped = await deps.repo.listSkillDirs(deps.seedRoots);
   const seeded: string[] = [];
   for (const { dir, absDir } of shipped) {
-    if (isExempt(dir) || ledger.has(dir)) continue;
+    if (isExempt(dir) || deps.ledger.has(dir)) continue;
     try {
       if (!(await deps.repo.existsInAnyPath(dir, deps.skillPaths))) {
         await deps.repo.writeFromDir(dir, deps.skillPaths, absDir);
@@ -73,7 +87,7 @@ async function seedPass(
       deps.log(`seeding "${dir}" failed: ${errorMessage(err)}`);
     }
   }
-  ledger.addAll(seeded);
+  deps.ledger.addAll(seeded);
 }
 
 async function managePass(
@@ -99,7 +113,7 @@ async function managePass(
         const pristineDir = pristineByDir.get(dir);
         if (pristineDir === undefined) {
           await deps.repo.remove(dir, [skillPath]);
-          deps.ledger?.remove(dir);
+          deps.ledger.remove(dir);
           deps.log(`removed retired image skill "${dir}" from ${skillPath}`);
           continue;
         }

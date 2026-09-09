@@ -15,29 +15,32 @@ export interface SeedLedger {
   remove(name: string): void;
 }
 
-export type SeedLedgerOpenResult =
-  | { kind: "ok"; ledger: SeedLedger }
-  | { kind: "corrupt"; file: string };
+export interface SeedLedgerOpenResult {
+  kind: "ok" | "corrupt";
+  file: string;
+  ledger: SeedLedger;
+}
+
+function ledgerFileState(file: string): "ok" | "corrupt" {
+  if (!existsSync(file)) return "ok";
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return "corrupt";
+  }
+  return seedLedgerSchema.safeParse(raw).success ? "ok" : "corrupt";
+}
 
 export function openSeedLedger(stateDir: string): SeedLedgerOpenResult {
   const file = join(stateDir, LEDGER_FILE);
-  if (existsSync(file)) {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(readFileSync(file, "utf8"));
-    } catch {
-      return { kind: "corrupt", file };
-    }
-    if (!seedLedgerSchema.safeParse(raw).success) {
-      return { kind: "corrupt", file };
-    }
-  }
   const store = openJsonFile(file, {
     schema: seedLedgerSchema,
     initial: () => ({ seeded: [] }),
   });
   return {
-    kind: "ok",
+    kind: ledgerFileState(file),
+    file,
     ledger: {
       has(name) {
         return store.read().seeded.includes(name);
