@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-08-18
+Last verified: 2026-09-09
 
 ## Overview
 

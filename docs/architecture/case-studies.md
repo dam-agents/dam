@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-09-04
+Last verified: 2026-09-09
 
 ## Overview
 
