@@ -1,6 +1,6 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { type CSSProperties, useCallback, useMemo } from "react";
+import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ export function SessionsSidebar({
   onToggle,
   className,
   style,
+  ref,
   onResumeSession,
   onNewSession,
 }: {
@@ -47,6 +48,7 @@ export function SessionsSidebar({
   onToggle: () => void;
   className?: string;
   style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
   onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
 }) {
@@ -224,6 +226,7 @@ export function SessionsSidebar({
       headerRight={headerRight}
       className={className}
       style={style}
+      ref={ref}
     >
       <div className="flex-1 overflow-y-auto">
         {loading && <SessionListSkeleton />}

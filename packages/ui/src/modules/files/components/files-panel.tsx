@@ -5,7 +5,7 @@ import {
   Folders,
   Upload,
 } from "@carbon/icons-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +28,14 @@ export function FilesPanel({
   onToggle,
   className,
   style,
+  ref,
   onOpenFile,
 }: {
   open: boolean;
   onToggle: () => void;
   className?: string;
   style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const controller = useFilesPanelController({ onOpenFile });
@@ -77,6 +79,7 @@ export function FilesPanel({
       className={className}
       headerClassName="border-t border-border"
       style={style}
+      ref={ref}
     >
       <input
         ref={controller.fileInputRef}
