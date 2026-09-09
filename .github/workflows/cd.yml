@@ -859,7 +859,7 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise x -- pnpm audit --prod --json) || true
+          results=$(mise x --no-deps -- pnpm audit --prod --json) || true
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -993,7 +993,7 @@ jobs:
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
           # trivy.yaml at the repo root sets ignore-unfixed.
-          report=$(mise x -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
+          report=$(mise x --no-deps -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
             echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
             exit 0
           }
