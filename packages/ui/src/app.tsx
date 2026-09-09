@@ -6,19 +6,18 @@ import { DocsLauncher } from "./components/docs-launcher.js";
 import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
-import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
-import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
-import { PacksView } from "./modules/packs/views/packs-view.js";
+import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import { SchedulesView } from "./modules/schedules/views/schedules-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -108,29 +107,28 @@ function MainApp() {
             <SandboxHomeView />
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
+          ) : view === "home" ? (
+            <HomeView />
+          ) : view === "presets" ? (
+            <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+              <PresetsView />
+            </div>
+          ) : view === "schedules" ? (
+            <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+              <SchedulesView />
+            </div>
+          ) : view === "artifacts" ? (
+            <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+              <ArtifactsView />
+            </div>
           ) : (
-            <div
-              className={cn(
-                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" || view === "packs"
-                  ? "max-w-[1200px]"
-                  : "max-w-[960px]",
-              )}
-            >
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "agent-new" ? (
+            <div className="mx-auto w-full max-w-[960px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+              {view === "agent-new" ? (
                 <AgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "agents" ? (
-                <AgentsView />
-              ) : view === "packs" ? (
-                <PacksView />
               ) : view === "setup-workbench" ? (
                 <SetupWorkbenchView />
-              ) : view === "artifacts" ? (
-                <ArtifactsView />
               ) : (
                 <HomeView />
               )}

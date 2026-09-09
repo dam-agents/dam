@@ -1,13 +1,12 @@
 import {
-  Book,
   Box,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
-  EdgeDevice,
   Folders,
   Home,
   Settings,
+  Time,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -43,27 +42,21 @@ export function IconRail({
     badge: 0,
     navigate: () => setView("home"),
   };
-  const agents: Destination = {
-    label: "Agents",
-    icon: EdgeDevice,
-    active: view === "agents" || view === "agent-new",
-    badge: 0,
-    navigate: () => setView("agents"),
-  };
-  const knowledgeBases: Destination = {
-    label: "Knowledge",
-    icon: Book,
-    active: view === ("knowledge-base-config" as string),
-    badge: 0,
-    navigate: () => setView("agents"),
-  };
-  const packs: Destination = {
-    label: "Presets",
+  const starterKits: Destination = {
+    label: "Starter Kits",
     icon: Box,
-    active: view === "packs",
+    active: view === "presets",
     badge: 0,
-    navigate: () => setView("packs"),
+    navigate: () => setView("presets"),
   };
+  const schedules: Destination = {
+    label: "Schedules",
+    icon: Time,
+    active: view === "schedules",
+    badge: 0,
+    navigate: () => setView("schedules"),
+  };
+
   const artifacts: Destination = {
     label: "Artifacts",
     icon: Folders,
@@ -138,20 +131,19 @@ export function IconRail({
         </div>
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...agents} expanded={expandedNav} />
-          <RailItem {...knowledgeBases} expanded={expandedNav} />
-          <RailItem {...packs} expanded={expandedNav} />
+          <RailItem {...starterKits} expanded={expandedNav} />
+          <RailItem {...schedules} expanded={expandedNav} />
+          <RailItem {...artifacts} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
-          <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...settings} expanded={expandedNav} />
         </div>
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, agents, knowledgeBases, packs].map((destination) => (
+          {[sandboxes, starterKits, schedules, artifacts].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>

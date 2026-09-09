@@ -1,199 +1,230 @@
-import { ArrowRight } from "@carbon/icons-react";
+import type { CarbonIconType } from "@carbon/icons-react";
+import { Chat, Code, Document, Time } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
+import { CARD_SURFACE } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
-import { useFeed } from "../api/queries.js";
-import { ComputeWidget } from "../components/compute-widget.js";
-import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
-import { FeedEmptyState } from "../components/feed-empty-state.js";
-import { FeedFilterBar } from "../components/feed-filter-bar.js";
-import { FeedList } from "../components/feed-list.js";
-import { HomeGreeting } from "../components/home-greeting.js";
-import {
-  FeedFilterSkeleton,
-  WidgetSkeleton,
-} from "../components/home-skeletons.js";
-import { SchedulesWidget } from "../components/schedules-widget.js";
-import { SpendWidget } from "../components/spend-widget.js";
-import { useDismissals } from "../hooks/use-dismissals.js";
-import { usePodSessionsWatch } from "../hooks/use-pod-sessions-watch.js";
-import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
-import {
-  emptyStateFor,
-  FEED_SOURCES,
-  type FeedSource,
-  feedStats,
-  type FeedStatus,
-  filterFeed,
-} from "../lib/feed-filter.js";
+import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
+import { SandboxList } from "../../agents/components/sandbox-list.js";
+import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
+import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
+import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
+import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
+import { PackDetailSheet } from "../../packs/components/pack-detail-sheet.js";
+import type { Pack } from "../../packs/data/packs.js";
 
 export function HomeView() {
-  const {
-    items,
-    agents,
-    runningAgents,
-    hasAgents,
-    loadingAgents,
-    loadingFeed,
-    unreadableAgents,
-    approvalsUnreadable,
-  } = useFeed();
-  usePodSessionsWatch();
-  const selectAgent = useStore((s) => s.selectAgent);
-  const openAgentSession = useStore((s) => s.openAgentSession);
-  const { isDismissed, dismiss } = useDismissals();
-  const sticky = useStickyResolved();
-
-  const [status, setStatus] = useState<FeedStatus>("all");
-  const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
-    () => new Set(FEED_SOURCES),
+  const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
+    useAgentRows();
+  const { visible, drawByDriver } = splitTemporarySandboxes(
+    agentsData?.list ?? [],
   );
+  const { stopSandbox, deleteSandbox } = useSandboxRowActions({
+    deleteAgent,
+    suspend,
+  });
 
-  if (loadingAgents) {
+  const setView = useStore((s) => s.setView);
+  const setPendingPack = useStore((s) => s.setPendingPack);
+
+  const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+  const [browsePacksOpen, setBrowsePacksOpen] = useState(false);
+
+  const createAgent = () => setView("agent-new");
+
+  const handleCreateFromPack = (pack: Pack) => {
+    setSelectedPack(null);
+    setPendingPack(pack);
+    setView("agent-new");
+  };
+
+  const hasAgents = initialLoaded && visible.length > 0;
+
+  if (!initialLoaded) {
     return (
-      <div>
-        <HomeGreeting title="Activity" />
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
-            <FeedFilterSkeleton />
-          </div>
-          <div className="space-y-3 lg:col-start-1 lg:row-start-2">
-            <FeedCardSkeleton rows={3} />
-          </div>
-          <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
-            <WidgetSkeleton rows={2} />
-            <WidgetSkeleton rows={3} />
-            <WidgetSkeleton rows={3} />
-          </aside>
+      <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+        <div className="anim-in">
+          <PageHeader title="Agents" />
+          <ListSkeleton rows={2} rowHeight={70} />
         </div>
       </div>
     );
   }
 
   if (!hasAgents) {
-    return (
-      <div>
-        <WelcomeEntryPoints />
-      </div>
-    );
+    return <HomeEmptyState />;
   }
 
-  const live = sticky.merge(items).filter((item) => !isDismissed(item));
-  const visible = filterFeed(live, status, included);
-  const stats = feedStats(visible);
-  const dismissible = visible.filter((item) => item.kind !== "in-progress");
-  const workingAgentIds = new Set(
-    live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
-  );
+  return (
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+      <div className="anim-in">
+        <PageHeader
+          title="Agents"
+          description="Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
+          actions={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBrowsePacksOpen(true)}
+              >
+                Browse starter kits
+              </Button>
+              <Button onClick={createAgent}>Create agent</Button>
+            </>
+          }
+        />
 
-  const toggleSource = (source: FeedSource) =>
-    setIncluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(source)) next.delete(source);
-      else next.add(source);
-      return next;
-    });
+        <OutdatedTemplatesBanner agents={visible} />
+
+        <SandboxList
+          agents={visible}
+          drawByDriver={drawByDriver}
+          rowProps={rowProps}
+          onStop={(agent) => void stopSandbox(agent)}
+          onDelete={(agent) => void deleteSandbox(agent)}
+        />
+
+        <BrowsePacksModal
+          open={browsePacksOpen}
+          onClose={() => setBrowsePacksOpen(false)}
+          onSelect={(pack) => {
+            setBrowsePacksOpen(false);
+            setSelectedPack(pack);
+          }}
+          onStartFromScratch={createAgent}
+        />
+
+        <PackDetailSheet
+          pack={selectedPack}
+          onClose={() => setSelectedPack(null)}
+          onBack={() => {
+            setSelectedPack(null);
+            setBrowsePacksOpen(true);
+          }}
+          onCreateFromPack={handleCreateFromPack}
+          onStartFromScratch={() => {
+            setSelectedPack(null);
+            createAgent();
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+const WELCOME_BLOCKS: {
+  icon: CarbonIconType;
+  title: string;
+  body: string;
+}[] = [
+  {
+    icon: Code,
+    title: "Agents",
+    body: "An agent is yours to keep. It has its own files, tools, and memory. You chat with it, and it keeps working after you close the tab.",
+  },
+  {
+    icon: Time,
+    title: "Schedules",
+    body: "An agent can work every morning, every Monday, or whenever you need. Tell it when and what, and it writes its own schedule.",
+  },
+  {
+    icon: Chat,
+    title: "Channels",
+    body: "Bind an agent to a Slack channel and your team can talk to it there. Or connect your editor over SSH and work in its environment directly.",
+  },
+  {
+    icon: Document,
+    title: "Wikis",
+    body: "Point an agent at a repo or docs and it writes them up as a wiki, keeps it current, and answers questions from it.",
+  },
+];
+
+function HomeEmptyState() {
+  const brand = getBrand();
+  const setView = useStore((s) => s.setView);
+  const setPendingPack = useStore((s) => s.setPendingPack);
+
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+
+  const handleCreateFromPack = (pack: Pack) => {
+    setSelectedPack(null);
+    setPendingPack(pack);
+    setView("agent-new");
+  };
 
   return (
-    <div>
-      <HomeGreeting title="Activity" />
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
-          <div className="flex w-full items-center justify-between">
-            <FeedFilterBar
-              status={status}
-              onStatusChange={setStatus}
-              included={included}
-              onToggleSource={toggleSource}
-            />
-            {(stats.running + stats.toReview > 0 || dismissible.length > 0) && (
-              <div className="flex items-center gap-4">
-                {stats.running + stats.toReview > 0 && (
-                  <p className="text-sm text-muted-foreground tabular-nums">
-                    <span className="font-medium text-foreground">
-                      {stats.running}
-                    </span>{" "}
-                    running
-                    <span className="mx-1.5 text-border">·</span>
-                    <span className="font-medium text-foreground">
-                      {stats.toReview}
-                    </span>{" "}
-                    to review
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+      <div className="anim-in">
+        <PageHeader
+          title={`Welcome to ${brand.name}`}
+          description={
+            <span className="inline-block max-w-[560px]">
+              {brand.name} runs agents in the cloud. Each one gets its own
+              isolated environment, with your credentials and tools already set
+              up.
+            </span>
+          }
+          actions={
+            <Button onClick={() => setBrowseOpen(true)}>
+              Create your first agent
+            </Button>
+          }
+        />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {WELCOME_BLOCKS.map((block) => {
+            const Icon = block.icon;
+            return (
+              <div
+                key={block.title}
+                className={cn(CARD_SURFACE, "flex flex-col overflow-hidden")}
+              >
+                <div className="flex h-36 w-full items-center justify-center bg-muted/50">
+                  <Icon size={32} className="text-muted-foreground/40" />
+                </div>
+                <div className="flex flex-1 flex-col p-5">
+                  <h3 className="text-base font-semibold text-foreground">
+                    {block.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {block.body}
                   </p>
-                )}
-                {dismissible.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      for (const item of dismissible) sticky.drop(item.id);
-                      dismiss(dismissible);
-                    }}
-                    title="Hides these from Home. Nothing is resolved or marked read; running work stays."
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Clear all
-                  </button>
-                )}
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
-        <div className="space-y-3 lg:col-start-1 lg:row-start-2">
-          {loadingFeed && visible.length === 0 ? (
-            <FeedCardSkeleton rows={3} />
-          ) : visible.length === 0 && agents.length === 1 ? (
-            <Callout inset className="bg-card">
-              <div className="flex flex-col items-center gap-4 py-6">
-                <p className="text-sm text-foreground/80">
-                  Your first agent is ready. Open it to give it something to do.
-                </p>
-                <Button
-                  variant="outline"
-                  onClick={() => selectAgent(agents[0]!.id)}
-                >
-                  Open {agents[0]!.name}
-                  <ArrowRight size={16} />
-                </Button>
-              </div>
-            </Callout>
-          ) : visible.length === 0 ? (
-            <FeedEmptyState
-              {...emptyStateFor(status, {
-                allSourcesExcluded: included.size === 0,
-                noRunningAgents: runningAgents.length === 0,
-                unreadableAgents,
-                approvalsUnreadable,
-              })}
-            />
-          ) : (
-            <>
-              {loadingFeed && <FeedCardSkeleton />}
-              <FeedList
-                items={visible}
-                agents={agents}
-                onOpenSession={openAgentSession}
-                onDismiss={(item) => {
-                  sticky.drop(item.id);
-                  dismiss([item]);
-                }}
-                onResolved={(item, label) => sticky.keep(item, label)}
-                resolvedLabelFor={sticky.labelFor}
-              />
-            </>
-          )}
-        </div>
-        <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
-          <ComputeWidget
-            runningAgents={runningAgents}
-            workingAgentIds={workingAgentIds}
-          />
-          <SpendWidget />
-          <SchedulesWidget />
-        </aside>
+
+        <BrowsePacksModal
+          open={browseOpen}
+          onClose={() => setBrowseOpen(false)}
+          onSelect={(pack) => {
+            setBrowseOpen(false);
+            setSelectedPack(pack);
+          }}
+          onStartFromScratch={() => setView("agent-new")}
+        />
+
+        <PackDetailSheet
+          pack={selectedPack}
+          onClose={() => setSelectedPack(null)}
+          onBack={() => {
+            setSelectedPack(null);
+            setBrowseOpen(true);
+          }}
+          onCreateFromPack={handleCreateFromPack}
+          onStartFromScratch={() => {
+            setSelectedPack(null);
+            setView("agent-new");
+          }}
+        />
       </div>
     </div>
   );

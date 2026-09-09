@@ -5,7 +5,6 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatBytes } from "@/lib/format-size";
 
@@ -146,16 +145,15 @@ export function ArtifactsView() {
   const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
   const hasContent = artifacts.length > 0 || folders.length > 0;
-  const isEmpty = !loading && !hasContent;
 
   return (
     <div className="anim-in">
       <PageHeader
-        title="Artifacts"
+        title={hasContent ? "Artifacts" : "No artifacts yet"}
         description={
           hasContent
             ? "Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
-            : undefined
+            : "Artifacts from every agent collect here. Create an agent to get started."
         }
         actions={
           hasContent ? (
@@ -170,7 +168,9 @@ export function ArtifactsView() {
                 Upload artifact
               </Button>
             </>
-          ) : undefined
+          ) : (
+            <Button onClick={() => setView("home")}>Go to home</Button>
+          )
         }
       />
 
@@ -189,17 +189,7 @@ export function ArtifactsView() {
         </div>
       )}
 
-      {}
       {loading && !hasContent && <ListSkeleton rows={2} rowHeight={70} />}
-
-      {isEmpty && (
-        <PageEmptyState
-          title="No artifacts yet"
-          message="Artifacts from every agent collect here."
-          actionLabel="Go to agents"
-          onAction={() => setView("agents")}
-        />
-      )}
 
       {hasContent && (
         <div className="mt-5 flex flex-col gap-3">

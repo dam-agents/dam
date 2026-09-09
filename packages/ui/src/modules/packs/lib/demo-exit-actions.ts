@@ -22,7 +22,7 @@ export function makeThisMine(packId: string): void {
 export function backToPacks(): void {
   const store = useStore.getState();
   store.resetChatContext();
-  store.setView("packs");
+  store.setView("home");
 }
 
 export function walkAway(packId: string): void {
@@ -35,7 +35,7 @@ export function walkAway(packId: string): void {
 
   store.clearDemoAgent(packId);
   store.resetChatContext();
-  store.setView("packs");
+  store.setView("home");
 }
 
 function removeAgentFromCache(agentId: string): void {

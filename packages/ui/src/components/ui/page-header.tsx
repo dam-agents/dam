@@ -18,29 +18,22 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <header className={cn("@container mb-8", className)}>
-      <div className="flex flex-col @lg:flex-row @lg:flex-wrap @lg:items-center @lg:justify-between @lg:gap-x-4">
-        {}
-        <div className="order-1 flex min-h-10 min-w-0 items-center gap-3">
-          <h1
-            title={typeof title === "string" ? title : undefined}
-            className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"
-          >
-            {title}
-          </h1>
-          {adornment}
-        </div>
-        {actions && (
-          <div className="order-3 mt-3 flex shrink-0 items-center gap-2 @lg:order-2 @lg:mt-0">
-            {actions}
-          </div>
-        )}
-        {description && (
-          <p className="order-2 mt-3 text-sm text-balance text-muted-foreground @lg:order-3 @lg:w-full">
-            {description}
-          </p>
-        )}
+    <header className={cn("mb-8", className)}>
+      {actions && <div className="mb-4 flex items-center justify-end gap-2">{actions}</div>}
+      <div className="flex min-h-10 min-w-0 items-center gap-3">
+        <h1
+          title={typeof title === "string" ? title : undefined}
+          className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"
+        >
+          {title}
+        </h1>
+        {adornment}
       </div>
+      {description && (
+        <p className="mt-3 max-w-[640px] text-sm text-balance text-muted-foreground">
+          {description}
+        </p>
+      )}
     </header>
   );
 }

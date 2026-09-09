@@ -1,8 +1,10 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import {
+  ArrowLeft,
   BareMetalServer,
   Box,
   Chat,
+  Close,
   Code,
   Launch,
   Notebook,
@@ -12,7 +14,7 @@ import {
 import { rruleToText } from "api-server-api";
 
 import { GithubIcon } from "@/components/brand-icons";
-import { DialogFooter, DialogHeader, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -42,15 +44,17 @@ const SETUP_KIND_ORDER: PackIngredientKind[] = [
 interface Props {
   pack: Pack | null;
   onClose: () => void;
+  onBack?: () => void;
   onCreateFromPack: (pack: Pack) => void;
-  onTryIt: (pack: Pack) => void;
+  onStartFromScratch: () => void;
 }
 
 export function PackDetailSheet({
   pack,
   onClose,
+  onBack,
   onCreateFromPack,
-  onTryIt,
+  onStartFromScratch,
 }: Props) {
   if (!pack) return null;
 
@@ -71,9 +75,22 @@ export function PackDetailSheet({
 
   return (
     <Modal widthClass="w-[1200px]">
+      <div className="flex shrink-0 items-center justify-end px-5 pt-4 md:px-6">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onClose}
+          aria-label="Close"
+          className="shrink-0 text-muted-foreground"
+        >
+          <Close size={16} />
+        </Button>
+      </div>
+
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <DialogHeader onClose={onClose} divided>
+          <div className="border-b border-border px-5 pb-4 md:px-7">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
                 <Icon size={16} className="text-foreground" />
@@ -92,7 +109,7 @@ export function PackDetailSheet({
                 </p>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <p className="text-sm leading-relaxed text-muted-foreground">
@@ -153,14 +170,19 @@ export function PackDetailSheet({
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onTryIt(pack)}>
-              Try Demo
-            </Button>
+          <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-4 md:px-7">
+            <div>
+              {onBack && (
+                <Button variant="outline" onClick={onBack}>
+                  <ArrowLeft size={16} />
+                  Back
+                </Button>
+              )}
+            </div>
             <Button onClick={() => onCreateFromPack(pack)}>
-              Create an agent from this Preset
+              Use this Starter Kit
             </Button>
-          </DialogFooter>
+          </div>
         </div>
 
         <div className="hidden w-1/2 shrink-0 flex-col items-center justify-center border-l border-border bg-preset-light md:flex">

@@ -19,18 +19,18 @@ function useReviewScreens(): ReviewScreen[] {
   return [
     {
       label: "Home",
-      note: "Activity feed, compute, spend.",
+      note: "Agent list or welcome empty state.",
       go: () => setView("home"),
     },
     {
-      label: "Agents",
-      note: "Agent list with status indicators.",
-      go: () => setView("agents"),
+      label: "Starter Kits",
+      note: "Browsable starter kit library with spotlight hero.",
+      go: () => setView("presets"),
     },
     {
-      label: "Presets",
-      note: "Browse presets, detail sheet, search + filter.",
-      go: () => setView("packs"),
+      label: "Schedules",
+      note: "All schedules across agents.",
+      go: () => setView("schedules"),
     },
     {
       label: "Agent setup",
@@ -58,7 +58,7 @@ export function MockStateBar() {
     setMode(next);
     setMockEmpty(next === "empty");
     setMockFirstRun(next === "first-run");
-    queryClient.invalidateQueries();
+    void queryClient.refetchQueries();
   };
 
   return (
@@ -123,9 +123,8 @@ export function MockStateBar() {
             {screens.map((s) => {
               const active =
                 (s.label === "Home" && view === "home") ||
-                (s.label === "Agents" &&
-                  (view === "agents" || view === "agent-new")) ||
-                (s.label === "Presets" && view === "packs") ||
+                (s.label === "Starter Kits" && view === "presets") ||
+                (s.label === "Schedules" && view === "schedules") ||
                 (s.label === "Agent setup" && view === "agent-new") ||
                 (s.label === "Setup workbench" && view === "setup-workbench");
               return (

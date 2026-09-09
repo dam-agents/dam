@@ -508,8 +508,7 @@ export function ChatView() {
         );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
-    if (isKnowledgeBaseView) setView("agents");
-    else setView("home");
+    setView("home");
   }, [
     selectedAgent,
     selectedAgentName,
