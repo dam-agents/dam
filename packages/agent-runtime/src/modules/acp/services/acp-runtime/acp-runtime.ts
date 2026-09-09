@@ -37,7 +37,9 @@ import {
   type PlatformSessionMeta,
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
+import type { RunResultStore } from "../../infrastructure/run-result-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
+import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
@@ -67,6 +69,8 @@ const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
+
+const RUN_TEXT_BYTES_CAP = 1024 * 1024;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
@@ -100,6 +104,8 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
+  activeTurns: ActiveTurnStore;
+  runResults?: RunResultStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
 }
@@ -140,15 +146,37 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return channels;
   }
 
+  const isMachineSession = (sessionId: string): boolean => {
+    const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+    return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
+  };
+
+  let shuttingDown = false;
+
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
-      if (!nonViewerChannels.has(channel)) return;
-      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
-      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+      deps.activeTurns.record(sessionId);
+      if (nonViewerChannels.has(channel) && isMachineSession(sessionId))
         deps.sessionMetadata?.startRun(sessionId);
     },
-    onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
+    onTurnEnded: (sessionId) => {
+      if (shuttingDown) return;
+      deps.sessionMetadata?.finishRun(sessionId);
+      deps.activeTurns.remove(sessionId);
+    },
+    onTurnInterrupted: (sessionId, turn) => {
+      if (!turn.runPrompt && !isRunSession(sessionId)) return;
+      const buffer = runTextBuffers.get(sessionId);
+      runTextBuffers.delete(sessionId);
+      deps.runResults?.record(sessionId, {
+        promptId: turn.promptId,
+        stopReason: null,
+        finalText: buffer?.text ?? "",
+        truncated: buffer?.truncated ?? false,
+        endedAt: new Date().toISOString(),
+      });
+    },
     canStart: (sessionId) =>
       hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
@@ -205,6 +233,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
+    interruptedAt(sessionId) {
+      if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
+      return deps.activeTurns.leftovers().find((m) => m.sessionId === sessionId)
+        ?.startedAt;
+    },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
     },
@@ -248,6 +281,31 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const runTextBuffers = new Map<
+    string,
+    { text: string; truncated: boolean }
+  >();
+
+  function isRunSession(sessionId: string): boolean {
+    return (
+      deps.sessionMetadata?.get(sessionId)?.meta.type === SessionType.CliRun
+    );
+  }
+
+  function accumulateRunText(sessionId: string, text: string): void {
+    const buffer = runTextBuffers.get(sessionId) ?? {
+      text: "",
+      truncated: false,
+    };
+    if (buffer.truncated) return;
+    if (buffer.text.length + text.length > RUN_TEXT_BYTES_CAP) {
+      buffer.text += text.slice(0, RUN_TEXT_BYTES_CAP - buffer.text.length);
+      buffer.truncated = true;
+    } else {
+      buffer.text += text;
+    }
+    runTextBuffers.set(sessionId, buffer);
+  }
   const supersededEchoes = new Map<string, Set<string>>();
 
   function supersedeEcho(sessionId: string, id: string): void {
@@ -351,6 +409,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 
   function teardownRuntime(reason: HarnessTeardownReason): void {
+    shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
     for (const channel of engagedSessions.keys()) {
       channel.close(close.code, close.message);
@@ -366,6 +425,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
     promptScheduler.clear();
+    runTextBuffers.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
     sessionCloseSupported = true;
@@ -520,6 +580,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.forget(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
+    runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
     lease.maybeRecycle();
@@ -639,18 +700,32 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
-          const { turnEnded } = promptScheduler.onPromptResponse(
-            sid,
-            outboundId,
-          );
+          const { turnEnded, promptId, runPrompt } =
+            promptScheduler.onPromptResponse(sid, outboundId);
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
+          const stopReason = extractStopReason(frame);
           transcript.append(
             sid,
             JSON.stringify(
-              buildPlatformTurnEndedNotification({ sessionId: sid }),
+              buildPlatformTurnEndedNotification({
+                sessionId: sid,
+                ...(promptId !== null && { promptId }),
+                ...(stopReason !== null && { stopReason }),
+              }),
             ),
           );
+          if (turnEnded && (runPrompt || isRunSession(sid))) {
+            const buffer = runTextBuffers.get(sid);
+            runTextBuffers.delete(sid);
+            deps.runResults?.record(sid, {
+              promptId,
+              stopReason,
+              finalText: buffer?.text ?? "",
+              truncated: buffer?.truncated ?? false,
+              endedAt: new Date().toISOString(),
+            });
+          }
           maybeCloseIdleSession(sid);
           if (turnEnded) lease.maybeRecycle();
         }
@@ -673,6 +748,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
+        const text = extractAgentTextChunk(frame);
+        if (
+          text !== null &&
+          (promptScheduler.isRunTurn(sessionId) || isRunSession(sessionId))
+        )
+          accumulateRunText(sessionId, text);
         transcript.append(sessionId, line);
       }
     } else {
@@ -740,9 +821,31 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "platform/runResult" && paramsSid) {
+        const record = deps.runResults?.readFor(paramsSid) ?? null;
+        const interrupted =
+          !promptScheduler.hasTurnInFlight(paramsSid) &&
+          deps.activeTurns
+            .leftovers()
+            .some((marker) => marker.sessionId === paramsSid);
+        const response =
+          promptScheduler.hasWork(paramsSid) || interrupted
+            ? { status: "pending" }
+            : record === null
+              ? { status: "none" }
+              : { status: "done", result: record };
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: response }),
+        );
+        return;
+      }
+
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
+        deps.activeTurns.remove(paramsSid);
+        deps.runResults?.forgetSession(paramsSid);
         supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,
@@ -868,6 +971,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           originalId: frame.id,
           frame: rewritten,
           promptId,
+          runPrompt: extractPromptSurface(frame) === "cli",
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
@@ -1148,6 +1252,29 @@ function hasSessionCapability(
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session[name]);
+}
+
+function extractStopReason(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return null;
+  const stopReason = result.stopReason;
+  return typeof stopReason === "string" && stopReason.length > 0
+    ? stopReason
+    : null;
+}
+
+function extractAgentTextChunk(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  if (frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const update = params.update;
+  if (!isNonNullObject(update)) return null;
+  if (update.sessionUpdate !== "agent_message_chunk") return null;
+  const content = update.content;
+  if (!isNonNullObject(content) || content.type !== "text") return null;
+  return typeof content.text === "string" ? content.text : null;
 }
 
 function extractParamsSessionId(frame: unknown): string | null {

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -14,13 +13,9 @@ import {
   NameSection,
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
+import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import {
-  imageCatalogue,
-  KINDED_HARNESS_TEMPLATE_ID,
-} from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
   buildCodingAgentSetupInput,
@@ -37,8 +32,6 @@ export function CodingAgentSetupView() {
     {},
     RETURN_PATH,
   );
-  const { data: templates, isLoading } = useTemplates();
-  const { data: flags } = useFeatures();
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
 
@@ -49,23 +42,15 @@ export function CodingAgentSetupView() {
     boolean | null
   >(null);
 
-  const harnesses = useMemo(
-    () =>
-      imageCatalogue(templates ?? [], {
-        vmFeatureEnabled: flags?.["vm-sandboxes"] ?? false,
-      }).harnesses,
-    [templates, flags],
+  const onTemplateIdChange = useCallback(
+    (templateId: string | null) => update({ templateId }),
+    [update],
   );
-
-  const preselected = useRef(false);
-  useEffect(() => {
-    if (preselected.current || harnesses.length === 0) return;
-    preselected.current = true;
-    if (form.templateId !== null || form.customImage.trim().length > 0) return;
-    if (harnesses.some((t) => t.id === KINDED_HARNESS_TEMPLATE_ID)) {
-      update({ templateId: KINDED_HARNESS_TEMPLATE_ID });
-    }
-  }, [harnesses, form.templateId, form.customImage, update]);
+  const catalogue = useHarnessCatalogue({
+    templateId: form.templateId,
+    allowNone: form.customImage.trim().length > 0,
+    onTemplateIdChange,
+  });
 
   const draft: CodingAgentSetupDraft = {
     name: form.name,
@@ -111,8 +96,10 @@ export function CodingAgentSetupView() {
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
       <ImageSection
-        harnesses={harnesses}
-        loading={isLoading}
+        harnesses={catalogue.harnesses}
+        loading={catalogue.isLoading}
+        error={catalogue.isError}
+        onRetry={catalogue.refetch}
         templateId={form.templateId}
         customImage={form.customImage}
         registry={{

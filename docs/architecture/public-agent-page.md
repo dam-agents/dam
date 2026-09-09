@@ -1,6 +1,6 @@
 # Public Agent Page
 
-Last verified: 2026-08-24
+Last verified: 2026-09-08
 
 ## Overview
 
@@ -14,7 +14,7 @@ It is reached from two places: the Agent Footer under every Slack post, and the 
 
 The page is **unauthenticated and served from the app origin** — the same host as the rest of the UI, not the artifact share host.
 
-The share host is the tempting answer and the wrong one. It exists for exactly one reason: user-generated content must never execute on the app origin ([artifact-library](artifact-library.md)). This page is platform chrome — first-party markup, no agent-authored bytes in it — so none of that rationale applies, and hosting a conversion surface on a deliberately-untrusted subdomain hands people a URL that reads as untrustworthy because it _is_ the untrusted one. "Put it on the share host, that's the public one" conflates _public_ with _untrusted_; the two boundaries are unrelated.
+The by-link hosts belong to artifact sharing: the share host serves platform chrome and a separate viewer identity, while the content host executes untrusted user content ([artifact-library](artifact-library.md)). This page contains only first-party markup and belongs to the app's public entry. Public access alone does not make a page part of the artifact-sharing boundary.
 
 The page is rendered by the SPA rather than server-side, which puts the trust boundary **inside client bootstrap**: normal bootstrap ends in an unconditional redirect to Keycloak, so the public path has to be recognised and returned from before authentication runs. That carve-out is a security boundary, not a routing convenience — it is the one branch that reaches a render with no user — and it is pinned by specs asserting every authenticated path the matcher must refuse. A public entry that widened by accident would drop an anonymous visitor into the authenticated tree. Bootstrap also has no error page to fall back on: a throw before the first render is a blank document, so the page paints its shell before it reads, and a path the matcher cannot decode is answered as an unknown id rather than raised.
 
@@ -55,8 +55,10 @@ Three mechanisms keep the projection current, each with **one** job:
 | Mechanism     | Job                                                                                                                                                                                                                               |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Lazy fill** | Fills a missing row on first page view, behind the binding check, and tombstones the id when the Agent is gone. This is the entire backfill story — there is no migration backfill and no boot walk, because an Agent nobody has ever looked up costs nothing to not have. |
-| **Saga**      | Keeps a **bound** Agent's row current as it is created, updated, and deleted — a delete retires the row if there is one, and inserts nothing if there is not, because nothing ever removes a row here and the leftover-binding case is already bounded by lazy fill's tombstone — and pre-warms the row on a bind, so the first click after a bind is already warm. Create and update ask whether the Agent is bound first: the page never names an unbound Agent, and a row nothing can reach still costs the reconcile a control-plane read. A bind is the exception that writes without asking, being itself the binding. |
+| **Saga**      | Keeps a **bound** Agent's row current as it is created and updated, and pre-warms the row on a bind, so the first click after a bind is already warm. Create and update ask whether the Agent is bound first: the page never names an unbound Agent, and a row nothing can reach still costs the reconcile a control-plane read. A bind is the exception that writes without asking, being itself the binding. |
 | **Reconcile** | Periodically refreshes rows **that already exist and are still bound**. It does not scan bindings looking for Agents to add — that is lazy fill's job. Its only purpose is catching a replica that died between the K8s write and the Postgres write. |
+
+Deletion belongs to none of the three: the agent cleanup retires the row on every deletion path ([persistence § Lifetime](persistence.md#lifetime)), and the deletion event is only a notification here. Nothing ever removes a row, so a delete inserts no tombstone; the leftover-binding case is already bounded by lazy fill's tombstone on first view.
 
 Reading them as interchangeable is the failure mode: if the reconcile grows a binding scan it becomes a fleet-wide walk of the control plane, which is the thing the projection exists to prevent.
 

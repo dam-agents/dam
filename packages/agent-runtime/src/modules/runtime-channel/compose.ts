@@ -18,6 +18,7 @@ import {
   type RuntimeManifest,
 } from "./manifest.js";
 import { createStateStore } from "./state-store.js";
+import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
@@ -40,6 +41,10 @@ import type { TriggerSessionDriver } from "../acp/index.js";
 
 const SESSION_DIRECTORY_DEBOUNCE_MS = 1_000;
 
+export function pluginStateRoot(agentHome: string): string {
+  return join(agentHome, ".platform/plugins");
+}
+
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   manifest: RuntimeManifest;
@@ -59,6 +64,7 @@ export interface ComposeRuntimeChannelOpts {
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
+  onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
   log?: (msg: string) => void;
 }
 
@@ -80,7 +86,7 @@ export async function composeRuntimeChannel(
   const resolved = resolveDrivers(manifest);
   const env: ContextEnv = {
     agentHome: opts.agentHome,
-    pluginStateRoot: join(opts.agentHome, ".platform/plugins"),
+    pluginStateRoot: pluginStateRoot(opts.agentHome),
     log,
   };
 
@@ -144,6 +150,9 @@ export async function composeRuntimeChannel(
       harnessConfigPlugin.supported
         ? await harnessConfigPlugin.readCurrent()
         : undefined,
+    ...(opts.onSnapshotProcessed
+      ? { onSnapshotProcessed: opts.onSnapshotProcessed }
+      : {}),
     log,
   });
 

@@ -1,12 +1,24 @@
+import type { HarnessFamily } from "api-server-api";
+
 import {
   type AgentGreetingOptions,
   useAgentGreeting,
 } from "../../agents/hooks/use-agent-greeting.js";
+import { onboardCommandFor } from "../lib/onboard-command.js";
 
-const ONBOARD_COMMAND = "/wiki-onboard";
+export type ResolvedHarness =
+  | { ready: false }
+  | { ready: true; harness: HarnessFamily | undefined };
 
 export function useKnowledgeBaseGreeting(
-  opts: Omit<AgentGreetingOptions, "command" | "setupReady">,
+  opts: Omit<AgentGreetingOptions, "command" | "setupReady"> & {
+    harness: ResolvedHarness;
+  },
 ) {
-  useAgentGreeting({ ...opts, command: ONBOARD_COMMAND });
+  const { harness, ...rest } = opts;
+  useAgentGreeting({
+    ...rest,
+    setupReady: harness.ready,
+    command: onboardCommandFor(harness.ready ? harness.harness : undefined),
+  });
 }

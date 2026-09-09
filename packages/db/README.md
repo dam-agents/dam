@@ -16,7 +16,7 @@ Two kinds of migration, by what's changing (#739, [ADR-063](../../docs/adrs/063-
 
 ```sh
 # 1. edit src/schema.ts
-mise run db:generate     # writes drizzle/000N_<name>.sql + meta/000N_snapshot.json + journal entry
+mise run //packages/db:generate     # writes drizzle/000N_<name>.sql + meta/000N_snapshot.json + journal entry
 # 2. add a top comment to the .sql explaining *why* (reference ADRs if relevant)
 mise run check           # type-check + db:check:generated
 ```
@@ -26,7 +26,7 @@ mise run check           # type-check + db:check:generated
 ### Changing a view
 
 ```sh
-mise run db:new -- add_usage_retention_view   # scaffolds an empty drizzle/000N_<name>.sql + journal entry + snapshot
+mise run //packages/db:new -- add_usage_retention_view   # scaffolds an empty drizzle/000N_<name>.sql + journal entry + snapshot
 # write the CREATE/DROP VIEW SQL in it (create views after the views they depend
 # on; drop dependents first). Separate statements with `--> statement-breakpoint`.
 mise run check
@@ -36,7 +36,7 @@ mise run check
 
 ## `db:check:generated` — the guard
 
-`mise run db:check:generated` (part of `mise run check`, so it runs locally and in CI) runs `drizzle-kit generate` against `schema.ts` inside a throwaway copy of `drizzle/`: if that would produce a new migration, then `schema.ts` changed without `db:generate` (or a table migration was hand-written) and the check fails. The snapshot only advances when `db:generate` runs, so a clean result proves every table change went through generate. It's a pure file operation — **no database** — which is why it lives in the normal check bundle. Views never enter `schema.ts` or the snapshot, so they're outside its scope.
+`mise run //packages/db:check:generated` (part of `mise run check`, so it runs locally and in CI) runs `drizzle-kit generate` against `schema.ts` inside a throwaway copy of `drizzle/`: if that would produce a new migration, then `schema.ts` changed without `db:generate` (or a table migration was hand-written) and the check fails. The snapshot only advances when `db:generate` runs, so a clean result proves every table change went through generate. It's a pure file operation — **no database** — which is why it lives in the normal check bundle. Views never enter `schema.ts` or the snapshot, so they're outside its scope.
 
 ## The squash: `0000_squashed_baseline.sql` + `0001_usage_views.sql`
 

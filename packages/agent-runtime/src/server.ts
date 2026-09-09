@@ -1,6 +1,6 @@
 import http from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -18,6 +18,7 @@ import {
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   type AgentRuntimeContext,
+  type ApplyStateInput,
 } from "agent-runtime-api";
 import {
   OP_INPUT,
@@ -29,6 +30,7 @@ import {
 } from "api-server-api";
 import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
+import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
@@ -40,6 +42,7 @@ import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
@@ -50,6 +53,8 @@ import {
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
+  pluginStateRoot,
+  readSkillInstallBootState,
 } from "./modules/runtime-channel/index.js";
 import {
   loadManifest,
@@ -105,17 +110,29 @@ const kbPublish = composeKbPublish({
 });
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
-const pristineSkillPaths = [
-  ...skillRefPaths(runtimeManifest, config.IMAGE_WORKSPACE_DIR).filter(
-    (p) => !readSideSet.has(p),
-  ),
-  STAGED_SKILLS_DIR,
-];
-const skillsService = composeSkills({
-  skillPaths: readSidePaths,
-  pristineSkillPaths,
-  log: (msg) => process.stderr.write(`[skills] ${msg}\n`),
-});
+const seedRoots = skillRefPaths(
+  runtimeManifest,
+  config.IMAGE_WORKSPACE_DIR,
+).filter((p) => !readSideSet.has(p));
+const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
+const stateBackend = createFileDocumentStoreBackend(homeDir);
+const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
+const { service: skillsService, reconciler: imageSkillReconciler } =
+  composeSkills({
+    skillPaths: readSidePaths,
+    pristineSkillPaths,
+    ...(config.PLATFORM_IMAGE_SKILL_RECONCILE
+      ? {
+          reconcile: {
+            seedRoots,
+            stagedRoots: [STAGED_SKILLS_DIR],
+            manifestFile: config.SKILL_MANIFEST_FILE,
+            stateDir: join(homeDir, ".platform"),
+          },
+        }
+      : {}),
+    log: skillsLog,
+  });
 const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
@@ -125,8 +142,6 @@ const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
-
-const stateBackend = createFileDocumentStoreBackend(homeDir);
 
 const envStore = createEnvStateStore(homeDir);
 
@@ -152,6 +167,7 @@ const {
   backgroundWork,
   sessions: sessionsService,
   sessionChanges,
+  activeTurns,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -165,6 +181,30 @@ const {
   onArtifactTouch: artifactTouchReporter.report,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
+
+let recoveryScheduled = false;
+function scheduleRecovery(): void {
+  if (recoveryScheduled) return;
+  recoveryScheduled = true;
+  setTimeout(() => {
+    void recoverInterruptedTurns({
+      store: activeTurns,
+      sessionMetadata,
+      triggerDriver,
+      log: (msg) => process.stderr.write(`[recovery] ${msg}\n`),
+    });
+  }, 5_000).unref();
+}
+
+const reconcileOnState = imageSkillReconciler
+  ? (contributions: ApplyStateInput["state"]["contributions"]) => {
+      const names = new Set<string>();
+      for (const c of contributions) {
+        if (c.kind === "skill-ref") names.add(c.name);
+      }
+      void imageSkillReconciler.run(names);
+    }
+  : undefined;
 
 const runtimeChannel = await composeRuntimeChannel({
   manifestPath,
@@ -188,13 +228,28 @@ const runtimeChannel = await composeRuntimeChannel({
         configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),
         );
+        scheduleRecovery();
       },
     }),
     createFilePlugin(),
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
+  ...(reconcileOnState ? { onSnapshotProcessed: reconcileOnState } : {}),
 });
+
+if (imageSkillReconciler) {
+  const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
+  if (bootState.kind === "corrupt") {
+    skillsLog(
+      "skipping boot image-skill reconcile: skill-install state unreadable",
+    );
+  } else {
+    void imageSkillReconciler.run(
+      new Set(bootState.kind === "ok" ? bootState.installed : []),
+    );
+  }
+}
 
 const preparedSshd = await prepareSshd(homeDir, (msg) =>
   process.stderr.write(`[ssh] ${msg}\n`),
@@ -621,18 +676,15 @@ server.listen(config.PORT, () => {
     agentRuntimeVersion:
       process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
+
+  if (envStore.ready()) scheduleRecovery();
 });
 
-function readCgroupBytes(v2: string, v1: string): number | null {
-  for (const p of [v2, v1]) {
-    try {
-      const raw = readFileSync(p, "utf8").trim();
-      if (raw === "max") return Infinity;
-      const n = Number.parseInt(raw, 10);
-      if (Number.isFinite(n)) return n;
-    } catch {}
-  }
-  return null;
+if (config.MEM_REAPER && !config.PLATFORM_DEV) {
+  startMemReaper({
+    thresholdFraction: config.MEM_REAPER_THRESHOLD,
+    log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
+  });
 }
 
 const mib = (n: number) => Math.round(n / 1_048_576);

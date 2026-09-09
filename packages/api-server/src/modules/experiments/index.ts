@@ -1,6 +1,8 @@
 export {
   composeExperimentsForOwner,
   composeExperimentInactivitySweep,
+  createExperimentsCleanupHook,
+  listOpenExperimentDriverIds,
   reconcileExperimentPins,
   type ExperimentPinPort,
 } from "./compose.js";

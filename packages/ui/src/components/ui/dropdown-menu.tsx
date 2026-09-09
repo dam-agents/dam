@@ -76,6 +76,21 @@ function DropdownMenuCheckboxItem({
   );
 }
 
+function DropdownMenuLabel({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Label>) {
+  return (
+    <DropdownMenuPrimitive.Label
+      className={cn(
+        "px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -93,6 +108,7 @@ export {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 };

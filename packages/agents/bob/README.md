@@ -108,6 +108,14 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 
 Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
 
+### Running against another gateway (IBM LiteLLM)
+
+Granting the **IBM LiteLLM ETE Proxy** connection points Bob at that proxy instead of IBM's Bob gateway: it contributes `BOB_GATEWAY_URL`, an inert `BOBSHELL_API_KEY` placeholder, and a gateway path rewrite that maps Bob's `/inference/v1` prefix onto the proxy's plain `/v1` routes. Bob itself is unchanged — its prefixes are compiled in, and the rewrite happens in the Envoy sidecar. Three things to know:
+
+- **The key needs more than model access.** Bob asks the proxy for its model list before it will start a session, and that is a management route, not a model call — a LiteLLM virtual key scoped to LLM API routes alone is refused there and Bob fails to start. The team behind the key also has to carry the model Bob is set to use, or the first message comes back refused.
+- **A model has to be chosen.** Bob's built-in default resolves to a tier alias only its own gateway serves, so until one is chosen the proxy rejects it as unknown. The connection deliberately contributes no model of its own — it would collide with the Bob Shell connection's pin, which claims the same env name, and an agent can hold both. Set `BOB_SHELL_MODEL` instead — on the Bob Shell provider for every agent that inherits the secret, or in **Configure Agent → Env** for one agent. The Config panel does not offer a model: Bob's list needs the `/model/info` route neither a static catalog nor `modelDiscovery` can serve (see [Configuration](#the-config-panel-per-agent) above), so a dropdown fed live from the proxy is separate work.
+- **A connection's contributions are projected when it is created**, so a LiteLLM connection made before this shipped carries no gateway env and keeps Bob on its own gateway. Editing it does not help — the edit dialog replaces the credential and nothing else, and contributions are never recomputed. Delete it and create it again to pick the new ones up.
+
 ### Free-form env vars (Configure Agent → Env)
 
 Less common toggles, not surfaced on the provider card.
@@ -117,6 +125,7 @@ Less common toggles, not surfaced on the provider card.
 | `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)). |
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
+| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. |
 
 Gone, and silently ignored if an old agent still sets them: `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` and `BOB_SHIM_TRACE` (both belonged to the bridge — resume is native and there are no shim frames to trace).
 

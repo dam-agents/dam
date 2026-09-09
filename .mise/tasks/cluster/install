@@ -1,0 +1,634 @@
+#!/usr/bin/env bash
+#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true also creates the VM with nested virt and installs KubeVirt. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+#MISE raw=true
+#MISE depends=["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
+#
+# When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
+#
+# Both install and upgrade share the same flow:
+#   ensure VM/k3s → cert-manager → build images → load into k3s → helm install/upgrade
+#
+# install: provisions VM/k3s if needed, uses helm install
+# upgrade: assumes VM/k3s exists, uses helm upgrade
+set -eo pipefail
+
+LIMA_INSTANCE="platform-k3s"
+LIMA_TEMPLATE="etc/lima/k3s.yaml"
+HELM_VALUES=""
+HELM_EXTRA_ARGS=()
+NO_RESTART=false
+DEV_VALUES="helm/values-dev.yaml"
+for arg in "$@"; do
+  case "$arg" in
+    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
+    --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
+    --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
+    --set=*) HELM_EXTRA_ARGS+=("$arg") ;;
+    --no-restart) NO_RESTART=true ;;
+  esac
+done
+
+# Resolve the optional personal overlay (values-dev.yaml, gitignored) up front so
+# the agent render in step 3 sees the same values the install uses. Committed dev
+# defaults (terms.*, keycloak admin) live in values-local.yaml.
+if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
+  HELM_VALUES="$DEV_VALUES"
+  echo "Using dev overrides: $DEV_VALUES"
+fi
+# Value flags that can flip an agentTemplate's `enabled`.
+AGENT_VALUE_FLAGS=()
+[ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
+AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
+
+# virtualization.enabled drives extra provisioning below (nested-virt VM
+# creation, KubeVirt install) — resolve it from the values file + --set flags
+# (chart default is false) so one flag configures the whole stack.
+VIRT_ENABLED=""
+if [ -n "$HELM_VALUES" ] && [ "$(yq '.virtualization.enabled // false' "$HELM_VALUES")" = "true" ]; then
+  VIRT_ENABLED=1
+fi
+for arg in "${HELM_EXTRA_ARGS[@]}"; do
+  case "$arg" in
+    --set=virtualization.enabled=true) VIRT_ENABLED=1 ;;
+    --set=virtualization.enabled=false) VIRT_ENABLED="" ;;
+  esac
+done
+if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ]; then
+  # Sandbox device access varies with the outer container's configuration —
+  # probe instead of assuming. Both checks must actually open/attach: nodes
+  # can exist while the device cgroup still denies them.
+  VIRT_ERR=""
+  PROBE_IMG=$(mktemp)
+  truncate -s 1M "$PROBE_IMG"
+  if PROBE_DEV=$(losetup -f --show "$PROBE_IMG" 2>/dev/null); then
+    losetup -d "$PROBE_DEV"
+  else
+    VIRT_ERR="loop devices are unusable (bootc-image-builder assembles the containerDisk on them)"
+  fi
+  rm -f "$PROBE_IMG"
+  if [ "$(uname -m)" = "aarch64" ] && ! python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; then
+    VIRT_ERR="${VIRT_ERR:+$VIRT_ERR; }/dev/kvm is unusable (aarch64 VMIs are KVM-only; TCG works only on x86_64)"
+  fi
+  # bootc-image-builder writes the guest's SELinux labels through this kernel;
+  # label types unknown to the loaded policy need mac_admin (SELinux-less
+  # kernels accept anything). Probe with a made-up type.
+  if ! python3 -c 'import os,tempfile; f=tempfile.NamedTemporaryFile(); os.setxattr(f.name, "security.selinux", b"system_u:object_r:platform_probe_nonexistent_t:s0")' 2>/dev/null; then
+    VIRT_ERR="${VIRT_ERR:+$VIRT_ERR; }cannot write arbitrary SELinux labels (the containerDisk build labels the guest through the host kernel; needs mac_admin or an SELinux-less kernel)"
+  fi
+  if [ -n "$VIRT_ERR" ]; then
+    echo "FATAL: virtualization.enabled=true needs device access this sandbox lacks:" >&2
+    echo "  $VIRT_ERR" >&2
+    echo "Grant the sandbox these devices, or run the install on the host." >&2
+    exit 1
+  fi
+fi
+
+# 1. Provision cluster and set KUBECONFIG
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  # Keyed on the kubeconfig, which k3s writes only once it is actually
+  # serving — not on /var/lib/rancher/k3s, which the provision scripts create
+  # early. An install interrupted mid-provision leaves that directory behind,
+  # and skipping on it wedged every later run: no k3s, no service, and a
+  # 120s wait ending in a misleading "stat k3s.yaml: no such file". The
+  # provision scripts are idempotent, so re-running over a partial state heals
+  # it.
+  if [ ! -f "$KUBECONFIG" ]; then
+    echo "Provisioning k3s on host (sandbox mode)..."
+    # Lima provision scripts may shell out to apt-get; stub it so the loop
+    # below doesn't fail on a non-Debian host. Idempotent.
+    if ! command -v apt-get >/dev/null 2>&1 && command -v dnf >/dev/null 2>&1; then
+      [ -x /usr/local/bin/apt-get ] || (
+        sudo install -m 0755 /dev/stdin /usr/local/bin/apt-get <<'SHIM'
+#!/bin/sh
+exit 0
+SHIM
+      )
+    fi
+    for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
+      yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
+    done
+  fi
+  echo "Waiting for k3s to be ready..."
+  for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
+  for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+    echo "Creating k3s VM ($LIMA_INSTANCE)..."
+    # Nested virtualization exposes /dev/kvm inside the VM so KubeVirt runs
+    # vm-backend agents at full speed (macOS: vz on M3+/macOS 15). Enabled
+    # automatically with virtualization.enabled=true; PLATFORM_NESTED_VIRT=1
+    # forces it for a plain install. Create-time only — an existing VM needs
+    # cluster:delete + reinstall to gain it.
+    if [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
+        --set '.vmType = "vz" | .nestedVirtualization = true'
+    else
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+    fi
+  fi
+  STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
+  if [ "$STATUS" != "Running" ]; then
+    echo "Starting k3s VM..."
+    limactl start "$LIMA_INSTANCE"
+  fi
+  # Pre-existing VM without nested virt (create-time only): KVM-less VMIs boot
+  # nowhere on aarch64 (KubeVirt arm64 is KVM-only) — stop early with the fix.
+  if [ -n "$VIRT_ENABLED" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm \
+      && [ "$(limactl shell "$LIMA_INSTANCE" uname -m)" = "aarch64" ]; then
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; aarch64 VMIs need it." >&2
+    echo "Recreate it: mise run cluster:delete, then rerun this install (nested" >&2
+    echo "virt is enabled automatically when virtualization.enabled=true)." >&2
+    exit 1
+  fi
+  echo "Waiting for k3s to be ready..."
+  for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+fi
+# k3s writes kubeconfig before the node registers; the for-loop above
+# ensures ≥1 node exists, otherwise `kubectl wait --all` would error
+# immediately with "no matching resources found".
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+
+# 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
+# path for VMs created before this flag was added). New VMs already have
+# /etc/rancher/k3s/config.yaml from the lima provision script.
+# A config.yaml.d drop-in, never config.yaml itself: k3s merges the
+# directory natively, and overwriting the main file clobbers pre-existing
+# config — inside a VM sandbox it carries the CIDR remap that keeps the
+# inner cluster off the host cluster's ranges, and losing it crash-loops
+# k3s ("cidr ... is out the range of cluster cidr").
+K3S_LOGROT_DROPIN=/etc/rancher/k3s/config.yaml.d/50-container-log-rotation.yaml
+K3S_CONFIG_YAML='kubelet-arg:
+  - "container-log-max-size=10Mi"
+  - "container-log-max-files=3"
+'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  if ! sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    echo "Configuring k3s container log rotation (issue #244)..."
+    sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
+    sudo systemctl restart k3s
+    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+  fi
+else
+  if ! limactl shell "$LIMA_INSTANCE" sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    echo "Configuring k3s container log rotation (issue #244)..."
+    limactl shell "$LIMA_INSTANCE" sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
+    limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
+    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+  fi
+fi
+
+# 1c. Traefik app entrypoint — on lima this rides the provision script's
+# k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
+# so the app port silently doesn't exist. HelmChartConfig via kubectl apply
+# is idempotent and works on both. The port follows `--set=port=…` so the
+# ingress listens where the chart's URLs point (dev defaults to 4444, the
+# e2e install passes 5555); the last install wins.
+APP_PORT=4444
+if [ -n "$HELM_VALUES" ]; then
+  APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
+fi
+for arg in "${HELM_EXTRA_ARGS[@]}"; do
+  case "$arg" in
+    --set=port=*) APP_PORT="${arg#--set=port=}" ;;
+  esac
+done
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<YAML
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+    ports:
+      platform:
+        port: $APP_PORT
+        expose:
+          default: true
+        exposedPort: $APP_PORT
+        protocol: TCP
+YAML
+
+# 2. Install cert-manager
+if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
+  echo "Installing cert-manager..."
+  # Retried: freshly-provisioned k3s can restart its apiserver right after
+  # reporting Ready (seen as ECONNREFUSED mid-apply on CI runners).
+  for attempt in 1 2 3 4 5; do
+    kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml && break
+    [ "$attempt" = 5 ] && exit 1
+    echo "cert-manager apply failed (attempt $attempt); retrying in 10s..."
+    sleep 10
+  done
+  echo "Waiting for cert-manager to be ready..."
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
+else
+  echo "cert-manager already installed"
+fi
+
+# 2b. Install Istio ambient + Gateway-API CRDs (required).
+# Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
+# and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
+# floor for ambient L7 with locked-down waypoint HCM.
+GATEWAY_API_VERSION="v1.2.0"
+ISTIO_VERSION="1.29.1"
+
+if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
+  echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+else
+  echo "Gateway API CRDs already installed"
+fi
+
+# k3s bundles Traefik (chart v39+), whose `traefik-crd` chart also ships the
+# Gateway API CRDs. We install those out-of-band above (for Istio) via plain
+# `kubectl apply`, so they carry no Helm ownership metadata — and the
+# `traefik-crd` Helm job then dies with "invalid ownership metadata" and
+# Traefik never installs, leaving nothing on the ingress port. Stamp the
+# ownership the `traefik-crd` release expects so it adopts them on its next
+# reconcile. Idempotent, and covers both install orders (whichever of the k3s
+# Traefik bootstrap vs. this CRD apply wins the race).
+echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
+for crd in gatewayclasses gateways grpcroutes httproutes referencegrants; do
+  kubectl --kubeconfig="$KUBECONFIG" label crd "$crd.gateway.networking.k8s.io" \
+    app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-name=traefik-crd --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
+done
+
+echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
+helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+helm repo update istio >/dev/null
+
+# Install-only path. Avoids helm upgrade conflicts with istiod, which
+# patches `istiod-default-validator` ValidatingWebhookConfiguration's
+# `failurePolicy` after start; a subsequent `helm upgrade istio-base`
+# fails server-side apply because pilot-discovery owns that field.
+# This task is the dev install loop, not the prod upgrade path; in-place
+# Istio upgrades are an out-of-band operation when needed.
+istio_install_if_missing() {
+  local release="$1" chart="$2"
+  shift 2
+  if helm --kubeconfig="$KUBECONFIG" -n istio-system status "$release" >/dev/null 2>&1; then
+    echo "  $release already installed, skipping"
+    return 0
+  fi
+  helm --kubeconfig="$KUBECONFIG" install "$release" "$chart" \
+    -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait "$@"
+}
+
+istio_install_if_missing istio-base istio/base
+# Pin workload SVID TTL to 30d (issue #283). The default 24h races
+# against lima VM suspend/resume on a sleeping host laptop — when the
+# rotation window slips past expiry, every mesh hop dies until ztunnel
+# is bounced. Bumping the TTL well past a typical dev-cluster lifetime
+# (and well under Istio's 90d MAX_WORKLOAD_CERT_TTL default) takes the
+# rotation race off the critical path for normal dev work; the
+# ztunnel-cert-watchdog CronJob below covers the residual.
+istio_install_if_missing istiod istio/istiod \
+  --set profile=ambient \
+  --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h
+# k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
+# Without these overrides istio-cni-node loops "no networks found in
+# /host/etc/cni/net.d" and ambient redirection never engages.
+istio_install_if_missing istio-cni istio/cni \
+  --set profile=ambient \
+  --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
+  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d
+# ztunnel proxies every mesh hop, including the experiment SDK's status polls
+# from a driver to the api-server harness. Its chart default requests only
+# 200m, so a bursting agent pod (a nous worker boots with a large upstream
+# fetch and many concurrent dials) can outbid it on this single-node VM;
+# starved, ztunnel terminates in-flight connections and the client sees a
+# synthesized 503 with no retry anywhere in the path. Guarantee it a core.
+istio_install_if_missing ztunnel istio/ztunnel \
+  --set resources.requests.cpu=1 \
+  --set resources.requests.memory=512Mi
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+
+# Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
+# markers (issue #283) and, if any are present, roll ds/ztunnel plus all
+# istiod-synthesised waypoint deployments — waypoints hold their own
+# SVIDs, and ztunnel logs the failed HBONE dial when a waypoint's cert
+# is the expired one (issue #705). Belt-and-suspenders against any
+# rotation failure that slips past the 30d DEFAULT_WORKLOAD_CERT_TTL
+# pinned on istiod above (e.g. a cluster left running past TTL, an
+# upstream istio bug). Apply is idempotent on re-runs of cluster:install.
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    # list+watch needed by `rollout status` (it watches the ds);
+    # patch is what `rollout restart` does (pod-template annotation).
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ztunnel-cert-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: ztunnel-cert-watchdog
+    namespace: istio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ztunnel-cert-watchdog-waypoints
+rules:
+  # Cluster-scoped: waypoint deployments are synthesised wherever an
+  # istio-waypoint Gateway lives; discovery is label-based across namespaces.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ztunnel-cert-watchdog-waypoints
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ztunnel-cert-watchdog-waypoints
+subjects:
+  - kind: ServiceAccount
+    name: ztunnel-cert-watchdog
+    namespace: istio-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: ztunnel-cert-watchdog
+          restartPolicy: Never
+          containers:
+            - name: watchdog
+              image: mirror.gcr.io/alpine/k8s:1.30.4
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  TRIGGERED=0
+                  for pod in $(kubectl -n istio-system get pods -l app=ztunnel -o name); do
+                    if kubectl -n istio-system logs --since=15m "$pod" 2>/dev/null \
+                        | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+                      echo "watchdog: $pod reported expired SVID — rolling ztunnel + waypoints"
+                      TRIGGERED=1
+                      break
+                    fi
+                  done
+                  if [ "$TRIGGERED" = 1 ]; then
+                    # The expired cert may be a waypoint's own SVID (ztunnel logs the
+                    # failed HBONE dial); istiod labels the deployments it synthesises.
+                    WAYPOINTS=$(kubectl get deploy -A -l gateway.istio.io/managed=istio.io-mesh-controller \
+                      -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
+                    kubectl -n istio-system rollout restart ds/ztunnel
+                    for wp in $WAYPOINTS; do
+                      echo "watchdog: rolling waypoint deploy/${wp##*/} (ns ${wp%%/*})"
+                      kubectl -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
+                    done
+                    kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
+                    for wp in $WAYPOINTS; do
+                      kubectl -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
+                    done
+                  else
+                    echo "watchdog: mesh SVIDs healthy"
+                  fi
+YAML
+
+# Release namespace must be ambient so the api-server pod and the
+# Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
+# install below targets the `default` namespace; label it now (the
+# chart's validate-istio.yaml asserts this label is present).
+kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
+
+# 2c. KubeVirt — required by vm-backend agents (idempotent apply + wait).
+# The KVM-less-aarch64 cases (lima and sandbox) were already rejected above,
+# so no KVM here means an x86_64 node: TCG emulation (slow but functional).
+if [ -n "$VIRT_ENABLED" ]; then
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    HAS_KVM=$(test -e /dev/kvm && echo 1 || true)
+  else
+    HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
+  fi
+  KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
+  echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
+  # EnableVirtioFsStorageVolumes: virtiofs for the workspace PVCs. This is the
+  # gate the v1.8 webhook actually checks — the pre-1.7 ExperimentalVirtiofsSupport
+  # gate is discontinued, and KubeVirt's own deprecation warning suggests
+  # "EnableVirtioFsPVC", which v1.8.4 does not register.
+  # Without KVM the node-labeller init container must also be forced to qemu:
+  # it picks virttype from /proc/misc (kvm may be listed yet unusable, e.g. in
+  # nested/containerized nodes) and crash-loops virt-handler otherwise. Only a
+  # json-type customizeComponents patch works here — strategicMerge is mangled
+  # by the operator's customizer and wedges reconciliation.
+  if [ -z "${HAS_KVM:-}" ]; then
+    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":true}},"customizeComponents":{"patches":[{"resourceType":"DaemonSet","resourceName":"virt-handler","type":"json","patch":"[{\"op\":\"replace\",\"path\":\"/spec/template/spec/initContainers/0/env\",\"value\":[{\"name\":\"PREFERRED_VIRTTYPE\",\"value\":\"qemu\"},{\"name\":\"HYPERVISOR_DEVICE\",\"value\":\"kvm\"}]}]"}]}}}'
+  else
+    # Explicit nulls: merge-patch deletes them, so a cluster once configured
+    # for emulation heals when the node gains KVM (adds-only would keep TCG
+    # forever — fatal on aarch64, where qemu rejects host-passthrough).
+    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":null}},"customizeComponents":{"patches":null}}}'
+  fi
+  kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$KV_PATCH"
+  echo "Waiting for KubeVirt to become Available (this pulls several images)..."
+  kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
+fi
+
+# Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
+# clickstack.enabled=false.
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
+helm dependency build helm
+
+# 3. Load images into k3s (built by depends: //packages/*:image, or out-of-band in CI).
+# SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
+# already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
+# does NOT skip the load: buildx built the images out-of-band into the docker
+# daemon, and they still have to be imported into k3s's separate containerd.
+if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
+  echo "Skipping image load (SKIP_IMAGE_LOAD set)"
+  NO_RESTART=true
+else
+  # Build (and below, load) only the templates enabled in the effective rendered
+  # values (--set/--helm-values honored). Capture first so a failed render aborts
+  # rather than silently building none. Templates are one ConfigMap keyed by
+  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry.
+  AGENTS_RENDERED=$(helm template platform helm \
+      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
+             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
+  AGENT_TASKS=()
+  AGENT_IMAGES=()
+  SEEN_COMPONENTS=()
+  while IFS=$'\t' read -r name image; do
+    { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
+    name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
+    # Templates can share one image (presets, e.g. adaevolve/evox over the
+    # skydiscover image, or k-search-local over k-search), so resolve the
+    # build component from the image repository basename
+    # ("platform-<component>" locally), not the template key — and dedup so
+    # a shared image builds and loads once.
+    comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+    case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+    SEEN_COMPONENTS+=("$comp")
+    if [ -d "packages/agents/$comp" ]; then
+      AGENT_TASKS+=("$comp")
+      AGENT_IMAGES+=("$image")
+    elif [ -d "packages/e2e/agents/$comp" ]; then
+      # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+      # are not covered by //packages/agents:image — build straight from their Dockerfile, root
+      # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
+      # the per-agent tasks; in CI the image is already in the daemon.
+      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+        mise run //packages/platform-base:image
+        docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
+      fi
+      AGENT_IMAGES+=("$image")
+    else
+      echo "WARN: no build task for '$name' ($image) — skipping" >&2
+    fi
+  done <<< "$AGENTS_RENDERED"
+  [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+
+  echo "Loading images into k3s..."
+  tar="/tmp/platform-images.tar"
+  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}"
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    sudo k3s ctr images import "$tar"
+  else
+    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+    limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+    # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+    # so without this a stale multi-GiB tar is left behind in the VM.
+    limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+  fi
+  rm -f "$tar"
+fi
+
+# 4. Helm install or upgrade.
+echo "Installing/upgrading Platform chart..."
+# Helm never upgrades the chart's crds/ on an existing release — on
+# this single-env local cluster the freeze has no value, so apply them directly.
+# The explicit Established wait keeps the helm install below race-free even if
+# the chart ever grows a CR instance (today it deliberately ships none).
+kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f helm/crds/
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f helm/crds/
+
+# ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
+# CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
+# the quay.io/dam-agents mirror (their db/agent images stay upstream). The MongoDB operator
+# defaults to watching only its own namespace, so it must be pointed at the release ns
+# (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
+if [ -n "${CLICKSTACK:-}" ]; then
+  echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
+  helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
+    --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
+    --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
+    --set clickhouse-operator.manager.image.tag=v0.0.1 \
+    --set mongodb-operator.registry.operator=quay.io/dam-agents \
+    --set mongodb-operator.operator.watchNamespace=default
+  kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
+    crd/clickhouseclusters.clickhouse.com \
+    crd/keeperclusters.clickhouse.com \
+    crd/mongodbcommunity.mongodbcommunity.mongodb.com
+  HELM_EXTRA_ARGS+=(--set clickstack.enabled=true)
+fi
+
+# No --wait: the keycloak-provision post-install hook imports the platform realm
+# after deployments come up. With --wait, helm would block on readiness
+# before the hook runs.
+# --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
+# object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
+# the upgrade with an ownership conflict. The chart is the source of truth here.
+helm --kubeconfig="$KUBECONFIG" upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+
+# 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
+if [ "$NO_RESTART" = true ]; then
+  echo "Skipping pod restart (--no-restart)"
+else
+  echo "Restarting pods..."
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
+  # Agent pods are managed by the controller (StatefulSets in platform-agents) and
+  # pin :latest too — delete them so they come back on the freshly loaded image.
+  kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
+fi
+
+# 6. Wait for all Platform deployments to become Available (replaces helm --wait,
+# but happens AFTER post-install hooks have run, so no deadlock).
+echo "Waiting for deployments to be ready..."
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
+
+# HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
+# long-lived monitor connection is closed, topology stuck Unknown, and it does not
+# self-heal). Once the stack is up and Mongo is ready, a warm restart connects cleanly and
+# stays healthy in-mesh — so restart it here. (Prod installs should likewise ensure HyperDX
+# (re)starts after Mongo is ready.)
+if [ -n "${CLICKSTACK:-}" ] && [ "$NO_RESTART" != true ]; then
+  echo "Restarting HyperDX onto a ready MongoDB..."
+  kubectl --kubeconfig="$KUBECONFIG" rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-clickstack-app
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-clickstack-app --timeout=5m
+fi
+
+# 7. Prune dangling image layers (issue #244). After repeated reinstalls,
+# old `:latest` SHAs lose their tag to the freshly imported one and become
+# `<none>:<none>`. Drop only those — `crictl rmi --prune` would also wipe
+# tagged-but-unpinned images like the agent ones we just loaded (no
+# instance pods exist yet to pin them).
+echo "Pruning dangling images..."
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo ""
+echo "=== Cluster ready ==="
+echo "KUBECONFIG=$KUBECONFIG"
+echo ""
+kubectl --kubeconfig="$KUBECONFIG" get pods

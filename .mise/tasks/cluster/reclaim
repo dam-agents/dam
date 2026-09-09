@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#MISE description="Reclaim disk in the dev cluster: prune unused images, delete completed/failed pods, surface orphan PVCs."
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  RUN_IN_VM="sudo"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
+fi
+
+echo "[1/4] Pruning unreferenced images from containerd..."
+$RUN_IN_VM k3s crictl rmi --prune || true
+
+echo "[2/4] Deleting Succeeded/Failed pods cluster-wide..."
+kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Succeeded --ignore-not-found
+kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Failed --ignore-not-found
+
+echo "[3/4] Checking for orphan agent PVCs..."
+# Cross-reference platform.ai/instance label on each PVC against existing instance
+# ConfigMaps. The controller GCs orphans every 10m; this just surfaces any that
+# look stuck. Forced deletion is left to the operator.
+ORPHANS=()
+while IFS='|' read -r ns pvc inst; do
+  [ -z "$pvc" ] && continue
+  if ! kubectl --kubeconfig="$KUBECONFIG" -n "$ns" get configmap "$inst" >/dev/null 2>&1; then
+    ORPHANS+=("$ns/$pvc (instance: $inst)")
+  fi
+done < <(
+  kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l platform.ai/instance \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.platform\.ai/instance}{"\n"}{end}'
+)
+if [ -z "${ORPHANS[*]:-}" ]; then
+  echo "  no orphan PVCs found"
+else
+  echo "  $(printf '%s\n' "${ORPHANS[@]}" | wc -l | tr -d ' ') orphan PVC(s):"
+  printf '    %s\n' "${ORPHANS[@]}"
+  echo "  controller will GC them automatically; or delete manually with: kubectl delete pvc -n <ns> <name>"
+fi
+
+echo "[4/4] Disk usage on the cluster VM:"
+$RUN_IN_VM df -h /

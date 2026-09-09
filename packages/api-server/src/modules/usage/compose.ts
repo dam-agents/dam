@@ -10,10 +10,12 @@ import {
 } from "./infrastructure/activity-events-repository.js";
 import {
   upsertAgent,
+  listLiveAgentIds,
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
+import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
@@ -52,7 +54,9 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const insert = insertActivityEvent(deps.db, deps.subPseudonymizer);
   const upsertRole = upsertActorRole(deps.db, deps.subPseudonymizer);
   const upsertAgentRow = upsertAgent(deps.db, deps.subPseudonymizer);
-  const markDeleted = markAgentDeleted(deps.db);
+  const registerCreatedAgent = upsertAgent(deps.db, deps.subPseudonymizer, {
+    resetRuntimeState: true,
+  });
 
   const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
@@ -62,12 +66,15 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     : new Hono();
 
   let persistAgentsSub: Subscription | null = null;
+  let persistActorRolesSub: Subscription | null = null;
   let persistActivitySub: Subscription | null = null;
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
-      upsertAgent: upsertAgentRow,
-      markAgentDeleted: markDeleted,
+      upsertAgent: registerCreatedAgent,
+    });
+    persistActorRolesSub = startPersistActorRolesSaga({
+      upsertActorRole: upsertRole,
     });
     bootstrapAgents({
       listIdentities: deps.listK8sAgents,
@@ -80,7 +87,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     if (deps.activityTrackingEnabled) {
       persistActivitySub = startPersistActivitySaga({
         insert,
-        upsertActorRole: upsertRole,
       });
     } else {
       process.stderr.write(
@@ -96,6 +102,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
 
   function stop(): void {
     persistAgentsSub?.unsubscribe();
+    persistActorRolesSub?.unsubscribe();
     persistActivitySub?.unsubscribe();
   }
 
@@ -114,4 +121,14 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   }
 
   return { mount, start, stop, retentionTick };
+}
+
+export function listUsageAgentIds(db: Db): Promise<string[]> {
+  return listLiveAgentIds(db)();
+}
+
+export function createUsageAgentsCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
+  return markAgentDeleted(db);
 }

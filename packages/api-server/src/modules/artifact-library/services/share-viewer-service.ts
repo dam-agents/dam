@@ -1,6 +1,12 @@
+import { match } from "ts-pattern";
 import { ARTIFACT_RESTORE_WINDOW_DAYS } from "api-server-api";
 
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
+import type { ShareSession } from "../domain/share-session.js";
+import {
+  decideRestrictedView,
+  type ViewDecision,
+} from "../domain/viewer-access.js";
 import type {
   ArtifactLibraryRepository,
   ArtifactRow,
@@ -11,7 +17,8 @@ import { emit, EventType } from "../../../events.js";
 export type SharedResolution =
   | { state: "not-found" }
   | { state: "expired"; withinGrace: boolean }
-  | { state: "ok"; artifact: ArtifactRow };
+  | { state: "ok"; artifact: ArtifactRow }
+  | { state: "restricted"; artifact: ArtifactRow };
 
 export type FolderResolution =
   | { state: "not-found" }
@@ -20,6 +27,7 @@ export type FolderResolution =
 export interface ShareViewerService {
   resolveArtifact(slug: string): Promise<SharedResolution>;
   resolveFolder(slug: string): Promise<FolderResolution>;
+  canView(artifact: ArtifactRow, session: ShareSession): Promise<ViewDecision>;
   meta(
     artifact: ArtifactRow,
     version?: number,
@@ -82,12 +90,24 @@ export function createShareViewerService(deps: {
   return {
     async resolveArtifact(slug) {
       const row = await repo.getArtifactBySlug(slug);
-      if (!row || row.visibility !== "public") return { state: "not-found" };
+      if (!row) return { state: "not-found" };
+      if (row.visibility === "private") return { state: "not-found" };
       const expiry = expiryState(row);
       if (expiry.expired) {
         return { state: "expired", withinGrace: expiry.withinGrace };
       }
-      return { state: "ok", artifact: row };
+      return match(row.visibility)
+        .with("public", () => ({ state: "ok", artifact: row }) as const)
+        .with(
+          "restricted",
+          () => ({ state: "restricted", artifact: row }) as const,
+        )
+        .exhaustive();
+    },
+
+    async canView(artifact, session) {
+      const viewers = await repo.listViewers(artifact.id);
+      return decideRestrictedView(artifact, session, viewers);
     },
 
     async resolveFolder(slug) {

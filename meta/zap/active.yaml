@@ -1,0 +1,63 @@
+env:
+  contexts:
+    - name: dam-api
+      urls:
+        - https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api
+      includePaths:
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/.*
+      excludePaths:
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc/e2e\..*
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc/egressRules\.applyPreset.*
+        - https://dam-dev\.apps\.dam-cl\.fmaas\.res\.ibm\.com/api/trpc-ws.*
+      authentication:
+        method: form
+        parameters:
+          loginPageUrl: https://keycloak-dam-dev.apps.dam-cl.fmaas.res.ibm.com/realms/platform/protocol/openid-connect/token
+          loginRequestUrl: https://keycloak-dam-dev.apps.dam-cl.fmaas.res.ibm.com/realms/platform/protocol/openid-connect/token
+          loginRequestBody: "grant_type=password&client_id=platform-ui&scope=openid&username={%username%}&password={%password%}"
+        verification:
+          method: poll
+          pollFrequency: 20
+          pollUnits: requests
+          pollUrl: https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.list
+          loggedInRegex: "\\QHTTP/1.1 200\\E"
+          loggedOutRegex: "\\QHTTP/1.1 401\\E"
+      sessionManagement:
+        method: headers
+        parameters:
+          Authorization: "Bearer {%json:access_token%}"
+      users:
+        - name: zap
+          credentials:
+            username: zap
+            password: zap
+  parameters:
+    failOnError: false
+    failOnWarning: false
+    progressToStdout: true
+jobs:
+  - type: activeScan
+    parameters:
+      context: dam-api
+      user: zap
+      maxScanDurationInMins: 90
+      maxRuleDurationInMins: 10
+      threadPerHost: 4
+      delayInMs: 250
+  - type: passiveScan-wait
+  - type: report
+    parameters:
+      template: traditional-html-plus
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: active
+      reportTitle: DAM dev - active scan (HTTP API)
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: active
+  - type: report
+    parameters:
+      template: sarif-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: active.sarif

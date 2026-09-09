@@ -55,11 +55,11 @@ export function CatalogConnectionRow({
               className="shrink-0 text-foreground/80"
             />
           )}
-          <p className="truncate text-[15px] text-foreground">
+          <p className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground">
             {connection.name}
           </p>
-          <Badge variant="muted" className="shrink-0 font-normal">
-            {tag}
+          <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
+            <span className="truncate">{tag}</span>
           </Badge>
           {connection.status !== "active" && (
             <ConnectionStatusBadge status={connection.status} />

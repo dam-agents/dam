@@ -13,4 +13,4 @@ export const MCP_DOCS_URL =
   "https://pages.github.ibm.com/dam-agents/docs/core-concepts/connections/#mcp-servers";
 
 export const COMPUTE_REQUEST_URL =
-  "https://ibm.enterprise.slack.com/archives/C0B3F03NB24";
+  "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759";

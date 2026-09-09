@@ -100,6 +100,7 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   channel_telegram: SessionType.ChannelTelegram,
   schedule_cron: SessionType.ScheduleCron,
   experiment_execute: SessionType.ExperimentExecute,
+  cli_run: SessionType.CliRun,
 };
 
 const POD_MODE: Record<PodSession["mode"], SessionMode> = {

@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import type { SessionDraft } from "./draft-key.js";
 import {
   browserStorage,
   type KeyValueStore,
@@ -8,7 +7,8 @@ import {
   safeGetItem,
   safeKeys,
   safeRemoveItem,
-} from "./safe-storage.js";
+} from "../../../lib/safe-storage.js";
+import type { SessionDraft } from "./draft-key.js";
 
 export const DRAFT_STORAGE_PREFIX = "platform-draft:";
 

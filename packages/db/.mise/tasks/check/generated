@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#MISE sources=["src/schema.ts", "drizzle/meta/*.json"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# Guard: assert every schema.ts change has been generated into a
+# migration. Diffs schema.ts against the committed snapshots inside a throwaway
+# copy of drizzle/ — if `generate` would add a migration, the schema changed
+# without `mise run //packages/db:generate`. Pure files, no database, so it runs
+# in `mise run check`. Views aren't in schema.ts, so they're out of scope by design.
+set -euo pipefail
+# Temp copy lives under node_modules so the parallel lint/format/tsc tasks
+# (which ignore node_modules) never scan it — avoids a scandir race as it's
+# created and removed. A relative --out path also dodges a drizzle-kit bug that
+# prefixes absolute --out paths with "./".
+tmp="node_modules/.cache/db-generated-check.$$"
+trap 'rm -rf "$tmp"' EXIT
+rm -rf "$tmp"; mkdir -p "$tmp"; cp -r drizzle/. "$tmp/"
+before=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
+# If generate can't complete non-interactively (an ambiguous diff), set -e
+# fails the check — fail closed.
+pnpm exec drizzle-kit generate --dialect postgresql --schema ./src/schema.ts --out "$tmp" --name generated_check >/dev/null 2>&1
+after=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
+if [ "$before" != "$after" ]; then
+  echo "❌ schema.ts changed without a migration. Run: mise run //packages/db:generate"
+  exit 1
+fi
+echo "✅ Schema is fully generated: snapshot matches schema.ts."

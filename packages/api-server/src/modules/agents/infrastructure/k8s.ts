@@ -54,6 +54,8 @@ function isStatus(err: unknown, code: number): boolean {
   );
 }
 const is404 = (err: unknown) => isStatus(err, 404);
+const isDnsSubdomainName = (name: string) =>
+  /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/.test(name);
 
 let cachedKubeConfig: k8s.KubeConfig | undefined;
 
@@ -88,6 +90,7 @@ export function createK8sClient(
     },
 
     async getSecret(name) {
+      if (!isDnsSubdomainName(name)) return null;
       try {
         return await api.readNamespacedSecret({ name, namespace });
       } catch (err) {
@@ -104,6 +107,8 @@ export function createK8sClient(
     },
 
     async replaceSecret(name, body) {
+      if (!isDnsSubdomainName(name))
+        throw new Error(`invalid object name: ${name}`);
       return api.replaceNamespacedSecret({
         name,
         namespace,
@@ -112,6 +117,7 @@ export function createK8sClient(
     },
 
     async deleteSecret(name) {
+      if (!isDnsSubdomainName(name)) return;
       try {
         await api.deleteNamespacedSecret({ name, namespace });
       } catch (err) {
@@ -121,6 +127,7 @@ export function createK8sClient(
     },
 
     async getCustomObject(plural, name) {
+      if (!isDnsSubdomainName(name)) return null;
       try {
         return (await co.getNamespacedCustomObject({
           ...crArgs(plural),
@@ -148,6 +155,8 @@ export function createK8sClient(
     },
 
     async patchCustomObject(plural, name, body) {
+      if (!isDnsSubdomainName(name))
+        throw new Error(`invalid object name: ${name}`);
       return (await co.patchNamespacedCustomObject(
         { ...crArgs(plural), name, body },
         k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.MergePatch),
@@ -155,6 +164,7 @@ export function createK8sClient(
     },
 
     async deleteCustomObject(plural, name) {
+      if (!isDnsSubdomainName(name)) return;
       try {
         await co.deleteNamespacedCustomObject({ ...crArgs(plural), name });
       } catch (err) {

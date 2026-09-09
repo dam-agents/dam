@@ -73,6 +73,7 @@ const configSchema = z.object({
   keycloakRealm: z.string().default("platform"),
   keycloakClientId: z.string().default("platform-ui"),
   keycloakCliClientId: z.string().default("platform-cli"),
+  keycloakShareClientId: z.string().default("platform-share"),
   keycloakApiAudience: z.string().default("platform-api"),
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
@@ -86,6 +87,8 @@ const configSchema = z.object({
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
+  caseStudiesRetentionDays: z.coerce.number().int().positive().default(365),
+  caseStudiesTombstoneGraceDays: z.coerce.number().int().positive().default(30),
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
   defaultGithubAppSlug: adminAppSlugSchema,
@@ -122,6 +125,7 @@ const configSchema = z.object({
   objectStorageSecretAccessKey: z.string().nullable().default(null),
   objectStorageForcePathStyle: z.stringbool().default(true),
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
+  contentBaseUrl: z.url({ error: "CONTENT_BASE_URL must be a valid URL" }),
   kbSharePerFileMaxBytes: z.coerce
     .number()
     .int()
@@ -161,6 +165,16 @@ const validatedConfigSchema = configSchema
         "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY must be set together (or both left unset for the SDK default provider chain)",
       path: ["objectStorageAccessKeyId"],
     },
+  )
+  .refine(
+    (c) =>
+      new URL(c.contentBaseUrl).hostname.toLowerCase() !==
+      new URL(c.shareBaseUrl).hostname.toLowerCase(),
+    {
+      message:
+        "CONTENT_BASE_URL must be a different host than SHARE_BASE_URL: the browser isolates artifact code from the share host by origin",
+      path: ["contentBaseUrl"],
+    },
   );
 
 export function loadConfig(): Config {
@@ -199,6 +213,7 @@ export function loadConfig(): Config {
     keycloakRealm: process.env.KEYCLOAK_REALM,
     keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
     keycloakCliClientId: process.env.KEYCLOAK_CLI_CLIENT_ID,
+    keycloakShareClientId: process.env.KEYCLOAK_SHARE_CLIENT_ID,
     keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
@@ -214,6 +229,9 @@ export function loadConfig(): Config {
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
+    caseStudiesRetentionDays: process.env.CASE_STUDIES_RETENTION_DAYS,
+    caseStudiesTombstoneGraceDays:
+      process.env.CASE_STUDIES_TOMBSTONE_GRACE_DAYS,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret:
       process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
@@ -246,6 +264,7 @@ export function loadConfig(): Config {
     objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     shareBaseUrl: process.env.SHARE_BASE_URL,
+    contentBaseUrl: process.env.CONTENT_BASE_URL,
     kbSharePerFileMaxBytes: process.env.KB_SHARE_PER_FILE_MAX_BYTES,
     kbShareTotalMaxBytes: process.env.KB_SHARE_TOTAL_MAX_BYTES,
     kbShareMaxFiles: process.env.KB_SHARE_MAX_FILES,

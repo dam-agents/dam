@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+go test ./... "$@"

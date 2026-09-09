@@ -1,3 +1,4 @@
+import { addUpgradeSecurityHeaders } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -33,6 +34,7 @@ export function createTerminalRelay(
   bus: RedisBus,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  addUpgradeSecurityHeaders(wss);
   const lastActivity = new Map<string, number>();
   const replicaId = randomUUID();
   const activeClients = new Map<string, WebSocket>();

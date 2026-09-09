@@ -1,6 +1,8 @@
 import {
+  contribution as contributionSchema,
   type Contribution,
   type EnvMapping,
+  BOB_INFERENCE_PREFIX_REWRITE,
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
@@ -144,7 +146,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Proxy that fronts model endpoints for IBM-internal Claude Code.",
+    "Proxy that fronts model endpoints for IBM-internal Claude Code and Bob.",
   iconSlug: "ibm",
   authKind: "header",
   host: IBM_LITELLM_HOST,
@@ -157,6 +159,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
       host: IBM_LITELLM_HOST,
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
+      pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
     },
   ],
 };
@@ -213,7 +216,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "maxCost",
       envName: "BOB_MAX_COINS",
       label: "Max cost",
-      hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
+      hint: "Per-task cost cap, written to session.maxCost; Bob stops the task when exceeded.",
       pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
       patternHint: "a positive amount, e.g. 0.50 or 5",
     },
@@ -825,11 +828,27 @@ function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
   };
 }
 
+function assertContributionsParse(
+  templates: ConnectionTemplate[],
+): ConnectionTemplate[] {
+  for (const template of templates) {
+    for (const c of template.contributions ?? []) {
+      const parsed = contributionSchema.safeParse(c);
+      if (!parsed.success) {
+        throw new Error(
+          `connection template "${template.id}" declares a contribution the runtime contract rejects: ${parsed.error.message}`,
+        );
+      }
+    }
+  }
+  return templates;
+}
+
 export function buildCatalog(
   creds: OperatorCredentials = {},
   opts: { shareBaseUrl?: string } = {},
 ): ConnectionTemplate[] {
-  return [
+  return assertContributionsParse([
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,
@@ -851,5 +870,5 @@ export function buildCatalog(
     CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,
-  ];
+  ]);
 }

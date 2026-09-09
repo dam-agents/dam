@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#MISE description="Delete the entire k3s cluster (destroys all data). Options: --vm-name=NAME --force"
+#MISE raw=true
+set -eo pipefail
+
+LIMA_INSTANCE="platform-k3s"
+FORCE=false
+for arg in "$@"; do
+  case "$arg" in
+    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
+    --force) FORCE=true ;;
+  esac
+done
+
+if [ "$FORCE" != "true" ]; then
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    echo "This will uninstall k3s and delete all cluster data."
+  else
+    echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
+  fi
+  read -p "Continue? [y/N] " -r
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+  fi
+fi
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+  echo "k3s uninstalled from host."
+else
+  limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
+  echo "k3s cluster ($LIMA_INSTANCE) deleted."
+fi

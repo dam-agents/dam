@@ -178,7 +178,7 @@ describe("shipped agent manifests resolve", () => {
         configOptions: { approvals: "platform.approvals" },
       },
       modelDiscovery: {
-        urlEnv: ["BOB_GATEWAY_URL"],
+        urlEnv: ["BOB_GATEWAY_URL", "BOB_DEFAULT_GATEWAY_URL"],
         path: "/inference/v1/model/info",
         shape: "litellm-model-info",
       },

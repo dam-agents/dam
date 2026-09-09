@@ -22,6 +22,11 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
+import type {
+  CaseStudyInspectionService,
+  CaseStudySubmissionsService,
+} from "../../modules/case-studies/index.js";
+import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
@@ -35,6 +40,11 @@ export function createHarnessRouter(deps: {
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   agentKb: AgentKbDeps;
+  caseStudySubmissions: CaseStudySubmissionsService;
+  caseStudyInspection: CaseStudyInspectionService;
+  carriesInspectorRole: (sub: string) => Promise<boolean>;
+  agentImage: (agentId: string) => Promise<string | null>;
+  usageSummary: AgentUsageSummaryService;
   templates: TemplatesService;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
@@ -54,6 +64,11 @@ export function createHarnessRouter(deps: {
     experimentsServiceFor: deps.experimentsServiceFor,
     kbShareOpsFor: deps.kbShareOpsFor,
     agentHome: deps.agentHome,
+    caseStudySubmissions: deps.caseStudySubmissions,
+    caseStudyInspection: deps.caseStudyInspection,
+    carriesInspectorRole: deps.carriesInspectorRole,
+    agentImage: deps.agentImage,
+    usageSummary: deps.usageSummary,
   });
   mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {

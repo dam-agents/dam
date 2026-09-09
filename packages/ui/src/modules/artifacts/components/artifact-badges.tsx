@@ -1,5 +1,6 @@
-import { Globe } from "@carbon/icons-react";
+import { Globe, UserMultiple } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
+import { match } from "ts-pattern";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -35,16 +36,25 @@ export function ArtifactStatusBadge({
 }: {
   artifact: LibraryArtifact;
 }) {
-  if (deletionState(artifact.expiresAt).state === "expired") {
-    return <Badge variant="danger">Deleting soon</Badge>;
-  }
-  if (artifact.visibility !== "public") {
-    return <Badge variant="muted">Private</Badge>;
-  }
-  return (
-    <Badge variant="success" className="gap-1">
-      <Globe size={12} />
-      Public
-    </Badge>
-  );
+  const expiring = deletionState(artifact.expiresAt).state === "expired";
+  return match({ expiring, visibility: artifact.visibility })
+    .with({ expiring: true }, () => (
+      <Badge variant="danger">Deleting soon</Badge>
+    ))
+    .with({ visibility: "private" }, () => (
+      <Badge variant="muted">Private</Badge>
+    ))
+    .with({ visibility: "restricted" }, () => (
+      <Badge variant="info" className="gap-1">
+        <UserMultiple size={12} />
+        Restricted
+      </Badge>
+    ))
+    .with({ visibility: "public" }, () => (
+      <Badge variant="success" className="gap-1">
+        <Globe size={12} />
+        Public
+      </Badge>
+    ))
+    .exhaustive();
 }

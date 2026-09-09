@@ -364,6 +364,26 @@
   animation: slide-in-right 0.25s ease-out both;
 }
 
+@keyframes title-marquee {
+  0%,
+  5.56% {
+    transform: translateX(0);
+  }
+  33.33%,
+  38.89% {
+    transform: translateX(var(--marquee-shift, 0px));
+  }
+  66.67%,
+  100% {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .anim-title-marquee {
+    animation: title-marquee 9s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+  }
+}
+
 @keyframes dot-jump {
   0%,
   60%,

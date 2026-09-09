@@ -1,0 +1,209 @@
+# Local dev: images built with docker and loaded into k3s directly.
+# Used via: helm install -f values-local.yaml
+
+ui:
+  image:
+    repository: platform-ui
+    tag: latest
+    pullPolicy: Never
+
+apiServer:
+  image:
+    repository: platform-api-server
+    tag: latest
+    pullPolicy: Never
+
+controller:
+  image:
+    repository: platform-controller
+    tag: latest
+    pullPolicy: Never
+  logLevel: debug
+  agent:
+    templateDefaults:
+      imagePullPolicy: IfNotPresent
+  # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+  # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
+  # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
+  # stay inside what the lima VM can schedule — a too-small ceiling once parked
+  # the nous target in OverBudget for hours (the deadline clock kept running),
+  # but the fix here is the VM's capacity, not the stock default.
+  #
+  # Must stay inside what the lima VM can schedule (etc/lima/k3s.yaml) with
+  # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
+  # admitted workers drove the load average past 20 — kubelet probes timed
+  # out, the node flapped NotReady, Keycloak crash-looped on liveness kills
+  # and the UI lost auth. 6 of the VM's 10 CPUs caps agent burst so k3s,
+  # Istio, Keycloak and the api-server always keep ~4; 14Gi + the ~5Gi
+  # platform stack stays inside the VM's 20Gi. Spawns that fit this ceiling
+  # but not the currently-free room queue (sweepable targets auto-start when
+  # room frees); a worker sized past the ceiling is rejected at the spawn
+  # route instead of parking until its deadline.
+  userBudgets:
+    defaultCpu: "6"
+    defaultMemory: "14Gi"
+
+# Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
+# upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
+# agent volumes still live on it — the storage migration needs the source
+# volumes readable to drain them. New agents never touch it (workspaces are
+# ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
+# it so the e2e cluster proves the no-shared-filesystem path. Drops together
+# with the chart's nfsProvisioner block once dev clusters are drained.
+nfsProvisioner:
+  enabled: true
+
+# Merges over the values.yaml catalog. Every template gets a local image
+# override so enabling one later never pulls from quay.
+agentTemplates:
+  claude-code:
+    image:
+      repository: platform-claude-code
+      tag: latest
+
+  # Rendered (and thus built/loaded) only when virtualization.enabled is set
+  # on the install (e.g. `mise run cluster:install -- --set=virtualization.enabled=true`).
+  # The `=` form is required — cluster:install only matches `--set=*`, so a
+  # space-separated `--set foo=bar` is silently dropped.
+  claude-code-vm:
+    image:
+      repository: platform-claude-code-vm
+      tag: latest
+
+  codex:
+    enabled: false
+    image:
+      repository: platform-codex
+      tag: latest
+
+  pi-agent:
+    enabled: false
+    image:
+      repository: platform-pi-agent
+      tag: latest
+
+  bob:
+    enabled: false
+    image:
+      repository: platform-bob
+      tag: latest
+
+  nous:
+    enabled: false
+    image:
+      repository: platform-nous
+      tag: latest
+    # A campaign's measurement phase can run several target-system daemons at
+    # once (a pm2 benchmark held three ~1 GiB daemons simultaneously) — the
+    # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
+    # heavy campaign fits; the campaign prompt should still bound its own
+    # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
+    #
+    # The CPU ceiling is deliberately half the memory-driven sizing: at 4 the
+    # worker's boot burst (a ~13 MB upstream fetch plus a dozen concurrent
+    # egress dials) could take half the 8-core VM and starve ztunnel, which
+    # terminated the driver's in-flight status poll through the waypoint and
+    # killed the run with a synthesized 503. Memory is the resource nous
+    # actually runs out of; CPU only needs to be enough not to crowd the mesh.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
+
+  openevolve:
+    enabled: false
+    image:
+      repository: platform-openevolve
+      tag: latest
+
+  shinkaevolve:
+    enabled: false
+    image:
+      repository: platform-shinkaevolve
+      tag: latest
+
+  gepa:
+    enabled: false
+    image:
+      repository: platform-gepa
+      tag: latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
+
+  # Both presets share the one locally-built skydiscover image.
+  adaevolve:
+    enabled: false
+    image:
+      repository: platform-skydiscover
+      tag: latest
+
+  evox:
+    enabled: false
+    image:
+      repository: platform-skydiscover
+      tag: latest
+
+  # Test fixture; not in the values.yaml catalog — the mock image is never
+  # release-tagged (CI pushes per-commit shas for the e2e job only).
+  mock:
+    enabled: true
+    description: "Scripted mock agent (E2E test fixture)"
+    image:
+      repository: platform-mock
+      tag: latest
+    storageSize: "1Gi"
+    env:
+      - name: MOCK_DEFAULT_REPLY
+        value: "Hello from the mock agent."
+
+  k-search:
+    enabled: false
+    image:
+      repository: platform-k-search
+      tag: latest
+
+  k-search-local:
+    image:
+      repository: platform-k-search
+      tag: latest
+
+# Local dev convenience: route requests with any Host header (including
+# IP literals like 127.0.0.1) to the app, so the cluster is reachable
+# however the developer happens to address it.
+ingress:
+  catchAllAppHost: true
+
+keycloak:
+  # Known dev admin password for the local cluster — never used in production.
+  admin:
+    password: admin
+  image:
+    repository: platform-keycloak
+    tag: latest
+    pullPolicy: Never
+  # Bootstrap a known dev/dev user for local cluster — never enabled in production.
+  testUser:
+    enabled: true
+    username: dev
+    password: dev
+  extraRedirectUris:
+    - "*"
+  extraWebOrigins:
+    - "*"
+  # Human-readable Keycloak logs for `mise run cluster:logs` during dev.
+  log:
+    consoleOutput: "default"
+
+# terms.* are required by the chart validators. Dev placeholder so a
+# local install renders and installs without extra flags.
+terms:
+  version: dev
+  text: "Dev placeholder Terms of Use."

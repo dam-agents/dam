@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-04
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -117,11 +117,15 @@ with any identity-provider buttons offered below it) and SSO-first
 (identity-provider CTAs only, for deployments where corporate SSO is the
 expected sign-in path; the page falls back to the password form when the
 realm has no identity provider configured). The chart's `keycloak.login`
-values ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml))
+values ([`helm/values.yaml`](../../helm/values.yaml))
 select the variant and an optional "Request access" link; they reach the
 theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
-and a pod roll — no theme rebuild, no realm change. Upstream identity
+and a pod roll — no theme rebuild, no realm change. The same page also
+knows which client started the sign-in: when it is the artifact share
+host's client, the heading and lead paragraph
+tell the visitor they need to sign in to view a shared artifact instead
+of the general product pitch. Upstream identity
 providers themselves (e.g. w3id) are realm configuration managed outside
 the chart.
 
@@ -134,6 +138,13 @@ The user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
+
+The realm holds a **dedicated public client** for the artifact share host
+([artifact-library](artifact-library.md#the-share-host--trust-boundary)):
+PKCE-only, redirect pinned to that host's sign-in callback, and no
+`platform-api` audience, so its tokens are rejected by the api-server. A
+restricted-link viewer thus gets an identity on the share origin without
+the app's tokens ever being valid there.
 
 Two interstitials can take the browser off the page the user asked for:
 the login redirect above, and the Terms-of-Use gate. Both park that
@@ -158,26 +169,23 @@ There is no token exchange — credential storage is K8s-native and label-
 scoped, so the api-server enforces ownership directly when reading and
 writing.
 
-For headless / CI use, the CLI accepts a long-lived **API key** in the
-same `Authorization: Bearer` slot, distinguished by a `pk_` prefix. API
-keys carry the owner's `sub`, a subset of permission scopes, and an
-optional agent allowlist; the bearer middleware dispatches by prefix and
-produces the same downstream authenticated-principal shape — sub, scopes,
-agent binding, and an optional key id. API keys cannot mint or revoke
-other API keys — the management surface rejects any request whose
-principal was authenticated via a key, so exfiltrated keys cannot
-escalate.
+Headless / CI use: the CLI accepts a long-lived **API key** in the same
+`Authorization: Bearer` slot, marked by a `pk_` prefix. A key carries the
+owner's `sub`, a subset of permission scopes, and an optional agent
+allowlist; deleting an Agent drops it from every key, so a later
+same-named Agent is not covered. The bearer middleware dispatches by
+prefix and yields the same principal shape — sub, scopes, agent binding,
+optional key id. Keys cannot mint or revoke other keys: the management
+surface rejects any request authenticated via a key, so a leaked key
+cannot escalate.
 
 ## Keycloak event logging
 
 Keycloak is also an audit event source. It emits login and admin events
 to pod stdout via its built-in `jboss-logging` event listener, so they
 ride the same cluster log pipeline as every other pod log out to the
-external log service. The listener's level is set through Keycloak's
-per-listener SPI knobs rather than a broad `org.keycloak` log-category
-override: successes surface at `info`, errors at `warn`. Production pods
-emit structured JSON; local dev overrides the console format to plain
-text for a readable `cluster:logs`.
+external log service. Successes surface at `info`, errors at `warn`, as
+structured JSON in production.
 
 Persistence is split by event class:
 
@@ -200,7 +208,7 @@ Persistence is split by event class:
   source of truth.
 
 The event knobs, log format, and realm import live in the Keycloak Helm
-values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
+values under [`helm/`](../../helm/).
 
 ## Resource ownership
 
@@ -315,27 +323,21 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
-host**, all from one K8s Secret. The Secret carries a JSON
-`agent-platform.ai/injection-hosts` annotation listing each
-`{host, headerName?, valueFormat?, encoding?, pathPattern?}` tuple; the
-controller fans the Secret into one Envoy filter chain per host —
-entries that share a host stack into that chain as an ordered list of
-credential injectors (see *Multiple injection steps per host* below) —
-mounting the Secret once and reading one SDS file per injection step
-inside it. The same list drives the egress allowlist (one
-`connection:<id>` rule per host) — there is no second source of truth.
+host**, all from one K8s Secret. The Secret carries an annotated list of
+per-host injection descriptors; the controller fans it into one Envoy
+filter chain per host, stacking entries that share a host, and mounts
+the Secret once. The same list drives the egress allowlist, one rule per
+host and connection, so there is no second source of truth.
 
 GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
-the same OAuth token must reach `api.github.com` as
-`Authorization: Bearer …`, `github.com` as
-`Authorization: Basic base64("x-access-token:<token>")` (so `git clone`
-of private repos works without a credential helper), and
-`raw.githubusercontent.com` as `Bearer` again (raw-file fetches).
+the same OAuth token must reach the API host as a bearer token, the git
+host as basic auth carrying the token as a password (so `git clone` of
+private repos works without a credential helper), and the raw-content
+host as a bearer token again.
 
-The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
-Only the gateway pod mounts the Secret; the agent pod does not. See
-[`packages/api-server/src/modules/connections/infrastructure/`](../../packages/api-server/src/modules/connections/infrastructure/) and
-[`packages/api-server/src/modules/connections/domain/connection-sds.ts`](../../packages/api-server/src/modules/connections/domain/connection-sds.ts).
+The Secret also carries the SDS documents Envoy reads, one per injection
+step — see
+[`packages/api-server/src/modules/connections/`](../../packages/api-server/src/modules/connections/).
 
 ## Image pull credentials
 
@@ -516,16 +518,26 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
   with SAN pinning unchanged. Agent-side trust is unaffected: the agent
   always trusts the platform MITM CA, never the upstream's.
 
+**Path rewriting.** An injection descriptor can declare path prefix
+rewrites for its host: the chain matches those prefixes ahead of its
+catch-all route and swaps the prefix on the way upstream, leaving every
+other path untouched. Rewriting is a routing-leg concern, after the
+ext_authz Check, so egress rules describe the paths the agent requests.
+Both ends of a rewrite are whole path segments and the gateway drops any
+that are not, so a rewrite cannot reach past what the host's chain
+admits. One prefix carries one replacement: conflicting Secrets keep the
+first and log the loser.
+
 **Multiple injection steps per host.** A single host can carry more than
 one credential — either two different credentials (e.g. an API key and a
 tenant ID on distinct headers) or the same credential injected into both
-a header and a URL query parameter (e.g. Bob shell's `/key/info?key=…`
-endpoint). The controller groups Secrets by `hostPattern` into one L7
-chain with an ordered list of `credential_injector` filters; each step
-must use a unique header name, and steps marked with `queryParamName`
-get a follow-up Lua filter that moves the (bare, percent-encoded) value
-into the named URL query parameter and strips the carrier header so it
-never reaches the upstream.
+a header and a URL query parameter, for upstreams that authenticate off
+the URL. The controller groups Secrets by host into one L7
+chain with an ordered list of credential injectors; each step must use a
+unique header name, and a step that targets a query parameter instead
+gets a follow-up filter that moves the percent-encoded value into that
+parameter and strips the carrier header, so it never reaches the
+upstream.
 
 ## HITL ext_authz
 
@@ -682,26 +694,13 @@ mesh.
 
 ## Dev cluster: SVID rotation resilience
 
-A dev-cluster constraint, not an architectural property. The local
-k3s/lima `cluster:install` ([`deploy/tasks.toml`](../../deploy/tasks.toml))
-pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
-outlive a typical dev cluster's lifetime, and installs a
-`ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent
-ztunnel logs every 10 min for `certificate expired` /
-`AlertReceived(CertificateExpired)` and rolls the affected mesh
-workloads — `ds/ztunnel` and the istio-synthesised waypoint
-deployments, whose SVIDs expire independently. An expired waypoint
-cert stalls only the flows through that waypoint (e.g. the harness
-path), which is why it can masquerade as an app-level bug — see
-[issue #705](https://github.com/dam-agents/dam/issues/705).
-`mise run cluster:fix-certs` performs the same roll on demand, and
-`mise run cluster:status` reports whether the expired-cert signature
-is present. Together these absorb the race where lima VM
-suspend/resume on a sleeping host laptop slips past the default 24h
-rotation window and stalls every mesh hop — see
-[issue #283](https://github.com/dam-agents/dam/issues/283).
-The same clock skip can age out cert-manager's short-lived webhook
-serving cert, failing chart installs at admission; `cluster:status`
-probes for that and `cluster:fix-certs` restarts the webhook too.
-Production deployments configure mesh PKI separately and don't get
-any of these knobs.
+A dev-cluster constraint, not an architectural property. A lima VM that
+sleeps with the host can slip past the mesh's default certificate rotation
+window, expiring workload SVIDs (and cert-manager's webhook cert) and stalling
+every mesh hop — an expired waypoint cert stalls only the flows through that
+waypoint, so it can masquerade as an app-level bug. The local
+`cluster:install` lengthens the workload cert TTL and installs a watchdog that
+rolls affected mesh workloads; `cluster:status` reports the signature and
+`cluster:fix-certs` heals on demand. Symptoms and recovery live in the
+[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill. Production
+deployments configure mesh PKI separately and get none of these knobs.

@@ -40,7 +40,8 @@ export function createSchedulesService(deps: {
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
     const ok = await deps.agentExists(agentId);
-    if (!ok) throw new Error(`Agent "${agentId}" not found`);
+    if (!ok)
+      throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
   }
 
   return {
@@ -53,7 +54,7 @@ export function createSchedulesService(deps: {
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
-      validateCron(input.cron);
+      asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,

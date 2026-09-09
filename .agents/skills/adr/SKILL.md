@@ -65,7 +65,7 @@ Ask the user for any missing information. You need at minimum: title, context, d
 If the decision is made → create `docs/adrs/NNN-short-title.md` with status `accepted`.
 If the decision is open → create `docs/adrs/DRAFT-short-title.md` with status `proposed` (omit `id`).
 
-Read `docs/adrs/index.md` for the next free number. After creating the file, regenerate the index with `mise run docs:generate:adr-index` — the index is generated, not hand-edited.
+Read `docs/adrs/index.md` for the next free number. After creating the file, regenerate the index with `mise run //docs:generate:adr-index` — the index is generated, not hand-edited.
 
 ## Updating an ADR
 
@@ -73,7 +73,7 @@ Valid status transitions: `accepted`, `deprecated`, and supersession via the *ne
 
 Read the target ADR directly. An accepted body is immutable: only its status changes, and only to superseded via the *new* ADR's `supersedes` field. `check:adr-immutable` enforces this at commit, so keep any edit to an accepted record inside that rule.
 
-When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` with `git mv`, set `id` and `status: accepted` in the frontmatter, then regenerate the index with `mise run docs:generate:adr-index`.
+When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` with `git mv`, set `id` and `status: accepted` in the frontmatter, then regenerate the index with `mise run //docs:generate:adr-index`.
 
 ## Conventions
 
@@ -81,7 +81,7 @@ When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` w
 - **Drafts**: `DRAFT-short-title.md` — no number until accepted
 - **Owner**: the person accountable for the decision — drives it to resolution, revisits if context changes
 - File names: short kebab-case, 2-3 words max
-- Index: `docs/adrs/index.md` — generated from frontmatter by `mise run docs:generate:adr-index`, never hand-edited
+- Index: `docs/adrs/index.md` — generated from frontmatter by `mise run //docs:generate:adr-index`, never hand-edited
 
 ## Template
 
