@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -8,10 +9,12 @@ import type { AgentView } from "../../../types.js";
 
 export function FreeUpComputeItems({
   agent,
+  configureLabel,
   onPause,
   onStop,
 }: {
   agent: AgentView;
+  configureLabel: string;
   onPause: () => void;
   onStop: () => void;
 }) {
@@ -30,18 +33,20 @@ export function FreeUpComputeItems({
         />
       </DropdownMenuItem>
       <DropdownMenuItem
-        className="h-auto py-2"
+        className="h-auto py-2 data-[disabled]:pointer-events-auto"
         disabled={neverHibernates}
         onSelect={onPause}
         data-testid="agent-pause"
+        title={
+          neverHibernates
+            ? `This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in ${configureLabel}.`
+            : undefined
+        }
       >
         <MenuItemBody
           title="Pause"
-          description={
-            neverHibernates
-              ? "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Configure agent."
-              : "Wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
-          }
+          tag={neverHibernates ? "Unavailable" : undefined}
+          description="Wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
         />
       </DropdownMenuItem>
       <DropdownMenuSeparator />
@@ -51,14 +56,23 @@ export function FreeUpComputeItems({
 
 function MenuItemBody({
   title,
+  tag,
   description,
 }: {
   title: string;
+  tag?: string;
   description: string;
 }) {
   return (
     <span className="flex max-w-72 flex-col gap-0.5">
-      <span>{title}</span>
+      <span className="flex items-center gap-2">
+        {title}
+        {tag && (
+          <Badge variant="muted" size="sm">
+            {tag}
+          </Badge>
+        )}
+      </span>
       <span className="whitespace-normal text-xs text-muted-foreground">
         {description}
       </span>

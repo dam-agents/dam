@@ -144,6 +144,7 @@ export function AgentRow({
               {display.state === "running" && (
                 <FreeUpComputeItems
                   agent={agent}
+                  configureLabel={configureLabel}
                   onPause={onPause}
                   onStop={onStop}
                 />
