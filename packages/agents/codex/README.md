@@ -37,9 +37,11 @@ The harness scripts translate `OPENAI_BASE_URL` into Codex's `-c openai_base_url
 | Script | Runs | Purpose |
 |---|---|---|
 | `harness-chat.sh` | `codex-acp` | ACP subprocess for chat-mode sessions (UI) |
-| `harness-terminal.sh` | `codex` / `codex resume` | Interactive TUI for terminal-mode sessions |
+| `harness-terminal.sh` | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
 
 Terminal sessions use `--dangerously-bypass-approvals-and-sandbox` since the pod itself is the sandbox (network isolation + Envoy credential injection).
+
+Codex mints its own thread id on the first turn, so the platform session id cannot be passed in. A managed `SessionStart` hook (`requirements.toml`, shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal.sh` resumes that thread when the file exists and starts a fresh conversation otherwise. A terminal closed before its first turn leaves no pin and simply starts fresh next time.
 
 ## Usage
 
