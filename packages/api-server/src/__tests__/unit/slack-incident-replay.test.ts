@@ -28,16 +28,14 @@ type Turn = {
 };
 
 /**
- * A STATEFUL, FAITHFUL fake ACP.
- *
- * - listSessions returns the sessions actually created so far, keyed by the
- *   platform threadTs meta. The existing coalescing harness always returns [],
- *   so it can never observe session continuity across turns; this can.
- * - sendPrompt creates a session when given platformMeta and resumes when given
- *   resumeSessionId, and tracks whether a turn is running.
- * - steer honours the production `idleBehavior: "promptRequired"` contract: it
- *   reports "injected" only while a turn is actually running, and
- *   "no-running-turn" otherwise — it never silently starts a detached turn.
+ * TEST_OVERVIEW: How a Slack thread keeps one Session across turns, and how a
+ * coalesced top-level batch still lets an id-less reply post. The fake ACP here
+ * is stateful, unlike the coalescing suite's: listSessions returns the Sessions
+ * created so far keyed by their platform threadTs, so a resume can be observed;
+ * sendPrompt mints a Session for a fresh prompt and resumes one for a
+ * resumeSessionId; steer honours the production promptRequired contract and
+ * reports "injected" only while a turn runs, "no-running-turn" otherwise, so it
+ * never starts a detached turn.
  */
 function statefulHarness(opts?: { settleMs?: number }) {
   const gw = createFakeSlackGateway();
@@ -58,8 +56,6 @@ function statefulHarness(opts?: { settleMs?: number }) {
         prompt: typeof prompt === "string" ? prompt : JSON.stringify(prompt),
         running: wasRunning,
       });
-      // Faithful to idleBehavior: "promptRequired": a steer that finds no
-      // running turn reports back rather than starting a detached one.
       return wasRunning ? "injected" : "no-running-turn";
     },
     sendPrompt: async (prompt: string | ContentBlock[], o: SendPromptOpts) => {
@@ -137,8 +133,7 @@ function statefulHarness(opts?: { settleMs?: number }) {
       for (const g of gates) g();
       gates.length = 0;
     },
-    /** A top-level @-mention (no threadTs) — it starts a thread. */
-    fireTop(ts: string, text: string, user = "U1") {
+    fireTopLevelMention(ts: string, text: string, user = "U1") {
       return gw.fireMention({
         user,
         channel: "C1",
@@ -147,7 +142,6 @@ function statefulHarness(opts?: { settleMs?: number }) {
         teamId: "T-e2e",
       });
     },
-    /** A reply inside the thread rooted at threadTs. */
     fireInThread(ts: string, threadTs: string, text: string, user = "U1") {
       return gw.fireMention({
         user,
@@ -166,63 +160,60 @@ function statefulHarness(opts?: { settleMs?: number }) {
 
 describe("slack incident replay — Damathy threaded conversation", () => {
   /**
-   * The exact incident shape. Jenna @-mentions DAM at top level; DAM answers
-   * (turn 1, draft v1) and the turn ends. Ten minutes later she replies IN THE
-   * THREAD ("File away!"). That message must (A) be answered at all, and (B)
-   * resume turn 1's session so the answer remembers draft v1 — not start a
-   * fresh, amnesiac turn.
+   * TEST_SCENARIO: The exact incident shape. Jenna @-mentions DAM at top level;
+   * DAM answers (turn 1, draft v1) and the turn ends. Ten minutes later she
+   * replies IN THE THREAD ("File away!"). That message must (A) be answered at
+   * all, and (B) resume turn 1's session so the answer remembers draft v1 — not
+   * start a fresh, amnesiac turn. The top-level mention roots the thread at its
+   * own ts (100.001); the follow-up replies inside that thread; the assertions
+   * check the follow-up ran and reused turn 1's session.
    */
   it("answers an in-thread follow-up and resumes the first turn's session", async () => {
     const h = statefulHarness({ settleMs: 0 });
     await h.start();
 
-    // 4:08 — top-level mention. Thread roots at this message's ts.
-    await h.fireTop("100.001", "@dam draft a reply to the customer");
+    await h.fireTopLevelMention(
+      "100.001",
+      "@dam draft a reply to the customer",
+    );
     await h.waitFor(() => h.turns.length === 1);
 
-    // 4:18 — reply inside the thread DAM opened (thread root = 100.001).
     await h.fireInThread("200.001", "100.001", "@dam file it away");
     await h.waitFor(() => h.turns.length === 2);
 
-    // (A) the follow-up was answered.
     expect(h.turns).toHaveLength(2);
     expect(String(h.turns[1]!.prompt)).toContain("file it away");
-    // (B) it resumed the session turn 1 created — the answer remembers v1.
     expect(h.turns[1]!.resumed).toBe(true);
     expect(h.turns[1]!.sessionId).toBe(h.turns[0]!.sessionId);
   });
 
   /**
-   * The overlap #3500 introduced. A top-level @-mention starts the thread and
-   * its turn (queue key `top:user`). Before that turn finishes, the follow-up
-   * arrives IN the thread (queue key `thread:root`) — a DIFFERENT coalescing
-   * queue. The two queues can only be serialised by the shared session lock
-   * (keyed on the thread's session key). This asserts the follow-up still (A)
-   * runs and (B) resumes turn 1's session rather than opening a parallel,
-   * amnesiac one.
+   * TEST_SCENARIO: The overlap #3500 introduced. A top-level @-mention starts
+   * the thread and its turn (queue key `top:user`), held mid-flight. Before
+   * that turn finishes, the follow-up arrives IN the thread (queue key
+   * `thread:root`) — a DIFFERENT coalescing queue. The two queues can only be
+   * serialised by the shared session lock (keyed on the thread's session key).
+   * Releasing turn 1 lets the follow-up run; this asserts it still (A) runs and
+   * (B) resumes turn 1's session rather than opening a parallel, amnesiac one —
+   * every session used for the thread is the same one.
    */
   it("resumes the session when the in-thread follow-up overlaps turn 1", async () => {
     const h = statefulHarness({ settleMs: 0 });
     await h.start();
 
-    // 4:08 — top-level mention. Its turn starts and is held mid-flight.
     h.hold();
-    void h.fireTop("100.001", "@dam draft a reply to the customer");
+    void h.fireTopLevelMention("100.001", "@dam draft a reply to the customer");
     await h.waitFor(() => h.turns.length === 1);
 
-    // 4:18 — reply lands in the thread WHILE turn 1 is still composing.
     void h.fireInThread("200.001", "100.001", "@dam file it away");
     await h.waitFor(() => h.steers.length > 0 || h.turns.length === 2);
 
-    // Let turn 1 finish; the follow-up must now be delivered.
     h.releaseAll();
     await h.waitFor(() => h.turns.length === 2 && h.turns[1]!.resumed);
 
-    // (A) the follow-up was answered.
     expect(h.turns.length).toBeGreaterThanOrEqual(2);
     const followUp = h.turns.find((t) => t.prompt.includes("file it away"));
     expect(followUp, "the follow-up produced a turn").toBeDefined();
-    // (B) every session used for this thread is the same one — no amnesiac fork.
     const sessionIds = new Set(h.turns.map((t) => t.sessionId));
     expect(sessionIds.size, "one session for the whole thread").toBe(1);
   });
@@ -230,53 +221,43 @@ describe("slack incident replay — Damathy threaded conversation", () => {
 
 describe("slack incident replay — coalesced top-level batch drops the reply (#3500)", () => {
   /**
-   * Symptom A of the Damathy incident: "my draft never made it to the channel".
-   *
-   * Two top-level @-mentions from the SAME user, the second arriving while the
-   * first turn is still composing. #3500 steers the second into the running
-   * turn. `onSteered` registers it as a second live turn ref whose reply target
-   * is its own eventTs — a DIFFERENT thread from the first ref. So when the
-   * agent calls its reply tool without an explicit threadTs, `resolveTurn`
-   * sees two live refs pointing at two threads, calls it ambiguous, and REFUSES
-   * the reply. The agent's answer never reaches Slack.
-   *
-   * Before #3500 these two top-level mentions ran as two SEQUENTIAL turns
-   * (serialised by `withSessionTurnLock`), each with a single live ref, so an
-   * id-less reply resolved to the sole in-flight thread and posted. The commit's
-   * own review note claims the id-less reply is "refused exactly as before" —
-   * but "before" it was two separate turns and was NOT refused. Coalescing
-   * manufactures an ambiguity that did not exist, and the agent has no way to
-   * know which [ts …] tag to pass on its first, un-steered reply.
-   *
-   * This test asserts the agent's id-less reply is NOT refused. It fails on the
-   * #3500 code and is the regression guard for the fix.
+   * TEST_SCENARIO: Symptom A of the Damathy incident — "my draft never made it
+   * to the channel". Two top-level @-mentions from the SAME user, the second
+   * arriving while the first turn is still composing (turn 1 is held
+   * mid-flight). #3500 steered the second into the running turn and `onSteered`
+   * registered it as a second live turn ref whose reply target was its own
+   * eventTs — a DIFFERENT thread from the first ref. So an id-less reply saw two
+   * live refs pointing at two threads, was called ambiguous, and was REFUSED;
+   * the agent's answer never reached Slack. Before #3500 these two mentions ran
+   * as two SEQUENTIAL turns (serialised by `withSessionTurnLock`), each with a
+   * single live ref, so an id-less reply resolved to the sole in-flight thread
+   * and posted — coalescing manufactured an ambiguity that did not exist. The
+   * fix makes both refs share the conversation anchor; this asserts the id-less
+   * reply is NOT refused and reaches the channel. It fails on the #3500 code and
+   * is the regression guard for the fix.
    */
   it("does not refuse the agent's id-less reply after a same-user top-level mention is steered in", async () => {
     const h = statefulHarness({ settleMs: 0 });
     await h.start();
 
-    // 3:56 — first top-level mention. Its turn starts and is held mid-flight,
-    // standing in for the agent still composing its draft.
     h.hold();
-    void h.fireTop("100.001", "@dam file an issue about the flaky test");
+    void h.fireTopLevelMention(
+      "100.001",
+      "@dam file an issue about the flaky test",
+    );
     await h.waitFor(() => h.turns.length === 1);
 
-    // 4:02 — a second top-level mention from the SAME user, while turn 1 is
-    // still composing. #3500 steers it into the running turn.
-    void h.fireTop("200.001", "@dam actually, hello first");
+    void h.fireTopLevelMention("200.001", "@dam actually, hello first");
     await h.waitFor(() => h.steers.length > 0);
     expect(
       h.steers[0]!.running,
       "the second mention was steered mid-turn",
     ).toBe(true);
 
-    // The agent now calls its reply tool with no explicit threadTs — the normal
-    // path for answering the conversation it is in.
     const result = await h.worker.reply("agent-1", {
       text: "Here is the draft issue …",
     });
 
-    // The reply must post, not be refused as ambiguous.
     expect(result).toEqual({ ok: true });
     expect(
       h.posts().some((p) => p.text.includes("Here is the draft issue")),

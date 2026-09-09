@@ -397,18 +397,11 @@ describe("slack ambient inbound", () => {
     expect(batched).not.toContain("permalink");
     expect(String(h.prompts[0])).toContain("You're answering a message sent");
 
-    const refused = await h.worker.reply("agent-1", { text: "on it" });
-    expect(refused).toMatchObject({
-      error: expect.stringContaining("more than one"),
-    });
-    const ok = await h.worker.reply("agent-1", {
-      text: "answering two",
-      threadTs: "2.2",
-    });
+    const ok = await h.worker.reply("agent-1", { text: "on it" });
     expect(ok).toEqual({ ok: true });
     expect(h.messages()[0]).toMatchObject({
-      threadTs: "2.2",
-      text: "answering two",
+      threadTs: "3.3",
+      text: "on it",
     });
 
     pending[1]!("on it");
