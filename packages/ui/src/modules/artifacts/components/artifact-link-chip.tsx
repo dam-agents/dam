@@ -6,6 +6,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 import { useStore } from "../../../store.js";
 import { useArtifact } from "../api/queries.js";
+import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 
 export const ARTIFACT_LINK_PREFIX = ARTIFACT_INTERNAL_LINK_PREFIX;
@@ -25,7 +26,7 @@ export function ArtifactLinkChip({
 }) {
   const { data: artifact } = useArtifact(artifactId);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifact = useOpenArtifact();
 
   const label =
     artifact?.title ??
@@ -40,7 +41,7 @@ export function ArtifactLinkChip({
       <button
         type="button"
         onClick={() =>
-          setOpenArtifactId(artifactId === openArtifactId ? null : artifactId)
+          void openArtifact(artifactId === openArtifactId ? null : artifactId)
         }
         className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-sm font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
       >

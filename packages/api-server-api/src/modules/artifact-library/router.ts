@@ -66,7 +66,7 @@ export const artifactLibraryRouter = t.router({
   update: manageAgentsProcedure
     .input(artifactUpdateInputSchema)
     .mutation(({ ctx, input: { id, ...rest } }) =>
-      ctx.artifactLibrary.update(id, rest),
+      ctx.artifactLibrary.update(id, rest, { user: true }),
     ),
 
   setSharing: manageAgentsProcedure

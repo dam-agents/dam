@@ -22,9 +22,23 @@ each carrying its session id — and reports the touch over its runtime
 channel. The write is scoped to the calling agent's own artifacts and never
 overwrites another session's attribution, so a failure anywhere leaves a
 version unattributed rather than misattributed. Terminal sessions bypass ACP
-and stay unattributed. Concurrent revision publishes are
-detected — one wins, the other is refused with a conflict and leaves no
-partial version behind.
+and stay unattributed.
+
+A version also records **who wrote it** — the owner, when a person edited it
+in the app, or the publishing agent. Every writer states this, and the writes
+the platform makes for its own bookkeeping name the agent they were made for,
+so a single artifact's history never mixes a named author with a blank one.
+Only versions from before the platform tracked authorship name nobody, rather
+than attributing a write to whoever happens to own the library.
+
+Concurrent revision publishes are detected — one wins, the other is refused
+with a conflict and leaves no partial version behind. An **interactive edit**
+is guarded further: it states the version it changed and is refused when the
+head has already moved on, so an owner editing in the app never silently
+replaces a newer agent revision. The owner is told instead, and may then
+overwrite deliberately. An agent's publish always appends and is never
+refused on these grounds — only a surface that can hold stale text on a
+screen claims a version.
 
 An artifact's **kind is settled when it is created** and no revision can move
 it — neither by declaring one nor by renaming into another extension. The
@@ -227,22 +241,31 @@ flowchart LR
   library grouped by folder, with search, upload, folder management, sharing
   controls, a separate delete-after (retention) control, and in-app previews
   that reuse the chat file-viewer stack (markdown prose, highlighted code,
-  inline images). Retention is reached from the artifact's own menu rather than
-  the sharing dialog, and stays available whatever the artifact's visibility —
-  it governs deletion, not the link. An artifact's visibility badge is also the
-  control that opens the sharing dialog, so the state and the means to change it
-  sit in one place; the library's artifact rows therefore show their share
-  actions at rest, while every other row — folders here, and artifacts in the
-  chat side panel — keeps its actions behind a hover reveal. The in-app preview
-  carries the same entry point, so opening an artifact is a place to start
-  sharing it rather than a dead end. Folder membership is mutable and
-  advisory: any artifact can be filed into any folder, moved to another, or
-  taken out again from the library itself, so organising a library is not tied
-  to the moment each artifact was published. Nothing reads membership as a
-  claim about provenance — an [experiment](experiments.md) lineage folder is an
-  ordinary destination, listed among the other folders under its plain name
-  (its full name when that would collide), and what a run produced is recorded
-  by the experiment rather than by where the artifact sits.
+  inline images). An owner can **change a text artifact's content** from the
+  preview they read it in, which publishes a version like any other revision,
+  so the artifact keeps its identity, its link and every earlier version. Only
+  the current version is editable; a past one is read-only. Editing is bounded
+  further by what the platform accepts in one inline write, which is less than
+  it hands back to read — a document past that bound stays readable but offers
+  no Edit, so no surface advertises an action the save would refuse. The version
+  history is readable rather than merely steppable — each version says when it
+  was written and who wrote it. Retention is reached from the artifact's own
+  menu rather than the sharing dialog, and stays available whatever the
+  artifact's visibility — it governs deletion, not the link. An artifact's
+  visibility badge is also the control that opens the sharing dialog, so the
+  state and the means to change it sit in one place; the library's artifact
+  rows therefore show their share actions at rest, while every other row —
+  folders here, and artifacts in the chat side panel — keeps its actions
+  behind a hover reveal. The in-app preview carries the same entry point, so
+  opening an artifact is a place to start sharing it rather than a dead end.
+  Folder membership is mutable and advisory: any artifact can be filed into
+  any folder, moved to another, or taken out again from the library itself, so
+  organising a library is not tied to the moment each artifact was published.
+  Nothing reads membership as a claim about provenance — an
+  [experiment](experiments.md) lineage folder is an ordinary destination,
+  listed among the other folders under its plain name (its full name when that
+  would collide), and what a run produced is recorded by the experiment rather
+  than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, grouped into the same collapsible folder groups as the
   library, with the same actions.
@@ -253,7 +276,10 @@ flowchart LR
   in the session sidebar, scoped to the sandbox's agent, grouped by folder and
   offering the same per-artifact actions plus drag-to-folder filing, and a
   **docked preview** beside the conversation that renders the selected
-  artifact and follows new versions as they are published. Deleting the
+  artifact, hosts the same editor, and follows new versions as they are
+  published. That preview shares one slot with the sandbox file viewer, so
+  opening either evicts the other; both ask before they displace an unsaved
+  edit, and so does every dismissal of a surface holding one. Deleting the
   artifact a preview is showing closes that preview.
 - On the two agent-scoped surfaces a folder shows only that agent's artifacts,
   every user folder is listed even when empty (so there is always a filing

@@ -36,7 +36,7 @@ type ArtifactDialog =
   | { kind: "move"; artifact: LibraryArtifact }
   | { kind: "share"; artifact: LibraryArtifact }
   | { kind: "retention"; artifact: LibraryArtifact }
-  | { kind: "preview"; artifact: LibraryArtifact }
+  | { kind: "preview"; artifact: LibraryArtifact; edit?: boolean }
   | { kind: "deleteFolder"; folder: ArtifactFolder };
 
 export function ArtifactsView() {
@@ -84,6 +84,8 @@ export function ArtifactsView() {
   const rowActions = {
     onPreview: (artifact: LibraryArtifact) =>
       setDialog({ kind: "preview", artifact }),
+    onEdit: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "preview", artifact, edit: true }),
     onRename: (artifact: LibraryArtifact) =>
       setDialog({ kind: "rename", artifact }),
     onMove: (artifact: LibraryArtifact) =>
@@ -218,6 +220,7 @@ export function ArtifactsView() {
         <ArtifactPreviewDialog
           artifact={dialog.artifact}
           onClose={closeDialog}
+          initialEdit={dialog.edit}
         />
       )}
       <ConfirmDialog

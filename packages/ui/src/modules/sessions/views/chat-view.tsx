@@ -63,6 +63,7 @@ import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
@@ -146,7 +147,7 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifact = useOpenArtifact();
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
   const {
@@ -813,7 +814,7 @@ export function ChatView() {
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel
                   experiment={dashboardExperiment}
-                  onClose={() => setOpenArtifactId(null)}
+                  onClose={() => void openArtifact(null)}
                 />
               ) : openArtifactId ? (
                 <DockedArtifactPanel key={openArtifactId} />

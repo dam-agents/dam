@@ -73,6 +73,16 @@ export function useUpdateArtifact() {
   );
 }
 
+export function useSaveArtifactContent() {
+  return useMutation({
+    ...trpc.artifactLibrary.update.mutationOptions(),
+    meta: {
+      invalidates: invalidatesLibraryAndContent,
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useSetArtifactSharing() {
   return useMutation({
     ...trpc.artifactLibrary.setSharing.mutationOptions(),
