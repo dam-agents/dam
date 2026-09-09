@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Delete what a scan run created under the zap user on dam-dev.
+"""Delete what a scan run created under the zap user on dam-dev, in the three
+collections a run is known to fill: artifact folders, skill sets, skill sources.
 
 An item is deleted when it carries a marker of the scan: a field equal to one
 of the enumerator's sample literals (the active scanner mutates one field per
 request, so every created item keeps at least one), or a createdAt at or after
 the run start (reports/started-at, written by scan.sh, or --since ISO-8601).
-Anything else under the account is listed and left alone. --all wipes the
-whole account instead.
+Anything else in those collections is listed and left alone. --all empties the
+three collections instead. Other kinds the seed list can create (agents,
+schedules, connections, API keys, ...) have so far always been rejected at
+validation or ownership checks; inspect them by hand if a run changes that.
 """
 import json, ssl, sys, urllib.parse, urllib.request
 from datetime import datetime, timezone

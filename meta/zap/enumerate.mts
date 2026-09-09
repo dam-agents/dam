@@ -19,6 +19,14 @@ const PATTERN_SAMPLES: Record<string, string> = {
   "^\\d{4}-\\d{2}-\\d{2}$": "2026-01-01",
 };
 
+const INPUT_FIXES: Record<string, (v: any) => any> = {
+  "artifactLibrary.create": ({ uploadRef: _uploadRef, ...v }) => v,
+  "artifactLibrary.update": ({ uploadRef: _uploadRef, ...v }) => v,
+  "metrics.spendBreakdown": (v) => ({ ...v, timeZone: "UTC" }),
+  "schedules.createRRule": (v) => ({ ...v, quietHours: [{ ...v.quietHours[0], endTime: "10:30" }] }),
+  "schedules.updateRRule": (v) => ({ ...v, quietHours: [{ ...v.quietHours[0], endTime: "10:30" }] }),
+};
+
 function sample(s: any, defs: any): any {
   if (!s || typeof s !== "object") return "zap";
   if (s.$ref) return sample(defs[s.$ref.replace("#/$defs/", "")], defs);
@@ -58,7 +66,9 @@ for (const [path, proc] of Object.entries<any>(appRouter._def.procedures)) {
   if (inputSchema) {
     try {
       const schema = z.toJSONSchema(inputSchema, { io: "input", unrepresentable: "any" });
-      input = sample(schema, schema.$defs ?? {});
+      input = (INPUT_FIXES[path] ?? ((v) => v))(sample(schema, schema.$defs ?? {}));
+      const parsed = inputSchema.safeParse(input);
+      if (!parsed.success) throw new Error(`sample fails the input schema: ${parsed.error.issues.map((i: any) => i.path.join(".") + " " + i.message).join("; ")}`);
     } catch (e) {
       failures.push(`${path}: ${e instanceof Error ? e.message : String(e)}`);
     }

@@ -147,12 +147,12 @@ jobs:
         method: POST
         name: schedules.createRRule
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"09:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+        data: "{\"name\": \"zap\", \"agentId\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"10:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.updateRRule"
         method: POST
         name: schedules.updateRRule
         headers: ["Content-Type: application/json"]
-        data: "{\"id\": \"zap\", \"name\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"09:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
+        data: "{\"id\": \"zap\", \"name\": \"zap\", \"rrule\": \"zap\", \"timezone\": \"zap\", \"quietHours\": [{\"startTime\": \"09:30\", \"endTime\": \"10:30\", \"enabled\": true}], \"task\": \"zap\", \"sessionMode\": \"continuous\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/schedules.delete"
         method: POST
         name: schedules.delete
@@ -486,12 +486,12 @@ jobs:
         method: POST
         name: artifactLibrary.create
         headers: ["Content-Type: application/json"]
-        data: "{\"title\": \"zap\", \"content\": \"zap\", \"uploadRef\": \"zap\", \"fileName\": \"zap\", \"kind\": \"html\", \"contentType\": \"zap\", \"folderId\": \"zap\", \"visibility\": \"private\", \"expiresInHours\": 1}"
+        data: "{\"title\": \"zap\", \"content\": \"zap\", \"fileName\": \"zap\", \"kind\": \"html\", \"contentType\": \"zap\", \"folderId\": \"zap\", \"visibility\": \"private\", \"expiresInHours\": 1}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.update"
         method: POST
         name: artifactLibrary.update
         headers: ["Content-Type: application/json"]
-        data: "{\"id\": \"zap\", \"title\": \"zap\", \"folderId\": \"zap\", \"content\": \"zap\", \"uploadRef\": \"zap\", \"fileName\": \"zap\", \"contentType\": \"zap\"}"
+        data: "{\"id\": \"zap\", \"title\": \"zap\", \"folderId\": \"zap\", \"content\": \"zap\", \"fileName\": \"zap\", \"contentType\": \"zap\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/artifactLibrary.setSharing"
         method: POST
         name: artifactLibrary.setSharing
@@ -558,7 +558,7 @@ jobs:
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/metrics.overview?input=%7B%22agentId%22%3A%20%22zap%22%2C%20%22sessionId%22%3A%20%22zap%22%2C%20%22sinceHours%22%3A%201%2C%20%22limit%22%3A%201%7D"
         method: GET
         name: metrics.overview
-      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/metrics.spendBreakdown?input=%7B%22from%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22to%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22agentId%22%3A%20%22zap%22%2C%20%22timeZone%22%3A%20%22zap%22%7D"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/metrics.spendBreakdown?input=%7B%22from%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22to%22%3A%20%222026-01-01T00%3A00%3A00.000Z%22%2C%20%22agentId%22%3A%20%22zap%22%2C%20%22timeZone%22%3A%20%22UTC%22%7D"
         method: GET
         name: metrics.spendBreakdown
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/terms.current"
