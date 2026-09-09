@@ -160,6 +160,8 @@ if (envStore.ready()) podService?.refreshEnv();
 
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
+let seedHarnessModel: (() => Promise<void>) | null = null;
+
 const {
   runtime: acpRuntime,
   triggerDriver,
@@ -179,6 +181,7 @@ const {
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
+  beforeFirstSpawn: () => seedHarnessModel?.() ?? Promise.resolve(),
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -207,6 +210,7 @@ const reconcileOnState = imageSkillReconciler
   : undefined;
 
 const runtimeChannel = await composeRuntimeChannel({
+  onHarnessConfigApplied: () => acpRuntime.recycleForConfig(),
   manifestPath,
   agentHome: homeDir,
   workDir,
@@ -237,6 +241,10 @@ const runtimeChannel = await composeRuntimeChannel({
   ],
   ...(reconcileOnState ? { onSnapshotProcessed: reconcileOnState } : {}),
 });
+
+seedHarnessModel = async () => {
+  await runtimeChannel.seedHarnessModel();
+};
 
 if (imageSkillReconciler) {
   const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));

@@ -22,6 +22,7 @@ export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
 export const modelDiscoverySpec = z.object({
   urlEnv: z.array(z.string().min(1)).nonempty(),
+  redirectEnv: z.array(z.string().min(1)).optional(),
   path: z.string().startsWith("/").optional(),
   shape: z.enum(["openai-models", "litellm-model-info"]).optional(),
 });

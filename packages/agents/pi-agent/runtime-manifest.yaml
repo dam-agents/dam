@@ -35,7 +35,12 @@ drivers:
               name: "High"
             - value: xhigh
               name: "Extra High"
+    # Both name an OpenAI-compatible endpoint the agent was pointed at — it
+    # fronts no provider of its own, so either justifies a seeded model.
     modelDiscovery:
       urlEnv:
+        - OPENAI_PROXY_URL
+        - OPENAI_BASE_URL
+      redirectEnv:
         - OPENAI_PROXY_URL
         - OPENAI_BASE_URL

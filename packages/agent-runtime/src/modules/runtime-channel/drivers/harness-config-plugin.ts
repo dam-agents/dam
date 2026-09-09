@@ -31,6 +31,7 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly catalog: HarnessConfigBinding["catalog"];
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   apply: ApplyHarnessConfigFn;
+  seedModel(): Promise<boolean>;
 }
 
 export function createHarnessConfigPlugin(deps: {
@@ -38,6 +39,7 @@ export function createHarnessConfigPlugin(deps: {
   agentHome: string;
   envReader: RuntimeEnvReader;
   discoverModels: ModelDiscovery;
+  onApplied?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
@@ -97,6 +99,7 @@ export function createHarnessConfigPlugin(deps: {
       log,
       onUnparseable: "throw",
     });
+    deps.onApplied?.();
   };
 
   const readCurrent = async (opts?: {
@@ -120,12 +123,34 @@ export function createHarnessConfigPlugin(deps: {
     }
   };
 
+  const seedModel = async (): Promise<boolean> => {
+    const spec = binding?.modelDiscovery;
+    if (!binding || !spec || !binding.keys.model) return false;
+    const current = readCurrentValues(binding, agentHome, log);
+    if (current.model) return false;
+
+    const outcome = await discoverModels(spec, envReader.current());
+    if (outcome.status !== "observed") return false;
+    if (!spec.redirectEnv?.includes(outcome.via)) {
+      log(
+        `[harness-config] no model seeded: ${outcome.via} supplies the harness's own endpoint`,
+      );
+      return false;
+    }
+    const model = outcome.models[0]?.value;
+    if (!model) return false;
+    log(`[harness-config] seeding model ${model} (via ${outcome.via})`);
+    await apply({ model });
+    return true;
+  };
+
   return {
     name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
     readCurrent,
     apply,
+    seedModel,
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {
       return async (payload) => apply(payload as HarnessConfigEventPayload);
     },

@@ -77,7 +77,7 @@ Approvals cannot ride the settings file at all, because Bob's ACP reads them fro
 
 Two consequences worth knowing:
 
-- **A change lands on the next harness start.** The platform writes the panel event once and never re-asserts it, and neither surface re-reads the file mid-session. A running session keeps the posture it started with; the next one picks the new one up. The env rail is the faster lever, since an env change recycles the harness.
+- **A change lands on the next harness start — which the apply now brings about.** Neither surface re-reads the file mid-session, so the platform recycles the harness after writing the panel event: idle, right away; mid-turn, once the work drains. A session in flight keeps the posture it started with and is closed by the recycle, so the pick applies without waiting for something else to restart Bob.
 - **The file stays yours.** A panel value is never reconciled away, so a hand-edit through the Files panel or SSH survives — including one to the `platform` section.
 
 ### Where the Model list comes from
@@ -91,6 +91,12 @@ Which gateway gets asked follows from the connection, and two of them can be gra
 A Bob Shell connection made before `BOB_DEFAULT_GATEWAY_URL` was added to the preset does not carry it — re-save the provider in Settings → Providers once to pick it up, otherwise the Model option stays absent and the rest of the panel keeps working.
 
 A list that cannot be read — no gateway URL granted, no route to it, an auth failure, or an empty list — leaves the panel on its last known list and the rest of the panel usable; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for agents that make no panel choice, with the same precedence as Mode: panel over pin.
+
+### Why a redirected Bob is given a model
+
+A gateway that fronts somebody else's catalogue does not serve Bob's own default model, and a request naming a model the tenant cannot reach is refused with a 403 rather than answered by something else — so a Bob nobody has configured yet fails its first prompt outright. Whenever a connection redirects Bob (`BOB_GATEWAY_URL`) and no model is set, the platform therefore writes the first discovered model into the panel's `platform.model` before Bob starts for the first time; the first chat waits for that read instead of racing it.
+
+On Bob's own gateway (`BOB_DEFAULT_GATEWAY_URL`) nothing is written — Bob's curated default is the better answer there, and the panel still lists what the gateway serves if you want to override it. A pick of yours is never overwritten either way, and if discovery cannot be reached there is nothing to write, so Bob falls back to its default exactly as before.
 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 

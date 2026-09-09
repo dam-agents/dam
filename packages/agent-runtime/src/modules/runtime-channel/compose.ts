@@ -49,11 +49,13 @@ export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   manifest: RuntimeManifest;
   harnessConfig: HarnessConfigService;
+  seedHarnessModel(): Promise<boolean>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
 export interface ComposeRuntimeChannelOpts {
+  onHarnessConfigApplied?: () => void;
   manifestPath: string;
   agentHome: string;
   workDir: string;
@@ -108,6 +110,9 @@ export async function composeRuntimeChannel(
 
   const harnessConfigRaw = resolved["harness-config"];
   const harnessConfigPlugin = createHarnessConfigPlugin({
+    ...(opts.onHarnessConfigApplied
+      ? { onApplied: opts.onHarnessConfigApplied }
+      : {}),
     binding: harnessConfigRaw
       ? harnessConfigBinding.parse(harnessConfigRaw)
       : undefined,
@@ -167,6 +172,7 @@ export async function composeRuntimeChannel(
     service,
     manifest,
     harnessConfig: harnessConfigPlugin,
+    seedHarnessModel: harnessConfigPlugin.seedModel,
     sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {

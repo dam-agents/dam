@@ -79,6 +79,7 @@ describe("createModelDiscovery", () => {
         { value: "a-model", name: "a-model" },
         { value: "b-model", name: "b-model" },
       ],
+      via: "U",
     });
   });
 
@@ -127,6 +128,7 @@ describe("createModelDiscovery", () => {
       ),
     ).toEqual({
       status: "observed",
+      via: "BOB_GATEWAY_URL",
       models: [
         { value: "aws/claude-opus-4-8", name: "aws/claude-opus-4-8" },
         { value: "aws/claude-sonnet-4-6", name: "aws/claude-sonnet-4-6" },
@@ -157,6 +159,7 @@ describe("createModelDiscovery", () => {
       ),
     ).toEqual({
       status: "observed",
+      via: "U",
       models: [
         { value: "legacy-no-mode", name: "legacy-no-mode" },
         { value: "premium-ide", name: "premium-ide" },
