@@ -5,10 +5,13 @@ export interface ProviderRowDef {
   description: string;
 }
 
+export const IBM_LITELLM_DESCRIPTION =
+  "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",
-    description: "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
+    description: IBM_LITELLM_DESCRIPTION,
   },
   {
     type: "bob",
