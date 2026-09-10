@@ -23,7 +23,7 @@ flowchart LR
 
   api -->|read catalog.yaml, kit.yaml at ref| catalog
   catalog -.->|entry| kitrepo
-  ui -->|kits.list / kits.apply| api
+  ui -->|kits.list / kits.create| api
   api -->|create + grants + kit stamp| agents
   api -->|create declared schedules| schedules
   api -->|bind Slack conversation| channels
@@ -44,7 +44,7 @@ flowchart LR
 
 ## Apply
 
-Apply is **create-only** and a composition of existing rails, compensated rather than transactional:
+Apply — the `create` procedure of the starter-kits router, since tRPC reserves `apply` — is **create-only** and a composition of existing rails, compensated rather than transactional:
 
 1. Resolve the kit at the catalog's pin. Resolve the Template from the pin or the user's pick; refuse when neither exists.
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
