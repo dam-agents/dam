@@ -22,9 +22,12 @@ Three rules carry the security model:
    address it can express. There is no second route to deny, and nftables
    drops forwarding off the link as defence in depth rather than as the
    boundary itself. The gateway → api-server hops (harness and ext_authz) are
-   gated by the *filesystem*: each is a unix socket created for one agent,
-   owned by that gateway's uid, mode 0600. A harness request arriving on one
-   and naming a different agent is refused before the router sees it.
+   gated by the *filesystem and the mount namespace*: each is a unix socket
+   created for one agent, owned by the gateway account, mode 0600 — and every
+   gateway runs in a mount namespace holding only its own agent's socket pair
+   and credential directory, so another agent's are not merely unreadable but
+   absent. A harness request arriving on a socket and naming a different agent
+   is refused before the router sees it.
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).
@@ -56,7 +59,7 @@ flowchart LR
   api-server -->|JWKS validate| keycloak
 
   api-server -->|write credentials, owner-scoped| store
-  supervisor -->|render only this agent's grants<br/>readable by the gateway uid alone| gw
+  supervisor -->|render only this agent's grants<br/>bound into this gateway's namespace alone| gw
   supervisor -->|netns + /30 link, no default route<br/>nftables, leaf cert, bootstrap| sandbox
 
   agent-runtime -->|its only routable address| envoy
@@ -64,9 +67,11 @@ flowchart LR
   envoy -->|inject credentials| external
 ```
 
-The credential boundary is the process: credential bytes are rendered only
-into a directory the paired gateway's uid can read, and the sandbox has no
-route to anything but that gateway. Enforcement is layered:
+The credential boundary is the gateway's namespace: credential bytes are
+rendered into a directory owned by the gateway account, and each gateway runs
+with an empty filesystem laid over the agents root and only its own agent's
+directory bound back in. The sandbox, for its part, has no route to anything
+but that gateway. Enforcement is layered:
 
 - **Link topology** is the sole gate on the sandbox → gateway hop. The
   sandbox's namespace holds one /30 veth and nothing else — no default
@@ -96,11 +101,17 @@ route to anything but that gateway. Enforcement is layered:
   because the agent has no admitted route to any of them.
 - **Per-agent sockets** gate the gateway-originated hops. The harness
   endpoint and the ext_authz service are each bound to a unix socket
-  created for one agent, chowned to that gateway's uid and chmodded
-  0600. Nothing in the request names the agent: the socket does. A
-  harness call naming another agent is refused, and an ext_authz check
-  is evaluated for the agent whose socket it arrived on, so neither the
-  `:authority` header nor any other caller-set field can shift identity.
+  created for one agent, owned by the gateway account and mode 0600, and
+  bound into that one gateway's namespace. Nothing in the request names
+  the agent: the socket does. A harness call naming another agent is
+  refused, and an ext_authz check is evaluated for the agent whose socket
+  it arrived on, so neither the `:authority` header nor any other
+  caller-set field can shift identity.
+
+  Every gateway runs as the *same* account, so the uid separates gateways
+  from the rest of the node but not from each other — the per-instance
+  mount namespace is what separates them, and it is the load-bearing half
+  of this boundary.
 
 The sandbox holds no platform credential of any kind, and the gateway runs
 in a separate process, uid and namespace — there is nothing co-located to
@@ -404,7 +415,9 @@ must be treated as high-value. The statement audit is best-effort, not enforced
 ## Envoy credential injection
 
 The supervisor renders a per-Agent Envoy bootstrap and issues the leaf TLS
-material the gateway uses to terminate the agent's egress TLS. The leaf is
+material the gateway uses to terminate the agent's egress TLS. The gateway
+itself is a systemd unit instance, which is what drops it to the gateway
+account and gives it the namespace holding only that agent's files. The leaf is
 signed by the node's own CA, generated on first boot; the CA certificate —
 and only the certificate, never the key — is mounted read-only into the
 sandbox at `/etc/platform/ca/ca.crt`, so the agent's TLS clients trust
@@ -631,8 +644,8 @@ opposite sides of the credential boundary, so the threat models differ:
   forwarding anything.
 - **Gateway → api-server harness.** All agent egress (the harness call
   included) flows through the paired gateway, so what arrives is
-  gateway → harness, on a unix socket created for that one agent and readable
-  only by that gateway's uid. A request naming a different agent is refused
+  gateway → harness, on a unix socket created for that one agent and present
+  in no other gateway's namespace. A request naming a different agent is refused
   there, so handlers can treat the URL's `:id` as authenticated.
 - **Gateway → api-server ext_authz** arrives on that agent's second socket,
   bound by a server that was constructed for that agent. The api-server does
@@ -641,7 +654,8 @@ opposite sides of the credential boundary, so the threat models differ:
 - **The node ruleset** backs all of this up: forwarding off any sandbox link
   is dropped, and each link admits only its own gateway address and port.
 
-Topology and file ownership are the security boundary, and each side's gate
-matches its threat model: the sandbox runs untrusted code and is held by the
-kernel's routing table, while the gateway is platform-controlled and its
-identity is the socket the node handed it.
+Topology, file ownership and the mount namespace are the security boundary,
+and each side's gate matches its threat model: the sandbox runs untrusted code
+and is held by the kernel's routing table, while the gateway is
+platform-controlled and its identity is the socket the node handed it — the
+only one it can see.

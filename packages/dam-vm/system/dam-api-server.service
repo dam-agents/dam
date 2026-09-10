@@ -16,27 +16,37 @@ Type=simple
 User=root
 WorkingDirectory=/opt/dam/api-server
 EnvironmentFile=/etc/dam/env
-ExecStart=/usr/bin/node /opt/dam/api-server/dist/index.js
+ExecStart=/usr/local/bin/node /opt/dam/api-server/dist/index.js
 Restart=always
 RestartSec=2
 
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-PrivateTmp=yes
-ProtectKernelModules=yes
-ProtectKernelLogs=yes
-ProtectControlGroups=no
+# Deliberately NOT ProtectSystem / PrivateTmp / ProtectHome: each of those
+# gives the unit its own mount namespace, and the supervisor's whole job is to
+# create mounts the rest of the node must see. A network namespace is a bind
+# mount under /run/netns; made inside a private namespace it is invisible to
+# containerd, which is asked to join it from outside. Shared propagation does
+# not rescue it either — iproute2 marks /run/netns shared on first use, and
+# that marking lands in the private namespace too. The mount namespace is
+# therefore the host's, and the hardening below is what is left: no new
+# privileges, a capability set cut to what the job needs, and the kernel
+# surfaces closed off.
+# ProtectKernelTunables and ProtectKernelLogs are absent for the same reason:
+# each implies MountAPIVFS, which is a private mount namespace by another
+# name. ProtectKernelModules is capability-based and costs nothing here.
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
 # CAP_NET_ADMIN for the per-agent namespaces and the ruleset; CAP_SYS_ADMIN
 # for entering them; CAP_CHOWN/DAC to hand each gateway its own credentials.
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_KILL
-ReadWritePaths=/var/lib/dam /run/dam /var/run/netns /run/containerd
-StateDirectory=dam
-RuntimeDirectory=dam
-RuntimeDirectoryMode=0750
+# CAP_MAC_ADMIN is for the container runtime's own AppArmor profile, which it
+# loads on first use; without it every sandbox start fails rather than
+# quietly running unconfined.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_KILL CAP_MAC_ADMIN
+# No StateDirectory / RuntimeDirectory: both make systemd bind-mount the
+# directory into the unit, which is a private mount namespace again — and
+# RuntimeDirectory would take /run/dam, sockets and all, down with a restart.
+# tmpfiles.d owns those directories instead.
 
 [Install]
 WantedBy=multi-user.target

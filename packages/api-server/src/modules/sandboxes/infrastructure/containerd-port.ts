@@ -144,9 +144,7 @@ export function createContainerdPort(opts: {
     },
 
     async list() {
-      const out = await nerdctl([
-        "ps", "--all", "--quiet", "--format", "{{.Names}}",
-      ]);
+      const out = await nerdctl(["ps", "--all", "--format", "{{.Names}}"]);
       return out
         .split("\n")
         .filter((n) => n.startsWith("dam-"))

@@ -47,8 +47,8 @@ const configSchema = z.object({
   /** Where the per-agent control-plane sockets live. */
   runRoot: z.string().default("/run/dam"),
   /** uid/gid the per-agent Envoy runs as, and the only reader of its sockets. */
-  gatewayUid: z.coerce.number().optional(),
-  gatewayGid: z.coerce.number().optional(),
+  /** Account the paired gateways run as; its ids are resolved at boot. */
+  gatewayUser: z.string().default("dam-gateway"),
   /** Port each paired gateway's Envoy listens on, on the host end of the link. */
   gatewayPort: z.coerce.number().default(3128),
   /** Node CA directory: the certificate every sandbox trusts. */
@@ -209,8 +209,7 @@ export function loadConfig(): Config {
     logLevel: process.env.LOG_LEVEL,
     port: process.env.PORT,
     runRoot: process.env.DAM_RUN_ROOT,
-    gatewayUid: process.env.DAM_GATEWAY_UID,
-    gatewayGid: process.env.DAM_GATEWAY_GID,
+    gatewayUser: process.env.DAM_GATEWAY_USER,
     gatewayPort: process.env.DAM_GATEWAY_PORT,
     pkiRoot: process.env.DAM_PKI_ROOT,
     telemetryCollectorHost: process.env.PLATFORM_TELEMETRY_COLLECTOR_HOST,

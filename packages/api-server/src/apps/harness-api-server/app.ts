@@ -52,6 +52,8 @@ import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
   extAuthzGate: ExtAuthzGate;
+  /** Resolved once at boot; the only reader of the per-agent sockets. */
+  gatewayUser: { uid: number; gid: number };
   agentStore: AgentStore;
   sandboxAddresses: SandboxAddresses;
   config: Config;
@@ -257,8 +259,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       holdSeconds: config.approvalHoldSeconds,
       gate: deps.extAuthzGate,
     },
-    ...(config.gatewayUid !== undefined ? { gatewayUid: config.gatewayUid } : {}),
-    ...(config.gatewayGid !== undefined ? { gatewayGid: config.gatewayGid } : {}),
+    gatewayUid: deps.gatewayUser.uid,
+    gatewayGid: deps.gatewayUser.gid,
     log: (message, fields) => getLogger().warn(fields ?? {}, message),
   });
 }

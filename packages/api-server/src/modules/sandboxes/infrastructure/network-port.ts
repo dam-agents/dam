@@ -1,3 +1,6 @@
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { exec } from "./exec.js";
 import {
   nftablesRuleset,
@@ -21,13 +24,25 @@ export function createNetworkPort(): NetworkPort {
 
   return {
     async create(link) {
-      const existing = await this.list();
-      if (!existing.includes(link.netns)) await ip("netns", "add", link.netns);
+      // A namespace can be *listed* and still be unusable: `ip netns add`
+      // leaves the anchor file behind if the bind mount is lost, and joining
+      // one of those fails with a bare EINVAL. Probing is the only way to
+      // tell, and a stale anchor is recreated rather than reported — nothing
+      // downstream can do anything with it either.
+      const usable = await exec("ip", ["netns", "exec", link.netns, "true"])
+        .then(() => true)
+        .catch(() => false);
+      if (!usable) {
+        await ip("netns", "del", link.netns).catch(() => {});
+        await ip("link", "del", link.hostInterface).catch(() => {});
+        await ip("netns", "add", link.netns);
+      }
 
       // A veth pair is created whole; if the host end is already there the
       // link survived a restart and only addressing needs re-asserting.
       const links = await exec("ip", ["-o", "link", "show"]).catch(() => "");
       if (!links.includes(`${link.hostInterface}@`)) {
+        await ip("link", "del", link.hostInterface).catch(() => {});
         await ip(
           "link", "add", link.hostInterface,
           "type", "veth",
@@ -62,9 +77,21 @@ export function createNetworkPort(): NetworkPort {
     },
 
     async applyRuleset(links, ports) {
-      await exec("nft", ["-f", "-"], {
-        input: `table inet dam\ndelete table inet dam\n${nftablesRuleset({ links, ...ports })}`,
-      });
+      // nft reads its input as a file, and refuses a pipe — so the ruleset
+      // goes through a real one. It is written whole and the old table is
+      // dropped in the same transaction, so there is no window in which a
+      // sandbox is on a half-applied ruleset.
+      const path = join(tmpdir(), `dam-nft-${process.pid}.nft`);
+      await writeFile(
+        path,
+        `table inet dam\ndelete table inet dam\n${nftablesRuleset({ links, ...ports })}`,
+        { mode: 0o600 },
+      );
+      try {
+        await exec("nft", ["-f", path]);
+      } finally {
+        await rm(path, { force: true });
+      }
     },
 
     async list() {

@@ -27,11 +27,11 @@ export function composeSandboxes(deps: {
   pkiRoot: string;
   gatewayPort: number;
   sandboxPort: number;
+  gatewayUid: number;
+  gatewayGid: number;
   defaultIdleTimeoutMs: number;
   harnessAuthority: string;
   extAuthzHoldSeconds: number;
-  gatewayUid?: number;
-  gatewayGid?: number;
   objectStore?: { host: string; port: number };
   telemetry?: { host: string; port: number };
   otel: (agentId: string) => EnvoyOTelView;
@@ -41,11 +41,7 @@ export function composeSandboxes(deps: {
     store: deps.store,
     network: createNetworkPort(),
     containerd: createContainerdPort({}),
-    gateway: createGatewayPort({
-      ...(deps.gatewayUid !== undefined ? { uid: deps.gatewayUid } : {}),
-      ...(deps.gatewayGid !== undefined ? { gid: deps.gatewayGid } : {}),
-      log: (message) => deps.log(message),
-    }),
+    gateway: createGatewayPort({ log: (message) => deps.log(message) }),
     pki: createPkiPort(deps.pkiRoot),
     envoyConfig: createEnvoyConfigPort({
       secrets: deps.secrets,
@@ -62,6 +58,8 @@ export function composeSandboxes(deps: {
     runRoot: deps.runRoot,
     gatewayPort: deps.gatewayPort,
     sandboxPort: deps.sandboxPort,
+    gatewayUid: deps.gatewayUid,
+    gatewayGid: deps.gatewayGid,
     defaultIdleTimeoutMs: deps.defaultIdleTimeoutMs,
     log: deps.log,
   });

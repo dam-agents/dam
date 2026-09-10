@@ -1,0 +1,14 @@
+[Unit]
+Description=Platform UI (static SPA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/nginx -c /etc/dam/nginx.conf -g "daemon off;"
+ExecReload=/usr/sbin/nginx -c /etc/dam/nginx.conf -s reload
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

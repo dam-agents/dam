@@ -31,7 +31,17 @@ provision:
       set -eux -o pipefail
       apt-get update
       apt-get install -y containerd nftables iproute2 openssl \
-        postgresql redis-server nodejs npm jq curl
+        postgresql redis-server nginx-light rsync jq curl
+
+      # Node from upstream: the archive's is too old for the api-server, and
+      # the version has to match what the repo builds against.
+      NODE_VERSION=24.9.0
+      case "$(uname -m)" in
+        aarch64) NODE_ARCH=arm64 ;;
+        x86_64)  NODE_ARCH=x64 ;;
+      esac
+      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        | tar -xJ -C /usr/local --strip-components=1
 
       # nerdctl and the CNI plugins are not in Ubuntu's archive.
       NERDCTL_VERSION=2.1.2
@@ -45,6 +55,16 @@ provision:
       curl -fsSL -o /usr/local/bin/runsc "${URL}/runsc"
       curl -fsSL -o /usr/local/bin/containerd-shim-runsc-v1 "${URL}/containerd-shim-runsc-v1"
       chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+
+      # Envoy is the paired gateway, and Ubuntu ships no package for it.
+      ENVOY_VERSION=1.36.1
+      case "$(uname -m)" in
+        aarch64) ENVOY_ARCH=aarch_64 ;;
+        x86_64)  ENVOY_ARCH=x86_64 ;;
+      esac
+      curl -fsSL -o /usr/local/bin/envoy \
+        "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${ENVOY_ARCH}"
+      chmod 0755 /usr/local/bin/envoy
 
       mkdir -p /etc/containerd
       cat >/etc/containerd/config.toml <<'CONF'

@@ -1,4 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { exec } from "../infrastructure/exec.js";
 import type {
   AgentRecord,
   AgentStatus,
@@ -34,6 +36,9 @@ export interface SandboxSupervisorDeps {
   runRoot: string;
   gatewayPort: number;
   sandboxPort: number;
+  /** uid/gid the gateway runs as, and the only reader of its directory. */
+  gatewayUid: number;
+  gatewayGid: number;
   defaultIdleTimeoutMs: number;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
@@ -126,6 +131,10 @@ export function createSandboxSupervisor(
     const layout = layoutFor(deps.agentsRoot, record.id);
     const sockets = socketsFor(deps.runRoot, record.id);
 
+    // 0751 on the agent root: the gateway user has to traverse to its own
+    // gateway directory, and traversal is all it gets — the directory does
+    // not list, and its mount namespace holds no other agent's anyway.
+    await mkdir(layout.root, { recursive: true, mode: 0o751 });
     for (const dir of [layout.work, layout.home, layout.scratch]) {
       await mkdir(dir, { recursive: true, mode: 0o750 });
     }
@@ -144,7 +153,18 @@ export function createSandboxSupervisor(
       sockets,
     });
     await deps.pki.ensureLeaf(layout.leafTls, hosts);
-    await deps.gateway.ensureRunning(record.id, layout.gatewayConfig, config);
+    await mkdir(dirname(layout.gatewayConfig), { recursive: true, mode: 0o750 });
+    await writeFile(layout.gatewayConfig, config, { mode: 0o640 });
+    // Everything the gateway reads is written by this process as root and
+    // then handed to the gateway's uid — which is the whole credential
+    // boundary, so it is asserted here rather than left to whoever wrote
+    // each file.
+    await exec("chown", [
+      "-R",
+      `${deps.gatewayUid}:${deps.gatewayGid}`,
+      dirname(layout.gatewayConfig),
+    ]);
+    await deps.gateway.ensureRunning(record.id, config);
 
     await deps.containerd.ensureRunning({
       agentId: record.id,
@@ -156,11 +176,11 @@ export function createSandboxSupervisor(
         ? { registryAuthPath: record.spec.registryAuthPath }
         : {}),
       netns: link.netns,
-      env: sandboxEnv(record, link, layout.caCert),
+      env: sandboxEnv(record, link, deps.gatewayPort),
       mounts: [
         { source: layout.work, target: `${homeOf(record)}/work` },
         { source: layout.home, target: homeOf(record) },
-        { source: layout.caCert, target: "/etc/platform/ca/ca.crt", readOnly: true },
+        { source: layout.caCert, target: SANDBOX_CA_PATH, readOnly: true },
       ],
       ...(record.spec.resources?.limits
         ? {
@@ -179,7 +199,7 @@ export function createSandboxSupervisor(
 
     const state = await deps.containerd.inspect(record.id);
     const sandboxReady = state?.running === true;
-    const gatewayReady = deps.gateway.isRunning(record.id);
+    const gatewayReady = await deps.gateway.isRunning(record.id);
     await publishStatus(record.id, {
       ready: sandboxReady && gatewayReady,
       hibernated: false,
@@ -256,10 +276,23 @@ export function createSandboxSupervisor(
 
     async start() {
       stopped = false;
+      // Subscribe first, then sweep *without* awaiting it. A sweep pulls
+      // images and starts sandboxes, which can take minutes; awaiting it here
+      // would hold up everything the api-server does after boot — including
+      // opening its own listener — and an install with one slow image would
+      // look like an install that never came up.
       unsubscribe = deps.store.onChange((change) => {
-        if (!stopped) void schedule(change.id);
+        if (stopped) return;
+        // Its own status writes are not intent, and reacting to them would
+        // spin: reconcile writes status, the write announces, reconcile runs.
+        if (change.type === "upsert" && change.statusOnly) return;
+        void schedule(change.id);
       });
-      await this.sweep();
+      void this.sweep().catch((err: unknown) => {
+        deps.log("sandbox.sweep.failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     },
 
     async stop() {
@@ -274,12 +307,15 @@ export function createSandboxSupervisor(
 
 const homeOf = (record: AgentRecord) => record.spec.agentHome ?? "/home/agent";
 
+/** The CA path the sandbox sees, which is not where the node keeps it. */
+const SANDBOX_CA_PATH = "/etc/platform/ca/ca.crt";
+
 function sandboxEnv(
   record: AgentRecord,
   link: SandboxLink,
-  caPath: string,
+  gatewayPort: number,
 ): Record<string, string> {
-  const proxy = `http://${link.hostAddress}:3128`;
+  const proxy = `http://${link.hostAddress}:${gatewayPort}`;
   const env: Record<string, string> = {
     HOME: homeOf(record),
     // Decorative, as it was under NetworkPolicy: the sandbox has no route to
@@ -290,9 +326,9 @@ function sandboxEnv(
     http_proxy: proxy,
     https_proxy: proxy,
     NO_PROXY: "localhost,127.0.0.1",
-    SSL_CERT_FILE: caPath,
-    REQUESTS_CA_BUNDLE: caPath,
-    NODE_EXTRA_CA_CERTS: caPath,
+    SSL_CERT_FILE: SANDBOX_CA_PATH,
+    REQUESTS_CA_BUNDLE: SANDBOX_CA_PATH,
+    NODE_EXTRA_CA_CERTS: SANDBOX_CA_PATH,
     PORT: "8080",
   };
   for (const e of record.spec.env ?? []) env[e.name] = e.value;

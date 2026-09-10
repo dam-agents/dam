@@ -35,8 +35,8 @@ export function createAgentSockets(deps: {
   runRoot: string;
   extAuthz: ExtAuthzGrpcAppDeps;
   /** uid of the gateway processes, the only readers of these sockets. */
-  gatewayUid?: number;
-  gatewayGid?: number;
+  gatewayUid: number;
+  gatewayGid: number;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): AgentSockets {
   const open = new Map<string, { http: Server; grpc: grpc.Server }>();
@@ -63,9 +63,7 @@ export function createAgentSockets(deps: {
       // The pair is only reachable by the gateway, so a mode slip is the one
       // way another local process could speak for this agent.
       chmodSync(paths.harness, 0o600);
-      if (deps.gatewayUid !== undefined) {
-        chownSync(paths.harness, deps.gatewayUid, deps.gatewayGid ?? -1);
-      }
+      chownSync(paths.harness, deps.gatewayUid, deps.gatewayGid);
 
       const rpc = await startExtAuthzSocket(
         agentId,
@@ -73,9 +71,7 @@ export function createAgentSockets(deps: {
         deps.extAuthz,
       );
       chmodSync(paths.extAuthz, 0o600);
-      if (deps.gatewayUid !== undefined) {
-        chownSync(paths.extAuthz, deps.gatewayUid, deps.gatewayGid ?? -1);
-      }
+      chownSync(paths.extAuthz, deps.gatewayUid, deps.gatewayGid);
 
       open.set(agentId, { http, grpc: rpc });
     },

@@ -183,6 +183,7 @@ import { createAgentStore } from "./modules/agents/infrastructure/agent-store.js
 import { composeSandboxes } from "./modules/sandboxes/index.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { gatewayOtelView } from "./modules/sandboxes/infrastructure/otel-view.js";
+import { resolveGatewayUser } from "./modules/sandboxes/infrastructure/gateway-user.js";
 import { startSandboxAddresses } from "./modules/agents/infrastructure/sandbox-addresses.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
@@ -1112,9 +1113,11 @@ export async function bootstrap() {
       : createUnavailableAgentUsageSummary(),
     wakeAgent: wakeAgentFor,
   };
+  const gatewayUser = await resolveGatewayUser(config.gatewayUser);
   const harnessSockets = startHarnessApiServerApp({
     ...harnessDeps,
     extAuthzGate,
+    gatewayUser,
   });
 
   const { supervisor } = composeSandboxes({
@@ -1126,11 +1129,11 @@ export async function bootstrap() {
     pkiRoot: config.pkiRoot,
     gatewayPort: config.gatewayPort,
     sandboxPort: config.sandboxPort,
+    gatewayUid: gatewayUser.uid,
+    gatewayGid: gatewayUser.gid,
     defaultIdleTimeoutMs: config.agentIdleTimeoutMinutes * 60_000,
     harnessAuthority: new URL(config.harnessServerUrl).host,
     extAuthzHoldSeconds: config.approvalHoldSeconds,
-    ...(config.gatewayUid !== undefined ? { gatewayUid: config.gatewayUid } : {}),
-    ...(config.gatewayGid !== undefined ? { gatewayGid: config.gatewayGid } : {}),
     ...(config.telemetryCollectorHost
       ? {
           telemetry: {

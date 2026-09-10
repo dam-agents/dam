@@ -1,0 +1,39 @@
+[Unit]
+Description=Platform egress gateway for agent %i
+# The supervisor starts and stops this; it is not enabled, and it does not
+# come back on its own once the agent is gone.
+
+[Service]
+Type=simple
+User=dam-gateway
+Group=dam-gateway
+ExecStart=/usr/local/bin/envoy \
+  --config-path /var/lib/dam/agents/%i/gateway/envoy.yaml \
+  --log-level warn \
+  --service-node %i \
+  --service-cluster platform-credential-injector
+Restart=always
+RestartSec=2
+
+# Every gateway runs as the same user, so the uid is NOT what separates one
+# agent's credentials from another's gateway — the mount namespace is. An
+# empty tmpfs is laid over both roots and exactly this agent's directory and
+# socket pair are bound back in, so another agent's credentials are not
+# merely unreadable here, they are absent. Sockets are bound writable because
+# connecting to one is a write.
+TemporaryFileSystem=/var/lib/dam:ro /run/dam:ro
+BindReadOnlyPaths=/var/lib/dam/agents/%i/gateway
+BindPaths=/run/dam/harness/%i.sock /run/dam/extauthz/%i.sock
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# It terminates TLS and dials upstreams; neither needs a capability.
+CapabilityBoundingSet=

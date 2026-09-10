@@ -6,30 +6,61 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 
-mise run //packages/ui:build 2>/dev/null || pnpm --filter ui build
+pnpm --filter ui build
 pnpm --filter api-server exec tsup
+PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
 
-limactl shell dam sudo bash -s -- "${MISE_PROJECT_ROOT}" <<'REMOTE'
+# The repo is a shared mount, so the VM must never run pnpm against it: a
+# --prod install there prunes the host's dev dependencies out from under the
+# editor and the test run. Source is copied to VM-local disk first.
+limactl shell dam sudo rsync -a --delete \
+  --exclude node_modules --exclude .git --exclude .worktrees \
+  "${MISE_PROJECT_ROOT}/" /opt/dam/src/
+
+limactl shell dam sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" <<'REMOTE'
 set -euo pipefail
 REPO="$1"
+PNPM_VERSION="$2"
 
 install -d -m 0700 /var/lib/dam/secrets /var/lib/dam/pki /var/lib/dam/registry-auth
-install -d -m 0755 /var/lib/dam/agents /run/dam /etc/dam
+# The gateway user must be able to traverse to its own agent's directory;
+# what it can see inside is settled by the unit's mount namespace.
+install -d -m 0751 /var/lib/dam/agents /run/dam /etc/dam
 install -d -m 0750 /run/dam/harness /run/dam/extauthz
+install -d -m 0755 /run/netns
+# /run is a tmpfs, so the directory has to be recreated on every boot.
+printf 'd /run/netns 0755 root root -\nd /run/dam 0755 root root -\nd /run/dam/harness 0750 root dam-gateway -\nd /run/dam/extauthz 0750 root dam-gateway -\n' > /etc/tmpfiles.d/dam.conf
 id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
 chown dam-gateway /run/dam/harness /run/dam/extauthz
 
+# The dependency tree is built here, not on the host: native modules (sharp,
+# argon2) are platform-specific, and a tree deployed from macOS loads none of
+# them on Linux.
+command -v pnpm >/dev/null || npm install -g "pnpm@${PNPM_VERSION}"
 rm -rf /opt/dam/api-server
 install -d /opt/dam
-cp -a "$REPO/packages/api-server" /opt/dam/api-server
+(cd "$REPO" && pnpm install --frozen-lockfile --filter api-server... >/dev/null && pnpm --filter api-server --prod --legacy deploy /opt/dam/api-server)
+# `deploy` carries the package and its dependencies, not build output or the
+# sibling packages read at runtime.
+cp -a "$REPO/packages/api-server/dist" /opt/dam/api-server/dist
+install -d /opt/dam/api-server/packages/db
+cp -a "$REPO/packages/db/drizzle" /opt/dam/api-server/packages/db/drizzle
+rm -rf /opt/dam/api-server/ui && cp -a "$REPO/packages/ui/dist" /opt/dam/api-server/ui
 
 install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
+# Secrets are generated once and kept, so a reinstall does not invalidate
+# every API key and re-pseudonymize the activity log.
+[ -f /var/lib/dam/hmac-keys ] || {
+  umask 077
+  { echo "ACTIVITY_HMAC_KEY=$(openssl rand -hex 32)"
+    echo "API_KEY_HMAC_KEY=$(openssl rand -hex 32)"; } > /var/lib/dam/hmac-keys
+}
 {
-  echo "DAM_GATEWAY_UID=$(id -u dam-gateway)"
-  echo "DAM_GATEWAY_GID=$(id -g dam-gateway)"
+  cat /var/lib/dam/hmac-keys
   echo "DATABASE_URL=postgres://dam:dam@127.0.0.1:5432/dam"
 } >> /etc/dam/env
-cp -a "$REPO/packages/agents"/*/template.yaml /etc/dam/templates/ 2>/dev/null || install -d /etc/dam/templates
+install -d /etc/dam/templates
+cp -a "$REPO/packages/agents"/*/template.yaml /etc/dam/templates/ 2>/dev/null || true
 
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -q 1 || {
   sudo -u postgres psql -c "CREATE ROLE dam LOGIN PASSWORD 'dam'"
@@ -37,9 +68,55 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -
 }
 
 install -m 0644 "$REPO/packages/dam-vm/system/dam-api-server.service" /usr/lib/systemd/system/
+install -m 0644 "$REPO/packages/dam-vm/system/dam-ui.service" /usr/lib/systemd/system/
+install -m 0644 "$REPO/packages/dam-vm/system/dam-gateway@.service" /usr/lib/systemd/system/
+
+# The UI is static files behind nginx, the same shape the container image has.
+install -d /usr/share/dam-ui
+rsync -a --delete "$REPO/packages/ui/dist/" /usr/share/dam-ui/
+cat > /etc/dam/nginx.conf <<'NGINX'
+events {}
+http {
+  include /etc/nginx/mime.types;
+  # The SPA and the api-server share an origin: the browser holds the session
+  # and the ACP/tRPC sockets, and a second origin would put both behind CORS
+  # and cookie rules for no gain on one node.
+  map $http_upgrade $connection_upgrade { default upgrade; "" close; }
+  # Node binds the IPv6 wildcard, which is where the api-server actually
+  # answers; the IPv4 loopback is the fallback for a host with IPv6 off.
+  upstream dam_api {
+    server [::1]:4000;
+    server 127.0.0.1:4000 backup;
+  }
+  server {
+    listen 8080;
+    root /usr/share/dam-ui;
+    location /api/ {
+      proxy_pass http://dam_api;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+      proxy_set_header Host $host;
+      # A turn can hold a connection open for as long as the agent thinks.
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+      proxy_buffering off;
+    }
+    location / { try_files $uri $uri/ /index.html; }
+  }
+}
+pid /run/dam-ui.pid;
+NGINX
 systemctl daemon-reload
-systemctl enable --now containerd postgresql redis
+systemctl enable --now containerd postgresql
+# Load the runtime's AppArmor profile here, as a full-privilege shell: the
+# api-server's capability set cannot replace a profile, and a sandbox start
+# that tries to load one fails outright rather than running unconfined.
+nerdctl apparmor load 2>/dev/null || true
+systemctl enable --now redis-server 2>/dev/null || systemctl enable --now redis
 systemctl restart dam-api-server
+systemctl enable dam-ui
+systemctl restart dam-ui
 REMOTE
 
 echo "Installed. Next: mise run vm:status, then http://localhost:4000"

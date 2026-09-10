@@ -43,7 +43,18 @@ export interface AgentChangeSubscription {
 }
 
 export type AgentChange =
-  | { type: "upsert"; id: string; record: AgentRecord }
+  | {
+      type: "upsert";
+      id: string;
+      record: AgentRecord;
+      /**
+       * True when the change was the supervisor publishing what it observed.
+       * The supervisor must ignore these: reconciling its own status write
+       * is a loop with no fixed point, since every pass writes status again.
+       * Every other consumer — the live-update hints above all — wants them.
+       */
+      statusOnly?: boolean;
+    }
   | { type: "delete"; id: string };
 
 export interface AgentStore {
@@ -106,6 +117,7 @@ export function createAgentStore(db: Db): AgentStore {
   async function update(
     id: string,
     set: Partial<typeof agentRecords.$inferInsert>,
+    statusOnly = false,
   ): Promise<AgentRecord | null> {
     const [row] = await db
       .update(agentRecords)
@@ -114,7 +126,7 @@ export function createAgentStore(db: Db): AgentStore {
       .returning();
     if (!row) return null;
     const record = toRecord(row);
-    announce({ type: "upsert", id, record });
+    announce({ type: "upsert", id, record, ...(statusOnly ? { statusOnly } : {}) });
     return record;
   }
 
@@ -168,7 +180,7 @@ export function createAgentStore(db: Db): AgentStore {
     async writeStatus(id, patch) {
       const current = await this.get(id);
       if (!current) return null;
-      return update(id, { status: { ...current.status, ...patch } });
+      return update(id, { status: { ...current.status, ...patch } }, true);
     },
 
     async delete(id) {

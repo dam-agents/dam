@@ -17,6 +17,19 @@ PLATFORM_HARNESS_SERVER_URL=http://harness.dam.internal:4001
 DATABASE_URL=postgres://dam@/dam?host=/run/postgresql
 REDIS_URL=redis://127.0.0.1:6379
 
+UI_BASE_URL=http://localhost:8080
+SHARE_BASE_URL=http://share.localhost:8080
+CONTENT_BASE_URL=http://content.localhost:8080
+KEYCLOAK_URL=http://localhost:8081
+
+# Node-local secrets. The install generates them on first run; they are here so
+# a hand-rolled node has one place to put its own.
+ACTIVITY_HMAC_KEY=
+API_KEY_HMAC_KEY=
+
+TERMS_VERSION=1
+TERMS_TEXT=Use of this install is governed by its operator's terms.
+
 AGENT_TEMPLATES_PATH=/etc/dam/templates
 GIT_REPOS_PATH=/etc/dam/repos
 TRUSTED_HOSTS_PATH=/etc/dam/trusted-hosts.yaml
