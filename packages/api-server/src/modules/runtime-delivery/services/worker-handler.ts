@@ -44,6 +44,19 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     }
   }
 
+  async function emitContributionGapChanged(agentId: string): Promise<void> {
+    try {
+      const ownerSub = await deps.resolveOwner(agentId);
+      if (ownerSub) {
+        emit({ type: EventType.ContributionGapChanged, agentId, ownerSub });
+      }
+    } catch (err) {
+      deps.log(
+        `[runtime-worker] ${agentId}: capability-gap hint failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
   return async (agentId: string, opts?: { retryUntilReady?: boolean }) => {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
@@ -140,11 +153,21 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       }
     }
 
-    const { newlyFailed, recovered, gaveUp, eventsGaveUp } =
-      await deps.outboxRepo.recordOutcome(agentId, row.version, {
-        ...settle,
-        deliveredEventIds: payload.events.map((e) => e.id),
-      });
+    const {
+      newlyFailed,
+      recovered,
+      gaveUp,
+      eventsGaveUp,
+      droppedKindsChanged,
+    } = await deps.outboxRepo.recordOutcome(agentId, row.version, {
+      ...settle,
+      deliveredEventIds: payload.events.map((e) => e.id),
+      droppedContributionKinds: payload.droppedContributionKinds,
+    });
+
+    if (droppedKindsChanged) {
+      await emitContributionGapChanged(agentId);
+    }
 
     for (const e of eventsGaveUp) {
       deps.log(

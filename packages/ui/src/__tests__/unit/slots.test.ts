@@ -41,6 +41,7 @@ const agent = (
   size,
   state,
   contributionFailures: [],
+  unsupportedContributionKinds: [],
   channels: [],
   spawnedBy: null,
 });

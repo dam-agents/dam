@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-09
+Last verified: 2026-09-10
 
 ## Overview
 
@@ -199,7 +199,7 @@ serves — so a model has to come from somewhere else. A provider pin or a
 per-agent override supplies one, and when neither does, nobody has to
 step in: because this Connection redirects Bob, the platform seeds one
 before the harness starts, taking the first of the names the endpoint
-lists once they are ordered ([runtime-delivery](runtime-delivery.md#concepts)).
+lists once they are ordered ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
 The seed yields to a pin rather than overriding it — it fills an empty
 slot only, so a chosen model is never swapped for one nobody picked.
 

@@ -23,6 +23,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   size: {},
   state,
   contributionFailures: [],
+  unsupportedContributionKinds: [],
   channels: [],
   spawnedBy: null,
 });

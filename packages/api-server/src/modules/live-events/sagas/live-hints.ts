@@ -14,6 +14,7 @@ export function hintFor(
     case EventType.AgentCreated:
     case EventType.RuntimeHelloReceived:
     case EventType.WorkspaceMutationSettled:
+    case EventType.ContributionGapChanged:
       return {
         ownerSub: event.ownerSub,
         hint: { topic: "agents", agentId: event.agentId },

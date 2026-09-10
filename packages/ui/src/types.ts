@@ -132,6 +132,7 @@ export interface AgentView {
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
+  unsupportedContributionKinds: string[];
   channels: (
     | {
         type: "slack";
