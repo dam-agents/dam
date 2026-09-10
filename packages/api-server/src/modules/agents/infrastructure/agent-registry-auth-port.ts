@@ -1,6 +1,12 @@
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Private-registry credentials for an agent's own
+ * image, in the docker config format the container runtime already reads. One
+ * directory per agent, so a pull only ever sees the credential for the image it
+ * is pulling; never mounted into the sandbox.
+ */
 export interface RegistryCredential {
   server: string;
   username: string;
@@ -8,7 +14,6 @@ export interface RegistryCredential {
 }
 
 export interface AgentRegistryAuthPort {
-  /** Docker config directory the image pull for this agent reads. */
   configDir(agentId: string): string;
   create(
     agentId: string,
@@ -26,12 +31,6 @@ function buildDockerConfigJson(cred: RegistryCredential): string {
   return JSON.stringify({ auths: { [cred.server]: { auth } } });
 }
 
-/**
- * Private-registry credentials for an agent's own image, in the docker config
- * format the container runtime already reads. One directory per agent so a
- * pull only ever sees the credential for the image it is pulling; 0600 like
- * every other credential on the node, and never mounted into the sandbox.
- */
 export function createAgentRegistryAuthPort(
   root: string,
 ): AgentRegistryAuthPort {

@@ -20,6 +20,15 @@ import type { GatewayPort } from "../infrastructure/gateway-port.js";
 import type { PkiPort } from "../infrastructure/pki-port.js";
 import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The reconcile loop. The agent record is intent,
+ * the node is observed state, and this is the only thing that writes status.
+ * It is change-driven off the store's change stream with a periodic sweep
+ * behind it, for the reason every reconciler has one: an event that is missed,
+ * or an action that fails, must be retried by something that does not depend on
+ * the event. It ignores its own status writes, which would otherwise be a loop
+ * with no fixed point.
+ */
 export interface SandboxSupervisorDeps {
   store: AgentStore;
   network: NetworkPort;
@@ -27,7 +36,6 @@ export interface SandboxSupervisorDeps {
   gateway: GatewayPort;
   pki: PkiPort;
   envoyConfig: EnvoyConfigPort;
-  /** Opens the per-agent harness and ext_authz sockets; closes them on delete. */
   sockets: {
     open(agentId: string): Promise<void>;
     close(agentId: string): Promise<void>;
@@ -36,7 +44,6 @@ export interface SandboxSupervisorDeps {
   runRoot: string;
   gatewayPort: number;
   sandboxPort: number;
-  /** uid/gid the gateway runs as, and the only reader of its directory. */
   gatewayUid: number;
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
@@ -44,32 +51,25 @@ export interface SandboxSupervisorDeps {
 }
 
 export interface SandboxSupervisor {
-  /** Reconciles one agent to its spec. Safe to call concurrently per agent. */
   reconcile(agentId: string): Promise<void>;
-  /** Reconciles every agent, and tears down anything left over. */
   sweep(): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
 }
 
-/**
- * The reconcile loop: the agent record is intent, the node is observed state,
- * and this is the only thing that writes `status`.
- *
- * It is change-driven off the store's emitter, with a periodic sweep behind
- * it — the same shape the Kubernetes controller had, for the same reason:
- * an event that is missed or an action that fails must be retried by
- * something that does not depend on the event.
- */
 export function createSandboxSupervisor(
   deps: SandboxSupervisorDeps,
 ): SandboxSupervisor {
   const inflight = new Map<string, Promise<void>>();
   const queued = new Set<string>();
+  // The links that exist right now. The ruleset is rendered from this rather
+  // than from published status: status is written after the link is up, so
+  // deriving from it would leave every new link un-ruled until the next
+  // reconcile.
+  const liveLinks = new Map<string, SandboxLink>();
   let unsubscribe: (() => void) | null = null;
   let stopped = false;
 
-  /** Serializes per agent: two reconciles of one agent would race on its netns. */
   function schedule(agentId: string): Promise<void> {
     const current = inflight.get(agentId);
     if (current) {
@@ -131,9 +131,6 @@ export function createSandboxSupervisor(
     const layout = layoutFor(deps.agentsRoot, record.id);
     const sockets = socketsFor(deps.runRoot, record.id);
 
-    // 0751 on the agent root: the gateway user has to traverse to its own
-    // gateway directory, and traversal is all it gets — the directory does
-    // not list, and its mount namespace holds no other agent's anyway.
     await mkdir(layout.root, { recursive: true, mode: 0o751 });
     for (const dir of [layout.work, layout.home, layout.scratch]) {
       await mkdir(dir, { recursive: true, mode: 0o750 });
@@ -144,6 +141,7 @@ export function createSandboxSupervisor(
 
     await deps.sockets.open(record.id);
     await deps.network.create(link);
+    liveLinks.set(record.id, link);
     await applyRuleset();
 
     const { config, hosts } = await deps.envoyConfig.render({
@@ -153,12 +151,11 @@ export function createSandboxSupervisor(
       sockets,
     });
     await deps.pki.ensureLeaf(layout.leafTls, hosts);
-    await mkdir(dirname(layout.gatewayConfig), { recursive: true, mode: 0o750 });
+    await mkdir(dirname(layout.gatewayConfig), {
+      recursive: true,
+      mode: 0o750,
+    });
     await writeFile(layout.gatewayConfig, config, { mode: 0o640 });
-    // Everything the gateway reads is written by this process as root and
-    // then handed to the gateway's uid — which is the whole credential
-    // boundary, so it is asserted here rather than left to whoever wrote
-    // each file.
     await exec("chown", [
       "-R",
       `${deps.gatewayUid}:${deps.gatewayGid}`,
@@ -205,7 +202,9 @@ export function createSandboxSupervisor(
       hibernated: false,
       address: link.sandboxAddress,
       sandboxReady,
-      ...(sandboxReady ? {} : { sandboxNotReadyReason: state?.reason ?? "SandboxNotReady" }),
+      ...(sandboxReady
+        ? {}
+        : { sandboxNotReadyReason: state?.reason ?? "SandboxNotReady" }),
       ...(state?.reason ? { sandboxTerminationReason: state.reason } : {}),
       sandboxRestarts: state?.restarts ?? 0,
       gatewayReady,
@@ -215,13 +214,13 @@ export function createSandboxSupervisor(
     });
   }
 
-  /** Stop the workload, keep the data. */
   async function hibernate(record: AgentRecord): Promise<void> {
     await deps.containerd.stop(record.id);
     await deps.containerd.remove(record.id);
     await deps.gateway.stop(record.id);
     const link = await linkForRecord(record);
     await deps.network.destroy(link);
+    liveLinks.delete(record.id);
     await deps.sockets.close(record.id);
     await applyRuleset();
     await publishStatus(record.id, {
@@ -236,22 +235,19 @@ export function createSandboxSupervisor(
     });
   }
 
-  /** Stop the workload and forget the agent; the data directory goes too. */
   async function teardown(agentId: string): Promise<void> {
     await deps.containerd.stop(agentId);
     await deps.containerd.remove(agentId);
     await deps.gateway.stop(agentId);
-    await deps.network.destroy(linkFor(agentId, 0)).catch(() => {});
+    const known = liveLinks.get(agentId);
+    if (known) await deps.network.destroy(known).catch(() => {});
+    liveLinks.delete(agentId);
     await deps.sockets.close(agentId);
     await applyRuleset();
   }
 
   async function applyRuleset(): Promise<void> {
-    const links = (await deps.store.list()).flatMap((r) => {
-      const index = r.status.address ? indexOfAddress(r.status.address) : null;
-      return index === null ? [] : [linkFor(r.id, index)];
-    });
-    await deps.network.applyRuleset(links, {
+    await deps.network.applyRuleset([...liveLinks.values()], {
       gatewayPort: deps.gatewayPort,
       sandboxPort: deps.sandboxPort,
     });
@@ -262,9 +258,17 @@ export function createSandboxSupervisor(
 
     async sweep() {
       const records = await deps.store.list();
+      // A restart loses the in-memory link set; the published addresses are
+      // what it is rebuilt from, so the ruleset survives one.
+      for (const record of records) {
+        const index = record.status.address
+          ? indexOfAddress(record.status.address)
+          : null;
+        if (index !== null && !liveLinks.has(record.id)) {
+          liveLinks.set(record.id, linkFor(record.id, index));
+        }
+      }
       for (const record of records) await schedule(record.id);
-      // Anything the runtime still holds that no record claims is left over
-      // from a crash mid-delete, and nothing else will come back for it.
       const known = new Set(records.map((r) => r.id));
       for (const agentId of await deps.containerd.list()) {
         if (!known.has(agentId)) {
@@ -276,15 +280,8 @@ export function createSandboxSupervisor(
 
     async start() {
       stopped = false;
-      // Subscribe first, then sweep *without* awaiting it. A sweep pulls
-      // images and starts sandboxes, which can take minutes; awaiting it here
-      // would hold up everything the api-server does after boot — including
-      // opening its own listener — and an install with one slow image would
-      // look like an install that never came up.
       unsubscribe = deps.store.onChange((change) => {
         if (stopped) return;
-        // Its own status writes are not intent, and reacting to them would
-        // spin: reconcile writes status, the write announces, reconcile runs.
         if (change.type === "upsert" && change.statusOnly) return;
         void schedule(change.id);
       });
@@ -307,7 +304,6 @@ export function createSandboxSupervisor(
 
 const homeOf = (record: AgentRecord) => record.spec.agentHome ?? "/home/agent";
 
-/** The CA path the sandbox sees, which is not where the node keeps it. */
 const SANDBOX_CA_PATH = "/etc/platform/ca/ca.crt";
 
 function sandboxEnv(
@@ -318,9 +314,6 @@ function sandboxEnv(
   const proxy = `http://${link.hostAddress}:${gatewayPort}`;
   const env: Record<string, string> = {
     HOME: homeOf(record),
-    // Decorative, as it was under NetworkPolicy: the sandbox has no route to
-    // anything else, so honoring it is not what makes egress go through the
-    // gateway.
     HTTP_PROXY: proxy,
     HTTPS_PROXY: proxy,
     http_proxy: proxy,

@@ -1,9 +1,24 @@
 import crypto from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import type { SecretRef } from "api-server-api";
 import type { SecretMetadata, SecretStore } from "../services/secret-store.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Credential bytes on the node's filesystem, one
+ * file per secret under a per-owner directory. The directory is the isolation
+ * the owner label used to provide. The owner is baked into the ref at mint
+ * time, so every read is a direct open rather than a scan, and refs coming back
+ * from Postgres are re-checked for shape. Files are written through a
+ * temp-and-rename so a torn write cannot leave half a secret behind.
+ */
 const NAME_PREFIX = "platform-secret-";
 
 interface StoredSecret {
@@ -12,29 +27,15 @@ interface StoredSecret {
 }
 
 export interface FileSecretStoreOpts {
-  /** Root directory, e.g. `/var/lib/dam/secrets`. Must be root-owned 0700. */
   root: string;
   storeId?: string;
 }
 
-/**
- * Credential bytes on the node's filesystem, one file per secret under a
- * per-owner directory. The directory is the isolation the `owner` label used to
- * provide: nothing but this process reads the root, and only the rendered
- * per-agent copy is ever exposed — to that agent's gateway, never to the
- * sandbox. Files are written 0600 through a temp-and-rename so a torn write
- * cannot leave a half-secret behind.
- */
 export function createFileSecretStore(opts: FileSecretStoreOpts): SecretStore {
   const storeId = opts.storeId ?? "file";
 
   const ownerDir = (owner: string) => join(opts.root, pathSafe(owner));
 
-  /**
-   * A ref path is `<owner>/<name>`, both path-safe segments — the owner is
-   * baked in at mint time so every read is a direct open rather than a scan.
-   * Refs come back from Postgres, so the shape is re-checked on the way in.
-   */
   function secretPath(refPath: string): string {
     if (!/^[A-Za-z0-9._%-]+\/[A-Za-z0-9._%-]+$/.test(refPath)) {
       throw new Error(`malformed secret ref path: ${JSON.stringify(refPath)}`);
@@ -152,15 +153,18 @@ export function createFileSecretStore(opts: FileSecretStoreOpts): SecretStore {
         const path = `${pathSafe(scope.owner)}/${file.slice(0, -".json".length)}`;
         const stored = await readStored(path);
         if (!stored) continue;
-        if (scope.purpose && stored.metadata.purpose !== scope.purpose) continue;
-        out.push({ ref: { storeId, path, field: "" }, metadata: stored.metadata });
+        if (scope.purpose && stored.metadata.purpose !== scope.purpose)
+          continue;
+        out.push({
+          ref: { storeId, path, field: "" },
+          metadata: stored.metadata,
+        });
       }
       return out;
     },
   };
 }
 
-/** Percent-encodes anything that is not safe in a single path segment. */
 function pathSafe(value: string): string {
   return value.replace(
     /[^A-Za-z0-9._-]/g,

@@ -14,6 +14,14 @@ import {
   type EnvoyOTelView,
 } from "../domain/envoy-bootstrap.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Assembles the paired gateway's configuration and
+ * materializes the credentials it injects. The credential bytes are written
+ * here and nowhere else, one directory per granted secret. Directories for
+ * credentials no longer granted are removed in the same pass, so revoking a
+ * grant takes the bytes off the node rather than merely unlinking them from a
+ * filter chain.
+ */
 export interface EnvoyConfigInput {
   record: AgentRecord;
   link: SandboxLink;
@@ -23,7 +31,6 @@ export interface EnvoyConfigInput {
 
 export interface EnvoyConfigResult {
   config: string;
-  /** Hosts the gateway terminates — the SAN list its leaf must carry. */
   hosts: string[];
 }
 
@@ -45,16 +52,6 @@ export interface EnvoyConfigOpts {
 const HEALTH_PATH = "/__platform_healthz";
 const CREDENTIAL_SDS_NAME = "credential";
 
-/**
- * Assembles the paired gateway's configuration and materializes the
- * credentials it injects.
- *
- * The credential bytes are written here and nowhere else: one directory per
- * granted secret under the agent's gateway directory, which only the gateway
- * uid can read. Directories for credentials that are no longer granted are
- * removed in the same pass, so revoking a grant takes the bytes off the node
- * rather than merely unlinking them from a filter chain.
- */
 export function createEnvoyConfigPort(opts: EnvoyConfigOpts): EnvoyConfigPort {
   return {
     async render({ record, link, layout, sockets }) {
@@ -151,5 +148,4 @@ async function materializeCredentials(
   }
 }
 
-/** The store's ref path is `<owner>/<name>`; chains key on the name. */
 const nameOf = (refPath: string) => refPath.split("/").pop() ?? refPath;

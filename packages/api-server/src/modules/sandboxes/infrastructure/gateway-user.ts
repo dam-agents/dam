@@ -1,10 +1,10 @@
 import { exec } from "./exec.js";
 
 /**
- * The uid/gid the paired gateways run as. Resolved by name at boot rather
- * than configured numerically: the account is created by the install, and a
- * stale number in a config file would hand an agent's credentials to
- * whoever holds that id now.
+ * UNIT_BOUNDARY_DESCRIPTION: Resolves the account the paired gateways run as,
+ * by name at boot rather than by a configured number. The account is created by
+ * the install, and a stale number in a config file would hand an agent's
+ * credentials to whoever holds that id now.
  */
 export async function resolveGatewayUser(
   name: string,

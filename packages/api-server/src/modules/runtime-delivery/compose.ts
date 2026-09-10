@@ -109,7 +109,8 @@ export function composeRuntimeDelivery(
     stateBuilder,
     agentRunningPort: opts.agentRunningPort,
     snapshotWriter: opts.snapshotWriter,
-    clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.sandboxAddresses),
+    clientFor: (agentId) =>
+      createAgentRuntimeClient(agentId, opts.sandboxAddresses),
     resolveOwner: opts.resolveOwner,
     log,
   });

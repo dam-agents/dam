@@ -13,17 +13,14 @@ import { socketsFor } from "../../modules/sandboxes/domain/layout.js";
 import { securityLog } from "../../core/security-log.js";
 
 /**
- * The agent-facing control plane: a pair of unix sockets per running agent,
- * one for the harness API and one for ext_authz.
- *
- * Nothing here authenticates a bearer, because nothing presents one. The
- * boundary is the socket: it exists only while the agent runs, it is created
- * 0600 under the paired gateway's uid, and it names exactly one agent. A
- * harness request for a *different* agent's id is refused here, which is the
- * rule the waypoint's AuthorizationPolicy used to enforce by matching the
- * caller's SPIFFE principal against the URL.
+ * UNIT_BOUNDARY_DESCRIPTION: The agent-facing control plane: a pair of unix
+ * sockets per running agent, one for the harness API and one for ext_authz.
+ * Nothing here authenticates a bearer because nothing presents one — the socket
+ * is the boundary. It exists only while that agent runs, it is readable only by
+ * the gateway account and bound into that one gateway's mount namespace, and a
+ * harness request naming a different agent is refused before the router sees
+ * it.
  */
-
 export interface AgentSockets {
   open(agentId: string): Promise<void>;
   close(agentId: string): Promise<void>;
@@ -34,7 +31,6 @@ export function createAgentSockets(deps: {
   app: Hono;
   runRoot: string;
   extAuthz: ExtAuthzGrpcAppDeps;
-  /** uid of the gateway processes, the only readers of these sockets. */
   gatewayUid: number;
   gatewayGid: number;
   log: (message: string, fields?: Record<string, unknown>) => void;
@@ -60,8 +56,6 @@ export function createAgentSockets(deps: {
           resolve();
         });
       });
-      // The pair is only reachable by the gateway, so a mode slip is the one
-      // way another local process could speak for this agent.
       chmodSync(paths.harness, 0o600);
       chownSync(paths.harness, deps.gatewayUid, deps.gatewayGid);
 
@@ -80,7 +74,9 @@ export function createAgentSockets(deps: {
       const listeners = open.get(agentId);
       if (!listeners) return;
       open.delete(agentId);
-      await new Promise<void>((resolve) => listeners.http.close(() => resolve()));
+      await new Promise<void>((resolve) =>
+        listeners.http.close(() => resolve()),
+      );
       listeners.grpc.forceShutdown();
       const paths = socketsFor(deps.runRoot, agentId);
       await rm(paths.harness, { force: true });
@@ -93,10 +89,6 @@ export function createAgentSockets(deps: {
   };
 }
 
-/**
- * A socket serves one agent. A request naming another is the only shape that
- * could cross the boundary, so it is refused before the router sees it.
- */
 function guard(
   agentId: string,
   app: Hono,

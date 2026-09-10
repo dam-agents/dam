@@ -6,9 +6,12 @@ import {
 } from "../../agents/infrastructure/labels.js";
 
 /**
- * Whether an agent's sandbox should be running right now. Running-vs-hibernated
- * is derived, never stored: activity stamps are the input and this is the
- * only place that reads them, so a wake and a hibernation cannot disagree.
+ * UNIT_BOUNDARY_DESCRIPTION: Whether an agent's sandbox should be running
+ * now. Running-versus-hibernated is derived, never stored: activity stamps are
+ * the input and this is the only place that reads them, so a wake and a
+ * hibernation cannot disagree. A stop request outranks every other signal, and
+ * a stamp that cannot be read keeps the agent up — a clock problem must not
+ * read as idleness and take working agents down.
  */
 export function shouldRun(
   annotations: Record<string, string>,
@@ -23,13 +26,10 @@ export function shouldRun(
   const last = annotations[LAST_ACTIVITY_KEY];
   if (!last) return true;
   const lastAt = Date.parse(last);
-  // An unparseable stamp keeps the agent up: a clock problem must not look
-  // like idleness and take a working agent down.
   if (Number.isNaN(lastAt)) return true;
   return now.getTime() - lastAt <= idleTimeoutMs;
 }
 
-/** Per-agent override wins over the node-wide default; `0s` never hibernates. */
 export function effectiveIdleTimeoutMs(
   override: string | undefined,
   globalMs: number,

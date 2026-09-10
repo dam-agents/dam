@@ -23,7 +23,9 @@ function makeClient(agentId: string, addresses: SandboxAddresses) {
   });
 }
 
-export function createAgentFilesClient(addresses: SandboxAddresses): AgentFilesClient {
+export function createAgentFilesClient(
+  addresses: SandboxAddresses,
+): AgentFilesClient {
   return {
     async listDirs(agentId, paths) {
       const client = makeClient(agentId, addresses);

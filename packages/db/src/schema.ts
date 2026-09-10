@@ -790,8 +790,6 @@ export const agentRecords = pgTable(
       .notNull()
       .default({}),
     spec: jsonb("spec").notNull(),
-    // Written only by the sandbox supervisor. The Kubernetes status
-    // subresource used to make that structural; here it is a single write path.
     status: jsonb("status").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -800,8 +798,6 @@ export const agentRecords = pgTable(
   (table) => [index("agent_records_owner_idx").on(table.owner)],
 );
 
-// One user's ceiling override on summed sandbox limits, as quantity strings
-// ("4", "16Gi") — the same units the agent specs are written in.
 export const userBudgets = pgTable("user_budgets", {
   owner: text("owner").primaryKey(),
   cpu: text("cpu").notNull(),

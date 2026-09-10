@@ -16,16 +16,6 @@ export interface ExtAuthzGrpcAppDeps {
   gate: ExtAuthzGate;
 }
 
-/**
- * One ext_authz server per agent, on that agent's own unix socket.
- *
- * The agent id is bound here rather than parsed off `:authority`: the socket
- * is created 0600 under the paired gateway's uid, so arriving on it is proof
- * of which gateway is asking. That is the same guarantee the per-agent
- * AuthorizationPolicy gave by matching the caller's SPIFFE principal, minus
- * the mesh — and unlike the authority header, it is not something the caller
- * can choose.
- */
 export async function startExtAuthzSocket(
   agentId: string,
   socketPath: string,

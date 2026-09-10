@@ -3,9 +3,12 @@ import { agentRecords, eq, type Db } from "db";
 import type { AgentSpecCR } from "api-server-api";
 
 /**
- * Observed sandbox state. Written by the sandbox supervisor and by nothing
- * else — this is what the Kubernetes status subresource used to enforce
- * structurally, and `writeStatus` is now the only path that touches it.
+ * UNIT_BOUNDARY_DESCRIPTION: The agent record, and the only writer of each
+ * half of it. `spec` is user intent and `status` is what the supervisor
+ * observed; a Kubernetes status subresource used to make that split structural,
+ * and in one process it is held by `writeStatus` being the only path that
+ * touches observed state. Its change stream drives both reconcile and the
+ * live-update hints, and cannot drop an event the way a watch could.
  */
 export interface AgentStatus {
   ready?: boolean;
@@ -13,14 +16,11 @@ export interface AgentStatus {
   hibernatedSince?: string;
   overBudget?: boolean;
   overBudgetMessage?: string;
-  /** Reconcile failure: the supervisor could not realize the spec. */
   error?: string;
   errorReason?: string;
-  /** Address the api-server dials the agent-runtime on, e.g. `10.64.0.2`. */
   address?: string;
   sandboxReady?: boolean;
   sandboxNotReadyReason?: string;
-  /** Why the sandbox process last exited, when it exited abnormally. */
   sandboxTerminationReason?: string;
   sandboxRestarts?: number;
   sandboxRestartReason?: string;
@@ -47,12 +47,6 @@ export type AgentChange =
       type: "upsert";
       id: string;
       record: AgentRecord;
-      /**
-       * True when the change was the supervisor publishing what it observed.
-       * The supervisor must ignore these: reconciling its own status write
-       * is a loop with no fixed point, since every pass writes status again.
-       * Every other consumer — the live-update hints above all — wants them.
-       */
       statusOnly?: boolean;
     }
   | { type: "delete"; id: string };
@@ -67,23 +61,20 @@ export interface AgentStore {
     annotations: Record<string, string>;
     spec: AgentSpecCR;
   }): Promise<AgentRecord>;
-  patchSpec(id: string, patch: Record<string, unknown>): Promise<AgentRecord | null>;
+  patchSpec(
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<AgentRecord | null>;
   patchAnnotations(
     id: string,
     patch: Record<string, string>,
   ): Promise<AgentRecord | null>;
   writeStatus(id: string, patch: AgentStatus): Promise<AgentRecord | null>;
   delete(id: string): Promise<boolean>;
-  /** Resolves the next time this agent changes; cancel to drop the waiter. */
   whenChanged(id: string): AgentChangeSubscription;
   onChange(listener: (change: AgentChange) => void): () => void;
 }
 
-/**
- * RFC 7386 JSON merge patch — the semantics the K8s API applied to spec
- * patches, which callers still rely on: nested objects merge, arrays replace,
- * null deletes.
- */
 export function mergePatch(target: unknown, patch: unknown): unknown {
   if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
     return patch;
@@ -126,7 +117,12 @@ export function createAgentStore(db: Db): AgentStore {
       .returning();
     if (!row) return null;
     const record = toRecord(row);
-    announce({ type: "upsert", id, record, ...(statusOnly ? { statusOnly } : {}) });
+    announce({
+      type: "upsert",
+      id,
+      record,
+      ...(statusOnly ? { statusOnly } : {}),
+    });
     return record;
   }
 

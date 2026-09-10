@@ -117,9 +117,7 @@ export function createSshRelay(
       }
       if (clientGone || overflow) return;
 
-      upstream = new WebSocket(
-        `ws://${addresses.baseUrl(agentId)}/api/ssh`,
-      );
+      upstream = new WebSocket(`ws://${addresses.baseUrl(agentId)}/api/ssh`);
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);

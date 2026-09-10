@@ -152,7 +152,9 @@ describe("agent-artifacts-sweeper", () => {
         order.push(`deleted:${e.agentId}:${e.ownerSub ?? "?"}`);
       });
     const sweeper = createAgentArtifactsSweeper({
-      agentStore: fakeStore(["agent-live"], { appearsAfterList: ["agent-new"] }),
+      agentStore: fakeStore(["agent-live"], {
+        appearsAfterList: ["agent-new"],
+      }),
       sources: [
         {
           name: "egress",

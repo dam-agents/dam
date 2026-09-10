@@ -1,5 +1,11 @@
 import type { EnvoyOTelView } from "../domain/envoy-bootstrap.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What the paired gateway exports about itself.
+ * Everything is off when no exporter is configured: a gateway that cannot reach
+ * a collector must not spend the agent's egress budget retrying, and its access
+ * logs would be the loudest thing on the node.
+ */
 export interface OtelConfig {
   otelExporterEndpoint?: string | undefined;
   otelExporterProtocol: string;
@@ -10,12 +16,6 @@ export interface OtelConfig {
 
 const GATEWAY_SERVICE_NAME = "platform-agent-gateway";
 
-/**
- * What the gateway exports about itself. Everything is off when no exporter is
- * configured: a gateway that cannot reach a collector must not spend the
- * agent's egress budget retrying, and its access logs would otherwise be the
- * loudest thing on the node.
- */
 export function gatewayOtelView(
   agentId: string,
   config: OtelConfig,

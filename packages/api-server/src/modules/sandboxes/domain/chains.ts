@@ -6,15 +6,13 @@ import type {
 } from "./envoy-bootstrap.js";
 
 /**
- * Which hosts the gateway terminates, and what it injects into each.
- *
- * One chain per host, however many credentials name it: Envoy matches a
- * filter chain by SNI, so two chains for one host would leave the second
- * unreachable. Conflicts between credentials on the same host are resolved
- * first-wins and reported, never merged — a silently merged credential set is
- * how one connection's token ends up on another's upstream.
+ * UNIT_BOUNDARY_DESCRIPTION: Which hosts the paired gateway terminates and
+ * what it injects into each. One chain per host however many credentials name
+ * it, because Envoy matches a filter chain by SNI and a second chain for one
+ * host would be unreachable. Conflicts between credentials on one host are
+ * resolved first-wins and reported, never merged: a silently merged credential
+ * set is how one connection's token reaches another's upstream.
  */
-
 export const SECRET_TYPE_LABEL = "agent-platform.ai/secret-type";
 export const CONNECTION_LABEL = "agent-platform.ai/connection";
 export const HOST_PATTERN_ANN = "agent-platform.ai/host-pattern";
@@ -28,7 +26,6 @@ export interface CredentialSecret {
   name: string;
   labels: Record<string, string>;
   annotations: Record<string, string>;
-  /** Field names present on the secret; values are written out separately. */
   fieldNames: string[];
 }
 
@@ -54,13 +51,14 @@ export interface ChainsResult {
   warnings: ChainWarning[];
 }
 
-/** Keeps only the secrets this agent has actually been granted. */
 export function filterByGrants<T extends CredentialSecret>(
   secrets: readonly T[],
   grantedSecretIds: readonly string[],
   grantedConnectionIds: readonly string[],
 ): T[] {
-  const secretGrants = new Set(grantedSecretIds.map((s) => s.trim()).filter(Boolean));
+  const secretGrants = new Set(
+    grantedSecretIds.map((s) => s.trim()).filter(Boolean),
+  );
   const connectionGrants = new Set(
     grantedConnectionIds.map((s) => s.trim()).filter(Boolean),
   );
@@ -185,7 +183,12 @@ export function buildChains(
     if (winner !== undefined) {
       warn(
         "duplicate injection header on host; later credential skipped to avoid credential_injector clobber",
-        { host, headerName: header, winningSecret: winner, skippedSecret: secretName },
+        {
+          host,
+          headerName: header,
+          winningSecret: winner,
+          skippedSecret: secretName,
+        },
       );
       return;
     }
@@ -283,11 +286,14 @@ function parseInjectionHosts(
     if (!entry.host) return false;
     const key = `${entry.host}|${entry.headerName || "Authorization"}`;
     if (seen.has(key)) {
-      warn("duplicate (host, header) in injection-hosts; skipping later entry", {
-        secret: secret.name,
-        host: entry.host,
-        headerName: entry.headerName || "Authorization",
-      });
+      warn(
+        "duplicate (host, header) in injection-hosts; skipping later entry",
+        {
+          secret: secret.name,
+          host: entry.host,
+          headerName: entry.headerName || "Authorization",
+        },
+      );
       return false;
     }
     seen.add(key);
@@ -337,7 +343,6 @@ function validPathRewrites(
   });
 }
 
-/** Both ends must be `/`-anchored, so a rewrite cannot escape its prefix. */
 const anchoredPath = (p: string) =>
   typeof p === "string" && p.startsWith("/") && p.endsWith("/");
 
@@ -346,7 +351,6 @@ const stripCredentialPrefix = (name: string) =>
     ? name.slice(CREDENTIAL_NAME_PREFIX.length)
     : name;
 
-/** Chain and cluster names are Envoy identifiers, so the host is digested. */
 function hostShort(host: string): string {
   return createHash("sha256").update(host).digest("hex").slice(0, 8);
 }

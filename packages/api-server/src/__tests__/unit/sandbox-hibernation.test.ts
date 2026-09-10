@@ -55,7 +55,9 @@ describe("shouldRun", () => {
   });
 
   it("never hibernates when the timeout is zero or negative", () => {
-    expect(shouldRun({ [LAST_ACTIVITY_KEY]: minutesAgo(600) }, 0, NOW)).toBe(true);
+    expect(shouldRun({ [LAST_ACTIVITY_KEY]: minutesAgo(600) }, 0, NOW)).toBe(
+      true,
+    );
   });
 
   // TEST_SCENARIO: a clock problem must not read as idleness and take a working agent down.

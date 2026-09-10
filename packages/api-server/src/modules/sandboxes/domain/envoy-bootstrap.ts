@@ -1,18 +1,13 @@
 import yaml from "js-yaml";
 
 /**
- * The paired gateway's Envoy configuration: the agent's only route off its
- * sandbox. Egress arrives as a CONNECT proxy request, is TLS-terminated per
- * host so a credential can be injected on the wire, and is gated per request
- * by the api-server's ext_authz.
- *
- * Two hops that used to be TCP services in the cluster are unix sockets here.
- * That is the whole of the identity story on one node: the socket a request
- * arrives on names the agent, the socket is created 0600 under the gateway's
- * own uid, and nothing the agent controls can reach another agent's. It
- * replaces the SPIFFE principal an AuthorizationPolicy used to match.
+ * UNIT_BOUNDARY_DESCRIPTION: The paired gateway's Envoy configuration, which
+ * is the agent's only route off its sandbox. Egress arrives as a CONNECT proxy
+ * request, is TLS-terminated per host so a credential can be injected on the
+ * wire, and is gated per request by the api-server's ext_authz. The harness and
+ * ext_authz hops are unix sockets rather than addresses: the socket a request
+ * arrives on names the agent, and nothing the caller sets can change that.
  */
-
 type Ev = Record<string, unknown>;
 
 export interface EnvoyCredential {
@@ -59,20 +54,15 @@ export interface EnvoyBootstrapParams {
   listenAddress: string;
   port: number;
   chains: EnvoyHostChain[];
-  /** Directory holding the per-credential SDS files, one subdirectory each. */
   credentialsRoot: string;
   credentialSdsName: string;
-  /** Directory holding the MITM leaf `tls.crt` / `tls.key`. */
   leafTlsDir: string;
-  /** `host:port` the agent addresses the harness API by. */
   harnessAuthority: string;
-  /** Unix socket the harness port answers on for this agent. */
   harnessSocketPath: string;
   objectStoreAuthority?: string;
   objectStoreHost?: string;
   objectStorePort?: number;
   healthPath: string;
-  /** Unix socket the ext_authz gRPC service answers on for this agent. */
   extAuthzSocketPath: string;
   extAuthzAuthority: string;
   extAuthzTimeoutSeconds: number;
@@ -161,7 +151,11 @@ function buildOuterListener(p: EnvoyBootstrapParams): Ev {
     route_config: {
       name: "connect_routes",
       virtual_hosts: [
-        { name: "connect", domains: ["*"], routes: buildOuterRoutes(p, anyUpgrades) },
+        {
+          name: "connect",
+          domains: ["*"],
+          routes: buildOuterRoutes(p, anyUpgrades),
+        },
       ],
     },
   };
@@ -394,7 +388,8 @@ function buildChainHttpFilters(
       filters.push({
         name: "envoy.filters.http.lua",
         typed_config: {
-          "@type": "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
+          "@type":
+            "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
           default_source_code: {
             inline_string: luaQueryParamScript(
               cred.headerName,
@@ -650,7 +645,6 @@ function pinnedTcpCluster(name: string, host: string, port: number): Ev {
   };
 }
 
-/** A local service reached over a unix socket rather than a cluster IP. */
 function pipeCluster(name: string, path: string): Ev {
   return {
     name,
@@ -773,9 +767,7 @@ function pipeLoadAssignment(clusterName: string, path: string): Ev {
     cluster_name: clusterName,
     endpoints: [
       {
-        lb_endpoints: [
-          { endpoint: { address: { pipe: { path } } } },
-        ],
+        lb_endpoints: [{ endpoint: { address: { pipe: { path } } } }],
       },
     ],
   };
@@ -825,7 +817,8 @@ function routerHttpFilter(): Ev {
   return {
     name: "envoy.filters.http.router",
     typed_config: {
-      "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router",
+      "@type":
+        "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router",
     },
   };
 }

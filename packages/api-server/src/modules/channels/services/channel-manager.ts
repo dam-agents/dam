@@ -224,7 +224,6 @@ export function createChannelManager(deps: {
       throw new Error(`channel workers failed to stop: ${failed.join("; ")}`);
   }
 
-  /** A worker throwing is reported to the caller, never to the turn. */
   async function guarded<T>(
     local: () => Promise<T>,
   ): Promise<T | { error: string }> {

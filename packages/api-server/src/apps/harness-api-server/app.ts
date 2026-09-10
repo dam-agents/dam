@@ -52,7 +52,6 @@ import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
   extAuthzGate: ExtAuthzGate;
-  /** Resolved once at boot; the only reader of the per-agent sockets. */
   gatewayUser: { uid: number; gid: number };
   agentStore: AgentStore;
   sandboxAddresses: SandboxAddresses;
@@ -250,8 +249,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     },
   });
 
-  // No TCP listener: the harness port is reached only over the per-agent
-  // unix sockets, which the supervisor opens as each agent starts.
   return createAgentSockets({
     app,
     runRoot: config.runRoot,

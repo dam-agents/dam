@@ -2,22 +2,15 @@ import { createHash } from "node:crypto";
 import { exec, CommandError } from "./exec.js";
 
 /**
- * The paired gateway: one Envoy per agent, holding that agent's credentials
- * and terminating its egress TLS.
- *
- * It runs as a systemd unit rather than a child process, which is what puts
- * it under its own uid — the boundary keeping one agent's credential files
- * out of another gateway's reach. Letting systemd drop the privilege means
- * the api-server never needs `CAP_SETUID` to do it, and the gateway gets
- * restart semantics and its own journal for free.
- *
- * A configuration change replaces the process rather than reloading it:
- * Envoy has no bootstrap reload, and a gateway still serving a superseded
- * credential set is exactly the state worth avoiding.
+ * UNIT_BOUNDARY_DESCRIPTION: The paired gateway's lifecycle. It runs as a
+ * systemd unit instance rather than a child process: systemd drops it to the
+ * gateway account, so the api-server needs no privilege to do so, and gives
+ * each instance a mount namespace holding only its own agent's credentials —
+ * which is what isolates gateways that all share one account. A configuration
+ * change replaces the process, because Envoy has no bootstrap reload and a
+ * gateway on a superseded credential set is the state worth avoiding.
  */
-
 export interface GatewayPort {
-  /** (Re)starts the gateway when the configuration it is on has changed. */
   ensureRunning(agentId: string, config: string): Promise<void>;
   stop(agentId: string): Promise<void>;
   isRunning(agentId: string): Promise<boolean>;
@@ -29,8 +22,6 @@ const unitFor = (agentId: string) => `dam-gateway@${agentId}.service`;
 export function createGatewayPort(opts: {
   log: (message: string) => void;
 }): GatewayPort {
-  // The hash of the config each running gateway was started on, so an
-  // unchanged reconcile does not bounce a working gateway.
   const started = new Map<string, string>();
 
   return {
@@ -52,11 +43,13 @@ export function createGatewayPort(opts: {
     },
 
     async isRunning(agentId) {
-      // `is-active` exits non-zero for every inactive state, which is the
-      // answer rather than a failure.
-      return (await exec("systemctl", ["is-active", unitFor(agentId)]).catch(
-        () => "",
-      )).trim() === "active";
+      return (
+        (
+          await exec("systemctl", ["is-active", unitFor(agentId)]).catch(
+            () => "",
+          )
+        ).trim() === "active"
+      );
     },
 
     async stopAll() {

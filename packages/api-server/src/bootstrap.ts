@@ -48,9 +48,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
-import {
-  createChannelManager,
-} from "./modules/channels/services/channel-manager.js";
+import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -710,8 +708,6 @@ export async function bootstrap() {
         })
       : undefined;
 
-  // One node, one process: every role that admits a single holder install-wide
-  // is held here by construction, so there is no election to win first.
   const channelManager = createChannelManager({ slackWorker, telegramWorker });
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -1146,9 +1142,9 @@ export async function bootstrap() {
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
   await supervisor.start();
-  // The change stream reconciles what users do; this catches what the node
-  // did behind our back — a sandbox that died, a reboot, a failed teardown.
-  await periodicJobs.register("sandbox-sweep", 60_000, () => supervisor.sweep());
+  await periodicJobs.register("sandbox-sweep", 60_000, () =>
+    supervisor.sweep(),
+  );
 
   void telegramWorker?.resolveIdentity();
   liveEventsModule.startAgentWatch();

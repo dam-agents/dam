@@ -80,7 +80,11 @@ describe("nftables ruleset", () => {
   });
 
   it("is empty of agent rules when no agent is running", () => {
-    const empty = nftablesRuleset({ links: [], gatewayPort: 3128, sandboxPort: 8080 });
+    const empty = nftablesRuleset({
+      links: [],
+      gatewayPort: 3128,
+      sandboxPort: 8080,
+    });
     expect(empty).not.toContain("iifname");
     expect(empty).toContain("table inet dam");
   });

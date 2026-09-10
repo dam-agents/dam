@@ -1,25 +1,20 @@
 import { exec, CommandError } from "./exec.js";
 
 /**
- * The sandbox runtime: containerd with the gVisor (`runsc`) handler, driven
- * through nerdctl.
- *
- * nerdctl is the containerd project's own CLI, so image pull, registry auth
- * and snapshot handling come from containerd itself rather than from us.
- * Ceiling: it is a CLI, so there is no task event stream — a container that
- * dies is noticed on the next reconcile tick, not the instant it exits. The
- * upgrade path is a small Go helper exposing containerd's event API over a
- * socket; nothing above this port would change.
+ * UNIT_BOUNDARY_DESCRIPTION: The sandbox runtime — containerd with the gVisor
+ * (runsc) handler, driven through nerdctl. nerdctl is the containerd project's
+ * own CLI, so image pull, registry auth and snapshots come from containerd
+ * rather than from us. Ceiling: a CLI has no task event stream, so a sandbox
+ * that dies is noticed on the next reconcile tick rather than at once; the
+ * upgrade path is a small helper exposing containerd's event API, and nothing
+ * above this port would change.
  */
-
 export const RUNSC_RUNTIME = "io.containerd.runsc.v1";
 
 export interface SandboxSpec {
   agentId: string;
   image: string;
-  /** `always` | `missing` | `never`. */
   pullPolicy?: string;
-  /** Docker config directory for a private registry, if the image needs one. */
   registryAuthPath?: string;
   netns: string;
   env: Record<string, string>;
@@ -30,9 +25,7 @@ export interface SandboxSpec {
 
 export interface SandboxState {
   running: boolean;
-  /** Exit code of the last run, when it ended abnormally. */
   exitCode?: number;
-  /** Why the runtime says it ended — OOMKilled, Error, Completed. */
   reason?: string;
   restarts: number;
 }
@@ -59,7 +52,6 @@ interface NerdctlInspect {
 }
 
 export function createContainerdPort(opts: {
-  /** cgroup memory headroom is enforced by the runtime, not by us. */
   namespace?: string;
 }): ContainerdPort {
   const ns = opts.namespace ?? "dam";
@@ -73,22 +65,33 @@ export function createContainerdPort(opts: {
       if (state) await this.remove(spec.agentId);
 
       const args = [
-        "--namespace", ns,
-        "run", "--detach",
-        "--name", containerName(spec.agentId),
-        "--runtime", RUNSC_RUNTIME,
-        "--network", `ns:/var/run/netns/${spec.netns}`,
-        "--restart", "no",
+        "--namespace",
+        ns,
+        "run",
+        "--detach",
+        "--name",
+        containerName(spec.agentId),
+        "--runtime",
+        RUNSC_RUNTIME,
+        "--network",
+        `ns:/var/run/netns/${spec.netns}`,
+        "--restart",
+        "no",
         "--read-only=false",
-        "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
       ];
       if (spec.pullPolicy) args.push("--pull", spec.pullPolicy);
       for (const [name, value] of Object.entries(spec.env)) {
         args.push("--env", `${name}=${value}`);
       }
       for (const m of spec.mounts) {
-        args.push("--volume", `${m.source}:${m.target}${m.readOnly ? ":ro" : ""}`);
+        args.push(
+          "--volume",
+          `${m.source}:${m.target}${m.readOnly ? ":ro" : ""}`,
+        );
       }
       if (spec.limits?.cpu) args.push("--cpus", spec.limits.cpu);
       if (spec.limits?.memory) args.push("--memory", spec.limits.memory);
@@ -97,9 +100,6 @@ export function createContainerdPort(opts: {
       }
       args.push(spec.image);
 
-      // A private-registry pull reads the docker config from the environment,
-      // so a credential is scoped to the one pull that needs it rather than
-      // installed node-wide.
       await exec("nerdctl", args, {
         timeoutMs: 15 * 60_000,
         ...(spec.registryAuthPath

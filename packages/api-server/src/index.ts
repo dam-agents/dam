@@ -18,7 +18,6 @@ const onSignal = (): void => {
   shuttingDown = true;
   void (async () => {
     process.stderr.write("shutting down...\n");
-    // The per-agent harness sockets go down with the supervisor, in cleanup().
     const listenersClosed = closed(apiServer);
     trpcWs.drain();
     const wsClosed = Promise.resolve(trpcWs.close()).catch(() => {});

@@ -56,12 +56,16 @@ describe("grant filtering", () => {
 
   // TEST_SCENARIO: an ungranted credential reaching the gateway is the failure this whole model exists to prevent — it would be injected into the agent's traffic without the owner ever granting it.
   it("keeps only granted connections and secrets", () => {
-    const kept = filterByGrants(secrets, ["tok1"], ["conn-1"]).map((s) => s.name);
+    const kept = filterByGrants(secrets, ["tok1"], ["conn-1"]).map(
+      (s) => s.name,
+    );
     expect(kept).toEqual(["conn-a", "platform-cred-tok1", "allow-1"]);
   });
 
   it("keeps allow-only entries, which carry no credential to leak", () => {
-    expect(filterByGrants(secrets, [], []).map((s) => s.name)).toEqual(["allow-1"]);
+    expect(filterByGrants(secrets, [], []).map((s) => s.name)).toEqual([
+      "allow-1",
+    ]);
   });
 });
 
@@ -103,7 +107,9 @@ describe("chains", () => {
   });
 
   it("renders a host allow-only when its SDS field is missing", () => {
-    const secret = connectionSecret("conn", "c1", [{ host: "api.example.com" }]);
+    const secret = connectionSecret("conn", "c1", [
+      { host: "api.example.com" },
+    ]);
     secret.fieldNames = [];
     const { chains, warnings } = buildChains([secret], [], CREDENTIALS_ROOT);
     expect(chains[0]!.credentials).toEqual([]);
@@ -126,7 +132,9 @@ describe("chains", () => {
       [],
       CREDENTIALS_ROOT,
     );
-    expect(chains[0]!.pathRewrites).toEqual([{ prefix: "/v1/", replacement: "/" }]);
+    expect(chains[0]!.pathRewrites).toEqual([
+      { prefix: "/v1/", replacement: "/" },
+    ]);
     expect(warnings.map((w) => w.message)).toContain(
       "invalid path rewrite in injection-hosts; ignoring",
     );

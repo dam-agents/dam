@@ -1,6 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Runs a node command. Arguments are always passed
+ * as a vector, never a shell string: agent ids, hostnames and image references
+ * all reach these commands from user input, and a shell would make each one an
+ * injection point.
+ */
 const run = promisify(execFile);
 
 export class CommandError extends Error {
@@ -14,15 +20,14 @@ export class CommandError extends Error {
   }
 }
 
-/**
- * Runs a node command. Arguments are passed as a vector, never a shell string:
- * agent ids, hostnames and image references all reach these commands from user
- * input, and a shell would make each one an injection point.
- */
 export async function exec(
   file: string,
   args: string[],
-  opts: { input?: string; timeoutMs?: number; env?: Record<string, string> } = {},
+  opts: {
+    input?: string;
+    timeoutMs?: number;
+    env?: Record<string, string>;
+  } = {},
 ): Promise<string> {
   try {
     const child = run(file, args, {

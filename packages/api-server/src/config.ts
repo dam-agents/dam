@@ -33,27 +33,17 @@ const positiveQuantitySchema = z
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
-  /** Root of the node's per-agent state: workspaces, gateway config, creds. */
   agentsRoot: z.string().default("/var/lib/dam/agents"),
-  /** Root of the credential store. Root-owned 0700. */
   secretStoreRoot: z.string().default("/var/lib/dam/secrets"),
-  /** Root of per-agent private-registry docker configs. */
   registryAuthRoot: z.string().default("/var/lib/dam/registry-auth"),
-  /** Port agent-runtime listens on inside its sandbox. */
   sandboxPort: z.coerce.number().default(8080),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   logLevel: z.enum(["error", "warn", "info", "debug"]).default("info"),
   port: z.coerce.number().default(4000),
-  /** Where the per-agent control-plane sockets live. */
   runRoot: z.string().default("/run/dam"),
-  /** uid/gid the per-agent Envoy runs as, and the only reader of its sockets. */
-  /** Account the paired gateways run as; its ids are resolved at boot. */
   gatewayUser: z.string().default("dam-gateway"),
-  /** Port each paired gateway's Envoy listens on, on the host end of the link. */
   gatewayPort: z.coerce.number().default(3128),
-  /** Node CA directory: the certificate every sandbox trusts. */
   pkiRoot: z.string().default("/var/lib/dam/pki"),
-  /** Bundled telemetry collector, if this node runs one. */
   telemetryCollectorHost: z.string().default(""),
   telemetryCollectorPort: z.coerce.number().default(4318),
   otelExporterEndpoint: z.string().optional(),

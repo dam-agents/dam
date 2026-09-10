@@ -1,18 +1,18 @@
 import type { AgentStore } from "../../agents/infrastructure/agent-store.js";
 import type { LiveEventsBus } from "../services/live-events-service.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Projects agent changes into per-owner
+ * invalidation hints. The store's change stream cannot drop an event the way a
+ * Kubernetes watch could, so there is no reconnect or replay sweep here — only
+ * the fingerprint check, which keeps supervisor status churn and activity
+ * stamps from reaching browsers as a change.
+ */
 export interface AgentWatchOptions {
   debounceMs?: number;
   volatileAnnotations?: readonly string[];
 }
 
-/**
- * Projects agent changes into per-owner invalidation hints. The store's
- * emitter cannot drop events the way a K8s watch could, so there is no
- * reconnect or replay sweep here — only the fingerprint check, which keeps
- * supervisor status churn (a heartbeat, an activity stamp) from reaching
- * browsers as a change.
- */
 export function startAgentWatch(
   bus: LiveEventsBus,
   store: Pick<AgentStore, "onChange">,
@@ -20,7 +20,10 @@ export function startAgentWatch(
 ): { stop(): void } {
   const debounceMs = opts.debounceMs ?? 300;
   const pending = new Map<string, NodeJS.Timeout>();
-  const fingerprints = new Map<string, { fingerprint: string; owner: string }>();
+  const fingerprints = new Map<
+    string,
+    { fingerprint: string; owner: string }
+  >();
 
   const publish = (agentId: string, owner: string) => {
     const existing = pending.get(agentId);

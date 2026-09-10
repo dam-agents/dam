@@ -1,10 +1,11 @@
 import type { AgentStore } from "./agent-store.js";
 
 /**
- * Where each running sandbox answers. The supervisor allocates the address and
- * publishes it on the agent's status; this keeps a synchronous view of that so
- * the relays and clients can build a URL without a round trip, the way the
- * `<agent>.<ns>.svc` DNS name used to let them.
+ * UNIT_BOUNDARY_DESCRIPTION: Where each running sandbox answers. The
+ * supervisor allocates the address and publishes it on the agent's status; this
+ * keeps a synchronous view of that, so relays and clients can build a URL
+ * without a round trip. An agent with no address is not running, and saying so
+ * loudly beats a connection that hangs.
  */
 export interface SandboxAddresses {
   baseUrl(agentId: string): string;
