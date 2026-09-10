@@ -1,0 +1,17 @@
+[Unit]
+Description=Platform first-boot provisioning (schema, realm, templates, CA)
+After=postgresql.service
+Requires=postgresql.service
+Before=dam-api-server.service
+ConditionPathExists=!/var/lib/dam/.provisioned
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/dam/env
+ExecStart=/opt/dam/bin/dam-provision
+# The marker is written by the script itself, only once every step has
+# succeeded — a half-provisioned node must run this again, not skip it.
+
+[Install]
+WantedBy=multi-user.target

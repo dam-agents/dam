@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# What the node is running, in one screen: the platform units, the sandboxes,
+# and the per-agent links and sockets that carry them.
+set -euo pipefail
+limactl shell dam sudo bash -s <<'REMOTE'
+set -uo pipefail
+echo "=== units ==="
+systemctl is-active containerd postgresql redis dam-api-server 2>/dev/null | paste -d' ' <(echo -e "containerd\npostgresql\nredis\napi-server") -
+echo
+echo "=== sandboxes ==="
+nerdctl --namespace dam ps --all --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || echo "(none)"
+echo
+echo "=== links ==="
+ip -brief addr show | grep '^damh' || echo "(none)"
+echo
+echo "=== control-plane sockets ==="
+ls -l /run/dam/harness /run/dam/extauthz 2>/dev/null || echo "(none)"
+echo
+echo "=== egress ruleset ==="
+nft list table inet dam 2>/dev/null || echo "(no table)"
+REMOTE

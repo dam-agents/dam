@@ -1,0 +1,42 @@
+[Unit]
+Description=Platform api-server (UI, tRPC, ACP relay, sandbox supervisor)
+# Postgres and Redis are hard requirements: the api-server holds the agent
+# records in one and its job queues in the other, and starting without either
+# means starting without the agents. containerd is what the sandboxes run on.
+After=network-online.target postgresql.service redis.service containerd.service
+Requires=postgresql.service redis.service containerd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Root, and this is the cost of folding the controller in: the supervisor
+# creates network namespaces, writes nftables rules and drives containerd,
+# none of which an unprivileged process can do. The hardening below is what
+# keeps that from meaning "unrestricted".
+User=root
+WorkingDirectory=/opt/dam/api-server
+EnvironmentFile=/etc/dam/env
+ExecStart=/usr/bin/node /opt/dam/api-server/dist/index.js
+Restart=always
+RestartSec=2
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=no
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# CAP_NET_ADMIN for the per-agent namespaces and the ruleset; CAP_SYS_ADMIN
+# for entering them; CAP_CHOWN/DAC to hand each gateway its own credentials.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_KILL
+ReadWritePaths=/var/lib/dam /run/dam /var/run/netns /run/containerd
+StateDirectory=dam
+RuntimeDirectory=dam
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

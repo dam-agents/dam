@@ -1,0 +1,22 @@
+# Node configuration. Everything the Helm values used to carry that still
+# means something on one node; anything that was about scheduling, storage
+# classes or the mesh is gone rather than defaulted.
+
+DAM_AGENTS_ROOT=/var/lib/dam/agents
+DAM_SECRET_STORE_ROOT=/var/lib/dam/secrets
+DAM_REGISTRY_AUTH_ROOT=/var/lib/dam/registry-auth
+DAM_PKI_ROOT=/var/lib/dam/pki
+DAM_RUN_ROOT=/run/dam
+DAM_GATEWAY_PORT=3128
+DAM_SANDBOX_PORT=8080
+
+PORT=4000
+PLATFORM_RELEASE_NAME=dam
+PLATFORM_HARNESS_SERVER_URL=http://harness.dam.internal:4001
+
+DATABASE_URL=postgres://dam@/dam?host=/run/postgresql
+REDIS_URL=redis://127.0.0.1:6379
+
+AGENT_TEMPLATES_PATH=/etc/dam/templates
+GIT_REPOS_PATH=/etc/dam/repos
+TRUSTED_HOSTS_PATH=/etc/dam/trusted-hosts.yaml

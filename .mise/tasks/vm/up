@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Start (and on first run, create) the dev VM. Everything else in vm:* assumes
+# this has succeeded.
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+if limactl list --quiet 2>/dev/null | grep -qx dam; then
+  limactl start dam
+else
+  limactl start --name=dam --tty=false etc/lima/dam.yaml
+fi
+echo "VM up. Next: mise run vm:install"

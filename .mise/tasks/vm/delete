@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Destroys the VM and everything in it, agent workspaces included.
+set -euo pipefail
+limactl stop -f dam 2>/dev/null || true
+limactl delete dam

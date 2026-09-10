@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# First-boot provisioning. Everything here is idempotent: the unit is gated on
+# a marker, but a half-finished boot must be safe to repeat, so the marker is
+# written last and only on success.
+set -euo pipefail
+. /etc/dam/env
+
+install -d -m 0700 -o root -g root \
+  "${DAM_SECRET_STORE_ROOT}" "${DAM_PKI_ROOT}" "${DAM_REGISTRY_AUTH_ROOT}"
+install -d -m 0755 -o root -g root "${DAM_AGENTS_ROOT}"
+
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -q 1; then
+  sudo -u postgres createuser dam
+  sudo -u postgres createdb --owner dam dam
+fi
+
+# Schema: the api-server runs migrations itself at boot, so nothing to do here.
+
+if [ -d /etc/dam/keycloak-realm ]; then
+  /opt/keycloak/bin/kc.sh import --dir /etc/dam/keycloak-realm --override false || true
+fi
+
+touch /var/lib/dam/.provisioned

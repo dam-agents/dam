@@ -57,7 +57,7 @@ So creating one is a first-class flow: an **experiment agent** is an Agent
 carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
 copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
 out of a path staged in the image, and appends a purpose note to the
-pod's user-level AGENTS.md so every session — not only the greeted first one —
+sandbox's user-level AGENTS.md so every session — not only the greeted first one —
 opens knowing that "experiment" means a platform Experiment. AGENTS.md is the
 source of truth and a symlink makes Claude Code read it, mirroring the image's
 `/etc/AGENTS.md` pattern at `$HOME` level. The note rides a shared append
@@ -133,7 +133,7 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
 ```mermaid
 sequenceDiagram
   participant U as user (UI)
-  participant H as harness (driver pod)
+  participant H as harness (driver sandbox)
   participant S as script (experiment SDK)
   participant API as api-server<br/>(Experiments)
   U->>H: chat: author the experiment
@@ -181,7 +181,7 @@ This applies to **all four** terminal paths — Stop, the script's own `finish`
 Stop alone. The two reaps additionally end every still-open span as `error`,
 since no script remains to end them; Stop and `finish` leave the script's own
 span bookkeeping alone. The ledger is closed in every case, so a surviving target can no longer report into
-the run; leaving it alive only holds its pod and its owner's budget until the
+the run; leaving it alive only holds its sandbox and its owner's budget until the
 invocation TTL, which is hours for a long campaign. `completed` is included
 deliberately: a loop that returns without awaiting a spawn orphans its target
 exactly like one that died mid-poll. The Agent Sweep is not a backstop here —
@@ -229,7 +229,7 @@ room currently free is not an error — it queues and starts when room frees
 
 **A failed spawn says why.** Polling an invocation returns its status and, once
 the target reports, the schema-validated result. A `failed` row additionally
-carries the platform's own reason — deadline exceeded, target pod restarted
+carries the platform's own reason — deadline exceeded, target sandbox restarted
 mid-turn, stopped with the run — because it is the one line of diagnosis the
 platform holds and the loop cannot reconstruct: the target is already gone by
 the time the driver sees the failure. A loop that only ever read a bare
@@ -280,7 +280,7 @@ signal. The **inactivity sweep** is the backstop: a `running` row with no
 accepted event within the configured window
 (`EXPERIMENT_INACTIVITY_SECONDS`, default 15 min) is reaped to `failed` —
 with heartbeats, that now specifically means the script process is gone
-(crashed without reporting, pod lost). A wedged-but-alive script heartbeats
+(crashed without reporting, sandbox lost). A wedged-but-alive script heartbeats
 indefinitely and stays visibly `running` until the user stops it: the sweep
 cannot tell stuck from slow, and Stop exists. Each
 reap is an atomic conditional transition, so multi-replica races no-op, and

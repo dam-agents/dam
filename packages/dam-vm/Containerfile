@@ -1,0 +1,45 @@
+# dam-vm — the whole platform as one bootc image.
+#
+# Everything the install used to get from a Kubernetes cluster is a systemd
+# unit here: Postgres, Redis, Keycloak, containerd with the gVisor handler,
+# and the api-server that supervises the agent sandboxes. There is no
+# orchestrator, so there is nothing to install into — the image *is* the
+# install, and `bootc upgrade` is the upgrade path.
+#
+# The agent images themselves are unchanged OCI images pulled at runtime;
+# this image carries no harness content.
+FROM quay.io/fedora/fedora-bootc:44
+
+# gVisor is the sandbox boundary, so runsc is not optional here the way a
+# RuntimeClass was in the cluster.
+RUN dnf install -y --setopt=install_weak_deps=False \
+      containerd nerdctl cni-plugins \
+      postgresql-server postgresql-contrib redis \
+      envoy nftables iproute openssl \
+      java-21-openjdk-headless \
+      nodejs npm \
+      jq tar gzip && \
+    dnf clean all
+
+ARG GVISOR_URL=https://storage.googleapis.com/gvisor/releases/release/latest/x86_64
+RUN curl -fsSL -o /usr/local/bin/runsc "${GVISOR_URL}/runsc" && \
+    curl -fsSL -o /usr/local/bin/containerd-shim-runsc-v1 "${GVISOR_URL}/containerd-shim-runsc-v1" && \
+    chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+
+# The runsc handler, registered under the name the supervisor asks for.
+RUN mkdir -p /etc/containerd && printf '%s\n' \
+  'version = 2' \
+  '[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]' \
+  '  runtime_type = "io.containerd.runsc.v1"' \
+  > /etc/containerd/config.toml
+
+# The gateway uid: Envoy runs as this, and it is the only reader of an
+# agent's credential files and control-plane sockets.
+RUN useradd --system --no-create-home --shell /sbin/nologin dam-gateway
+
+COPY --from=platform-api-server:latest /app /opt/dam/api-server
+COPY system/*.service /usr/lib/systemd/system/
+COPY bin/ /opt/dam/bin/
+COPY etc/ /etc/dam/
+
+RUN systemctl enable containerd postgresql redis dam-first-boot dam-keycloak dam-api-server

@@ -1,0 +1,21 @@
+[Unit]
+Description=Keycloak (the install's identity authority)
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=keycloak
+EnvironmentFile=/etc/dam/env
+ExecStart=/opt/keycloak/bin/kc.sh start --optimized
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+StateDirectory=keycloak
+
+[Install]
+WantedBy=multi-user.target

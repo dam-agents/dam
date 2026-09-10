@@ -108,8 +108,8 @@ stale allowlist or fire a share for a transition that never committed.
 ## The share host — trust boundary
 
 User-generated content is never served from the app origin. Two dedicated
-by-link hosts (separate subdomains, both mandatory, wired through the cluster
-ingress and configured via Helm) carry it:
+by-link hosts (separate subdomains, both mandatory, wired through the node
+ingress and configured in the node configuration) carry it:
 
 - The **share host** serves *only* the by-link surfaces — share pages and
   their source download, folder pages, the share sign-in routes, and the
@@ -215,14 +215,14 @@ flowchart LR
 ```
 
 - **Agents** publish through artifact tools on the per-agent platform MCP
-  server (the same in-pod outbound surface as channels, skills, and
+  server (the same in-sandbox outbound surface as channels, skills, and
   schedules). Small text content travels inline; anything bigger takes
   the **direct-transfer** path: the tool
   mints a short-lived presigned upload link, the harness PUTs bytes straight
   to the store through its paired gateway, and the create call references the
   completed upload. The platform verifies the upload (existence, size cap)
   before the artifact row lands, and an upload reference outside the caller's
-  own staging namespace reads as unknown. Attribution is the mesh-verified
+  own staging area reads as unknown. Attribution is the socket-verified
   agent identity — a harness cannot publish as another agent, and the
   owner-scoped service means it can only ever touch its owner's library.
   Reads mirror this: small text content returns inline, and a download tool
@@ -295,7 +295,7 @@ The database enforces the composition with foreign keys: version rows cascade
 with their artifact, and folder deletion detaches its artifacts. Deleting a
 folder ungroups its artifacts (their share state is untouched).
 The **retention sweep** runs as a scheduled platform periodic job (its own
-queue and worker lane) — one execution per period across replicas, with the
+queue and worker lane) — one execution per period, with the
 tick itself idempotent —
 and permanently removes artifacts — private ones included — whose retention
 date passed more than the grace window ago. Agent deletion does

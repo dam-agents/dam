@@ -44,7 +44,7 @@ Read responses are uncacheable, so nothing downstream can turn the generic answe
 
 ## Read path
 
-**Public reads never touch the K8s API.** An Agent's name lives on its Agent custom resource, so the naive implementation lets anyone with a shell drive control-plane reads at whatever rate they like, on the one endpoint with no principal behind it to rate-limit against.
+**Public reads never touch the K8s API.** An Agent's name lives on its Agent record, so the naive implementation lets anyone with a shell drive control-plane reads at whatever rate they like, on the one endpoint with no principal behind it to rate-limit against.
 
 Caching does not substitute for fixing this, and the reason is worth stating because it inverts the usual intuition: **Agent ids are unguessable, which cuts the wrong way.** Every probe of a random id is a distinct cache key and therefore a _guaranteed miss_. A cache in front of a read-through would pass essentially all hostile traffic through to the control plane while absorbing only the repeat views of genuinely shared links.
 

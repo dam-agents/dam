@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Install (or reinstall) the platform into the running dev VM from this
+# checkout: build the api-server and UI, lay down the node layout and config,
+# and start the units. This is the `cluster:install` of the VM world — it is
+# a dev-loop task, not the production install, which is the bootc image.
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+
+mise run //packages/ui:build 2>/dev/null || pnpm --filter ui build
+pnpm --filter api-server exec tsup
+
+limactl shell dam sudo bash -s -- "${MISE_PROJECT_ROOT}" <<'REMOTE'
+set -euo pipefail
+REPO="$1"
+
+install -d -m 0700 /var/lib/dam/secrets /var/lib/dam/pki /var/lib/dam/registry-auth
+install -d -m 0755 /var/lib/dam/agents /run/dam /etc/dam
+install -d -m 0750 /run/dam/harness /run/dam/extauthz
+id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
+chown dam-gateway /run/dam/harness /run/dam/extauthz
+
+rm -rf /opt/dam/api-server
+install -d /opt/dam
+cp -a "$REPO/packages/api-server" /opt/dam/api-server
+
+install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
+{
+  echo "DAM_GATEWAY_UID=$(id -u dam-gateway)"
+  echo "DAM_GATEWAY_GID=$(id -g dam-gateway)"
+  echo "DATABASE_URL=postgres://dam:dam@127.0.0.1:5432/dam"
+} >> /etc/dam/env
+cp -a "$REPO/packages/agents"/*/template.yaml /etc/dam/templates/ 2>/dev/null || install -d /etc/dam/templates
+
+sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -q 1 || {
+  sudo -u postgres psql -c "CREATE ROLE dam LOGIN PASSWORD 'dam'"
+  sudo -u postgres createdb --owner dam dam
+}
+
+install -m 0644 "$REPO/packages/dam-vm/system/dam-api-server.service" /usr/lib/systemd/system/
+systemctl daemon-reload
+systemctl enable --now containerd postgresql redis
+systemctl restart dam-api-server
+REMOTE
+
+echo "Installed. Next: mise run vm:status, then http://localhost:4000"

@@ -12,18 +12,16 @@ flowchart LR
   llm[LLM APIs]
   github[GitHub]
 
-  subgraph cluster[Platform install]
+  subgraph node[Platform node]
     ui[ui]
     api-server[api-server]
-    controller[controller]
     keycloak[keycloak]
     postgres[(postgres)]
     redis[(redis)]
-    k8s-api[(K8s API)]
-    subgraph agentpod[agent pod]
+    subgraph sandbox[agent sandbox]
       agent-runtime
     end
-    subgraph gatewaypod[gateway pod]
+    subgraph gw[paired gateway]
       envoy[Envoy]
     end
   end
@@ -37,35 +35,45 @@ flowchart LR
   cli -->|tRPC + WS| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
-  api-server -->|REST| k8s-api
   api-server -->|JWKS validate| keycloak
-  api-server -->|metadata| postgres
-  api-server -->|BullMQ jobs / pub-sub| redis
+  api-server -->|records, metadata| postgres
+  api-server -->|BullMQ jobs| redis
+  api-server -->|supervises| sandbox
+  api-server -->|supervises| gw
 
-  controller -->|watch + status| k8s-api
-
-  agent-runtime -->|HTTPS_PROXY| envoy
-  envoy -->|ext_authz Check| api-server
+  agent-runtime -->|only route off its link| envoy
+  envoy -->|ext_authz over a per-agent socket| api-server
   envoy -->|inject credentials| llm
   envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only. The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`. The agent pod has no service-account credentials and no upstream tokens of its own.
+Platform is a **single node**: one machine, one api-server process, agents in
+gVisor sandboxes it supervises directly. The node boundary is the trust
+boundary. Browsers and Slack users reach Platform through the api-server; LLM
+and GitHub traffic from an agent always exits through its paired gateway,
+where Envoy injects credentials from files readable only by that gateway.
+
+Egress isolation is **topological**: a sandbox's network namespace holds one
+point-to-point link and no default route, so its paired gateway is the only
+address it can name. Credential injection is enforced by the kernel's routing
+table, not by the agent honoring `HTTPS_PROXY`. The sandbox holds no
+credential of its own, and the control-plane sockets it reaches the api-server
+through are named per agent and readable only by its gateway.
 
 ## Subsystems
 
 Each page is the authoritative, self-contained description of its subsystem — what it looks like today and why it is shaped that way.
 
-- [platform-topology](architecture/platform-topology.md) — the four long-lived components (controller, api-server, agent-runtime, ui), the protocols between them, and the K8s resource model.
+- [platform-topology](architecture/platform-topology.md) — the long-lived components (api-server, agent-runtime, gateway, ui), the protocols between them, and the node's resource model.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions.
-- [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
-- [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-Agent PVC) and what survives each lifecycle event.
-- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
+- [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced when a sandbox starts; per-user overrides for privileged users.
+- [persistence](architecture/persistence.md) — the two substrates (Postgres, the per-agent directory on the node) and what survives each lifecycle event.
+- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, the paired Envoy credential gateway, file-backed credential storage, ext_authz HITL, the sandbox network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
 - [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated app-origin surface, reached from the Slack Agent Footer: names a channel-bound Agent and its owner off a Postgres projection, one generic page for everything else.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
-- [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
+- [agent-skills](architecture/agent-skills.md) — the sandbox-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [harness configuration](architecture/harness-config.md) — the Config panel's model/mode/config defaults: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
@@ -77,7 +85,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [metrics](architecture/metrics.md) — the user-facing spend read path: owner-scoped tRPC reads over the telemetry store backing the global and per-agent Usage surfaces, failing closed when the backend is disabled.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
-- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh rather than ingestion tokens.
+- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, reachable only from the node rather than gated by ingestion tokens.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
 - [code](security/code.md) — CodeQL SAST and pre-commit hardening.
 - [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.
