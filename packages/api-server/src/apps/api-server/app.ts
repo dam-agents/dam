@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {
@@ -103,6 +104,17 @@ export function startApiServerApp(deps: ApiServerDeps) {
       ensureReady,
     }),
   );
+
+  if (config.uiRoot) {
+    app.use("/*", except("/api/*", serveStatic({ root: config.uiRoot })));
+    app.use(
+      "/*",
+      except(
+        "/api/*",
+        serveStatic({ root: config.uiRoot, path: "index.html" }),
+      ),
+    );
+  }
 
   const server = serve(
     {

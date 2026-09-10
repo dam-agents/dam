@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 
-pnpm --filter ui build
+pnpm --filter platform-ui exec sh -c 'tsc && vite build'
 pnpm --filter api-server exec tsup
 PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
 
@@ -71,55 +71,67 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -
 }
 
 install -m 0644 "$REPO/packages/dam-vm/system/dam-api-server.service" /usr/lib/systemd/system/
-install -m 0644 "$REPO/packages/dam-vm/system/dam-ui.service" /usr/lib/systemd/system/
 install -m 0644 "$REPO/packages/dam-vm/system/dam-gateway@.service" /usr/lib/systemd/system/
+install -m 0644 "$REPO/packages/dam-vm/system/dam-keycloak.service" /usr/lib/systemd/system/
 
-# The UI is static files behind nginx, the same shape the container image has.
+# The api-server serves these itself; no reverse proxy, one origin, one port.
 install -d /usr/share/dam-ui
 rsync -a --delete "$REPO/packages/ui/dist/" /usr/share/dam-ui/
-cat > /etc/dam/nginx.conf <<'NGINX'
-events {}
-http {
-  include /etc/nginx/mime.types;
-  # The SPA and the api-server share an origin: the browser holds the session
-  # and the ACP/tRPC sockets, and a second origin would put both behind CORS
-  # and cookie rules for no gain on one node.
-  map $http_upgrade $connection_upgrade { default upgrade; "" close; }
-  # Node binds the IPv6 wildcard, which is where the api-server actually
-  # answers; the IPv4 loopback is the fallback for a host with IPv6 off.
-  upstream dam_api {
-    server [::1]:4000;
-    server 127.0.0.1:4000 backup;
-  }
-  server {
-    listen 8080;
-    root /usr/share/dam-ui;
-    location /api/ {
-      proxy_pass http://dam_api;
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-      proxy_set_header Host $host;
-      # A turn can hold a connection open for as long as the agent thinks.
-      proxy_read_timeout 3600s;
-      proxy_send_timeout 3600s;
-      proxy_buffering off;
-    }
-    location / { try_files $uri $uri/ /index.html; }
-  }
+
+# Keycloak. The client secret and the dev user's password are generated once
+# and kept, so a reinstall does not invalidate a logged-in browser session.
+id keycloak >/dev/null 2>&1 || useradd --system --home-dir /opt/keycloak --shell /usr/sbin/nologin keycloak
+chown -R keycloak:keycloak /opt/keycloak
+[ -f /var/lib/dam/keycloak-secrets ] || {
+  umask 077
+  { echo "PLATFORM_API_CLIENT_SECRET=$(openssl rand -hex 24)"
+    echo "PLATFORM_TEST_USER=dev"
+    echo "PLATFORM_TEST_PASSWORD=dev"; } > /var/lib/dam/keycloak-secrets
 }
-pid /run/dam-ui.pid;
-NGINX
+. /var/lib/dam/keycloak-secrets
+sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='keycloak'" | grep -q 1 || {
+  sudo -u postgres psql -c "CREATE ROLE keycloak LOGIN PASSWORD 'keycloak'"
+  sudo -u postgres createdb --owner keycloak keycloak
+}
+{
+  echo "KC_DB=postgres"
+  echo "KC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak"
+  echo "KC_DB_USERNAME=keycloak"
+  echo "KC_DB_PASSWORD=keycloak"
+  echo "KC_HTTP_ENABLED=true"
+  echo "KC_HTTP_PORT=8081"
+  echo "KC_HOSTNAME_STRICT=false"
+  echo "KC_BOOTSTRAP_ADMIN_USERNAME=admin"
+  echo "KC_BOOTSTRAP_ADMIN_PASSWORD=admin"
+  cat /var/lib/dam/keycloak-secrets
+} > /etc/dam/keycloak-env
+chmod 0640 /etc/dam/keycloak-env && chown root:keycloak /etc/dam/keycloak-env
+echo "KEYCLOAK_API_CLIENT_SECRET=${PLATFORM_API_CLIENT_SECRET}" >> /etc/dam/env
+
+# Keycloak substitutes nothing in an imported realm, so the node's URLs and
+# secrets are rendered in here.
+install -d -m 0750 -o root -g keycloak /etc/dam/keycloak-realm
+sed -e "s#@UI_URL@#${PLATFORM_UI_URL:-http://localhost:4000}#g" \
+    -e "s#@SHARE_URL@#http://share.localhost:4000#g" \
+    -e "s#@API_CLIENT_SECRET@#${PLATFORM_API_CLIENT_SECRET}#g" \
+    -e "s#@TEST_USER@#${PLATFORM_TEST_USER}#g" \
+    -e "s#@TEST_PASSWORD@#${PLATFORM_TEST_PASSWORD}#g" \
+    "$REPO/packages/dam-vm/etc/keycloak-realm.json" > /etc/dam/keycloak-realm/platform-realm.json
+
 systemctl daemon-reload
-systemctl enable --now containerd postgresql
-# Load the runtime's AppArmor profile here, as a full-privilege shell: the
-# api-server's capability set cannot replace a profile, and a sandbox start
-# that tries to load one fails outright rather than running unconfined.
-nerdctl apparmor load 2>/dev/null || true
+systemctl enable --now postgresql
 systemctl enable --now redis-server 2>/dev/null || systemctl enable --now redis
+
+# `build` bakes the database vendor into the distribution; `start --optimized`
+# then refuses to re-derive it at boot, which is what keeps startup quick.
+systemctl stop dam-keycloak 2>/dev/null || true
+sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) /opt/keycloak/bin/kc.sh build >/dev/null
+# Import is idempotent: an existing realm is left as it is.
+sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) \
+  /opt/keycloak/bin/kc.sh import --dir /etc/dam/keycloak-realm --override false >/dev/null
+systemctl enable --now dam-keycloak
+
 systemctl restart dam-api-server
-systemctl enable dam-ui
-systemctl restart dam-ui
 REMOTE
 
-echo "Installed. Next: mise run vm:status, then http://localhost:4000"
+echo "Installed. Next: mise run vm:status, then http://localhost:4000 (dev/dev)"

@@ -44,6 +44,7 @@ const configSchema = z.object({
   gatewayUser: z.string().default("dam-gateway"),
   gatewayPort: z.coerce.number().default(3128),
   pkiRoot: z.string().default("/var/lib/dam/pki"),
+  uiRoot: z.string().default(""),
   imagesRoot: z.string().default("/var/lib/dam/images"),
   sandboxCommand: z
     .string()
@@ -207,6 +208,7 @@ export function loadConfig(): Config {
     gatewayUser: process.env.DAM_GATEWAY_USER,
     gatewayPort: process.env.DAM_GATEWAY_PORT,
     pkiRoot: process.env.DAM_PKI_ROOT,
+    uiRoot: process.env.DAM_UI_ROOT,
     imagesRoot: process.env.DAM_IMAGES_ROOT,
     sandboxCommand: process.env.DAM_SANDBOX_COMMAND,
     telemetryCollectorHost: process.env.PLATFORM_TELEMETRY_COLLECTOR_HOST,

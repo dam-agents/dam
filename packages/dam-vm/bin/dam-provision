@@ -16,8 +16,47 @@ fi
 
 # Schema: the api-server runs migrations itself at boot, so nothing to do here.
 
-if [ -d /etc/dam/keycloak-realm ]; then
-  /opt/keycloak/bin/kc.sh import --dir /etc/dam/keycloak-realm --override false || true
+# The identity authority's own database and secrets, generated once. The API
+# client secret is written into the node env too, since the api-server
+# authenticates to Keycloak with it.
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='keycloak'" | grep -q 1; then
+  sudo -u postgres psql -c "CREATE ROLE keycloak LOGIN PASSWORD 'keycloak'"
+  sudo -u postgres createdb --owner keycloak keycloak
 fi
+if [ ! -f /etc/dam/keycloak-env ]; then
+  umask 077
+  {
+    echo "KC_DB=postgres"
+    echo "KC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak"
+    echo "KC_DB_USERNAME=keycloak"
+    echo "KC_DB_PASSWORD=keycloak"
+    echo "KC_HTTP_ENABLED=true"
+    echo "KC_HTTP_PORT=8081"
+    echo "KC_HOSTNAME_STRICT=false"
+    echo "KC_BOOTSTRAP_ADMIN_USERNAME=admin"
+    echo "KC_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)"
+    echo "PLATFORM_API_CLIENT_SECRET=$(openssl rand -hex 24)"
+    echo "PLATFORM_TEST_USER=dev"
+    echo "PLATFORM_TEST_PASSWORD=$(openssl rand -hex 12)"
+  } > /etc/dam/keycloak-env
+  chmod 0640 /etc/dam/keycloak-env && chown root:keycloak /etc/dam/keycloak-env
+fi
+. /etc/dam/keycloak-env
+grep -q '^KEYCLOAK_API_CLIENT_SECRET=.' /etc/dam/env ||
+  echo "KEYCLOAK_API_CLIENT_SECRET=${PLATFORM_API_CLIENT_SECRET}" >> /etc/dam/env
+
+sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) /opt/keycloak/bin/kc.sh build
+
+# Keycloak substitutes nothing in an imported realm, so the node's URLs and
+# secrets are rendered in here.
+install -d -m 0750 -o root -g keycloak /etc/dam/keycloak-realm
+sed -e "s#@UI_URL@#${UI_BASE_URL}#g" \
+    -e "s#@SHARE_URL@#${SHARE_BASE_URL}#g" \
+    -e "s#@API_CLIENT_SECRET@#${PLATFORM_API_CLIENT_SECRET}#g" \
+    -e "s#@TEST_USER@#${PLATFORM_TEST_USER}#g" \
+    -e "s#@TEST_PASSWORD@#${PLATFORM_TEST_PASSWORD}#g" \
+    /etc/dam/keycloak-realm.json > /etc/dam/keycloak-realm/platform-realm.json
+sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) \
+  /opt/keycloak/bin/kc.sh import --dir /etc/dam/keycloak-realm --override false
 
 touch /var/lib/dam/.provisioned

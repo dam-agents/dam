@@ -17,11 +17,12 @@ mounts:
   - location: "/tmp/lima"
     writable: true
 
-# The UI and the api-server; agent sandboxes are never exposed off the VM.
+# The api-server, which serves the UI too, and Keycloak. Agent sandboxes are
+# never exposed off the VM.
 portForwards:
   - guestPort: 4000
     hostPort: 4000
-  - guestPort: 8080
+  - guestPort: 8081
     hostPort: 8081
 
 provision:
@@ -30,8 +31,8 @@ provision:
       #!/bin/bash
       set -eux -o pipefail
       apt-get update
-      apt-get install -y containerd nftables iproute2 openssl \
-        postgresql redis-server nginx-light rsync jq curl
+      apt-get install -y nftables iproute2 openssl \
+        postgresql redis-server rsync jq curl openjdk-21-jre-headless
 
       # Node from upstream: the archive's is too old for the api-server, and
       # the version has to match what the repo builds against.
@@ -43,18 +44,12 @@ provision:
       curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
         | tar -xJ -C /usr/local --strip-components=1
 
-      # nerdctl and the CNI plugins are not in Ubuntu's archive.
-      NERDCTL_VERSION=2.1.2
-      ARCH=$(dpkg --print-architecture)
-      curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-${ARCH}.tar.gz" \
-        | tar -xz -C /usr/local/bin nerdctl
-
       # gVisor: the sandbox boundary, so a dev VM without it is not a dev VM.
+      # The supervisor calls runsc itself, so there is no shim and no daemon.
       ARCH_GVISOR=$(uname -m)
       URL="https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH_GVISOR}"
       curl -fsSL -o /usr/local/bin/runsc "${URL}/runsc"
-      curl -fsSL -o /usr/local/bin/containerd-shim-runsc-v1 "${URL}/containerd-shim-runsc-v1"
-      chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+      chmod 0755 /usr/local/bin/runsc
 
       # Envoy is the paired gateway, and Ubuntu ships no package for it.
       ENVOY_VERSION=1.36.1
@@ -66,20 +61,22 @@ provision:
         "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${ENVOY_ARCH}"
       chmod 0755 /usr/local/bin/envoy
 
-      mkdir -p /etc/containerd
-      cat >/etc/containerd/config.toml <<'CONF'
-      version = 2
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
-        runtime_type = "io.containerd.runsc.v1"
-      CONF
-      systemctl restart containerd
+      # Keycloak, which Ubuntu does not package.
+      KEYCLOAK_VERSION=26.4.0
+      test -d /opt/keycloak || {
+        mkdir -p /opt/keycloak
+        curl -fsSL "https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz" \
+          | tar -xz -C /opt/keycloak --strip-components=1
+      }
 
       id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
 
 probes:
-  - description: "containerd answers with the runsc handler registered"
+  - description: "the node has everything the platform shells out to"
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      timeout 120s bash -c "until nerdctl info >/dev/null 2>&1; do sleep 2; done"
       test -x /usr/local/bin/runsc
+      test -x /usr/local/bin/envoy
+      test -x /opt/keycloak/bin/kc.sh
+      command -v nft node

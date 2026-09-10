@@ -5,10 +5,10 @@ set -euo pipefail
 limactl shell dam sudo bash -s <<'REMOTE'
 set -uo pipefail
 echo "=== units ==="
-systemctl is-active containerd postgresql redis dam-api-server 2>/dev/null | paste -d' ' <(echo -e "containerd\npostgresql\nredis\napi-server") -
+systemctl is-active postgresql redis dam-keycloak dam-api-server 2>/dev/null | paste -d' ' <(echo -e "postgresql\nredis\nkeycloak\napi-server") -
 echo
 echo "=== sandboxes ==="
-nerdctl --namespace dam ps --all --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || echo "(none)"
+runsc --network=sandbox --overlay2=none list 2>/dev/null || echo "(none)"
 echo
 echo "=== links ==="
 ip -brief addr show | grep '^damh' || echo "(none)"
