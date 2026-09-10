@@ -699,12 +699,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Foreground on purpose: backgrounded, the rm competes with the image
-      # pulls for disk I/O and takes 3x longer, net slower.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
+      # No runner disk cleanup: the 145G root disk has ~87G free and the whole
+      # e2e run uses ~15G (measured 2026-09-10); the customary rm of the SDKs
+      # cost 40–90 s for nothing.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
