@@ -322,7 +322,7 @@ Newer agent on older server is rare (images are pinned). The agent calls `runtim
 
 The agent's `hello` declares which Contribution kinds and which Event kinds it supports. The api-server filters outbound payloads: unsupported items are dropped at send time (logged + counted with a `dropped-unsupported` metric). A dropped workspace-mutating event is additionally stamped dispatched-with-error right there — it can never settle on this runtime, and leaving it pending would hold the agent in *preparing workspace* until its TTL.
 
-Filtering precedes the hash, so a gapped delivery settles clean and leaves no trace in the cursors. Each delivery therefore records the kinds it dropped on the outbox row, and the Agent shows its owner what the runtime refused beside the pending update that fixes it — degraded, not disqualified.
+Filtering precedes the hash, so a gapped delivery settles clean and leaves no trace in the cursors. Each delivery therefore records the kinds it dropped on the outbox row, and the Agent shows its owner what the runtime refused, alongside the agent update that fixes it where one is pending and the fact that none is otherwise — degraded, not disqualified.
 
 A `hello` whose advertised kinds change **raises the desired version**, which is what makes applying that update land the refused parts; nothing else would, since the row already settled. Bumping rather than merely enqueueing keeps the trigger durable: the row goes behind, so the sweep recovers a lost job, and a delivery built on stale capabilities can no longer overwrite a newer one's record.
 
