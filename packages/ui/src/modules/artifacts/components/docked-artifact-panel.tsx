@@ -3,6 +3,7 @@ import {
   Code,
   Download,
   Edit,
+  Launch,
   Maximize,
   Save,
   Share,
@@ -22,6 +23,7 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -87,6 +89,7 @@ export function DockedArtifactPanel() {
     shownVersion,
   );
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
+  const startSession = useStartArtifactSession(artifact);
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
 
@@ -181,6 +184,17 @@ export function DockedArtifactPanel() {
                 onClick={() => void downloadArtifact(artifact.id)}
               >
                 <Download size={14} />
+              </Button>
+            )}
+            {startSession.available && shownVersion === latest && (
+              <Button
+                variant="outline"
+                size="icon-xs"
+                aria-label="Start a new session"
+                tooltip="Start a new session"
+                onClick={() => void startSession.start()}
+              >
+                <Launch size={14} />
               </Button>
             )}
             {frameShowing && (

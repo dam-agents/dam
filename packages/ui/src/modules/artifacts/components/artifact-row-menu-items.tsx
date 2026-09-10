@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { useArtifactDeletion } from "../hooks/use-artifact-deletion.js";
+import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
@@ -25,6 +26,7 @@ export function ArtifactRowMenuItems({
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   const deleteArtifact = useArtifactDeletion();
+  const startSession = useStartArtifactSession(artifact);
 
   return (
     <>
@@ -45,6 +47,11 @@ export function ArtifactRowMenuItems({
       <DropdownMenuItem onSelect={() => void downloadArtifact(artifact.id)}>
         Download
       </DropdownMenuItem>
+      {startSession.available && (
+        <DropdownMenuItem onSelect={() => void startSession.start()}>
+          Start a new session
+        </DropdownMenuItem>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
         Delete after…

@@ -218,7 +218,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "get_artifact",
-    "Get an artifact's metadata and (for text kinds) its full source content. For binary or large artifacts use create_artifact_download_url instead.",
+    "Get an artifact's metadata and (for text kinds) its full source content. A reference of the form `platform://artifacts/<id>` names an artifact — pass the `<id>` part as this tool's `id`. For binary or large artifacts use create_artifact_download_url instead.",
     {
       id: z.string().min(1),
       version: z.number().int().positive().optional(),
