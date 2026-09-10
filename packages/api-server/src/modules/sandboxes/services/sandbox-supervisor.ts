@@ -62,10 +62,6 @@ export function createSandboxSupervisor(
 ): SandboxSupervisor {
   const inflight = new Map<string, Promise<void>>();
   const queued = new Set<string>();
-  // The links that exist right now. The ruleset is rendered from this rather
-  // than from published status: status is written after the link is up, so
-  // deriving from it would leave every new link un-ruled until the next
-  // reconcile.
   const liveLinks = new Map<string, SandboxLink>();
   let unsubscribe: (() => void) | null = null;
   let stopped = false;
@@ -258,8 +254,6 @@ export function createSandboxSupervisor(
 
     async sweep() {
       const records = await deps.store.list();
-      // A restart loses the in-memory link set; the published addresses are
-      // what it is rebuilt from, so the ruleset survives one.
       for (const record of records) {
         const index = record.status.address
           ? indexOfAddress(record.status.address)
