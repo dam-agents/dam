@@ -63,6 +63,7 @@ const setup: CodingAgentSetupDraft = {
   providerRef: { id: "conn-provider" },
   connectionIds: ["conn-granted"],
   registryCredential: EMPTY_REGISTRY_CREDENTIAL,
+  hibernationTimeoutMin: 60,
 };
 
 const fullCredential = {
@@ -116,6 +117,7 @@ describe("buildCodingAgentSetupInput", () => {
     ).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
+      hibernationTimeoutMin: 60,
       templateId: "claude-code",
       appConnectionIds: ["conn-granted", "conn-provider"],
     });
@@ -130,6 +132,7 @@ describe("buildCodingAgentSetupInput", () => {
     expect(buildCodingAgentSetupInput(custom)).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
+      hibernationTimeoutMin: 60,
       image: "ghcr.io/org/agent:latest",
       appConnectionIds: ["conn-granted", "conn-provider"],
     });
