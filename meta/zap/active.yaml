@@ -40,8 +40,8 @@ jobs:
     parameters:
       context: dam-api
       user: zap
-      maxScanDurationInMins: 90
-      maxRuleDurationInMins: 10
+      maxScanDurationInMins: 300
+      maxRuleDurationInMins: 20
       threadPerHost: 4
       delayInMs: 250
   - type: passiveScan-wait
