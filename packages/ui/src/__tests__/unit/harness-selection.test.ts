@@ -18,7 +18,6 @@ function harness(id: string): TemplateView {
     image: `quay.io/x/${id}:latest`,
     category: "harness",
     experimental: false,
-    vm: false,
   };
 }
 

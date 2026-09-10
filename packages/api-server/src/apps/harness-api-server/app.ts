@@ -1,4 +1,3 @@
-import { serve } from "@hono/node-server";
 import type {
   AgentsService,
   ConnectionsService,
@@ -38,6 +37,9 @@ import { createTemplatesRepository } from "../../modules/templates/infrastructur
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
+import { createAgentSockets, type AgentSockets } from "./agent-sockets.js";
+import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import { getLogger } from "../../core/logger.js";
 import { createAgentImageReader } from "./agent-image.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -49,6 +51,7 @@ import type {
 import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
+  extAuthzGate: ExtAuthzGate;
   agentStore: AgentStore;
   sandboxAddresses: SandboxAddresses;
   config: Config;
@@ -245,18 +248,17 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     },
   });
 
-  const server = serve(
-    { fetch: app.fetch, port: config.harnessServerPort },
-    () => {
-      process.stderr.write(
-        `harness-api listening on http://localhost:${config.harnessServerPort}\n`,
-      );
+  // No TCP listener: the harness port is reached only over the per-agent
+  // unix sockets, which the supervisor opens as each agent starts.
+  return createAgentSockets({
+    app,
+    runRoot: config.runRoot,
+    extAuthz: {
+      holdSeconds: config.approvalHoldSeconds,
+      gate: deps.extAuthzGate,
     },
-  );
-
-  server.on("upgrade", (_req, socket) => {
-    socket.destroy();
+    ...(config.gatewayUid !== undefined ? { gatewayUid: config.gatewayUid } : {}),
+    ...(config.gatewayGid !== undefined ? { gatewayGid: config.gatewayGid } : {}),
+    log: (message, fields) => getLogger().warn(fields ?? {}, message),
   });
-
-  return { server };
 }

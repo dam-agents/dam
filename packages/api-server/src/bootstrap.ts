@@ -180,6 +180,9 @@ import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createAgentStore } from "./modules/agents/infrastructure/agent-store.js";
+import { composeSandboxes } from "./modules/sandboxes/index.js";
+import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { gatewayOtelView } from "./modules/sandboxes/infrastructure/otel-view.js";
 import { startSandboxAddresses } from "./modules/agents/infrastructure/sandbox-addresses.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
@@ -1109,12 +1112,40 @@ export async function bootstrap() {
       : createUnavailableAgentUsageSummary(),
     wakeAgent: wakeAgentFor,
   };
-  const extAuthzDeps = {
-    port: config.extAuthzPort,
-    holdSeconds: config.approvalHoldSeconds,
-    gate: extAuthzGate,
-    releaseName: config.releaseName,
-  };
+  const harnessSockets = startHarnessApiServerApp({
+    ...harnessDeps,
+    extAuthzGate,
+  });
+
+  const { supervisor } = composeSandboxes({
+    store: agentStore,
+    secrets: secretStores.default(),
+    sockets: harnessSockets,
+    agentsRoot: config.agentsRoot,
+    runRoot: config.runRoot,
+    pkiRoot: config.pkiRoot,
+    gatewayPort: config.gatewayPort,
+    sandboxPort: config.sandboxPort,
+    defaultIdleTimeoutMs: config.agentIdleTimeoutMinutes * 60_000,
+    harnessAuthority: new URL(config.harnessServerUrl).host,
+    extAuthzHoldSeconds: config.approvalHoldSeconds,
+    ...(config.gatewayUid !== undefined ? { gatewayUid: config.gatewayUid } : {}),
+    ...(config.gatewayGid !== undefined ? { gatewayGid: config.gatewayGid } : {}),
+    ...(config.telemetryCollectorHost
+      ? {
+          telemetry: {
+            host: config.telemetryCollectorHost,
+            port: config.telemetryCollectorPort,
+          },
+        }
+      : {}),
+    otel: (agentId) => gatewayOtelView(agentId, config),
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
+  await supervisor.start();
+  // The change stream reconciles what users do; this catches what the node
+  // did behind our back — a sandbox that died, a reboot, a failed teardown.
+  await periodicJobs.register("sandbox-sweep", 60_000, () => supervisor.sweep());
 
   void telegramWorker?.resolveIdentity();
   liveEventsModule.startAgentWatch();
@@ -1139,10 +1170,12 @@ export async function bootstrap() {
     await schedulesBoot.close();
     await redisBus.close();
     turnAttendance.close();
+    await supervisor.stop();
+    await harnessSockets.closeAll();
     await chatSdkState?.disconnect().catch(() => {});
     await sharedRedis.quit().catch(() => {});
     await sql.end();
   };
 
-  return { apiServerDeps, harnessDeps, extAuthzDeps, cleanup };
+  return { apiServerDeps, cleanup };
 }

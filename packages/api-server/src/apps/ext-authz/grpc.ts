@@ -12,45 +12,34 @@ const GRPC_STATUS_OK = 0;
 const GRPC_STATUS_PERMISSION_DENIED = 7;
 
 export interface ExtAuthzGrpcAppDeps {
-  port: number;
   holdSeconds: number;
   gate: ExtAuthzGate;
-  releaseName: string;
 }
 
-export async function startExtAuthzGrpcApp(
+/**
+ * One ext_authz server per agent, on that agent's own unix socket.
+ *
+ * The agent id is bound here rather than parsed off `:authority`: the socket
+ * is created 0600 under the paired gateway's uid, so arriving on it is proof
+ * of which gateway is asking. That is the same guarantee the per-agent
+ * AuthorizationPolicy gave by matching the caller's SPIFFE principal, minus
+ * the mesh — and unlike the authority header, it is not something the caller
+ * can choose.
+ */
+export async function startExtAuthzSocket(
+  agentId: string,
+  socketPath: string,
   deps: ExtAuthzGrpcAppDeps,
-): Promise<{ server: grpc.Server }> {
+): Promise<grpc.Server> {
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
     "grpc.keepalive_permit_without_calls": 1,
   });
 
-  const expectedPrefix = `${deps.releaseName}-extauthz-`;
-
   const impl: AuthorizationServer = {
     check: async (call, callback) => {
       try {
-        const authority = call.getHost();
-        const agentId = parseInstanceFromAuthority(authority, expectedPrefix);
-        if (!agentId) {
-          securityLog("warn", "egress.decision", {
-            category: "egress",
-            actor: null,
-            actorKind: "agent",
-            surface: "ext-authz",
-            decision: "deny",
-            reason: "unparsable-authority",
-            detail: { authority },
-          });
-          callback(
-            null,
-            denied(`unable to derive instance from :authority='${authority}'`),
-          );
-          return;
-        }
-
         const httpReq = call.request.attributes?.request?.http;
         const sni = call.request.attributes?.tlsSession?.sni ?? null;
         const rawHost = httpReq?.host || sni;
@@ -99,33 +88,12 @@ export async function startExtAuthzGrpcApp(
 
   await new Promise<void>((res, rej) => {
     server.bindAsync(
-      `0.0.0.0:${deps.port}`,
+      `unix://${socketPath}`,
       grpc.ServerCredentials.createInsecure(),
-      (err) => {
-        if (err) {
-          rej(err);
-          return;
-        }
-        process.stderr.write(
-          `ext-authz gRPC listening on 0.0.0.0:${deps.port}\n`,
-        );
-        res();
-      },
+      (err) => (err ? rej(err) : res()),
     );
   });
-  return { server };
-}
-
-function parseInstanceFromAuthority(
-  authority: string,
-  expectedPrefix: string,
-): string | null {
-  if (!authority) return null;
-  const stripped = stripPort(authority);
-  const firstLabel = stripped.split(".")[0] ?? "";
-  if (!firstLabel.startsWith(expectedPrefix)) return null;
-  const id = firstLabel.slice(expectedPrefix.length);
-  return id || null;
+  return server;
 }
 
 function stripPort(host: string): string {

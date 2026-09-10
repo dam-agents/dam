@@ -21,6 +21,7 @@ export type SecuritySurface =
   | "telegram"
   | "scheduler"
   | "ext-authz"
+  | "harness"
   | "mcp"
   | "ws";
 

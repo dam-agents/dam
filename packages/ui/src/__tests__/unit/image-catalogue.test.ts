@@ -5,7 +5,6 @@ import type { TemplateView } from "../../types.js";
 
 function template(
   id: string,
-  vm: boolean,
   category: TemplateView["category"] = "harness",
 ): TemplateView {
   return {
@@ -13,50 +12,24 @@ function template(
     name: id,
     image: `${id}:latest`,
     category,
-    experimental: vm,
-    vm,
+    experimental: false,
   };
 }
 
 const CATALOGUE = [
-  template("claude-code", false),
-  template("codex", false),
-  template("claude-code-vm", true),
-  template("nous", false, "preconfigured"),
-  template("nous-vm", true, "preconfigured"),
+  template("claude-code"),
+  template("codex"),
+  template("nous", "preconfigured"),
 ];
 
 describe("imageCatalogue", () => {
-  it("hides VM-backed templates entirely when the feature is off", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, {
-      vmFeatureEnabled: false,
-    });
+  // TEST_SCENARIO: preconfigured images are picked elsewhere; letting one into the harness list offers it as a coding agent, which it is not.
+  it("leaves specialized images out of the only list it offers", () => {
+    const { harnesses } = imageCatalogue(CATALOGUE);
     expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
   });
 
-  it("mixes VM-backed templates in alongside container ones when on", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, {
-      vmFeatureEnabled: true,
-    });
-    expect(harnesses.map((t) => t.id)).toEqual([
-      "claude-code",
-      "codex",
-      "claude-code-vm",
-    ]);
-  });
-
-  it("leaves specialized images out of the only list it offers", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, { vmFeatureEnabled: true });
-    expect(harnesses.every((t) => t.category === "harness")).toBe(true);
-  });
-
-  it("is a no-op on an install that ships no VM templates", () => {
-    const containersOnly = CATALOGUE.filter((t) => !t.vm);
-    for (const vmFeatureEnabled of [false, true]) {
-      const { harnesses } = imageCatalogue(containersOnly, {
-        vmFeatureEnabled,
-      });
-      expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
-    }
+  it("is empty rather than undefined on an install that ships no templates", () => {
+    expect(imageCatalogue([]).harnesses).toEqual([]);
   });
 });
