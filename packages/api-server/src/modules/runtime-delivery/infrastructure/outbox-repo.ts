@@ -59,7 +59,7 @@ export interface ApplyTransitions {
 }
 
 export interface OutboxRepo {
-  getRow(agentId: string): Promise<OutboxRow | null>;
+  getRow(agentId: string, tx?: Db | DbTx): Promise<OutboxRow | null>;
   getRows(agentIds: string[]): Promise<OutboxRow[]>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -113,8 +113,8 @@ interface InternalRow {
 
 export function createOutboxRepo(db: Db): OutboxRepo {
   return {
-    async getRow(agentId): Promise<OutboxRow | null> {
-      const rows = (await db
+    async getRow(agentId, tx = db): Promise<OutboxRow | null> {
+      const rows = (await tx
         .select()
         .from(runtimeStateOutbox)
         .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
@@ -462,19 +462,22 @@ export interface AgentRuntimeStateRow {
 }
 
 export interface AgentsRuntimeRepo {
-  upsertHello(input: {
-    agentId: string;
-    protocolVersion: string;
-    capabilities: unknown;
-    agentRuntimeVersion: string;
-  }): Promise<{ previousCapabilities: unknown }>;
+  upsertHello(
+    input: {
+      agentId: string;
+      protocolVersion: string;
+      capabilities: unknown;
+      agentRuntimeVersion: string;
+    },
+    tx?: Db | DbTx,
+  ): Promise<{ previousCapabilities: unknown }>;
   get(agentId: string): Promise<AgentRuntimeStateRow | null>;
 }
 
 export function createAgentsRuntimeRepo(db: Db): AgentsRuntimeRepo {
   return {
-    async upsertHello(input): Promise<{ previousCapabilities: unknown }> {
-      return db.transaction(async (tx) => {
+    async upsertHello(input, tx): Promise<{ previousCapabilities: unknown }> {
+      const run = async (tx: Db | DbTx) => {
         const locked = await tx
           .select({ capabilities: agentsTable.runtimeCapabilities })
           .from(agentsTable)
@@ -490,7 +493,8 @@ export function createAgentsRuntimeRepo(db: Db): AgentsRuntimeRepo {
           })
           .where(eq(agentsTable.id, input.agentId));
         return { previousCapabilities: locked[0]?.capabilities ?? null };
-      });
+      };
+      return tx ? run(tx) : db.transaction(run);
     },
 
     async get(agentId): Promise<AgentRuntimeStateRow | null> {

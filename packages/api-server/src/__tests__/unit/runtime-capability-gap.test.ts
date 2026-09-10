@@ -12,6 +12,7 @@ import type {
 } from "../../modules/runtime-delivery/infrastructure/outbox-repo.js";
 import type { StateQueue } from "../../modules/runtime-delivery/infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "../../modules/runtime-delivery/services/snapshot-writer.js";
+import type { Tx } from "../../core/unit-of-work.js";
 import { outboxRow } from "../helpers/outbox-row.js";
 
 const AGENT = "agent-1";
@@ -51,6 +52,7 @@ async function runHello(
         enqueued.push({ agentId, ...opts });
       },
     } as unknown as StateQueue,
+    uow: async (fn) => fn({} as Tx),
     resolveOwner: async () => null,
     log: () => {},
   });

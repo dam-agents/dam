@@ -85,9 +85,7 @@ export function AgentRow({
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />
-          <UnsupportedContributionsBadge
-            kinds={agent.unsupportedContributionKinds}
-          />
+          <UnsupportedContributionsBadge agent={agent} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}

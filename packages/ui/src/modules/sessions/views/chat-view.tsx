@@ -872,9 +872,7 @@ function ChatHeaderStatus({
       {!busy && agent && (
         <>
           <ContributionFailuresBadge failures={agent.contributionFailures} />
-          <UnsupportedContributionsBadge
-            kinds={agent.unsupportedContributionKinds}
-          />
+          <UnsupportedContributionsBadge agent={agent} />
         </>
       )}
     </>

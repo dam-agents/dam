@@ -7,6 +7,7 @@ import type {
   RuntimeDeliveryService,
 } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createOutboxRepo,
   createAgentsRuntimeRepo,
@@ -130,6 +131,7 @@ export function composeRuntimeDelivery(
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
     queue,
+    uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
     log,
   });

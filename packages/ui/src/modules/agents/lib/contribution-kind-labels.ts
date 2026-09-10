@@ -1,4 +1,6 @@
-const CONTRIBUTION_KIND_LABELS: Record<string, string> = {
+import type { ContributionKind } from "api-server-api";
+
+const CONTRIBUTION_KIND_LABELS: Record<ContributionKind, string> = {
   env: "environment variables",
   "egress-allow": "network access",
   "egress-inject": "network credentials",
@@ -8,7 +10,7 @@ const CONTRIBUTION_KIND_LABELS: Record<string, string> = {
 };
 
 export function contributionKindLabel(kind: string): string {
-  return CONTRIBUTION_KIND_LABELS[kind] ?? kind;
+  return CONTRIBUTION_KIND_LABELS[kind as ContributionKind] ?? kind;
 }
 
 export function contributionKindList(kinds: string[]): string {
