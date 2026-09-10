@@ -4,7 +4,13 @@ import {
   OverflowMenuVertical,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type Ref,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -42,12 +48,14 @@ export function ChatArtifactsPanel({
   onToggle,
   className,
   style,
+  ref,
 }: {
   agentId: string | null;
   open: boolean;
   onToggle: () => void;
   className?: string;
   style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
 }) {
   const enabled = open && !!agentId;
   const { data: artifacts = [], isPending } = useArtifacts(
@@ -93,6 +101,7 @@ export function ChatArtifactsPanel({
       className={className}
       headerClassName="border-t border-border"
       style={style}
+      ref={ref}
     >
       {loading || artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">

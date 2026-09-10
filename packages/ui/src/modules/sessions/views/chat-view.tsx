@@ -101,12 +101,27 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import {
+  type SidebarPanelStack,
+  useSidebarPanels,
+} from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
-const SESSIONS_HEIGHT_KEY = "platform-sessions-h";
+
+function PanelDivider({
+  stack,
+  below,
+}: {
+  stack: SidebarPanelStack;
+  below: SidebarPanelId;
+}) {
+  const divider = stack.dividerProps(below);
+  return divider && <ResizeHandle orientation="vertical" {...divider} />;
+}
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -190,21 +205,11 @@ export function ChatView() {
   );
   const rightWRef = useRef(rightW);
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsH, setSessionsH] = useState(() =>
-    readPersistedNumber(SESSIONS_HEIGHT_KEY, 260),
-  );
-  const sessionsHRef = useRef(sessionsH);
-  const [resizingSections, setResizingSections] = useState(false);
-  const sectionTransition = resizingSections
-    ? undefined
-    : "transition-[flex] duration-200";
-  const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
-    flex: !open
-      ? "0 0 44px"
-      : fixedPx !== undefined
-        ? `0 0 ${fixedPx}px`
-        : "1 1 0%",
-  });
+  const panelStack = useSidebarPanels([
+    { id: "sessions", open: sessionsSectionOpen },
+    { id: "files", open: filesSectionOpen },
+    { id: "artifacts", open: artifactsSectionOpen },
+  ]);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -577,43 +582,23 @@ export function ChatView() {
           <SessionsSidebar
             open={sessionsSectionOpen}
             onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(
-              sessionsSectionOpen,
-              sessionsSectionOpen && filesSectionOpen ? sessionsH : undefined,
-            )}
+            {...panelStack.panelProps("sessions")}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
           />
-          {sessionsSectionOpen && filesSectionOpen && (
-            <ResizeHandle
-              orientation="vertical"
-              onResize={(d) => {
-                setResizingSections(true);
-                const v = Math.max(
-                  120,
-                  Math.min(600, sessionsHRef.current + d),
-                );
-                sessionsHRef.current = v;
-                writePersistedNumber(SESSIONS_HEIGHT_KEY, v);
-                setSessionsH(v);
-              }}
-              onDragEnd={() => setResizingSections(false)}
-            />
-          )}
+          <PanelDivider stack={panelStack} below="files" />
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(filesSectionOpen)}
+            {...panelStack.panelProps("files")}
             onOpenFile={openFileHandler}
           />
+          <PanelDivider stack={panelStack} below="artifacts" />
           <ChatArtifactsPanel
             agentId={selectedAgent}
             open={artifactsSectionOpen}
             onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(artifactsSectionOpen)}
+            {...panelStack.panelProps("artifacts")}
           />
         </div>
         <ResizeHandle
