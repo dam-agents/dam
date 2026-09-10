@@ -59,7 +59,10 @@ describe("artifact-kind detection", () => {
       detectKind({ fileName: "page.mdx", contentType: "text/markdown" }),
     ).toBe("markdown");
     expect(
-      detectKind({ fileName: "results.jsonl", contentType: "application/json" }),
+      detectKind({
+        fileName: "results.jsonl",
+        contentType: "application/json",
+      }),
     ).toBe("code");
     expect(
       detectKind({
@@ -68,9 +71,9 @@ describe("artifact-kind detection", () => {
         content: Buffer.from("plain notes"),
       }),
     ).toBe("text");
-    expect(
-      detectKind({ fileName: "big.rst", contentType: "text/plain" }),
-    ).toBe("text");
+    expect(detectKind({ fileName: "big.rst", contentType: "text/plain" })).toBe(
+      "text",
+    );
     expect(
       detectKind({ fileName: "chart.svg", contentType: "image/svg+xml" }),
     ).toBe("binary");
