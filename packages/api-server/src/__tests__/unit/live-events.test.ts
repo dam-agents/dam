@@ -33,8 +33,8 @@ function harness() {
   const module = composeLiveEventsModule({
     bus,
     log: (m) => warnings.push(m),
-    k8s: { watchCustomObjects: () => () => {} },
-    namespace: "test",
+    agentStore: { onChange: () => () => {} },
+    sandboxAddresses: { baseUrl: () => "10.64.0.2:8080" },
     agentsRepo: { list: async () => [] },
     runtimeFeaturesFor: async () => new Map(),
   });

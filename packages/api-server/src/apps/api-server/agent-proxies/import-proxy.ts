@@ -8,7 +8,7 @@ import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../../modules/agents/infrastructure/sandbox-addresses.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
 import type { ApiVariables } from "../deps.js";
 
@@ -31,7 +31,7 @@ const PROXY_HOP_BY_HOP_HEADERS = new Set([
 ]);
 
 export interface ImportProxyDeps {
-  namespace: string;
+  addresses: SandboxAddresses;
   maxImportBundleBytes: number;
   verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<unknown>;
@@ -124,7 +124,7 @@ export function createImportProxy(deps: ImportProxyDeps) {
       );
     }
     const upstreamUrl = new URL(
-      `http://${podBaseUrl(agentId, deps.namespace)}/api/import`,
+      `http://${deps.addresses.baseUrl(agentId)}/api/import`,
     );
     const outHeaders: Record<string, string> = {};
     c.req.raw.headers.forEach((v, k) => {

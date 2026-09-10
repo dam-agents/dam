@@ -99,7 +99,6 @@ export interface TemplateView {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
-  vm: boolean;
   size?: { cpu?: string; memory?: string };
 }
 
@@ -130,7 +129,7 @@ export interface AgentView {
   overBudget: boolean;
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
-  podTerminationReason?: string;
+  sandboxTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   channels: (

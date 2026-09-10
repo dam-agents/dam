@@ -6,7 +6,7 @@ import {
   type ConnectionsService,
   type TemplatesService,
 } from "api-server-api";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 import {
   concreteResources,
   type DefaultResourceLimits,
@@ -23,7 +23,7 @@ import { securityLog } from "../../core/security-log.js";
 import { resolveAgent } from "./agent-auth.js";
 
 export interface InvocationEndpointsDeps {
-  k8s: K8sClient;
+  agentStore: AgentStore;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
@@ -37,7 +37,7 @@ export function mountInvocationRoutes(
 ): void {
   app.post("/api/agents/:id/invocations", async (c) => {
     const driverId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     let body: z.infer<typeof spawnInvocationRequestSchema>;
@@ -124,7 +124,7 @@ export function mountInvocationRoutes(
   app.get("/api/agents/:id/invocations/:invocationId", async (c) => {
     const driverId = c.req.param("id")!;
     const invocationId = c.req.param("invocationId")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     const view = await deps
@@ -136,7 +136,7 @@ export function mountInvocationRoutes(
 
   app.get("/api/agents/:id/connections", async (c) => {
     const driverId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     const conns = deps.connectionsServiceFor(verified.owner);
@@ -153,7 +153,7 @@ export function mountInvocationRoutes(
 
   app.get("/api/agents/:id/images", async (c) => {
     const driverId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     const templates = await deps.templates.list();
@@ -170,7 +170,7 @@ export function mountInvocationRoutes(
 
   app.get("/api/agents/:id/budget", async (c) => {
     const driverId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     const reserved = await deps.budgetsFor(verified.owner).reserved();

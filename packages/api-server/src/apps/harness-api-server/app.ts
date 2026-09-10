@@ -1,5 +1,4 @@
 import { serve } from "@hono/node-server";
-import type { CoreV1Api } from "@kubernetes/client-node";
 import type {
   AgentsService,
   ConnectionsService,
@@ -8,8 +7,8 @@ import type {
 } from "api-server-api";
 import type { Db } from "db";
 import type { RuntimeProgressPort } from "../../modules/agents/index.js";
-import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
+import type { SandboxAddresses } from "../../modules/agents/infrastructure/sandbox-addresses.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
@@ -33,7 +32,7 @@ import {
   composeKbShareServing,
 } from "../../modules/kb-shares/index.js";
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
-import { createKubernetesSecretStore } from "../../modules/secret-store/index.js";
+import { createFileSecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
@@ -50,9 +49,9 @@ import type {
 import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
-  agentStateCache: AgentStateCache;
+  agentStore: AgentStore;
+  sandboxAddresses: SandboxAddresses;
   config: Config;
-  api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
   seedSources: SkillSourceSeed[];
@@ -74,7 +73,6 @@ export interface HarnessApiServerAppDeps {
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const {
     config,
-    api,
     db,
     channelManager,
     seedSources,
@@ -93,7 +91,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeProgress,
   } = deps;
 
-  const k8sClient = createK8sClient(api, config.namespace);
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
 
@@ -112,7 +109,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           memory: config.agentDefaultMemoryLimit,
         },
         gate: composeSpawnSizeGate({
-          k8s: k8sClient,
+          db,
           owner,
           defaultCeiling: {
             cpu: config.defaultUserCpuBudget,
@@ -131,16 +128,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
-  const harnessAgentsRepo = createAgentsRepository(
-    k8sClient,
-    deps.agentStateCache,
-  );
+  const harnessAgentsRepo = createAgentsRepository(deps.agentStore);
   const kbShareOpsFor = (owner: string) =>
     composeKbShareAgentOps({
       owner,
       db,
       agents: agentsServiceFor(owner),
-      namespace: config.namespace,
+      sandboxAddresses: deps.sandboxAddresses,
       store: artifacts,
       ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
       workspace: {
@@ -162,11 +156,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   };
 
   const connectionsRepo = createConnectionsRepository(db);
-  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
+  const secretStore = createFileSecretStore({ root: config.secretStoreRoot });
   const kbMcp = composeKbShareServing({
     db,
     store: artifacts,
-    k8s: k8sClient,
+    agentStore: deps.agentStore,
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
   const kbPublishGate = composeKbPublishGate({
@@ -181,16 +175,16 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
 
   const app = createHarnessRouter({
     channelManager,
-    k8s: k8sClient,
+    agentStore: deps.agentStore,
+    addresses: deps.sandboxAddresses,
     runtimeHello,
     sessionDirectory,
     kbPublishGate,
     composeSkills: (owner) =>
       composeSkillsModule({
-        agentStateCache: deps.agentStateCache,
+        agentStore: deps.agentStore,
+        sandboxAddresses: deps.sandboxAddresses,
         surface: "mcp",
-        api,
-        namespace: config.namespace,
         owner,
         db,
         seedSources,
@@ -220,7 +214,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     kbShareOpsFor,
     agentHome: config.agentHome,
     agentKb: {
-      k8s: k8sClient,
+      agentStore: deps.agentStore,
       kbMcp,
       connections: connectionsRepo,
       secretStore,
@@ -228,12 +222,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
-    agentImage: createAgentImageReader(k8sClient),
+    agentImage: createAgentImageReader(deps.agentStore),
     usageSummary,
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({
-        k8s: k8sClient,
+        db,
         owner,
         listAgents: () => harnessAgentsRepo.list(owner),
         defaultCeiling: {

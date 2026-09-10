@@ -89,7 +89,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
   app.all(
     "/api/agents/:id/trpc/*",
     createAgentTrpcProxy({
-      namespace: config.namespace,
+      addresses: deps.sandboxAddresses,
       verifyOwner,
       ensureReady,
     }),
@@ -97,7 +97,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
   app.post(
     "/api/agents/:id/import",
     createImportProxy({
-      namespace: config.namespace,
+      addresses: deps.sandboxAddresses,
       maxImportBundleBytes: config.maxImportBundleBytes,
       verifyOwner,
       ensureReady,
@@ -132,24 +132,24 @@ export function startApiServerApp(deps: ApiServerDeps) {
     surfaceAttribution: deps.surfaceAttribution,
   });
   const acpRelay = createAcpRelay(
-    config.namespace,
+    deps.sandboxAddresses,
     deps.agentsRepo,
     deps.approvalsRelay,
     deps.sessionPresence,
   );
   const terminalRelay = createTerminalRelay(
-    config.namespace,
+    deps.sandboxAddresses,
     deps.agentsRepo,
     deps.sessionPresence,
     deps.redisBus,
   );
   const sshRelay = createSshRelay(
-    config.namespace,
+    deps.sandboxAddresses,
     deps.agentsRepo,
     deps.sessionPresence,
   );
   const agentTrpcRelay = createAgentTrpcRelay(
-    config.namespace,
+    deps.sandboxAddresses,
     deps.agentsRepo,
   );
 

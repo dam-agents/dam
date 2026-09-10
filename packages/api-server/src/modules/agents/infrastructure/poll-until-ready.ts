@@ -1,4 +1,4 @@
-import type { AgentChangeSubscription } from "./agent-state-cache.js";
+import type { AgentChangeSubscription } from "./agent-store.js";
 
 const MIN_WAKE_GAP_MS = 50;
 

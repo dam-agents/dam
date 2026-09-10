@@ -28,7 +28,7 @@ export interface UsageModuleDeps {
   subPseudonymizer: SubPseudonymizer;
   activityTrackingEnabled: boolean;
   inspectorRole: string;
-  listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
+  listAgentIdentities: () => Promise<{ id: string; owner: string }[]>;
 }
 
 type AppEnv = {
@@ -77,7 +77,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       upsertActorRole: upsertRole,
     });
     bootstrapAgents({
-      listIdentities: deps.listK8sAgents,
+      listIdentities: deps.listAgentIdentities,
       upsertAgent: upsertAgentRow,
     }).catch((err) => {
       process.stderr.write(

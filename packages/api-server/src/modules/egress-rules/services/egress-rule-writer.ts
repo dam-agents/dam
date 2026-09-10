@@ -4,7 +4,7 @@ import type {
   NewEgressRule,
 } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
-import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
+import type { AgentL7HostsPort } from "../infrastructure/agent-l7-hosts-port.js";
 
 export interface CreateEgressRuleWriterDeps {
   repo: EgressRulesRepository;

@@ -26,7 +26,7 @@ describe("classifyWakeFailure", () => {
     {
       name: "Ready still Hibernated → scale-up never observed",
       snapshot: { ...base, hibernated: true },
-      expected: { kind: "hibernated-not-scaled" },
+      expected: { kind: "hibernated-not-started" },
     },
     {
       name: "Reconciled=False → reconcile-error with message",
@@ -42,7 +42,7 @@ describe("classifyWakeFailure", () => {
       snapshot: {
         ...base,
         error: "reconcile agent: backoff limit exceeded",
-        reconciledReason: "BackoffLimitExceeded",
+        errorReason: "BackoffLimitExceeded",
       },
       expected: {
         kind: "reconcile-error",
@@ -51,63 +51,51 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
-      name: "ImagePullFailure → agent-pod-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "ImagePullFailure" },
+      name: "ImagePullFailure → sandbox-failed",
+      snapshot: { ...base, sandboxNotReadyReason: "ImagePullFailure" },
       expected: {
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "ImagePullFailure",
       },
     },
     {
-      name: "OutOfMemory → agent-pod-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "OutOfMemory" },
-      expected: { kind: "agent-pod-failed", terminationReason: "OutOfMemory" },
+      name: "OutOfMemory → sandbox-failed",
+      snapshot: { ...base, sandboxNotReadyReason: "OutOfMemory" },
+      expected: { kind: "sandbox-failed", terminationReason: "OutOfMemory" },
     },
     {
-      name: "ContainerTerminated → agent-pod-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "ContainerTerminated" },
+      name: "ContainerTerminated → sandbox-failed",
+      snapshot: { ...base, sandboxNotReadyReason: "ContainerTerminated" },
       expected: {
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "ContainerTerminated",
       },
     },
     {
       name: "plain PodNotReady → progressing (slow pull, attach, probes)",
-      snapshot: { ...base, agentPodNotReadyReason: "PodNotReady" },
-      expected: { kind: "agent-pod-not-ready" },
+      snapshot: { ...base, sandboxNotReadyReason: "PodNotReady" },
+      expected: { kind: "sandbox-not-ready" },
     },
     {
       name: "agent pod fine, gateway False → gateway-not-ready",
-      snapshot: { ...base, gatewayPodReady: false },
+      snapshot: { ...base, gatewayReady: false },
       expected: { kind: "gateway-not-ready" },
     },
     {
-      name: "StuckOnSupersededRevision → gateway-pod-failed",
+      name: "gateway OutOfMemory → gateway-failed",
       snapshot: {
         ...base,
-        gatewayPodReady: false,
-        gatewayPodNotReadyReason: "StuckOnSupersededRevision",
+        gatewayReady: false,
+        gatewayNotReadyReason: "OutOfMemory",
       },
-      expected: {
-        kind: "gateway-pod-failed",
-        gatewayReason: "StuckOnSupersededRevision",
-      },
-    },
-    {
-      name: "gateway OutOfMemory → gateway-pod-failed",
-      snapshot: {
-        ...base,
-        gatewayPodReady: false,
-        gatewayPodNotReadyReason: "OutOfMemory",
-      },
-      expected: { kind: "gateway-pod-failed", gatewayReason: "OutOfMemory" },
+      expected: { kind: "gateway-failed", gatewayReason: "OutOfMemory" },
     },
     {
       name: "gateway plain PodNotReady → still progressing",
       snapshot: {
         ...base,
-        gatewayPodReady: false,
-        gatewayPodNotReadyReason: "PodNotReady",
+        gatewayReady: false,
+        gatewayNotReadyReason: "PodNotReady",
       },
       expected: { kind: "gateway-not-ready" },
     },
@@ -129,7 +117,7 @@ describe("classifyWakeFailure", () => {
       classifyWakeFailure({
         ...base,
         error: "boom",
-        agentPodNotReadyReason: "ImagePullFailure",
+        sandboxNotReadyReason: "ImagePullFailure",
       }).kind,
     ).toBe("reconcile-error");
   });
@@ -139,10 +127,10 @@ describe("wakeFailureReasonToken", () => {
   it("appends the termination reason for pod failures", () => {
     expect(
       wakeFailureReasonToken({
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "ImagePullFailure",
       }),
-    ).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
+    ).toBe("wake-timeout:sandbox-failed:ImagePullFailure");
   });
 
   it("uses the kind for everything else", () => {
@@ -154,16 +142,16 @@ describe("wakeFailureReasonToken", () => {
 
 describe("isTransientWakeFailure", () => {
   it("marks progressing classes transient and hard causes not", () => {
-    expect(isTransientWakeFailure({ kind: "agent-pod-not-ready" })).toBe(true);
+    expect(isTransientWakeFailure({ kind: "sandbox-not-ready" })).toBe(true);
     expect(isTransientWakeFailure({ kind: "gateway-not-ready" })).toBe(true);
     expect(isTransientWakeFailure({ kind: "unknown" })).toBe(true);
     expect(isTransientWakeFailure({ kind: "not-found" })).toBe(false);
-    expect(isTransientWakeFailure({ kind: "hibernated-not-scaled" })).toBe(
+    expect(isTransientWakeFailure({ kind: "hibernated-not-started" })).toBe(
       false,
     );
     expect(
       isTransientWakeFailure({
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "OutOfMemory",
       }),
     ).toBe(false);
@@ -176,8 +164,8 @@ describe("isTransientWakeFailure", () => {
     ).toBe(false);
     expect(
       isTransientWakeFailure({
-        kind: "gateway-pod-failed",
-        gatewayReason: "StuckOnSupersededRevision",
+        kind: "gateway-failed",
+        gatewayReason: "OutOfMemory",
       }),
     ).toBe(false);
   });
@@ -190,7 +178,7 @@ describe("AgentWakeTimeoutError", () => {
       timeoutMs: 120_000,
       durationMs: 120_400,
       failure: {
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "ImagePullFailure",
       },
     });

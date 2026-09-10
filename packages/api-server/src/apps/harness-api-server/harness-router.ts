@@ -18,7 +18,8 @@ import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import type { ArtifactTouchService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../modules/agents/infrastructure/sandbox-addresses.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
@@ -30,7 +31,8 @@ import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
-  k8s: K8sClient;
+  agentStore: AgentStore;
+  addresses: SandboxAddresses;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -56,7 +58,8 @@ export function createHarnessRouter(deps: {
 
   mountMcpRoutes(app, {
     channelManager: deps.channelManager,
-    k8s: deps.k8s,
+    agentStore: deps.agentStore,
+    addresses: deps.addresses,
     composeSkills: deps.composeSkills,
     schedulesServiceFor: deps.schedulesServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
@@ -72,7 +75,7 @@ export function createHarnessRouter(deps: {
   });
   mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {
-    k8s: deps.k8s,
+    agentStore: deps.agentStore,
     invocationsServiceFor: deps.invocationsServiceFor,
     connectionsServiceFor: deps.connectionsServiceFor,
     templates: deps.templates,
@@ -80,11 +83,11 @@ export function createHarnessRouter(deps: {
     defaultLimits: deps.defaultLimits,
   });
   mountExperimentRoutes(app, {
-    k8s: deps.k8s,
+    agentStore: deps.agentStore,
     experimentsServiceFor: deps.experimentsServiceFor,
   });
   mountRuntimeTrpc(app, {
-    k8s: deps.k8s,
+    agentStore: deps.agentStore,
     hello: deps.runtimeHello,
     sessionDirectory: deps.sessionDirectory,
     artifactTouchesFor: (owner): ArtifactTouchService => ({

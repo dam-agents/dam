@@ -21,12 +21,6 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Reveals the pre-release connection catalog (Google services, Spotify, YouTube, custom client-credentials).",
   },
   {
-    id: "vm-sandboxes",
-    label: "VM sandboxes",
-    description:
-      "Reveals images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container, in the coding agent’s image list.",
-  },
-  {
     id: "session-costs",
     label: "Session costs",
     description:

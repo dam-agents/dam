@@ -42,7 +42,6 @@ import type { ApiServerDeps } from "../deps.js";
 export function createApiContextFactory(boot: ApiServerDeps) {
   const {
     config,
-    api,
     db,
     channelManager,
     telegramBindFlows,
@@ -64,7 +63,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     terms,
     e2e,
     artifacts,
-    k8sClient,
     agentsRepo,
     templatesRepo,
     reposService,
@@ -92,7 +90,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
     });
     const { budgets, resizeGate } = composeBudgetsModule({
-      k8s: k8sClient,
+      db,
       owner: user.sub,
       listAgents: () => agentsRepo.list(user.sub),
       defaultCeiling: {
@@ -105,15 +103,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
-      api,
-      agentStateCache: boot.agentStateCache,
-      namespace: config.namespace,
+      agentStore: boot.agentStore,
+      sandboxAddresses: boot.sandboxAddresses,
+      registryAuthRoot: config.registryAuthRoot,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
       },
-      virtualizationEnabled: config.virtualizationEnabled,
       resizeGate,
       owner: user.sub,
       db,
@@ -181,7 +178,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       db,
       agents,
-      namespace: config.namespace,
+      sandboxAddresses: boot.sandboxAddresses,
       store: artifacts,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       workspace: {
@@ -225,10 +222,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
     });
     const skills = composeSkillsModule({
-      agentStateCache: boot.agentStateCache,
+      agentStore: boot.agentStore,
+      sandboxAddresses: boot.sandboxAddresses,
       surface,
-      api,
-      namespace: config.namespace,
       owner: user.sub,
       db,
       seedSources,
@@ -239,7 +235,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
-    const l7Hosts = createAgentL7HostsPort(k8sClient);
+    const l7Hosts = createAgentL7HostsPort(boot.agentStore);
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -259,11 +255,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       wrapperFrameSender,
     });
     const files = composeFilesModule(
-      api,
-      config.namespace,
+      boot.agentStore,
+      boot.sandboxAddresses,
       user.sub,
       surface,
-      boot.agentStateCache,
     );
     const apiKeys = apiKeysModule.createService({
       ownerSub: user.sub,

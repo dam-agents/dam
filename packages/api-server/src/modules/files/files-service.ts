@@ -1,24 +1,19 @@
-import type * as k8s from "@kubernetes/client-node";
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import { TRPCError } from "@trpc/server";
 import type { AppRouter as AgentRuntimeRouter } from "agent-runtime-api";
 import type { FilesService } from "api-server-api";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
 import { createAgentsRepository } from "../agents/index.js";
-import { createK8sClient, podBaseUrl } from "../agents/infrastructure/k8s.js";
-import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
+import type { AgentStore } from "../agents/infrastructure/agent-store.js";
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 
 export function composeFilesModule(
-  api: k8s.CoreV1Api,
-  namespace: string,
+  agentStore: AgentStore,
+  sandboxAddresses: SandboxAddresses,
   ownerSub: string,
   surface: string,
-  agentStateCache: AgentStateCache,
 ): FilesService {
-  const agentsRepo = createAgentsRepository(
-    createK8sClient(api, namespace),
-    agentStateCache,
-  );
+  const agentsRepo = createAgentsRepository(agentStore);
   return {
     async upload(input) {
       if (!(await agentsRepo.isOwnedBy(input.agentId, ownerSub))) {
@@ -37,7 +32,7 @@ export function composeFilesModule(
       const runtime = createTRPCClient<AgentRuntimeRouter>({
         links: [
           httpBatchLink({
-            url: `http://${podBaseUrl(input.agentId, namespace)}/api/trpc`,
+            url: `http://${sandboxAddresses.baseUrl(input.agentId)}/api/trpc`,
           }),
         ],
       });

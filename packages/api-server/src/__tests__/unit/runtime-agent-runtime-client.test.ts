@@ -36,7 +36,7 @@ describe("agent-runtime client deadline", () => {
    *  pod from production. The call rejects on the deadline. */
   it("gives up on an agent that never answers", async () => {
     const base = await serverThatNeverAnswers();
-    const client = createAgentRuntimeClient("agent-wedged", "ns", {
+    const client = createAgentRuntimeClient("agent-wedged", { baseUrl: () => "10.64.0.2:8080" }, {
       fetch: (_input, init) => fetch(`${base}/api/trpc`, init as RequestInit),
       timeoutMs: 50,
     });

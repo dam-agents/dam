@@ -179,7 +179,7 @@ describe("slack turn presentation — owner turns", () => {
             agentId: "agent-1",
             timeoutMs: 120_000,
             durationMs: 120_100,
-            failure: { kind: "agent-pod-not-ready" },
+            failure: { kind: "sandbox-not-ready" },
           });
         }
       },
@@ -1098,7 +1098,7 @@ describe("slack turn — network-access framing and attendance", () => {
           agentId: "agent-1",
           timeoutMs: 120_000,
           durationMs: 120_100,
-          failure: { kind: "agent-pod-not-ready" },
+          failure: { kind: "sandbox-not-ready" },
         });
       },
     });

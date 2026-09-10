@@ -1,7 +1,7 @@
 import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
-import type { AgentSpecCR } from "../../crd-types.gen.js";
+import type { AgentSpecCR } from "./agent-spec.js";
 import type {
   agentCreateInputSchema,
   agentKindSchema,
@@ -57,7 +57,7 @@ export interface Agent {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
-  podTerminationReason?: string;
+  sandboxTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   channels: ChannelConfig[];

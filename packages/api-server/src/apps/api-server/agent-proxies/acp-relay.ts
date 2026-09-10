@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../../modules/agents/infrastructure/sandbox-addresses.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
@@ -108,7 +108,7 @@ function connectUpstream(url: string): Promise<WebSocket> {
 }
 
 export function createAcpRelay(
-  namespace: string,
+  addresses: SandboxAddresses,
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
@@ -241,7 +241,7 @@ export function createAcpRelay(
         pending.length = 0;
       });
 
-      const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp${
+      const upstreamUrl = `ws://${addresses.baseUrl(agentId)}/api/acp${
         passive ? "?passive=1" : ""
       }`;
 

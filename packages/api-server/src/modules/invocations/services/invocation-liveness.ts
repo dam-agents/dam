@@ -8,8 +8,8 @@ export interface InvocationLivenessSweep {
 const RESULT_RETENTION_MS = 10 * 60 * 1000;
 
 export interface TargetRestartState {
-  podRestarts: number;
-  podRestartReason?: string;
+  sandboxRestarts: number;
+  sandboxRestartReason?: string;
 }
 
 export interface CreateInvocationLivenessSweepDeps {
@@ -59,10 +59,10 @@ export function createInvocationLivenessSweep(
       for (const row of stillRunning) {
         try {
           const restart = await deps.readTargetRestart(row.id);
-          if (restart && restart.podRestarts > 0) {
+          if (restart && restart.sandboxRestarts > 0) {
             await failAndReap(
               row,
-              `target pod restarted${restart.podRestartReason ? ` (${restart.podRestartReason})` : ""}; one-shot turn cannot resume`,
+              `target sandbox restarted${restart.sandboxRestartReason ? ` (${restart.sandboxRestartReason})` : ""}; one-shot turn cannot resume`,
             );
           }
         } catch (err) {

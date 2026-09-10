@@ -6,7 +6,7 @@ import {
   finishRequestSchema,
   type ExperimentsService,
 } from "api-server-api";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 import {
   CustomDataTooLargeError,
   ExperimentClosedError,
@@ -16,7 +16,7 @@ import {
 import { resolveAgent } from "./agent-auth.js";
 
 export interface ExperimentEndpointsDeps {
-  k8s: K8sClient;
+  agentStore: AgentStore;
   experimentsServiceFor: (owner: string) => ExperimentsService;
 }
 
@@ -47,7 +47,7 @@ export function mountExperimentRoutes(
 ): void {
   app.post("/api/agents/:id/experiments/plan", async (c) => {
     const driverId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     let body: z.infer<typeof planRegisterRequestSchema>;
@@ -66,7 +66,7 @@ export function mountExperimentRoutes(
   app.post("/api/agents/:id/experiments/:experimentId/events", async (c) => {
     const driverId = c.req.param("id")!;
     const experimentId = c.req.param("experimentId")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     try {
@@ -83,7 +83,7 @@ export function mountExperimentRoutes(
   app.post("/api/agents/:id/experiments/:experimentId/finish", async (c) => {
     const driverId = c.req.param("id")!;
     const experimentId = c.req.param("experimentId")!;
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.agentStore, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     try {

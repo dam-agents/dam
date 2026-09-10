@@ -1,30 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
 import { createAgentArtifactsSweeper } from "../../sagas/agent-artifacts-sweeper.js";
 import { events$, ofType, EventType, type AgentDeleted } from "../../events.js";
-import type {
-  K8sClient,
-  KubeObject,
-} from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 
-function fakeK8s(
+function fakeStore(
   liveAgents: string[],
   opts: { appearsAfterList?: string[] } = {},
-): K8sClient {
+): AgentStore {
   const present = new Set([...liveAgents, ...(opts.appearsAfterList ?? [])]);
+  const record = (id: string) => ({ id, owner: "owner", annotations: {} });
   return {
-    listCustomObjects: async () =>
-      liveAgents.map((name) => ({ metadata: { name } }) as KubeObject),
-    getCustomObject: async (_plural: string, name: string) =>
-      present.has(name) ? ({ metadata: { name } } as KubeObject) : null,
-  } as unknown as K8sClient;
+    list: async () => liveAgents.map(record),
+    get: async (id: string) => (present.has(id) ? record(id) : null),
+  } as unknown as AgentStore;
 }
 
 describe("agent-artifacts-sweeper", () => {
-  it("deletes only orphans (agent_ids present in DB but missing in K8s)", async () => {
+  it("deletes only orphans (agent_ids present in DB but missing in the store)", async () => {
     const cleaned: Array<{ source: string; id: string }> = [];
 
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-live-1", "agent-live-2"]),
+      agentStore: fakeStore(["agent-live-1", "agent-live-2"]),
       sources: [
         {
           name: "egress",
@@ -62,7 +58,7 @@ describe("agent-artifacts-sweeper", () => {
   it("respects batchSize per tick", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([]),
+      agentStore: fakeStore([]),
       sources: [
         {
           name: "egress",
@@ -87,7 +83,7 @@ describe("agent-artifacts-sweeper", () => {
     const cleaned: string[] = [];
 
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([]),
+      agentStore: fakeStore([]),
       sources: [
         {
           name: "egress",
@@ -123,7 +119,7 @@ describe("agent-artifacts-sweeper", () => {
   it("skips a candidate whose Agent exists by the time it is reaped", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([], { appearsAfterList: ["agent-new"] }),
+      agentStore: fakeStore([], { appearsAfterList: ["agent-new"] }),
       sources: [
         {
           name: "usage-agents",
@@ -156,7 +152,7 @@ describe("agent-artifacts-sweeper", () => {
         order.push(`deleted:${e.agentId}:${e.ownerSub ?? "?"}`);
       });
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-live"], { appearsAfterList: ["agent-new"] }),
+      agentStore: fakeStore(["agent-live"], { appearsAfterList: ["agent-new"] }),
       sources: [
         {
           name: "egress",
@@ -189,7 +185,7 @@ describe("agent-artifacts-sweeper", () => {
   it("is a no-op when there are no orphans", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-1"]),
+      agentStore: fakeStore(["agent-1"]),
       sources: [
         {
           name: "egress",

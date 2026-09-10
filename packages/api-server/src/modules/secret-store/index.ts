@@ -7,5 +7,5 @@ export type {
   SecretStore,
   SecretStoreRegistry,
 } from "./services/secret-store.js";
-export { createKubernetesSecretStore } from "./infrastructure/k8s-secret-store.js";
-export type { KubernetesSecretStoreOpts } from "./infrastructure/k8s-secret-store.js";
+export { createFileSecretStore } from "./infrastructure/file-secret-store.js";
+export type { FileSecretStoreOpts } from "./infrastructure/file-secret-store.js";

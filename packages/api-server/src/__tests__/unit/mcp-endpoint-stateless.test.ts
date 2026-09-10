@@ -7,7 +7,7 @@ import {
 
 vi.mock("../../core/security-log.js", () => ({ securityLog: () => {} }));
 
-// TEST_OVERVIEW: the per-agent MCP endpoint must be stateless, so that any api-server replica can serve any harness call. The waypoint in front of the api-server load-balances every request on its own, so an endpoint holding streamable-HTTP sessions in process answers only the requests that happen to reach the replica holding the session; the harness then comes up without its outbound tools, and a Slack turn runs to the end and posts nothing, because a reply reaches Slack only through the reply tool. Each mounted app here stands for one replica — mountMcpRoutes carries whatever per-process state the endpoint keeps.
+// TEST_OVERVIEW: the per-agent MCP endpoint must be stateless — it mints no streamable-HTTP session id and builds a server per request. A harness reconnects (and the api-server restarts) far more often than it re-initializes, and an endpoint holding the session in process answers those later calls with "unknown session": the harness then runs a turn with no outbound tools, and a Slack turn finishes having posted nothing, because a reply reaches Slack only through the reply tool. Each mounted app here stands for a fresh process — mountMcpRoutes carries whatever in-process state the endpoint keeps.
 
 const AGENT = "agent-1";
 const URL_ = `http://harness/api/agents/${AGENT}/mcp`;
@@ -19,16 +19,16 @@ function replica() {
       supportsUserLookup: async () => false,
       supportsMessageReactions: async () => false,
     },
-    k8s: {
-      namespace: "platform",
-      getCustomObject: async () => ({
-        metadata: {
-          labels: { "agent-platform.ai/owner": "owner-1" },
-          uid: "u",
-        },
+    agentStore: {
+      get: async (id: string) => ({
+        id,
+        owner: "owner-1",
+        annotations: {},
         spec: {},
+        status: {},
       }),
     },
+    addresses: { baseUrl: () => "10.64.0.2:8080" },
     composeSkills: () => ({}),
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),

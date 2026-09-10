@@ -9,7 +9,7 @@ import type {
 } from "api-server-api";
 import type { AppRouter as MockAppRouter } from "mock-agent-api";
 import WS from "ws";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../agents/infrastructure/sandbox-addresses.js";
 
 export interface SlackE2eControl {
   fireMention(event: SlackFireMentionInput): Promise<void>;
@@ -20,7 +20,7 @@ export interface SlackE2eControl {
 }
 
 export function createE2eService(deps: {
-  namespace: string;
+  addresses: SandboxAddresses;
   slack?: SlackE2eControl;
 }): E2eService {
   function requireSlack(): SlackE2eControl {
@@ -39,7 +39,7 @@ export function createE2eService(deps: {
       client: ReturnType<typeof createTRPCClient<MockAppRouter>>,
     ) => Promise<T>,
   ): Promise<T> {
-    const url = `ws://${podBaseUrl(agentId, deps.namespace)}/api/acp`;
+    const url = `ws://${deps.addresses.baseUrl(agentId)}/api/acp`;
     const wsClient = createWSClient({
       url,
       WebSocket: WS as unknown as typeof WebSocket,

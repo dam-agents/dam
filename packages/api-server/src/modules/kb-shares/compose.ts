@@ -1,3 +1,4 @@
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 import type { Db } from "db";
 import type {
   AgentsService,
@@ -93,7 +94,7 @@ export function composeKbPublishGate(opts: {
 
 function composeNudge(opts: {
   db: Db;
-  namespace: string;
+  sandboxAddresses: SandboxAddresses;
   ensureReady: (agentId: string) => Promise<void>;
   publishLimits?: Partial<KbSharePublishLimits>;
 }): KbShareFlushNudge {
@@ -103,7 +104,7 @@ function composeNudge(opts: {
     ensureReady: opts.ensureReady,
     getRuntimeCapabilities: (agentId) =>
       runtimeRepo.get(agentId).then((r) => r?.runtimeCapabilities ?? null),
-    pod: createKbPublishPodClient(opts.namespace),
+    pod: createKbPublishPodClient(opts.sandboxAddresses),
     repo: {
       claimPublish: claimPublish(opts.db),
       finishPublishFailure: finishPublishFailure(opts.db),
@@ -131,7 +132,7 @@ interface ComposeShareServiceOpts {
   owner: string;
   db: Db;
   agents: Pick<AgentsService, "get">;
-  namespace: string;
+  sandboxAddresses: SandboxAddresses;
   store: KbShareStorePort;
   ensureReady: (agentId: string) => Promise<void>;
   workspace: WorkspaceLocation;
@@ -163,7 +164,7 @@ function composeShareService(opts: ComposeShareServiceOpts): KbSharesService {
     unconfigurePod: (agentId) => nudge.unconfigure(agentId),
     defaultRootsForKbTemplate: defaultShareRootsForKbTemplate,
     listWorkspaceRoots: makeListWorkspaceRoots(
-      createAgentFilesClient(opts.namespace),
+      createAgentFilesClient(opts.sandboxAddresses),
       workspacePrefix,
     ),
     objectStoreConfigured: opts.objectStoreConfigured,
@@ -221,11 +222,11 @@ export function createKbShareResolver(db: Db): (
 
 export function startKbShareSync(opts: {
   db: Db;
-  namespace: string;
+  sandboxAddresses: SandboxAddresses;
 }): KbShareSyncSaga {
   const nudge = composeNudge({
     db: opts.db,
-    namespace: opts.namespace,
+    sandboxAddresses: opts.sandboxAddresses,
     ensureReady: async () => {},
   });
   return startKbShareSyncSaga({

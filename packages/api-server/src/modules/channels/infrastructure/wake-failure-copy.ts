@@ -4,7 +4,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
   switch (c.kind) {
     case "not-found":
       return "This agent no longer exists — it may have been deleted.";
-    case "hibernated-not-scaled":
+    case "hibernated-not-started":
       return (
         "The agent couldn't be woken — the platform never started it. " +
         "Try again; if this keeps happening, contact an admin."
@@ -14,7 +14,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "This agent can't start right now: its owner is at their compute " +
         "budget. Ask the owner to free room and start it again."
       );
-    case "agent-pod-failed":
+    case "sandbox-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":
         case "InvalidImageName":
@@ -39,21 +39,15 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "This agent failed to start: its configuration couldn't be " +
         "applied. Check the agent's page or contact its owner."
       );
-    case "agent-pod-not-ready":
+    case "sandbox-not-ready":
       return "The agent is still warming up — give it a minute and try again.";
     case "gateway-not-ready":
       return (
         "The agent is still warming up (its network gateway is starting) — " +
         "give it a minute and try again."
       );
-    case "gateway-pod-failed":
+    case "gateway-failed":
       switch (c.gatewayReason) {
-        case "StuckOnSupersededRevision":
-          return (
-            "This agent can't reach the network: its gateway is stuck on an " +
-            "outdated configuration. The platform is replacing it — try again " +
-            "shortly, and tell an admin if this keeps happening."
-          );
         case "ImagePullFailure":
         case "InvalidImageName":
           return (

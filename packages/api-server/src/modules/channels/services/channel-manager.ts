@@ -11,8 +11,6 @@ import {
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
-import type { BusRpc } from "../../../core/bus-rpc.js";
-import type { BlobHandoff } from "../../../core/blob-handoff.js";
 
 export interface ChannelAttachment {
   filename: string;
@@ -161,138 +159,18 @@ export interface ChannelManager {
   supportsMessageReactions(): Promise<boolean>;
 }
 
-export const channelRpcRequestSchema = z.object({
-  method: z.enum([
-    "listConversations",
-    "postMessage",
-    "reply",
-    "react",
-    "declineTurn",
-    "handOffTurn",
-    "describeUsers",
-    "supportsUserLookup",
-    "describeMessageReactions",
-    "supportsMessageReactions",
-  ]),
-  args: z.array(z.unknown()),
-});
-export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
-
-const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
-const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
-  listConversations: forInstance,
-  postMessage: forInstance.rest(z.unknown()),
-  reply: forInstance.rest(z.unknown()),
-  react: forInstance.rest(z.unknown()),
-  declineTurn: forInstance,
-  handOffTurn: forInstance.rest(z.unknown()),
-  describeUsers: forInstance.rest(z.unknown()),
-  supportsUserLookup: z.tuple([]),
-  describeMessageReactions: forInstance.rest(z.unknown()),
-  supportsMessageReactions: z.tuple([]),
-};
-
 const TRANSPORT_RETRY_MS = 60_000;
-
-const okOrErrorSchema = z.union([
-  z.object({ ok: z.literal(true) }),
-  z.object({ error: z.string() }),
-]);
-const channelUserSchema = z.object({
-  id: z.string(),
-  username: z.string().optional(),
-  realName: z.string().optional(),
-  displayName: z.string().optional(),
-  title: z.string().optional(),
-  pronouns: z.string().optional(),
-  email: z.string().optional(),
-  timezone: z.string().optional(),
-  timezoneLabel: z.string().optional(),
-  statusText: z.string().optional(),
-  statusEmoji: z.string().optional(),
-  isBot: z.boolean().optional(),
-  isDeleted: z.boolean().optional(),
-  error: z.string().optional(),
-});
-const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
-  listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
-  postMessage: okOrErrorSchema,
-  reply: okOrErrorSchema,
-  react: okOrErrorSchema,
-  declineTurn: okOrErrorSchema,
-  handOffTurn: z.union([
-    z.object({ ok: z.literal(true), agent: z.string() }),
-    z.object({ error: z.string() }),
-  ]),
-  describeUsers: z.union([
-    z.object({ users: z.array(channelUserSchema) }),
-    z.object({ error: z.string() }),
-  ]),
-  supportsUserLookup: z.boolean(),
-  describeMessageReactions: z.union([
-    z.object({
-      reactions: z.array(
-        z.object({
-          name: z.string(),
-          count: z.number(),
-          users: z.array(z.string()),
-        }),
-      ),
-      conversationId: z.string(),
-      messageTs: z.string(),
-    }),
-    z.object({ error: z.string() }),
-  ]),
-  supportsMessageReactions: z.boolean(),
-};
-
-type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
 
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
   telegramWorker?: TelegramWorker;
-  rpc?: BusRpc<ChannelRpcRequest, unknown>;
-  blobs?: BlobHandoff;
-  isLeader?: () => boolean;
 }): ChannelManager {
-  const { slackWorker, telegramWorker, rpc, blobs } = deps;
-  const isLeader = deps.isLeader ?? (() => true);
+  const { slackWorker, telegramWorker } = deps;
   const workers: Worker[] = [slackWorker, telegramWorker].filter(
     Boolean,
   ) as Worker[];
 
-  async function stashAttachment(
-    attachment: ChannelAttachment,
-  ): Promise<ChannelAttachment | { error: string }> {
-    if (!blobs)
-      return {
-        error: "cannot post an attachment from this replica (no handoff)",
-      };
-    const { data, ...meta } = attachment;
-    return {
-      ...meta,
-      dataKey: await blobs.put(data),
-    } as unknown as ChannelAttachment;
-  }
-
-  async function restoreAttachment(
-    attachment: ChannelAttachment | undefined,
-  ): Promise<ChannelAttachment | undefined | { error: string }> {
-    const wire = attachment as
-      | (ChannelAttachment & Partial<WireAttachment>)
-      | undefined;
-    if (!wire?.dataKey) return attachment;
-    const data = await blobs?.take(wire.dataKey);
-    if (!data)
-      return {
-        error:
-          "attachment bytes were not available on the posting replica; retry the send",
-      };
-    const { dataKey: _key, ...meta } = wire;
-    return { ...meta, data };
-  }
   const subscriptions: Subscription[] = [];
-  let stopServing: (() => void) | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let generation = 0;
 
@@ -338,8 +216,6 @@ export function createChannelManager(deps: {
     generation += 1;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
-    stopServing?.();
-    stopServing = null;
     const stopped = await Promise.allSettled(workers.map((w) => w.stopAll()));
     const failed = stopped.flatMap((r) =>
       r.status === "rejected" ? [r.reason] : [],
@@ -348,24 +224,12 @@ export function createChannelManager(deps: {
       throw new Error(`channel workers failed to stop: ${failed.join("; ")}`);
   }
 
-  async function dispatch<T>(
-    method: ChannelRpcRequest["method"],
-    args: unknown[],
-    local: () => Promise<T>,
-  ): Promise<T> {
-    if (isLeader() || !rpc) return local();
-    return rpcResponseSchemas[method].parse(
-      await rpc.call({ method, args }),
-    ) as T;
-  }
-
-  async function dispatchResult<T>(
-    method: ChannelRpcRequest["method"],
-    args: unknown[],
+  /** A worker throwing is reported to the caller, never to the turn. */
+  async function guarded<T>(
     local: () => Promise<T>,
   ): Promise<T | { error: string }> {
     try {
-      return await dispatch(method, args, local);
+      return await local();
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -387,9 +251,6 @@ export function createChannelManager(deps: {
       if (!worker)
         return { error: `channel type ${channelType} not available` };
 
-      const attachment = await restoreAttachment(options?.attachment);
-      if (attachment && "error" in attachment) return attachment;
-      if (attachment) options = { ...options, attachment };
       return worker.postMessage(instanceName, text, options);
     },
     reply: async (
@@ -400,9 +261,6 @@ export function createChannelManager(deps: {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker?.reply)
         return { error: `reply not supported on ${channelType}` };
-      const attachment = await restoreAttachment(replyArgs.attachment);
-      if (attachment && "error" in attachment) return attachment;
-      if (attachment) replyArgs = { ...replyArgs, attachment };
       return worker.reply(instanceName, replyArgs);
     },
     react: (
@@ -486,7 +344,7 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<SlackConnected>(EventType.SlackConnected))
       .subscribe((event) => {
-        if (slackWorker && isLeader()) {
+        if (slackWorker) {
           slackWorker.start(event.agentId, {
             type: ChannelType.Slack,
             slackChannelId: event.slackChannelId,
@@ -499,7 +357,7 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<SlackDisconnected>(EventType.SlackDisconnected))
       .subscribe((event) => {
-        if (slackWorker && isLeader()) slackWorker.stop(event.agentId);
+        if (slackWorker) slackWorker.stop(event.agentId);
       }),
   );
 
@@ -507,7 +365,7 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
       .subscribe((event) => {
-        if (slackWorker && isLeader()) slackWorker.stop(event.agentId);
+        if (slackWorker) slackWorker.stop(event.agentId);
       }),
   );
 
@@ -522,20 +380,6 @@ export function createChannelManager(deps: {
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
       const generationAtStart = generation;
-      if (rpc) {
-        stopServing?.();
-        stopServing = rpc.serve(async (req) => {
-          const handler = localHandlers[req.method] as
-            | ((...a: unknown[]) => Promise<unknown>)
-            | undefined;
-          if (!handler)
-            throw new Error(`unknown channel rpc method ${req.method}`);
-          return handler(
-            ...(rpcArgSchemas[req.method].parse(req.args) as unknown[]),
-          );
-        });
-      }
-
       await startTransports(generationAtStart);
 
       for (const [agentId, channels] of channelsByInstance) {
@@ -556,103 +400,63 @@ export function createChannelManager(deps: {
     },
 
     listConversations(instanceName, channelType) {
-      return dispatch("listConversations", [instanceName, channelType], () =>
-        localHandlers.listConversations(instanceName, channelType),
-      ).catch(() => []);
+      return localHandlers
+        .listConversations(instanceName, channelType)
+        .catch(() => []);
     },
 
-    async postMessage(instanceName, channelType, text, options) {
-      let wireOptions = options;
-      if (!isLeader() && rpc && options?.attachment) {
-        const attachment = await stashAttachment(options.attachment);
-        if ("error" in attachment) return attachment;
-        wireOptions = { ...options, attachment };
-      }
-      return dispatchResult(
-        "postMessage",
-        [instanceName, channelType, text, wireOptions],
-        () =>
-          localHandlers.postMessage(instanceName, channelType, text, options),
+    postMessage(instanceName, channelType, text, options) {
+      return guarded(() =>
+        localHandlers.postMessage(instanceName, channelType, text, options),
       );
     },
 
-    async reply(instanceName, channelType, replyArgs) {
-      let wireArgs = replyArgs;
-      if (!isLeader() && rpc && replyArgs.attachment) {
-        const attachment = await stashAttachment(replyArgs.attachment);
-        if ("error" in attachment) return attachment;
-        wireArgs = { ...replyArgs, attachment };
-      }
-      return dispatchResult(
-        "reply",
-        [instanceName, channelType, wireArgs],
-        () => localHandlers.reply(instanceName, channelType, replyArgs),
+    reply(instanceName, channelType, replyArgs) {
+      return guarded(() =>
+        localHandlers.reply(instanceName, channelType, replyArgs),
       );
     },
 
     react(instanceName, channelType, reaction) {
-      return dispatchResult(
-        "react",
-        [instanceName, channelType, reaction],
-        () => localHandlers.react(instanceName, channelType, reaction),
+      return guarded(() =>
+        localHandlers.react(instanceName, channelType, reaction),
       );
     },
 
     declineTurn(instanceName, channelType) {
-      return dispatchResult("declineTurn", [instanceName, channelType], () =>
+      return guarded(() =>
         localHandlers.declineTurn(instanceName, channelType),
       );
     },
 
     handOffTurn(instanceName, channelType, targetName, note) {
-      return dispatchResult(
-        "handOffTurn",
-        [instanceName, channelType, targetName, note],
-        () =>
-          localHandlers.handOffTurn(
-            instanceName,
-            channelType,
-            targetName,
-            note,
-          ),
+      return guarded(() =>
+        localHandlers.handOffTurn(instanceName, channelType, targetName, note),
       );
     },
 
     describeUsers(instanceName, channelType, userIds) {
-      return dispatchResult(
-        "describeUsers",
-        [instanceName, channelType, userIds],
-        () => localHandlers.describeUsers(instanceName, channelType, userIds),
+      return guarded(() =>
+        localHandlers.describeUsers(instanceName, channelType, userIds),
       );
     },
 
     supportsUserLookup() {
-      return dispatch(
-        "supportsUserLookup",
-        [],
-        localHandlers.supportsUserLookup,
-      ).catch(() => true);
+      return localHandlers.supportsUserLookup().catch(() => true);
     },
 
     describeMessageReactions(instanceName, channelType, query) {
-      return dispatchResult(
-        "describeMessageReactions",
-        [instanceName, channelType, query],
-        () =>
-          localHandlers.describeMessageReactions(
-            instanceName,
-            channelType,
-            query,
-          ),
+      return guarded(() =>
+        localHandlers.describeMessageReactions(
+          instanceName,
+          channelType,
+          query,
+        ),
       );
     },
 
     supportsMessageReactions() {
-      return dispatch(
-        "supportsMessageReactions",
-        [],
-        localHandlers.supportsMessageReactions,
-      ).catch(() => true);
+      return localHandlers.supportsMessageReactions().catch(() => true);
     },
   };
 }

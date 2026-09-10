@@ -21,8 +21,8 @@ import type {
   ChannelManager,
   ChannelAttachment,
 } from "./../../modules/channels/services/channel-manager.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
+import type { SandboxAddresses } from "../../modules/agents/infrastructure/sandbox-addresses.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
@@ -92,7 +92,8 @@ export async function textTool<T>(
 
 export interface McpSessionDeps {
   channelManager: ChannelManager;
-  k8s: K8sClient;
+  agentStore: AgentStore;
+  addresses: SandboxAddresses;
   skills: SkillsService;
   schedules: SchedulesService;
   artifactLibrary: ArtifactLibraryServiceImpl;
@@ -129,7 +130,7 @@ export function createMcpSession(
   const runtimeClient = createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(agentId, deps.k8s.namespace)}/api/trpc`,
+        url: `http://${deps.addresses.baseUrl(agentId)}/api/trpc`,
       }),
     ],
   });
@@ -858,7 +859,8 @@ export function createMcpSession(
 
 export interface MountMcpDeps {
   channelManager: ChannelManager;
-  k8s: K8sClient;
+  agentStore: AgentStore;
+  addresses: SandboxAddresses;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
@@ -876,7 +878,7 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/agents/:id/mcp", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.agentStore, agentId);
     if (!verified) {
       securityLog("warn", "mcp.resolve_fail", {
         category: "authn",
@@ -903,7 +905,8 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
-      k8s: deps.k8s,
+      agentStore: deps.agentStore,
+      addresses: deps.addresses,
       skills,
       schedules,
       artifactLibrary,

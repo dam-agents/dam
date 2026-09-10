@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
-import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
   LABEL_OWNER,
@@ -10,7 +9,7 @@ import {
   composePublicAgentPage,
   createAgentsRepository,
   createAgentEnvRepository,
-  createAgentRegistrySecretPort,
+  createAgentRegistryAuthPort,
   createKeycloakUserDirectory,
   allChannelAgentIds,
   findChannelOwnerByAgent,
@@ -37,7 +36,6 @@ import {
   listKbShareAgentIds,
   startKbShareSync,
 } from "./modules/kb-shares/index.js";
-import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
@@ -52,8 +50,6 @@ import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-s
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
-  channelRpcRequestSchema,
-  type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
@@ -84,7 +80,7 @@ import {
   createSchedulesCleanupHook,
 } from "./modules/schedules/index.js";
 import {
-  createKubernetesSecretStore,
+  createFileSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
@@ -179,25 +175,14 @@ import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
 } from "./modules/artifact-library/index.js";
-import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
-import { createBusRpc } from "./core/bus-rpc.js";
-import { createRedisBlobHandoff } from "./core/blob-handoff.js";
-import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
-import {
-  startAgentStateCache,
-  createLiveAgentStateCache,
-} from "./modules/agents/infrastructure/agent-state-cache.js";
-import {
-  createAgentInformer,
-  createLeaseApi,
-} from "./modules/agents/infrastructure/k8s.js";
+import { createAgentStore } from "./modules/agents/infrastructure/agent-store.js";
+import { startSandboxAddresses } from "./modules/agents/infrastructure/sandbox-addresses.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -207,7 +192,6 @@ export async function bootstrap() {
   });
   getLogger().info("api-server starting");
 
-  const { api } = createApi(config.namespace);
   const dbTls = {
     ca: config.databaseCaCertPath
       ? readFileSync(config.databaseCaCertPath, "utf8")
@@ -267,19 +251,12 @@ export async function bootstrap() {
     log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
   });
 
-  const k8sClient = createK8sClient(api, config.namespace);
-  const leaseApi = createLeaseApi();
-  const agentStateCache = startAgentStateCache({
-    informer: createAgentInformer(config.namespace),
-    live: k8sClient,
-    namespace: config.namespace,
-    log: (m) => getLogger().warn(`[agents] ${m}`),
-  });
-  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
-  const liveAgentsRepo = createAgentsRepository(
-    k8sClient,
-    createLiveAgentStateCache(k8sClient),
+  const agentStore = createAgentStore(db);
+  const sandboxAddresses = await startSandboxAddresses(
+    agentStore,
+    config.sandboxPort,
   );
+  const agentsRepo = createAgentsRepository(agentStore);
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -350,7 +327,7 @@ export async function bootstrap() {
         kbMcp: composeKbShareServing({
           db,
           store: artifacts,
-          k8s: k8sClient,
+          agentStore,
           grepDeadlineMs: config.kbShareGrepDeadlineMs,
         }),
       }),
@@ -364,12 +341,12 @@ export async function bootstrap() {
       }),
     },
   });
-  const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
+  const sessionPresence = createSessionPresence(agentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),
   );
 
-  const l7PromotionReconcile = createL7PromotionReconcile(db, k8sClient, (m) =>
+  const l7PromotionReconcile = createL7PromotionReconcile(db, agentStore, (m) =>
     getLogger().info(`[l7-reconcile] ${m}`),
   );
   await periodicJobs.register(
@@ -389,7 +366,7 @@ export async function bootstrap() {
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
-    namespace: config.namespace,
+    sandboxAddresses,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -413,7 +390,9 @@ export async function bootstrap() {
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
   const secretStores = createSecretStoreRegistry();
-  secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+  secretStores.register(
+    createFileSecretStore({ root: config.secretStoreRoot }),
+  );
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
@@ -499,7 +478,7 @@ export async function bootstrap() {
       : undefined;
 
   const { service: e2eService } = composeE2eModule({
-    namespace: config.namespace,
+    addresses: sandboxAddresses,
     slack: fakeSlackGateway,
   });
 
@@ -526,7 +505,7 @@ export async function bootstrap() {
   const agentSkillsRepo = createAgentSkillsRepository(db);
   const kbShareAutoRefresh = startKbShareSync({
     db,
-    namespace: config.namespace,
+    sandboxAddresses,
   });
   const turnMetricsSub = startTurnMetricsSaga(
     createTurnMetrics(metrics.getMeter("platform-apiserver")),
@@ -538,15 +517,8 @@ export async function bootstrap() {
     subPseudonymizer,
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
-    listK8sAgents: async () => {
-      const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
-      return agents
-        .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
-        .map((a) => ({
-          id: a.metadata!.name!,
-          owner: a.metadata!.labels![LABEL_OWNER]!,
-        }));
-    },
+    listAgentIdentities: async () =>
+      (await agentStore.list()).map((a) => ({ id: a.id, owner: a.owner })),
   });
   usage.start();
   if (config.activityTrackingEnabled) {
@@ -571,23 +543,17 @@ export async function bootstrap() {
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
-    k8s: k8sClient,
-    namespace: config.namespace,
+    agentStore,
+    sandboxAddresses,
     agentsRepo,
     runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
-  const agentWatchRole: LeaderRole = {
-    name: "live-events-agent-watch",
-    onAcquired: () => liveEventsModule.startAgentWatch(),
-    onLost: () => liveEventsModule.stopAgentWatch(),
-  };
-
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
-    api,
-    agentStateCache,
-    namespace: config.namespace,
+    agentStore,
+    sandboxAddresses,
+    registryAuthRoot: config.registryAuthRoot,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
@@ -672,7 +638,7 @@ export async function bootstrap() {
   const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
-      namespace: config.namespace,
+      addresses: sandboxAddresses,
       instanceName,
       turnCeilingMs: acpTurnCeilingMs,
     });
@@ -702,7 +668,7 @@ export async function bootstrap() {
         turnAttendance,
         (agentId) =>
           createAgentWorkspaceFiles(
-            `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+            `http://${sandboxAddresses.baseUrl(agentId)}/api/trpc`,
           ),
         undefined,
         DEFAULT_SETTLE_MS,
@@ -740,45 +706,9 @@ export async function bootstrap() {
         })
       : undefined;
 
-  const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
-    bus: redisBus,
-    service: "channels",
-    requestSchema: channelRpcRequestSchema,
-    claim: async (id) =>
-      (await sharedRedis.set(
-        `rpc:claim:channels:${id}`,
-        "1",
-        "EX",
-        60,
-        "NX",
-      )) === "OK",
-  });
-
-  const channelManager = createChannelManager({
-    slackWorker,
-    telegramWorker,
-    rpc: channelRpc,
-    blobs: createRedisBlobHandoff(sharedRedis),
-    isLeader: () => leaderLease.isRunning("channels"),
-  });
-
-  const leaderLease = createLeaderLease({
-    leases: leaseApi,
-    namespace: config.namespace,
-    name: `${config.releaseName}-apiserver`,
-    roles: [
-      {
-        name: "channels",
-        onAcquired: async () => {
-          const channelsByInstance = await listChannelsByOwner(db, "")();
-          await channelManager.bootstrap(channelsByInstance);
-        },
-        onLost: () => channelManager.standDown(),
-      },
-      agentWatchRole,
-    ],
-    log: (m) => getLogger().info(`[leader] ${m}`),
-  });
+  // One node, one process: every role that admits a single holder install-wide
+  // is held here by construction, so there is no election to win first.
+  const channelManager = createChannelManager({ slackWorker, telegramWorker });
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
@@ -787,7 +717,7 @@ export async function bootstrap() {
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
-      `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
+      `ws://${sandboxAddresses.baseUrl(agentId)}/api/acp`,
   });
 
   const {
@@ -828,8 +758,7 @@ export async function bootstrap() {
     deliverySweeper.tick(),
   );
 
-  const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
-  const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+  const registryAuthPort = createAgentRegistryAuthPort(config.registryAuthRoot);
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
@@ -861,8 +790,8 @@ export async function bootstrap() {
     },
     {
       name: "registry-pull-secrets",
-      listAgentIds: () => registrySecretPort.listAgentIds(),
-      cleanup: (agentId: string) => registrySecretPort.delete(agentId),
+      listAgentIds: () => registryAuthPort.listAgentIds(),
+      cleanup: (agentId: string) => registryAuthPort.delete(agentId),
     },
     {
       name: "connection-grants",
@@ -946,7 +875,7 @@ export async function bootstrap() {
     findKbShareOwnerByAgent(db),
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
-    k8s: agentsCleanupK8s,
+    agentStore,
     sources: agentCleanupSources,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
@@ -1013,7 +942,7 @@ export async function bootstrap() {
   const prStateResolver = composePrStateResolver({
     db,
     agents: agentsRepo,
-    namespace: config.namespace,
+    sandboxAddresses,
     log: (msg) => process.stderr.write(`[pr-state-resolver] ${msg}\n`),
   });
   await periodicJobs.register("skill-pr-state-resolve", 10 * 60_000, () =>
@@ -1043,11 +972,10 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) => {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
-      api,
-      agentStateCache,
-      namespace: config.namespace,
+      agentStore,
+      sandboxAddresses,
+      registryAuthRoot: config.registryAuthRoot,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
-      virtualizationEnabled: config.virtualizationEnabled,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
@@ -1080,8 +1008,8 @@ export async function bootstrap() {
       const agent = await agentsRepo.get(agentId);
       return agent
         ? {
-            podRestarts: agent.podRestarts,
-            podRestartReason: agent.podRestartReason,
+            sandboxRestarts: agent.sandboxRestarts,
+            sandboxRestartReason: agent.sandboxRestartReason,
           }
         : null;
     },
@@ -1092,7 +1020,7 @@ export async function bootstrap() {
   );
 
   const agentSweep = createAgentSweep({
-    listAgents: () => liveAgentsRepo.list(),
+    listAgents: () => agentsRepo.list(),
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
@@ -1106,11 +1034,11 @@ export async function bootstrap() {
   );
 
   const apiServerDeps: ApiServerDeps = {
-    agentStateCache,
+    agentStore,
+    sandboxAddresses,
     periodicJobs,
     sharedRedis,
     config,
-    api,
     db,
     channelManager,
     identityLinkService,
@@ -1144,7 +1072,6 @@ export async function bootstrap() {
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
     podSessions: liveEventsModule.podSessions,
-    k8sClient,
     agentsRepo,
     connectionsBoot,
     templatesRepo,
@@ -1160,9 +1087,9 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
-    agentStateCache,
+    agentStore,
+    sandboxAddresses,
     config,
-    api,
     db,
     channelManager,
     seedSources,
@@ -1190,7 +1117,10 @@ export async function bootstrap() {
   };
 
   void telegramWorker?.resolveIdentity();
-  void leaderLease.start();
+  liveEventsModule.startAgentWatch();
+  void listChannelsByOwner(db, "")().then((channelsByInstance) =>
+    channelManager.bootstrap(channelsByInstance),
+  );
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
@@ -1199,11 +1129,10 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
-    await agentStateCache.stop();
-    await leaderLease.stop();
+    sandboxAddresses.stop();
+    liveEventsModule.stopAgentWatch();
     liveEventsModule.stop();
     await periodicJobs.close();
-    channelRpc.close();
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();
     await runtimeDelivery.queue.close();

@@ -2,7 +2,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter, SourcePathReason } from "agent-runtime-api";
 import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../agents/infrastructure/sandbox-addresses.js";
 import type { PrDisposition } from "../domain/pr-state.js";
 
 export interface PublishSkillCall {
@@ -102,11 +102,11 @@ export class AgentRuntimeClientError extends Error {
   }
 }
 
-function makeClient(agentId: string, namespace: string) {
+function makeClient(agentId: string, addresses: SandboxAddresses) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+        url: `http://${addresses.baseUrl(agentId)}/api/trpc`,
       }),
     ],
   });
@@ -185,14 +185,14 @@ async function runWithUpstreamMapping<T>(
 }
 
 export function createAgentRuntimeSkillsClient(
-  namespace: string,
+  addresses: SandboxAddresses,
 ): AgentRuntimeSkillsClient {
   return {
     listLocal: async (agentId, hashNames) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${agentId}`,
         () =>
-          makeClient(agentId, namespace).skills.listLocal.query(
+          makeClient(agentId, addresses).skills.listLocal.query(
             hashNames && hashNames.length > 0 ? { hashNames } : undefined,
           ),
       );
@@ -200,13 +200,13 @@ export function createAgentRuntimeSkillsClient(
     },
     publish: (agentId, body) =>
       runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
-        makeClient(agentId, namespace).skills.publish.mutate(body),
+        makeClient(agentId, addresses).skills.publish.mutate(body),
       ),
     scan: async (agentId, source, path) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime scan ${agentId}`,
         () =>
-          makeClient(agentId, namespace).skills.scan.mutate({
+          makeClient(agentId, addresses).skills.scan.mutate({
             source,
             ...(path !== undefined ? { path } : {}),
           }),
@@ -217,26 +217,26 @@ export function createAgentRuntimeSkillsClient(
       const { skills: created } = await runWithUpstreamMapping(
         `agent-runtime writeLocal ${agentId}`,
         () =>
-          makeClient(agentId, namespace).skills.writeLocal.mutate({ skills }),
+          makeClient(agentId, addresses).skills.writeLocal.mutate({ skills }),
       );
       return created as LocalSkill[];
     },
     deleteLocal: async (agentId, name) => {
       await runWithUpstreamMapping(`agent-runtime deleteLocal ${agentId}`, () =>
-        makeClient(agentId, namespace).skills.deleteLocal.mutate({ name }),
+        makeClient(agentId, addresses).skills.deleteLocal.mutate({ name }),
       );
     },
     readLocal: (agentId, name) =>
       runWithUpstreamMapping(`agent-runtime readLocal ${agentId}`, () =>
-        makeClient(agentId, namespace).skills.readLocal.query({ name }),
+        makeClient(agentId, addresses).skills.readLocal.query({ name }),
       ),
     readPullRequest: (agentId, coords) =>
       runWithUpstreamMapping(`agent-runtime readPullRequest ${agentId}`, () =>
-        makeClient(agentId, namespace).skills.readPullRequest.query(coords),
+        makeClient(agentId, addresses).skills.readPullRequest.query(coords),
       ),
     readSkillFile: (agentId, input) =>
       runWithUpstreamMapping(`agent-runtime readSkillFile ${agentId}`, () =>
-        makeClient(agentId, namespace).skills.readSkillFile.query(input),
+        makeClient(agentId, addresses).skills.readSkillFile.query(input),
       ),
   };
 }

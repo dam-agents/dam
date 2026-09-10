@@ -1,27 +1,15 @@
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
+import { eq, userBudgets, type Db } from "db";
 
-const USERBUDGETS_PLURAL = "userbudgets";
-
-export function createUserBudgetsReader(k8s: K8sClient) {
+export function createUserBudgetsReader(db: Db) {
   return {
     async ceiling(
       owner: string,
     ): Promise<{ cpu: string; memory: string } | null> {
-      const obj = await k8s.getCustomObject(
-        USERBUDGETS_PLURAL,
-        `budget-${owner}`,
-      );
-      if (!obj) return null;
-      const spec = (obj as { spec?: { cpu?: unknown; memory?: unknown } }).spec;
-      const cpu = quantityString(spec?.cpu);
-      const memory = quantityString(spec?.memory);
-      return cpu !== null && memory !== null ? { cpu, memory } : null;
+      const [row] = await db
+        .select({ cpu: userBudgets.cpu, memory: userBudgets.memory })
+        .from(userBudgets)
+        .where(eq(userBudgets.owner, owner));
+      return row ?? null;
     },
   };
-}
-
-function quantityString(v: unknown): string | null {
-  if (typeof v === "string") return v;
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  return null;
 }

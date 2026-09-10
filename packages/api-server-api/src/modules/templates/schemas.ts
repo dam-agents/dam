@@ -8,7 +8,6 @@ export const templateGetInputSchema = z.object({
 export const mountSchema = z.object({
   path: z.string(),
   persist: z.boolean(),
-  size: z.string().optional(),
 });
 
 export const resourcesSchema = z.object({
@@ -56,18 +55,8 @@ export const templateSpecSchema = z
     env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
-    imagePullSecretRef: z.string().optional(),
+    registryAuthPath: z.string().optional(),
     hibernationTimeout: z.string().optional(),
-    storageSize: z.string().optional(),
-    storageClass: z.string().optional(),
-    backend: z
-      .object({
-        type: z.enum(["container", "vm"]),
-        vm: z.object({}).passthrough().optional(),
-      })
-      .optional(),
-    runtimeClassName: z.string().optional(),
-    nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();

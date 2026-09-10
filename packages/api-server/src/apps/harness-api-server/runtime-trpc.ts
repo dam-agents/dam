@@ -8,11 +8,11 @@ import type {
   SessionDirectoryService,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 import { resolveAgent } from "./agent-auth.js";
 
 export interface RuntimeTrpcDeps {
-  k8s: K8sClient;
+  agentStore: AgentStore;
   hello: RuntimeDeliveryService;
   sessionDirectory: SessionDirectoryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
@@ -22,7 +22,7 @@ export interface RuntimeTrpcDeps {
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
   app.all("/api/agents/:id/trpc/*", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.agentStore, agentId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }

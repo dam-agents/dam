@@ -2,7 +2,7 @@ import { addUpgradeSecurityHeaders } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../../modules/agents/infrastructure/sandbox-addresses.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
@@ -25,7 +25,7 @@ export interface SshRelay {
 }
 
 export function createSshRelay(
-  namespace: string,
+  addresses: SandboxAddresses,
   repo: AgentsRepository,
   presence: SessionPresence,
 ): SshRelay {
@@ -118,7 +118,7 @@ export function createSshRelay(
       if (clientGone || overflow) return;
 
       upstream = new WebSocket(
-        `ws://${podBaseUrl(agentId, namespace)}/api/ssh`,
+        `ws://${addresses.baseUrl(agentId)}/api/ssh`,
       );
       const us = upstream;
       us.on("open", () => {

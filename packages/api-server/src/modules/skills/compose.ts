@@ -1,4 +1,3 @@
-import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillsService } from "api-server-api";
 import type { RuntimeProgressPort } from "../agents/index.js";
@@ -7,8 +6,8 @@ import {
   type AgentsRepository,
 } from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
-import { createK8sClient } from "../agents/infrastructure/k8s.js";
-import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
+import type { AgentStore } from "../agents/infrastructure/agent-store.js";
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
@@ -46,7 +45,7 @@ export function connectScanCacheBus(bus: RedisBus): void {
 export function composePrStateResolver(deps: {
   db: Db;
   agents: AgentsRepository;
-  namespace: string;
+  sandboxAddresses: SandboxAddresses;
   log: (msg: string) => void;
 }): PrStateResolver {
   return createPrStateResolver({
@@ -54,7 +53,7 @@ export function composePrStateResolver(deps: {
     reader: createGitHubPrStateReader(),
     podReader: createPodPrStateReader({
       agents: deps.agents,
-      runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
+      runtimeClient: createAgentRuntimeSkillsClient(deps.sandboxAddresses),
       log: deps.log,
     }),
     log: deps.log,
@@ -62,8 +61,8 @@ export function composePrStateResolver(deps: {
 }
 
 export function composeSkillsModule(deps: {
-  api: k8s.CoreV1Api;
-  namespace: string;
+  agentStore: AgentStore;
+  sandboxAddresses: SandboxAddresses;
   owner: string;
   surface: string;
   db: Db;
@@ -72,19 +71,17 @@ export function composeSkillsModule(deps: {
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
   runtimeProgress: RuntimeProgressPort;
-  agentStateCache: AgentStateCache;
 }): SkillsService {
-  const { db, namespace, seedSources } = deps;
-  const k8sClient = createK8sClient(deps.api, namespace);
+  const { db, seedSources } = deps;
   return createSkillsService({
     surface: deps.surface,
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8sClient, deps.agentStateCache),
+    agentsRepo: createAgentsRepository(deps.agentStore),
     templatesRepo: deps.templatesRepo,
     seedSources,
-    runtimeClient: createAgentRuntimeSkillsClient(namespace),
+    runtimeClient: createAgentRuntimeSkillsClient(deps.sandboxAddresses),
     githubCredential: createGithubCredentialPort(
       createConnectionsRepository(db),
     ),

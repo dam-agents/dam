@@ -1,4 +1,3 @@
-import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
@@ -18,8 +17,8 @@ import type {
   ContributionsProgressPort,
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
+import type { SandboxAddresses } from "../../modules/agents/infrastructure/sandbox-addresses.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type {
   AgentCleanupHook,
@@ -63,7 +62,6 @@ export interface ApiServerDeps {
   config: Config;
   periodicJobs: PeriodicJobs;
   sharedRedis: Redis;
-  api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
   identityLinkService: IdentityLinkService;
@@ -95,8 +93,8 @@ export interface ApiServerDeps {
   liveEvents: LiveEventsService;
   podSessions: PodSessionsService;
 
-  k8sClient: K8sClient;
-  agentStateCache: AgentStateCache;
+  agentStore: AgentStore;
+  sandboxAddresses: SandboxAddresses;
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;

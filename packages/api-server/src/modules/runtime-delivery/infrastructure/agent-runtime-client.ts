@@ -1,7 +1,7 @@
 import { createTRPCClient, httpLink } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import type { ApplyStateInput, ApplyStateResult } from "api-server-api";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../agents/infrastructure/sandbox-addresses.js";
 
 export const APPLY_STATE_TIMEOUT_MS = 60_000;
 
@@ -18,14 +18,14 @@ export interface AgentRuntimeClientOpts {
 
 export function createAgentRuntimeClient(
   agentId: string,
-  namespace: string,
+  addresses: SandboxAddresses,
   opts: AgentRuntimeClientOpts = {},
 ): AgentRuntimeClient {
   const timeoutMs = opts.timeoutMs ?? APPLY_STATE_TIMEOUT_MS;
   const client = createTRPCClient<AppRouter>({
     links: [
       httpLink({
-        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+        url: `http://${addresses.baseUrl(agentId)}/api/trpc`,
         fetch: opts.fetch,
       }),
     ],

@@ -361,7 +361,7 @@ describe("slack ambient inbound", () => {
       binding: ambient,
       ensureReady: async () => {
         calls += 1;
-        if (calls === 1) throw wakeError({ kind: "agent-pod-not-ready" });
+        if (calls === 1) throw wakeError({ kind: "sandbox-not-ready" });
       },
     });
     await h.message(STRANGER, "how do I rotate the token?");

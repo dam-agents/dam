@@ -81,10 +81,10 @@ describe("audit-log saga", () => {
       agentId: "agent-3",
       actorSub: "kc-1",
       outcome: "failure",
-      reason: "wake-timeout:agent-pod-failed:ImagePullFailure",
+      reason: "wake-timeout:sandbox-failed:ImagePullFailure",
     });
     const rec = h.records()[0]!;
-    expect(rec.reason).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
+    expect(rec.reason).toBe("wake-timeout:sandbox-failed:ImagePullFailure");
   });
 
   it("does not log auth.login: per-request UserAuthenticated is intentionally ignored", () => {

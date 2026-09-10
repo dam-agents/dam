@@ -22,6 +22,8 @@ export {
   connections,
   connectionGrants,
   agents,
+  agentRecords,
+  userBudgets,
   runtimeStateOutbox,
   runtimeEvents,
   schedules,

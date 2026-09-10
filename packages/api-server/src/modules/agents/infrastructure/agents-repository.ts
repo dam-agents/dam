@@ -1,19 +1,14 @@
-import { type K8sClient } from "./k8s.js";
-import type { AgentStateCache } from "./agent-state-cache.js";
+import type { AgentStore } from "./agent-store.js";
 import {
   ACTIVE_SESSION_KEY,
-  AGENTS_PLURAL,
   ANN_ROLL_REV,
-  LABEL_OWNER,
   LAST_ACTIVITY_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
 import {
   agentIsOwnedBy,
-  agentOwner,
-  buildAgentObject,
+  buildAgentRecord,
   parseInfraAgent,
-  readyConditionStatus,
   type InfraAgent,
 } from "./agent-mappers.js";
 import {
@@ -67,121 +62,90 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
-export function createAgentsRepository(
-  k8s: K8sClient,
-  cache: AgentStateCache,
-): AgentsRepository {
+export function createAgentsRepository(store: AgentStore): AgentsRepository {
   const inflight = new Map<string, Promise<void>>();
 
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
   async function bumpLastActivity(id: string): Promise<void> {
-    await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-      metadata: {
-        annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
-      },
+    await store.patchAnnotations(id, {
+      [LAST_ACTIVITY_KEY]: new Date().toISOString(),
     });
   }
 
   const repo: AgentsRepository = {
     async list(owner?) {
-      const objs = await cache.list(owner);
-      return objs.map((o) => parseInfraAgent(o));
+      return (await store.list(owner)).map((r) => parseInfraAgent(r));
     },
 
     async get(id, owner?) {
-      const obj = await cache.get(id);
-      if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
-      return parseInfraAgent(obj);
+      const record = await store.get(id);
+      if (!record) return null;
+      if (owner && !agentIsOwnedBy(record, owner)) return null;
+      return parseInfraAgent(record);
     },
 
     async create(spec, owner, name, templateId?, annotations?) {
-      const created = await k8s.createCustomObject(
-        AGENTS_PLURAL,
-        buildAgentObject(spec, owner, name, templateId, annotations),
+      const created = await store.create(
+        buildAgentRecord(spec, owner, name, templateId, annotations),
       );
       return parseInfraAgent(created);
     },
 
     async updateSpec(id, owner, patch) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
-      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        spec: patch,
-      });
-      return parseInfraAgent(updated);
+      const record = await store.get(id);
+      if (!record) return null;
+      if (owner && !agentIsOwnedBy(record, owner)) return null;
+      const updated = await store.patchSpec(id, patch);
+      return updated ? parseInfraAgent(updated) : null;
     },
 
     async patchSpec(id, patch) {
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
+      await store.patchSpec(id, patch);
     },
 
     async delete(id, owner?) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return false;
-      if (owner && !agentIsOwnedBy(obj, owner)) return false;
-      await k8s.deleteCustomObject(AGENTS_PLURAL, id);
-      return true;
+      const record = await store.get(id);
+      if (!record) return false;
+      if (owner && !agentIsOwnedBy(record, owner)) return false;
+      return store.delete(id);
     },
 
     async restart(id, owner?) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return false;
-      if (owner && !agentIsOwnedBy(obj, owner)) return false;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: { annotations: { [ANN_ROLL_REV]: new Date().toISOString() } },
+      const record = await store.get(id);
+      if (!record) return false;
+      if (owner && !agentIsOwnedBy(record, owner)) return false;
+      await store.patchAnnotations(id, {
+        [ANN_ROLL_REV]: new Date().toISOString(),
       });
       return true;
     },
 
     async wake(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-            [STOP_REQUESTED_KEY]: "",
-          },
-        },
+      const updated = await store.patchAnnotations(id, {
+        [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+        [STOP_REQUESTED_KEY]: "",
       });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      return reread ? parseInfraAgent(reread) : null;
+      return updated ? parseInfraAgent(updated) : null;
     },
 
     async requestStop(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [STOP_REQUESTED_KEY]: new Date().toISOString(),
-            [ACTIVE_SESSION_KEY]: "",
-          },
-        },
+      const updated = await store.patchAnnotations(id, {
+        [STOP_REQUESTED_KEY]: new Date().toISOString(),
+        [ACTIVE_SESSION_KEY]: "",
       });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      return reread ? parseInfraAgent(reread) : null;
+      return updated ? parseInfraAgent(updated) : null;
     },
 
     async requestPause(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
       const pauseStamp = new Date().toISOString();
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [STOP_REQUESTED_KEY]: pauseStamp,
-            [ACTIVE_SESSION_KEY]: "",
-            [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
-          },
-        },
+      const updated = await store.patchAnnotations(id, {
+        [STOP_REQUESTED_KEY]: pauseStamp,
+        [ACTIVE_SESSION_KEY]: "",
+        [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
       });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      const infra = reread ? parseInfraAgent(reread) : null;
-      if (!infra) return null;
+      if (!updated) return null;
+      const infra = parseInfraAgent(updated);
       void (async () => {
         const settled = await pollUntilReady(
           async () => (await repo.get(id))?.hibernated ?? true,
@@ -189,7 +153,7 @@ export function createAgentsRepository(
             initialMs: PAUSE_SETTLE_POLL_MS,
             maxMs: PAUSE_SETTLE_POLL_MS,
             timeoutMs: PAUSE_SETTLE_TIMEOUT_MS,
-            wakeOn: () => cache.whenChanged(id),
+            wakeOn: () => store.whenChanged(id),
           },
         );
         if (!settled) {
@@ -199,8 +163,8 @@ export function createAgentsRepository(
           );
           return;
         }
-        const current = await k8s.getCustomObject(AGENTS_PLURAL, id);
-        const standing = current?.metadata?.annotations?.[STOP_REQUESTED_KEY];
+        const current = await store.get(id);
+        const standing = current?.annotations[STOP_REQUESTED_KEY];
         if (standing !== pauseStamp) {
           getLogger().info(
             { agentId: id },
@@ -220,56 +184,40 @@ export function createAgentsRepository(
     },
 
     async isOwnedBy(id, owner) {
-      const obj = await cache.get(id);
-      return obj !== null && agentIsOwnedBy(obj, owner);
+      const record = await store.get(id);
+      return record !== null && agentIsOwnedBy(record, owner);
     },
 
     async getOwner(id) {
-      const obj = await cache.get(id);
-      return obj ? (agentOwner(obj) ?? null) : null;
+      return (await store.get(id))?.owner ?? null;
     },
 
     async resolveIdentity(id) {
-      const obj = await cache.get(id);
-      if (!obj) return null;
-      const owner = agentOwner(obj);
-      if (!owner) return null;
-      return { owner, agentId: id };
+      const record = await store.get(id);
+      return record ? { owner: record.owner, agentId: id } : null;
     },
 
     async patchAnnotation(id, key, value) {
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: { annotations: { [key]: value } },
-      });
+      await store.patchAnnotations(id, { [key]: value });
     },
 
     async listAgentIdsWithAnnotation(key, value) {
-      const objs = await cache.list();
-      const ids: string[] = [];
-      for (const o of objs) {
-        const id = o.metadata?.name;
-        if (id && o.metadata?.annotations?.[key] === value) ids.push(id);
-      }
-      return ids;
+      const records = await store.list();
+      return records
+        .filter((r) => r.annotations[key] === value)
+        .map((r) => r.id);
     },
 
     async wakeIfHibernated(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return false;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-            [STOP_REQUESTED_KEY]: "",
-          },
-        },
+      const updated = await store.patchAnnotations(id, {
+        [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+        [STOP_REQUESTED_KEY]: "",
       });
-      return true;
+      return updated !== null;
     },
 
     async isReady(id) {
-      const obj = await cache.get(id);
-      return obj !== null && readyConditionStatus(obj) === "True";
+      return (await store.get(id))?.status.ready === true;
     },
 
     async ensureReady(id, opts) {
@@ -280,7 +228,7 @@ export function createAgentsRepository(
       }
 
       const work = (async () => {
-        const current = await cache.get(id);
+        const current = await store.get(id);
         if (!current) {
           throw new AgentWakeTimeoutError({
             agentId: id,
@@ -289,38 +237,26 @@ export function createAgentsRepository(
             failure: { kind: "not-found" },
           });
         }
-        if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
+        if (current.annotations[STOP_REQUESTED_KEY]) {
           throw new AgentStoppedError(id);
         }
-        if (await repo.isReady(id)) {
+        if (current.status.ready === true) {
           await bumpLastActivity(id);
           return;
         }
         opts?.onWaking?.();
         const startedAt = Date.now();
         getLogger().info({ agentId: id }, "agent.wake.begin");
-        try {
-          await bumpLastActivity(id);
-        } catch (e) {
-          if (!(await k8s.getCustomObject(AGENTS_PLURAL, id))) {
-            throw new AgentWakeTimeoutError({
-              agentId: id,
-              timeoutMs: WAKE_TIMEOUT_MS,
-              durationMs: Date.now() - startedAt,
-              failure: { kind: "not-found" },
-            });
-          }
-          throw e;
-        }
+        await bumpLastActivity(id);
         let sawNotOverBudget = false;
         const ready = await pollUntilReady(
           async () => {
-            const obj = await cache.get(id);
-            if (!obj) return false;
-            if (obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
+            const record = await store.get(id);
+            if (!record) return false;
+            if (record.annotations[STOP_REQUESTED_KEY]) {
               throw new AgentStoppedError(id);
             }
-            const infra = parseInfraAgent(obj);
+            const infra = parseInfraAgent(record);
             if (infra.overBudget) {
               const graceOver =
                 Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;
@@ -345,13 +281,13 @@ export function createAgentsRepository(
             initialMs: WAKE_POLL_INITIAL_MS,
             maxMs: WAKE_POLL_MAX_MS,
             timeoutMs: WAKE_TIMEOUT_MS,
-            wakeOn: () => cache.whenChanged(id),
+            wakeOn: () => store.whenChanged(id),
           },
         );
         const durationMs = Date.now() - startedAt;
         if (!ready) {
-          const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-          const infra = obj ? parseInfraAgent(obj) : null;
+          const record = await store.get(id);
+          const infra = record ? parseInfraAgent(record) : null;
           if (infra?.ready) {
             getLogger().info(
               { agentId: id, durationMs, lateReady: true },
@@ -367,11 +303,11 @@ export function createAgentsRepository(
               durationMs,
               cause: wakeFailureReasonToken(failure),
               hibernated: infra?.hibernated,
-              agentPodNotReadyReason: infra?.agentPodNotReadyReason,
-              gatewayPodReady: infra?.gatewayPodReady,
-              gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
-              reconciledReason: infra?.reconciledReason,
-              podTerminationReason: infra?.podTerminationReason,
+              sandboxNotReadyReason: infra?.sandboxNotReadyReason,
+              gatewayReady: infra?.gatewayReady,
+              gatewayNotReadyReason: infra?.gatewayNotReadyReason,
+              errorReason: infra?.errorReason,
+              sandboxTerminationReason: infra?.sandboxTerminationReason,
             },
             "agent.wake.timeout",
           );

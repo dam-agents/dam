@@ -1,5 +1,5 @@
 import type { BudgetsService } from "api-server-api";
-import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import type { Db } from "db";
 import { createUserBudgetsReader } from "./infrastructure/user-budgets.js";
 import {
   createBudgetsService,
@@ -11,13 +11,13 @@ import {
 } from "./services/budgets-service.js";
 
 export function composeBudgetsModule(deps: {
-  k8s: K8sClient;
+  db: Db;
   owner: string;
   listAgents(): Promise<BudgetedAgent[]>;
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
 }): { budgets: BudgetsService; resizeGate: ResizeGate } {
-  const userBudgets = createUserBudgetsReader(deps.k8s);
+  const userBudgets = createUserBudgetsReader(deps.db);
   const serviceDeps = {
     listAgents: deps.listAgents,
     readCeilingOverride: () => userBudgets.ceiling(deps.owner),
@@ -31,11 +31,11 @@ export function composeBudgetsModule(deps: {
 }
 
 export function composeSpawnSizeGate(deps: {
-  k8s: K8sClient;
+  db: Db;
   owner: string;
   defaultCeiling: { cpu: string; memory: string };
 }): SpawnSizeGate {
-  const userBudgets = createUserBudgetsReader(deps.k8s);
+  const userBudgets = createUserBudgetsReader(deps.db);
   return createSpawnSizeGate({
     readCeilingOverride: () => userBudgets.ceiling(deps.owner),
     defaultCeiling: deps.defaultCeiling,

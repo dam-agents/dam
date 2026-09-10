@@ -1,3 +1,4 @@
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 import type { E2eService } from "api-server-api";
 import {
   createE2eService,
@@ -5,7 +6,7 @@ import {
 } from "./services/e2e-service.js";
 
 export function composeE2eModule(deps: {
-  namespace: string;
+  addresses: SandboxAddresses;
   slack?: SlackE2eControl;
 }): {
   service: E2eService;

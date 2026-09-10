@@ -2,20 +2,17 @@ import type { Subscription } from "rxjs";
 import type { LiveEventsService, PodSessionsService } from "api-server-api";
 import type { RedisBus } from "../../core/redis-bus.js";
 import { createRedisLiveEventsBus } from "./infrastructure/redis-live-events-bus.js";
-import { startAgentWatch } from "./infrastructure/k8s-agent-watch.js";
+import { startAgentWatch } from "./infrastructure/agent-watch.js";
 import { createLiveEventsService } from "./services/live-events-service.js";
 import { createPodSessionsService } from "./services/pod-sessions-service.js";
 import { createPodSessionWatcher } from "./infrastructure/pod-session-watch.js";
 import { startLiveHintsSaga } from "./sagas/live-hints.js";
-import {
-  AGENTS_PLURAL,
-  LABEL_OWNER,
-  LAST_ACTIVITY_KEY,
-} from "../agents/infrastructure/labels.js";
-import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import { LAST_ACTIVITY_KEY } from "../agents/infrastructure/labels.js";
+import type { AgentStore } from "../agents/infrastructure/agent-store.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { RuntimeFeatures } from "agent-runtime-api";
 import { agentStreamable } from "../agents/index.js";
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 
 export interface LiveEventsModule {
   liveEvents: LiveEventsService;
@@ -29,8 +26,8 @@ export interface LiveEventsModule {
 export function composeLiveEventsModule(deps: {
   bus: RedisBus;
   log: (message: string) => void;
-  k8s: Pick<K8sClient, "watchCustomObjects">;
-  namespace: string;
+  agentStore: Pick<AgentStore, "onChange">;
+  sandboxAddresses: SandboxAddresses;
   agentsRepo: Pick<AgentsRepository, "list">;
   runtimeFeaturesFor: (
     agentIds: string[],
@@ -48,7 +45,7 @@ export function composeLiveEventsModule(deps: {
       const features = await deps.runtimeFeaturesFor(running);
       return running.filter((id) => features.get(id)?.liveUpdates);
     },
-    watchAgent: createPodSessionWatcher(deps.namespace, deps.log),
+    watchAgent: createPodSessionWatcher(deps.sandboxAddresses, deps.log),
     onAgentsChanged: (ownerSub, listener) =>
       bus.subscribe(ownerSub, (event) => {
         if (event.topic === "agents" || event.topic === "sync") listener();
@@ -67,11 +64,8 @@ export function composeLiveEventsModule(deps: {
     },
     startAgentWatch() {
       if (watch) return;
-      watch = startAgentWatch(bus, deps.k8s, {
-        plural: AGENTS_PLURAL,
-        ownerLabel: LABEL_OWNER,
+      watch = startAgentWatch(bus, deps.agentStore, {
         volatileAnnotations: [LAST_ACTIVITY_KEY],
-        log: deps.log,
       });
     },
     stopAgentWatch() {

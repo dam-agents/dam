@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
 
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import {
   createSpawnSizeGate,
   SizeNeverFitsError,
@@ -77,16 +76,10 @@ describe("spawn size admission over the route", () => {
   test("maps SizeNeverFitsError to a 400 with the figures", async () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
-      k8s: {
-        getCustomObject: async (plural: string, id: string) =>
-          plural === AGENTS_PLURAL && id === "driver-1"
-            ? {
-                metadata: {
-                  uid: "uid-1",
-                  labels: { "agent-platform.ai/owner": "owner-1" },
-                },
-                spec: {},
-              }
+      agentStore: {
+        get: async (id: string) =>
+          id === "driver-1"
+            ? { id, owner: "owner-1", annotations: {}, spec: {}, status: {} }
             : null,
       } as never,
       invocationsServiceFor: () =>
@@ -136,16 +129,10 @@ describe("budget visibility over the route", () => {
   const makeApp = () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
-      k8s: {
-        getCustomObject: async (plural: string, id: string) =>
-          plural === AGENTS_PLURAL && id === "driver-1"
-            ? {
-                metadata: {
-                  uid: "uid-1",
-                  labels: { "agent-platform.ai/owner": "owner-1" },
-                },
-                spec: {},
-              }
+      agentStore: {
+        get: async (id: string) =>
+          id === "driver-1"
+            ? { id, owner: "owner-1", annotations: {}, spec: {}, status: {} }
             : null,
       } as never,
       invocationsServiceFor: () => ({}) as never,

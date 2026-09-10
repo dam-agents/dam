@@ -5,7 +5,6 @@ import type { harnessFamilySchema } from "./schemas.js";
 export interface Mount {
   path: string;
   persist: boolean;
-  size?: string;
 }
 
 export interface Resources {
@@ -13,7 +12,7 @@ export interface Resources {
   limits?: Record<string, string>;
 }
 
-export const SPEC_VERSION = "agent-platform.ai/v1";
+export const SPEC_VERSION = "platform/v1";
 
 export type TemplateCategory = "harness" | "preconfigured";
 
@@ -42,13 +41,8 @@ export interface TemplateSpec {
   env?: EnvVar[];
   resources?: Resources;
   imagePullPolicy?: string;
-  imagePullSecretRef?: string;
+  registryAuthPath?: string;
   hibernationTimeout?: string;
-  storageSize?: string;
-  storageClass?: string;
-  backend?: { type: "container" | "vm"; vm?: Record<string, unknown> };
-  runtimeClassName?: string;
-  nodeSelector?: Record<string, string>;
   skillSources?: SkillSourceSeed[];
 }
 

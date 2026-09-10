@@ -5,7 +5,7 @@ import { createConnectionRulesSync } from "../../modules/egress-rules/services/c
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
-import type { AgentL7HostsPort } from "../../modules/egress-rules/infrastructure/k8s-agent-l7-hosts-port.js";
+import type { AgentL7HostsPort } from "../../modules/egress-rules/infrastructure/agent-l7-hosts-port.js";
 
 function rowFrom(r: NewEgressRule): EgressRuleRow {
   return {

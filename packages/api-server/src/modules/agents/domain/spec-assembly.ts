@@ -47,13 +47,8 @@ export function assembleSpecFromTemplate(
     env: tmplSpec.env,
     resources: concreteResources(tmplSpec.resources, opts.size, defaultLimits),
     imagePullPolicy: tmplSpec.imagePullPolicy,
-    imagePullSecretRef: tmplSpec.imagePullSecretRef,
+    registryAuthPath: tmplSpec.registryAuthPath,
     hibernationTimeout: tmplSpec.hibernationTimeout,
-    storageSize: tmplSpec.storageSize,
-    storageClass: tmplSpec.storageClass,
-    backend: tmplSpec.backend,
-    runtimeClassName: tmplSpec.runtimeClassName,
-    nodeSelector: tmplSpec.nodeSelector,
   };
 }
 

@@ -14,7 +14,7 @@ describe("agents.backgroundWork read", () => {
   it("returns the pod-reported sets for a running agent", async () => {
     const read = executeBackgroundWorkRead({
       getAgent: async () => ({ hibernated: false }),
-      podStatus: { backgroundWork: async () => HELD },
+      sandboxStatus: { backgroundWork: async () => HELD },
     });
     expect(await read("agent-1")).toEqual(HELD);
   });
@@ -23,7 +23,7 @@ describe("agents.backgroundWork read", () => {
     const probe = vi.fn();
     const read = executeBackgroundWorkRead({
       getAgent: async () => ({ hibernated: true }),
-      podStatus: { backgroundWork: probe },
+      sandboxStatus: { backgroundWork: probe },
     });
     expect(await read("agent-1")).toEqual([]);
     expect(probe).not.toHaveBeenCalled();
@@ -32,7 +32,7 @@ describe("agents.backgroundWork read", () => {
   it("fails soft to [] when the pod doesn't answer (starting, rolling, unreachable)", async () => {
     const read = executeBackgroundWorkRead({
       getAgent: async () => ({ hibernated: false }),
-      podStatus: {
+      sandboxStatus: {
         backgroundWork: async () => {
           throw new Error("fetch failed");
         },

@@ -2,13 +2,13 @@ import { SHARED_KB_TEMPLATE_ID } from "api-server-api";
 import type { Hono } from "hono";
 
 import { securityLog } from "../../core/security-log.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStore } from "../../modules/agents/infrastructure/agent-store.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/services/secret-store.js";
 import { resolveAgent } from "./agent-auth.js";
 
 export interface AgentKbDeps {
-  k8s: K8sClient;
+  agentStore: AgentStore;
   kbMcp: { fetch: (req: Request) => Response | Promise<Response> };
   connections: Pick<ConnectionsRepository, "listConnectionsForAgent">;
   secretStore: Pick<SecretStore, "getField">;
@@ -32,7 +32,7 @@ async function agentShareTokens(
 export function mountAgentKbRoutes(app: Hono, deps: AgentKbDeps): void {
   app.all("/api/agents/:id/kb", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.agentStore, agentId);
     if (!verified) {
       securityLog("warn", "kb_consume.resolve_fail", {
         category: "authn",

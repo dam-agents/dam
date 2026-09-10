@@ -22,7 +22,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
-import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
+import type { SandboxStatusClient } from "../infrastructure/sandbox-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import {
   assembleAgent,
@@ -46,7 +46,7 @@ import {
 } from "../domain/telemetry-env.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
-import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
+import type { AgentRegistryAuthPort } from "../infrastructure/agent-registry-auth-port.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
@@ -194,14 +194,14 @@ export function executeTelegramBind(deps: {
 
 export function executeBackgroundWorkRead(deps: {
   getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
-  podStatus: PodStatusClient;
+  sandboxStatus: SandboxStatusClient;
 }) {
   return async (id: string): Promise<SessionBackgroundWork[] | null> => {
     const infra = await deps.getAgent(id);
     if (!infra) return null;
     if (infra.hibernated) return [];
     try {
-      return await deps.podStatus.backgroundWork(id);
+      return await deps.sandboxStatus.backgroundWork(id);
     } catch {
       return [];
     }
@@ -434,12 +434,11 @@ export function createAgentsService(deps: {
   ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
-  registrySecretPort: AgentRegistrySecretPort;
+  registryAuthPort: AgentRegistryAuthPort;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
-  podStatus: PodStatusClient;
+  sandboxStatus: SandboxStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
@@ -683,7 +682,7 @@ export function createAgentsService(deps: {
 
     backgroundWork: executeBackgroundWorkRead({
       getAgent: (id) => deps.repo.get(id, deps.owner),
-      podStatus: deps.podStatus,
+      sandboxStatus: deps.sandboxStatus,
     }),
 
     async create(input: AgentCreateInput) {
@@ -714,14 +713,6 @@ export function createAgentsService(deps: {
           },
           deps.agentDefaultLimits,
         );
-      }
-      const backend = spec.backend as { type?: string } | undefined;
-      if (backend?.type === "vm" && !deps.virtualizationEnabled) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "this template runs as a full VM, which is not enabled on this install (virtualization.enabled)",
-        });
       }
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
@@ -754,12 +745,12 @@ export function createAgentsService(deps: {
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
-        await deps.registrySecretPort.create(
+        await deps.registryAuthPort.create(
           agentId,
           owner,
           input.registryCredential,
         );
-        spec.imagePullSecretRef = deps.registrySecretPort.secretName(agentId);
+        spec.registryAuthPath = deps.registryAuthPort.configDir(agentId);
       }
 
       const createAnnotations: Record<string, string> = {};
@@ -784,7 +775,7 @@ export function createAgentsService(deps: {
       } catch (e) {
         if (input.registryCredential) {
           try {
-            await deps.registrySecretPort.delete(agentId);
+            await deps.registryAuthPort.delete(agentId);
           } catch (cleanupErr) {
             securityLog("error", "agent.create.pull_secret_orphaned", {
               category: "resource",

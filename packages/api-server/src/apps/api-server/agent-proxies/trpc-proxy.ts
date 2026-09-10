@@ -5,12 +5,12 @@ import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../../modules/agents/infrastructure/sandbox-addresses.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
 import type { ApiVariables } from "../deps.js";
 
 export interface AgentTrpcProxyDeps {
-  namespace: string;
+  addresses: SandboxAddresses;
   verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<unknown>;
 }
@@ -69,7 +69,7 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
 
     const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-    const upstreamUrl = `http://${podBaseUrl(agentId, deps.namespace)}/api/trpc${rest}${qs}`;
+    const upstreamUrl = `http://${deps.addresses.baseUrl(agentId)}/api/trpc${rest}${qs}`;
     try {
       const headers = new Headers(c.req.raw.headers);
       headers.delete("host");

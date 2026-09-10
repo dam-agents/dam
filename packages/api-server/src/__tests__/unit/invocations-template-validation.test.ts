@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
 
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 
 // TEST_OVERVIEW: A driver naming a template that doesn't exist: the catalogue is the
 
@@ -10,16 +9,10 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
   const spawned: Array<Record<string, unknown>> = [];
   const app = new Hono();
   mountInvocationRoutes(app, {
-    k8s: {
-      getCustomObject: async (plural: string, id: string) =>
-        plural === AGENTS_PLURAL && id === "driver-1"
-          ? {
-              metadata: {
-                uid: "uid-1",
-                labels: { "agent-platform.ai/owner": "owner-1" },
-              },
-              spec: {},
-            }
+    agentStore: {
+      get: async (id: string) =>
+        id === "driver-1"
+          ? { id, owner: "owner-1", annotations: {}, spec: {}, status: {} }
           : null,
     } as never,
     invocationsServiceFor: () =>

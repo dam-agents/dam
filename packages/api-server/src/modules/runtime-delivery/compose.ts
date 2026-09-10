@@ -1,3 +1,4 @@
+import type { SandboxAddresses } from "../agents/infrastructure/sandbox-addresses.js";
 import type { ConnectionOptions } from "bullmq";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
@@ -75,7 +76,7 @@ export interface ContributionsStatus {
 
 export interface ComposeRuntimeDeliveryOpts {
   db: Db;
-  namespace: string;
+  sandboxAddresses: SandboxAddresses;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
   snapshotWriter: HarnessConfigSnapshotWriter;
@@ -108,7 +109,7 @@ export function composeRuntimeDelivery(
     stateBuilder,
     agentRunningPort: opts.agentRunningPort,
     snapshotWriter: opts.snapshotWriter,
-    clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.namespace),
+    clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.sandboxAddresses),
     resolveOwner: opts.resolveOwner,
     log,
   });

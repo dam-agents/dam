@@ -104,7 +104,7 @@ describe("slack wake-failure surfacing", () => {
   it("hard failure: posts human copy, never the internal error string", async () => {
     const h = harness(async () => {
       throw wakeError({
-        kind: "agent-pod-failed",
+        kind: "sandbox-failed",
         terminationReason: "ImagePullFailure",
       });
     });
@@ -116,7 +116,7 @@ describe("slack wake-failure surfacing", () => {
     expect(h.turnEvents()).toHaveLength(1);
     const turn = h.turnEvents()[0] as { outcome: string; reason?: string };
     expect(turn.outcome).toBe("failure");
-    expect(turn.reason).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
+    expect(turn.reason).toBe("wake-timeout:sandbox-failed:ImagePullFailure");
   });
 
   it("transient failure: posts the still-starting note, retries once, answers", async () => {
@@ -124,7 +124,7 @@ describe("slack wake-failure surfacing", () => {
     const h = harness(async (_id, opts) => {
       calls++;
       opts?.onWaking?.();
-      if (calls === 1) throw wakeError({ kind: "agent-pod-not-ready" });
+      if (calls === 1) throw wakeError({ kind: "sandbox-not-ready" });
     });
     await h.mention();
 
@@ -142,7 +142,7 @@ describe("slack wake-failure surfacing", () => {
     let calls = 0;
     const h = harness(async () => {
       calls++;
-      throw wakeError({ kind: "agent-pod-not-ready" });
+      throw wakeError({ kind: "sandbox-not-ready" });
     });
     await h.mention();
 

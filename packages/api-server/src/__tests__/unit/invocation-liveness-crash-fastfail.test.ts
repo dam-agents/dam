@@ -66,7 +66,7 @@ describe("invocation liveness — crash fast-fail", () => {
   test("fails and reaps a target whose pod restarted, naming the cause", async () => {
     const { sweep, failed, deleted } = makeSweep(
       [runningRow("agent-crashed")],
-      async () => ({ podRestarts: 1, podRestartReason: "OutOfMemory" }),
+      async () => ({ sandboxRestarts: 1, sandboxRestartReason: "OutOfMemory" }),
     );
 
     await sweep.tick();
@@ -82,7 +82,7 @@ describe("invocation liveness — crash fast-fail", () => {
   test("still fails a restart the controller could not classify", async () => {
     const { sweep, failed } = makeSweep(
       [runningRow("agent-crashed")],
-      async () => ({ podRestarts: 2 }),
+      async () => ({ sandboxRestarts: 2 }),
     );
 
     await sweep.tick();
@@ -94,7 +94,7 @@ describe("invocation liveness — crash fast-fail", () => {
   test("leaves a healthy target running", async () => {
     const { sweep, failed, deleted } = makeSweep(
       [runningRow("agent-healthy")],
-      async () => ({ podRestarts: 0 }),
+      async () => ({ sandboxRestarts: 0 }),
     );
 
     await sweep.tick();
@@ -123,7 +123,7 @@ describe("invocation liveness — crash fast-fail", () => {
       async (id) => {
         seen.push(id);
         if (id === "agent-unreadable") throw new Error("boom");
-        return { podRestarts: 1, podRestartReason: "OutOfMemory" };
+        return { sandboxRestarts: 1, sandboxRestartReason: "OutOfMemory" };
       },
     );
 

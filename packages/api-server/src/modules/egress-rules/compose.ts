@@ -15,11 +15,10 @@ import {
 } from "./services/connection-rules-sync.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
 import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
-import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
-import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
+import { createAgentL7HostsPort } from "./infrastructure/agent-l7-hosts-port.js";
+import type { AgentL7HostsPort } from "./infrastructure/agent-l7-hosts-port.js";
 import { reconcileL7Promotions } from "./services/l7-promotion-reconcile.js";
-import type { K8sClient } from "../agents/infrastructure/k8s.js";
-import { AGENTS_PLURAL } from "../agents/infrastructure/labels.js";
+import type { AgentStore } from "../agents/infrastructure/agent-store.js";
 
 export interface ComposeEgressRulesDeps {
   db: Db;
@@ -97,20 +96,16 @@ export function createPresetSeederAdapter(
 
 export function createL7PromotionReconcile(
   db: Db,
-  k8sClient: K8sClient,
+  agentStore: AgentStore,
   log: (message: string) => void,
 ): () => Promise<{ scanned: number; drifted: number; failed: number }> {
   const repo = createEgressRulesRepository(db);
-  const l7Hosts = createAgentL7HostsPort(k8sClient);
-  const listAgentL7State = async () => {
-    const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
-    return agents.flatMap((a) => {
-      const id = a.metadata?.name;
-      if (!id) return [];
-      const spec = (a.spec ?? {}) as { l7Hosts?: string[] };
-      return [{ agentId: id, current: spec.l7Hosts ?? [] }];
-    });
-  };
+  const l7Hosts = createAgentL7HostsPort(agentStore);
+  const listAgentL7State = async () =>
+    (await agentStore.list()).map((a) => ({
+      agentId: a.id,
+      current: a.spec.l7Hosts ?? [],
+    }));
   return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });
 }
 
@@ -119,7 +114,7 @@ export type { EgressPreset };
 export {
   createAgentL7HostsPort,
   type AgentL7HostsPort,
-} from "./infrastructure/k8s-agent-l7-hosts-port.js";
+} from "./infrastructure/agent-l7-hosts-port.js";
 
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);

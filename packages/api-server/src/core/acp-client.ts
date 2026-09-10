@@ -7,7 +7,7 @@ import type {
   ContentBlock,
   InitializeResponse,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../modules/agents/infrastructure/sandbox-addresses.js";
 import { getLogger } from "./logger.js";
 
 const PING_INTERVAL_MS = 30_000;
@@ -265,12 +265,12 @@ async function withAcpConnection<T>(
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
 export function createAcpClient(opts: {
-  namespace: string;
+  addresses: SandboxAddresses;
   instanceName: string;
   turnCeilingMs?: number;
 }): AcpClient {
   return createAcpClientForUrl(
-    `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
+    `ws://${opts.addresses.baseUrl(opts.instanceName)}/api/acp`,
     opts.turnCeilingMs ?? DEFAULT_TURN_CEILING_MS,
   );
 }

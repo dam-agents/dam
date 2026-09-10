@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../../modules/agents/infrastructure/sandbox-addresses.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
@@ -28,7 +28,7 @@ export interface TerminalRelay {
 }
 
 export function createTerminalRelay(
-  namespace: string,
+  addresses: SandboxAddresses,
   repo: AgentsRepository,
   presence: SessionPresence,
   bus: RedisBus,
@@ -120,7 +120,7 @@ export function createTerminalRelay(
           () =>
             new Promise<WebSocket>((resolve, reject) => {
               const ws = new WebSocket(
-                `ws://${podBaseUrl(agentId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`,
+                `ws://${addresses.baseUrl(agentId)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`,
               );
               ws.on("open", () => resolve(ws));
               ws.on("error", (err) => {

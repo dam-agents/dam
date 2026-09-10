@@ -12,7 +12,7 @@ export function useAgentCrashToasts(): void {
     const liveIds = new Set<string>();
     for (const agent of agents) {
       liveIds.add(agent.id);
-      const reason = agent.podTerminationReason;
+      const reason = agent.sandboxTerminationReason;
       if (reason && seen.get(agent.id) !== reason) {
         seen.set(agent.id, reason);
         emitToast({

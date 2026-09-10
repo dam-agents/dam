@@ -60,6 +60,7 @@ async function mcpHarness() {
   };
 
   const session = createMcpSession("agent-1", {
+    addresses: { baseUrl: () => "10.64.0.2:8080" },
     channelManager: {},
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,

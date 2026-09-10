@@ -1,7 +1,7 @@
 import { createTRPCClient, httpLink } from "@trpc/client";
 import type { AppRouter, KbPublishSyncInput } from "agent-runtime-api";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../agents/infrastructure/sandbox-addresses.js";
 
 const SYNC_TIMEOUT_MS = 10_000;
 
@@ -17,14 +17,14 @@ export interface KbPublishPodClient {
 }
 
 export function createKbPublishPodClient(
-  namespace: string,
+  addresses: SandboxAddresses,
 ): KbPublishPodClient {
   return {
     async sync(agentId, input) {
       const client = createTRPCClient<AppRouter>({
         links: [
           httpLink({
-            url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+            url: `http://${addresses.baseUrl(agentId)}/api/trpc`,
             fetch: (request, init) =>
               fetch(request, {
                 ...init,

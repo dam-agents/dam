@@ -107,10 +107,10 @@ export function AgentUnavailableOverlay({
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {!Icon && <StartupTip sandbox={agent.name} />}
-      {agent.podTerminationReason && (
+      {agent.sandboxTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
-          {agent.podTerminationReason}
+          {agent.sandboxTerminationReason}
         </p>
       )}
       {powerAction === "start" && (

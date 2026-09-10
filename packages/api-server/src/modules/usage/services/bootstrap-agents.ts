@@ -8,8 +8,7 @@ export type BootstrapAgentsDeps = {
 export async function bootstrapAgents(
   deps: BootstrapAgentsDeps,
 ): Promise<void> {
-  const k8sAgents = await deps.listIdentities();
-  for (const a of k8sAgents) {
+  for (const a of await deps.listIdentities()) {
     await deps.upsertAgent({ id: a.id, ownerSub: a.owner });
   }
 }

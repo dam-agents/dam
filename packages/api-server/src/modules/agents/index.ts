@@ -15,9 +15,9 @@ export {
   type AgentEnvRepository,
 } from "./infrastructure/agent-env-repository.js";
 export {
-  createAgentRegistrySecretPort,
-  type AgentRegistrySecretPort,
-} from "./infrastructure/agent-registry-secret-port.js";
+  createAgentRegistryAuthPort,
+  type AgentRegistryAuthPort,
+} from "./infrastructure/agent-registry-auth-port.js";
 export {
   createKeycloakUserDirectory,
   type KeycloakUserDirectory,

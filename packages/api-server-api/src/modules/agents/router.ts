@@ -48,7 +48,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       cpu: agent.spec.resources?.limits?.cpu,
       memory: agent.spec.resources?.limits?.memory,
     },
-    podTerminationReason: agent.podTerminationReason,
+    sandboxTerminationReason: agent.sandboxTerminationReason,
     contributionFailures: agent.contributionFailures,
     unsupportedContributionKinds: agent.unsupportedContributionKinds,
     channels: agent.channels,

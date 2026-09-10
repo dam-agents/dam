@@ -1,12 +1,11 @@
-import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
-import { createK8sClient } from "./infrastructure/k8s.js";
-import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
-import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
-import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
+import type { AgentStore } from "./infrastructure/agent-store.js";
+import type { SandboxAddresses } from "./infrastructure/sandbox-addresses.js";
+import { createAgentRegistryAuthPort } from "./infrastructure/agent-registry-auth-port.js";
+import { createSandboxStatusClient } from "./infrastructure/sandbox-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -63,12 +62,11 @@ export type {
 } from "./services/agents-service.js";
 
 export function composeAgentsModule(deps: {
-  api: k8s.CoreV1Api;
-  agentStateCache: AgentStateCache;
-  namespace: string;
+  agentStore: AgentStore;
+  sandboxAddresses: SandboxAddresses;
+  registryAuthRoot: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
-  virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
@@ -93,10 +91,9 @@ export function composeAgentsModule(deps: {
   repo: AgentsRepository;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
-  const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s, deps.agentStateCache);
+  const repo = createAgentsRepository(deps.agentStore);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
-  const registrySecretPort = createAgentRegistrySecretPort(k8s);
+  const registryAuthPort = createAgentRegistryAuthPort(deps.registryAuthRoot);
   const owner = deps.owner ?? "";
   return {
     agents: createAgentsService({
@@ -104,17 +101,16 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
-      registrySecretPort,
+      registryAuthPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
-      podStatus: createPodStatusClient(deps.namespace),
+      sandboxStatus: createSandboxStatusClient(deps.sandboxAddresses),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

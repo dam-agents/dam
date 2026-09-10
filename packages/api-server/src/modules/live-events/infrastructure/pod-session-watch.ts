@@ -4,11 +4,11 @@ import {
   type AppRouter as AgentRuntimeRouter,
 } from "agent-runtime-api";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { SandboxAddresses } from "../../agents/infrastructure/sandbox-addresses.js";
 import type { PodSessionWatch } from "../services/pod-sessions-service.js";
 
 export function createPodSessionWatcher(
-  namespace: string,
+  addresses: SandboxAddresses,
   log: (message: string) => void,
 ) {
   return function watchAgent(
@@ -16,7 +16,7 @@ export function createPodSessionWatcher(
     onNotice: () => void,
   ): PodSessionWatch {
     const wsClient = createWSClient({
-      url: `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
+      url: `ws://${addresses.baseUrl(agentId)}/api/trpc-ws`,
       keepAlive: { enabled: true },
       onError: () => log(`pod session watch errored for ${agentId}`),
     });

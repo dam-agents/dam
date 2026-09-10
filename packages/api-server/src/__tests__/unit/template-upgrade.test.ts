@@ -21,7 +21,7 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     hibernated: true,
     stopRequested: false,
     overBudget: false,
-    podRestarts: 0,
+    sandboxRestarts: 0,
     ...overrides,
   };
 }

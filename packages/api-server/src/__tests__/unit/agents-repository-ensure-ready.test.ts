@@ -1,52 +1,38 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { fakeK8s } from "../helpers/fake-k8s.js";
-import { createLiveAgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import { fakeAgentStore } from "../helpers/fake-agent-store.js";
 import type {
-  K8sClient,
-  KubeObject,
-} from "../../modules/agents/infrastructure/k8s.js";
+  AgentRecord,
+  AgentStatus,
+  AgentStore,
+} from "../../modules/agents/infrastructure/agent-store.js";
 import { isAgentWakeTimeoutError } from "../../modules/agents/domain/wake-failure.js";
 import { isAgentStoppedError } from "../../modules/agents/domain/agent-stopped.js";
 import { configureLogger } from "../../core/logger.js";
 
-type Condition = {
-  type: string;
-  status: string;
-  reason?: string;
-  message?: string;
-};
-
-function agentObj(name: string, conditions: Condition[]): KubeObject {
+function agentRec(name: string, status: AgentStatus): AgentRecord {
   return {
-    metadata: { name, annotations: {} },
-    spec: { name },
-    status: { conditions },
-  } as KubeObject;
+    id: name,
+    owner: "owner-1",
+    annotations: {},
+    spec: { image: "x", name },
+    status,
+  };
 }
 
-const READY: Condition[] = [{ type: "Ready", status: "True" }];
-const HIBERNATED: Condition[] = [
-  { type: "Ready", status: "False", reason: "Hibernated" },
-];
-const OVER_BUDGET: Condition[] = [
-  {
-    type: "Ready",
-    status: "False",
-    reason: "OverBudget",
-    message: "4.5/4 CPU — stop a running agent to free room",
-  },
-];
+const READY: AgentStatus = { ready: true };
+const HIBERNATED: AgentStatus = { ready: false, hibernated: true };
+const OVER_BUDGET: AgentStatus = {
+  ready: false,
+  overBudget: true,
+  overBudgetMessage: "4.5/4 CPU — stop a running agent to free room",
+};
 
-function harness(initial: KubeObject[]) {
+function harness(initial: AgentRecord[]) {
   const lines: Array<Record<string, unknown>> = [];
   configureLogger({ level: "info", write: (l) => lines.push(JSON.parse(l)) });
-  const { client, store } = fakeK8s(initial);
-  const repo = createAgentsRepository(
-    client,
-    createLiveAgentStateCache(client),
-  );
-  return { repo, store, lines };
+  const { store, records } = fakeAgentStore(initial);
+  return { repo: createAgentsRepository(store), store, records, lines };
 }
 
 beforeEach(() => {
@@ -69,21 +55,19 @@ async function advanceUntilSettled(p: Promise<unknown>): Promise<void> {
 
 describe("ensureReady", () => {
   it("fast path: already ready bumps last-activity without polling", async () => {
-    const { repo, store, lines } = harness([agentObj("a1", READY)]);
+    const { repo, records, lines } = harness([agentRec("a1", READY)]);
     await repo.ensureReady("a1");
     expect(
-      store.get("a1")?.metadata?.annotations?.[
-        "agent-platform.ai/last-activity"
-      ],
+      records.get("a1")?.annotations["agent-platform.ai/last-activity"],
     ).toBeTruthy();
     expect(lines.map((l) => l.msg)).not.toContain("agent.wake.begin");
   });
 
   it("wake success logs agent.wake.ready with duration", async () => {
-    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const { repo, records, lines } = harness([agentRec("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     await vi.advanceTimersByTimeAsync(5_000);
-    store.set("a1", agentObj("a1", READY));
+    records.set("a1", agentRec("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
     await p;
     const ready = lines.find((l) => l.msg === "agent.wake.ready");
@@ -94,12 +78,12 @@ describe("ensureReady", () => {
   });
 
   it("onWaking fires on the slow path and for joiners, not when ready", async () => {
-    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
+    const { repo, records } = harness([agentRec("a1", HIBERNATED)]);
     let notices = 0;
     const p1 = repo.ensureReady("a1", { onWaking: () => notices++ });
     const p2 = repo.ensureReady("a1", { onWaking: () => notices++ });
     await vi.advanceTimersByTimeAsync(0);
-    store.set("a1", agentObj("a1", READY));
+    records.set("a1", agentRec("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
     await Promise.all([p1, p2]);
     expect(notices).toBe(2);
@@ -110,68 +94,62 @@ describe("ensureReady", () => {
 
   const timeoutCases: Array<{
     name: string;
-    conditions: Condition[];
+    status: AgentStatus;
     kind: string;
     logCause: string;
   }> = [
     {
-      name: "still Hibernated → hibernated-not-scaled",
-      conditions: HIBERNATED,
-      kind: "hibernated-not-scaled",
-      logCause: "wake-timeout:hibernated-not-scaled",
+      name: "still Hibernated → hibernated-not-started",
+      status: HIBERNATED,
+      kind: "hibernated-not-started",
+      logCause: "wake-timeout:hibernated-not-started",
     },
     {
-      name: "ImagePullFailure → agent-pod-failed",
-      conditions: [
-        { type: "Ready", status: "False", reason: "PodsNotReady" },
-        {
-          type: "AgentPodReady",
-          status: "False",
-          reason: "ImagePullFailure",
-          message: "can't pull image (check the registry credential)",
-        },
-      ],
-      kind: "agent-pod-failed",
-      logCause: "wake-timeout:agent-pod-failed:ImagePullFailure",
+      name: "ImagePullFailure → sandbox-failed",
+      status: {
+        ready: false,
+        sandboxReady: false,
+        sandboxNotReadyReason: "ImagePullFailure",
+      },
+      kind: "sandbox-failed",
+      logCause: "wake-timeout:sandbox-failed:ImagePullFailure",
     },
     {
-      name: "plain PodNotReady → agent-pod-not-ready (progressing)",
-      conditions: [
-        { type: "Ready", status: "False", reason: "PodsNotReady" },
-        { type: "AgentPodReady", status: "False", reason: "PodNotReady" },
-      ],
-      kind: "agent-pod-not-ready",
-      logCause: "wake-timeout:agent-pod-not-ready",
+      name: "plain not-ready → sandbox-not-ready (progressing)",
+      status: {
+        ready: false,
+        sandboxReady: false,
+        sandboxNotReadyReason: "SandboxNotReady",
+      },
+      kind: "sandbox-not-ready",
+      logCause: "wake-timeout:sandbox-not-ready",
     },
     {
       name: "gateway lagging → gateway-not-ready",
-      conditions: [
-        { type: "Ready", status: "False", reason: "PodsNotReady" },
-        { type: "AgentPodReady", status: "True", reason: "PodReady" },
-        { type: "GatewayPodReady", status: "False", reason: "PodNotReady" },
-      ],
+      status: {
+        ready: false,
+        sandboxReady: true,
+        gatewayReady: false,
+        gatewayNotReadyReason: "GatewayNotReady",
+      },
       kind: "gateway-not-ready",
       logCause: "wake-timeout:gateway-not-ready",
     },
     {
       name: "reconcile error → reconcile-error",
-      conditions: [
-        { type: "Ready", status: "False", reason: "PodsNotReady" },
-        {
-          type: "Reconciled",
-          status: "False",
-          reason: "ReconcileError",
-          message: "applying statefulset: boom",
-        },
-      ],
+      status: {
+        ready: false,
+        error: "creating the sandbox: boom",
+        errorReason: "ReconcileError",
+      },
       kind: "reconcile-error",
       logCause: "wake-timeout:reconcile-error",
     },
   ];
 
-  for (const { name, conditions, kind, logCause } of timeoutCases) {
+  for (const { name, status, kind, logCause } of timeoutCases) {
     it(`timeout: ${name}`, async () => {
-      const { repo, lines } = harness([agentObj("a1", conditions)]);
+      const { repo, lines } = harness([agentRec("a1", status)]);
       const p = repo.ensureReady("a1");
       p.catch(() => {});
       await advanceUntilSettled(p);
@@ -189,11 +167,11 @@ describe("ensureReady", () => {
     });
   }
 
-  it("timeout with the CR deleted mid-wake → not-found", async () => {
-    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
+  it("timeout with the agent deleted mid-wake → not-found", async () => {
+    const { repo, records } = harness([agentRec("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
-    store.delete("a1");
+    records.delete("a1");
     await advanceUntilSettled(p);
     const err = await p.then(
       () => null,
@@ -206,20 +184,20 @@ describe("ensureReady", () => {
   });
 
   it("keeps polling past a stale denial and succeeds once the controller admits", async () => {
-    const { repo, store } = harness([agentObj("a1", OVER_BUDGET)]);
+    const { repo, records } = harness([agentRec("a1", OVER_BUDGET)]);
     const p = repo.ensureReady("a1");
     await vi.advanceTimersByTimeAsync(0);
-    store.set("a1", agentObj("a1", READY));
+    records.set("a1", agentRec("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(p).resolves.toBeUndefined();
   });
 
   it("fail-fast: a denial that appears during the wake rejects immediately", async () => {
-    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const { repo, records, lines } = harness([agentRec("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
     await vi.advanceTimersByTimeAsync(0);
-    store.set("a1", agentObj("a1", OVER_BUDGET));
+    records.set("a1", agentRec("a1", OVER_BUDGET));
     await advanceUntilSettled(p);
     const err = await p.then(
       () => null,
@@ -234,7 +212,7 @@ describe("ensureReady", () => {
   });
 
   it("fail-fast: a standing denial outlasting the grace window rejects with the figures", async () => {
-    const { repo } = harness([agentObj("a1", OVER_BUDGET)]);
+    const { repo } = harness([agentRec("a1", OVER_BUDGET)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
     await advanceUntilSettled(p);
@@ -251,12 +229,11 @@ describe("ensureReady", () => {
   });
 
   it("a stop landing mid-wake fails fast and is never cleared by the wake", async () => {
-    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
+    const { repo, records } = harness([agentRec("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
     await vi.advanceTimersByTimeAsync(0);
-    const obj = store.get("a1");
-    obj!.metadata!.annotations!["agent-platform.ai/stop-requested"] =
+    records.get("a1")!.annotations["agent-platform.ai/stop-requested"] =
       "2026-07-14T00:00:00Z";
     await advanceUntilSettled(p);
     const err = await p.then(
@@ -265,35 +242,23 @@ describe("ensureReady", () => {
     );
     expect(isAgentStoppedError(err)).toBe(true);
     expect(
-      store.get("a1")?.metadata?.annotations?.[
-        "agent-platform.ai/stop-requested"
-      ],
+      records.get("a1")?.annotations["agent-platform.ai/stop-requested"],
     ).toBe("2026-07-14T00:00:00Z");
   });
 
   it("late ready at the deadline counts as success", async () => {
-    const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
-    const original = store.get("a1")!;
+    const { store, lines } = harness([agentRec("a1", HIBERNATED)]);
     let polls = 0;
-    const { client } = (() => {
-      const inner = fakeK8s([original]);
-      const wrapped: K8sClient = {
-        ...inner.client,
-        async getCustomObject(plural, name) {
-          polls++;
-          if (Date.now() >= 120_000) {
-            return agentObj("a1", READY);
-          }
-          return inner.client.getCustomObject(plural, name);
-        },
-      };
-      return { client: wrapped };
-    })();
+    const wrapped: AgentStore = {
+      ...store,
+      async get(id) {
+        polls++;
+        if (Date.now() >= 120_000) return agentRec("a1", READY);
+        return store.get(id);
+      },
+    };
     vi.setSystemTime(0);
-    const repo2 = createAgentsRepository(
-      client,
-      createLiveAgentStateCache(client),
-    );
+    const repo2 = createAgentsRepository(wrapped);
     const p = repo2.ensureReady("a1");
     await advanceUntilSettled(p);
     await expect(p).resolves.toBeUndefined();
@@ -308,26 +273,24 @@ describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
   it("clears its own stop once the controller reports Hibernated", async () => {
-    const { repo, store } = harness([agentObj("a1", READY)]);
+    const { repo, records } = harness([agentRec("a1", READY)]);
     const infra = await repo.requestPause("a1");
     expect(infra).not.toBeNull();
-    const ann = () => store.get("a1")?.metadata?.annotations ?? {};
+    const ann = () => records.get("a1")?.annotations ?? {};
     expect(ann()[STOP_KEY]).toBeTruthy();
-    (store.get("a1") as { status?: unknown }).status = {
-      conditions: HIBERNATED,
-    };
+    records.get("a1")!.status = HIBERNATED;
     await vi.advanceTimersByTimeAsync(5_000);
     expect(ann()[STOP_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {
-    const { repo, store } = harness([agentObj("a1", READY)]);
+    const { repo, records } = harness([agentRec("a1", READY)]);
     await repo.requestPause("a1");
-    const obj = store.get("a1");
-    obj!.metadata!.annotations![STOP_KEY] = "9999-01-01T00:00:00Z";
-    (obj as { status?: unknown }).status = { conditions: HIBERNATED };
+    const record = records.get("a1")!;
+    record.annotations[STOP_KEY] = "9999-01-01T00:00:00Z";
+    record.status = HIBERNATED;
     await vi.advanceTimersByTimeAsync(65_000);
-    expect(store.get("a1")?.metadata?.annotations?.[STOP_KEY]).toBe(
+    expect(records.get("a1")?.annotations[STOP_KEY]).toBe(
       "9999-01-01T00:00:00Z",
     );
   });

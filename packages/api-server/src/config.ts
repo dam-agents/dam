@@ -33,7 +33,14 @@ const positiveQuantitySchema = z
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
-  namespace: z.string().default("platform-agents"),
+  /** Root of the node's per-agent state: workspaces, gateway config, creds. */
+  agentsRoot: z.string().default("/var/lib/dam/agents"),
+  /** Root of the credential store. Root-owned 0700. */
+  secretStoreRoot: z.string().default("/var/lib/dam/secrets"),
+  /** Root of per-agent private-registry docker configs. */
+  registryAuthRoot: z.string().default("/var/lib/dam/registry-auth"),
+  /** Port agent-runtime listens on inside its sandbox. */
+  sandboxPort: z.coerce.number().default(8080),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   logLevel: z.enum(["error", "warn", "info", "debug"]).default("info"),
   port: z.coerce.number().default(4000),
@@ -63,7 +70,6 @@ const configSchema = z.object({
   telegramBotToken: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  virtualizationEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -181,7 +187,10 @@ export function loadConfig(): Config {
   return validatedConfigSchema.parse({
     serverVersion: pkg.version,
     appVersion: process.env.PLATFORM_APP_VERSION ?? "0.0.0",
-    namespace: process.env.NAMESPACE,
+    agentsRoot: process.env.DAM_AGENTS_ROOT,
+    secretStoreRoot: process.env.DAM_SECRET_STORE_ROOT,
+    registryAuthRoot: process.env.DAM_REGISTRY_AUTH_ROOT,
+    sandboxPort: process.env.DAM_SANDBOX_PORT,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     logLevel: process.env.LOG_LEVEL,
     port: process.env.PORT,
@@ -203,7 +212,6 @@ export function loadConfig(): Config {
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
-    virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
