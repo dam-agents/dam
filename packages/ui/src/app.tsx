@@ -1,12 +1,12 @@
 import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
 
+import { Badge } from "@/components/ui/badge";
+
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
-import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
-import { NotificationsDrawer } from "./components/notifications-drawer.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
@@ -14,8 +14,10 @@ import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
-import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import { useNotifications } from "./modules/notifications/api/queries.js";
+import { NotificationsPanel } from "./modules/notifications/components/notifications-panel.js";
+import { isNeedsYou } from "./modules/notifications/lib/notification-types.js";
 import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
@@ -55,22 +57,36 @@ export default function App() {
   return <MainApp />;
 }
 
-function NotificationsBell() {
+const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
+
+function NotificationBell() {
   const toggleNotifications = useStore((s) => s.toggleNotifications);
+  const { items } = useNotifications();
+  const needsYouCount = items.filter(isNeedsYou).length;
 
   return (
     <button
       type="button"
       onClick={toggleNotifications}
-      className="fixed right-4 top-4 z-[100] flex h-10 w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-      aria-label="Notifications"
+      aria-label={
+        needsYouCount > 0
+          ? `Notifications, ${needsYouCount} pending`
+          : "Notifications"
+      }
+      className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       <Notification size={16} />
+      {needsYouCount > 0 && (
+        <Badge
+          variant="default"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-accent px-1 text-[10px] font-bold text-white hover:bg-accent"
+        >
+          {needsYouCount > 9 ? "9+" : needsYouCount}
+        </Badge>
+      )}
     </button>
   );
 }
-
-const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
@@ -102,23 +118,26 @@ function MainApp() {
     }
   }, []);
 
-  if (view === "chat" || view === "knowledge-base-chat")
+  if (view === "chat")
     return (
       <>
         <div className="flex h-full bg-background overflow-hidden">
           <IconRail hideMobileBar />
           <div className="relative z-content flex-1 min-w-0">
+            <div className="pointer-events-none absolute top-0 right-0 z-10 px-4 pt-3 md:px-6">
+              <div className="pointer-events-auto">
+                <NotificationBell />
+              </div>
+            </div>
             <ChatView />
           </div>
         </div>
-        <NotificationsBell />
-        <NotificationsDrawer
+        <NotificationsPanel
           open={notificationsOpen}
           onClose={() => setNotificationsOpen(false)}
         />
         <DialogOverlay />
         <ConnectionBanner />
-        <FloatingApprovalsPill />
         <DocsLauncher />
       </>
     );
@@ -128,10 +147,13 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
+          <div className="pointer-events-none sticky top-0 z-10 flex justify-end px-4 pt-3 md:px-6">
+            <div className="pointer-events-auto">
+              <NotificationBell />
+            </div>
+          </div>
           {view === "sandbox-home" ? (
             <SandboxHomeView />
-          ) : view === "knowledge-base-config" ? (
-            <KnowledgeBaseConfigView />
           ) : view === "home" ? (
             <HomeView />
           ) : view === "presets" ? (
@@ -163,14 +185,12 @@ function MainApp() {
           )}
         </main>
       </div>
-      <NotificationsBell />
-      <NotificationsDrawer
+      <NotificationsPanel
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
       />
       <DialogOverlay />
       <ConnectionBanner />
-      <FloatingApprovalsPill />
       <DocsLauncher />
     </div>
   );

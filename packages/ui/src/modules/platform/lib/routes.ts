@@ -32,10 +32,7 @@ export type Route =
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "agents" }
   | { view: "agent-new" }
-  | { view: "knowledge-base-chat"; agent: string }
-  | { view: "knowledge-base-config"; agentId: string }
   | { view: "artifacts" }
-  | { view: "knowledge-bases" }
   | { view: "setup-workbench" }
   | { view: "presets" }
   | { view: "schedules" }
@@ -108,6 +105,7 @@ export function parseRoute(path: string): Route {
   if (path === "/presets") return { view: "presets" };
   if (path === "/schedules") return { view: "schedules" };
   if (path === "/setup-workbench") return { view: "setup-workbench" };
+  if (path === "/card-gallery") return { view: "card-gallery" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -118,20 +116,7 @@ export function parseRoute(path: string): Route {
     };
   }
   if (path === "/agents/new") return { view: "agent-new" };
-  const knowledgeBaseConfigMatch = path.match(
-    /^\/knowledge-bases\/([^/]+)\/settings$/,
-  );
-  if (knowledgeBaseConfigMatch)
-    return {
-      view: "knowledge-base-config",
-      agentId: decodeSegment(knowledgeBaseConfigMatch[1]!),
-    };
-  const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
-  if (knowledgeBaseChatMatch)
-    return {
-      view: "knowledge-base-chat",
-      agent: decodeSegment(knowledgeBaseChatMatch[1]!),
-    };
+  if (path.startsWith("/knowledge-bases")) return { view: "home" };
   return { view: "home" };
 }
 
@@ -169,16 +154,12 @@ export function routeToPath(route: Route): string {
       return "/presets";
     case "schedules":
       return "/schedules";
-    case "knowledge-base-chat":
-      return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
-    case "knowledge-base-config":
-      return `/knowledge-bases/${encodeURIComponent(route.agentId)}/settings`;
     case "artifacts":
       return "/artifacts";
-    case "knowledge-bases":
-      return "/";
     case "setup-workbench":
       return "/setup-workbench";
+    case "card-gallery":
+      return "/card-gallery";
     default: {
       const unhandled: never = route;
       return unhandled;
@@ -194,10 +175,7 @@ export function routeToNavigationState(route: Route): {
 } {
   return {
     view: route.view,
-    agentId:
-      route.view === "sandbox-home" || route.view === "knowledge-base-config"
-        ? route.agentId
-        : null,
+    agentId: route.view === "sandbox-home" ? route.agentId : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",

@@ -17,7 +17,6 @@ type ParameterlessView =
   | "artifacts"
   | "agents"
   | "agent-new"
-  | "knowledge-bases"
   | "setup-workbench"
   | "presets"
   | "schedules"
@@ -32,7 +31,6 @@ export interface NavigationSlice {
   setView: (v: ParameterlessView) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
-  navigateToKnowledgeBaseConfig: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -85,14 +83,6 @@ export const createNavigationSlice: StateCreator<
       routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
     set({ view: "sandbox-home", agentId, sandboxSection: section });
-  },
-  navigateToKnowledgeBaseConfig: (agentId) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "sandbox-home", agentId, sandboxSection: "setup" }),
-    );
-    set({ view: "sandbox-home", agentId, sandboxSection: "setup" });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
