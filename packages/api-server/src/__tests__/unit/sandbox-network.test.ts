@@ -48,11 +48,7 @@ describe("sandbox links", () => {
 
 describe("nftables ruleset", () => {
   const links = [linkFor("a", 0), linkFor("b", 1)];
-  const ruleset = nftablesRuleset({
-    links,
-    gatewayPort: 3128,
-    sandboxPort: 8080,
-  });
+  const ruleset = nftablesRuleset({ links, gatewayPort: 3128 });
 
   // TEST_SCENARIO: forwarding off the link is the one path that would let a sandbox reach the internet without passing its gateway, which is the whole credential boundary.
   it("drops forwarding off every sandbox link", () => {
@@ -79,12 +75,17 @@ describe("nftables ruleset", () => {
     expect(lines[accept + 1]).toBe('iifname "damh0" drop');
   });
 
+  // TEST_SCENARIO: the node dials the sandbox's own listener for ACP, terminal and tRPC; those replies come back on the link with an ephemeral port and would hit the per-link drop.
+  it("lets replies to node-initiated connections back in", () => {
+    const lines = ruleset.split("\n").map((l) => l.trim());
+    expect(lines).toContain("ct state established,related accept");
+    expect(lines.indexOf("ct state established,related accept")).toBeLessThan(
+      lines.indexOf('iifname "damh0" drop'),
+    );
+  });
+
   it("is empty of agent rules when no agent is running", () => {
-    const empty = nftablesRuleset({
-      links: [],
-      gatewayPort: 3128,
-      sandboxPort: 8080,
-    });
+    const empty = nftablesRuleset({ links: [], gatewayPort: 3128 });
     expect(empty).not.toContain("iifname");
     expect(empty).toContain("table inet dam");
   });

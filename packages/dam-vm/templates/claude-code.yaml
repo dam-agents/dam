@@ -1,0 +1,18 @@
+# The node's agent catalogue is a directory of these, read at boot and never
+# written at runtime. One file per template; the filename is its id.
+version: "1"
+name: Claude Code
+description: Default Claude Code agent
+category: harness
+harness: claude-code
+image: quay.io/dam-agents/claude-code:latest
+hibernationTimeout: 30m
+mounts:
+  - path: $HOME
+    persist: true
+  - path: $HOME/work
+    persist: true
+resources:
+  limits:
+    cpu: "2"
+    memory: 4Gi

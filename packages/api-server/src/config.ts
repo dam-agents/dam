@@ -44,6 +44,11 @@ const configSchema = z.object({
   gatewayUser: z.string().default("dam-gateway"),
   gatewayPort: z.coerce.number().default(3128),
   pkiRoot: z.string().default("/var/lib/dam/pki"),
+  imagesRoot: z.string().default("/var/lib/dam/images"),
+  sandboxCommand: z
+    .string()
+    .default("")
+    .transform((v) => v.split(/\s+/).filter(Boolean)),
   telemetryCollectorHost: z.string().default(""),
   telemetryCollectorPort: z.coerce.number().default(4318),
   otelExporterEndpoint: z.string().optional(),
@@ -202,6 +207,8 @@ export function loadConfig(): Config {
     gatewayUser: process.env.DAM_GATEWAY_USER,
     gatewayPort: process.env.DAM_GATEWAY_PORT,
     pkiRoot: process.env.DAM_PKI_ROOT,
+    imagesRoot: process.env.DAM_IMAGES_ROOT,
+    sandboxCommand: process.env.DAM_SANDBOX_COMMAND,
     telemetryCollectorHost: process.env.PLATFORM_TELEMETRY_COLLECTOR_HOST,
     telemetryCollectorPort: process.env.PLATFORM_TELEMETRY_COLLECTOR_PORT,
     otelExporterEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,

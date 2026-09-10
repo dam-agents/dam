@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exec } from "./exec.js";
-import { nftablesRuleset, type SandboxLink } from "../domain/network.js";
+import {
+  nftablesRuleset,
+  SANDBOX_NETNS_RULESET,
+  type SandboxLink,
+} from "../domain/network.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Creates and tears down the per-agent namespace
@@ -17,13 +22,24 @@ export interface NetworkPort {
   destroy(link: SandboxLink): Promise<void>;
   applyRuleset(
     links: readonly SandboxLink[],
-    ports: { gatewayPort: number; sandboxPort: number },
+    ports: { gatewayPort: number },
   ): Promise<void>;
   list(): Promise<string[]>;
 }
 
 export function createNetworkPort(): NetworkPort {
   const ip = (...args: string[]) => exec("ip", args);
+
+  async function nft(ruleset: string, netns?: string): Promise<void> {
+    const path = join(tmpdir(), `dam-nft-${randomUUID()}.nft`);
+    await writeFile(path, ruleset, { mode: 0o600 });
+    try {
+      if (netns) await exec("ip", ["netns", "exec", netns, "nft", "-f", path]);
+      else await exec("nft", ["-f", path]);
+    } finally {
+      await rm(path, { force: true });
+    }
+  }
 
   return {
     async create(link) {
@@ -72,6 +88,7 @@ export function createNetworkPort(): NetworkPort {
       );
       await inNs("link", "set", link.sandboxInterface, "up");
       await inNs("link", "set", "lo", "up");
+      await nft(SANDBOX_NETNS_RULESET, link.netns);
     },
 
     async destroy(link) {
@@ -80,17 +97,9 @@ export function createNetworkPort(): NetworkPort {
     },
 
     async applyRuleset(links, ports) {
-      const path = join(tmpdir(), `dam-nft-${process.pid}.nft`);
-      await writeFile(
-        path,
+      await nft(
         `table inet dam\ndelete table inet dam\n${nftablesRuleset({ links, ...ports })}`,
-        { mode: 0o600 },
       );
-      try {
-        await exec("nft", ["-f", path]);
-      } finally {
-        await rm(path, { force: true });
-      }
     },
 
     async list() {

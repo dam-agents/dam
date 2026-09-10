@@ -7,7 +7,12 @@ Description=Platform egress gateway for agent %i
 Type=simple
 User=dam-gateway
 Group=dam-gateway
+# Every Envoy claims a shared-memory region keyed by base id, and the default
+# is 0 — so without this the second gateway on the node cannot start, and a
+# region left by a crashed one blocks even the first. Letting Envoy pick a
+# free id is what makes one gateway per agent possible at all.
 ExecStart=/usr/local/bin/envoy \
+  --use-dynamic-base-id \
   --config-path /var/lib/dam/agents/%i/gateway/envoy.yaml \
   --log-level warn \
   --service-node %i \

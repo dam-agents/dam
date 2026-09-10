@@ -23,6 +23,7 @@ REPO="$1"
 PNPM_VERSION="$2"
 
 install -d -m 0700 /var/lib/dam/secrets /var/lib/dam/pki /var/lib/dam/registry-auth
+install -d -m 0755 /var/lib/dam/images
 # The gateway user must be able to traverse to its own agent's directory;
 # what it can see inside is settled by the unit's mount namespace.
 install -d -m 0751 /var/lib/dam/agents /run/dam /etc/dam
@@ -42,10 +43,12 @@ install -d /opt/dam
 (cd "$REPO" && pnpm install --frozen-lockfile --filter api-server... >/dev/null && pnpm --filter api-server --prod --legacy deploy /opt/dam/api-server)
 # `deploy` carries the package and its dependencies, not build output or the
 # sibling packages read at runtime.
-cp -a "$REPO/packages/api-server/dist" /opt/dam/api-server/dist
-install -d /opt/dam/api-server/packages/db
-cp -a "$REPO/packages/db/drizzle" /opt/dam/api-server/packages/db/drizzle
-rm -rf /opt/dam/api-server/ui && cp -a "$REPO/packages/ui/dist" /opt/dam/api-server/ui
+# Trailing /. so a re-install replaces the contents instead of nesting the
+# directory inside itself and leaving the old build in place.
+rm -rf /opt/dam/api-server/dist /opt/dam/api-server/packages
+install -d /opt/dam/api-server/dist /opt/dam/api-server/packages/db/drizzle
+cp -a "$REPO/packages/api-server/dist/." /opt/dam/api-server/dist/
+cp -a "$REPO/packages/db/drizzle/." /opt/dam/api-server/packages/db/drizzle/
 
 install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
 # Secrets are generated once and kept, so a reinstall does not invalidate
@@ -60,7 +63,7 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
   echo "DATABASE_URL=postgres://dam:dam@127.0.0.1:5432/dam"
 } >> /etc/dam/env
 install -d /etc/dam/templates
-cp -a "$REPO/packages/agents"/*/template.yaml /etc/dam/templates/ 2>/dev/null || true
+cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
 
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -q 1 || {
   sudo -u postgres psql -c "CREATE ROLE dam LOGIN PASSWORD 'dam'"

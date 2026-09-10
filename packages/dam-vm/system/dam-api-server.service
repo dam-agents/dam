@@ -34,15 +34,26 @@ NoNewPrivileges=yes
 # ProtectKernelTunables and ProtectKernelLogs are absent for the same reason:
 # each implies MountAPIVFS, which is a private mount namespace by another
 # name. ProtectKernelModules is capability-based and costs nothing here.
-RestrictSUIDSGID=yes
-RestrictRealtime=yes
-LockPersonality=yes
-# CAP_NET_ADMIN for the per-agent namespaces and the ruleset; CAP_SYS_ADMIN
-# for entering them; CAP_CHOWN/DAC to hand each gateway its own credentials.
-# CAP_MAC_ADMIN is for the container runtime's own AppArmor profile, which it
-# loads on first use; without it every sandbox start fails rather than
-# quietly running unconfined.
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_KILL CAP_MAC_ADMIN
+# No seccomp-installing directive may appear here — RestrictSUIDSGID,
+# LockPersonality, RestrictRealtime, ProtectKernelModules and their kind all
+# install a filter, and gVisor installs its own when it re-execs itself for
+# the sentry and the gofer. An inherited filter makes that exec fail outright,
+# so a single one of them means no sandbox on the node starts at all. What
+# RestrictSUIDSGID would have bought is kept by choice instead: image
+# extraction drops setuid bits rather than being prevented from restoring
+# them.
+# CAP_FSETID is for unpacking images faithfully: a layer carries setuid bits,
+# and without it every image with one fails to extract. They are inert in the
+# sandbox regardless — its spec sets noNewPrivileges and an empty capability
+# set, so a setuid binary there elevates nothing.
+# Two jobs need capabilities here. The supervisor's own: namespaces and the
+# ruleset (NET_ADMIN), entering them (SYS_ADMIN), handing each gateway its
+# credentials (CHOWN, DAC_OVERRIDE, FOWNER), unpacking images faithfully
+# (FSETID), the runtime's AppArmor profile (MAC_ADMIN), stopping things
+# (KILL). The rest is what gVisor needs to build a sandbox: it re-execs
+# itself for the gofer and the sentry, and a capability it asks for that
+# is outside this set fails that exec outright rather than degrading.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_KILL CAP_MAC_ADMIN CAP_SETGID CAP_SETUID CAP_SETPCAP CAP_SETFCAP CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_CHROOT CAP_SYS_PTRACE CAP_SYS_RESOURCE CAP_IPC_LOCK CAP_MKNOD CAP_AUDIT_WRITE
 # No StateDirectory / RuntimeDirectory: both make systemd bind-mount the
 # directory into the unit, which is a private mount namespace again — and
 # RuntimeDirectory would take /run/dam, sockets and all, down with a restart.

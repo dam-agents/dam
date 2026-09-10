@@ -15,7 +15,7 @@ import {
 import { layoutFor, socketsFor } from "../domain/layout.js";
 import { effectiveIdleTimeoutMs, shouldRun } from "../domain/hibernation.js";
 import type { NetworkPort } from "../infrastructure/network-port.js";
-import type { ContainerdPort } from "../infrastructure/containerd-port.js";
+import type { RunscPort } from "../infrastructure/runsc-port.js";
 import type { GatewayPort } from "../infrastructure/gateway-port.js";
 import type { PkiPort } from "../infrastructure/pki-port.js";
 import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
@@ -32,7 +32,7 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
 export interface SandboxSupervisorDeps {
   store: AgentStore;
   network: NetworkPort;
-  containerd: ContainerdPort;
+  runsc: RunscPort;
   gateway: GatewayPort;
   pki: PkiPort;
   envoyConfig: EnvoyConfigPort;
@@ -47,6 +47,8 @@ export interface SandboxSupervisorDeps {
   gatewayUid: number;
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
+  sandboxCommand: string[];
+  harnessBaseUrl: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
 
@@ -159,22 +161,21 @@ export function createSandboxSupervisor(
     ]);
     await deps.gateway.ensureRunning(record.id, config);
 
-    await deps.containerd.ensureRunning({
+    await deps.runsc.ensureRunning({
       agentId: record.id,
       image: record.spec.image,
-      ...(record.spec.imagePullPolicy
-        ? { pullPolicy: record.spec.imagePullPolicy }
-        : {}),
       ...(record.spec.registryAuthPath
         ? { registryAuthPath: record.spec.registryAuthPath }
         : {}),
       netns: link.netns,
-      env: sandboxEnv(record, link, deps.gatewayPort),
+      env: sandboxEnv(record, link, deps),
       mounts: [
-        { source: layout.work, target: `${homeOf(record)}/work` },
         { source: layout.home, target: homeOf(record) },
+        { source: layout.work, target: `${homeOf(record)}/work` },
         { source: layout.caCert, target: SANDBOX_CA_PATH, readOnly: true },
       ],
+      stateDir: layout.sandbox,
+      ...(deps.sandboxCommand.length ? { command: deps.sandboxCommand } : {}),
       ...(record.spec.resources?.limits
         ? {
             limits: {
@@ -187,10 +188,9 @@ export function createSandboxSupervisor(
             },
           }
         : {}),
-      labels: { "dam.agent-id": record.id, "dam.owner": record.owner },
     });
 
-    const state = await deps.containerd.inspect(record.id);
+    const state = await deps.runsc.inspect(record.id);
     const sandboxReady = state?.running === true;
     const gatewayReady = await deps.gateway.isRunning(record.id);
     await publishStatus(record.id, {
@@ -211,8 +211,10 @@ export function createSandboxSupervisor(
   }
 
   async function hibernate(record: AgentRecord): Promise<void> {
-    await deps.containerd.stop(record.id);
-    await deps.containerd.remove(record.id);
+    await deps.runsc.stop(
+      record.id,
+      layoutFor(deps.agentsRoot, record.id).sandbox,
+    );
     await deps.gateway.stop(record.id);
     const link = await linkForRecord(record);
     await deps.network.destroy(link);
@@ -232,8 +234,7 @@ export function createSandboxSupervisor(
   }
 
   async function teardown(agentId: string): Promise<void> {
-    await deps.containerd.stop(agentId);
-    await deps.containerd.remove(agentId);
+    await deps.runsc.stop(agentId, layoutFor(deps.agentsRoot, agentId).sandbox);
     await deps.gateway.stop(agentId);
     const known = liveLinks.get(agentId);
     if (known) await deps.network.destroy(known).catch(() => {});
@@ -245,7 +246,6 @@ export function createSandboxSupervisor(
   async function applyRuleset(): Promise<void> {
     await deps.network.applyRuleset([...liveLinks.values()], {
       gatewayPort: deps.gatewayPort,
-      sandboxPort: deps.sandboxPort,
     });
   }
 
@@ -264,7 +264,7 @@ export function createSandboxSupervisor(
       }
       for (const record of records) await schedule(record.id);
       const known = new Set(records.map((r) => r.id));
-      for (const agentId of await deps.containerd.list()) {
+      for (const agentId of await deps.runsc.list()) {
         if (!known.has(agentId)) {
           deps.log("sandbox.sweep.orphan", { agentId });
           await teardown(agentId);
@@ -303,20 +303,28 @@ const SANDBOX_CA_PATH = "/etc/platform/ca/ca.crt";
 function sandboxEnv(
   record: AgentRecord,
   link: SandboxLink,
-  gatewayPort: number,
+  deps: SandboxSupervisorDeps,
 ): Record<string, string> {
-  const proxy = `http://${link.hostAddress}:${gatewayPort}`;
+  const home = homeOf(record);
+  const proxy = `http://${link.hostAddress}:${deps.gatewayPort}`;
+  const harness = deps.harnessBaseUrl.replace(/\/+$/, "");
   const env: Record<string, string> = {
-    HOME: homeOf(record),
+    HOME: home,
     HTTP_PROXY: proxy,
     HTTPS_PROXY: proxy,
     http_proxy: proxy,
     https_proxy: proxy,
-    NO_PROXY: "localhost,127.0.0.1",
-    SSL_CERT_FILE: SANDBOX_CA_PATH,
-    REQUESTS_CA_BUNDLE: SANDBOX_CA_PATH,
+    NO_PROXY: "localhost,127.0.0.1,::1",
+    no_proxy: "localhost,127.0.0.1,::1",
+    JAVA_TOOL_OPTIONS: `-Duser.home=${home} -Dhttp.proxyHost=${link.hostAddress} -Dhttp.proxyPort=${deps.gatewayPort} -Dhttps.proxyHost=${link.hostAddress} -Dhttps.proxyPort=${deps.gatewayPort}`,
     NODE_EXTRA_CA_CERTS: SANDBOX_CA_PATH,
-    PORT: "8080",
+    NODE_USE_ENV_PROXY: "1",
+    GIT_HTTP_PROXY_AUTHMETHOD: "basic",
+    PLATFORM_AGENT_ID: record.id,
+    API_SERVER_URL: harness,
+    PLATFORM_MCP_URL: `${harness}/api/agents/${record.id}/mcp`,
+    PLATFORM_POD_FILES_EVENTS_URL: `${harness}/api/agents/${record.id}/pod-files/events`,
+    PORT: String(deps.sandboxPort),
   };
   for (const e of record.spec.env ?? []) env[e.name] = e.value;
   return env;

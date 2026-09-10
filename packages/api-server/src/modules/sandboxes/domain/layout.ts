@@ -15,6 +15,7 @@ export interface SandboxLayout {
   leafTls: string;
   caCert: string;
   envFile: string;
+  sandbox: string;
 }
 
 export function layoutFor(root: string, agentId: string): SandboxLayout {
@@ -29,6 +30,7 @@ export function layoutFor(root: string, agentId: string): SandboxLayout {
     leafTls: join(dir, "gateway", "tls"),
     caCert: join(dir, "ca", "ca.crt"),
     envFile: join(dir, "env"),
+    sandbox: join(dir, "sandbox"),
   };
 }
 
