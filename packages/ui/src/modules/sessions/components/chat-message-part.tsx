@@ -4,6 +4,7 @@ import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
 import type { MessagePart, Role } from "../../../types.js";
+import { MockScheduleCard } from "./mock-schedule-card.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
@@ -59,6 +60,8 @@ export function ChatMessagePart({
           )}
         </div>
       );
+    case "mock-schedule-card":
+      return <MockScheduleCard schedule={part.schedule} />;
     default:
       return <ToolChip chip={part} />;
   }

@@ -1,24 +1,32 @@
 import {
-  CheckmarkFilled,
-  ErrorFilled,
+  Edit,
   OverflowMenuVertical,
+  Pause,
+  Play,
+  SendAltFilled,
+  Share,
   Time,
+  TrashCan,
 } from "@carbon/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { getBrand } from "@/brand";
+import { DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { CARD_SURFACE } from "../../../components/ui/card.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
@@ -31,11 +39,7 @@ import { useOwnerSchedules } from "../api/queries.js";
 import { ScheduleResultsModal } from "../components/schedule-results-modal.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
-import {
-  formatRunTime,
-  lastRunStatus,
-  scheduleCadenceText,
-} from "../lib/schedule-format.js";
+import { formatRunTime, scheduleCadenceText } from "../lib/schedule-format.js";
 
 interface AgentGroup {
   agentId: string;
@@ -44,12 +48,24 @@ interface AgentGroup {
 }
 
 export function SchedulesView() {
+  useEffect(() => {
+    const prev = document.title;
+    const brand = getBrand();
+    document.title = `Schedules · ${brand.name}`;
+    return () => {
+      document.title = prev;
+    };
+  }, []);
+
   const { data: schedules, isPending: schedulesPending } = useOwnerSchedules();
   const agents = useAgentsList();
   const { isPending: agentsPending } = useAgents();
   const setView = useStore((s) => s.setView);
 
-  const [editing, setEditing] = useState<Schedule | null>(null);
+  const [editing, setEditing] = useState<{
+    schedule: Schedule;
+    agentName: string;
+  } | null>(null);
   const [creating, setCreating] = useState(false);
   const [viewingResults, setViewingResults] = useState<Schedule | null>(null);
 
@@ -78,7 +94,7 @@ export function SchedulesView() {
     return (
       <div className="anim-in">
         <PageHeader title="Schedules" />
-        <ListSkeleton rows={3} rowHeight={90} />
+        <ListSkeleton rows={3} rowHeight={64} />
       </div>
     );
   }
@@ -121,7 +137,9 @@ export function SchedulesView() {
           <AgentScheduleGroup
             key={group.agentId}
             group={group}
-            onEdit={setEditing}
+            onEdit={(schedule) =>
+              setEditing({ schedule, agentName: group.agentName })
+            }
             onViewResults={setViewingResults}
           />
         ))}
@@ -129,18 +147,18 @@ export function SchedulesView() {
 
       {editing && (
         <ScheduleFormModal
-          agentId={editing.agentId}
-          existing={editing}
+          agentId={editing.schedule.agentId}
+          agentName={editing.agentName}
+          existing={editing.schedule}
           onClose={() => setEditing(null)}
           onSaved={() => setEditing(null)}
         />
       )}
 
       {creating && (
-        <ScheduleFormModal
-          agentChoices={agents.map((a) => ({ id: a.id, name: a.name }))}
+        <CreateScheduleModal
+          agents={agents.map((a) => ({ id: a.id, name: a.name }))}
           onClose={() => setCreating(false)}
-          onSaved={() => setCreating(false)}
         />
       )}
 
@@ -175,12 +193,12 @@ function AgentScheduleGroup({
       <button
         type="button"
         onClick={() => openAgentSession(group.agentId)}
-        className="mb-3 text-base font-semibold text-foreground transition-colors hover:text-primary"
+        className="mb-3 text-[15px] font-semibold text-foreground transition-colors hover:text-primary"
       >
         {group.agentName}
       </button>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         {group.schedules.map((schedule) => (
           <ScheduleRow
             key={schedule.id}
@@ -214,8 +232,6 @@ function ScheduleRow({
   const guardEdit = useScheduleEditGuard();
 
   const cadence = scheduleCadenceText(schedule);
-  const runStatus = lastRunStatus(status?.lastResult);
-  const lastRunTime = status?.lastRun ? formatRunTime(status.lastRun) : null;
   const nextRunTime = status?.nextRun ? formatRunTime(status.nextRun) : null;
 
   const handleEdit = () => void guardEdit(schedule, agentName, onEdit);
@@ -242,88 +258,169 @@ function ScheduleRow({
       resetScheduleSession.mutate({ id });
   };
 
+  const subtitle = [
+    cadence,
+    nextRunTime && enabled ? `Next ${nextRunTime}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className={cn(CARD_SURFACE, "p-4")}>
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
-            <p className="text-[15px] font-semibold text-foreground">{name}</p>
-            {!enabled && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[13px] font-medium text-muted-foreground">
-                Paused
-              </span>
+    <div
+      className={cn(
+        CARD_SURFACE,
+        CARD_HOVER,
+        "group flex items-center gap-4 rounded-xl px-4 py-3",
+      )}
+    >
+      <div
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+          enabled
+            ? "bg-accent/10 text-accent"
+            : "bg-muted text-muted-foreground",
+        )}
+      >
+        {enabled ? <Time size={16} /> : <Pause size={16} />}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold text-foreground">
+          {name}
+        </p>
+        {subtitle && (
+          <p className="truncate text-[14px] text-muted-foreground">
+            {subtitle}
+          </p>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          aria-label="Edit schedule"
+          onClick={handleEdit}
+        >
+          <Edit size={16} />
+        </Button>
+
+        <Switch
+          checked={enabled}
+          onCheckedChange={() => toggleSchedule.mutate({ id })}
+          label={enabled ? "Disable schedule" : "Enable schedule"}
+        />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
+              aria-label="Schedule actions"
+            >
+              <OverflowMenuVertical size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={handleEdit}>
+              <Edit size={16} className="mr-2.5 text-muted-foreground" />
+              Edit schedule
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onViewResults}>
+              <Play size={16} className="mr-2.5 text-muted-foreground" />
+              View runs
+            </DropdownMenuItem>
+            {sessionMode === "continuous" && (
+              <DropdownMenuItem onSelect={handleReset}>
+                <Share size={16} className="mr-2.5 text-muted-foreground" />
+                Reset session
+              </DropdownMenuItem>
             )}
-          </div>
-
-          {cadence && (
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Time size={14} className="shrink-0" />
-              {cadence}
-            </p>
-          )}
-
-          {(lastRunTime || (nextRunTime && enabled)) && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              {lastRunTime && (
-                <span className="inline-flex items-center gap-1.5">
-                  {runStatus &&
-                    (runStatus.label === "Succeeded" ? (
-                      <CheckmarkFilled
-                        size={14}
-                        className="text-emerald-600 dark:text-emerald-400"
-                      />
-                    ) : (
-                      <ErrorFilled
-                        size={14}
-                        className="text-red-600 dark:text-red-400"
-                      />
-                    ))}
-                  {lastRunTime}
-                </span>
-              )}
-              {nextRunTime && enabled && <span>Next: {nextRunTime}</span>}
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onViewResults}>
-            View runs
-          </Button>
-
-          <Switch
-            checked={enabled}
-            onCheckedChange={() => toggleSchedule.mutate({ id })}
-            label={enabled ? "Disable schedule" : "Enable schedule"}
-          />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground"
-                aria-label="Schedule actions"
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={handleEdit}>
-                Edit schedule
-              </DropdownMenuItem>
-              {sessionMode === "continuous" && (
-                <DropdownMenuItem onSelect={handleReset}>
-                  Reset session
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem tone="danger" onSelect={handleDelete}>
-                Delete schedule
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem tone="danger" onSelect={handleDelete}>
+              <TrashCan size={16} className="mr-2.5" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+function CreateScheduleModal({
+  agents,
+  onClose,
+}: {
+  agents: readonly { id: string; name: string }[];
+  onClose: () => void;
+}) {
+  const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
+  const [prompt, setPrompt] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const selectAgent = useStore((s) => s.selectAgent);
+
+  const handleSend = () => {
+    if (!agentId || !prompt.trim()) return;
+    selectAgent(agentId, prompt.trim());
+    onClose();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <Modal widthClass="w-[520px]">
+      <DialogHeader
+        title="Create schedule"
+        subtitle="Pick an agent and describe when and what it should do."
+        onClose={onClose}
+        divided={false}
+      />
+
+      <div className="flex flex-col gap-4 px-5 pb-5 md:px-7 md:pb-7">
+        <Select
+          className="h-10"
+          value={agentId}
+          onChange={(e) => setAgentId(e.target.value)}
+        >
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </Select>
+
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="e.g. Every weekday at 9am, summarize overnight CI failures"
+            rows={3}
+            className={cn(
+              "w-full resize-none rounded-xl border border-border bg-background px-4 py-3 pr-12 text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+            )}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute right-2 bottom-2 text-muted-foreground hover:text-foreground"
+            disabled={!prompt.trim() || !agentId}
+            onClick={handleSend}
+          >
+            <SendAltFilled size={16} />
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

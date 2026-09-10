@@ -267,6 +267,20 @@ export function ChatView() {
     sendPrompt,
   });
 
+  useEffect(() => {
+    if (!chatIdle) return;
+    const prompt = useStore.getState().consumePendingPrompt();
+    if (!prompt) return;
+    if (import.meta.env.VITE_MOCK) {
+      import("../../../mock/mock-chat.js").then(({ runMockChat }) => {
+        const store = useStore.getState();
+        runMockChat(prompt, store.setMessages, store.setSessionId);
+      });
+    } else {
+      sendPrompt(prompt);
+    }
+  }, [chatIdle, sendPrompt]);
+
   const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
   const createdFromPack = useStore((s) => s.createdFromPack);

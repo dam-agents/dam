@@ -58,13 +58,27 @@ export interface VerdictPart {
   allowed: boolean;
 }
 
+export interface MockScheduleCardPart {
+  kind: "mock-schedule-card";
+  schedule: {
+    name: string;
+    prompt: string;
+    frequency: string;
+    days: string;
+    time: string;
+    timezone: string;
+    sessionMode: string;
+  };
+}
+
 export type MessagePart =
   | TextPart
   | ThoughtPart
   | ImagePart
   | FilePart
   | ToolChip
-  | VerdictPart;
+  | VerdictPart
+  | MockScheduleCardPart;
 
 export interface Message {
   id: string;

@@ -24,7 +24,9 @@ export interface AgentsSlice {
   clearAgentUnreachable: (id: string) => void;
   deletedAgents: ReadonlySet<string>;
   markAgentDeleted: (id: string) => void;
-  selectAgent: (id: string) => void;
+  pendingPrompt: string | null;
+  selectAgent: (id: string, pendingPrompt?: string) => void;
+  consumePendingPrompt: () => string | null;
   openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
   goBack: () => void;
@@ -93,14 +95,23 @@ export const createAgentsSlice: StateCreator<
       return { deletedAgents: next };
     }),
 
-  selectAgent: (id) => {
+  pendingPrompt: null,
+
+  selectAgent: (id, prompt) => {
     history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
     get().resetChatContext();
     set({
       selectedAgent: id,
       view: "chat",
       mobileScreen: "sessions",
+      pendingPrompt: prompt ?? null,
     });
+  },
+
+  consumePendingPrompt: () => {
+    const prompt = get().pendingPrompt;
+    if (prompt) set({ pendingPrompt: null });
+    return prompt;
   },
 
   openKnowledgeBase: (id) => {

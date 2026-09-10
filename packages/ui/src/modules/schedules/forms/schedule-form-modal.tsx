@@ -1,20 +1,22 @@
-import { Information } from "@carbon/icons-react";
+import { ChevronDown, Close, Information } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { FormField } from "@/components/form-field";
-import {
-  DialogActions,
-  DialogBody,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
+import { DialogActions, DialogBody, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ import type { Schedule } from "../../../types.js";
 import {
   useCreateSchedule,
   useDeleteSchedule,
+  useToggleSchedule,
   useUpdateSchedule,
 } from "../api/mutations.js";
 import {
@@ -34,7 +37,7 @@ import {
   TIME_OPTIONS,
   TIMEZONE_OPTIONS,
 } from "../lib/schedule-form-options.js";
-import { QuietHoursEditor } from "./quiet-hours-editor.js";
+import { QuietHoursRows } from "./quiet-hours-editor.js";
 import {
   buildRRuleParts,
   scheduleFormDefaults,
@@ -43,20 +46,43 @@ import {
 } from "./schedule-form-schema.js";
 
 const DAYS_ISO: { iso: number; label: string }[] = [
-  { iso: 1, label: "Mon" },
-  { iso: 2, label: "Tue" },
-  { iso: 3, label: "Wed" },
-  { iso: 4, label: "Thu" },
-  { iso: 5, label: "Fri" },
-  { iso: 6, label: "Sat" },
-  { iso: 7, label: "Sun" },
+  { iso: 1, label: "Monday" },
+  { iso: 2, label: "Tuesday" },
+  { iso: 3, label: "Wednesday" },
+  { iso: 4, label: "Thursday" },
+  { iso: 5, label: "Friday" },
+  { iso: 6, label: "Saturday" },
+  { iso: 7, label: "Sunday" },
 ];
+
+const SHORT_DAYS: Record<number, string> = {
+  1: "Mon",
+  2: "Tue",
+  3: "Wed",
+  4: "Thu",
+  5: "Fri",
+  6: "Sat",
+  7: "Sun",
+};
+
+function formatSelectedDays(days: number[]): string {
+  if (days.length === 0) return "None";
+  if (days.length === 7) return "Every day";
+  const weekdays = [1, 2, 3, 4, 5];
+  const weekend = [6, 7];
+  if (days.length === 5 && weekdays.every((d) => days.includes(d)))
+    return "Weekdays";
+  if (days.length === 2 && weekend.every((d) => days.includes(d)))
+    return "Weekends";
+  return days.map((d) => SHORT_DAYS[d]).join(", ");
+}
 
 const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
 interface Props {
   agentId?: string;
+  agentName?: string;
   agentChoices?: readonly { id: string; name: string }[];
   existing?: Schedule;
   onClose: () => void;
@@ -65,6 +91,7 @@ interface Props {
 
 export function ScheduleFormModal({
   agentId,
+  agentName,
   agentChoices,
   existing,
   onClose,
@@ -75,7 +102,9 @@ export function ScheduleFormModal({
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const deleteSchedule = useDeleteSchedule();
+  const toggleSchedule = useToggleSchedule();
   const showConfirm = useStore((state) => state.showConfirm);
+  const selectAgent = useStore((s) => s.selectAgent);
   const mutation = existing ? updateSchedule : createSchedule;
 
   const handleDelete = async () => {
@@ -139,17 +168,70 @@ export function ScheduleFormModal({
     }
   });
 
+  const isEditing = !!existing;
+
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-        <DialogHeader
-          title={existing ? "Edit schedule" : "Create a new Schedule"}
-          onClose={onClose}
-        />
+        {/* Header */}
+        <div className="relative px-5 pt-5 pb-4 md:px-7 md:pt-7">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-5 right-5 text-muted-foreground md:top-5 md:right-5"
+          >
+            <Close size={16} />
+          </Button>
 
-        <DialogBody className="flex flex-col gap-4">
-          {!existing && agentChoices && (
-            <FormField label="Agent" disableInset>
+          {isEditing && agentName && (
+            <button
+              type="button"
+              className="mb-1 text-[14px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+              onClick={() => {
+                onClose();
+                selectAgent(existing.agentId);
+              }}
+            >
+              {agentName}
+            </button>
+          )}
+
+          {isEditing ? (
+            <div className="flex items-center justify-between gap-4 pr-8">
+              <Input
+                className="h-auto border-none bg-transparent p-0 text-lg font-semibold text-foreground shadow-none focus-visible:ring-0"
+                {...register("name")}
+              />
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-[14px] text-muted-foreground">
+                  {existing.enabled ? "Active" : "Inactive"}
+                </span>
+                <Switch
+                  checked={existing.enabled}
+                  onCheckedChange={() =>
+                    toggleSchedule.mutate({ id: existing.id })
+                  }
+                  label={
+                    existing.enabled ? "Disable schedule" : "Enable schedule"
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <h2 className="text-lg font-semibold text-foreground">
+              Create a new schedule
+            </h2>
+          )}
+        </div>
+
+        <DialogBody className="flex flex-col gap-6">
+          {/* Agent selector — create only */}
+          {!isEditing && agentChoices && (
+            <div className="flex flex-col gap-2">
+              <SectionLabel>Agent</SectionLabel>
               <Select
                 className="h-10"
                 value={chosenAgent}
@@ -164,193 +246,182 @@ export function ScheduleFormModal({
                   </option>
                 ))}
               </Select>
-            </FormField>
-          )}
-          <FormField label="Name" error={errors.name?.message} disableInset>
-            <Input
-              className="h-10"
-              variant={errors.name ? "invalid" : undefined}
-              placeholder={`eg. "Daily brief"`}
-              {...register("name")}
-            />
-          </FormField>
-
-          <div className="flex flex-col gap-2">
-            <SectionLabel>Run</SectionLabel>
-            <Select className="h-10" {...register("kind")}>
-              {RUN_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          {values.kind === "daily" && (
-            <div className="flex flex-col gap-2">
-              <SectionLabel>Time</SectionLabel>
-              <Select className="h-10" {...register("time")}>
-                {timeOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
             </div>
           )}
 
-          {(values.kind === "minutely" || values.kind === "hourly") && (
+          {/* Name — create only */}
+          {!isEditing && (
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-sm text-foreground">
-                <span>Every</span>
-                <Input
-                  type="number"
-                  min={1}
-                  className="h-10 w-[80px]"
-                  variant={errors.interval ? "invalid" : undefined}
-                  {...register("interval")}
-                />
-                <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
-              </div>
-              <FormError message={errors.interval?.message} />
-            </div>
-          )}
-
-          {values.kind !== "custom" && (
-            <div className="flex flex-col gap-2">
-              <SectionLabel>On</SectionLabel>
-              <Controller
-                control={control}
-                name="days"
-                render={({ field }) => (
-                  <div className="flex flex-wrap gap-1.5">
-                    {DAYS_ISO.map((d) => (
-                      <button
-                        key={d.iso}
-                        type="button"
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-medium",
-                          field.value.includes(d.iso)
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                        onClick={() =>
-                          field.onChange(
-                            field.value.includes(d.iso)
-                              ? field.value.filter((v) => v !== d.iso)
-                              : [...field.value, d.iso].sort(),
-                          )
-                        }
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              />
-              <FormError message={errors.days?.message} />
-            </div>
-          )}
-
-          {values.kind === "custom" && (
-            <div className="flex flex-col gap-2">
-              <SectionLabel>RRULE</SectionLabel>
+              <SectionLabel>Name</SectionLabel>
               <Input
-                className="h-10 font-mono text-xs"
-                variant={cadence.error ? "invalid" : undefined}
-                placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
-                {...register("customRRule")}
+                className="h-10"
+                variant={errors.name ? "invalid" : undefined}
+                placeholder="Schedule name"
+                {...register("name")}
               />
+              <FormError message={errors.name?.message} />
             </div>
           )}
 
-          {cadence.error ? (
-            <FormError message={cadence.error} />
-          ) : (
-            cadence.summary && (
-              <p className="-mt-1 text-sm text-muted-foreground">
-                {cadence.summary}
-              </p>
-            )
-          )}
-
-          <FormField
-            label="Timezone"
-            error={errors.timezone?.message}
-            disableInset
-          >
-            <Controller
-              control={control}
-              name="timezone"
-              render={({ field }) => (
-                <SearchableSelect
-                  value={field.value}
-                  onChange={field.onChange}
-                  options={TIMEZONE_OPTIONS}
-                  placeholder="Select a timezone"
-                  invalid={!!errors.timezone}
-                />
-              )}
-            />
-          </FormField>
-
-          <QuietHoursEditor
-            control={control}
-            register={register}
-            error={quietHoursError}
-          />
-
-          <FormField label="Prompt" error={errors.task?.message} disableInset>
+          {/* Prompt */}
+          <div className="flex flex-col gap-2">
+            <SectionLabel>Prompt</SectionLabel>
             <Textarea
-              className="min-h-[80px] resize-y"
+              className="min-h-[100px] resize-y"
               variant={errors.task ? "invalid" : undefined}
               placeholder="Enter a task prompt"
-              rows={3}
+              rows={4}
               {...register("task")}
             />
-          </FormField>
+            <FormError message={errors.task?.message} />
+          </div>
 
+          {/* Frequency */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5">
-              <SectionLabel>Session type</SectionLabel>
-              <HintTooltip
-                content={SESSION_TOOLTIP}
-                label="About session types"
-                side="top"
-                className="text-muted-foreground"
-              >
-                <Information size={14} />
-              </HintTooltip>
-            </div>
-            <Controller
-              control={control}
-              name="sessionMode"
-              render={({ field }) => (
-                <div className="flex gap-1.5">
-                  {(["fresh", "continuous"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-medium capitalize",
-                        field.value === mode
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground",
-                      )}
-                      onClick={() => field.onChange(mode)}
-                    >
-                      {mode}
-                    </button>
+            <SectionLabel>Frequency</SectionLabel>
+            <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
+              <FieldRow label="Repeat">
+                <InlineSelect {...register("kind")}>
+                  {RUN_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
                   ))}
-                </div>
+                </InlineSelect>
+              </FieldRow>
+
+              {values.kind === "daily" && (
+                <FieldRow label="Time">
+                  <InlineSelect {...register("time")}>
+                    {timeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </InlineSelect>
+                </FieldRow>
               )}
-            />
+
+              {(values.kind === "minutely" || values.kind === "hourly") && (
+                <FieldRow label="Interval">
+                  <div className="flex items-center justify-end gap-1.5 text-[14px]">
+                    <span className="text-muted-foreground">Every</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      className="h-auto w-[48px] border-none bg-transparent p-0 text-right text-[14px] shadow-none focus:ring-0"
+                      variant={errors.interval ? "invalid" : undefined}
+                      {...register("interval")}
+                    />
+                    <span className="text-muted-foreground">
+                      {values.kind === "minutely" ? "min" : "hr"}
+                    </span>
+                  </div>
+                </FieldRow>
+              )}
+
+              {values.kind !== "custom" && (
+                <Controller
+                  control={control}
+                  name="days"
+                  render={({ field }) => (
+                    <FieldRow label="Days">
+                      <DayPicker
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    </FieldRow>
+                  )}
+                />
+              )}
+
+              {values.kind === "custom" && (
+                <FieldRow label="RRULE">
+                  <Input
+                    className="h-auto border-none bg-transparent p-0 text-right font-mono text-[14px] shadow-none focus:ring-0"
+                    variant={cadence.error ? "invalid" : undefined}
+                    placeholder="FREQ=WEEKLY;BYDAY=MO,WE"
+                    {...register("customRRule")}
+                  />
+                </FieldRow>
+              )}
+
+              <FieldRow label="Timezone">
+                <Controller
+                  control={control}
+                  name="timezone"
+                  render={({ field }) => (
+                    <SearchableSelect
+                      value={field.value}
+                      onChange={field.onChange}
+                      options={TIMEZONE_OPTIONS}
+                      placeholder="Select"
+                      invalid={!!errors.timezone}
+                    />
+                  )}
+                />
+              </FieldRow>
+            </div>
+
+            {cadence.error ? (
+              <FormError message={cadence.error} />
+            ) : (
+              cadence.summary && (
+                <p className="text-[14px] text-muted-foreground">
+                  {cadence.summary}
+                </p>
+              )
+            )}
+            <FormError message={errors.days?.message} />
+            <FormError message={errors.interval?.message} />
+            <FormError message={errors.timezone?.message} />
+          </div>
+
+          {/* Options */}
+          <div className="flex flex-col gap-2">
+            <SectionLabel>Options</SectionLabel>
+            <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
+              <FieldRow
+                label={
+                  <span className="flex items-center gap-1.5">
+                    Session type
+                    <HintTooltip
+                      content={SESSION_TOOLTIP}
+                      label="About session types"
+                      side="top"
+                      className="text-muted-foreground"
+                    >
+                      <Information size={16} />
+                    </HintTooltip>
+                  </span>
+                }
+              >
+                <Controller
+                  control={control}
+                  name="sessionMode"
+                  render={({ field }) => (
+                    <InlineSelect
+                      value={field.value}
+                      onChange={(e) =>
+                        field.onChange(e.target.value as "fresh" | "continuous")
+                      }
+                    >
+                      <option value="fresh">Fresh</option>
+                      <option value="continuous">Continuous</option>
+                    </InlineSelect>
+                  )}
+                />
+              </FieldRow>
+
+              <QuietHoursRows control={control} register={register} />
+            </div>
+            <FormError message={quietHoursError} />
           </div>
         </DialogBody>
 
         <DialogActions
           leading={
-            existing ? (
+            isEditing ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -364,12 +435,87 @@ export function ScheduleFormModal({
             ) : undefined
           }
           onCancel={onClose}
-          label={existing ? "Save" : "Create"}
-          pendingLabel={existing ? "Saving…" : "Creating…"}
+          label={isEditing ? "Save" : "Create"}
+          pendingLabel={isEditing ? "Saving…" : "Creating…"}
           pending={mutation.isPending}
           disabled={!targetAgentId}
         />
       </form>
     </Modal>
+  );
+}
+
+function FieldRow({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <span className="shrink-0 text-[14px] text-foreground">{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const InlineSelect = ({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<typeof Select>) => (
+  <Select
+    className={cn(
+      "h-auto w-auto border-none bg-transparent py-0 pr-7 pl-2 text-right text-[14px] shadow-none focus:ring-0",
+      className,
+    )}
+    {...props}
+  >
+    {children}
+  </Select>
+);
+
+function DayPicker({
+  value,
+  onChange,
+}: {
+  value: number[];
+  onChange: (v: number[]) => void;
+}) {
+  const summary = formatSelectedDays(value);
+
+  const toggle = (iso: number) => {
+    onChange(
+      value.includes(iso)
+        ? value.filter((v) => v !== iso)
+        : [...value, iso].sort(),
+    );
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 text-[14px] text-foreground hover:text-accent"
+        >
+          {summary}
+          <ChevronDown size={16} className="text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[180px]">
+        {DAYS_ISO.map((d) => (
+          <DropdownMenuCheckboxItem
+            key={d.iso}
+            checked={value.includes(d.iso)}
+            onCheckedChange={() => toggle(d.iso)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            {d.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
