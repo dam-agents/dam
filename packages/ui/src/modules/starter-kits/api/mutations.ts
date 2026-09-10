@@ -8,7 +8,7 @@ import { agentsKeys } from "../../agents/api/queries.js";
 export function useApplyStarterKit() {
   return useMutation({
     mutationFn: (input: StarterKitApplyInput) =>
-      api.starterKits.apply.mutate(input),
+      api.starterKits.create.mutate(input),
     meta: {
       invalidates: [
         agentsKeys.listWithChannels(),
