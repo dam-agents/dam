@@ -18,6 +18,7 @@ function fakeAgent(id: string): Agent {
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],
+    unsupportedContributionKinds: [],
     features: { liveUpdates: false },
     channels: [],
     kind: "knowledge-base",

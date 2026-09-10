@@ -13,6 +13,7 @@
  *  would never fire (#3409). */
 import { describe, it, expect } from "vitest";
 import type { Event } from "agent-runtime-api";
+import type { RuntimeEventKind } from "api-server-api";
 import {
   events$,
   EventType,
@@ -22,9 +23,9 @@ import { createWorkerHandler } from "../../modules/runtime-delivery/services/wor
 import type {
   OutboxRepo,
   AgentsRuntimeRepo,
-  OutboxRow,
 } from "../../modules/runtime-delivery/infrastructure/outbox-repo.js";
 import type { AgentRuntimeClient } from "../../modules/runtime-delivery/infrastructure/agent-runtime-client.js";
+import { outboxRow } from "../helpers/outbox-row.js";
 import type { StateBuilder } from "../../modules/runtime-delivery/services/state-builder.js";
 import type { HarnessConfigSnapshotWriter } from "../../modules/runtime-delivery/services/snapshot-writer.js";
 
@@ -68,21 +69,15 @@ function harness(opts: {
   settledEventIds: string[];
   owner?: string | null;
   eventsGaveUp?: { id: string; kind: Event["kind"] }[];
-  droppedEventKinds?: string[];
+  droppedEventKinds?: RuntimeEventKind[];
   undeliverableCount?: number;
   onMarkUndeliverable?: (agentId: string, kinds: string[]) => void;
 }) {
-  const row: OutboxRow = {
+  const row = outboxRow({
     agentId: AGENT_ID,
     version: 3,
-    lastEnqueuedAt: new Date(0),
     lastSettledVersion: 2,
-    lastAppliedVersion: 2,
-    lastAppliedHash: null,
-    lastAppliedAt: null,
-    applyFailures: [],
-    applyAttempts: 0,
-  };
+  });
   const outboxRepo = {
     getRow: async () => row,
     recordOutcome: async () => ({

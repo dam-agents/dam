@@ -22,6 +22,7 @@ import {
 } from "../utils/temporary-sandboxes.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
+import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 
 interface Props {
@@ -84,6 +85,9 @@ export function AgentRow({
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />
+          <UnsupportedContributionsBadge
+            kinds={agent.unsupportedContributionKinds}
+          />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}

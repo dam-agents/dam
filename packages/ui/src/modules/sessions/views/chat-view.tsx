@@ -51,7 +51,9 @@ import {
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
+import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
+import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -574,6 +576,7 @@ export function ChatView() {
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
+          <ContributionGapNotice agentId={selectedAgent} />
           <SessionsSidebar
             open={sessionsSectionOpen}
             onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
@@ -867,7 +870,12 @@ function ChatHeaderStatus({
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (
-        <ContributionFailuresBadge failures={agent.contributionFailures} />
+        <>
+          <ContributionFailuresBadge failures={agent.contributionFailures} />
+          <UnsupportedContributionsBadge
+            kinds={agent.unsupportedContributionKinds}
+          />
+        </>
       )}
     </>
   );

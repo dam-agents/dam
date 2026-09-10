@@ -7,6 +7,7 @@ import type {
   AgentSpecCR,
   AgentState,
   ChannelConfig,
+  ContributionKind,
   DriverFailure,
   TemplateUpdate,
 } from "api-server-api";
@@ -202,6 +203,7 @@ export function assembleAgent(
   preparingWorkspace: boolean,
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
+  unsupportedContributionKinds: ContributionKind[],
 ): Agent {
   return {
     id: infra.id,
@@ -220,6 +222,7 @@ export function assembleAgent(
     overBudgetMessage: infra.overBudgetMessage,
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,
+    unsupportedContributionKinds,
     channels,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,

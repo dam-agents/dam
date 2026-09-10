@@ -116,7 +116,7 @@ Unlike `hello`, it is not part of catch-up: it settles nothing, acks nothing, an
 
 ### `hello` — agent → api-server catch-up
 
-Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
+Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, or if the capability set it reports differs from the one on record, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
 The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply, and which optional surfaces its image serves: harness configuration, and the pod's own watch surface for live updates. A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; each claim gates both the UI surfaces that read it and the platform's pod-facing streams. Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
@@ -326,7 +326,9 @@ Newer agent on older server is rare (images are pinned). The agent calls `runtim
 
 The agent's `hello` declares which Contribution kinds and which Event kinds it supports. The api-server filters outbound payloads: unsupported items are dropped at send time (logged + counted with a `dropped-unsupported` metric). A dropped workspace-mutating event is additionally stamped dispatched-with-error right there — it can never settle on this runtime, and leaving it pending would hold the agent in *preparing workspace* until its TTL.
 
-The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent that doesn't support `skill-ref` shows "Agent doesn't support skills; this connection grants envs + hosts but not skill installation."
+Filtering precedes the hash, so a gapped delivery settles clean and leaves no trace in the cursors. Each delivery therefore records the kinds it dropped on the outbox row, and the Agent shows its owner what the runtime refused beside the pending update that fixes it — degraded, not disqualified.
+
+A `hello` whose advertised kinds change **raises the desired version**, which is what makes applying that update land the refused parts; nothing else would, since the row already settled. Bumping rather than merely enqueueing keeps the trigger durable: the row goes behind, so the sweep recovers a lost job, and a delivery built on stale capabilities can no longer overwrite a newer one's record.
 
 Capabilities also gate whole flows, not only payload items: `hello` carries a numeric knowledge-base publish capability, and the api-server delegates share publishing to the pod only when it meets the current level — a runtime below it gets the share marked failed with an update-the-agent hint instead of silently never publishing ([knowledge bases](knowledge-bases.md)).
 
@@ -336,7 +338,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 | Substrate | What lives there | Notes |
 |---|---|---|
 | Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
-| Postgres `runtime_state_outbox` | One row per agent — the desired version and the two cursors behind it | Compared against the applied hash by the sweep. |
+| Postgres `runtime_state_outbox` | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads. |
 | Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id. |
 | Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
@@ -354,4 +356,4 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report, and the session-directory report below — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
-- **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload. A flow-gating capability (the knowledge-base publish level) fails visibly instead: the gated feature records an update-the-agent failure rather than dropping work silently.
+- **Capabilities are honored end-to-end, and never silently.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds still succeeds and the unsupported parts simply don't appear in the agent's payload — but the Agent carries an owner-visible warning naming what its runtime refused, and keeps it until the runtime advertises those kinds. A flow-gating capability (the knowledge-base publish level) fails visibly instead: the gated feature records an update-the-agent failure rather than dropping work silently.

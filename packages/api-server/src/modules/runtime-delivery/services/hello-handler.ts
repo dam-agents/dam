@@ -10,6 +10,7 @@ import type {
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import { emit, EventType } from "../../../events.js";
+import { advertisedKindsChanged } from "../domain/capability-filter.js";
 
 export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
@@ -21,12 +22,18 @@ export function createHelloHandler(deps: {
 }): RuntimeDeliveryService {
   return {
     async hello(agentId: string, input: HelloInput): Promise<HelloResult> {
-      await deps.agentsRuntimeRepo.upsertHello({
-        agentId,
-        protocolVersion: input.protocolVersion,
-        capabilities: input.capabilities,
-        agentRuntimeVersion: input.agentRuntimeVersion,
-      });
+      const { previousCapabilities } = await deps.agentsRuntimeRepo.upsertHello(
+        {
+          agentId,
+          protocolVersion: input.protocolVersion,
+          capabilities: input.capabilities,
+          agentRuntimeVersion: input.agentRuntimeVersion,
+        },
+      );
+      const kindsChanged = advertisedKindsChanged(
+        previousCapabilities,
+        input.capabilities,
+      );
 
       const ownerSub = await deps.resolveOwner(agentId);
       if (ownerSub) {
@@ -46,7 +53,16 @@ export function createHelloHandler(deps: {
       }
 
       const row = await deps.outboxRepo.getRow(agentId);
-      if (row && row.version > (input.lastAppliedVersion ?? 0)) {
+      if (!row) return { events: [] };
+
+      let desiredVersion = row.version;
+      if (kindsChanged) {
+        desiredVersion = await deps.outboxRepo.bumpVersion(agentId);
+        deps.log(
+          `[runtime-hello] ${agentId}: advertised kinds changed; desired version bumped to v${desiredVersion} for re-delivery`,
+        );
+      }
+      if (desiredVersion > (input.lastAppliedVersion ?? 0)) {
         await deps.queue.enqueue(agentId, { retryUntilReady: true });
       }
       return { events: [] };

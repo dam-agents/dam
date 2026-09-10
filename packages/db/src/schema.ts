@@ -400,6 +400,9 @@ export const runtimeStateOutbox = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     applyAttempts: integer("apply_attempts").notNull().default(0),
+    droppedContributionKinds: jsonb("dropped_contribution_kinds")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   (table) => [
     index("runtime_state_outbox_retry_idx")

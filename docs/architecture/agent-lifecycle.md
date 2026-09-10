@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Overview
 
@@ -71,7 +71,7 @@ Everything tied to an Agent's *configuration* rides the runtime channel as contr
 
 ### Template upgrade
 
-Because a Template is captured at create time, a helm upgrade that advances a template (a newer agent image) never re-flows into existing Agents. The template-upgrade path (#1077) is the sanctioned catch-up: on every Agent read the api-server compares the Agent's captured image against the current image of the template it came from — a template's resolved image reference doubles as its version identity — and surfaces a pending update on the Agent when they differ. Applying it is user-initiated, one Agent at a time or every behind Agent at once: a single Agent confirms against the exact image movement, a batch against the images it moves to and the restart it costs, and the api-server then re-points the Agent spec at the template's current image, and the reconciler rolls a running pair onto it (a hibernated Agent just wakes on the new image). The upgrade is deliberately image-only: template env stays frozen in `agent_env` (re-seeding would clobber user edits), and mount/storage changes cannot ride a spec patch (the StatefulSet's volume layout is immutable once created) — those still require recreating the Agent.
+Because a Template is captured at create time, a helm upgrade that advances a template (a newer agent image) never re-flows into existing Agents. The template-upgrade path (#1077) is the sanctioned catch-up: on every Agent read the api-server compares the Agent's captured image against the current image of the template it came from — a template's resolved image reference doubles as its version identity — and surfaces a pending update on the Agent when they differ. Applying it is user-initiated, one Agent at a time or every behind Agent at once: a single Agent confirms against the exact image movement, a batch against the images it moves to and the restart it costs, and the api-server then re-points the Agent spec at the template's current image, and the reconciler rolls a running pair onto it (a hibernated Agent just wakes on the new image). The upgrade is deliberately image-only: template env stays frozen in `agent_env` (re-seeding would clobber user edits), and mount/storage changes cannot ride a spec patch (the StatefulSet's volume layout is immutable once created) — those still require recreating the Agent. What it does change is what the Agent can accept: a runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, so applying the update closes a capability gap rather than only reporting one ([runtime-delivery](runtime-delivery.md#capability-negotiation)).
 
 ### Wake
 

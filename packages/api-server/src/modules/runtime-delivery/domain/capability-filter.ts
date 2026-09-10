@@ -54,3 +54,27 @@ export function filterByCapabilities(
     droppedEventKinds: Array.from(droppedEvents),
   };
 }
+
+export function advertisedKindsChanged(prev: unknown, next: unknown): boolean {
+  return advertisedKindsKey(prev) !== advertisedKindsKey(next);
+}
+
+function advertisedKindsKey(capabilities: unknown): string {
+  const record = (capabilities ?? {}) as Record<string, unknown>;
+  return JSON.stringify([
+    sortedKinds(record.contributions),
+    sortedKinds(record.events),
+  ]);
+}
+
+export function kindSetChanged(prev: string[], next: string[]): boolean {
+  return (
+    JSON.stringify(sortedKinds(prev)) !== JSON.stringify(sortedKinds(next))
+  );
+}
+
+function sortedKinds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const kinds = value.filter((k): k is string => typeof k === "string");
+  return [...new Set(kinds)].sort();
+}

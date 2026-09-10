@@ -316,6 +316,13 @@
       "when": 1788871834300,
       "tag": "0044_ordinary_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789026350616,
+      "tag": "0045_bizarre_junta",
+      "breakpoints": true
     }
   ]
 }
