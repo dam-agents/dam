@@ -9,8 +9,10 @@
 #
 # Content tags pin an image to the commit that last touched its inputs, so
 # upgrading to a chart that didn't change the image doesn't roll the pod (or
-# rebuild the workload). The repo default stays `""` — charts rendered straight
-# from git keep the appVersion fallback.
+# rebuild the agent) — and a harness template's image ref, its version
+# identity for upgrade offers, moves only when the image really did. The repo
+# default stays `""` — charts rendered straight from git keep the appVersion
+# fallback.
 #
 # Both publish jobs call this, so the marker set and the component list can't
 # drift apart between the dev and release paths.
@@ -25,7 +27,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 [ -f "$VALUES" ] || { echo "no such values file: $VALUES" >&2; exit 1; }
 
-for comp in keycloak $("$here/resolve" list-workloads); do
+for comp in keycloak $("$here/resolve" list-agents) $("$here/resolve" list-slow-builds); do
   tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
   [ -n "$tag" ] || { echo "empty source sha for $comp" >&2; exit 1; }
   tmp="$(mktemp)"

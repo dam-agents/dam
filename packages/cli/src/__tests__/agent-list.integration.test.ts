@@ -164,6 +164,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],
+    unsupportedContributionKinds: [],
     channels: [],
     ...overrides,
   };

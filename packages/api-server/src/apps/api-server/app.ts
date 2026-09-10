@@ -31,8 +31,10 @@ import {
 
 export type { ApiServerDeps } from "./deps.js";
 
-const securityHeaders: MiddlewareHandler = async (c, next) => {
+export const securityHeaders: MiddlewareHandler = async (c, next) => {
   await next();
+  if (c.res.status !== 304 && !c.res.headers.has("Cache-Control"))
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "no-referrer");

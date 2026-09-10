@@ -1,5 +1,5 @@
 {
-  "id": "905f038d-d2e3-4a39-b9e7-93ff3c9dcaf8",
+  "id": "f2790463-ad83-4985-8320-34ee754f48f8",
   "prevId": "ab8c3cea-1cc3-4f97-ba54-e8985ac5bf8a",
   "version": "7",
   "dialect": "postgresql",
@@ -2369,12 +2369,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_path": {
-          "name": "source_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -2875,6 +2869,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "dropped_contribution_kinds": {
+          "name": "dropped_contribution_kinds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         }
       },
       "indexes": {

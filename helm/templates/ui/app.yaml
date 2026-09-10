@@ -16,6 +16,13 @@ data:
         ''      '';
     }
 
+    # The shell (index.html) must always revalidate so a deploy is picked up on
+    # the next load; /assets/ files are content-hashed, so they never change.
+    map $uri $static_cache_control {
+        default     "no-cache, no-store, must-revalidate";
+        ~^/assets/  "public, max-age=31536000, immutable";
+    }
+
     # Structured JSON access log, one object per line on stdout.
     log_format json_access escape=json
         '{'
@@ -80,6 +87,11 @@ data:
             add_header X-Frame-Options "DENY" always;
             add_header Referrer-Policy "no-referrer" always;
             add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            # Navigation-only CSP. Fetch directives (script-src, img-src, ...) are
+            # inherited by the srcdoc iframes that preview artifacts and files, and
+            # those render arbitrary HTML, so any fetch restriction here breaks them.
+            add_header Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+            add_header Cache-Control $static_cache_control always;
             try_files $uri $uri/ /index.html;
         }
     }

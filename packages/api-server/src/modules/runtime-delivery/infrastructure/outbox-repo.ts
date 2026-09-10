@@ -12,9 +12,14 @@ import {
   runtimeEvents,
   agents as agentsTable,
 } from "db";
-import type { DriverFailure, RuntimeEventKind } from "api-server-api";
+import type {
+  ContributionKind,
+  DriverFailure,
+  RuntimeEventKind,
+} from "api-server-api";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "../domain/workspace-mutation.js";
+import { kindSetChanged } from "../domain/capability-filter.js";
 
 export interface OutboxRow {
   agentId: string;
@@ -26,6 +31,7 @@ export interface OutboxRow {
   lastAppliedAt: Date | null;
   applyFailures: DriverFailure[];
   applyAttempts: number;
+  droppedContributionKinds: ContributionKind[];
 }
 
 export interface PendingEventRow {
@@ -49,10 +55,11 @@ export interface ApplyTransitions {
   recovered: string[];
   gaveUp: DriverFailure[];
   eventsGaveUp: EventGiveUp[];
+  droppedKindsChanged: boolean;
 }
 
 export interface OutboxRepo {
-  getRow(agentId: string): Promise<OutboxRow | null>;
+  getRow(agentId: string, tx?: Db | DbTx): Promise<OutboxRow | null>;
   getRows(agentIds: string[]): Promise<OutboxRow[]>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -72,6 +79,7 @@ export interface OutboxRepo {
       failures: DriverFailure[];
       settledEventIds: string[];
       deliveredEventIds: string[];
+      droppedContributionKinds: ContributionKind[];
     },
     maxAttempts?: number,
   ): Promise<ApplyTransitions>;
@@ -100,12 +108,13 @@ interface InternalRow {
   lastAppliedAt: Date | null;
   applyFailures: DriverFailure[];
   applyAttempts: number;
+  droppedContributionKinds: ContributionKind[];
 }
 
 export function createOutboxRepo(db: Db): OutboxRepo {
   return {
-    async getRow(agentId): Promise<OutboxRow | null> {
-      const rows = (await db
+    async getRow(agentId, tx = db): Promise<OutboxRow | null> {
+      const rows = (await tx
         .select()
         .from(runtimeStateOutbox)
         .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
@@ -207,6 +216,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             recovered: [],
             gaveUp: [],
             eventsGaveUp: [],
+            droppedKindsChanged: false,
           };
         }
 
@@ -216,6 +226,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           (f) => !prevKinds.has(f.kind),
         );
         const recovered = [...prevKinds].filter((k) => !currKinds.has(k));
+        const droppedKindsChanged = kindSetChanged(
+          prev.droppedContributionKinds,
+          result.droppedContributionKinds,
+        );
 
         if (result.settledEventIds.length > 0) {
           await tx
@@ -279,7 +293,13 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         }
 
         if (prev.lastSettledVersion > settledVersion) {
-          return { newlyFailed: [], recovered: [], gaveUp: [], eventsGaveUp };
+          return {
+            newlyFailed: [],
+            recovered: [],
+            gaveUp: [],
+            eventsGaveUp,
+            droppedKindsChanged: false,
+          };
         }
 
         if (!clean) {
@@ -290,13 +310,20 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               lastSettledVersion: settledVersion,
               applyFailures: result.failures,
               applyAttempts: nextAttempts,
+              droppedContributionKinds: result.droppedContributionKinds,
             })
             .where(eq(runtimeStateOutbox.agentId, agentId));
           const gaveUp =
             prev.applyAttempts < maxAttempts && nextAttempts >= maxAttempts
               ? result.failures
               : [];
-          return { newlyFailed, recovered, gaveUp, eventsGaveUp };
+          return {
+            newlyFailed,
+            recovered,
+            gaveUp,
+            eventsGaveUp,
+            droppedKindsChanged,
+          };
         }
 
         await tx
@@ -308,9 +335,16 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             lastAppliedAt: new Date(),
             applyFailures: [],
             applyAttempts: 0,
+            droppedContributionKinds: result.droppedContributionKinds,
           })
           .where(eq(runtimeStateOutbox.agentId, agentId));
-        return { newlyFailed, recovered, gaveUp: [], eventsGaveUp };
+        return {
+          newlyFailed,
+          recovered,
+          gaveUp: [],
+          eventsGaveUp,
+          droppedKindsChanged,
+        };
       });
     },
 
@@ -428,27 +462,39 @@ export interface AgentRuntimeStateRow {
 }
 
 export interface AgentsRuntimeRepo {
-  upsertHello(input: {
-    agentId: string;
-    protocolVersion: string;
-    capabilities: unknown;
-    agentRuntimeVersion: string;
-  }): Promise<void>;
+  upsertHello(
+    input: {
+      agentId: string;
+      protocolVersion: string;
+      capabilities: unknown;
+      agentRuntimeVersion: string;
+    },
+    tx?: Db | DbTx,
+  ): Promise<{ previousCapabilities: unknown }>;
   get(agentId: string): Promise<AgentRuntimeStateRow | null>;
 }
 
 export function createAgentsRuntimeRepo(db: Db): AgentsRuntimeRepo {
   return {
-    async upsertHello(input): Promise<void> {
-      await db
-        .update(agentsTable)
-        .set({
-          runtimeProtocolVersion: input.protocolVersion,
-          runtimeCapabilities: input.capabilities as object,
-          runtimeLastHelloAt: new Date(),
-          runtimeAgentVersion: input.agentRuntimeVersion,
-        })
-        .where(eq(agentsTable.id, input.agentId));
+    async upsertHello(input, tx): Promise<{ previousCapabilities: unknown }> {
+      const run = async (tx: Db | DbTx) => {
+        const locked = await tx
+          .select({ capabilities: agentsTable.runtimeCapabilities })
+          .from(agentsTable)
+          .where(eq(agentsTable.id, input.agentId))
+          .for("update");
+        await tx
+          .update(agentsTable)
+          .set({
+            runtimeProtocolVersion: input.protocolVersion,
+            runtimeCapabilities: input.capabilities as object,
+            runtimeLastHelloAt: new Date(),
+            runtimeAgentVersion: input.agentRuntimeVersion,
+          })
+          .where(eq(agentsTable.id, input.agentId));
+        return { previousCapabilities: locked[0]?.capabilities ?? null };
+      };
+      return tx ? run(tx) : db.transaction(run);
     },
 
     async get(agentId): Promise<AgentRuntimeStateRow | null> {
