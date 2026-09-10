@@ -62,6 +62,7 @@ export interface Agent {
   channels: ChannelConfig[];
   kind?: AgentKind;
   kbTemplateId?: string;
+  starterKit?: string;
   features: RuntimeFeatures;
 }
 
@@ -69,6 +70,7 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   kbTemplateId?: string;
+  starterKit?: string;
   id?: string;
   telemetryAttributionId?: string;
 };

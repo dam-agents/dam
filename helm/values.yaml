@@ -1591,6 +1591,15 @@ e2e:
 # `{name, gitUrl, path?}` shape works for per-template sources under
 # `<templateKey>.skillSources`. `path` is an optional repo-relative
 # subdirectory to scan; omit it to scan `skills/` then the repo root.
+# -- Starter kit catalog the api-server reads kits from: a public GitHub
+# repository URL (optionally `/tree/<ref>/<dir>` to name a directory, or
+# `#<ref>` to pin), or an absolute directory path inside the pod. Empty
+# hides the catalog. Rendered into the api-server pod as STARTER_KITS_CATALOG.
+starterKits:
+  catalog: ""
+  # Example — the proof-of-concept catalog in the platform repository:
+  # catalog: "https://github.com/dam-agents/dam/tree/main/starter-kits"
+
 skills:
   skillSources: []
   # Example:

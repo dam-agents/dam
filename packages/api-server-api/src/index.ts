@@ -176,6 +176,25 @@ export {
   experimentFolderName,
 } from "./modules/experiments/schemas.js";
 export type {
+  StarterKit,
+  StarterKitApplyInput,
+  StarterKitApplyResult,
+  StarterKitCatalog,
+  StarterKitCatalogEntry,
+  StarterKitCategory,
+  StarterKitConnectionRequirement,
+  StarterKitParameter,
+  StarterKitSchedule,
+  StarterKitView,
+  StarterKitsService,
+} from "./modules/starter-kits/types.js";
+export {
+  starterKitApplyInputSchema,
+  starterKitCatalogSchema,
+  starterKitCategorySchema,
+  starterKitSchema,
+} from "./modules/starter-kits/schemas.js";
+export type {
   KnowledgeBaseCreateInput,
   KnowledgeBaseTemplateId,
   KnowledgeBasesService,
@@ -456,6 +475,7 @@ export type {
   SkillRef,
   SkillApplyBatchInput,
   SkillSet,
+  SkillEntriesApplyInput,
   SkillSetApplyInput,
   SkillSetApplyResult,
   SkillSetCreateInput,

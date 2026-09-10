@@ -35,6 +35,8 @@ export type Route =
   | { view: "knowledge-base-new" }
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
+  | { view: "starter-kits" }
+  | { view: "starter-kit-new"; kit: string }
   | { view: "artifacts" };
 
 export type View = Route["view"];
@@ -107,6 +109,13 @@ export function parseRoute(path: string): Route {
   }
   if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
+  if (path === "/starter-kits") return { view: "starter-kits" };
+  const starterKitNewMatch = path.match(/^\/starter-kits\/([^/]+)\/new$/);
+  if (starterKitNewMatch)
+    return {
+      view: "starter-kit-new",
+      kit: decodeSegment(starterKitNewMatch[1]!),
+    };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
   const knowledgeBaseConfigMatch = path.match(
@@ -163,6 +172,10 @@ export function routeToPath(route: Route): string {
       return "/knowledge-bases/new";
     case "knowledge-base-chat":
       return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
+    case "starter-kits":
+      return "/starter-kits";
+    case "starter-kit-new":
+      return `/starter-kits/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
     default: {
@@ -177,10 +190,12 @@ export function routeToNavigationState(route: Route): {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitId: string | null;
 } {
   return {
     view: route.view,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
+    starterKitId: route.view === "starter-kit-new" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",

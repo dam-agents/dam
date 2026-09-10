@@ -1,0 +1,23 @@
+schemaVersion: v1
+id: nous
+name: Nous
+description: >-
+  Hypothesis-driven experimentation campaigns against a target system the
+  agent clones, builds, patches and measures. Runs on the pre-built Nous
+  image.
+category: research
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md
+template: nous
+connections:
+  - templates: [ibm-litellm, anthropic]
+    required: true
+    note: Nous drives Claude through the Claude Agent SDK; an API-key style credential is needed.
+  - templates: [github, github-app, github-pat]
+    note: Needed to clone private target repositories and publish results.
+hibernationTimeoutMin: 0
+parameters:
+  - name: target repository
+    required: true
+  - name: campaign goal
+    required: true
+    note: What to optimize and how it is measured.

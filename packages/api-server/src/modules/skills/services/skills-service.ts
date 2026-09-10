@@ -18,6 +18,7 @@ import type {
   SkillsState,
   SkillUninstallInput,
   SkillApplyBatchInput,
+  SkillSetApplyResult,
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
@@ -529,6 +530,81 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     return deps.agentSkillsRepo.listSkills(agentId);
   };
 
+  async function applyEntries(
+    agentId: string,
+    requested: SkillSetEntry[],
+    coverage: string,
+  ): Promise<SkillSetApplyResult> {
+    const wanted = new Map<string, SkillSetEntry>();
+    for (const entry of requested) wanted.set(skillKey(entry), entry);
+
+    if (wanted.size > MAX_SKILL_BATCH_ENTRIES) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `${coverage} ${wanted.size} skills; one apply carries at most ${MAX_SKILL_BATCH_ENTRIES}`,
+      });
+    }
+
+    const sources = await service.listSources(agentId);
+    const connected = new Map(sources.map((s) => [s.gitUrl, s]));
+    const sourcePaths = new Map(sources.map((s) => [s.gitUrl, s.path]));
+
+    const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
+    const byGitUrl = new Map<string, SkillSetEntry[]>();
+    for (const entry of wanted.values()) {
+      const source = connected.get(entry.source);
+      if (!source) {
+        skipped.push({ ...entry, reason: "source-not-connected" });
+        continue;
+      }
+      const list = byGitUrl.get(entry.source) ?? [];
+      list.push(entry);
+      byGitUrl.set(entry.source, list);
+    }
+
+    const installedKeys = new Set(
+      (await deps.agentSkillsRepo.listSkills(agentId)).map(skillKey),
+    );
+    const toInstall: SkillApplyBatchInput["install"] = [];
+    for (const [gitUrl, entries] of byGitUrl) {
+      const source = connected.get(gitUrl)!;
+      let scanned: Map<string, Skill>;
+      try {
+        const { skills } = await service.list(source.id, agentId);
+        scanned = new Map(skills.map((s) => [s.name, s]));
+      } catch (err) {
+        getLogger().warn(
+          { err, source: gitUrl, agentId },
+          "skills set apply: source unreadable, skipping its entries",
+        );
+        for (const entry of entries) {
+          skipped.push({ ...entry, reason: "source-unreadable" });
+        }
+        continue;
+      }
+      for (const entry of entries) {
+        const match = scanned.get(entry.name);
+        if (!match) {
+          skipped.push({ ...entry, reason: "not-in-source" });
+          continue;
+        }
+        if (installedKeys.has(skillKey(entry))) continue;
+        toInstall.push({
+          source: match.source,
+          name: match.name,
+          version: match.version,
+          contentHash: match.contentHash,
+        });
+      }
+    }
+
+    const after = await applyBatchWith(
+      { agentId, install: toInstall, uninstall: [] },
+      sourcePaths,
+    );
+    return { installed: after, skipped, added: toInstall.length };
+  }
+
   const service: SkillsService = {
     async listSources(agentId?: string) {
       const [owned, template] = await Promise.all([
@@ -878,78 +954,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      const wanted = new Map<string, SkillSetEntry>();
-      for (const set of sets) {
-        for (const entry of set!.skills) {
-          wanted.set(skillKey(entry), entry);
-        }
-      }
+      const entries: SkillSetEntry[] = [];
+      for (const set of sets) entries.push(...set!.skills);
+      return applyEntries(agentId, entries, "these sets cover");
+    },
 
-      if (wanted.size > MAX_SKILL_BATCH_ENTRIES) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `these sets cover ${wanted.size} skills; one apply carries at most ${MAX_SKILL_BATCH_ENTRIES}`,
-        });
-      }
-
-      const sources = await service.listSources(agentId);
-      const connected = new Map(sources.map((s) => [s.gitUrl, s]));
-      const sourcePaths = new Map(sources.map((s) => [s.gitUrl, s.path]));
-
-      const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
-      const byGitUrl = new Map<string, SkillSetEntry[]>();
-      for (const entry of wanted.values()) {
-        const source = connected.get(entry.source);
-        if (!source) {
-          skipped.push({ ...entry, reason: "source-not-connected" });
-          continue;
-        }
-        const list = byGitUrl.get(entry.source) ?? [];
-        list.push(entry);
-        byGitUrl.set(entry.source, list);
-      }
-
-      const installedKeys = new Set(
-        (await deps.agentSkillsRepo.listSkills(agentId)).map(skillKey),
-      );
-      const toInstall: SkillApplyBatchInput["install"] = [];
-      for (const [gitUrl, entries] of byGitUrl) {
-        const source = connected.get(gitUrl)!;
-        let scanned: Map<string, Skill>;
-        try {
-          const { skills } = await service.list(source.id, agentId);
-          scanned = new Map(skills.map((s) => [s.name, s]));
-        } catch (err) {
-          getLogger().warn(
-            { err, source: gitUrl, agentId },
-            "skills set apply: source unreadable, skipping its entries",
-          );
-          for (const entry of entries) {
-            skipped.push({ ...entry, reason: "source-unreadable" });
-          }
-          continue;
-        }
-        for (const entry of entries) {
-          const match = scanned.get(entry.name);
-          if (!match) {
-            skipped.push({ ...entry, reason: "not-in-source" });
-            continue;
-          }
-          if (installedKeys.has(skillKey(entry))) continue;
-          toInstall.push({
-            source: match.source,
-            name: match.name,
-            version: match.version,
-            contentHash: match.contentHash,
-          });
-        }
-      }
-
-      const after = await applyBatchWith(
-        { agentId, install: toInstall, uninstall: [] },
-        sourcePaths,
-      );
-      return { installed: after, skipped, added: toInstall.length };
+    async applyEntries({ agentId, skills }) {
+      return applyEntries(agentId, skills, "this selection covers");
     },
 
     async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {

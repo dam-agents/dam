@@ -19,6 +19,7 @@ import { filesRouter } from "./modules/files/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
+import { starterKitsRouter } from "./modules/starter-kits/router.js";
 import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
@@ -37,6 +38,7 @@ export const appRouter = t.router({
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
   knowledgeBases: knowledgeBasesRouter,
+  starterKits: starterKitsRouter,
   kbShares: kbSharesRouter,
   artifactLibrary: artifactLibraryRouter,
   caseStudies: caseStudiesRouter,

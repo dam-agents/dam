@@ -1,6 +1,7 @@
 import {
   Book,
   type CarbonIconType,
+  Catalog,
   ChevronLeft,
   ChevronRight,
   Code,
@@ -59,6 +60,14 @@ export function IconRail({
     active: view === "knowledge-bases" || view === "knowledge-base-chat",
     badge: 0,
     navigate: navigateToKnowledgeBases,
+  };
+  const starterKits: Destination = {
+    label: "Starter kits",
+    shortLabel: "Kits",
+    icon: Catalog,
+    active: view === "starter-kits" || view === "starter-kit-new",
+    badge: 0,
+    navigate: () => setView("starter-kits"),
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -146,11 +155,16 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, codingAgents, knowledgeBases, artifacts, settings].map(
-            (destination) => (
-              <BottomBarItem key={destination.label} {...destination} />
-            ),
-          )}
+          {[
+            sandboxes,
+            codingAgents,
+            knowledgeBases,
+            starterKits,
+            artifacts,
+            settings,
+          ].map((destination) => (
+            <BottomBarItem key={destination.label} {...destination} />
+          ))}
         </nav>
       )}
     </>

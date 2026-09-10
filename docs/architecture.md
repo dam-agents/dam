@@ -66,6 +66,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
 - [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
+- [starter-kits](architecture/starter-kits.md) — git-hosted kits applied to a new agent: connection requirements as template sets, platform-created schedules, suggested channels, optional Template pin, platform-composed onboarding first turn; catalog read from one pinned index, never cluster state.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, dashboard-artifact live view. GUI surfaces hidden pending a rethink; created over the API.

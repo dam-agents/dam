@@ -142,6 +142,7 @@ export interface AgentView {
     | { type: "telegram" }
   )[];
   kbTemplateId: string | null;
+  starterKit: string | null;
   spawnedBy: string | null;
   kind?: AgentKind;
 }
