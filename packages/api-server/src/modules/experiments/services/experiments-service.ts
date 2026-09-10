@@ -343,7 +343,7 @@ export function createExperimentsService(
               kind: current.kind,
               ...(folderId ? { folderId } : {}),
             },
-            { agentId: source.driverAgentId, internal: true },
+            { author: "agent", agentId: source.driverAgentId, internal: true },
           );
           return clone.id;
         } catch {
@@ -452,7 +452,7 @@ export function createExperimentsService(
             kind: "html",
             ...(captureFolderId ? { folderId: captureFolderId } : {}),
           },
-          { agentId: driverAgentId, internal: true },
+          { author: "agent", agentId: driverAgentId, internal: true },
         );
         return dashboard.id;
       };
@@ -528,7 +528,7 @@ export function createExperimentsService(
           fileName,
           folderId,
         },
-        { agentId: driverAgentId, internal: true },
+        { author: "agent", agentId: driverAgentId, internal: true },
       );
       const scriptArtifactId = scriptArtifact.id;
       const scriptVersion = scriptArtifact.version;
@@ -571,7 +571,7 @@ export function createExperimentsService(
               kind: "html",
               folderId,
             },
-            { agentId: driverAgentId, internal: true },
+            { author: "agent", agentId: driverAgentId, internal: true },
           );
           dashboardArtifactId = dashboard.id;
         } catch {}

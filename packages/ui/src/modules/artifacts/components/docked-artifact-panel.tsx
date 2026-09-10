@@ -161,7 +161,11 @@ export function DockedArtifactPanel() {
                   onShare={() => setShareOpen(true)}
                 />
                 {artifact.shareUrl && (
-                  <CopyLinkButton url={artifact.shareUrl} variant="outline" />
+                  <CopyLinkButton
+                    url={artifact.shareUrl}
+                    variant="outline"
+                    restricted={artifact.visibility === "restricted"}
+                  />
                 )}
                 <Button
                   variant="outline"

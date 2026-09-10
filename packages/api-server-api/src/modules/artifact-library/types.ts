@@ -133,7 +133,11 @@ export interface ArtifactLibraryService {
   listVersions(id: string): Promise<ArtifactVersionInfo[]>;
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string; internal?: boolean },
+    attribution?: {
+      author: ArtifactVersionAuthor;
+      agentId?: string;
+      internal?: boolean;
+    },
   ): Promise<LibraryArtifact>;
   update(
     id: string,

@@ -241,8 +241,8 @@ flowchart LR
   create/update call (with the upload route for content over the inline cap)
   plus two extra facts — the create attributes the artifact to the sandbox's
   agent (validated against the owner's agents), and both calls record the
-  file's workspace-relative path as the artifact's `source_path`. The path is
-  a plain label: the server never dereferences or validates it, and the UI
+  file's workspace-relative path on the artifact as its source path. The path
+  is a plain label: the server never dereferences or validates it, and the UI
   uses it only to decide between creating a new artifact and publishing a new
   version of an existing one (among the agent's artifacts with a matching
   path, the most recently updated wins). The same label is settable through
@@ -269,8 +269,10 @@ flowchart LR
   state and the means to change it sit in one place; the library's artifact
   rows therefore show their share actions at rest, while every other row —
   folders here, and artifacts in the chat side panel — keeps its actions
-  behind a hover reveal. The in-app preview carries the same entry point, so
-  opening an artifact is a place to start sharing it rather than a dead end.
+  behind a hover reveal. The in-app preview and the chat panel's docked artifact
+  view carry the same entry point — badge, a copy-link control once a share
+  link exists, and an always-present Share button — so opening an artifact is
+  a place to start sharing it rather than a dead end.
   Folder membership is mutable and advisory: any artifact can be filed into
   any folder, moved to another, or taken out again from the library itself, so
   organising a library is not tied to the moment each artifact was published.

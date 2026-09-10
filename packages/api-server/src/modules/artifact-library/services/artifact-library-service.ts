@@ -60,7 +60,11 @@ export interface ArtifactAgentDownloadTicket {
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string; internal?: boolean },
+    attribution?: {
+      author: ArtifactVersionAuthor;
+      agentId?: string;
+      internal?: boolean;
+    },
   ): Promise<LibraryArtifact>;
   resolveContentRef(
     id: string,
@@ -353,7 +357,7 @@ export function createArtifactLibraryService(
 
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
-      if (attribution) await ensureAgent(attribution.agentId);
+      if (attribution?.agentId) await ensureAgent(attribution.agentId);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;
@@ -393,7 +397,7 @@ export function createArtifactLibraryService(
           expiresAt: expiresAtFrom(input.expiresInHours),
           sourcePath: input.sourcePath ?? null,
         },
-        agentId ? "agent" : "user",
+        attribution?.author ?? "user",
       );
       emit({
         type: EventType.ArtifactCreated,

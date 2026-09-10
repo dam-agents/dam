@@ -130,7 +130,7 @@ export function registerArtifactLibraryTools(
             expiresInHours: expires_in_hours ?? null,
             sourcePath: source_path,
           },
-          { agentId: deps.agentId },
+          { author: "agent", agentId: deps.agentId },
         );
         return json({
           ...touched(toAgentArtifact(artifact)),
