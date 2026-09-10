@@ -39,13 +39,9 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 
 | Term | Definition |
 |------|-----------|
-| Infra State | State the Controller reconciles into running infrastructure. Stored in a ConfigMap with `spec.yaml` (api-server writer) and `status.yaml` (controller writer). |
-| Application State | State only the API Server reads and writes; the Controller never touches it. Stored in PostgreSQL. |
-| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Always ReadWriteOnce — the Agent's pod is the volume's only writer. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract. |
-| Warm Pool | A controller-managed, leader-only background buffer of pre-provisioned, already-bound Spare workspace volumes, organized into per-size pools, that a newly created Agent claims at create time to skip first-start provisioning latency. Disabled by default. |
-| Spare | An unclaimed Workspace Volume in the Warm Pool — provisioned and bound, waiting to be claimed. Carries a pool label and an available marker, and deliberately **no** owning-Agent label, so the orphan-volume sweep ignores it. |
-| Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
-| Storage Migration | The controller's one-time, interrupt-safe drain of legacy shared-writable (RWX) Workspace Volumes onto ReadWriteOnce storage: force the Agent down, copy onto a fresh volume in a checksum-verified Job, re-point the Agent, delete the old volume, restore the prior run state. A no-op once no RWX volume remains; removed with the transitional window. |
+| Infra State | State the Sandbox Supervisor reconciles into running infrastructure. Stored in the agent record's `status`, which only the supervisor writes. |
+| Application State | State only the API surface reads and writes; the Sandbox Supervisor never touches it. Stored in PostgreSQL. |
+| Workspace Volume | The node directory bind-mounted into an Agent's sandbox that holds its workspace and `$HOME`. The Agent's sandbox is its only writer, and it survives hibernation; deleting the Agent deletes it. |
 
 ## Live Updates
 
@@ -55,12 +51,12 @@ Eventing and cache-freshness vocabulary shared by every bounded context. Three w
 |------|-----------|
 | Domain Event | An in-process, synchronous, at-most-once, non-durable announcement a service emits after its write commits. Its only consumers are Sagas running in the emitting process. Never crosses a process boundary, and nothing may depend on one arriving |
 | Saga | An in-process consumer of Domain Events — the audit trail, usage rollups, per-agent cleanups. A Saga that must reach another replica forwards a Signal; it never forwards the Domain Event itself |
-| Signal | A thin cross-replica message on the shared Redis bus — an id and a topic, never entity state. The consumer re-reads truth from the store on receipt. Reserved for this meaning: an in-process announcement is a Domain Event, and a browser-bound invalidation notice is a Live Event |
+| Signal | A thin message on the shared Redis bus — an id and a topic, never entity state. The consumer re-reads truth from the store on receipt. Reserved for this meaning: an in-process announcement is a Domain Event, and a browser-bound invalidation notice is a Live Event |
 | Live Event | The per-owner invalidation notice a browser tab receives on its live-events subscription: a Topic plus ids, **never entity state**. Means "re-read this over the query path", never "here is the new value". Schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison a stream |
 | Topic | The family a Live Event names, which the client maps to a query family. Coarse by design — a Topic invalidates whole families rather than splicing individual entities |
 | Sync | The Live Event every (re)subscribed stream opens with, meaning "re-read everything you map". The loss bound for the whole mechanism: reconnects heal by refetch rather than replay, so no Live Event needs delivery guarantees. Also what an overflowing queue collapses to, since by contract it is the full recovery |
-| Watch | A pod-side observer of pod-owned truth (the session list, watched workspace directories, the open file) that emits Live Events for changes only the pod can see. Its lifetime **is** the subscription: an unobserved Agent has no Watch and produces no traffic. Coalesces under load, and how it detects change — filesystem notifications or an internal diff — is private to the pod |
-| Snapshot | Pod-owned truth kept server-side as display state, so a surface still renders while its Agent is hibernated. Carries the moment it was captured and whether a pod confirmed it or it is merely what an apply asserted. Never re-asserted onto the pod, and the live read always wins when the Agent is up. The harness-config snapshot on the `agents` row is the reference implementation |
+| Watch | A sandbox-side observer of sandbox-owned truth (the session list, watched workspace directories, the open file) that emits Live Events for changes only the pod can see. Its lifetime **is** the subscription: an unobserved Agent has no Watch and produces no traffic. Coalesces under load, and how it detects change — filesystem notifications or an internal diff — is private to the pod |
+| Snapshot | Sandbox-owned truth kept server-side as display state, so a surface still renders while its Agent is hibernated. Carries the moment it was captured and whether a pod confirmed it or it is merely what an apply asserted. Never re-asserted onto the pod, and the live read always wins when the Agent is up. The harness-config snapshot on the `agents` row is the reference implementation |
 
 ## Agents (bounded context)
 
@@ -69,12 +65,11 @@ Eventing and cache-freshness vocabulary shared by every bounded context. Three w
 | Term | Definition |
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
-| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. The primary user-facing word too — see [User-Facing Terminology](#user-facing-terminology). A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
-| Sandbox | The isolated container an Agent runs in. In user-facing copy "sandbox" appears only where the copy describes that container — isolation, images, inside/outside boundaries; everywhere else the word is **agent**. See [User-Facing Terminology](#user-facing-terminology) for the rule and the retirement it reverses (#3216, reversing the #892 rename) |
+| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. The primary user-facing word too — see [User-Facing Terminology](#user-facing-terminology). A Postgres row whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (supervisor writer) carries observed state. Optionally derived from a Template at create-time |
+| Sandbox | The gVisor container an Agent runs in — a `runsc` container the supervisor creates from a bundle it writes, on an overlay over the shared image directory, joined to the Agent's own network namespace. In user-facing copy "sandbox" appears only where the copy describes that container — isolation, images, inside/outside boundaries; everywhere else the word is **agent**. See [User-Facing Terminology](#user-facing-terminology) for the rule and the retirement it reverses (#3216, reversing the #892 rename) |
 | Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain agents. The Home agents list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
 | Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment agent copies in its authoring skill from a path staged in the image |
-| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
-| Backend | *(proposed, VM-sandbox proposal)* The isolation substrate an Agent's workload runs on, selected per-template as `spec.backend` — a discriminated union (`type: container \| vm`, default `container`, variant props in a sub-block named after the variant). `container` reconciles the agent StatefulSet (optionally Kata via `runtimeClassName`); `vm` reconciles a KubeVirt VirtualMachine. Not "Sandbox" (retired domain term) and distinct from `runtimeClassName`, which selects among *container* runtimes and is rejected on the `vm` backend |
+| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the sandbox's environment. Server-composed, never user free text |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
 | Session Transcript | The in-memory record of one Session's messages, kept by agent-runtime. It has a size cap: when full, the oldest lines are dropped and readers are warned. Each attached channel remembers how far it has read, so it only receives what it missed. Not saved to disk — dies with the harness process. Distinct from the harness's own on-disk JSONL history (under `~/.claude/projects/…`), which outlives the process and backs `--resume`; this term never means that file |
 | Prompt Scheduler | The agent-runtime module that runs each Session one turn at a time. A prompt is queued (up to a cap, then refused with a structured error) whenever its Session cannot take one yet — a turn already in flight, no channel engaged to read the answer, or the harness not holding the session — and started as soon as it can; this is the only place a prompt waits, and the scheduler tells the sender each prompt's fate — accepted, queued, started — over the sender's own channel. The last channel leaving parks the queue rather than dropping it, so a page reload keeps its place; a client engaging again resumes it. Every route a queue can leave by — that window passing with nobody back, the Session being forgotten, the harness going down — announces it with the cause, so a queue is never discarded without its prompts becoming Undelivered Prompts first. Queued prompts are still not a durable buffer: none run on their own, and none survive the harness process |
@@ -91,9 +86,9 @@ Eventing and cache-freshness vocabulary shared by every bounded context. Three w
 | Agent Lifetime | *(proposed, PR #2816)* Optional grace period a Sweepable Agent may stay hibernated before the Agent Sweep deletes it. Default zero — deleted as soon as it hibernates. The knob that later lets an inherited channel agent linger warm (Radek's "2 days") while an Invocation target dies on hibernate. Distinct from the per-Invocation Liveness Deadline, which bounds one result, not the agent |
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
-| Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
+| Reserved ID Prefix (agent-) | `agent-` — the prefix the api-server mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
 | Keycloak User Directory | Infrastructure port resolving a Keycloak `sub` to a user's display name or email, and an email back to a `sub`; backed by the Keycloak admin API |
-| Public Agent Page | The unauthenticated page a non-owner reaches from an Agent's Agent Footer. Names the Agent and its owner and pitches the install; follows the User-Facing Terminology rule, so it says *agent* throughout. Exists only for an Agent holding at least one Channel Binding; every other id — unknown, unbound, deleted, or one whose read failed — renders the same agent-less generic page, so neither the body nor the status confirms which Agents exist. Served from a Postgres projection owned by the Agents context, never a read-through to the K8s API |
+| Public Agent Page | The unauthenticated page a non-owner reaches from an Agent's Agent Footer. Names the Agent and its owner and pitches the install; follows the User-Facing Terminology rule, so it says *agent* throughout. Exists only for an Agent holding at least one Channel Binding; every other id — unknown, unbound, deleted, or one whose read failed — renders the same agent-less generic page, so neither the body nor the status confirms which Agents exist. Served from a Postgres projection owned by the Agents context, never a read-through to the agent record |
 
 ## Channels (bounded context)
 
@@ -115,7 +110,7 @@ Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as 
 | Invocation | A run-once request from a driver Agent to a target Agent: a `(driver, target, prompt, result schema) → one validated result` binding. Orthogonal to whether the target is ephemeral — pairing an Invocation with a freshly-spawned Sweepable Agent is the common case, not part of the definition |
 | Driver | The Agent that creates an Invocation and polls it for the result. Attenuation ceiling: an Invocation's connections must be a subset of the driver's own grants |
 | report_result | The fixed MCP tool the target Agent calls to report its result; the server validates it against the stashed Result Schema (structural only, never truth) and flips the Invocation terminal. Attribution is by the reporting agent's own id. *(renamed from the spawn/loop-era `node_done`)* |
-| Result Schema | The driver-supplied JSON Schema an Invocation's result must match; stored on the Invocation record, never on any Kubernetes resource, so the platform stays blind to content |
+| Result Schema | The driver-supplied JSON Schema an Invocation's result must match; stored on the Invocation record, never on the agent record, so the platform stays blind to content |
 | Liveness Deadline | The per-Invocation deadline (driver-set `ttlMs`, clamped ~1min..6h) after which a still-running Invocation is failed, so a target that exits silently can't wedge the driver's poll. Distinct from Agent Lifetime |
 | Egress Aliasing | *(proposed, #2930)* An Invocation target has no egress identity of its own: the ext_authz gate resolves the target to its Driver — recursively, up to the root non-target Agent — before rule match, HITL hold, and approval write. All egress policy lives on the Driver and applies live to its running targets; approvals raised by target traffic belong to the Driver, stamped with the originating target for audit. Reach without credentials: the target gains the Driver's network reach, but the gateway still injects credentials per-agent |
 | Driver Cascade | *(proposed, #2930)* Deleting a Driver fails its running Invocations and eagerly reaps their targets — transitively for chains — so no target keeps running or prompting against a deleted Driver's egress identity. Makes the dangling-driver state structurally unreachable; a target that slips through fails closed at the gate |
@@ -127,21 +122,21 @@ Catalog and orchestration view of skills. Distinct from the agent-runtime's Skil
 
 | Term | Definition |
 |------|-----------|
-| Skill Source | A connected source of skills addressable by id; one of three kinds — user (Postgres row, owner-scoped), system (Seed List entry, cluster-admin-declared), or template (synthesised from a Template's `skillSources`) |
+| Skill Source | A connected source of skills addressable by id; one of three kinds — user (Postgres row, owner-scoped), system (Seed List entry, operator-declared), or template (synthesised from a Template's `skillSources`) |
 | Installed Skill Ref | A record that a Scanned Skill from a Skill Source is installed at a Version on a specific Agent; identity is `(agentId, source, name)` |
 | Skill Publish Record | A record that a Local Skill from an Agent was published as a PR to a Skill Source; written on every successful Publish, denormalized so it survives source rename or deletion |
-| Seed List | The cluster-admin-declared system Skill Sources injected as JSON into api-server config (`SKILL_SOURCES_SEED`) at startup; merged into Skill Source listings with `system: true` and protected from user deletion |
+| Seed List | The operator-declared system Skill Sources injected as JSON into api-server config (`SKILL_SOURCES_SEED`) at startup; merged into Skill Source listings with `system: true` and protected from user deletion |
 | Platform Skill | A Local Skill the platform ships to make one of its own features usable. A reading over Skill Origin, not a fourth origin value: the skill must be judged `system` or `system-modified` against the image **and** be named in the platform skill registry, a static skill-name-to-feature map in the contract package |
 
 ## Skills — agent-runtime side (bounded context)
 
-Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../docs/architecture/agent-skills.md)). Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
+Sandbox-side operational view of skills ([`docs/architecture/agent-skills.md`](../docs/architecture/agent-skills.md)). Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
 
 | Term | Definition |
 |------|-----------|
 | Skill | A directory containing `SKILL.md` (with `name`/`description` frontmatter); the unit of installation |
-| Skill Path | An absolute on-pod directory under which Skills are materialized; a Skill's identity within a path is the directory name |
-| Local Skill | A Skill present in some Skill Path on this pod, regardless of whether it was installed from a Source or authored in place |
+| Skill Path | An absolute in-sandbox directory under which Skills are materialized; a Skill's identity within a path is the directory name |
+| Local Skill | A Skill present in some Skill Path in this sandbox, regardless of whether it was installed from a Source or authored in place |
 | Skill Source | A git repository URL that contains one or more Skills |
 | Scanned Skill | A Skill discovered in a Source: `(source, name, description, version, contentHash)` where `version` is the Source's HEAD commit SHA at scan time |
 | Content Hash | Deterministic SHA-256 over a Skill directory's file contents (sorted-path order, NUL-delimited); the drift signal produced — but not compared — on this side |
@@ -152,7 +147,7 @@ Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../do
 | Delete Local | Removing a standalone Local Skill's directory from every Skill Path; a name that resolves to no directory is a no-op |
 | Shipped-Skill Manifest | The append-only content-hash history of every skill version any platform image ever shipped, baked into every image; the reference deciding whether a Local Skill copy is platform-managed |
 | Seed Ledger | Per-volume record of which image skills were already seeded; a seeded name is never copied again, so a user's deletion of an image skill is final |
-| Image-Skill Reconciliation | The pod-side pass that seeds, updates, and removes platform-managed Local Skills against the Shipped-Skill Manifest; a diverged copy is the user's and is never touched, and Installed Skill Refs are exempt |
+| Image-Skill Reconciliation | The sandbox-side pass that seeds, updates, and removes platform-managed Local Skills against the Shipped-Skill Manifest; a diverged copy is the user's and is never touched, and Installed Skill Refs are exempt |
 | Read Local | Reading every file in a Local Skill's directory, size-capped per file and per skill; returns the resolved directory basename with the files |
 
 ## Approvals (bounded context)
@@ -234,10 +229,10 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 
 | Term | Definition |
 |------|-----------|
-| Secret | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the agent pod's Envoy sidecar for wire-level injection on outbound traffic |
+| Secret | A user-owned credential (e.g., an Anthropic API key) stored as a file under the owner's `sub` and rendered into the agent's paired gateway for wire-level injection on outbound traffic |
 | Secret Type | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns) |
 | Host Pattern | The hostname pattern that identifies which outbound requests the Envoy sidecar should inject this secret into |
-| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the Agent ConfigMap |
+| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent record |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
 
 ## Terms (bounded context)
@@ -262,7 +257,7 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 | Actor Sub | The pseudonymized identifier of the user who triggered an Activity Event — `HMAC-SHA256(ACTIVITY_HMAC_KEY, keycloak_sub)` rendered as hex. Joinable across `activity_events`, `actor_roles`, and `agents.owner_sub` because the same key is used everywhere |
 | Sub Pseudonymizer | The repository-boundary helper that applies the HMAC to every `sub` before it reaches Postgres — single chokepoint, raw subs stay in-process only |
 | Activity Outcome | A `success` / `failure` Postgres enum on every Activity Event — no default, so a missing outcome surfaces as a constraint violation rather than silently miscounting |
-| Agent Mirror | The Postgres `agents` table — a per-install projection of agent ConfigMaps that lets SQL views resolve `agent_id → owner_sub` without a K8s API round-trip; populated by an event saga + startup K8s scan |
+| Agent Mirror | The Postgres `agents` table — a per-install projection of the agent records that lets SQL views resolve `agent_id → owner_sub` without reading the record itself; populated by an event saga plus a scan at startup |
 | Inspector | A Keycloak user carrying the configured inspector realm role (`platform-inspector` by default) who can read `/api/usage/*` but is otherwise indistinguishable from a regular platform user |
 | Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
 | Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
@@ -277,7 +272,7 @@ Agent-written, sanitized weekly self-accounts and the platform store behind them
 | Edition | One stored Case Study, identified by `(agent, week start)` — the Monday (UTC) of the submitting week, stamped from the server clock. Resubmitting within the week replaces the edition and resets it to Pending |
 | Pending | The state every submission lands in: visible to the owner only, never served by any inspector surface. The default and the fallback — content changes always return here |
 | Release | The owner's explicit consent event: a status flip from Pending to Released, the only state inspector surfaces serve. Hidden and Deleted (tombstone) are the reserved opt-out and withdrawal states |
-| Submission | The `submit_case_study` MCP write: agent id bound by the mesh-verified session, harness image stamped from the Agent CR, week start from the server clock — the agent declares only content, window, and its own artifact reference |
+| Submission | The `submit_case_study` MCP write: agent id bound by the socket the call arrived on, harness image stamped from the agent record, week start from the server clock — the agent declares only content, window, and its own artifact reference |
 | Platform Friction | The Case Study section naming what the platform itself put in the way — goal, obstacle, workaround — where platform feature names are expected and company specifics are not |
 
 ## Metrics (bounded context)
@@ -293,7 +288,7 @@ The user-facing spend read path over agent telemetry — owner-scoped reads that
 
 ## Budgets (bounded context)
 
-Fair-sharing of the cluster's fixed compute pool between users. Distinct from Spend under Metrics (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
+Fair-sharing of the node's fixed compute between users. Distinct from Spend under Metrics (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
 
 | Term | Definition |
 |------|-----------|

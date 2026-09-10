@@ -102,7 +102,7 @@ The reply is a discriminated outcome, not a bare ack:
 - **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload — it advances the answered cursor but not the applied one, so a consumer that needs the sandbox's disk to match the spec gates on the second.
 - **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
-Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+Concurrent dispatches race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 ### Session-directory report — agent → api-server
 
@@ -202,7 +202,7 @@ The user-facing response does not depend on agent reachability. If BullMQ's enqu
 
 ### Worker
 
-A BullMQ Worker on every api-server replica consumes from the single `state` queue. BullMQ owns the dispatch loop, retry-with-backoff, stalled-job recovery, and the dashboard surface; the platform code is the *handler*:
+A BullMQ Worker in the api-server consumes from the single `state` queue. BullMQ owns the dispatch loop, retry-with-backoff, stalled-job recovery, and the dashboard surface; the platform code is the *handler*:
 
 ```mermaid
 flowchart TD
@@ -233,7 +233,7 @@ BullMQ retries cover transport failures (network blip, agent crash mid-call) and
 
 Every `applyState` call carries a deadline of about a minute. An agent that accepts the request but never answers — a sandbox wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot until the transport gives up on its own, which takes minutes. Together with per-agent coalescing, this bounds what one unresponsive agent can hold to one active job per key. The worker's concurrency is sized far above what that bound allows the live agent population to occupy at once, so a slot is never the scarce resource and no delivery waits behind another agent's; the cap protects the process from a burst, it does not schedule agents. A handler holds nothing else for the duration of the call — the Postgres reads finish before the request goes out and the outcome is recorded after it returns — so a stalled agent ties up its own socket and nothing shared.
 
-Slots are not the only shared resource, and the other one is scarce: a single Postgres pool serves both these handlers and the request path. It is sized explicitly rather than left at the client's default, and deliberately far below the slot count — a handler borrows a connection for its short queries and never across the call to the agent, so the pool has to cover the handlers querying at any instant, not the ones parked on a slow agent. Both the pool size and the slot count are deployment values ([`helm/values.yaml`](../../helm/values.yaml)), and the pool is per replica: scaling replicas multiplies it against the database server's own connection limit.
+Slots are not the only shared resource, and the other one is scarce: a single Postgres pool serves both these handlers and the request path. It is sized explicitly rather than left at the client's default, and deliberately far below the slot count — a handler borrows a connection for its short queries and never across the call to the agent, so the pool has to cover the handlers querying at any instant, not the ones parked on a slow agent. Both the pool size and the slot count are node configuration values ([`packages/dam-vm/etc/env`](../../packages/dam-vm/etc/env)).
 
 ### Cron sweep
 

@@ -128,7 +128,7 @@ with any identity-provider buttons offered below it) and SSO-first
 (identity-provider CTAs only, for deployments where corporate SSO is the
 expected sign-in path; the page falls back to the password form when the
 realm has no identity provider configured). The chart's `keycloak.login`
-values ([`helm/values.yaml`](../../helm/values.yaml))
+values ([`packages/dam-vm/etc/env`](../../packages/dam-vm/etc/env))
 select the variant and an optional "Request access" link; they reach the
 theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
@@ -218,8 +218,8 @@ Persistence is split by event class:
   the external log pipeline, not the Keycloak database, is the audit
   source of truth.
 
-The event knobs, log format, and realm import live in the Keycloak Helm
-values under [`helm/`](../../helm/).
+The event knobs, log format, and realm import live in the node's Keycloak
+configuration under [`packages/dam-vm/etc/`](../../packages/dam-vm/etc/).
 
 ## Resource ownership
 
@@ -574,9 +574,9 @@ the point: it stays actionable on Home, a permanent verdict there
 writes the rule the agent's next attempt consumes, and retries reuse
 that one row instead of filing a copy each time. No in-session prompt
 is published on this path — the only consumers are the relay clients
-whose absence defines it. Both signals are read across api-server
-replicas (the replica relaying a turn is rarely the one a Check lands
-on) and fail toward *attended*, so losing them degrades to the ordinary
+whose absence defines it. Both signals are read out of shared
+state rather than from the relay that set them, and fail toward
+*attended*, so losing them degrades to the ordinary
 hold rather than to silent denial. An attached browser or CLI session
 means someone can decide, so a channel turn running alongside one holds
 as usual; and an agent whose rules allow everything never reaches this

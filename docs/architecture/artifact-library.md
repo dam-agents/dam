@@ -342,4 +342,4 @@ counting them would report the platform's own writes as user activity.
 - Implementation (service, repository, share and content apps, share sign-in, render tokens, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
 - Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
 - UI destination: [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
-- Share and content host wiring (ingress rules, env, share Keycloak client): [`helm/`](../../helm/)
+- Share and content host wiring (env, share Keycloak client): [`packages/dam-vm/etc/`](../../packages/dam-vm/etc/)

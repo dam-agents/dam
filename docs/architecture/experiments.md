@@ -38,7 +38,7 @@ subsystem adds the piece that pivot dropped — observability. The **experiment
 SDK** (stdlib-only Python, baked into platform-base) is an instrumentation
 layer: declaring the skeleton costs a handful of lines around code the driver
 would write anyway, and everything the platform learns arrives as reported
-data over the same waypoint-attributed per-agent HTTP surface the driver
+data over the same socket-attributed per-agent HTTP surface the driver
 already uses to spawn.
 
 **Lenient skeleton.** The declared skeleton is a statement of intent, not a
@@ -49,7 +49,7 @@ a run over a declaration mismatch; drift is signal for the human, not a fault.
 ## The experiment agent
 
 Nothing about an Experiment requires a special Agent — Plan Registration is keyed
-only on the calling agent's waypoint identity, so any Agent with the SDK can
+only on the socket the call arrived on, so any Agent with the SDK can
 register one. But an agent has to *know how*, and until it does the Experiments
 destination has nothing to show and the user has nothing to click.
 
@@ -161,7 +161,7 @@ at start, results artifact at the end), so the draft's stay clean for the
 next build iteration.
 
 **Ingestion and attribution.** The reporting routes live beside the
-invocation endpoints on the harness port: the waypoint-authenticated `:id`
+invocation endpoints on the harness socket: the socket-authenticated `:id`
 path segment is the caller, no body ever names the driver, and a foreign or
 missing experiment reads as unknown. Events append only while the experiment
 is `running` — Stop closes the trace, so a stopped loop dies on its next
@@ -283,7 +283,7 @@ with heartbeats, that now specifically means the script process is gone
 (crashed without reporting, sandbox lost). A wedged-but-alive script heartbeats
 indefinitely and stays visibly `running` until the user stops it: the sweep
 cannot tell stuck from slow, and Stop exists. Each
-reap is an atomic conditional transition, so multi-replica races no-op, and
+reap is an atomic conditional transition, so a concurrent reap no-ops, and
 the sweep runs with a jittered start. A running Experiment also **pins** its
 driver Agent against the idle checker's hibernation (the
 `agent-platform.ai/experiment-active` annotation, subordinate to a user hard

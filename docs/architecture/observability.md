@@ -39,7 +39,7 @@ The telemetry store, its exploration UI and the app-state store behind it run as
 
 ClickStack's default posture secures the collector with an ingestion key the UI issues and manages — application-layer, token-based access control. The platform deliberately does **not** rely on that. The collector binds a loopback address on the node and nothing else, so the only writers are the platform's own processes; an agent reaches it, when telemetry is enabled, through the one chain its paired gateway terminates for it, which the gateway forwards without a per-request human decision. This keeps telemetry access on the same boundary as everything else the agent does (see [security-and-credentials](security-and-credentials.md)) rather than introducing a parallel token scheme.
 
-Making the mesh the sole gate is why the collector is platform-owned. ClickStack's bundled collector takes its configuration — including the ingestion-key check — dynamically from the exploration UI, so that configuration cannot be the access boundary here. The platform instead runs its own collector with a fixed configuration and no key enforcement. The UI is unaffected: it reads the telemetry store directly, not the collector.
+Making the node boundary the sole gate is why the collector is platform-owned. ClickStack's bundled collector takes its configuration — including the ingestion-key check — dynamically from the exploration UI, so that configuration cannot be the access boundary here. The platform instead runs its own collector with a fixed configuration and no key enforcement. The UI is unaffected: it reads the telemetry store directly, not the collector.
 
 ## Agent export
 
@@ -57,9 +57,9 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 
 ## Platform-service export
 
-The platform's own services emit their operational telemetry through an in-process OpenTelemetry SDK apiece. Enabling the backend sets the standard OTLP endpoint environment on each deployment, pointing straight at the bundled collector over plain HTTP inside the mesh (ztunnel supplies mTLS, and the collector's authorization policy already admits the release namespace); without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
+The platform's own services emit their operational telemetry through an in-process OpenTelemetry SDK apiece. Enabling the backend sets the standard OTLP endpoint environment on the unit, pointing at the node's collector over plain HTTP; without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
-- The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
+- The **sandbox supervisor** emits one trace per reconcile pass and background sweep, with spans for the commands it shells out to, plus reconcile metrics and its structured logs with trace correlation. It runs inside the api-server, so its traces share that process's SDK.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **turn counter** below, and its structured logs with trace correlation. Health-probe requests are not traced. The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
 
 ### Turn counter
@@ -95,4 +95,4 @@ This subsystem is distinct from two neighbours, and overlaps one of them on purp
 
 Telemetry here is the OpenTelemetry-native, explorable signal pipeline: a different store (columnar, not Postgres), a different shape (OTLP logs/traces/metrics), and a different read surface (the exploration UI). Postgres remains the right home for coarse usage analytics; it cannot serve high-volume telemetry, which is the reason this subsystem exists at all.
 
-See [`helm/`](../../helm/) for the node configuration shape — the `clickstack` values block, and the collector and authorization policy under `templates/clickstack/`.
+See [`packages/dam-vm/etc/env`](../../packages/dam-vm/etc/env) for the node configuration shape.

@@ -30,7 +30,7 @@ flowchart LR
   gateway -->|harness + ext_authz, per-agent unix sockets| api-server
   api-server -->|spec reads, status writes| postgres
   api-server -.->|in-process| supervisor
-  supervisor -->|containerd + runsc, netns, nftables| agent-runtime
+  supervisor -->|runsc, netns, nftables| agent-runtime
   supervisor -->|render config, spawn| gateway
 ```
 
@@ -46,11 +46,22 @@ record claims. For each running agent it creates the network namespace and the
 point-to-point link, writes the whole nftables ruleset, renders and issues the
 gateway's configuration and leaf certificate, materializes the credentials that
 gateway may inject, opens the agent's pair of control-plane sockets, and starts
-the sandbox on containerd under the gVisor handler. It hibernates idle agents by
-stopping the pair and leaves the data directory untouched.
+the sandbox by calling `runsc` with a bundle it writes. It hibernates idle
+agents by stopping the pair and leaves the data directory untouched.
+
+There is no container runtime daemon under this. The supervisor speaks the
+registry API itself — manifest, config blob, layer tarballs, whiteouts — and
+unpacks each image once into a directory shared read-only by every sandbox on
+it, then gives each agent an overlay with its own upper. A daemon would add a
+second lifecycle to keep in step with the supervisor's, and its shim was the
+one thing that could not join a per-agent network namespace at all.
+
+The bundle's `config.json` doubles as the record of what the running sandbox was
+given: a sandbox whose desired spec no longer matches it is replaced, which is
+how an image or environment change reaches a running agent.
 
 Folding it in is what makes the api-server a privileged process: namespaces,
-nftables and containerd are root-only work. The privileged surface is confined
+nftables, mounts and sandbox creation are root-only work. The privileged surface is confined
 to one module's infrastructure layer, and the unit is hardened around a
 capability set rather than running unrestricted — but the blast radius is real,
 and it is the price of having no second daemon.
@@ -128,6 +139,32 @@ Continuing such a conversation here makes a session outlive the surface it start
 
 ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 
+## Sandbox network
+
+Each sandbox has its own network namespace holding one `/30` point-to-point
+link. The gateway binds the host end; the sandbox end is the only address in
+the sandbox's routing table. There is no default route and no resolver, so
+egress isolation is topological — there is no rule to get wrong, because there
+is no second route to deny.
+
+Two details of that namespace are load-bearing and easy to undo by accident.
+
+**The namespace's kernel stack is blinded.** gVisor runs its own TCP/IP stack
+over a raw socket on the link, but the kernel in that namespace still sees
+every frame and still holds the address, so both stacks answer: the kernel
+sends an RST for a port only gVisor is listening on, and the RST wins. The
+namespace therefore carries an nftables `input` chain with `policy drop`.
+Packet taps run before that hook, so gVisor still receives everything, and it
+is the only stack that replies. Removing the address from the kernel instead
+is not equivalent: the supervisor puts it back on the next pass, and gVisor
+reads the address from there when it boots.
+
+**The node's ruleset admits replies.** The node dials the sandbox on the link
+for ACP, the terminal, the tRPC proxy and file imports. Those replies arrive
+with an ephemeral destination port, so the per-link drop that limits new
+inbound traffic to the gateway port must sit behind an
+`ct state established,related accept`.
+
 ## Node resource model
 
 One Postgres row per Agent carries both halves of the model, and the split
@@ -169,8 +206,8 @@ For each running Agent the supervisor holds: a **network namespace** with one
 **data directory** (`work` and `home` persist, scratch does not), a **gateway
 directory** (rendered bootstrap, leaf certificate, credential files, all
 readable only by the gateway uid), a **pair of unix sockets** for the harness
-and ext_authz endpoints, an **Envoy process**, and a **containerd task** under
-the runsc handler. Hibernation removes everything but the data directory;
+and ext_authz endpoints, an **Envoy process**, and a **runsc sandbox** whose
+root is an overlay over the shared image directory. Hibernation removes everything but the data directory;
 deletion removes that too.
 
 ## Invariants
