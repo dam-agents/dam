@@ -46,8 +46,10 @@ data:
     -- views. NOLOGIN and password-less: the role is a group, it holds no
     -- credential and grants nobody anything by itself. An operator grants
     -- membership to whichever login should read the metrics (`GRANT
-    -- usage_readers TO <login>`), and membership is attached to the two
-    -- roles rather than to any view, so no view migration can revoke it. The
+    -- usage_readers TO <login> WITH INHERIT TRUE` — without the option a
+    -- NOINHERIT login is a member that reads nothing), and membership is
+    -- attached to the two roles rather than to any view, so no view migration
+    -- can revoke it. The
     -- api-server reconciles SELECT on the passthroughs for this role after
     -- running migrations on every start, which is why the name is fixed
     -- rather than configurable. Because it reconciles, this role may be
