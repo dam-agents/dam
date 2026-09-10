@@ -44,10 +44,8 @@ export function resizePair(
   const totalPx = above.px + below.px;
   if (totalPx <= 0) return unchanged;
 
-  const smallestDelta = MIN_PANEL_PX - above.px;
-  const largestDelta = below.px - MIN_PANEL_PX;
-  if (largestDelta < smallestDelta) return unchanged;
-
+  const smallestDelta = Math.min(MIN_PANEL_PX - above.px, 0);
+  const largestDelta = Math.max(below.px - MIN_PANEL_PX, 0);
   const delta = Math.min(largestDelta, Math.max(smallestDelta, deltaPx));
   const totalWeight = above.weight + below.weight;
   const aboveWeight = (totalWeight * (above.px + delta)) / totalPx;
