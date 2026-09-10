@@ -2,11 +2,11 @@ import { INLINE_CONTENT_MAX_BYTES, type LibraryArtifact } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
-import { useStore } from "../../../store.js";
 import type { FileContent } from "../../files/api/queries.js";
 import { useCreateArtifact, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifacts } from "../api/queries.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
+import { useOpenArtifact } from "./use-open-artifact.js";
 
 function basename(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
@@ -38,7 +38,7 @@ export function useFilePromotion(
   const { data: artifacts } = useArtifacts(agentId ? { agentId } : null);
   const createArtifact = useCreateArtifact();
   const updateArtifact = useUpdateArtifact();
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifact = useOpenArtifact();
   const [uploading, setUploading] = useState(false);
 
   const linked = useMemo(
@@ -54,13 +54,14 @@ export function useFilePromotion(
     setUploading(true);
     try {
       const name = basename(file.path);
+      const contentType = file.mimeType ?? "text/plain";
       const big = new Blob([file.content]).size > INLINE_CONTENT_MAX_BYTES;
       let payload: { uploadRef: string } | { content: string };
       if (big) {
         const uploadRef = await runAction(
           () =>
             uploadArtifactFile(
-              new File([file.content], name, { type: "text/plain" }),
+              new File([file.content], name, { type: contentType }),
             ),
           "Publishing the file failed",
         );
@@ -74,17 +75,19 @@ export function useFilePromotion(
         ? await updateArtifact.mutateAsync({
             id: linked.id,
             ...payload,
+            contentType,
             sourcePath: file.path,
           })
         : await createArtifact.mutateAsync({
             title: name,
             fileName: name,
             ...payload,
+            contentType,
             sourcePath: file.path,
             ...(agentId ? { agentId } : {}),
           });
 
-      setOpenArtifactId(artifact.id);
+      await openArtifact(artifact.id);
     } catch {
     } finally {
       setUploading(false);

@@ -364,6 +364,7 @@ export function createArtifactLibraryService(
       const kind = detectKind({
         explicit: input.kind,
         fileName: input.fileName,
+        contentType: input.contentType,
         content: contentBuffer,
       });
       const fileName = input.fileName ?? defaultFileName(input.title, kind);
