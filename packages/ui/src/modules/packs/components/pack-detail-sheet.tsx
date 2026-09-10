@@ -74,22 +74,9 @@ export function PackDetailSheet({
 
   return (
     <Modal widthClass="w-[1200px]">
-      <div className="flex shrink-0 items-center justify-end px-5 pt-4 md:px-6">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onClose}
-          aria-label="Close"
-          className="shrink-0 text-muted-foreground"
-        >
-          <Close size={16} />
-        </Button>
-      </div>
-
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="border-b border-border px-5 pb-4 md:px-7">
+          <div className="border-b border-border px-5 pt-5 pb-4 md:px-7 md:pt-7">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
                 <Icon size={16} className="text-foreground" />
@@ -107,6 +94,16 @@ export function PackDetailSheet({
                   {pack.tagline}
                 </p>
               </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                onClick={onClose}
+                aria-label="Close"
+                className="shrink-0 md:hidden"
+              >
+                <Close size={16} />
+              </Button>
             </div>
           </div>
 
@@ -184,7 +181,17 @@ export function PackDetailSheet({
           </div>
         </div>
 
-        <div className="hidden w-1/2 shrink-0 flex-col items-center justify-center border-l border-border bg-preset-light md:flex">
+        <div className="relative hidden w-1/2 shrink-0 flex-col items-center justify-center border-l border-border bg-preset-light md:flex">
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-4 right-4"
+          >
+            <Close size={16} />
+          </Button>
           <PlayFilledAlt size={48} className="text-preset/30" />
           <p className="mt-3 text-sm font-medium text-muted-foreground">
             See it in action
