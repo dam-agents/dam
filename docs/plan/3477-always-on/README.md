@@ -36,7 +36,7 @@ approved proposal**, which supersedes the frame text:
 |----|-------|-------|------------|
 | 01 | ✅ Lifecycle option cards on Configure | Shared `LifecycleField`, replaces `HibernationTimeoutField` in Agent Setup | — |
 | 02 | ✅ Lifecycle in the create flow | Section in coding-agent setup view; create input carries the choice | 01 |
-| 03 | Skip the wait on the startup screen | Button on the startup overlay sets always-on | — |
+| 03 | ✅ Skip the wait on the startup screen | Button on the startup overlay sets always-on | — |
 | 04 | Always-on hover in Compute Resources | Segment hover card with always-on line and Manage link | — |
 
 ## Conventions & glossary
