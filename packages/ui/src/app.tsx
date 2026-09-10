@@ -1,3 +1,4 @@
+import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
@@ -5,6 +6,7 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
 import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
+import { NotificationsDrawer } from "./components/notifications-drawer.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
@@ -53,10 +55,27 @@ export default function App() {
   return <MainApp />;
 }
 
+function NotificationsBell() {
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
+
+  return (
+    <button
+      type="button"
+      onClick={toggleNotifications}
+      className="fixed right-4 top-4 z-[100] flex h-10 w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+      aria-label="Notifications"
+    >
+      <Notification size={16} />
+    </button>
+  );
+}
+
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
+  const notificationsOpen = useStore((s) => s.notificationsOpen);
+  const setNotificationsOpen = useStore((s) => s.setNotificationsOpen);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -92,6 +111,11 @@ function MainApp() {
             <ChatView />
           </div>
         </div>
+        <NotificationsBell />
+        <NotificationsDrawer
+          open={notificationsOpen}
+          onClose={() => setNotificationsOpen(false)}
+        />
         <DialogOverlay />
         <ConnectionBanner />
         <FloatingApprovalsPill />
@@ -139,6 +163,11 @@ function MainApp() {
           )}
         </main>
       </div>
+      <NotificationsBell />
+      <NotificationsDrawer
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+      />
       <DialogOverlay />
       <ConnectionBanner />
       <FloatingApprovalsPill />

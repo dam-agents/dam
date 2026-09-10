@@ -36,6 +36,7 @@ export function IconRail({
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+
   const sandboxes: Destination = {
     label: "Home",
     icon: Home,

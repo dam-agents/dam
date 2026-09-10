@@ -29,6 +29,8 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
+import { mockSessions } from "./data/sessions.js";
+import { spendBreakdown } from "./data/spend.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
@@ -154,6 +156,32 @@ queryClient.setQueryData(trpcKey("metrics.usage"), {
   totalCostCents: 0,
 });
 
+// Spend breakdown (for SpendWidget on home page)
+queryClient.setQueryData(trpcKey("metrics.spendBreakdown"), spendBreakdown);
+
+// Links (used by ComputeWidget's "Request more" link)
+queryClient.setQueryData(trpcKey("links.all"), {
+  computeRequest: "#",
+  docs: "#",
+  status: "#",
+});
+
+// Sessions per agent (for feed / notifications)
+// These go through ACP WebSocket (not tRPC), so the fetch stub can't intercept them.
+// Seed data AND provide a queryFn override that returns it, so refetches don't wipe it.
+const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+for (const agent of agents) {
+  if (agent.state === "running" && !(agent.id in sessionsByAgent)) {
+    sessionsByAgent[agent.id] = [];
+  }
+}
+for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+  queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+}
+(window as any).__mockListAgentSessions = (agentId: string) =>
+  Promise.resolve(sessionsByAgent[agentId] ?? []);
+console.warn("[MOCK] Registered __mockListAgentSessions for", Object.keys(sessionsByAgent));
+
 // Egress rules
 queryClient.setQueryData(trpcKey("egressRules.list"), [
   {
@@ -229,6 +257,8 @@ const fixtures: Record<string, unknown> = {
   "repos.list": [],
   "apiKeys.list": [],
   "metrics.usage": { totalTokens: 0, totalCostCents: 0 },
+  "metrics.spendBreakdown": spendBreakdown,
+  "links.all": { computeRequest: "#", docs: "#", status: "#" },
   "harnessConfig.get": {},
   "harnessConfig.status": {
     catalog: {

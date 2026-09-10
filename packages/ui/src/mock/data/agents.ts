@@ -125,8 +125,8 @@ export const agents: AgentView[] = [
       { type: "slack", slackChannelId: "#creative-ops" },
     ],
 
-    kind: "knowledge-base",
-    kbTemplateId: "llm-wiki",
+    kind: undefined,
+    kbTemplateId: null,
     features: { liveUpdates: true },
   },
   {
@@ -151,7 +151,7 @@ export const agents: AgentView[] = [
     contributionFailures: [],
     channels: [{ type: "slack", slackChannelId: "#dam-dev" }],
 
-    kind: "experiment",
+    kind: undefined,
     kbTemplateId: null,
     features: { liveUpdates: true },
   },
@@ -177,7 +177,7 @@ export const agents: AgentView[] = [
     contributionFailures: [],
     channels: [],
 
-    kind: "experiment",
+    kind: undefined,
     kbTemplateId: null,
     features: { liveUpdates: true },
   },
@@ -203,8 +203,8 @@ export const agents: AgentView[] = [
     contributionFailures: [],
     channels: [],
 
-    kind: "knowledge-base",
-    kbTemplateId: "plain-wiki",
+    kind: undefined,
+    kbTemplateId: null,
     features: { liveUpdates: true },
   },
   {
@@ -235,8 +235,8 @@ export const agents: AgentView[] = [
     ],
     channels: [],
 
-    kind: "knowledge-base",
-    kbTemplateId: "plain-wiki",
+    kind: undefined,
+    kbTemplateId: null,
     features: { liveUpdates: true },
   },
   {
@@ -261,7 +261,7 @@ export const agents: AgentView[] = [
     contributionFailures: [],
     channels: [],
 
-    kind: "experiment",
+    kind: undefined,
     kbTemplateId: null,
     features: { liveUpdates: true },
   },

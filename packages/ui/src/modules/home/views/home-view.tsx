@@ -1,6 +1,6 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import { Chat, Code, Document, Time } from "@carbon/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -18,6 +18,8 @@ import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.
 import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import { PackDetailSheet } from "../../packs/components/pack-detail-sheet.js";
 import type { Pack } from "../../packs/data/packs.js";
+import { ComputeWidget } from "../components/compute-widget.js";
+import { SpendWidget } from "../components/spend-widget.js";
 
 export function HomeView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
@@ -43,6 +45,20 @@ export function HomeView() {
     setPendingPack(pack);
     setView("agent-new");
   };
+
+  const runningAgents = useMemo(
+    () => visible.filter((a) => a.state === "running"),
+    [visible],
+  );
+  const workingAgentIds = useMemo(
+    () =>
+      new Set(
+        visible
+          .filter((a) => a.state === "running" && a.size?.cpu)
+          .map((a) => a.id),
+      ),
+    [visible],
+  );
 
   const hasAgents = initialLoaded && visible.length > 0;
 
@@ -81,6 +97,14 @@ export function HomeView() {
         />
 
         <OutdatedTemplatesBanner agents={visible} />
+
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ComputeWidget
+            runningAgents={runningAgents}
+            workingAgentIds={workingAgentIds}
+          />
+          <SpendWidget />
+        </div>
 
         <SandboxList
           agents={visible}

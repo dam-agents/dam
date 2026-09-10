@@ -39,18 +39,24 @@ export function useFeed(): Feed {
     [agents],
   );
 
+  const mockFn = (window as any).__mockListAgentSessions;
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
-      queryFn: () => listAgentSessionsOverAcp(agent.id),
-      staleTime: SESSIONS_STALE_MS,
+      queryFn: () =>
+        mockFn
+          ? mockFn(agent.id)
+          : listAgentSessionsOverAcp(agent.id),
+      staleTime: mockFn ? Infinity : SESSIONS_STALE_MS,
       retry: false,
-      refetchInterval: (query: { state: { status: string } }) =>
-        !agent.features.liveUpdates
-          ? SESSIONS_COMPAT_POLL_MS
-          : query.state.status === "error"
-            ? SESSIONS_ERROR_RETRY_MS
-            : false,
+      refetchInterval: mockFn
+        ? false
+        : (query: { state: { status: string } }) =>
+            !agent.features.liveUpdates
+              ? SESSIONS_COMPAT_POLL_MS
+              : query.state.status === "error"
+                ? SESSIONS_ERROR_RETRY_MS
+                : false,
     })),
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),

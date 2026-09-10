@@ -7,6 +7,9 @@ export const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
+  notificationsOpen: boolean;
+  toggleNotifications: () => void;
+  setNotificationsOpen: (open: boolean) => void;
 }
 
 export function readStoredSidebarExpanded(): boolean {
@@ -30,4 +33,8 @@ export const createSidebarSlice: StateCreator<
     } catch {}
     set({ sidebarExpanded: expanded });
   },
+  notificationsOpen: false,
+  toggleNotifications: () =>
+    set((s) => ({ notificationsOpen: !s.notificationsOpen })),
+  setNotificationsOpen: (open) => set({ notificationsOpen: open }),
 });

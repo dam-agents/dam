@@ -27,6 +27,16 @@ async function main() {
     } catch (err) {
       console.error("[mock] MSW failed to start:", err);
     }
+
+    const { mockSessions } = await import("./mock/data/sessions.js");
+    const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+    (window as any).__mockListAgentSessions = (agentId: string) =>
+      Promise.resolve(sessionsByAgent[agentId] ?? []);
+
+    for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+      queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+    }
+
     await loadBrand().then(applyBrand);
     const { default: App } = await import("./app.js");
     const { MockStateBar } = await import("./mock/state-bar.js");
