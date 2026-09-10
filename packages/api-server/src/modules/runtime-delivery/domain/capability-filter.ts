@@ -19,6 +19,11 @@ export interface CapabilityFilterResult {
   droppedEventKinds: RuntimeEventKind[];
 }
 
+const HOST_RAIL_KINDS = new Set<ContributionKind>([
+  "egress-allow",
+  "egress-inject",
+]);
+
 export function filterByCapabilities(
   capabilities: AgentCapabilities,
   contributions: Contribution[],
@@ -32,7 +37,7 @@ export function filterByCapabilities(
   for (const c of contributions) {
     if (allowedContrib.has(c.kind)) {
       filteredContribs.push(c);
-    } else {
+    } else if (!HOST_RAIL_KINDS.has(c.kind)) {
       droppedContribs.add(c.kind);
     }
   }
