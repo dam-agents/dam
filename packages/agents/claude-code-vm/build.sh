@@ -29,7 +29,10 @@ AGENT_IMAGE="${AGENT_IMAGE:-platform-claude-code:latest}"
 OUT_TAG="${OUT_TAG:-platform-claude-code-vm:latest}"
 STORAGE_VOL="platform-ccvm-storage"
 # Digest-pinned: bib decides the disk layout, so a silently moved :latest would
-# change the output for an unchanged bootc image.
+# change the output for an unchanged bootc image. Safe to pin off :latest here
+# only because cosign leaves a `sha256-<digest>` tag on every published bib
+# manifest, so quay never sees one untagged and never expires it — unlike
+# skopeo below, whose old digests do vanish.
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
 # Pin to an -immutable version tag, not :latest: skopeo garbage-collects the
 # digests that :latest used to point at, and once the pinned digest is GC'd
