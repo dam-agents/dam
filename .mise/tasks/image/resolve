@@ -16,6 +16,7 @@
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
 #   mise run image:resolve -- build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
+#   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
 #   mise run image:resolve -- list-slow-builds           -> workloads + claude-code-vm (chart-pinned by source sha)
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
@@ -25,10 +26,11 @@
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
-# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI main/tag: publish all),
-# RESOLVE_REUSE_WORKLOADS=1 exempts workloads from RESOLVE_NO_REUSE (CI main:
-# a workload rebuilds only when its effective source moved — the published
-# chart pins its source-sha tag, so an unchanged one keeps last deploy's tag).
+# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule: publish all),
+# RESOLVE_REUSE_AGENTS=1 exempts agents, workloads and the VM from
+# RESOLVE_NO_REUSE (CI main: they rebuild only when their effective source moved
+# — the published chart pins their source-sha tags, so an unchanged one keeps
+# last deploy's tag).
 # Written for bash 3.2 (macOS) — no associative arrays.
 set -euo pipefail
 
@@ -43,12 +45,14 @@ TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.confi
 # keep in sync with packages/platform-base/Dockerfile.
 PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
+# harness agents on platform-base; CI's `agents` build/merge matrix
+AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
-# Slow, rarely-changing claude-code derivatives whose chart tag is pinned by
-# source sha (pin-tags): main pushes reuse the unchanged ones. The VM
-# containerDisk (built by build.sh, not buildx) follows the same rule.
+# claude-code derivatives outside the agents matrix. Like the agents, their
+# chart tag is pinned by source sha (pin-tags) and main pushes reuse the
+# unchanged ones; the VM containerDisk is built by build.sh, not buildx.
 SLOW_BUILDS="$WORKLOADS claude-code-vm"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
@@ -121,9 +125,15 @@ build_or_reuse() {
   docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
+# Agents, workloads and the VM honour RESOLVE_REUSE_AGENTS despite
+# RESOLVE_NO_REUSE (see header); platform-base and keycloak keep the caller's mode.
+resolve_derived() {
+  ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
+}
+
 # tag portion to hand children as BASE_IMAGE / to publish under this run's sha
 tag_for() {
-  local d; d="$(resolve "$1")"
+  local d; d="$(resolve_derived "$1")"
   if [ "${d%% *}" = REUSE ]; then local r="${d#REUSE }"; echo "${r##*:}"; else echo "${GITHUB_SHA:?GITHUB_SHA required}"; fi
 }
 
@@ -133,25 +143,23 @@ gha_outputs() {
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak claude-code codex pi-agent bob k-search $SLOW_BUILDS; do
+  src="$(for a in platform-base keycloak $AGENTS $SLOW_BUILDS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
   pb_tag="$(tag_for platform-base)"
   built=()
-  for a in claude-code codex pi-agent bob k-search; do
-    [ "$(resolve "$a" | cut -d' ' -f1)" = BUILD ] && built+=("$a")
+  for a in $AGENTS; do
+    [ "$(resolve_derived "$a" | cut -d' ' -f1)" = BUILD ] && built+=("$a")
   done
   agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
   cc_tag="$(tag_for claude-code)"
   # Workloads are slow, rarely-changing builds on the claude-code base: PRs
-  # never build them, and RESOLVE_REUSE_WORKLOADS lets main pushes reuse the
-  # unchanged ones despite RESOLVE_NO_REUSE (see header).
+  # never build them.
   wl_built=()
   if [ "${EVENT:-}" != pull_request ]; then
     for w in $WORKLOADS; do
-      d="$(if [ -n "${RESOLVE_REUSE_WORKLOADS:-}" ]; then unset RESOLVE_NO_REUSE; fi; resolve "$w")"
-      [ "${d%% *}" = BUILD ] && wl_built+=("$w")
+      [ "$(resolve_derived "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
     done
   fi
   workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
@@ -160,8 +168,7 @@ gha_outputs() {
   # never byte-reproducible (bootc-image-builder draws fs UUIDs from
   # crypto/rand), so skipping unchanged builds is the only way an unchanged
   # VM keeps its digest.
-  d="$(if [ -n "${RESOLVE_REUSE_WORKLOADS:-}" ]; then unset RESOLVE_NO_REUSE; fi; resolve claude-code-vm)"
-  if [ "${d%% *}" = BUILD ]; then vm=true; else vm=false; fi
+  if [ "$(resolve_derived claude-code-vm | cut -d' ' -f1)" = BUILD ]; then vm=true; else vm=false; fi
   printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_vm=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
     "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$vm" "$cc_tag" "$src"
 }
@@ -215,10 +222,11 @@ case "${1:-}" in
   resolve)        resolve "$2" ;;
   build-or-reuse) shift; build_or_reuse "$@" ;;
   gha-outputs)    gha_outputs ;;
+  list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller platform-base keycloak claude-code codex pi-agent bob k-search $SLOW_BUILDS ;;
+  list-components) echo api-server ui controller platform-base keycloak $AGENTS $SLOW_BUILDS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac
