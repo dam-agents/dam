@@ -38,6 +38,12 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * the transfer replaces, and the bundle it was built from does not change, so
  * nothing else would notice.
  *
+ * A node that brings a workspace up says so on the record, whether it fetched
+ * it or created it. The record, not the presence of a directory, is what the
+ * stale-copy sweep and the next node's fetch both read: a directory nobody
+ * claims is one the sweep reaps at the first hibernation, and one no other
+ * node would ever fetch from.
+ *
  * Deleting an agent removes its directory; being moved off a node does not,
  * because that copy is what the new node fetches from. A copy is only removed
  * once the record says some other node both runs the agent and holds its
@@ -164,6 +170,8 @@ export function createSandboxSupervisor(
     await mkdir(layout.root, { recursive: true, mode: 0o751 });
     if (await deps.fetchWorkspace(record)) {
       await deps.runsc.stop(record.id, layout.sandbox);
+    }
+    if (record.lastNode !== deps.nodeId) {
       await deps.store.noteWorkspaceAt(record.id, deps.nodeId);
     }
     for (const dir of [layout.home, join(layout.home, "work")]) {
