@@ -4,14 +4,11 @@ import { createLeaderLock } from "./core/leader-lock.js";
 import { createNodeRegistry } from "./modules/nodes/infrastructure/node-registry.js";
 import {
   createPeerTunnels,
-  openPeerStream,
   readPeerCredentials,
   startPeerServer,
 } from "./modules/nodes/infrastructure/peer-link.js";
-import {
-  exportWorkspace,
-  importWorkspace,
-} from "./modules/sandboxes/infrastructure/workspace-transfer.js";
+import { createWorkspaceCourier } from "./modules/nodes/services/workspace-courier.js";
+import { exportWorkspace } from "./modules/sandboxes/infrastructure/workspace-transfer.js";
 import { layoutFor } from "./modules/sandboxes/domain/layout.js";
 import { createPkiPort } from "./modules/sandboxes/infrastructure/pki-port.js";
 import { createInstallCaStore } from "./modules/sandboxes/infrastructure/install-ca-store.js";
@@ -307,25 +304,13 @@ export async function bootstrap() {
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
 
-  const fetchWorkspace = async (record: {
-    id: string;
-    lastNode: string | null;
-  }): Promise<boolean> => {
-    const from = record.lastNode;
-    if (!from || from === config.nodeId) return false;
-    const peer = (await nodeRegistry.list()).find((n) => n.id === from);
-    if (!peer) throw new Error(`node ${from} holds the workspace and is gone`);
-    getLogger().info({ agentId: record.id, from }, "workspace.fetch.begin");
-    const stream = await openPeerStream({
-      peerAddress: peer.peerAddress,
-      credentials: peerCredentials,
-      verb: "export",
-      agentId: record.id,
-    });
-    await importWorkspace(layoutFor(config.agentsRoot, record.id).root, stream);
-    getLogger().info({ agentId: record.id, from }, "workspace.fetch.done");
-    return true;
-  };
+  const workspaceCourier = createWorkspaceCourier({
+    nodeId: config.nodeId,
+    agentsRoot: config.agentsRoot,
+    registry: nodeRegistry,
+    credentials: peerCredentials,
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
   const agentsRepo = createAgentsRepository(agentStore);
   const agentEnvRepo = createAgentEnvRepository(db);
 
@@ -1190,7 +1175,7 @@ export async function bootstrap() {
     imagesRoot: config.imagesRoot,
     db,
     nodeId: config.nodeId,
-    fetchWorkspace,
+    fetchWorkspace: (record) => workspaceCourier.fetch(record),
     pki,
     pkiRoot: config.pkiRoot,
     gatewayPort: config.gatewayPort,
