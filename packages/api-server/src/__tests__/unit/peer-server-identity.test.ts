@@ -83,8 +83,6 @@ beforeAll(async () => {
     "serverAuth,clientAuth",
     "DNS:node-1,DNS:platform-node",
   );
-  // Exactly what every agent's gateway is issued: the same authority, the
-  // hosts it terminates, and serving only.
   gateway = leaf("gateway", "serverAuth", "DNS:api.anthropic.com");
 
   port = 24_000 + Math.floor(Math.random() * 1000);

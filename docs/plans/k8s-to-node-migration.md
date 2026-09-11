@@ -46,12 +46,15 @@ is upgraded by pointing the new api-server at it.
 an agent id. A periodic sweep deletes the rows of any agent id the agent record
 table does not contain — the backstop for a delete interrupted halfway. Between
 the moment the new api-server starts and the moment the importer has written
-the agent records, *every* agent in the install is absent from that table, so
-the sweep would delete every install's channel bindings, schedules, API-key
-scopes, egress rules, knowledge-base shares and public profiles, and emit a
-deletion event for each. The sweep now refuses to act when no agent record
-exists at all — that state is not the one it was built for — but the ordering
-below is what actually keeps the window shut.
+the agent records, *every* agent in the install is absent from that table.
+
+This was measured rather than reasoned about. On a migrated database with the
+records not yet imported, the first sweep reaped: the channel binding deleted,
+the schedule deleted, the egress rule deleted, the API key's agent binding
+emptied, the public profile retired — one agent's entire configuration, and it
+would have been every agent's. The sweep now refuses to act when no agent
+record exists at all, since that state is not the one it was built for, but the
+ordering below is what actually keeps the window shut.
 
 ## The importer
 
