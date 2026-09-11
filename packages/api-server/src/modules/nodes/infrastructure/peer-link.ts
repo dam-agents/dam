@@ -55,6 +55,36 @@ export async function readPeerCredentials(
 export const MAX_HEADER_BYTES = 256;
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether the certificate on the other end is a
+ * node's.
+ *
+ * One authority signs every certificate in the install, gateways included,
+ * because an agent has to trust the gateway its own node hands it. So a
+ * verified chain says "minted here" and not "is a node" — and the two verbs
+ * behind this link read an agent's workspace and open a connection to its
+ * sandbox.
+ *
+ * TLS already refuses a certificate not issued for client authentication, so a
+ * gateway's cannot complete the handshake. This says so in the code rather
+ * than resting on it: the name only a node's certificate carries and the usage
+ * only a node's is issued for, checked where the reason is written down. It is
+ * a second lock on the same door, which is the right number for a door whose
+ * key every agent's gateway holds a near-miss of.
+ */
+const CLIENT_AUTH_OID = "1.3.6.1.5.5.7.3.2";
+
+export function isNodeCertificate(cert: {
+  subjectaltname?: string;
+  ext_key_usage?: string[];
+}): boolean {
+  const names = (cert?.subjectaltname ?? "").split(",").map((n) => n.trim());
+  return (
+    names.includes(`DNS:${PEER_SERVER_NAME}`) &&
+    (cert?.ext_key_usage ?? []).includes(CLIENT_AUTH_OID)
+  );
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: How long reaching a peer may take before it
  * counts as unreachable. A node whose peer is gone but whose packets are not
  * refused — a stopped guest, a dropped route — otherwise waits out the
@@ -127,6 +157,12 @@ export function startPeerServer(opts: {
       rejectUnauthorized: true,
     },
     (socket) => {
+      if (!isNodeCertificate(socket.getPeerCertificate())) {
+        opts.log("peer.rejected", {
+          subject: socket.getPeerCertificate()?.subject?.CN,
+        });
+        return socket.destroy();
+      }
       let header = Buffer.alloc(0);
       const onData = (chunk: Buffer) => {
         header = Buffer.concat([header, chunk]);
