@@ -272,12 +272,12 @@ status subresource enforced:
   hibernated Agent never reads as crashed.
 
   Observed state is what a node saw while it held the agent, and it outlives
-  the holding: an agent between nodes, or one whose node left the install, is
-  described by whatever its last node published. Placement is therefore read
-  alongside it — an agent no node is assigned to is not running, whatever
-  readiness still says. An agent assigned to a node that has stopped answering
-  is the case still outstanding: it reads as running, because the read path
-  cannot see node liveness.
+  the holding: an agent between nodes, or one whose node has gone quiet, is
+  described by whatever its last node published. Placement and node liveness
+  are therefore read alongside it, and an agent nothing is running does not
+  read as running — the two ways of that being true, between nodes and on a
+  node that stopped answering, are the same answer to a caller who would
+  otherwise dial it.
 
   `status` also carries the agent's **address**, the sandbox end of its link.
   Publishing it is what lets every relay build a URL without a lookup, and
