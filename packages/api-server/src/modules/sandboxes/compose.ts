@@ -1,3 +1,4 @@
+import type { Db } from "db";
 import type { AgentStore } from "../agents/infrastructure/agent-store.js";
 import type { SecretStore } from "../secret-store/index.js";
 import { createRunscPort } from "./infrastructure/runsc-port.js";
@@ -6,6 +7,7 @@ import { createEnvoyConfigPort } from "./infrastructure/envoy-config-port.js";
 import { createGatewayPort } from "./infrastructure/gateway-port.js";
 import { createNetworkPort } from "./infrastructure/network-port.js";
 import { createPkiPort } from "./infrastructure/pki-port.js";
+import { createInstallCaStore } from "./infrastructure/install-ca-store.js";
 import type { EnvoyOTelView } from "./domain/envoy-bootstrap.js";
 import {
   createSandboxSupervisor,
@@ -17,6 +19,7 @@ export interface SandboxesModule {
 }
 
 export function composeSandboxes(deps: {
+  db: Db;
   store: AgentStore;
   secrets: SecretStore;
   sockets: {
@@ -49,7 +52,7 @@ export function composeSandboxes(deps: {
       log: deps.log,
     }),
     gateway: createGatewayPort({ log: (message) => deps.log(message) }),
-    pki: createPkiPort(deps.pkiRoot),
+    pki: createPkiPort(deps.pkiRoot, createInstallCaStore(deps.db)),
     envoyConfig: createEnvoyConfigPort({
       secrets: deps.secrets,
       gatewayPort: deps.gatewayPort,

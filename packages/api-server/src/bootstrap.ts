@@ -1121,6 +1121,7 @@ export async function bootstrap() {
     agentsRoot: config.agentsRoot,
     runRoot: config.runRoot,
     imagesRoot: config.imagesRoot,
+    db,
     pkiRoot: config.pkiRoot,
     gatewayPort: config.gatewayPort,
     sandboxPort: config.sandboxPort,

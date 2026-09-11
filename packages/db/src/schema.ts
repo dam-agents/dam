@@ -822,6 +822,14 @@ export const secrets = pgTable(
   ],
 );
 
+export const installSecrets = pgTable("install_secrets", {
+  name: text("name").primaryKey(),
+  value: jsonb("value").$type<Record<string, string>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const nodes = pgTable("nodes", {
   id: text("id").primaryKey(),
   address: text("address").notNull(),

@@ -24,6 +24,7 @@ export {
   agents,
   agentRecords,
   secrets,
+  installSecrets,
   nodes,
   userBudgets,
   runtimeStateOutbox,

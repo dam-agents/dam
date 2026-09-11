@@ -337,6 +337,13 @@
       "when": 1789117218514,
       "tag": "0047_clumsy_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789117983483,
+      "tag": "0048_round_lifeguard",
+      "breakpoints": true
     }
   ]
 }
