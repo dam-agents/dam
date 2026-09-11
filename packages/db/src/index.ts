@@ -2,6 +2,7 @@ export {
   createDb,
   DEFAULT_DB_POOL_MAX,
   type Db,
+  type DbSql,
   type DbOptions,
   type DbTx,
 } from "./client.js";

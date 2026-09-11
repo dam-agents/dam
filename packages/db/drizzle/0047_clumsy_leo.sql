@@ -1,3 +1,9 @@
+-- Multi-node: `nodes` is the registry each api-server heartbeats into, and
+-- `agent_records.assigned_node` records which node is running an agent so a
+-- node's supervisor reconciles only its own. `secrets` moves credential bytes
+-- off the node's filesystem, since the node that injects a credential is not
+-- necessarily the one the agent was created on. `last_node` remembers the
+-- previous placement so a wake can prefer the node that still has the disk.
 CREATE TABLE "nodes" (
 	"id" text PRIMARY KEY NOT NULL,
 	"address" text NOT NULL,

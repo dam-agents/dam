@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
+import { createLeaderLock } from "./core/leader-lock.js";
 import {
   AGENTS_PLURAL,
   LABEL_OWNER,
@@ -1148,13 +1149,26 @@ export async function bootstrap() {
     supervisor.sweep(),
   );
 
-  void telegramWorker?.resolveIdentity();
-  liveEventsModule.startAgentWatch();
-  void listChannelsByOwner(db, "")().then((channelsByInstance) =>
-    channelManager.bootstrap(channelsByInstance),
-  );
+  const LEADER_LOCK_KEY = 0x64616d_6c6472;
+  const leaderLock = createLeaderLock({
+    sql,
+    key: LEADER_LOCK_KEY,
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+    onAcquired: async () => {
+      void telegramWorker?.resolveIdentity();
+      liveEventsModule.startAgentWatch();
+      const channelsByInstance = await listChannelsByOwner(db, "")();
+      await channelManager.bootstrap(channelsByInstance);
+    },
+    onLost: async () => {
+      liveEventsModule.stopAgentWatch();
+      await channelManager.standDown();
+    },
+  });
+  leaderLock.start();
 
   const cleanup = async (): Promise<void> => {
+    await leaderLock.stop();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     kbShareAutoRefresh.unsubscribe();

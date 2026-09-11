@@ -34,7 +34,7 @@ ACTIVITY_HMAC_KEY=
 API_KEY_HMAC_KEY=
 
 TERMS_VERSION=1
-TERMS_TEXT=Use of this install is governed by its operator's terms.
+TERMS_TEXT="Use of this install is governed by its operator's terms."
 
 AGENT_TEMPLATES_PATH=/etc/dam/templates
 GIT_REPOS_PATH=/etc/dam/repos

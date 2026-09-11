@@ -1,0 +1,101 @@
+// TEST_OVERVIEW: the lock decides which node runs the work that admits one holder — the Slack and Telegram transports above all, where a second holder answers every mention twice. What matters is not that acquiring works but that the callbacks fire once each and in order: a node that has already stood up its singletons must not stand them up again, and a node that has lost the connection must stand them down before anyone else takes over.
+import { describe, expect, it, vi } from "vitest";
+import type { DbSql } from "db";
+import { createLeaderLock } from "../../core/leader-lock.js";
+
+function fakeSql(opts: { granted: boolean; failAfter?: number }) {
+  let queries = 0;
+  let released = 0;
+  const reserved = (() => {
+    const fn = (async () => {
+      queries += 1;
+      if (opts.failAfter !== undefined && queries > opts.failAfter) {
+        throw new Error("connection terminated");
+      }
+      return [{ ok: opts.granted }];
+    }) as unknown as Record<string, unknown>;
+    fn.release = () => {
+      released += 1;
+    };
+    return fn;
+  })();
+  const sql = { reserve: async () => reserved };
+  return {
+    sql: sql as unknown as DbSql,
+    releases: () => released,
+    queries: () => queries,
+  };
+}
+
+const lockOf = (
+  sql: DbSql,
+  cbs: { onAcquired: () => void; onLost: () => void },
+) =>
+  createLeaderLock({
+    sql,
+    key: 1,
+    pollMs: 1_000_000,
+    log: () => {},
+    ...cbs,
+  });
+
+describe("leader lock", () => {
+  it("stands the singletons up once when it wins", async () => {
+    const { sql } = fakeSql({ granted: true });
+    const onAcquired = vi.fn();
+    const onLost = vi.fn();
+    const lock = lockOf(sql, { onAcquired, onLost });
+
+    lock.start();
+    await vi.waitFor(() => expect(lock.isLeader()).toBe(true));
+    expect(onAcquired).toHaveBeenCalledTimes(1);
+    expect(onLost).not.toHaveBeenCalled();
+    await lock.stop();
+  });
+
+  // TEST_SCENARIO: a node that did not win must not touch the transports at all — this is the double-Slack case.
+  it("stays silent when another node holds it", async () => {
+    const { sql } = fakeSql({ granted: false });
+    const onAcquired = vi.fn();
+    const onLost = vi.fn();
+    const lock = lockOf(sql, { onAcquired, onLost });
+
+    lock.start();
+    await vi.waitFor(() => expect(sql).toBeDefined());
+    expect(lock.isLeader()).toBe(false);
+    expect(onAcquired).not.toHaveBeenCalled();
+    expect(onLost).not.toHaveBeenCalled();
+    await lock.stop();
+  });
+
+  // TEST_SCENARIO: the lock dies with the connection, so a heartbeat that throws means another node is about to take over and this one must let go first.
+  it("stands down and releases when the connection dies", async () => {
+    const probe = fakeSql({ granted: true, failAfter: 1 });
+    const onAcquired = vi.fn();
+    const onLost = vi.fn();
+    const lock = createLeaderLock({
+      sql: probe.sql,
+      key: 1,
+      pollMs: 5,
+      log: () => {},
+      onAcquired,
+      onLost,
+    });
+
+    lock.start();
+    await vi.waitFor(() => expect(onLost).toHaveBeenCalled());
+    expect(lock.isLeader()).toBe(false);
+    expect(onLost).toHaveBeenCalledTimes(1);
+    expect(probe.releases()).toBeGreaterThan(0);
+    await lock.stop();
+  });
+
+  it("does not announce a loss it never held", async () => {
+    const { sql } = fakeSql({ granted: false });
+    const onLost = vi.fn();
+    const lock = lockOf(sql, { onAcquired: vi.fn(), onLost });
+    lock.start();
+    await lock.stop();
+    expect(onLost).not.toHaveBeenCalled();
+  });
+});
