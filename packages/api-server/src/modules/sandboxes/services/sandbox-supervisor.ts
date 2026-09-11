@@ -45,6 +45,11 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * replaced it when the orchestrator left, and its absence is invisible until
  * something dials an agent the moment it is declared up.
  *
+ * Any answer counts, including a refusal: the question is whether something is
+ * listening, and an image whose runtime does not recognise the path is still
+ * an image every caller can reach. Only a connection that does not complete
+ * means not yet.
+ *
  * A node that brings a workspace up says so on the record, whether it fetched
  * it or created it. The record, not the presence of a directory, is what the
  * stale-copy sweep and the next node's fetch both read: a directory nobody
@@ -105,7 +110,7 @@ async function serving(address: string, port: number): Promise<boolean> {
     const up = await fetch(`http://${address}:${port}/healthz`, {
       signal: AbortSignal.timeout(1_000),
     }).then(
-      (res) => res.ok,
+      () => true,
       () => false,
     );
     if (up) return true;
