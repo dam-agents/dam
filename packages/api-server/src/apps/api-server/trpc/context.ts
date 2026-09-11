@@ -16,6 +16,7 @@ import {
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
+import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
@@ -67,6 +68,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    starterKitsRepo,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -237,6 +239,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templatesRepo,
       runtimeProgress: contributionsProgress,
     });
+    const { starterKits } = composeStarterKitsForOwner({
+      owner: user.sub,
+      repo: starterKitsRepo,
+      agents,
+      schedules,
+      connections,
+      skills,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
+    });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
     const l7Hosts = createAgentL7HostsPort(k8sClient);
@@ -336,6 +349,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       experiments,
       invocationsQuery,
       knowledgeBases,
+      starterKits,
       kbShares,
       artifactLibrary,
       caseStudies,

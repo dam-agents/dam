@@ -54,6 +54,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     channels: agent.channels,
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,
+    starterKit: agent.starterKit ?? null,
   };
 }
 

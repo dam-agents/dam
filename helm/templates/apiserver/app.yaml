@@ -302,6 +302,10 @@ spec:
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}
             {{- end }}
+            {{- if .Values.starterKits.catalog }}
+            - name: STARTER_KITS_CATALOG
+              value: {{ .Values.starterKits.catalog | quote }}
+            {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_ID

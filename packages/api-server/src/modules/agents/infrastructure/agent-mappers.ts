@@ -26,6 +26,7 @@ import {
   READY_REASON_OVER_BUDGET,
   STOP_REQUESTED_KEY,
   VERSION,
+  ANN_STARTER_KIT,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 
@@ -57,6 +58,7 @@ export interface InfraAgent {
   lifetimeMs: number;
   kind?: AgentKind;
   kbTemplateId?: string;
+  starterKit?: string;
   hibernatedSince?: Date;
   ready: boolean;
   hibernated: boolean;
@@ -170,6 +172,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_KB_TEMPLATE]
       ? { kbTemplateId: annotations[ANN_KB_TEMPLATE] }
       : {}),
+    ...(annotations[ANN_STARTER_KIT]
+      ? { starterKit: annotations[ANN_STARTER_KIT] }
+      : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
@@ -226,6 +231,7 @@ export function assembleAgent(
     channels,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,
+    starterKit: infra.starterKit,
     features,
   };
 }

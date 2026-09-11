@@ -78,6 +78,7 @@ import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
+import { useStarterKitGreeting } from "../../starter-kits/hooks/use-starter-kit-greeting.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
@@ -245,6 +246,13 @@ export function ChatView() {
   useExperimentGreeting({
     agentId: selectedAgent,
     active: agentView !== null && isExperimentSandbox(agentView),
+    idle: chatIdle,
+    sendPrompt,
+  });
+  useStarterKitGreeting({
+    agentId: selectedAgent,
+    active:
+      view === "chat" && agentView !== null && agentView.starterKit !== null,
     idle: chatIdle,
     sendPrompt,
   });

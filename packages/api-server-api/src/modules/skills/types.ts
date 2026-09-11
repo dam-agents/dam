@@ -63,6 +63,10 @@ export type SkillSetCreateInput = z.infer<typeof skillSetCreateInputSchema>;
 export type SkillSetDeleteInput = z.infer<typeof skillSetDeleteInputSchema>;
 
 export type SkillSetApplyInput = z.infer<typeof skillSetApplyInputSchema>;
+export interface SkillEntriesApplyInput {
+  agentId: string;
+  skills: SkillSetEntry[];
+}
 
 export type SkillSetApplyResult = z.infer<typeof skillSetApplyResultSchema>;
 
@@ -95,6 +99,7 @@ export interface SkillsService {
   createSet: (input: SkillSetCreateInput) => Promise<SkillSet>;
   deleteSet: (input: SkillSetDeleteInput) => Promise<void>;
   applySets: (input: SkillSetApplyInput) => Promise<SkillSetApplyResult>;
+  applyEntries: (input: SkillEntriesApplyInput) => Promise<SkillSetApplyResult>;
   createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
   deleteLocal: (input: SkillDeleteLocalInput) => Promise<LocalSkill[]>;
   readLocal: (input: SkillReadLocalInput) => Promise<SkillLocalFiles>;
