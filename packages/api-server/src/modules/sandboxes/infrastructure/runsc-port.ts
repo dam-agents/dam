@@ -29,6 +29,15 @@ import type { Image, ImageStore } from "./image-store.js";
  * agent's log file on both streams; a pipe would never see EOF and the call
  * would hang.
  *
+ * The sandbox runs as the user its image names — the harnesses refuse to run
+ * as root, and the agent's own directories are chowned to that user so it can
+ * write them. The overlay's own directories are 0755 for the same reason:
+ * overlayfs takes the merged root's mode from the upper, and that root is the
+ * sandbox's "/", so a stricter mode leaves a non-root agent unable to traverse
+ * its own filesystem at all. Nothing is exposed by it — the directory above is
+ * already closed to everyone but the gateway user. A name is resolved against the image's /etc/passwd, not the
+ * node's.
+ *
  * The sandbox runs with Docker's default capability set, which is what images
  * are built to expect. Those are capabilities inside gVisor's own kernel, not
  * on the node: the boundary is the sentry, and an agent that cannot chown its
@@ -94,13 +103,15 @@ export function createRunscPort(deps: {
       const image = await deps.images.ensure(spec.image, {
         ...(spec.registryAuthPath ? { authDir: spec.registryAuthPath } : {}),
       });
+      const user = await resolveUser(image);
       const bundle = join(spec.stateDir, "bundle");
       const configPath = join(bundle, "config.json");
       const desired = JSON.stringify(
-        buildOciSpec(spec, join(spec.stateDir, "merged"), image),
+        buildOciSpec(spec, join(spec.stateDir, "merged"), image, user),
         null,
         2,
       );
+
       const applied = await readFile(configPath, "utf8").catch(() => "");
 
       const current = await state(spec.agentId);
@@ -115,6 +126,15 @@ export function createRunscPort(deps: {
       }
 
       await mountOverlay(spec.stateDir, image.rootfs);
+      for (const mount of spec.mounts) {
+        if (mount.readOnly) continue;
+        const owner = await exec("stat", ["-c", "%u:%g", mount.source]).catch(
+          () => "",
+        );
+        if (owner.trim() !== `${user.uid}:${user.gid}`) {
+          await exec("chown", ["-R", `${user.uid}:${user.gid}`, mount.source]);
+        }
+      }
       await mkdir(bundle, { recursive: true, mode: 0o750 });
       await writeFile(configPath, desired, { mode: 0o640 });
 
@@ -191,24 +211,26 @@ async function mountOverlay(stateDir: string, rootfs: string): Promise<string> {
   const options = await exec("findmnt", ["-n", "-o", "OPTIONS", merged]).catch(
     () => "",
   );
-  if (options.includes(`lowerdir=${rootfs}`)) return merged;
-  if (options) {
-    await exec("umount", [merged]);
-    for (const sub of ["upper", "work"]) {
-      await rm(join(stateDir, sub), { recursive: true, force: true });
+  if (!options.includes(`lowerdir=${rootfs}`)) {
+    if (options) {
+      await exec("umount", [merged]);
+      for (const sub of ["upper", "work"]) {
+        await rm(join(stateDir, sub), { recursive: true, force: true });
+      }
     }
+    for (const sub of ["upper", "work", "merged"]) {
+      await mkdir(join(stateDir, sub), { recursive: true, mode: 0o755 });
+    }
+    await exec("mount", [
+      "-t",
+      "overlay",
+      "overlay",
+      "-o",
+      `lowerdir=${rootfs},upperdir=${join(stateDir, "upper")},workdir=${join(stateDir, "work")}`,
+      merged,
+    ]);
   }
-  for (const sub of ["upper", "work", "merged"]) {
-    await mkdir(join(stateDir, sub), { recursive: true, mode: 0o750 });
-  }
-  await exec("mount", [
-    "-t",
-    "overlay",
-    "overlay",
-    "-o",
-    `lowerdir=${rootfs},upperdir=${join(stateDir, "upper")},workdir=${join(stateDir, "work")}`,
-    merged,
-  ]);
+  await exec("chmod", ["0755", merged]);
   return merged;
 }
 
@@ -231,10 +253,37 @@ const SANDBOX_CAPABILITIES = [
   "CAP_AUDIT_WRITE",
 ];
 
+interface SandboxUser {
+  uid: number;
+  gid: number;
+}
+
+async function resolveUser(image: Image): Promise<SandboxUser> {
+  const [name = "", group = ""] = image.config.user.split(":");
+  const numeric = (v: string) => (/^\d+$/.test(v) ? Number(v) : null);
+  const uid = numeric(name);
+  if (uid !== null) return { uid, gid: numeric(group) ?? uid };
+  if (!name) return { uid: 0, gid: 0 };
+
+  const passwd = await readFile(join(image.rootfs, "etc/passwd"), "utf8").catch(
+    () => "",
+  );
+  const row = passwd
+    .split("\n")
+    .map((l) => l.split(":"))
+    .find((f) => f[0] === name);
+  if (!row)
+    throw new Error(
+      `image user ${image.config.user} is not in its own /etc/passwd`,
+    );
+  return { uid: Number(row[2]), gid: numeric(group) ?? Number(row[3]) };
+}
+
 function buildOciSpec(
   spec: SandboxSpec,
   root: string,
   image: Image,
+  user: SandboxUser,
 ): Record<string, unknown> {
   const env = new Map<string, string>();
   for (const entry of image.config.env) {
@@ -250,7 +299,7 @@ function buildOciSpec(
     annotations: { "ai.agent-platform.image-rootfs": image.rootfs },
     process: {
       terminal: false,
-      user: { uid: 0, gid: 0 },
+      user,
       args: command,
       env: [...env].map(([k, v]) => `${k}=${v}`),
       cwd: spec.workingDir || image.config.workingDir || "/",
