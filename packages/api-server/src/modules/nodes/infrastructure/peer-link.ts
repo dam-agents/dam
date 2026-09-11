@@ -53,6 +53,19 @@ export async function readPeerCredentials(
 }
 
 export const MAX_HEADER_BYTES = 256;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How long reaching a peer may take before it
+ * counts as unreachable. A node whose peer is gone but whose packets are not
+ * refused — a stopped guest, a dropped route — otherwise waits out the
+ * kernel's own retry budget, and the sweep reconciles agents one after
+ * another, so one unreachable peer holds up every other agent on the node.
+ *
+ * It bounds reaching the peer, not using it, and is lifted once the peer
+ * answers: a relay is idle whenever nobody is typing, and an export of a large
+ * workspace is one long quiet read — neither is a stall.
+ */
+export const PEER_CONNECT_TIMEOUT_MS = 5_000;
 const PEER_SERVER_NAME = "platform-node";
 
 export type PeerVerb = "dial" | "export";
@@ -178,6 +191,7 @@ function dialPeer(opts: {
   credentials: PeerCredentials;
   verb: PeerVerb;
   agentId: string;
+  timeoutMs?: number;
   onReady: (socket: Socket) => void;
   onError: (err: Error) => void;
 }): void {
@@ -190,12 +204,18 @@ function dialPeer(opts: {
       cert: opts.credentials.cert,
       key: opts.credentials.key,
       servername: PEER_SERVER_NAME,
+      timeout: opts.timeoutMs ?? PEER_CONNECT_TIMEOUT_MS,
     },
     () => {
+      socket.setTimeout(0);
       socket.write(`${opts.verb} ${opts.agentId}\n`);
       opts.onReady(socket);
     },
   );
+  socket.once("timeout", () => {
+    socket.destroy();
+    opts.onError(new Error(`peer ${opts.peerAddress} did not answer in time`));
+  });
   socket.once("error", opts.onError);
 }
 
@@ -204,6 +224,7 @@ export function openPeerStream(opts: {
   credentials: PeerCredentials;
   verb: PeerVerb;
   agentId: string;
+  timeoutMs?: number;
 }): Promise<NodeJS.ReadableStream> {
   return new Promise((resolve, reject) => {
     dialPeer({ ...opts, onReady: resolve, onError: reject });
