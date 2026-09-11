@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { and, eq, secrets, sql, type Db } from "db";
 import type { SecretRef } from "api-server-api";
 import type { SecretMetadata, SecretStore } from "../services/secret-store.js";
+import { pathSafe } from "../domain/ref-path.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Credential bytes in Postgres, one row per secret,
@@ -173,11 +174,4 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
       }));
     },
   };
-}
-
-function pathSafe(value: string): string {
-  return value.replace(
-    /[^A-Za-z0-9._-]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).padStart(2, "0")}`,
-  );
 }

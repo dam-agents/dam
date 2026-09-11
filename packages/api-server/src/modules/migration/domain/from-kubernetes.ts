@@ -1,4 +1,5 @@
 import type { AgentSpecCR } from "api-server-api";
+import { pathSafe } from "../../secret-store/domain/ref-path.js";
 import {
   LABEL_OWNER,
   LABEL_TEMPLATE_REF,
@@ -64,8 +65,6 @@ export interface BudgetRow {
   cpu: string;
   memory: string;
 }
-
-export const pathSafe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 export const secretPathFor = (owner: string, name: string) =>
   `${pathSafe(owner)}/${name}`;
