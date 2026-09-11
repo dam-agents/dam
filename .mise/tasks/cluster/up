@@ -5,9 +5,25 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 VM="${DAM_CLUSTER_VM:-dam-cluster}"
+# A second cluster (the e2e one) needs its own host ports. Whoever claims a
+# forward first keeps it, and the guest ports are fixed, so a clash would not
+# fail — it would quietly point this VM's clients at the other cluster. The
+# guest-side NodePorts never move; only what the host publishes them as.
+OFF="${DAM_CLUSTER_PORT_OFFSET:-0}"
 if limactl list --quiet 2>/dev/null | grep -qx "$VM"; then
   limactl start "$VM"
 else
-  limactl start --name="$VM" --tty=false etc/lima/k3s.yaml
+  limactl start --name="$VM" --tty=false \
+    --set=".portForwards[0].hostPort = $((30432 + OFF))" \
+    --set=".portForwards[1].hostPort = $((30379 + OFF))" \
+    --set=".portForwards[2].hostPort = $((30081 + OFF))" \
+    --set=".portForwards[3].hostPort = $((30333 + OFF))" \
+    --set=".portForwards[4].hostPort = $((6443 + OFF))" \
+    etc/lima/k3s.yaml
 fi
+# lima copies the kubeconfig out verbatim, so it names the port k3s serves on
+# inside the guest rather than the one this VM publishes.
+KUBECONFIG_FILE="${LIMA_HOME:-$HOME/.lima}/${VM}/copied-from-guest/kubeconfig.yaml"
+sed -E "s#127\.0\.0\.1:[0-9]+#127.0.0.1:$((6443 + OFF))#" "$KUBECONFIG_FILE" > "$KUBECONFIG_FILE.tmp"
+mv "$KUBECONFIG_FILE.tmp" "$KUBECONFIG_FILE"
 echo "Cluster up. Next: mise run cluster:install"

@@ -9,14 +9,17 @@ NS="${DAM_NAMESPACE:-dam}"
 # Node VMs are not on the cluster network; they reach it through the lima
 # host, which is the one address every guest can already resolve.
 HOST="${DAM_CLUSTER_HOST:-192.168.5.2}"
+# The host publishes the guest's fixed NodePorts shifted by this, so that a
+# second cluster can run beside the first (see cluster:up).
+OFF="${DAM_CLUSTER_PORT_OFFSET:-0}"
 secret() { kubectl -n "$NS" get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
 cat <<VARS
-export DAM_DATABASE_URL='postgres://platform_apiserver:$(secret dam-platform-postgres-secrets POSTGRES_APISERVER_PASSWORD)@${HOST}:30432/platform'
-export DAM_REDIS_URL='redis://:$(secret dam-platform-redis-auth password 2>/dev/null || true)@${HOST}:30379'
-export DAM_KEYCLOAK_URL='http://${HOST}:30081'
-export DAM_KEYCLOAK_EXTERNAL_URL='http://localhost:30081'
+export DAM_DATABASE_URL='postgres://platform_apiserver:$(secret dam-platform-postgres-secrets POSTGRES_APISERVER_PASSWORD)@${HOST}:$((30432 + OFF))/platform'
+export DAM_REDIS_URL='redis://:$(secret dam-platform-redis-auth password 2>/dev/null || true)@${HOST}:$((30379 + OFF))'
+export DAM_KEYCLOAK_URL='http://${HOST}:$((30081 + OFF))'
+export DAM_KEYCLOAK_EXTERNAL_URL='http://localhost:$((30081 + OFF))'
 export DAM_API_CLIENT_SECRET='$(secret dam-platform-keycloak-secrets PLATFORM_API_CLIENT_SECRET)'
-export DAM_OBJECT_STORAGE_ENDPOINT='http://${HOST}:30333'
+export DAM_OBJECT_STORAGE_ENDPOINT='http://${HOST}:$((30333 + OFF))'
 export DAM_OBJECT_STORAGE_ACCESS_KEY_ID='$(secret dam-platform-seaweedfs-secrets accessKeyId)'
 export DAM_OBJECT_STORAGE_SECRET_ACCESS_KEY='$(secret dam-platform-seaweedfs-secrets secretAccessKey)'
 VARS

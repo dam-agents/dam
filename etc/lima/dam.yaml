@@ -7,8 +7,12 @@ images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
     arch: "aarch64"
 
-cpus: 6
-memory: "12GiB"
+# A node runs the api-server, one Envoy per agent and the agent sandboxes. It
+# no longer runs Postgres, Redis or Keycloak — those are on the cluster — so
+# this is sized for agents alone. Several nodes on one laptop add up: two of
+# these plus the cluster VM is the normal dev shape.
+cpus: 4
+memory: "8GiB"
 disk: "80GiB"
 
 mounts:

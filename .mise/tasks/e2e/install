@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-#MISE description="Bring up the e2e node: its own VM, the e2e control API on, and the mock harness as its only image."
+#MISE description="Bring up the e2e install: a cluster VM with the shared services, a node VM with the e2e control API on, and the mock harness as its only image."
 #MISE hide=true
 #MISE raw=true
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+
+mise run cluster:up
+# The realm's issuer is the URL the browser uses, which is this cluster's
+# shifted Keycloak port, not the dev cluster's.
+mise run cluster:install -- --set "urls.keycloak=$PLATFORM_KEYCLOAK_URL" --set "urls.ui=$DAM_UI_URL"
+eval "$(mise run cluster:env)"
 
 mise run vm:up
 mise run vm:install
@@ -30,11 +36,6 @@ description: Scripted mock agent (e2e test fixture)
 category: harness
 image: /var/lib/dam/images/mock.tar
 hibernationTimeout: 30m
-mounts:
-  - path: $HOME
-    persist: true
-  - path: $HOME/work
-    persist: true
 env:
   - name: MOCK_DEFAULT_REPLY
     value: "Hello from the mock agent."

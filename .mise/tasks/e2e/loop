@@ -20,9 +20,10 @@ done
 
 # Bootstrap once if the node is missing; never try to heal a broken one.
 if ! limactl list -q 2>/dev/null | grep -qx "$DAM_VM"; then
-  echo "No e2e node found — bootstrapping once (slow, ~minutes)..."
+  echo "No e2e install found — bootstrapping once (slow, ~minutes)..."
   mise run e2e:install
 else
+  eval "$(mise run cluster:env)"
   mise run vm:install
   mise run e2e:reset
 fi

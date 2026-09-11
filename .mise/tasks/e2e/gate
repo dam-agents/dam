@@ -22,7 +22,7 @@ for _ in $(seq 1 100); do
   sleep 3
 done
 if [ "$STREAK" -lt 3 ]; then
-  echo "ERROR: the e2e node is up but not serving. Check 'DAM_VM=$DAM_VM mise run vm:status'." >&2
+  echo "ERROR: the e2e install is up but not serving. Check 'DAM_VM=$DAM_VM mise run vm:status'." >&2
   exit 1
 fi
 echo "e2e node ready."

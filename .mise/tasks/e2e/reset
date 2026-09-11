@@ -1,30 +1,47 @@
 #!/usr/bin/env bash
-#MISE description="Wipe e2e node data without reinstalling: delete every agent, drop and recreate the database, clear stored Playwright auth. Leaves the node running."
+#MISE description="Wipe e2e data without reinstalling: delete every agent, recreate the platform database on the cluster, clear stored Playwright auth. Leaves both VMs running."
+#MISE raw=true
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM}/copied-from-guest/kubeconfig.yaml"
 
-limactl shell "$DAM_VM" sudo bash -s <<'REMOTE'
-set -euo pipefail
-# Delete the records first and let the supervisor tear their sandboxes down:
-# it owns the netns, the link, the gateway unit and the mounts, and a hand
-# cleanup would leave half of them behind.
-sudo -u postgres psql -q -d dam -c "DELETE FROM agent_records" >/dev/null
+PGPW=$(kubectl -n "$DAM_NAMESPACE" get secret dam-platform-postgres-secrets \
+  -o jsonpath='{.data.POSTGRES_ADMIN_PASSWORD}' | base64 -d)
+psql_() {
+  kubectl -n "$DAM_NAMESPACE" exec -i dam-platform-postgres-0 -- \
+    env PGPASSWORD="$PGPW" psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U platform -d "$1" -tAf -
+}
+
+# Delete the records first, with the api-server still up, and let each node's
+# supervisor tear the sandboxes down: it owns the netns, the veth, the gateway
+# unit and the mounts, and dropping the database out from under it would leave
+# every one of them behind.
+echo "DELETE FROM agent_records;" | psql_ platform >/dev/null
 for _ in $(seq 1 40); do
-  runsc --network=sandbox --overlay2=none list 2>/dev/null | grep -q '^dam-' || break
+  limactl shell "$DAM_VM" sudo runsc --network=sandbox --overlay2=none list 2>/dev/null |
+    grep -q '^dam-' || break
   sleep 3
 done
 
-# Drop and recreate. Nothing may hold a session on it, so the api-server stops
-# first; it reruns the migrations from zero when it comes back.
-systemctl stop dam-api-server
-sudo -u postgres psql -q -c "DROP DATABASE IF EXISTS dam WITH (FORCE)" >/dev/null
-sudo -u postgres psql -q -c "CREATE DATABASE dam OWNER dam" >/dev/null
-systemctl start dam-api-server
-REMOTE
+# Nothing may hold a session on the database while it is dropped, so the node
+# stops first; it reruns the migrations from zero when it comes back.
+limactl shell "$DAM_VM" sudo systemctl stop dam-api-server
+# The four grants mirror the chart's init SQL, which only runs on a freshly
+# initialised data directory and so does not see this database: without them
+# the recreated database would be reachable by every role, including
+# Keycloak's, which the chart deliberately shuts out.
+psql_ postgres <<'SQL' >/dev/null
+DROP DATABASE IF EXISTS platform WITH (FORCE);
+CREATE DATABASE platform OWNER platform_apiserver;
+REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
+GRANT CONNECT ON DATABASE platform TO platform_apiserver;
+GRANT CONNECT ON DATABASE platform TO usage_readers;
+SQL
+limactl shell "$DAM_VM" sudo systemctl start dam-api-server
 
-# Terms acceptance lived in the database we just dropped, so a stored session
-# would land on the terms gate instead of the app.
+# Terms acceptance lived in the database that was just dropped, so a stored
+# session would land on the terms gate instead of the app.
 rm -f packages/e2e/playwright/.auth/user.json
 mise run e2e:gate
 echo "e2e data reset complete."
