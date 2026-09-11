@@ -45,4 +45,4 @@ TERMS_TEXT="Use of this install is governed by its operator's terms."
 
 AGENT_TEMPLATES_PATH=/etc/dam/templates
 GIT_REPOS_PATH=/etc/dam/repos
-TRUSTED_HOSTS_PATH=/etc/dam/trusted-hosts.yaml
+TRUSTED_HOSTS_PATH=/etc/dam/trusted-hosts

@@ -1166,6 +1166,18 @@ export async function bootstrap() {
     gatewayUser,
   });
 
+  const agentStoreEndpoint =
+    config.objectStorageAgentEndpoint ?? config.objectStorageEndpoint;
+  const agentObjectStore = agentStoreEndpoint
+    ? {
+        host: new URL(agentStoreEndpoint).hostname,
+        port: Number(
+          new URL(agentStoreEndpoint).port ||
+            (new URL(agentStoreEndpoint).protocol === "https:" ? 443 : 80),
+        ),
+      }
+    : null;
+
   const { supervisor } = composeSandboxes({
     store: agentStore,
     secrets: secretStore,
@@ -1187,6 +1199,7 @@ export async function bootstrap() {
     harnessBaseUrl: config.harnessServerUrl,
     harnessAuthority: new URL(config.harnessServerUrl).host,
     extAuthzHoldSeconds: config.approvalHoldSeconds,
+    ...(agentObjectStore ? { objectStore: agentObjectStore } : {}),
     ...(config.telemetryCollectorHost
       ? {
           telemetry: {

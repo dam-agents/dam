@@ -104,6 +104,7 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
 } >> /etc/dam/env
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
+install -m 0644 "$REPO/packages/dam-vm/etc/trusted-hosts" /etc/dam/trusted-hosts
 
 install -m 0644 "$REPO/packages/dam-vm/system/dam-api-server.service" /usr/lib/systemd/system/
 install -m 0644 "$REPO/packages/dam-vm/system/dam-gateway@.service" /usr/lib/systemd/system/
