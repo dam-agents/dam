@@ -7,6 +7,9 @@ set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 VM="${DAM_VM:-dam}"
 
+DAM_VM="$VM"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
+
 pnpm --filter platform-ui exec sh -c 'tsc && vite build'
 pnpm --filter api-server exec tsup
 PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
@@ -14,8 +17,8 @@ PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
 # The repo is a shared mount, so the VM must never run pnpm against it: a
 # --prod install there prunes the host's dev dependencies out from under the
 # editor and the test run. Source is copied to VM-local disk first.
-limactl shell "$VM" sudo install -d /opt/dam/src
-limactl shell "$VM" sudo rsync -a --delete \
+on_node install -d /opt/dam/src
+on_node rsync -a --delete \
   --exclude node_modules --exclude .git --exclude .worktrees \
   "${MISE_PROJECT_ROOT}/" /opt/dam/src/
 
@@ -25,14 +28,14 @@ limactl shell "$VM" sudo rsync -a --delete \
 # so it also overrides anything above it.
 NODE_ENV_FILE="${DAM_NODE_ENV_FILE:-$MISE_PROJECT_ROOT/etc/node.env}"
 if [ -f "$NODE_ENV_FILE" ]; then
-  limactl copy "$NODE_ENV_FILE" "$VM":/tmp/node.env
+  copy_to_node "$NODE_ENV_FILE" /tmp/node.env
 else
-  limactl shell "$VM" sh -c ': > /tmp/node.env'
+  on_node sh -c ': > /tmp/node.env'
 fi
 
 # A second node forwards the same guest ports to different host ports, so the
 # URLs the browser and Keycloak agree on are not the node's own defaults.
-limactl shell "$VM" sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" \
+on_node bash -s -- /opt/dam/src "${PNPM_VERSION}" \
   "${DAM_UI_URL:-http://localhost:4000}" \
   "${DAM_NODE_ID:-node-1}" \
   "${DAM_NODE_ADDRESS:-127.0.0.1:4000}" \

@@ -4,11 +4,18 @@
 #MISE raw=true
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
-export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+# In sandbox mode the cluster and the node are the same machine, so the
+# kubeconfig is the local one and the endpoints are loopback.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  HOST="${DAM_CLUSTER_HOST:-127.0.0.1}"
+else
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+  # Node VMs are not on the cluster network; they reach it through the lima
+  # host, which is the one address every guest can already resolve.
+  HOST="${DAM_CLUSTER_HOST:-192.168.5.2}"
+fi
 NS="${DAM_NAMESPACE:-dam}"
-# Node VMs are not on the cluster network; they reach it through the lima
-# host, which is the one address every guest can already resolve.
-HOST="${DAM_CLUSTER_HOST:-192.168.5.2}"
 # The host publishes the guest's fixed NodePorts shifted by this, so that a
 # second cluster can run beside the first (see cluster:up).
 OFF="${DAM_CLUSTER_PORT_OFFSET:-0}"

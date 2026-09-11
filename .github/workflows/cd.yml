@@ -659,6 +659,8 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # IS_SANDBOX (set for the whole job) is what makes cluster:up and vm:up
+      # provision this runner instead of a lima guest; see etc/node-exec.sh.
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"

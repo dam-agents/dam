@@ -5,11 +5,12 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
 
 # vm:install lays /etc/dam/env and the templates down from the checkout every
 # time, so this runs after it rather than once at bootstrap — otherwise the
 # fast loop would reinstall the node and leave it without its e2e surface.
-limactl shell "$DAM_VM" sudo bash -s <<'REMOTE'
+on_node bash -s <<'REMOTE'
 set -euo pipefail
 
 # The mock is the node's whole catalogue: every other template names an image

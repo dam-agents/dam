@@ -5,6 +5,25 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 VM="${DAM_CLUSTER_VM:-dam-cluster}"
+
+# Inside a Linux box that can host the cluster itself — CI — there is nothing
+# to virtualize: the template's own provision scripts are what makes a machine
+# a cluster host, so they are run here instead of inside a guest. Nothing else
+# in the task differs, which is what keeps the two paths from drifting.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  if [ ! -f /etc/rancher/k3s/k3s.yaml ]; then
+    echo "Provisioning k3s on this machine (sandbox mode)..."
+    for i in $(seq 0 $(($(yq '.provision | length' etc/lima/k3s.yaml) - 1))); do
+      yq ".provision[$i].script" etc/lima/k3s.yaml | sudo bash
+    done
+  fi
+  sudo test -f /etc/rancher/k3s/k3s.yaml || {
+    echo "ERROR: k3s did not come up; no kubeconfig at /etc/rancher/k3s/k3s.yaml" >&2
+    exit 1
+  }
+  echo "Cluster up (sandbox). Next: mise run cluster:install"
+  exit 0
+fi
 # A second cluster (the e2e one) needs its own host ports. Whoever claims a
 # forward first keeps it, and the guest ports are fixed, so a clash would not
 # fail — it would quietly point this VM's clients at the other cluster. The

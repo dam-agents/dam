@@ -5,6 +5,7 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
 
 mise run cluster:up
 # The realm's issuer is the URL the browser uses, which is this cluster's
@@ -20,9 +21,9 @@ mise run vm:install
 mise run //packages/platform-base:image
 docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
 docker save platform-mock:latest -o /tmp/platform-mock.tar
-limactl copy /tmp/platform-mock.tar "$DAM_VM":/tmp/platform-mock.tar
+copy_to_node /tmp/platform-mock.tar /tmp/platform-mock.tar
 
-limactl shell "$DAM_VM" sudo bash -s <<'REMOTE'
+on_node bash -s <<'REMOTE'
 set -euo pipefail
 install -m 0644 /tmp/platform-mock.tar /var/lib/dam/images/mock.tar
 REMOTE

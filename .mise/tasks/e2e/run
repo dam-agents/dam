@@ -5,6 +5,7 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
 
 PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
 for arg in "$@"; do
@@ -20,7 +21,7 @@ cleanup() {
     echo ""
     echo "=== FAILURE: e2e node diagnostics ==="
     DAM_VM="$DAM_VM" mise run vm:status || true
-    limactl shell "$DAM_VM" sudo journalctl -u dam-api-server -n 200 --no-pager || true
+    on_node journalctl -u dam-api-server -n 200 --no-pager || true
   fi
 }
 trap cleanup EXIT

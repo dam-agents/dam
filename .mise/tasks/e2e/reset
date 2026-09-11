@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
 export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM}/copied-from-guest/kubeconfig.yaml"
 
 PGPW=$(kubectl -n "$DAM_NAMESPACE" get secret dam-platform-postgres-secrets \
@@ -19,14 +20,14 @@ psql_() {
 # every one of them behind.
 echo "DELETE FROM agent_records;" | psql_ platform >/dev/null
 for _ in $(seq 1 40); do
-  limactl shell "$DAM_VM" sudo runsc --network=sandbox --overlay2=none list 2>/dev/null |
+  on_node runsc --network=sandbox --overlay2=none list 2>/dev/null |
     grep -q '^dam-' || break
   sleep 3
 done
 
 # Nothing may hold a session on the database while it is dropped, so the node
 # stops first; it reruns the migrations from zero when it comes back.
-limactl shell "$DAM_VM" sudo systemctl stop dam-api-server
+on_node systemctl stop dam-api-server
 # The four grants mirror the chart's init SQL, which only runs on a freshly
 # initialised data directory and so does not see this database: without them
 # the recreated database would be reachable by every role, including
@@ -38,7 +39,7 @@ REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
 GRANT CONNECT ON DATABASE platform TO platform_apiserver;
 GRANT CONNECT ON DATABASE platform TO usage_readers;
 SQL
-limactl shell "$DAM_VM" sudo systemctl start dam-api-server
+on_node systemctl start dam-api-server
 
 # Terms acceptance lived in the database that was just dropped, so a stored
 # session would land on the terms gate instead of the app.

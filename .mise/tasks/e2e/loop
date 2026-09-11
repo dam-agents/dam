@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+. "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
 
 PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
 TEST_FILTER=""
@@ -19,7 +20,7 @@ for arg in "$@"; do
 done
 
 # Bootstrap once if the node is missing; never try to heal a broken one.
-if ! limactl list -q 2>/dev/null | grep -qx "$DAM_VM"; then
+if ! node_exists; then
   echo "No e2e install found — bootstrapping once (slow, ~minutes)..."
   mise run e2e:install
 else

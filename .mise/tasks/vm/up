@@ -4,6 +4,17 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 VM="${DAM_VM:-dam}"
+
+# Already inside the box that is to become the node — CI — so there is no
+# guest to create: the template's provision scripts are what make a machine a
+# node, and they are run here instead.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  for i in $(seq 0 $(($(yq '.provision | length' etc/lima/dam.yaml) - 1))); do
+    yq ".provision[$i].script" etc/lima/dam.yaml | sudo bash
+  done
+  echo "Node provisioned in place. Next: mise run vm:install"
+  exit 0
+fi
 if limactl list --quiet 2>/dev/null | grep -qx "$VM"; then
   limactl start "$VM"
 else

@@ -3,7 +3,11 @@
 # SeaweedFS — onto the cluster VM. Nothing the agents touch runs here.
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
-export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+else
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+fi
 helm upgrade --install dam helm \
   --namespace "${DAM_NAMESPACE:-dam}" --create-namespace \
   --values helm/values-local.yaml \
