@@ -277,6 +277,10 @@ checksum = "sha256:e3f56102bcf4f50b034a567e2482a1c5330799983ddd655952310211aef73
 url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-windows-amd64.zip"
 url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612665"
 
+[[tools.kubectl]]
+version = "1.37.0"
+backend = "aqua:kubernetes/kubernetes/kubectl"
+
 [[tools.lima]]
 version = "2.2.0"
 backend = "aqua:lima-vm/lima"
