@@ -21,6 +21,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     owner: "o1",
     agentId: "agent-1",
     folderId: null,
+    sourcePath: null,
     title: "Weekly digest",
     slug: "slug-a",
     kind: "html",

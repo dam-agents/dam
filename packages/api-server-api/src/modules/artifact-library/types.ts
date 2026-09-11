@@ -41,6 +41,7 @@ export interface LibraryArtifact {
   version: number;
   folderId: string | null;
   agentId: string | null;
+  sourcePath: string | null;
   visibility: ArtifactVisibility;
   expiresAt: string | null;
   viewCount: number;
@@ -87,6 +88,8 @@ export interface ArtifactCreateInput {
   folderId?: string;
   visibility?: ArtifactCreateVisibility;
   expiresInHours?: number | null;
+  sourcePath?: string;
+  agentId?: string;
 }
 
 export interface ArtifactUpdateInput {
@@ -96,6 +99,7 @@ export interface ArtifactUpdateInput {
   uploadRef?: string;
   fileName?: string;
   contentType?: string;
+  sourcePath?: string;
   expectedVersion?: number;
 }
 
@@ -129,7 +133,11 @@ export interface ArtifactLibraryService {
   listVersions(id: string): Promise<ArtifactVersionInfo[]>;
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string; internal?: boolean },
+    attribution?: {
+      author: ArtifactVersionAuthor;
+      agentId?: string;
+      internal?: boolean;
+    },
   ): Promise<LibraryArtifact>;
   update(
     id: string,

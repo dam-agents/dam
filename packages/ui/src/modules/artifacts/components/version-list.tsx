@@ -28,7 +28,7 @@ export function VersionList({
   const head = newestFirst[0]?.version ?? 0;
 
   return (
-    <ul className="max-h-[50vh] w-[260px] overflow-auto py-1">
+    <ul className="max-h-[50vh] w-[260px] overflow-auto p-1">
       {newestFirst.map((version) => {
         const author =
           version.author === "user"
@@ -43,8 +43,8 @@ export function VersionList({
               onClick={() => onChange(version.version)}
               aria-current={version.version === current}
               className={cn(
-                "flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent",
-                version.version === current && "bg-accent",
+                "flex w-full items-baseline gap-2 rounded-md px-3 py-1.5 text-left text-xs hover:bg-muted",
+                version.version === current && "bg-muted",
               )}
             >
               <span className="w-8 shrink-0 tabular-nums text-foreground">

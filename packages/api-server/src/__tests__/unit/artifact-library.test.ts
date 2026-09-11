@@ -54,6 +54,34 @@ describe("artifact-kind detection", () => {
     );
   });
 
+  it("falls back to the content type when the extension is unknown", () => {
+    expect(
+      detectKind({ fileName: "page.mdx", contentType: "text/markdown" }),
+    ).toBe("markdown");
+    expect(
+      detectKind({
+        fileName: "results.jsonl",
+        contentType: "application/json",
+      }),
+    ).toBe("code");
+    expect(
+      detectKind({
+        fileName: "notes.rst",
+        contentType: "text/plain",
+        content: Buffer.from("plain notes"),
+      }),
+    ).toBe("text");
+    expect(detectKind({ fileName: "big.rst", contentType: "text/plain" })).toBe(
+      "text",
+    );
+    expect(
+      detectKind({ fileName: "chart.svg", contentType: "image/svg+xml" }),
+    ).toBe("binary");
+    expect(
+      detectKind({ fileName: "index.html", contentType: "text/plain" }),
+    ).toBe("html");
+  });
+
   it("lets HTML anchors win over embedded React signals (slop rule)", () => {
     const htmlWithReact = `<!DOCTYPE html><html><body><script>const {useState} = React;</script></body></html>`;
     expect(detectKind({ content: Buffer.from(htmlWithReact) })).toBe("html");
@@ -94,6 +122,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     owner: "o1",
     agentId: null,
     folderId: null,
+    sourcePath: null,
     title: "T",
     slug: "slug-a",
     kind: "html",
