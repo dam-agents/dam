@@ -12,6 +12,8 @@ import {
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitScheduleCadence,
+  ownedMatches,
+  preselectedGrants,
   providerPolicyForKit,
   requirementStatuses,
   shortKitVersion,
@@ -265,5 +267,37 @@ describe("schedules", () => {
         timezone: "Europe/Prague",
       }),
     ).toMatch(/\(Europe\/Prague\)$/);
+  });
+});
+
+describe("existing connections", () => {
+  const ownedWithNames = [
+    { id: "c-gh", templateId: "github-pat", name: "bot token" },
+    { id: "c-gh2", templateId: "github-app", name: "org app" },
+    { id: "c-slack", templateId: "slack", name: "workspace" },
+  ];
+  test("lists the owned connections a requirement accepts, expanding families", () => {
+    expect(
+      ownedMatches({ accepts: ["github"], required: true }, ownedWithNames).map(
+        (c) => c.id,
+      ),
+    ).toEqual(["c-gh", "c-gh2"]);
+    expect(
+      ownedMatches({ accepts: ["slack"], required: false }, ownedWithNames).map(
+        (c) => c.id,
+      ),
+    ).toEqual(["c-slack"]);
+  });
+  test("pre-selects the single owned match of a required requirement, never a suggested one or an ambiguous one", () => {
+    const twoGithub = {
+      connections: [
+        { accepts: ["github"], required: true },
+        { accepts: ["slack"], required: false },
+      ],
+    };
+    expect(preselectedGrants(twoGithub, ownedWithNames, [])).toEqual([]);
+    const oneGithub = ownedWithNames.filter((c) => c.id !== "c-gh2");
+    expect(preselectedGrants(twoGithub, oneGithub, [])).toEqual(["c-gh"]);
+    expect(preselectedGrants(twoGithub, oneGithub, ["c-gh"])).toEqual([]);
   });
 });

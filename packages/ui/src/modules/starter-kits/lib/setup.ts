@@ -27,6 +27,7 @@ export interface StarterKitSetupDraft {
 export interface GrantedConnection {
   id: string;
   templateId: string;
+  name?: string;
 }
 
 export interface RequirementStatus {
@@ -183,4 +184,29 @@ export function toggleSkipped(
   return skipped.includes(name)
     ? skipped.filter((n) => n !== name)
     : [...skipped, name];
+}
+
+export function ownedMatches(
+  requirement: StarterKitConnectionRequirement,
+  owned: readonly GrantedConnection[],
+): GrantedConnection[] {
+  const accepted = expandConnectionClasses(requirement.accepts);
+  return owned.filter((c) => accepted.has(c.templateId));
+}
+
+export function preselectedGrants(
+  kit: Pick<StarterKitView, "connections">,
+  owned: readonly GrantedConnection[],
+  granted: readonly string[],
+): string[] {
+  const grantedSet = new Set(granted);
+  const out: string[] = [];
+  for (const requirement of kit.connections) {
+    if (!requirement.required) continue;
+    const matches = ownedMatches(requirement, owned);
+    if (matches.length !== 1) continue;
+    if (matches.some((c) => grantedSet.has(c.id))) continue;
+    out.push(matches[0].id);
+  }
+  return out;
 }

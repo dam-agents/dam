@@ -1,6 +1,6 @@
 import { CheckmarkFilled, CircleDash, Close, Undo } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,8 @@ import {
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitScheduleCadence,
+  ownedMatches,
+  preselectedGrants,
   providerPolicyForKit,
   requirementStatuses,
   type StarterKitSetupDraft,
@@ -109,6 +111,17 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   };
   const owned = connections.data ?? [];
   const statuses = requirementStatuses(kit, draft, owned);
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || connections.data === undefined) return;
+    preselected.current = true;
+    for (const id of preselectedGrants(
+      kit,
+      connections.data,
+      form.connectionIds,
+    ))
+      toggleConnection(id, true);
+  }, [kit, connections.data, form.connectionIds, toggleConnection]);
   const selectedTemplate = kit.template
     ? pinnedTemplate
     : (templates.data?.find((t) => t.id === form.templateId) ?? null);
@@ -229,6 +242,17 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                   )}
                   {!satisfied && !isProviderRequirement(requirement) && (
                     <div className="mt-2 flex flex-wrap gap-2">
+                      {ownedMatches(requirement, owned).map((c) => (
+                        <Button
+                          key={`use-${c.id}`}
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => toggleConnection(c.id, true)}
+                          data-testid={`starter-kit-use-${c.id}`}
+                        >
+                          Use {c.name ?? c.id}
+                        </Button>
+                      ))}
                       {connectTargets(requirement, templateById).map((t) => (
                         <Button
                           key={t.key}
