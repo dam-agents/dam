@@ -6,8 +6,7 @@ import { createImageStore } from "./infrastructure/image-store.js";
 import { createEnvoyConfigPort } from "./infrastructure/envoy-config-port.js";
 import { createGatewayPort } from "./infrastructure/gateway-port.js";
 import { createNetworkPort } from "./infrastructure/network-port.js";
-import { createPkiPort } from "./infrastructure/pki-port.js";
-import { createInstallCaStore } from "./infrastructure/install-ca-store.js";
+import type { PkiPort } from "./infrastructure/pki-port.js";
 import { createAgentRegistryAuthPort } from "../agents/infrastructure/agent-registry-auth-port.js";
 import type { EnvoyOTelView } from "./domain/envoy-bootstrap.js";
 import {
@@ -37,6 +36,7 @@ export function composeSandboxes(deps: {
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
   nodeId: string;
+  pki: PkiPort;
   sandboxCommand: string[];
   harnessBaseUrl: string;
   harnessAuthority: string;
@@ -54,7 +54,7 @@ export function composeSandboxes(deps: {
       log: deps.log,
     }),
     gateway: createGatewayPort({ log: (message) => deps.log(message) }),
-    pki: createPkiPort(deps.pkiRoot, createInstallCaStore(deps.db)),
+    pki: deps.pki,
     registryAuth: createAgentRegistryAuthPort(deps.secrets),
     envoyConfig: createEnvoyConfigPort({
       secrets: deps.secrets,

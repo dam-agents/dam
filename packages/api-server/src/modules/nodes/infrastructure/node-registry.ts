@@ -14,6 +14,10 @@ import { nodes, eq, sql, type Db } from "db";
  * the machine has minus a reserve for the api-server, the gateways and the
  * kernel. Sandboxes are not the only thing on the node, so handing out all of
  * it would starve the thing doing the handing out.
+ *
+ * `address` is the node's peer endpoint — where its peers open tunnels to
+ * reach the agents it holds — and not where a browser reaches it. Nothing in
+ * the platform dials a node for anything else.
  */
 export interface NodeRow {
   id: string;

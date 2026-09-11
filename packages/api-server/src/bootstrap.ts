@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import { createLeaderLock } from "./core/leader-lock.js";
 import { createNodeRegistry } from "./modules/nodes/infrastructure/node-registry.js";
+import {
+  createPeerTunnels,
+  readPeerCredentials,
+  startPeerServer,
+} from "./modules/nodes/infrastructure/peer-link.js";
+import { createPkiPort } from "./modules/sandboxes/infrastructure/pki-port.js";
+import { createInstallCaStore } from "./modules/sandboxes/infrastructure/install-ca-store.js";
 import { createScheduler } from "./modules/nodes/services/scheduler.js";
 import {
   AGENTS_PLURAL,
@@ -257,10 +264,42 @@ export async function bootstrap() {
   });
 
   const agentStore = createAgentStore(db, redisBus);
+  const nodeRegistry = createNodeRegistry({
+    db,
+    nodeId: config.nodeId,
+    address: config.nodeAddress,
+    staleAfterMs: config.nodeStaleAfterSeconds * 1000,
+  });
+  await nodeRegistry.register();
+
+  const pki = createPkiPort(config.pkiRoot, createInstallCaStore(db));
+  await pki.ensurePeerLeaf(config.peerLeafDir, config.nodeId);
+  const peerCredentials = await readPeerCredentials(
+    `${config.pkiRoot}/ca.crt`,
+    config.peerLeafDir,
+  );
+  const peerTunnels = createPeerTunnels({
+    credentials: peerCredentials,
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
+
   const sandboxAddresses = await startSandboxAddresses(
     agentStore,
     config.sandboxPort,
+    {
+      nodeId: config.nodeId,
+      addressOfNode: async (id) =>
+        (await nodeRegistry.list()).find((n) => n.id === id)?.address ?? null,
+      tunnels: peerTunnels,
+      log: (message, fields) => getLogger().info(fields ?? {}, message),
+    },
   );
+  const peerServer = await startPeerServer({
+    port: config.peerPort,
+    credentials: peerCredentials,
+    localAddressOf: (agentId) => sandboxAddresses.localAddress(agentId),
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
   const agentsRepo = createAgentsRepository(agentStore);
   const agentEnvRepo = createAgentEnvRepository(db);
 
@@ -1126,6 +1165,7 @@ export async function bootstrap() {
     imagesRoot: config.imagesRoot,
     db,
     nodeId: config.nodeId,
+    pki,
     pkiRoot: config.pkiRoot,
     gatewayPort: config.gatewayPort,
     sandboxPort: config.sandboxPort,
@@ -1152,13 +1192,6 @@ export async function bootstrap() {
     supervisor.sweep(),
   );
 
-  const nodeRegistry = createNodeRegistry({
-    db,
-    nodeId: config.nodeId,
-    address: config.nodeAddress,
-    staleAfterMs: config.nodeStaleAfterSeconds * 1000,
-  });
-  await nodeRegistry.register();
   await periodicJobs.register("node-heartbeat", 15_000, () =>
     nodeRegistry.heartbeat(),
   );
@@ -1193,6 +1226,8 @@ export async function bootstrap() {
       unsubscribeScheduler?.();
       unsubscribeScheduler = null;
       scheduler.stop();
+      await peerServer.close();
+      await peerTunnels.stop();
       liveEventsModule.stopAgentWatch();
       await channelManager.standDown();
     },

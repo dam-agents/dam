@@ -29,6 +29,7 @@ import type { InstallCaStore } from "./install-ca-store.js";
 export interface PkiPort {
   ensureCa(): Promise<string>;
   ensureLeaf(dir: string, hosts: readonly string[]): Promise<void>;
+  ensurePeerLeaf(dir: string, nodeId: string): Promise<void>;
 }
 
 const LEAF_DAYS = 825;
@@ -54,56 +55,76 @@ export function createPkiPort(caDir: string, store: InstallCaStore): PkiPort {
       return ca.cert;
     },
 
+    async ensurePeerLeaf(dir, nodeId) {
+      await this.ensureCa();
+      await issue(dir, {
+        subject: `/CN=platform-node-${nodeId}`,
+        usage: "serverAuth,clientAuth",
+        hosts: [nodeId, "platform-node"],
+      });
+    },
+
     async ensureLeaf(dir, hosts) {
-      const sanFile = join(dir, "san.cnf");
-      const san = hosts.map((h, i) => `DNS.${i + 1} = ${h}`).join("\n");
-      const alt = hosts.length ? `subjectAltName = @alt\n` : "";
-      const altSection = hosts.length ? `[alt]\n${san}\n` : "";
-      const config = `[req]\ndistinguished_name = dn\n[dn]\n[ext]\n${alt}keyUsage = critical,digitalSignature,keyEncipherment\nextendedKeyUsage = serverAuth\n${altSection}`;
-
-      if ((await readIfPresent(sanFile)) === config) return;
-
-      await mkdir(dir, { recursive: true, mode: 0o750 });
-      await writeFile(sanFile, config, { mode: 0o640 });
-      const key = join(dir, "tls.key");
-      const csr = join(dir, "tls.csr");
-      const cert = join(dir, "tls.crt");
-      await exec("openssl", [
-        "req",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        key,
-        "-out",
-        csr,
-        "-subj",
-        "/CN=platform-gateway",
-        "-config",
-        sanFile,
-      ]);
-      await exec("openssl", [
-        "x509",
-        "-req",
-        "-in",
-        csr,
-        "-CA",
-        caCert,
-        "-CAkey",
-        caKey,
-        "-set_serial",
-        `0x${randomBytes(16).toString("hex")}`,
-        "-out",
-        cert,
-        "-days",
-        String(LEAF_DAYS),
-        "-extensions",
-        "ext",
-        "-extfile",
-        sanFile,
-      ]);
+      await issue(dir, {
+        subject: "/CN=platform-gateway",
+        usage: "serverAuth",
+        hosts,
+      });
     },
   };
+
+  async function issue(
+    dir: string,
+    spec: { subject: string; usage: string; hosts: readonly string[] },
+  ): Promise<void> {
+    const sanFile = join(dir, "san.cnf");
+    const san = spec.hosts.map((h, i) => `DNS.${i + 1} = ${h}`).join("\n");
+    const alt = spec.hosts.length ? `subjectAltName = @alt\n` : "";
+    const altSection = spec.hosts.length ? `[alt]\n${san}\n` : "";
+    const config = `[req]\ndistinguished_name = dn\n[dn]\n[ext]\n${alt}keyUsage = critical,digitalSignature,keyEncipherment\nextendedKeyUsage = ${spec.usage}\n${altSection}`;
+
+    if ((await readIfPresent(sanFile)) === config) return;
+
+    await mkdir(dir, { recursive: true, mode: 0o750 });
+    await writeFile(sanFile, config, { mode: 0o640 });
+    const key = join(dir, "tls.key");
+    const csr = join(dir, "tls.csr");
+    const cert = join(dir, "tls.crt");
+    await exec("openssl", [
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      key,
+      "-out",
+      csr,
+      "-subj",
+      spec.subject,
+      "-config",
+      sanFile,
+    ]);
+    await exec("openssl", [
+      "x509",
+      "-req",
+      "-in",
+      csr,
+      "-CA",
+      caCert,
+      "-CAkey",
+      caKey,
+      "-set_serial",
+      `0x${randomBytes(16).toString("hex")}`,
+      "-out",
+      cert,
+      "-days",
+      String(LEAF_DAYS),
+      "-extensions",
+      "ext",
+      "-extfile",
+      sanFile,
+    ]);
+  }
 }
 
 async function readLocalCa(
