@@ -35,6 +35,7 @@ export interface InfraAgent {
   hibernatedSince?: Date;
   ready: boolean;
   hibernated: boolean;
+  assignedNode: string | null;
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -49,11 +50,24 @@ export interface InfraAgent {
   gatewayNotReadyReason?: string;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The single state a caller sees, folded from what
+ * a node observed and where the agent is placed.
+ *
+ * Readiness is something a node published while it was running the agent, and
+ * it stays published. An agent assigned to no node is being run by nobody, so
+ * that readiness is the last thing that was true rather than what is — and
+ * calling it running sends a caller to dial an address that answers to no one.
+ * An agent assigned to a node that has stopped answering still reads as
+ * running: liveness is not visible here, and inferring it from a stale
+ * timestamp this layer cannot see would be a guess.
+ */
 export function computeAgentState(
   infra: InfraAgent,
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
+  if (infra.ready && infra.assignedNode === null) return "starting";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
@@ -80,6 +94,7 @@ export function parseInfraAgent(record: AgentRecord): InfraAgent {
   return {
     id: record.id,
     name: spec.name,
+    assignedNode: record.assignedNode ?? null,
     ...(record.templateId ? { templateId: record.templateId } : {}),
     owner: record.owner,
     spec,
