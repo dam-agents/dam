@@ -8,7 +8,8 @@
  * agent still fits, since it is the one that already has the workspace on
  * local disk — anywhere else the agent has to be restored first. Otherwise the
  * emptiest node wins, measured as the larger of its CPU and memory fractions so
- * that neither dimension is filled while the other looks idle.
+ * that neither dimension can hide behind the other. An agent's demand is read
+ * from the Kubernetes-style quantities its limits are written in.
  *
  * An agent that fits nowhere is left unplaced rather than crammed onto the
  * emptiest node. It is visible as an unplaced agent and an operator adds a
@@ -39,7 +40,6 @@ export function fits(
   );
 }
 
-/** The fuller of the two dimensions, so one cannot hide behind the other. */
 function fullness(node: NodeCapacity, load: NodeLoad): number {
   return Math.max(
     node.cpuMilli > 0 ? load.cpuMilli / node.cpuMilli : 1,
@@ -68,7 +68,6 @@ export function choosePlacement(input: {
   ).id;
 }
 
-/** Kubernetes-style quantities, which is what an agent's limits are written in. */
 export function parseQuantity(value: string | undefined): number | null {
   if (!value) return null;
   const match = /^(\d+(?:\.\d+)?)(m|Ki|Mi|Gi|Ti|k|M|G|T)?$/.exec(value.trim());

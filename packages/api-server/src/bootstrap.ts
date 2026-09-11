@@ -256,7 +256,7 @@ export async function bootstrap() {
     log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
   });
 
-  const agentStore = createAgentStore(db);
+  const agentStore = createAgentStore(db, redisBus);
   const sandboxAddresses = await startSandboxAddresses(
     agentStore,
     config.sandboxPort,

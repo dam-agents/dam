@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { agentRecords, eq, type Db } from "db";
 import type { AgentSpecCR } from "api-server-api";
@@ -14,6 +15,13 @@ import type { AgentSpecCR } from "api-server-api";
  * which node is running the agent and is written only by the scheduler, while
  * `lastNode` remembers where it ran so a wake can prefer the node that still
  * has its disk. A node's supervisor reconciles only the agents assigned to it.
+ *
+ * The change stream reaches every node. A write announces locally and puts a
+ * note on the shared bus; the nodes that receive it re-read the row rather
+ * than trusting the note, because the row is the truth and a payload could
+ * only ever be a stale copy of it. A node skips its own notes, so the local
+ * path stays synchronous and nothing is handled twice. The bus is advisory —
+ * a dropped note costs the reconcile sweep's interval, not correctness.
  */
 export interface AgentStatus {
   ready?: boolean;
@@ -99,9 +107,17 @@ export function mergePatch(target: unknown, patch: unknown): unknown {
   return base;
 }
 
-export function createAgentStore(db: Db): AgentStore {
+export interface AgentChangeBus {
+  publish(channel: string, payload: string): Promise<void>;
+  subscribe(channel: string, listener: (payload: string) => void): () => void;
+}
+
+const CHANGE_CHANNEL = "agents:changed";
+
+export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
   const events = new EventEmitter();
   events.setMaxListeners(0);
+  const origin = randomUUID();
 
   const toRecord = (row: typeof agentRecords.$inferSelect): AgentRecord => ({
     id: row.id,
@@ -114,7 +130,48 @@ export function createAgentStore(db: Db): AgentStore {
     lastNode: row.lastNode,
   });
 
-  const announce = (change: AgentChange) => events.emit("change", change);
+  const announce = (change: AgentChange) => {
+    events.emit("change", change);
+    void bus?.publish(
+      CHANGE_CHANNEL,
+      JSON.stringify({
+        origin,
+        id: change.id,
+        ...(change.type === "upsert" && change.statusOnly
+          ? { statusOnly: true }
+          : {}),
+      }),
+    );
+  };
+
+  bus?.subscribe(CHANGE_CHANNEL, (payload) => {
+    let note: { origin?: string; id?: string; statusOnly?: boolean };
+    try {
+      note = JSON.parse(payload) as typeof note;
+    } catch {
+      return;
+    }
+    if (!note.id || note.origin === origin) return;
+    const id = note.id;
+    void db
+      .select()
+      .from(agentRecords)
+      .where(eq(agentRecords.id, id))
+      .then(([row]) => {
+        events.emit(
+          "change",
+          row
+            ? {
+                type: "upsert",
+                id,
+                record: toRecord(row),
+                ...(note.statusOnly ? { statusOnly: true } : {}),
+              }
+            : { type: "delete", id },
+        );
+      })
+      .catch(() => {});
+  });
 
   async function update(
     id: string,
