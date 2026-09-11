@@ -484,6 +484,9 @@ async function findSkillDirsInClone(
       if (isMissingDir(err)) return { kind: "path-missing", subPath };
       throw err;
     }
+    if (await isSkillDir(root)) {
+      return { kind: "found", dirs: [path.relative(repoDir, root)] };
+    }
     const dirs = await skillDirsIn(repoDir, root, entries);
     return dirs.length > 0
       ? { kind: "found", dirs }
@@ -508,6 +511,15 @@ async function skillDirsUnder(
     return [];
   }
   return skillDirsIn(repoDir, root, entries);
+}
+
+async function isSkillDir(dir: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(dir, "SKILL.md"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function skillDirsIn(
@@ -536,7 +548,7 @@ async function resolveSkillDirInClone(
     return err({ kind: "SkillNotFoundInSource", source: repoDir, name });
   }
   const candidates = subPath
-    ? [path.join(repoDir, subPath, name)]
+    ? [path.join(repoDir, subPath, name), path.join(repoDir, subPath)]
     : [
         ...SKILL_SOURCE_ROOTS.map((root) => path.join(repoDir, root, name)),
         path.join(repoDir, name),
@@ -544,6 +556,9 @@ async function resolveSkillDirInClone(
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(candidate, "SKILL.md"));
+      if (subPath && candidate === path.join(repoDir, subPath)) {
+        if ((await skillDirName(candidate)) !== name) continue;
+      }
       const real = await fs.realpath(candidate);
       const rootReal = await fs.realpath(repoDir);
       if (!real.startsWith(rootReal + path.sep)) continue;
@@ -551,6 +566,11 @@ async function resolveSkillDirInClone(
     } catch {}
   }
   return err({ kind: "SkillNotFoundInSource", source: repoDir, name });
+}
+
+async function skillDirName(absDir: string): Promise<string> {
+  const fm = await readSkillManifest(absDir);
+  return fm.name?.trim() || path.basename(absDir);
 }
 
 async function readSkillManifest(

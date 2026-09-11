@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-09
+Last verified: 2026-09-11
 
 ## Overview
 
@@ -72,9 +72,13 @@ A connection to an external git repository, addressable by id. Three kinds, all 
 - **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`helm/values.yaml`](../../helm/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
 - **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every agent derived from that template. Badged "Agent".
 
+A repository has one identity but many written forms — with or without a scheme, with `http://`, with a `.git` suffix or a trailing slash, or copied from a browser's address bar as a link to a branch and a directory inside the repo. The git URL is therefore **normalized to a canonical form before it becomes a source**, in one shared place the UI, the CLI and the api-server all use ([`agent-runtime-api`](../../packages/agent-runtime-api/)): the scheme is forced to `https`, the suffixes are dropped, and a browse link is split into the repository, the branch, and the directory. Normalization is part of source creation, so a client that skips it cannot register a form the scanners do not understand, and one repository written two ways cannot register twice. Input that names no repository is refused in the field, before the source exists.
+
+The directory of a browse link becomes the source's path when the user gave none. The branch is **not** honoured — both scanners read the repository's default branch — so the product says the branch was ignored rather than silently scanning something else.
+
 Listing dedupes on `gitUrl` with first-wins precedence: user → system → template. A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
 
-A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults. When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged. Path is a property of the source, resolved server-side; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source. One path per `(owner, gitUrl)`; changing it is delete + re-add.
+A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults. When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged. A path that **is itself a skill directory** — the common case when someone shares a link to one skill's folder — resolves to that single skill rather than to nothing. Path is a property of the source, resolved server-side; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source. One path per `(owner, gitUrl)`; changing it is delete + re-add.
 
 ### Skill, Installed Skill Ref, Local Skill
 

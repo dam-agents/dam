@@ -2,10 +2,7 @@ import { DialogActions, DialogBody } from "@/components/modal";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import {
-  type GithubSourceForm,
-  INVALID_URL_MESSAGE,
-} from "../../hooks/use-github-source-form.js";
+import type { GithubSourceForm } from "../../hooks/use-github-source-form.js";
 
 export function GithubSourceTab({
   github,
@@ -14,8 +11,10 @@ export function GithubSourceTab({
   github: GithubSourceForm;
   onClose: () => void;
 }) {
-  const { register, formState } = github.form;
+  const { register, formState, watch } = github.form;
   const { errors, isSubmitting, isValid } = formState;
+  const { resolved } = github;
+  const pathOverridden = watch("path").trim().length > 0;
 
   return (
     <form onSubmit={github.onSubmit}>
@@ -40,8 +39,24 @@ export function GithubSourceTab({
             placeholder="github.ibm.com/org/repo-name"
             {...register("gitUrl")}
           />
-          {errors.gitUrl?.message === INVALID_URL_MESSAGE && (
+          {errors.gitUrl?.message && (
             <p className="text-sm text-destructive">{errors.gitUrl.message}</p>
+          )}
+          {!errors.gitUrl && resolved && (
+            <p className="text-sm text-muted-foreground">
+              Repository <code>{resolved.gitUrl}</code>
+              {resolved.path && !pathOverridden ? (
+                <>
+                  , scanning <code>{resolved.path}</code>
+                </>
+              ) : null}
+              {resolved.ref ? (
+                <>
+                  . The link points at branch <code>{resolved.ref}</code>;
+                  skills are always read from the repository default branch.
+                </>
+              ) : null}
+            </p>
           )}
         </div>
         <div className="flex flex-col gap-1.5">

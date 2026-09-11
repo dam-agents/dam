@@ -3,7 +3,7 @@ import type {
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
-import { err, ok } from "agent-runtime-api";
+import { err, ok, parseGithubRepo } from "agent-runtime-api";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -17,12 +17,7 @@ export interface DetectedOwnerRepo {
 export function detectGithubOwnerRepo(
   gitUrl: string,
 ): DetectedOwnerRepo | null {
-  const trimmed = gitUrl
-    .replace(/\/+$/, "")
-    .replace(/\.git$/, "")
-    .replace(/\/+$/, "");
-  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
-  return m ? { owner: m[1], repo: m[2] } : null;
+  return parseGithubRepo(gitUrl);
 }
 
 export interface RepoInfo {

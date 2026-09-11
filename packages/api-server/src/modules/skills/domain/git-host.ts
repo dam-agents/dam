@@ -1,3 +1,5 @@
+import { parseGithubRepo } from "agent-runtime-api";
+
 export interface GitHostIdentity {
   kind: "github";
   owner: string;
@@ -5,13 +7,8 @@ export interface GitHostIdentity {
 }
 
 export function detectHost(gitUrl: string): GitHostIdentity | null {
-  const trimmed = gitUrl
-    .replace(/\/+$/, "")
-    .replace(/\.git$/, "")
-    .replace(/\/+$/, "");
-  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
-  if (m) return { kind: "github", owner: m[1], repo: m[2] };
-  return null;
+  const repo = parseGithubRepo(gitUrl);
+  return repo ? { kind: "github", ...repo } : null;
 }
 
 export function redactToken(message: string): string {

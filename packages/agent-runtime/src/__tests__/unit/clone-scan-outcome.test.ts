@@ -41,12 +41,22 @@ describe("findSkillDirsInClone", () => {
     });
   });
 
-  // TEST_SCENARIO: a path aimed at a skill's own directory exists but holds no child skill — the mistake that reads as an empty repo.
-  it("reports path-empty when the path holds no skill one level below", async () => {
+  // TEST_SCENARIO: a path aimed at a skill's own directory — what a link to a skill folder gives when its directory is pasted as the source path. The directory is the skill, not a parent of skills.
+  it("reads the path itself as the skill when it holds a SKILL.md", async () => {
     await writeSkill("skills/one");
     expect(await repo.findSkillDirsInClone(repoDir, "skills/one")).toEqual({
+      kind: "found",
+      dirs: ["skills/one"],
+    });
+  });
+
+  // TEST_SCENARIO: a path that is neither a skill nor a parent of one — still named rather than read as an empty repo.
+  it("reports path-empty when the path holds no skill at all", async () => {
+    await writeSkill("skills/one");
+    await fs.mkdir(path.join(repoDir, "docs"), { recursive: true });
+    expect(await repo.findSkillDirsInClone(repoDir, "docs")).toEqual({
       kind: "path-empty",
-      subPath: "skills/one",
+      subPath: "docs",
     });
   });
 
