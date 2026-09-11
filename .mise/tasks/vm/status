@@ -2,7 +2,7 @@
 # What the node is running, in one screen: the platform units, the sandboxes,
 # and the per-agent links and sockets that carry them.
 set -euo pipefail
-limactl shell dam sudo bash -s <<'REMOTE'
+limactl shell "${DAM_VM:-dam}" sudo bash -s <<'REMOTE'
 set -uo pipefail
 echo "=== units ==="
 systemctl is-active postgresql redis dam-keycloak dam-api-server 2>/dev/null | paste -d' ' <(echo -e "postgresql\nredis\nkeycloak\napi-server") -

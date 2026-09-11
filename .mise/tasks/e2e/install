@@ -1,46 +1,56 @@
 #!/usr/bin/env bash
-#MISE description="Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`. VM via E2E_VM_NAME (default platform-k3s-test)."
+#MISE description="Bring up the e2e node: its own VM, the e2e control API on, and the mock harness as its only image."
 #MISE hide=true
 #MISE raw=true
-set -eo pipefail
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+. "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
 
-VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
-fi
+mise run vm:up
+mise run vm:install
 
-export E2E_MOCK_ONLY=1
+# The mock harness is built here and carried in as a saved archive: the node
+# pulls from registries, and this image is never pushed to one.
+mise run //packages/platform-base:image
+docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
+docker save platform-mock:latest -o /tmp/platform-mock.tar
+limactl copy /tmp/platform-mock.tar "$DAM_VM":/tmp/platform-mock.tar
 
-INSTALL_ARGS=(
-  --lima-template=etc/lima/k3s-test.yaml
-  --helm-values=helm/values-e2e.yaml
-  --set=domain=localhost
-  --set=port=5555
-  --set=controller.agent.templateDefaults.storageSize=1Gi
-  --no-restart
-)
-# domain=localhost (NOT localtest.me): Chromium treats *.localhost as a
-# secure context per the URL spec, so window.crypto.subtle is available
-# and oidc-client-ts can generate PKCE state in signinRedirect(). On
-# *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
-# the OIDC redirect throws silently, and the SPA hangs on a blank screen.
-if [ -z "${IS_SANDBOX:-}" ]; then
-  INSTALL_ARGS+=(--vm-name="$VM_NAME")
-fi
-mise run cluster:install -- "${INSTALL_ARGS[@]}"
+limactl shell "$DAM_VM" sudo bash -s <<'REMOTE'
+set -euo pipefail
+install -m 0644 /tmp/platform-mock.tar /var/lib/dam/images/mock.tar
 
-# Targeted apiserver rollout: on a fresh cluster the apiserver pod starts in
-# parallel with postgres and loses a race against postgres's init-databases.sh
-# (creates keycloak + platform DBs, then restarts postgres). The Drizzle
-# migration's CREATE SCHEMA dies with ECONNRESET and the pod crash-loops.
-# Bouncing just apiserver after postgres is settled lets the second pod
-# generation migrate cleanly. UI/controller don't share this race, and
-# restarting the UI introduces a transient Traefik-endpoint 502 window that
-# breaks Playwright's first asset fetch — leave them alone.
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
+# The mock is the node's whole catalogue: every other template names an image
+# the e2e node has no reason to pull.
+rm -f /etc/dam/templates/*.yaml
+cat > /etc/dam/templates/mock.yaml <<'YAML'
+version: "1"
+name: Mock
+description: Scripted mock agent (e2e test fixture)
+category: harness
+image: /var/lib/dam/images/mock.tar
+hibernationTimeout: 30m
+mounts:
+  - path: $HOME
+    persist: true
+  - path: $HOME/work
+    persist: true
+env:
+  - name: MOCK_DEFAULT_REPLY
+    value: "Hello from the mock agent."
+  # A spec proving a queued prompt outlives an abandoned tab waits this out in
+  # real time, so the production 90s would cost every such spec a minute and a
+  # half of sleeping.
+  - name: QUEUE_PARK_MS
+    value: "8000"
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+YAML
 
-# Readiness gate — shared task, see e2e:gate.
+grep -q '^E2E_ENABLED=' /etc/dam/env || echo "E2E_ENABLED=true" >> /etc/dam/env
+systemctl restart dam-api-server
+REMOTE
+
 mise run e2e:gate

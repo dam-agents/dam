@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # Follow the api-server's journal, which is also where the supervisor logs.
 set -euo pipefail
-exec limactl shell dam sudo journalctl -u dam-api-server -f "$@"
+exec limactl shell "${DAM_VM:-dam}" sudo journalctl -u dam-api-server -f "$@"

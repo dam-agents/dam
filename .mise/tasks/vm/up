@@ -3,9 +3,15 @@
 # this has succeeded.
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
-if limactl list --quiet 2>/dev/null | grep -qx dam; then
-  limactl start dam
+VM="${DAM_VM:-dam}"
+if limactl list --quiet 2>/dev/null | grep -qx "$VM"; then
+  limactl start "$VM"
 else
-  limactl start --name=dam --tty=false etc/lima/dam.yaml
+  # A second node (the e2e one) needs its own host ports, or it silently
+  # loses the forward to whichever VM claimed it first.
+  limactl start --name="$VM" --tty=false \
+    --set=".portForwards[0].hostPort = ${DAM_PORT:-4000}" \
+    --set=".portForwards[1].hostPort = ${DAM_KEYCLOAK_PORT:-8081}" \
+    etc/lima/dam.yaml
 fi
 echo "VM up. Next: mise run vm:install"

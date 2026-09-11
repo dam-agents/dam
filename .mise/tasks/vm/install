@@ -5,6 +5,7 @@
 # a dev-loop task, not the production install, which is the bootc image.
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
+VM="${DAM_VM:-dam}"
 
 pnpm --filter platform-ui exec sh -c 'tsc && vite build'
 pnpm --filter api-server exec tsup
@@ -13,14 +14,22 @@ PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
 # The repo is a shared mount, so the VM must never run pnpm against it: a
 # --prod install there prunes the host's dev dependencies out from under the
 # editor and the test run. Source is copied to VM-local disk first.
-limactl shell dam sudo rsync -a --delete \
+limactl shell "$VM" sudo rsync -a --delete \
   --exclude node_modules --exclude .git --exclude .worktrees \
   "${MISE_PROJECT_ROOT}/" /opt/dam/src/
 
-limactl shell dam sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" <<'REMOTE'
+# A second node forwards the same guest ports to different host ports, so the
+# URLs the browser and Keycloak agree on are not the node's own defaults.
+limactl shell "$VM" sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" \
+  "${DAM_UI_URL:-http://localhost:4000}" \
+  "${DAM_KEYCLOAK_URL:-http://localhost:8081}" <<'REMOTE'
 set -euo pipefail
 REPO="$1"
 PNPM_VERSION="$2"
+UI_URL="$3"
+KC_URL="$4"
+SHARE_URL="${UI_URL%%://*}://share.${UI_URL#*://}"
+CONTENT_URL="${UI_URL%%://*}://content.${UI_URL#*://}"
 
 install -d -m 0700 /var/lib/dam/secrets /var/lib/dam/pki /var/lib/dam/registry-auth
 install -d -m 0755 /var/lib/dam/images
@@ -61,6 +70,10 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
 {
   cat /var/lib/dam/hmac-keys
   echo "DATABASE_URL=postgres://dam:dam@127.0.0.1:5432/dam"
+  echo "UI_BASE_URL=${UI_URL}"
+  echo "SHARE_BASE_URL=${SHARE_URL}"
+  echo "CONTENT_BASE_URL=${CONTENT_URL}"
+  echo "KEYCLOAK_EXTERNAL_URL=${KC_URL}"
 } >> /etc/dam/env
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
@@ -111,8 +124,8 @@ echo "KEYCLOAK_API_CLIENT_SECRET=${PLATFORM_API_CLIENT_SECRET}" >> /etc/dam/env
 # Keycloak substitutes nothing in an imported realm, so the node's URLs and
 # secrets are rendered in here.
 install -d -m 0750 -o root -g keycloak /etc/dam/keycloak-realm
-sed -e "s#@UI_URL@#${PLATFORM_UI_URL:-http://localhost:4000}#g" \
-    -e "s#@SHARE_URL@#http://share.localhost:4000#g" \
+sed -e "s#@UI_URL@#${UI_URL}#g" \
+    -e "s#@SHARE_URL@#${SHARE_URL}#g" \
     -e "s#@API_CLIENT_SECRET@#${PLATFORM_API_CLIENT_SECRET}#g" \
     -e "s#@TEST_USER@#${PLATFORM_TEST_USER}#g" \
     -e "s#@TEST_PASSWORD@#${PLATFORM_TEST_PASSWORD}#g" \
@@ -134,4 +147,4 @@ systemctl enable --now dam-keycloak
 systemctl restart dam-api-server
 REMOTE
 
-echo "Installed. Next: mise run vm:status, then http://localhost:4000 (dev/dev)"
+echo "Installed. Next: mise run vm:status, then ${DAM_UI_URL:-http://localhost:4000} (dev/dev)"

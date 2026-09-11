@@ -1,7 +1,7 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, CommandError } from "./exec.js";
-import type { ImageConfig, ImageStore } from "./image-store.js";
+import type { Image, ImageStore } from "./image-store.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The sandbox itself — a gVisor container, created
@@ -13,7 +13,10 @@ import type { ImageConfig, ImageStore } from "./image-store.js";
  * The rootfs is an overlay: the image's directory read-only underneath, a
  * per-agent upper on the node above it. Writes therefore outlive the sandbox
  * process, which is what lets a crashed sandbox be recreated rather than
- * rebuilt, and gVisor's own overlay is turned off so nothing shadows it.
+ * rebuilt, and gVisor's own overlay is turned off so nothing shadows it. A
+ * change of image is the one case where the upper is discarded: it records
+ * writes against the layers underneath it, and keeping it over a different
+ * image would make a rootfs that was never built.
  *
  * The bundle's config.json is also the record of what the running sandbox was
  * given. A sandbox whose desired spec no longer matches it — a new image
@@ -94,7 +97,7 @@ export function createRunscPort(deps: {
       const bundle = join(spec.stateDir, "bundle");
       const configPath = join(bundle, "config.json");
       const desired = JSON.stringify(
-        buildOciSpec(spec, join(spec.stateDir, "merged"), image.config),
+        buildOciSpec(spec, join(spec.stateDir, "merged"), image),
         null,
         2,
       );
@@ -162,18 +165,22 @@ export function createRunscPort(deps: {
     const quoted = [...RUNSC_FLAGS, ...args]
       .map((a) => `'${a.replaceAll("'", `'\\''`)}'`)
       .join(" ");
+    const before = await stat(log).then(
+      (s) => s.size,
+      () => 0,
+    );
     try {
       await exec("bash", [
         "-c",
         `exec runsc ${quoted} >>'${log}' 2>&1 </dev/null`,
       ]);
     } catch (err) {
-      const tail = await readFile(log, "utf8").then(
-        (t) => t.slice(-2000),
+      const written = await readFile(log, "utf8").then(
+        (t) => t.slice(before, before + 2000),
         () => "",
       );
       throw new Error(
-        `runsc ${args.join(" ")} failed: ${tail || (err as Error).message}`,
+        `runsc ${args.join(" ")} failed: ${written || (err as Error).message}`,
       );
     }
   }
@@ -181,23 +188,27 @@ export function createRunscPort(deps: {
 
 async function mountOverlay(stateDir: string, rootfs: string): Promise<string> {
   const merged = join(stateDir, "merged");
+  const options = await exec("findmnt", ["-n", "-o", "OPTIONS", merged]).catch(
+    () => "",
+  );
+  if (options.includes(`lowerdir=${rootfs}`)) return merged;
+  if (options) {
+    await exec("umount", [merged]);
+    for (const sub of ["upper", "work"]) {
+      await rm(join(stateDir, sub), { recursive: true, force: true });
+    }
+  }
   for (const sub of ["upper", "work", "merged"]) {
     await mkdir(join(stateDir, sub), { recursive: true, mode: 0o750 });
   }
-  const mounted = await exec("mountpoint", ["-q", merged]).then(
-    () => true,
-    () => false,
-  );
-  if (!mounted) {
-    await exec("mount", [
-      "-t",
-      "overlay",
-      "overlay",
-      "-o",
-      `lowerdir=${rootfs},upperdir=${join(stateDir, "upper")},workdir=${join(stateDir, "work")}`,
-      merged,
-    ]);
-  }
+  await exec("mount", [
+    "-t",
+    "overlay",
+    "overlay",
+    "-o",
+    `lowerdir=${rootfs},upperdir=${join(stateDir, "upper")},workdir=${join(stateDir, "work")}`,
+    merged,
+  ]);
   return merged;
 }
 
@@ -223,25 +234,26 @@ const SANDBOX_CAPABILITIES = [
 function buildOciSpec(
   spec: SandboxSpec,
   root: string,
-  image: ImageConfig,
+  image: Image,
 ): Record<string, unknown> {
   const env = new Map<string, string>();
-  for (const entry of image.env) {
+  for (const entry of image.config.env) {
     const eq = entry.indexOf("=");
     if (eq > 0) env.set(entry.slice(0, eq), entry.slice(eq + 1));
   }
   for (const [name, value] of Object.entries(spec.env)) env.set(name, value);
   const command = spec.command?.length
     ? spec.command
-    : [...image.entrypoint, ...image.cmd];
+    : [...image.config.entrypoint, ...image.config.cmd];
   return {
     ociVersion: "1.0.0",
+    annotations: { "ai.agent-platform.image-rootfs": image.rootfs },
     process: {
       terminal: false,
       user: { uid: 0, gid: 0 },
       args: command,
       env: [...env].map(([k, v]) => `${k}=${v}`),
-      cwd: spec.workingDir || image.workingDir || "/",
+      cwd: spec.workingDir || image.config.workingDir || "/",
       capabilities: {
         bounding: SANDBOX_CAPABILITIES,
         effective: SANDBOX_CAPABILITIES,

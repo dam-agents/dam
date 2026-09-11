@@ -22,7 +22,11 @@ import { exec } from "./exec.js";
  * is a second control plane over the same job, and the job is a manifest, some
  * blobs and tar. The result is content-addressed by manifest digest and shared
  * read-only by every sandbox on that image, so pulling it twice costs nothing
- * and no sandbox can write into what another one reads.
+ * and no sandbox can write into what another one reads. An absolute path in
+ * place of a reference is a saved image archive on the node, which is how an
+ * image built here rather than pushed somewhere reaches a sandbox: a
+ * `docker save` / `podman save` tarball, whose `manifest.json` names the
+ * config blob and the layer tarballs in order inside the same archive.
  *
  * The image's config blob is read along with its layers: it carries the PATH,
  * entrypoint and working directory the image was built against, and ignoring
@@ -92,52 +96,104 @@ export function createImageStore(opts: {
 }): ImageStore {
   const arch = opts.arch ?? (process.arch === "arm64" ? "arm64" : "amd64");
 
+  async function unpack(
+    dir: string,
+    write: (rootfs: string) => Promise<unknown>,
+  ): Promise<ImageConfig> {
+    const rootfs = join(dir, "rootfs");
+    const configPath = join(dir, "config.json");
+    if (await exists(join(dir, ".ready"))) {
+      return readConfig(JSON.parse(await readFile(configPath, "utf8")));
+    }
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(rootfs, { recursive: true, mode: 0o755 });
+    const config = await write(rootfs);
+    await writeFile(configPath, JSON.stringify(config));
+    await exec("find", [
+      rootfs,
+      "-xdev",
+      "-type",
+      "d",
+      "!",
+      "-perm",
+      "-200",
+      "-exec",
+      "chmod",
+      "u+w",
+      "{}",
+      "+",
+    ]).catch(() => {});
+    await writeFile(join(dir, ".ready"), "");
+    return readConfig(config);
+  }
+
   return {
     async ensure(reference, { authDir } = {}) {
+      if (reference.startsWith("/")) {
+        const stamp = await stat(reference);
+        const digest = createHash("sha256")
+          .update(`${reference}:${stamp.mtimeMs}:${stamp.size}`)
+          .digest("hex");
+        const dir = join(opts.root, `archive_${digest}`);
+        opts.log("image.load.begin", { reference });
+        const config = await unpack(dir, (rootfs) =>
+          applyArchive(reference, rootfs),
+        );
+        opts.log("image.load.done", { reference });
+        return { rootfs: join(dir, "rootfs"), config };
+      }
+
       const ref = parseRef(reference);
       const auth = await readRegistryAuth(authDir, ref.registry);
       const token = await authorize(ref, auth);
 
       const { manifest, digest } = await fetchManifest(ref, token, arch);
       const dir = join(opts.root, digest.replace(":", "_"));
-      const rootfs = join(dir, "rootfs");
-      const configPath = join(dir, "config.json");
-      if (await exists(join(dir, ".ready"))) {
-        return {
-          rootfs,
-          config: readConfig(JSON.parse(await readFile(configPath, "utf8"))),
-        };
-      }
-
       opts.log("image.pull.begin", { reference, digest });
-      await rm(dir, { recursive: true, force: true });
-      await mkdir(rootfs, { recursive: true, mode: 0o755 });
-      const config = manifest.config
-        ? await fetchBlobJson(ref, token, manifest.config.digest)
-        : {};
-      await writeFile(configPath, JSON.stringify(config));
-      for (const layer of manifest.layers ?? []) {
-        await applyLayer(ref, token, layer, rootfs);
-      }
-      await exec("find", [
-        rootfs,
-        "-xdev",
-        "-type",
-        "d",
-        "!",
-        "-perm",
-        "-200",
-        "-exec",
-        "chmod",
-        "u+w",
-        "{}",
-        "+",
-      ]).catch(() => {});
-      await writeFile(join(dir, ".ready"), `${reference}\n${digest}\n`);
+      const config = await unpack(dir, async (rootfs) => {
+        const blob = manifest.config
+          ? await fetchBlobJson(ref, token, manifest.config.digest)
+          : {};
+        for (const layer of manifest.layers ?? []) {
+          await applyLayer(ref, token, layer, rootfs);
+        }
+        return blob;
+      });
       opts.log("image.pull.done", { reference, digest });
-      return { rootfs, config: readConfig(config) };
+      return { rootfs: join(dir, "rootfs"), config };
     },
   };
+}
+
+async function applyArchive(path: string, rootfs: string): Promise<unknown> {
+  const scratch = await mkdtemp(join(tmpdir(), "dam-archive-"));
+  try {
+    await exec("tar", ["--extract", "--file", path, "--directory", scratch]);
+    const entries = JSON.parse(
+      await readFile(join(scratch, "manifest.json"), "utf8"),
+    ) as { Config?: string; Layers?: string[] }[];
+    const entry = entries[0];
+    if (!entry?.Config) throw new Error(`${path} is not a saved image archive`);
+    for (const layer of entry.Layers ?? []) {
+      const blob = join(scratch, layer);
+      const listing = await exec("tar", ["--list", "--file", blob]);
+      await exec("tar", [
+        "--extract",
+        "--file",
+        blob,
+        "--directory",
+        rootfs,
+        "--overwrite",
+        "--same-owner",
+        "--no-same-permissions",
+        "--delay-directory-restore",
+      ]);
+      await applyWhiteouts(rootfs, listing.split("\n"));
+    }
+    return JSON.parse(await readFile(join(scratch, entry.Config), "utf8"));
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 export function parseRef(reference: string): ImageRef {

@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # A shell in the VM, at the repo checkout it mounts.
 set -euo pipefail
-exec limactl shell dam bash -lc "cd '${MISE_PROJECT_ROOT:?}' && exec bash"
+exec limactl shell "${DAM_VM:-dam}" bash -lc "cd '${MISE_PROJECT_ROOT:?}' && exec bash"
