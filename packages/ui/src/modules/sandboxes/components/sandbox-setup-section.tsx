@@ -13,7 +13,7 @@ import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-ed
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
-import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
+import { LifecycleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 
@@ -109,16 +109,21 @@ export function SandboxSetupSection({ f }: Props) {
 
       <section className="mb-8">
         <SectionLabel spaced>Lifecycle</SectionLabel>
-        <Callout inset>
-          <HibernationTimeoutField
-            register={f.register("hibernationTimeoutMin", {
-              valueAsNumber: true,
-            })}
-            value={f.hibernationTimeoutMin}
-            error={f.errors.hibernationTimeoutMin?.message}
-            disabled={f.saving}
+        <Inset>
+          <Controller
+            control={f.control}
+            name="hibernationTimeoutMin"
+            render={({ field }) => (
+              <LifecycleField
+                value={field.value}
+                onChange={field.onChange}
+                sizeMi={{ cpuMilli: f.sizeCpuMilli, memoryMi: f.sizeMemoryMi }}
+                error={f.errors.hibernationTimeoutMin?.message}
+                disabled={f.saving}
+              />
+            )}
           />
-        </Callout>
+        </Inset>
       </section>
 
       <section className="mb-8">

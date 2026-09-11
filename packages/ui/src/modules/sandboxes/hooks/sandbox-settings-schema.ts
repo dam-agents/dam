@@ -11,7 +11,7 @@ export const settingsSchema = z.object({
     .array(envVarSchema)
     .refine(allEnvVarsValid, "All env vars need a name and a value"),
   hibernationTimeoutMin: z
-    .number({ message: "Enter a number of minutes (0 = never)" })
+    .number({ message: "Enter a number of minutes" })
     .int()
     .nonnegative(),
   sizeCpuMilli: z.number().int().positive(),

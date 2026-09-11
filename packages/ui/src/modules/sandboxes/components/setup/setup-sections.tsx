@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
@@ -13,6 +14,7 @@ import { ProviderSelect } from "../../../providers/components/provider-select.js
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
+import { LifecycleField } from "../lifecycle-field.js";
 
 export function NameSection({
   value,
@@ -98,6 +100,25 @@ export function ConnectionsSetupSection({
           oauthReturnView={oauthReturnView}
         />
       )}
+    </section>
+  );
+}
+
+export function LifecycleSetupSection({
+  value,
+  onChange,
+  sizeMi,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+  sizeMi?: SizeMi;
+}) {
+  return (
+    <section className="mb-8">
+      <SectionLabel spaced>Lifecycle</SectionLabel>
+      <Inset>
+        <LifecycleField value={value} onChange={onChange} sizeMi={sizeMi} />
+      </Inset>
     </section>
   );
 }

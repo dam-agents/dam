@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { sizeInMi } from "../../budgets/lib/slots.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -10,6 +11,7 @@ import { ImageSection } from "../../sandboxes/components/setup/image-section.js"
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
+  LifecycleSetupSection,
   NameSection,
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
@@ -59,7 +61,11 @@ export function CodingAgentSetupView() {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
     registryCredential,
+    hibernationTimeoutMin: form.hibernationTimeoutMin,
   };
+  const selectedTemplate = catalogue.harnesses.find(
+    (t) => t.id === form.templateId,
+  );
   const registryPartial = hasPartialRegistryCredential(draft);
   const canCreate = isCodingAgentSetupComplete(draft) && !createAgent.isPending;
 
@@ -129,6 +135,13 @@ export function CodingAgentSetupView() {
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
+      />
+      <LifecycleSetupSection
+        value={form.hibernationTimeoutMin}
+        onChange={(hibernationTimeoutMin) => update({ hibernationTimeoutMin })}
+        sizeMi={
+          selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
+        }
       />
     </SetupPageShell>
   );

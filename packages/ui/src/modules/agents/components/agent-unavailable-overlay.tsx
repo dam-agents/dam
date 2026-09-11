@@ -1,4 +1,4 @@
-import { Asleep, Play, Renew, Warning } from "@carbon/icons-react";
+import { Asleep, Play, Power, Renew, Warning } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { useUpdateAgent } from "../api/mutations.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import type {
@@ -107,6 +108,9 @@ export function AgentUnavailableOverlay({
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {!Icon && <StartupTip sandbox={agent.name} />}
+      {(state === "starting" || state === "preparing_workspace") && (
+        <SkipTheWait agent={agent} />
+      )}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
@@ -124,5 +128,22 @@ export function AgentUnavailableOverlay({
         </Button>
       )}
     </OverlayFrame>
+  );
+}
+
+function SkipTheWait({ agent }: { agent: AgentView }) {
+  const updateAgent = useUpdateAgent();
+  if (agent.hibernationTimeoutMin === 0) return null;
+  return (
+    <Button
+      variant="outline"
+      disabled={updateAgent.isPending}
+      onClick={() =>
+        updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 })
+      }
+      data-testid="skip-the-wait"
+    >
+      <Power size={14} /> Skip the wait — keep always-on
+    </Button>
   );
 }

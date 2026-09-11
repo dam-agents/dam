@@ -6,10 +6,13 @@ import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import { COMPUTE_REQUEST_URL } from "../../../constants.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
+import { formatCores, formatGi } from "../lib/format.js";
 import {
+  BYTES_PER_MI,
   type ComputeCellState,
   type ComputeSegment,
   computeView,
@@ -37,7 +40,36 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
   return `${segment.agentName} · ${formatSizeLabel(
     { cpuMilli: segment.cpuMilli, memoryMi: segment.memoryMi },
     unit,
-  )}`;
+  )}${segment.alwaysOn ? ", always on" : ""}`;
+}
+
+function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  return (
+    <div className="flex flex-col gap-1">
+      <p>
+        <span className="font-semibold">{segment.agentName}</span> (
+        {formatCores(segment.cpuMilli)} CPU ·{" "}
+        {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
+      </p>
+      {segment.alwaysOn && (
+        <>
+          <p className="text-muted-foreground">
+            Always on — holds compute even while idle.
+          </p>
+          <button
+            type="button"
+            className="self-end text-accent hover:underline"
+            onClick={() =>
+              segment.agentId && navigateToSandboxHome(segment.agentId, "setup")
+            }
+          >
+            Manage
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 interface Props {
@@ -48,6 +80,7 @@ interface Props {
 export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
   const unit = slotUnitOf(budget);
@@ -78,6 +111,11 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
           segments={view.segments}
           totalSlots={view.totalSlots}
           label={(segment) => segmentLabel(segment, unit)}
+          content={(segment) => <HeldSegmentCard segment={segment} />}
+          onActivate={(segment) => {
+            if (segment.agentId)
+              navigateToSandboxHome(segment.agentId, "setup");
+          }}
           ariaLabel="Usage slots"
         />
       </div>
