@@ -25,6 +25,7 @@ if ! limactl list -q 2>/dev/null | grep -qx "$DAM_VM"; then
 else
   eval "$(mise run cluster:env)"
   mise run vm:install
+  mise run e2e:node-config
   mise run e2e:reset
 fi
 

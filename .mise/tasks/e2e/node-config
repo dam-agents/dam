@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#MISE description="Make the e2e node an e2e node: the mock as its only template, the e2e control API on."
+#MISE hide=true
+#MISE raw=true
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+. "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+
+# vm:install lays /etc/dam/env and the templates down from the checkout every
+# time, so this runs after it rather than once at bootstrap — otherwise the
+# fast loop would reinstall the node and leave it without its e2e surface.
+limactl shell "$DAM_VM" sudo bash -s <<'REMOTE'
+set -euo pipefail
+
+# The mock is the node's whole catalogue: every other template names an image
+# the e2e node has no reason to pull.
+rm -f /etc/dam/templates/*.yaml
+cat > /etc/dam/templates/mock.yaml <<'YAML'
+version: "1"
+name: Mock
+description: Scripted mock agent (e2e test fixture)
+category: harness
+image: /var/lib/dam/images/mock.tar
+hibernationTimeout: 30m
+env:
+  - name: MOCK_DEFAULT_REPLY
+    value: "Hello from the mock agent."
+  # A spec proving a queued prompt outlives an abandoned tab waits this out in
+  # real time, so the production 90s would cost every such spec a minute and a
+  # half of sleeping.
+  - name: QUEUE_PARK_MS
+    value: "8000"
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+YAML
+
+grep -q '^E2E_ENABLED=' /etc/dam/env || echo "E2E_ENABLED=true" >> /etc/dam/env
+systemctl restart dam-api-server
+REMOTE

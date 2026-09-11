@@ -14,6 +14,7 @@ PNPM_VERSION=$(sed -n 's/^pnpm = "\([^"]*\)".*/\1/p' .mise/config.toml)
 # The repo is a shared mount, so the VM must never run pnpm against it: a
 # --prod install there prunes the host's dev dependencies out from under the
 # editor and the test run. Source is copied to VM-local disk first.
+limactl shell "$VM" sudo install -d /opt/dam/src
 limactl shell "$VM" sudo rsync -a --delete \
   --exclude node_modules --exclude .git --exclude .worktrees \
   "${MISE_PROJECT_ROOT}/" /opt/dam/src/

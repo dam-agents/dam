@@ -1,16 +1,18 @@
 [Unit]
 Description=Platform api-server (UI, tRPC, ACP relay, sandbox supervisor)
-# Postgres and Redis are hard requirements: the api-server holds the agent
-# records in one and its job queues in the other, and starting without either
-# means starting without the agents. containerd is what the sandboxes run on.
-After=network-online.target postgresql.service redis.service containerd.service
-Requires=postgresql.service redis.service containerd.service
+# Postgres and Redis are hard requirements, and neither is on this node: they
+# are the install's, reached over the network. There is nothing local to order
+# against, so the unit starts when the network is up and the restart below is
+# what waits for the cluster — a node booting before it can crash-loop for a
+# few seconds rather than being held back by a dependency that will never
+# appear.
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 # Root, and this is the cost of folding the controller in: the supervisor
-# creates network namespaces, writes nftables rules and drives containerd,
+# creates network namespaces, writes nftables rules and starts sandboxes,
 # none of which an unprivileged process can do. The hardening below is what
 # keeps that from meaning "unrestricted".
 User=root
@@ -25,7 +27,7 @@ NoNewPrivileges=yes
 # gives the unit its own mount namespace, and the supervisor's whole job is to
 # create mounts the rest of the node must see. A network namespace is a bind
 # mount under /run/netns; made inside a private namespace it is invisible to
-# containerd, which is asked to join it from outside. Shared propagation does
+# runsc, which is asked to join it from outside. Shared propagation does
 # not rescue it either — iproute2 marks /run/netns shared on first use, and
 # that marking lands in the private namespace too. The mount namespace is
 # therefore the host's, and the hardening below is what is left: no new

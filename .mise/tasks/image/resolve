@@ -91,7 +91,21 @@ effective_paths() {
   if [ -n "$base" ]; then echo "$(own_paths "$1") $(effective_paths "$base")"; else own_paths "$1"; fi
 }
 
-registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
+# Bounded, because an unanswered probe must not be able to wedge every image
+# task behind it: "is this already published?" has a fallback — build it — and
+# a client that sits on the question forever has none. Seen hanging
+# indefinitely against a registry the same host reaches over HTTP in 400ms.
+probe() {
+  "$@" >/dev/null 2>&1 &
+  local p=$! i
+  for i in $(seq 1 40); do
+    kill -0 "$p" 2>/dev/null || { wait "$p"; return $?; }
+    sleep 0.5
+  done
+  kill -9 "$p" 2>/dev/null
+  return 1
+}
+registry_has() { probe docker manifest inspect "$1" || probe docker buildx imagetools inspect "$1"; }
 
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
