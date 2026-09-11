@@ -11,6 +11,11 @@ DAM_SANDBOX_PORT=8080
 
 PORT=4000
 PLATFORM_RELEASE_NAME=dam
+
+# Node identity. Every api-server writes only its own row in `nodes`, and the
+# address is how its peers reach it; the install task sets both per VM.
+DAM_NODE_ID=node-1
+DAM_NODE_ADDRESS=127.0.0.1:4000
 PLATFORM_HARNESS_SERVER_URL=http://harness.dam.internal:4001
 
 DATABASE_URL=postgres://dam@/dam?host=/run/postgresql

@@ -29,6 +29,13 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * or an action that fails, must be retried by something that does not depend on
  * the event. It ignores its own status writes, which would otherwise be a loop
  * with no fixed point.
+ *
+ * A node reconciles only the agents assigned to it. An agent that is not
+ * assigned here is torn down here, whether it was deleted or the scheduler
+ * moved it: the node that holds it now is the one that builds it. A sandbox
+ * the node holds for an agent it has no record of goes through the same queue
+ * as everything else rather than being torn down on the spot — otherwise the
+ * sweep can destroy a namespace a reconcile is in the middle of using.
  */
 export interface SandboxSupervisorDeps {
   store: AgentStore;
@@ -48,6 +55,7 @@ export interface SandboxSupervisorDeps {
   gatewayUid: number;
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
+  nodeId: string;
   sandboxCommand: string[];
   registryAuth: {
     materialize(ref: SecretRef, dir: string): Promise<string>;
@@ -110,16 +118,22 @@ export function createSandboxSupervisor(
       ? indexOfAddress(record.status.address)
       : null;
     if (existing !== null) return linkFor(record.id, existing);
-    const taken = (await deps.store.list()).flatMap((r) => {
-      const index = r.status.address ? indexOfAddress(r.status.address) : null;
-      return index === null || r.id === record.id ? [] : [index];
-    });
+    const taken = (await deps.store.listAssignedTo(deps.nodeId)).flatMap(
+      (r) => {
+        const index = r.status.address
+          ? indexOfAddress(r.status.address)
+          : null;
+        return index === null || r.id === record.id ? [] : [index];
+      },
+    );
     return linkFor(record.id, allocateIndex(taken));
   }
 
   async function reconcileOne(agentId: string): Promise<void> {
     const record = await deps.store.get(agentId);
-    if (!record) return teardown(agentId);
+    if (!record || record.assignedNode !== deps.nodeId) {
+      return teardown(agentId);
+    }
 
     const idleTimeoutMs = effectiveIdleTimeoutMs(
       record.spec.hibernationTimeout,
@@ -262,7 +276,7 @@ export function createSandboxSupervisor(
     reconcile: schedule,
 
     async sweep() {
-      const records = await deps.store.list();
+      const records = await deps.store.listAssignedTo(deps.nodeId);
       for (const record of records) {
         const index = record.status.address
           ? indexOfAddress(record.status.address)
@@ -276,7 +290,7 @@ export function createSandboxSupervisor(
       for (const agentId of await deps.runsc.list()) {
         if (!known.has(agentId)) {
           deps.log("sandbox.sweep.orphan", { agentId });
-          await teardown(agentId);
+          await schedule(agentId);
         }
       }
     },

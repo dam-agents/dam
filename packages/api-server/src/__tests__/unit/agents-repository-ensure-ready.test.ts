@@ -17,6 +17,8 @@ function agentRec(name: string, status: AgentStatus): AgentRecord {
     annotations: {},
     spec: { image: "x", name },
     status,
+    assignedNode: null,
+    lastNode: null,
   };
 }
 

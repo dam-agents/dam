@@ -22,12 +22,16 @@ limactl shell "$VM" sudo rsync -a --delete \
 # URLs the browser and Keycloak agree on are not the node's own defaults.
 limactl shell "$VM" sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" \
   "${DAM_UI_URL:-http://localhost:4000}" \
+  "${DAM_NODE_ID:-node-1}" \
+  "${DAM_NODE_ADDRESS:-127.0.0.1:4000}" \
   "${DAM_KEYCLOAK_URL:-http://localhost:8081}" <<'REMOTE'
 set -euo pipefail
 REPO="$1"
 PNPM_VERSION="$2"
 UI_URL="$3"
-KC_URL="$4"
+NODE_ID="$4"
+NODE_ADDRESS="$5"
+KC_URL="$6"
 SHARE_URL="${UI_URL%%://*}://share.${UI_URL#*://}"
 CONTENT_URL="${UI_URL%%://*}://content.${UI_URL#*://}"
 
@@ -74,6 +78,8 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
   echo "SHARE_BASE_URL=${SHARE_URL}"
   echo "CONTENT_BASE_URL=${CONTENT_URL}"
   echo "KEYCLOAK_EXTERNAL_URL=${KC_URL}"
+  echo "DAM_NODE_ID=${NODE_ID}"
+  echo "DAM_NODE_ADDRESS=${NODE_ADDRESS}"
 } >> /etc/dam/env
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/

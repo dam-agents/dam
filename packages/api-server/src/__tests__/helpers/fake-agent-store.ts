@@ -27,6 +27,18 @@ export function fakeAgentStore(initial: Partial<AgentRecord>[] = []) {
       const all = [...records.values()];
       return owner ? all.filter((r) => r.owner === owner) : all;
     },
+    async listAssignedTo(nodeId) {
+      return [...records.values()].filter((r) => r.assignedNode === nodeId);
+    },
+    async assign(id, nodeId) {
+      const record = records.get(id);
+      if (!record) return null;
+      return upsert({
+        ...record,
+        assignedNode: nodeId,
+        lastNode: nodeId ?? record.lastNode,
+      });
+    },
     async create(rec) {
       return upsert(normalize(rec));
     },
@@ -85,5 +97,7 @@ function normalize(r: Partial<AgentRecord>): AgentRecord {
     annotations: r.annotations ?? {},
     spec: r.spec ?? ({ image: "test:latest" } as AgentSpecCR),
     status: r.status ?? {},
+    assignedNode: r.assignedNode ?? null,
+    lastNode: r.lastNode ?? null,
   };
 }

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import { createLeaderLock } from "./core/leader-lock.js";
+import { createNodeRegistry } from "./modules/nodes/infrastructure/node-registry.js";
+import { createScheduler } from "./modules/nodes/services/scheduler.js";
 import {
   AGENTS_PLURAL,
   LABEL_OWNER,
@@ -1123,6 +1125,7 @@ export async function bootstrap() {
     runRoot: config.runRoot,
     imagesRoot: config.imagesRoot,
     db,
+    nodeId: config.nodeId,
     pkiRoot: config.pkiRoot,
     gatewayPort: config.gatewayPort,
     sandboxPort: config.sandboxPort,
@@ -1149,18 +1152,47 @@ export async function bootstrap() {
     supervisor.sweep(),
   );
 
+  const nodeRegistry = createNodeRegistry({
+    db,
+    nodeId: config.nodeId,
+    address: config.nodeAddress,
+    staleAfterMs: config.nodeStaleAfterSeconds * 1000,
+  });
+  await nodeRegistry.register();
+  await periodicJobs.register("node-heartbeat", 15_000, () =>
+    nodeRegistry.heartbeat(),
+  );
+
+  const scheduler = createScheduler({
+    store: agentStore,
+    registry: nodeRegistry,
+    defaultIdleTimeoutMs: config.agentIdleTimeoutMinutes * 60_000,
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
+
   const LEADER_LOCK_KEY = 0x64616d_6c6472;
+  let unsubscribeScheduler: (() => void) | null = null;
   const leaderLock = createLeaderLock({
     sql,
     key: LEADER_LOCK_KEY,
     log: (message, fields) => getLogger().info(fields ?? {}, message),
     onAcquired: async () => {
+      unsubscribeScheduler = agentStore.onChange(() =>
+        scheduler.scheduleSoon(),
+      );
+      await periodicJobs.register("placement-sweep", 30_000, () =>
+        scheduler.tick(),
+      );
+      await scheduler.tick();
       void telegramWorker?.resolveIdentity();
       liveEventsModule.startAgentWatch();
       const channelsByInstance = await listChannelsByOwner(db, "")();
       await channelManager.bootstrap(channelsByInstance);
     },
     onLost: async () => {
+      unsubscribeScheduler?.();
+      unsubscribeScheduler = null;
+      scheduler.stop();
       liveEventsModule.stopAgentWatch();
       await channelManager.standDown();
     },
@@ -1169,6 +1201,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     await leaderLock.stop();
+    scheduler.stop();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     kbShareAutoRefresh.unsubscribe();

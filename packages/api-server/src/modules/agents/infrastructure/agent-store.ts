@@ -9,6 +9,11 @@ import type { AgentSpecCR } from "api-server-api";
  * and in one process it is held by `writeStatus` being the only path that
  * touches observed state. Its change stream drives both reconcile and the
  * live-update hints, and cannot drop an event the way a watch could.
+ *
+ * Placement is a third thing, and neither of those two: `assignedNode` says
+ * which node is running the agent and is written only by the scheduler, while
+ * `lastNode` remembers where it ran so a wake can prefer the node that still
+ * has its disk. A node's supervisor reconciles only the agents assigned to it.
  */
 export interface AgentStatus {
   ready?: boolean;
@@ -35,6 +40,8 @@ export interface AgentRecord {
   annotations: Record<string, string>;
   spec: AgentSpecCR;
   status: AgentStatus;
+  assignedNode: string | null;
+  lastNode: string | null;
 }
 
 export interface AgentChangeSubscription {
@@ -54,6 +61,8 @@ export type AgentChange =
 export interface AgentStore {
   get(id: string): Promise<AgentRecord | null>;
   list(owner?: string): Promise<AgentRecord[]>;
+  listAssignedTo(nodeId: string): Promise<AgentRecord[]>;
+  assign(id: string, nodeId: string | null): Promise<AgentRecord | null>;
   create(rec: {
     id: string;
     owner: string;
@@ -101,6 +110,8 @@ export function createAgentStore(db: Db): AgentStore {
     annotations: row.annotations,
     spec: row.spec as AgentSpecCR,
     status: row.status as AgentStatus,
+    assignedNode: row.assignedNode,
+    lastNode: row.lastNode,
   });
 
   const announce = (change: AgentChange) => events.emit("change", change);
@@ -140,6 +151,23 @@ export function createAgentStore(db: Db): AgentStore {
         ? db.select().from(agentRecords).where(eq(agentRecords.owner, owner))
         : db.select().from(agentRecords));
       return rows.map(toRecord);
+    },
+
+    async listAssignedTo(nodeId) {
+      const rows = await db
+        .select()
+        .from(agentRecords)
+        .where(eq(agentRecords.assignedNode, nodeId));
+      return rows.map(toRecord);
+    },
+
+    async assign(id, nodeId) {
+      return update(
+        id,
+        nodeId === null
+          ? { assignedNode: null }
+          : { assignedNode: nodeId, lastNode: nodeId },
+      );
     },
 
     async create(rec) {

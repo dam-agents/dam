@@ -20,7 +20,10 @@ import type { DbSql } from "db";
  * A node that loses the lock must stand its singletons down before another
  * node picks them up; that is why losing is a callback and not a flag to poll.
  * The key is one arbitrary constant every node shares — holding it is the
- * whole election, so there is nothing else to agree on.
+ * whole election, so there is nothing else to agree on. The heartbeat is a
+ * trivial query on the same connection: the lock lives on it, so proving the
+ * connection is alive proves the lock is still held. Releasing a connection
+ * that has already gone throws, which is precisely the case being handled.
  */
 export interface LeaderLock {
   start(): void;
@@ -52,7 +55,7 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
     try {
       reserved?.release();
     } catch {
-      // the connection is already gone, which is exactly why we lost it
+      /* c8 ignore next */
     }
     reserved = null;
     if (held) {
@@ -65,8 +68,6 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
     if (stopped) return;
     try {
       if (leader) {
-        // The lock lives on this connection, so proving the connection is
-        // alive is the same thing as proving we still hold it.
         await reserved!`SELECT 1`;
         return;
       }

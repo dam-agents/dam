@@ -36,6 +36,7 @@ export function composeSandboxes(deps: {
   gatewayUid: number;
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
+  nodeId: string;
   sandboxCommand: string[];
   harnessBaseUrl: string;
   harnessAuthority: string;
@@ -73,6 +74,7 @@ export function composeSandboxes(deps: {
     gatewayUid: deps.gatewayUid,
     gatewayGid: deps.gatewayGid,
     defaultIdleTimeoutMs: deps.defaultIdleTimeoutMs,
+    nodeId: deps.nodeId,
     sandboxCommand: deps.sandboxCommand,
     harnessBaseUrl: deps.harnessBaseUrl,
     log: deps.log,
