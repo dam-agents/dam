@@ -16,6 +16,7 @@ export const setupFormSchema = z.object({
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
   slackChannelId: z.string().default(""),
+  skippedSchedules: z.array(z.string()).default([]),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 

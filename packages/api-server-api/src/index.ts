@@ -29,6 +29,11 @@ export type {
   SkillSourceSeed,
 } from "./modules/templates/types.js";
 export { templateGetInputSchema } from "./modules/templates/schemas.js";
+export {
+  ALL_PROVIDER_TYPES,
+  PROVIDERS_BY_HARNESS,
+  providersForHarness,
+} from "./modules/templates/harness-providers.js";
 
 export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";

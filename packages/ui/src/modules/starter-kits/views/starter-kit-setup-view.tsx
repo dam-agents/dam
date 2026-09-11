@@ -1,8 +1,9 @@
-import { CheckmarkFilled, CircleDash } from "@carbon/icons-react";
+import { CheckmarkFilled, CircleDash, Close, Undo } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 import { useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,10 @@ import {
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import {
+  narrowPolicyToHarness,
+  setupProviderPolicy,
+} from "../../sandboxes/lib/setup-policy.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
@@ -37,9 +41,11 @@ import {
   describeAccepts,
   isProviderRequirement,
   isStarterKitSetupComplete,
+  kitScheduleCadence,
   providerPolicyForKit,
   requirementStatuses,
   type StarterKitSetupDraft,
+  toggleSkipped,
 } from "../lib/setup.js";
 
 export function StarterKitSetupView() {
@@ -99,12 +105,22 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
     slackChannelId: form.slackChannelId,
+    skippedSchedules: form.skippedSchedules,
   };
   const owned = connections.data ?? [];
   const statuses = requirementStatuses(kit, draft, owned);
+  const harnessFamily = kit.template
+    ? pinnedTemplate?.harness
+    : templates.data?.find((t) => t.id === form.templateId)?.harness;
+  const providerPolicy = narrowPolicyToHarness(
+    providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
+    harnessFamily,
+  );
+  const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
   const canApply =
     isStarterKitSetupComplete(kit, draft, owned) &&
     !pinMissing &&
+    !noCompatibleProvider &&
     !apply.isPending;
 
   const create = async () => {
@@ -164,11 +180,21 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         )}
       </section>
 
-      <ProviderSection
-        selected={form.providerRef}
-        onSelect={(providerRef) => update({ providerRef })}
-        policy={providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))}
-      />
+      {noCompatibleProvider ? (
+        <section className="mb-8">
+          <SectionLabel spaced>Provider</SectionLabel>
+          <Callout tone="warning">
+            This kit asks for a provider that the chosen harness cannot run on.
+            Pick another harness, or a kit whose provider fits.
+          </Callout>
+        </section>
+      ) : (
+        <ProviderSection
+          selected={form.providerRef}
+          onSelect={(providerRef) => update({ providerRef })}
+          policy={providerPolicy}
+        />
+      )}
 
       {statuses.length > 0 && (
         <section className="mb-8">
@@ -263,16 +289,65 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
       {kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules this kit creates</SectionLabel>
-          <ul className="space-y-1 text-sm">
-            {kit.schedules.map((s) => (
-              <li key={s.name} className="flex items-baseline gap-2">
-                <span className="font-medium">{s.name}</span>
-                <span className="text-muted-foreground">
-                  {"cron" in s ? s.cron : `${s.rrule} (${s.timezone})`}
-                  {s.enabled ? "" : " — created disabled"}
-                </span>
-              </li>
-            ))}
+          <p className="mb-3 text-sm text-muted-foreground">
+            Created with the author's defaults. Skip any you do not want; a
+            disabled one is created switched off and is one toggle away under
+            Schedules.
+          </p>
+          <ul className="divide-y divide-border rounded-md border">
+            {kit.schedules.map((s) => {
+              const skipped = form.skippedSchedules.includes(s.name);
+              return (
+                <li
+                  key={s.name}
+                  className="flex items-start gap-3 px-3 py-2.5 text-sm"
+                  data-testid={`starter-kit-schedule-${s.name}`}
+                >
+                  <div
+                    className={`min-w-0 flex-1 ${skipped ? "text-muted-foreground line-through" : ""}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{s.name}</span>
+                      {!skipped && (
+                        <Badge
+                          variant={s.enabled ? "success" : "muted"}
+                          size="sm"
+                        >
+                          {s.enabled ? "enabled" : "created disabled"}
+                        </Badge>
+                      )}
+                      {skipped && (
+                        <Badge variant="muted" size="sm">
+                          skipped
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {kitScheduleCadence(s)}
+                    </div>
+                    <div className="text-muted-foreground">{s.task}</div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={
+                      skipped ? `Add back ${s.name}` : `Skip ${s.name}`
+                    }
+                    title={skipped ? "Add back" : "Skip this schedule"}
+                    onClick={() =>
+                      update({
+                        skippedSchedules: toggleSkipped(
+                          form.skippedSchedules,
+                          s.name,
+                        ),
+                      })
+                    }
+                  >
+                    {skipped ? <Undo size={16} /> : <Close size={16} />}
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

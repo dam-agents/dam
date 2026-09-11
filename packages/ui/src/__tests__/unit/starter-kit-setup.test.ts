@@ -4,16 +4,19 @@
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
+import { narrowPolicyToHarness } from "../../modules/sandboxes/lib/setup-policy.js";
 import {
   buildStarterKitApplyInput,
   connectTargets,
   describeAccepts,
   isProviderRequirement,
   isStarterKitSetupComplete,
+  kitScheduleCadence,
   providerPolicyForKit,
   requirementStatuses,
   shortKitVersion,
   type StarterKitSetupDraft,
+  toggleSkipped,
 } from "../../modules/starter-kits/lib/setup.js";
 
 const kit: Pick<StarterKitView, "id" | "template" | "connections"> = {
@@ -37,6 +40,7 @@ const complete: StarterKitSetupDraft = {
   providerRef: { id: "c-llm" } as StarterKitSetupDraft["providerRef"],
   connectionIds: ["c-gh"],
   slackChannelId: " C123 ",
+  skippedSchedules: [],
 };
 
 describe("requirementStatuses", () => {
@@ -88,12 +92,19 @@ describe("isStarterKitSetupComplete", () => {
 
 describe("buildStarterKitApplyInput", () => {
   test("trims the name, merges the provider into the grants and passes the Slack channel", () => {
-    expect(buildStarterKitApplyInput(kit, complete, owned)).toEqual({
+    expect(
+      buildStarterKitApplyInput(
+        kit,
+        { ...complete, skippedSchedules: ["benchmark"] },
+        owned,
+      ),
+    ).toEqual({
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
+      skipSchedules: ["benchmark"],
     });
   });
 
@@ -199,5 +210,60 @@ describe("connection families", () => {
       ["GitHub App", "github", "github-app"],
       ["Slack", "slack", "slack"],
     ]);
+  });
+});
+
+describe("narrowPolicyToHarness", () => {
+  test("keeps only providers the harness can run on", () => {
+    expect(
+      narrowPolicyToHarness({ recommended: "ibm-litellm" }, "claude-code"),
+    ).toEqual({
+      allow: ["ibm-litellm", "anthropic"],
+      recommended: "ibm-litellm",
+    });
+    expect(
+      narrowPolicyToHarness(
+        { allow: ["openai", "anthropic"], recommended: "openai" },
+        "claude-code",
+      ),
+    ).toEqual({ allow: ["anthropic"], recommended: "anthropic" });
+    expect(
+      narrowPolicyToHarness(
+        { allow: ["openai"], recommended: "openai" },
+        "claude-code",
+      ).allow,
+    ).toEqual([]);
+  });
+  test("leaves the policy alone when the harness is unknown", () => {
+    expect(narrowPolicyToHarness({ allow: ["bob"] }, undefined)).toEqual({
+      allow: ["bob"],
+      recommended: "bob",
+    });
+  });
+});
+
+describe("schedules", () => {
+  test("toggles a schedule in and out of the skipped set", () => {
+    expect(toggleSkipped([], "a")).toEqual(["a"]);
+    expect(toggleSkipped(["a", "b"], "a")).toEqual(["b"]);
+  });
+  test("renders a cron as-is and an rrule as text with its timezone", () => {
+    expect(
+      kitScheduleCadence({
+        name: "x",
+        task: "t",
+        enabled: true,
+        cron: "*/5 * * * *",
+      }),
+    ).toBe("*/5 * * * *");
+    expect(
+      kitScheduleCadence({
+        name: "y",
+        task: "t",
+        enabled: false,
+        rrule: "FREQ=WEEKLY;BYDAY=FR",
+        timezone: "Europe/Prague",
+      }),
+    ).toMatch(/\(Europe\/Prague\)$/);
   });
 });

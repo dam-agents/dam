@@ -111,4 +111,5 @@ export const starterKitApplyInputSchema = z.object({
   templateId: z.string().min(1).optional(),
   connectionIds: z.array(z.string().min(1)).default([]),
   slackChannelId: z.string().min(1).optional(),
+  skipSchedules: z.array(z.string().min(1)).default([]),
 });

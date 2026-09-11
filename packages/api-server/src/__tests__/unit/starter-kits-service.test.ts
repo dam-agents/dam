@@ -168,6 +168,7 @@ describe("starter kits: apply", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-slack"],
       slackChannelId: "C123",
+      skipSchedules: [],
     });
 
     expect(result.agent.id).toBe("agent-1");
@@ -205,6 +206,20 @@ describe("starter kits: apply", () => {
     expect(calls.deleted).toEqual([]);
   });
 
+  it("leaves out the schedules the user chose to skip", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      kitId: "code-reviewer",
+      name: "reviewer",
+      templateId: "claude-code",
+      connectionIds: ["c-gh"],
+      skipSchedules: ["benchmark"],
+    });
+    expect(calls.cron.map((c) => c.name)).toEqual(["review"]);
+    expect(calls.rrule).toEqual([]);
+    expect(calls.toggled).toEqual([]);
+  });
+
   it("refuses when a required connection is not covered by the granted ones", async () => {
     const { service, calls } = makeHarness(LOADED);
     await expect(
@@ -213,6 +228,7 @@ describe("starter kits: apply", () => {
         name: "reviewer",
         templateId: "claude-code",
         connectionIds: ["c-slack"],
+        skipSchedules: [],
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(calls.created).toEqual([]);
@@ -225,6 +241,7 @@ describe("starter kits: apply", () => {
         kitId: "code-reviewer",
         name: "r",
         connectionIds: ["c-gh"],
+        skipSchedules: [],
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
@@ -237,6 +254,7 @@ describe("starter kits: apply", () => {
       name: "nous-1",
       templateId: "claude-code",
       connectionIds: [],
+      skipSchedules: [],
     });
     expect(pinned.calls.created[0].templateId).toBe("nous");
   });
@@ -281,6 +299,7 @@ describe("starter kits: apply", () => {
         name: "r",
         templateId: "t",
         connectionIds: ["c-gh"],
+        skipSchedules: [],
       }),
     ).rejects.toThrow("schedules down");
     expect(calls.deleted).toEqual(["agent-2"]);
@@ -307,6 +326,7 @@ describe("starter kits: apply", () => {
       name: "reviewer",
       templateId: "claude-code",
       connectionIds: ["c-gh"],
+      skipSchedules: [],
     });
     expect(calls.woken).toEqual(["agent-1"]);
     expect(calls.skillEntries).toEqual([
@@ -376,6 +396,7 @@ describe("starter kits: apply", () => {
       name: "r",
       templateId: "t",
       connectionIds: ["c-gh"],
+      skipSchedules: [],
     });
     expect(result.agent.id).toBe("agent-3");
     expect(result.skillsError).toBe("agent never became reachable");
@@ -390,6 +411,7 @@ describe("starter kits: apply", () => {
         name: "r",
         templateId: "t",
         connectionIds: [],
+        skipSchedules: [],
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

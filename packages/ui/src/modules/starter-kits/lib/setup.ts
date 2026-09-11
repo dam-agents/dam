@@ -5,8 +5,10 @@ import {
   expandConnectionClasses,
   PROVIDER_TEMPLATE_IDS,
   type ProviderPresetType,
+  rruleToText,
   type StarterKitApplyInput,
   type StarterKitConnectionRequirement,
+  type StarterKitSchedule,
   type StarterKitView,
 } from "api-server-api";
 
@@ -19,6 +21,7 @@ export interface StarterKitSetupDraft {
   providerRef: ProviderRef | null;
   connectionIds: string[];
   slackChannelId: string;
+  skippedSchedules: string[];
 }
 
 export interface GrantedConnection {
@@ -87,6 +90,7 @@ export function buildStarterKitApplyInput(
     connectionIds: draftConnectionIds(draft),
     ...(kit.template ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
+    skipSchedules: draft.skippedSchedules,
   };
 }
 
@@ -164,4 +168,19 @@ export function describeAccepts(
         connectionFamilyById(id)?.title ?? templateById.get(id)?.name ?? id,
     )
     .join(" or ");
+}
+
+export function kitScheduleCadence(schedule: StarterKitSchedule): string {
+  if ("rrule" in schedule)
+    return `${rruleToText(schedule.rrule)} (${schedule.timezone})`;
+  return schedule.cron;
+}
+
+export function toggleSkipped(
+  skipped: readonly string[],
+  name: string,
+): string[] {
+  return skipped.includes(name)
+    ? skipped.filter((n) => n !== name)
+    : [...skipped, name];
 }

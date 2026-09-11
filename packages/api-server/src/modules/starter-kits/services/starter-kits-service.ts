@@ -74,8 +74,10 @@ export function createStarterKitsService(
   async function seedSchedules(
     agentId: string,
     loaded: LoadedKit,
+    skip: readonly string[],
   ): Promise<void> {
     for (const s of loaded.kit.schedules) {
+      if (skip.includes(s.name)) continue;
       const created =
         "cron" in s
           ? await deps.schedules.createCron({
@@ -142,7 +144,7 @@ export function createStarterKitsService(
       });
 
       try {
-        await seedSchedules(agent.id, loaded);
+        await seedSchedules(agent.id, loaded, input.skipSchedules);
         if (input.slackChannelId)
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
       } catch (err) {
