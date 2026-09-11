@@ -12,6 +12,7 @@ import {
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
+  isAmbientThreadKey,
   slackThreadKey,
   ChannelType,
   SessionType,
@@ -69,10 +70,10 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
-  isTransientWakeFailure,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
@@ -84,6 +85,7 @@ import type {
   SlackMessage,
   SlackMessageReaction,
   SlackSlashCommand,
+  SlackThreadRead,
   SlackUserInfo,
 } from "./slack-gateway.js";
 import {
@@ -105,6 +107,7 @@ import {
 import {
   isAfterTs,
   lastOwnPostTs,
+  laterTs,
   newestTs,
   nextBoundary,
   selectUnseen,
@@ -512,6 +515,36 @@ function renderTurnFiles(attachments: {
 
 const THREAD_LOOKBACK = 50;
 
+const CHANNEL_LOOKBACK = 50;
+
+const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function windowFloorTs(nowMs: number): string {
+  return ((nowMs - CATCH_UP_WINDOW_MS) / 1000).toFixed(6);
+}
+
+async function readConversation(
+  gateway: SlackGateway,
+  channel: string,
+  threadTs: string | undefined,
+  since: string | undefined,
+): Promise<SlackThreadRead> {
+  if (threadTs !== undefined) {
+    return gateway.getThreadReplies({
+      channel,
+      threadTs,
+      limit: THREAD_LOOKBACK,
+      ...(since ? { oldest: since } : {}),
+    });
+  }
+  const read = await gateway.getChannelHistory({
+    channel,
+    limit: CHANNEL_LOOKBACK,
+    ...(since ? { oldest: since } : {}),
+  });
+  return { messages: read.messages.slice().reverse(), hasMore: read.hasMore };
+}
+
 const NO_COMMIT = (): void => {};
 
 interface CatchUpFrame {
@@ -547,19 +580,12 @@ async function getContextMessages(
   readNewestTs: string | null;
   readHasMore: boolean;
 }> {
-  const read = threadTs
-    ? await gateway.getThreadReplies({
-        channel,
-        threadTs,
-        limit: THREAD_LOOKBACK,
-        ...(catchUp ? { oldest: catchUp.since } : {}),
-      })
-    : {
-        messages: (await gateway.getChannelHistory({ channel, limit: 10 }))
-          .slice()
-          .reverse(),
-        hasMore: false,
-      };
+  const read = await readConversation(
+    gateway,
+    channel,
+    threadTs,
+    catchUp?.since,
+  );
   const raw = read.messages;
 
   const all = raw.map((message) => ({
@@ -830,6 +856,7 @@ export function createSlackWorker(
   workspaceFiles: AgentWorkspaceFilesFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
+  wakeWait: WakeWaitOptions = {},
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1345,7 +1372,12 @@ export function createSlackWorker(
         legacyThreadKey: ctx.threadTs,
         buildResumePrompt: async () => {
           const delivered = await deliverFiles();
-          const caught = await buildCatchUp(gw, { ...ctx, eventTs });
+          const caught = await buildCatchUp(gw, {
+            ...ctx,
+            eventTs,
+            threadKey,
+            batchTs: ctx.messages.map((m) => m.eventTs),
+          });
           return {
             prompt: framePrompt({
               contract,
@@ -1359,10 +1391,15 @@ export function createSlackWorker(
           };
         },
         buildFreshPrompt: () =>
-          buildThreadPrompt(gw, { ...ctx, eventTs, text }, contract, {
-            guidance,
-            deliver: deliverFiles,
-          }),
+          buildThreadPrompt(
+            gw,
+            { ...ctx, eventTs, text, threadKey },
+            contract,
+            {
+              guidance,
+              deliver: deliverFiles,
+            },
+          ),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
@@ -1405,22 +1442,17 @@ export function createSlackWorker(
 
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
-      try {
-        await runTurn();
-      } catch (err) {
-        if (
-          !isAgentWakeTimeoutError(err) ||
-          !isTransientWakeFailure(err.failure)
-        ) {
-          throw err;
-        }
-        await gw.postMessage({
-          channel: ctx.channel,
-          threadTs: ctx.threadTs,
-          text: "The agent is still starting — hang on, answering as soon as it's up…",
-        });
-        await runTurn();
-      }
+      await runWhileAgentStarts(runTurn, {
+        ...wakeWait,
+        onStillStarting: () =>
+          gw.postMessage({
+            channel: ctx.channel,
+            threadTs: ctx.threadTs,
+            text:
+              "The agent is still starting — this can take a few more " +
+              "minutes. It'll answer as soon as it's up.",
+          }),
+      });
     } catch (err) {
       await postFailure(err);
     } finally {
@@ -1469,6 +1501,7 @@ export function createSlackWorker(
       eventTs: string;
       text: string;
       hasThread: boolean;
+      threadKey: string;
       images: FetchedImage[];
     },
     contract: string,
@@ -1501,7 +1534,6 @@ export function createSlackWorker(
           })
         : undefined;
     const delivered = await opts?.deliver?.();
-    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
     return {
       prompt: framePrompt({
         contract,
@@ -1515,17 +1547,59 @@ export function createSlackWorker(
       commit: () =>
         noteThreadSeen(
           ctx.instanceName,
-          threadKey,
+          ctx.threadKey,
           nextBoundary(
             {
-              hasMore: readHasMore,
+              hasMore:
+                ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
+                  ? readHasMore
+                  : false,
               newestReadTs: readNewestTs,
               triggeringTs: ctx.eventTs,
             },
-            readThreadSeen(ctx.instanceName, threadKey),
+            readThreadSeen(ctx.instanceName, ctx.threadKey),
           ),
         ),
     };
+  }
+
+  async function catchUpSince(
+    gw: SlackGateway,
+    ctx: {
+      instanceName: string;
+      channel: string;
+      conversationTs: string | undefined;
+      threadKey: string;
+    },
+  ): Promise<string> {
+    const remembered = readThreadSeen(ctx.instanceName, ctx.threadKey);
+    if (remembered) return remembered;
+    const tail =
+      ctx.conversationTs !== undefined
+        ? (
+            await gw.getThreadTail({
+              channel: ctx.channel,
+              threadTs: ctx.conversationTs,
+              limit: THREAD_LOOKBACK,
+            })
+          ).messages
+        : (
+            await gw.getChannelHistory({
+              channel: ctx.channel,
+              limit: CHANNEL_LOOKBACK,
+            })
+          ).messages;
+    const own = lastOwnPostTs(
+      tail.map((message) => ({
+        ts: message.ts,
+        authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+        message,
+      })),
+      ctx.instanceName,
+    );
+    const floor = windowFloorTs(Date.now());
+    if (own === null) return floor;
+    return ctx.conversationTs !== undefined ? own : laterTs(own, floor);
   }
 
   async function buildCatchUp(
@@ -1536,28 +1610,19 @@ export function createSlackWorker(
       threadTs: string;
       eventTs: string;
       hasThread: boolean;
+      threadKey: string;
+      batchTs: string[];
     },
   ): Promise<CatchUpFrame> {
-    if (!ctx.hasThread) return { frame: {}, commit: NO_COMMIT };
-    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
+    const { threadKey } = ctx;
+    const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
     try {
-      const since =
-        readThreadSeen(ctx.instanceName, threadKey) ??
-        lastOwnPostTs(
-          (
-            await gw.getThreadTail({
-              channel: ctx.channel,
-              threadTs: ctx.threadTs,
-              limit: THREAD_LOOKBACK,
-            })
-          ).messages.map((message) => ({
-            ts: message.ts,
-            authorAgentId: parseAgentFooter(message)?.agentId ?? null,
-            message,
-          })),
-          ctx.instanceName,
-        );
-      if (!since) return { frame: {}, commit: NO_COMMIT };
+      const since = await catchUpSince(gw, {
+        instanceName: ctx.instanceName,
+        channel: ctx.channel,
+        conversationTs,
+        threadKey,
+      });
       const bot = {
         userId: await gw.getBotUserId().catch(() => null),
         label: botHistoryLabel(brand),
@@ -1568,13 +1633,14 @@ export function createSlackWorker(
           ctx.channel,
           ctx.eventTs,
           ctx.instanceName,
-          ctx.threadTs,
+          conversationTs,
           bot,
           resolveAgentName,
           {
             readingAgentId: ctx.instanceName,
             since,
             triggeringTs: ctx.eventTs,
+            batchTs: ctx.batchTs,
           },
         );
       const commit = () =>
@@ -1596,6 +1662,7 @@ export function createSlackWorker(
           context: lines,
           contextLegend: catchUpLegend(await canLookupUsers(gw), {
             botLabel: hasUnattributedBot ? bot.label : null,
+            someOmitted: readHasMore,
           }),
         },
         commit,
@@ -2606,6 +2673,8 @@ export function createSlackWorker(
             threadTs: args.replyThreadTs,
             eventTs: args.eventTs,
             hasThread: args.hasThread,
+            threadKey: args.threadKey,
+            batchTs: args.messages.map((m) => m.eventTs),
           });
           return {
             prompt: framePrompt({
@@ -2629,6 +2698,7 @@ export function createSlackWorker(
               eventTs: args.eventTs,
               text,
               hasThread: args.hasThread,
+              threadKey: args.threadKey,
               images: args.images,
             },
             contract,
@@ -2646,17 +2716,7 @@ export function createSlackWorker(
       for (const ref of turnRefs) {
         beginTurn(args.instanceName, ref, { advanceLastTurn: false });
       }
-      try {
-        await runTurn();
-      } catch (err) {
-        if (
-          !isAgentWakeTimeoutError(err) ||
-          !isTransientWakeFailure(err.failure)
-        ) {
-          throw err;
-        }
-        await runTurn();
-      }
+      await runWhileAgentStarts(runTurn, wakeWait);
       outcome = "success";
     } catch (err) {
       failureReason = isAgentStoppedError(err)
