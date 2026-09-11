@@ -38,6 +38,13 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * the transfer replaces, and the bundle it was built from does not change, so
  * nothing else would notice.
  *
+ * Ready means dialable, not started. A running process is not a listening one,
+ * and a sandbox now starts fast enough that a caller acting on readiness beats
+ * the server inside it — so the reconcile asks the sandbox itself before it
+ * publishes. This is the readiness probe the orchestrator used to run; nothing
+ * replaced it when the orchestrator left, and its absence is invisible until
+ * something dials an agent the moment it is declared up.
+ *
  * A node that brings a workspace up says so on the record, whether it fetched
  * it or created it. The record, not the presence of a directory, is what the
  * stale-copy sweep and the next node's fetch both read: a directory nobody
@@ -90,6 +97,21 @@ export interface SandboxSupervisor {
   sweep(): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
+}
+
+async function serving(address: string, port: number): Promise<boolean> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const up = await fetch(`http://${address}:${port}/healthz`, {
+      signal: AbortSignal.timeout(1_000),
+    }).then(
+      (res) => res.ok,
+      () => false,
+    );
+    if (up) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 export function createSandboxSupervisor(
@@ -239,7 +261,9 @@ export function createSandboxSupervisor(
     });
 
     const state = await deps.runsc.inspect(record.id);
-    const sandboxReady = state?.running === true;
+    const sandboxReady =
+      state?.running === true &&
+      (await serving(link.sandboxAddress, deps.sandboxPort));
     const gatewayReady = await deps.gateway.isRunning(record.id);
     await publishStatus(record.id, {
       ready: sandboxReady && gatewayReady,
