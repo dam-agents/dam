@@ -7,7 +7,9 @@ import { exec } from "./exec.js";
  * generated on first boot; the sandbox trusts it, which is what lets its paired
  * gateway terminate the agent's TLS and inject a credential. Each gateway's
  * leaf names exactly the hosts its chains terminate, so a host with no chain
- * cannot be intercepted.
+ * cannot be intercepted — and an agent that terminates nothing gets a leaf
+ * with no subjectAltName at all, rather than an openssl config naming an empty
+ * section, which openssl refuses outright.
  */
 export interface PkiPort {
   ensureCa(): Promise<string>;
@@ -51,7 +53,9 @@ export function createPkiPort(caDir: string): PkiPort {
     async ensureLeaf(dir, hosts) {
       const sanFile = join(dir, "san.cnf");
       const san = hosts.map((h, i) => `DNS.${i + 1} = ${h}`).join("\n");
-      const config = `[req]\ndistinguished_name = dn\n[dn]\n[ext]\nsubjectAltName = @alt\nkeyUsage = critical,digitalSignature,keyEncipherment\nextendedKeyUsage = serverAuth\n[alt]\n${san}\n`;
+      const alt = hosts.length ? `subjectAltName = @alt\n` : "";
+      const altSection = hosts.length ? `[alt]\n${san}\n` : "";
+      const config = `[req]\ndistinguished_name = dn\n[dn]\n[ext]\n${alt}keyUsage = critical,digitalSignature,keyEncipherment\nextendedKeyUsage = serverAuth\n${altSection}`;
 
       if ((await readIfPresent(sanFile)) === config) return;
 

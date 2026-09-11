@@ -31,7 +31,7 @@ import {
   composeKbShareServing,
 } from "../../modules/kb-shares/index.js";
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
-import { createFileSecretStore } from "../../modules/secret-store/index.js";
+import { createPgSecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
@@ -160,7 +160,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   };
 
   const connectionsRepo = createConnectionsRepository(db);
-  const secretStore = createFileSecretStore({ root: config.secretStoreRoot });
+  const secretStore = createPgSecretStore({ db });
   const kbMcp = composeKbShareServing({
     db,
     store: artifacts,

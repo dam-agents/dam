@@ -791,12 +791,49 @@ export const agentRecords = pgTable(
       .default({}),
     spec: jsonb("spec").notNull(),
     status: jsonb("status").notNull().default({}),
+    assignedNode: text("assigned_node"),
+    lastNode: text("last_node"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("agent_records_owner_idx").on(table.owner)],
+  (table) => [
+    index("agent_records_owner_idx").on(table.owner),
+    index("agent_records_assigned_node_idx").on(table.assignedNode),
+  ],
 );
+
+export const secrets = pgTable(
+  "secrets",
+  {
+    storeId: text("store_id").notNull(),
+    path: text("path").notNull(),
+    owner: text("owner").notNull(),
+    purpose: text("purpose").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull(),
+    fields: jsonb("fields").$type<Record<string, string>>().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.storeId, table.path] }),
+    index("secrets_owner_idx").on(table.owner, table.purpose),
+  ],
+);
+
+export const nodes = pgTable("nodes", {
+  id: text("id").primaryKey(),
+  address: text("address").notNull(),
+  capacityCpuMilli: integer("capacity_cpu_milli").notNull(),
+  capacityMemoryBytes: bigint("capacity_memory_bytes", {
+    mode: "number",
+  }).notNull(),
+  state: text("state").notNull().default("ready"),
+  lastHeartbeat: timestamp("last_heartbeat", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const userBudgets = pgTable("user_budgets", {
   owner: text("owner").primaryKey(),

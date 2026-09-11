@@ -78,7 +78,7 @@ import {
   createSchedulesCleanupHook,
 } from "./modules/schedules/index.js";
 import {
-  createFileSecretStore,
+  createPgSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
@@ -392,9 +392,7 @@ export async function bootstrap() {
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
   const secretStores = createSecretStoreRegistry();
-  secretStores.register(
-    createFileSecretStore({ root: config.secretStoreRoot }),
-  );
+  secretStores.register(createPgSecretStore({ db }));
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({

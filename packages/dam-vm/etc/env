@@ -3,7 +3,6 @@
 # classes or the mesh is gone rather than defaulted.
 
 DAM_AGENTS_ROOT=/var/lib/dam/agents
-DAM_SECRET_STORE_ROOT=/var/lib/dam/secrets
 DAM_REGISTRY_AUTH_ROOT=/var/lib/dam/registry-auth
 DAM_PKI_ROOT=/var/lib/dam/pki
 DAM_IMAGES_ROOT=/var/lib/dam/images

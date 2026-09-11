@@ -23,6 +23,8 @@ export {
   connectionGrants,
   agents,
   agentRecords,
+  secrets,
+  nodes,
   userBudgets,
   runtimeStateOutbox,
   runtimeEvents,

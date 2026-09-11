@@ -330,6 +330,13 @@
       "when": 1789064633155,
       "tag": "0046_nice_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789117218514,
+      "tag": "0047_clumsy_leo",
+      "breakpoints": true
     }
   ]
 }
