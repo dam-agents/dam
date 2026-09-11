@@ -422,3 +422,19 @@ nodeAccess:
   redis: 30379
   keycloak: 30081
   seaweedfs: 30333
+
+# -- The node VMs themselves, for a cluster that can run them (KubeVirt or
+# OpenShift Virtualization). Off by default: a node is created out of band and
+# registers itself, and a local install makes its nodes with lima instead.
+# Turning this on is one of the two implementations of that same contract.
+nodes:
+  enabled: false
+  count: 2
+  # The node image as a bootable container disk.
+  image: quay.io/dam-agents/node:latest
+  cpu: 4
+  memory: 8Gi
+  # /var/lib/dam — the agent workspaces, the unpacked images, the node's own
+  # keys. It is the reason a node that restarts comes back with its agents.
+  storage: 100Gi
+  storageClass: ""

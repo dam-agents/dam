@@ -1,0 +1,78 @@
+{{- if .Values.nodes.enabled }}
+{{- /*
+What a node is told, and the whole of it: who it is, where to be reached, and
+where the shared services are. A node created any other way — a lima guest on
+a laptop — is handed the same file by its install task, which is what lets one
+node image serve both without knowing which made it.
+
+The endpoints are the cluster's own service names rather than the node ports
+the outside world uses: a node VM sits on the pod network, so it resolves them
+directly and no traffic leaves the cluster to come back in.
+
+Credentials are read from the Secrets the chart already generated, so turning
+nodes on does not mint a second set that drifts from the first.
+*/ -}}
+{{- $fullname := include "platform.fullname" . -}}
+{{- $peers := printf "%s-nodes" $fullname -}}
+{{- $ns := .Release.Namespace -}}
+{{- $pgSecret := lookup "v1" "Secret" $ns (include "platform.postgres.secrets.fullname" .) -}}
+{{- $kcSecret := lookup "v1" "Secret" $ns (include "platform.keycloak.secrets.fullname" .) -}}
+{{- $s3Secret := lookup "v1" "Secret" $ns (include "platform.seaweedfs.secrets.fullname" .) -}}
+{{- $pgPassword := "" -}}
+{{- $apiClientSecret := "" -}}
+{{- $s3Key := "" -}}
+{{- $s3Secretkey := "" -}}
+{{- if $pgSecret }}{{- $pgPassword = index $pgSecret.data "POSTGRES_APISERVER_PASSWORD" | default "" | b64dec }}{{- end }}
+{{- if $kcSecret }}{{- $apiClientSecret = index $kcSecret.data "PLATFORM_API_CLIENT_SECRET" | default "" | b64dec }}{{- end }}
+{{- if $s3Secret }}
+{{- $s3Key = index $s3Secret.data "accessKeyId" | default "" | b64dec }}
+{{- $s3Secretkey = index $s3Secret.data "secretAccessKey" | default "" | b64dec }}
+{{- end }}
+{{- /*
+A node is handed its credentials once, at boot, inside cloud-init — there is no
+secretKeyRef for a virtual machine's first breath, so unlike every other
+consumer in this chart these values are read here rather than referenced. On
+the install that creates them they do not exist yet, and a node that boots with
+a blank database URL crash-loops for a reason nobody can see. Say so instead:
+enable nodes once the services they depend on are installed.
+*/ -}}
+{{- if or (empty $pgPassword) (empty $apiClientSecret) }}
+{{- fail "nodes.enabled requires the shared services to exist already: install the chart once with nodes disabled, then enable them" }}
+{{- end }}
+{{- range $i := until (int .Values.nodes.count) }}
+{{- $name := printf "%s-node-%d" $fullname $i }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-env
+  namespace: {{ $ns }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: node
+type: Opaque
+stringData:
+  userdata: |
+    #cloud-config
+    write_files:
+      - path: /etc/dam/env.cluster
+        permissions: "0600"
+        owner: root:root
+        content: |
+          DAM_NODE_ID={{ $name }}
+          DAM_NODE_ADDRESS={{ $name }}.{{ $peers }}.{{ $ns }}.svc:4002
+          DATABASE_URL=postgres://{{ $.Values.postgres.apiserverUser }}:{{ $pgPassword }}@{{ include "platform.postgres.fullname" $ }}.{{ $ns }}.svc:5432/platform
+          REDIS_URL=redis://{{ include "platform.redis.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.redis.port }}
+          KEYCLOAK_URL=http://{{ include "platform.keycloak.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.keycloak.port }}
+          KEYCLOAK_EXTERNAL_URL={{ $.Values.urls.keycloak }}
+          KEYCLOAK_API_CLIENT_SECRET={{ $apiClientSecret }}
+          OBJECT_STORAGE_ENDPOINT=http://{{ include "platform.seaweedfs.fullname" $ }}.{{ $ns }}.svc:8333
+          OBJECT_STORAGE_AGENT_ENDPOINT=http://{{ include "platform.seaweedfs.fullname" $ }}.{{ $ns }}.svc:8333
+          OBJECT_STORAGE_ACCESS_KEY_ID={{ $s3Key }}
+          OBJECT_STORAGE_SECRET_ACCESS_KEY={{ $s3Secretkey }}
+          UI_BASE_URL={{ $.Values.urls.ui }}
+    runcmd:
+      # The image ships the units and the defaults; this is the install's half.
+      - [ sh, -c, "cat /etc/dam/env.cluster >> /etc/dam/env && systemctl enable --now dam-api-server" ]
+{{- end }}
+{{- end }}

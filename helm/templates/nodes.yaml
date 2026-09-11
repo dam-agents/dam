@@ -1,0 +1,112 @@
+{{- if .Values.nodes.enabled }}
+{{- /*
+The node VMs. Kubernetes creates them and never learns what runs inside: an
+agent is not a workload here, it is a row in the database that one node's
+supervisor reconciles.
+
+Each node is a VirtualMachine with the node image as its boot disk and a
+volume for /var/lib/dam, and it is told who it is and where the shared
+services are through cloud-init — the same file a lima node gets from its
+install task, which is the whole contract between a node and whatever created
+it.
+
+Peers address each other by the per-node DNS name the headless Service below
+gives them, rather than by a pod IP that changes with every restart.
+*/ -}}
+{{- $fullname := include "platform.fullname" . -}}
+{{- $peers := printf "%s-nodes" $fullname -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $peers }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: node
+  ports:
+    - name: peer
+      port: 4002
+      targetPort: 4002
+    - name: http
+      port: 4000
+      targetPort: 4000
+{{- range $i := until (int .Values.nodes.count) }}
+{{- $name := printf "%s-node-%d" $fullname $i }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ $.Values.nodes.storage }}
+  {{- if $.Values.nodes.storageClass }}
+  storageClassName: {{ $.Values.nodes.storageClass | quote }}
+  {{- end }}
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: node
+        kubevirt.io/domain: {{ $name }}
+    spec:
+      hostname: {{ $name }}
+      subdomain: {{ $peers }}
+      domain:
+        cpu:
+          cores: {{ $.Values.nodes.cpu }}
+        memory:
+          guest: {{ $.Values.nodes.memory }}
+        devices:
+          disks:
+            - name: boot
+              disk:
+                bus: virtio
+            - name: data
+              disk:
+                bus: virtio
+            - name: cloudinit
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      terminationGracePeriodSeconds: 120
+      volumes:
+        - name: boot
+          containerDisk:
+            image: {{ $.Values.nodes.image | quote }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+        - name: cloudinit
+          cloudInitNoCloud:
+            secretRef:
+              name: {{ $name }}-env
+{{- end }}
+{{- end }}
