@@ -24,8 +24,8 @@ function kit(overrides: Partial<StarterKit> = {}): StarterKit {
     category: "software",
     seed: { url: "https://github.com/acme/code-guardian", ref: "v1.4.0" },
     connections: [
-      { templates: ["github-app", "github-pat"], required: true },
-      { templates: ["slack"], note: "Nudges." },
+      { accepts: ["github-app", "github-pat"], required: true },
+      { accepts: ["slack"], note: "Nudges." },
     ],
     schedules: [
       { name: "review", cron: "*/5 8-21 * * 1-5", task: "Review." },
@@ -437,10 +437,19 @@ describe("starter kits: onboarding prompt", () => {
 describe("starter kits: domain helpers", () => {
   it("finds required connections no granted template satisfies", () => {
     const unmet = unmetRequiredConnections(kit(), ["slack"]);
-    expect(unmet.map((u) => u.templates)).toEqual([
-      ["github-app", "github-pat"],
-    ]);
+    expect(unmet.map((u) => u.accepts)).toEqual([["github-app", "github-pat"]]);
     expect(unmetRequiredConnections(kit(), ["github-pat"])).toEqual([]);
+  });
+
+  it("expands a connection family to every template in it", () => {
+    const familyKit = kit({
+      connections: [{ accepts: ["github"], required: true }],
+    });
+    expect(unmetRequiredConnections(familyKit, ["github-app"])).toEqual([]);
+    expect(
+      unmetRequiredConnections(familyKit, ["github-enterprise-pat"]),
+    ).toHaveLength(1);
+    expect(unmetRequiredConnections(familyKit, ["slack"])).toHaveLength(1);
   });
 
   it("parses kit refs", () => {

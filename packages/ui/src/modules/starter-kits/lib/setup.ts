@@ -1,5 +1,8 @@
 import {
+  connectionFamilyById,
+  connectionFamilyOf,
   type ConnectionTemplateView,
+  expandConnectionClasses,
   PROVIDER_TEMPLATE_IDS,
   type ProviderPresetType,
   type StarterKitApplyInput,
@@ -48,7 +51,9 @@ export function requirementStatuses(
   );
   return kit.connections.map((requirement) => ({
     requirement,
-    satisfied: requirement.templates.some((t) => templates.has(t)),
+    satisfied: [...expandConnectionClasses(requirement.accepts)].some((t) =>
+      templates.has(t),
+    ),
   }));
 }
 
@@ -98,7 +103,7 @@ function isProviderTemplate(id: string): id is ProviderPresetType {
 export function isProviderRequirement(
   requirement: StarterKitConnectionRequirement,
 ): boolean {
-  return requirement.templates.some(isProviderTemplate);
+  return requirement.accepts.some(isProviderTemplate);
 }
 
 export function providerPolicyForKit(
@@ -107,7 +112,7 @@ export function providerPolicyForKit(
 ): SetupProviderPolicy {
   const providerReq = kit.connections.find(isProviderRequirement);
   if (!providerReq) return base;
-  const allow = providerReq.templates.filter(isProviderTemplate);
+  const allow = providerReq.accepts.filter(isProviderTemplate);
   const recommended =
     base.recommended && allow.includes(base.recommended)
       ? base.recommended
@@ -115,19 +120,48 @@ export function providerPolicyForKit(
   return { allow, recommended };
 }
 
-export function connectableTemplates(
-  requirement: StarterKitConnectionRequirement,
-  templateById: ReadonlyMap<string, ConnectionTemplateView>,
-): ConnectionTemplateView[] {
-  return requirement.templates.flatMap((id) => {
-    const t = templateById.get(id);
-    return t ? [t] : [];
-  });
+export interface ConnectTarget {
+  key: string;
+  label: string;
+  providerId: string;
+  templateId?: string;
 }
 
-export function describeTemplates(
+export function connectTargets(
+  requirement: StarterKitConnectionRequirement,
+  templateById: ReadonlyMap<string, ConnectionTemplateView>,
+): ConnectTarget[] {
+  const out: ConnectTarget[] = [];
+  const seen = new Set<string>();
+  for (const id of requirement.accepts) {
+    const family = connectionFamilyById(id);
+    if (family) {
+      if (seen.has(family.id)) continue;
+      seen.add(family.id);
+      out.push({ key: family.id, label: family.title, providerId: family.id });
+      continue;
+    }
+    const template = templateById.get(id);
+    if (!template || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      key: id,
+      label: template.name,
+      providerId: connectionFamilyOf(id)?.id ?? id,
+      templateId: id,
+    });
+  }
+  return out;
+}
+
+export function describeAccepts(
   ids: readonly string[],
   templateById: ReadonlyMap<string, Pick<ConnectionTemplateView, "name">>,
 ): string {
-  return ids.map((id) => templateById.get(id)?.name ?? id).join(" or ");
+  return ids
+    .map(
+      (id) =>
+        connectionFamilyById(id)?.title ?? templateById.get(id)?.name ?? id,
+    )
+    .join(" or ");
 }

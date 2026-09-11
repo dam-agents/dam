@@ -1,4 +1,4 @@
-import type { StarterKit } from "api-server-api";
+import { connectionFamilyById, type StarterKit } from "api-server-api";
 
 export interface OnboardingFacts {
   kit: StarterKit;
@@ -7,12 +7,21 @@ export interface OnboardingFacts {
   boundChannels: string[];
 }
 
+export function describeAccepts(ids: readonly string[]): string {
+  return ids
+    .map((id) => {
+      const family = connectionFamilyById(id);
+      return family ? `${family.title} (any method)` : id;
+    })
+    .join(" or ");
+}
+
 function connectionLines(kit: StarterKit): string[] {
   if (kit.connections.length === 0) return ["- Connections: none declared."];
   return kit.connections.map((req) => {
     const level = req.required ? "required, granted at create" : "suggested";
     const note = req.note ? ` — ${req.note}` : "";
-    return `- Connection (${level}): ${req.templates.join(" or ")}${note}`;
+    return `- Connection (${level}): ${describeAccepts(req.accepts)}${note}`;
   });
 }
 

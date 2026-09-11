@@ -13,7 +13,7 @@ export const starterKitCategorySchema = z.enum([
 ]);
 
 export const starterKitConnectionRequirementSchema = z.object({
-  templates: z.array(z.string().min(1)).min(1),
+  accepts: z.array(z.string().min(1)).min(1),
   required: z.boolean().default(false),
   note: z.string().optional(),
 });

@@ -6,7 +6,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildStarterKitApplyInput,
-  describeTemplates,
+  connectTargets,
+  describeAccepts,
   isProviderRequirement,
   isStarterKitSetupComplete,
   providerPolicyForKit,
@@ -19,8 +20,8 @@ const kit: Pick<StarterKitView, "id" | "template" | "connections"> = {
   id: "code-reviewer",
   template: undefined,
   connections: [
-    { templates: ["github-app", "github-pat"], required: true },
-    { templates: ["slack"], required: false },
+    { accepts: ["github-app", "github-pat"], required: true },
+    { accepts: ["slack"], required: false },
   ],
 };
 
@@ -47,9 +48,7 @@ describe("requirementStatuses", () => {
 
   test("counts the provider connection as granted", () => {
     const providerKit = {
-      connections: [
-        { templates: ["ibm-litellm", "anthropic"], required: true },
-      ],
+      connections: [{ accepts: ["ibm-litellm", "anthropic"], required: true }],
     };
     expect(
       requirementStatuses(
@@ -129,7 +128,7 @@ describe("providerPolicyForKit", () => {
   const base = { recommended: "ibm-litellm" as const };
   test("narrows the provider picker to the kit's provider requirement", () => {
     const policy = providerPolicyForKit(
-      { connections: [{ templates: ["anthropic", "openai"], required: true }] },
+      { connections: [{ accepts: ["anthropic", "openai"], required: true }] },
       base,
     );
     expect(policy).toEqual({
@@ -142,7 +141,7 @@ describe("providerPolicyForKit", () => {
       providerPolicyForKit(
         {
           connections: [
-            { templates: ["ibm-litellm", "anthropic"], required: true },
+            { accepts: ["ibm-litellm", "anthropic"], required: true },
           ],
         },
         base,
@@ -152,17 +151,53 @@ describe("providerPolicyForKit", () => {
   test("falls back to the base policy when no requirement names a provider", () => {
     expect(providerPolicyForKit(kit, base)).toBe(base);
     expect(isProviderRequirement(kit.connections[0])).toBe(false);
-    expect(isProviderRequirement({ templates: ["bob"], required: false })).toBe(
+    expect(isProviderRequirement({ accepts: ["bob"], required: false })).toBe(
       true,
     );
   });
 });
 
-describe("describeTemplates", () => {
-  test("names templates the catalog knows and falls back to the id", () => {
+describe("describeAccepts", () => {
+  test("names families, then templates the catalog knows, then falls back to the id", () => {
     const byId = new Map([["github-app", { name: "GitHub App" }]]);
-    expect(describeTemplates(["github-app", "github-pat"], byId)).toBe(
-      "GitHub App or github-pat",
+    expect(describeAccepts(["github", "github-app", "github-pat"], byId)).toBe(
+      "GitHub or GitHub App or github-pat",
     );
+  });
+});
+
+describe("connection families", () => {
+  test("a family requirement is satisfied by any of its templates", () => {
+    const familyKit = {
+      connections: [{ accepts: ["github"], required: true }],
+    };
+    const draft = { ...complete, connectionIds: ["c-gh"], providerRef: null };
+    expect(requirementStatuses(familyKit, draft, owned)[0].satisfied).toBe(
+      true,
+    );
+    expect(
+      requirementStatuses(familyKit, { ...draft, connectionIds: [] }, owned)[0]
+        .satisfied,
+    ).toBe(false);
+  });
+
+  test("connect targets open the family page once, and a bare template opens its family preselected", () => {
+    const byId = new Map<string, { id: string; name: string }>([
+      ["github-app", { id: "github-app", name: "GitHub App" }],
+      ["slack", { id: "slack", name: "Slack" }],
+    ]);
+    const targets = connectTargets(
+      {
+        accepts: ["github", "github-enterprise", "github-app", "slack"],
+        required: true,
+      },
+      byId as never,
+    );
+    expect(targets.map((t) => [t.label, t.providerId, t.templateId])).toEqual([
+      ["GitHub", "github", undefined],
+      ["GitHub Enterprise", "github-enterprise", undefined],
+      ["GitHub App", "github", "github-app"],
+      ["Slack", "slack", "slack"],
+    ]);
   });
 });

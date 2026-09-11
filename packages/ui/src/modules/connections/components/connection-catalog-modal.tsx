@@ -36,6 +36,7 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  initialProviderId?: string;
   initialTemplateId?: string;
 }
 
@@ -43,6 +44,7 @@ export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  initialProviderId,
   initialTemplateId,
 }: Props) {
   const connectionsQ = useAppConnections({ fresh: true });
@@ -69,14 +71,21 @@ export function ConnectionCatalogModal({
 
   const openedInitial = useRef(false);
   useEffect(() => {
-    if (openedInitial.current || !initialTemplateId) return;
-    const group = allGroups.find((g) =>
-      g.templates.some((t) => t.id === initialTemplateId),
+    if (openedInitial.current || (!initialProviderId && !initialTemplateId))
+      return;
+    const group = allGroups.find(
+      (g) =>
+        g.provider.id === initialProviderId ||
+        g.templates.some((t) => t.id === initialTemplateId),
     );
     if (!group) return;
     openedInitial.current = true;
-    setPane({ kind: "create", providerId: group.provider.id });
-  }, [allGroups, initialTemplateId]);
+    setPane(
+      group.provider.id === MCP_PROVIDER_ID
+        ? { kind: "create-mcp" }
+        : { kind: "create", providerId: group.provider.id },
+    );
+  }, [allGroups, initialProviderId, initialTemplateId]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))

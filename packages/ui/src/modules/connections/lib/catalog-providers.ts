@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  CONNECTION_FAMILIES,
+  type ConnectionTemplateView,
+  type ConnectionView,
+} from "api-server-api";
 
 export type CatalogTab = "apps" | "mcp" | "custom-headers";
 
@@ -27,48 +31,22 @@ export interface CatalogProviderGroup {
   connections: ConnectionView[];
 }
 
+const FAMILY_TAB: Record<string, CatalogTab> = {
+  "mcp-server": "mcp",
+  "custom-header": "custom-headers",
+};
+
 const STATIC_PROVIDERS: readonly {
   id: string;
   title: string;
   templateIds: readonly string[];
   tab: CatalogTab;
-}[] = [
-  {
-    id: "github",
-    title: "GitHub",
-    templateIds: ["github", "github-pat", "github-app"],
-    tab: "apps",
-  },
-  {
-    id: "github-enterprise",
-    title: "GitHub Enterprise",
-    templateIds: [
-      "github-enterprise",
-      "github-enterprise-pat",
-      "github-enterprise-app",
-    ],
-    tab: "apps",
-  },
-  { id: "modal", title: "Modal", templateIds: ["modal"], tab: "apps" },
-  {
-    id: "kubernetes",
-    title: "Kubernetes / OpenShift",
-    templateIds: ["kubernetes"],
-    tab: "apps",
-  },
-  {
-    id: "mcp-server",
-    title: "MCP servers",
-    templateIds: ["custom-mcp-oauth", "custom-mcp-none"],
-    tab: "mcp",
-  },
-  {
-    id: "custom-header",
-    title: "Custom Headers",
-    templateIds: ["custom-header"],
-    tab: "custom-headers",
-  },
-];
+}[] = CONNECTION_FAMILIES.map((f) => ({
+  id: f.id,
+  title: f.title,
+  templateIds: f.templateIds,
+  tab: FAMILY_TAB[f.id] ?? "apps",
+}));
 
 const STATIC_TITLE_BY_TEMPLATE_ID = new Map(
   STATIC_PROVIDERS.flatMap((p) => p.templateIds.map((id) => [id, p.title])),

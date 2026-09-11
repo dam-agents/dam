@@ -189,6 +189,14 @@ export type {
   StarterKitsService,
 } from "./modules/starter-kits/types.js";
 export {
+  CONNECTION_FAMILIES,
+  connectionFamilyById,
+  connectionFamilyOf,
+  expandConnectionClass,
+  expandConnectionClasses,
+} from "./modules/connections/families.js";
+export type { ConnectionFamily } from "./modules/connections/families.js";
+export {
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
   starterKitCategorySchema,

@@ -19,7 +19,7 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
-import { describeTemplates, shortKitVersion } from "../lib/setup.js";
+import { describeAccepts, shortKitVersion } from "../lib/setup.js";
 
 const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   knowledge: "Knowledge",
@@ -35,7 +35,7 @@ function needsLines(
   const lines: string[] = [];
   for (const req of kit.connections) {
     lines.push(
-      `${req.required ? "Requires" : "Suggests"} a ${describeTemplates(req.templates, templateById)} connection`,
+      `${req.required ? "Requires" : "Suggests"} a ${describeAccepts(req.accepts, templateById)} connection`,
     );
   }
   for (const ch of kit.channels) lines.push(`Suggests a ${ch.type} channel`);

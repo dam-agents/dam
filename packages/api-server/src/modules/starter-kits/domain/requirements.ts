@@ -1,6 +1,7 @@
-import type {
-  StarterKit,
-  StarterKitConnectionRequirement,
+import {
+  expandConnectionClasses,
+  type StarterKit,
+  type StarterKitConnectionRequirement,
 } from "api-server-api";
 
 export function unmetRequiredConnections(
@@ -9,7 +10,9 @@ export function unmetRequiredConnections(
 ): StarterKitConnectionRequirement[] {
   const granted = new Set(grantedTemplateIds);
   return kit.connections.filter(
-    (req) => req.required && !req.templates.some((t) => granted.has(t)),
+    (req) =>
+      req.required &&
+      ![...expandConnectionClasses(req.accepts)].some((t) => granted.has(t)),
   );
 }
 

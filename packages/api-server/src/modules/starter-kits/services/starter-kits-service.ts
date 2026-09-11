@@ -10,7 +10,10 @@ import type {
   StarterKitView,
 } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
-import { composeOnboardingPrompt } from "../domain/onboarding-prompt.js";
+import {
+  composeOnboardingPrompt,
+  describeAccepts,
+} from "../domain/onboarding-prompt.js";
 import {
   kitRef,
   parseKitRef,
@@ -123,7 +126,7 @@ export function createStarterKitsService(
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `missing required connection: ${unmet
-            .map((u) => u.templates.join(" or "))
+            .map((u) => describeAccepts(u.accepts))
             .join("; ")}`,
         });
 

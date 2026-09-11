@@ -32,8 +32,9 @@ import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import {
   buildStarterKitApplyInput,
-  connectableTemplates,
-  describeTemplates,
+  type ConnectTarget,
+  connectTargets,
+  describeAccepts,
   isProviderRequirement,
   isStarterKitSetupComplete,
   providerPolicyForKit,
@@ -66,7 +67,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
     [connectionTemplates.data],
   );
-  const [connectTemplateId, setConnectTemplateId] = useState<string | null>(
+  const [connectTarget, setConnectTarget] = useState<ConnectTarget | null>(
     null,
   );
   const grantedIds = useMemo(
@@ -175,7 +176,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
           <ul className="space-y-2 text-sm">
             {statuses.map(({ requirement, satisfied }) => (
               <li
-                key={requirement.templates.join("|")}
+                key={requirement.accepts.join("|")}
                 className="flex items-start gap-2"
               >
                 {satisfied ? (
@@ -185,7 +186,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                 )}
                 <div className="min-w-0 flex-1">
                   <div>
-                    {describeTemplates(requirement.templates, templateById)}{" "}
+                    {describeAccepts(requirement.accepts, templateById)}{" "}
                     <span className="text-muted-foreground">
                       ({requirement.required ? "required" : "suggested"})
                     </span>
@@ -202,19 +203,17 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                   )}
                   {!satisfied && !isProviderRequirement(requirement) && (
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {connectableTemplates(requirement, templateById).map(
-                        (t) => (
-                          <Button
-                            key={t.id}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setConnectTemplateId(t.id)}
-                            data-testid={`starter-kit-connect-${t.id}`}
-                          >
-                            Connect {t.name}
-                          </Button>
-                        ),
-                      )}
+                      {connectTargets(requirement, templateById).map((t) => (
+                        <Button
+                          key={t.key}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setConnectTarget(t)}
+                          data-testid={`starter-kit-connect-${t.key}`}
+                        >
+                          Connect {t.label}
+                        </Button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -229,10 +228,11 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         onToggle={toggleConnection}
         oauthReturnView={returnPath}
       />
-      {connectTemplateId && (
+      {connectTarget && (
         <ConnectionCatalogModal
-          initialTemplateId={connectTemplateId}
-          onClose={() => setConnectTemplateId(null)}
+          initialProviderId={connectTarget.providerId}
+          initialTemplateId={connectTarget.templateId}
+          onClose={() => setConnectTarget(null)}
           sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
           oauthReturnView={returnPath}
         />

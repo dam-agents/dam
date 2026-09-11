@@ -9,10 +9,10 @@ category: research
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md
 template: nous
 connections:
-  - templates: [ibm-litellm, anthropic]
+  - accepts: [ibm-litellm, anthropic]
     required: true
     note: Nous drives Claude through the Claude Agent SDK; an API-key style credential is needed.
-  - templates: [github, github-app, github-pat]
+  - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
 hibernationTimeoutMin: 0
 parameters:

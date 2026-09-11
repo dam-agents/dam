@@ -11,18 +11,20 @@ seed:
   url: https://github.com/dam-agents/code-guardian
   ref: main
 connections:
-  - templates: [github-app, github-pat, github-enterprise-app, github-enterprise-pat]
+  - accepts: [github, github-enterprise]
     required: true
     note: >-
-      Use a bot account. It must not be the account that opens the pull
-      requests it reviews.
-  - templates: [slack]
-    note: Enables reviewer nudges and the weekly audit post.
+      Connect as a bot account (a GitHub App or a token for a machine user),
+      not as the account that opens the pull requests it reviews.
+  - accepts: [slack]
+    note: >-
+      Used by the shepherd and weekly-audit schedules, which are created
+      disabled. Turn them on under Schedules once Slack is connected.
 channels:
   - type: slack
     note: >-
-      Reviewer nudges and the weekly audit post go here. Skip it to keep
-      everything in chat.
+      Where reviewer nudges and the weekly audit post land once those
+      schedules are on. Skip it to keep everything in chat.
 schedules:
   - name: code-guardian-review-active
     cron: "*/5 8-21 * * 1-5"
