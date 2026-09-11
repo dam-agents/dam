@@ -54,6 +54,8 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 5. Wake the Agent and record the apply in the security log.
 6. Install the declared external skills. This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
 
+The catalog has two entry points, answering the placement question in #447 with *both*: a **Starter kits** destination in the rail with the full catalog and setup pages, and a **Home widget** — in the activity aside for users with agents and under the first-run entry points for users without — listing the first few kits with a Use button. The widget renders nothing when the install has no catalog, so an install that has not opted in sees no new surface.
+
 **Kit Onboarding** is the hidden first turn the UI sends once the Agent runs and has no sessions — the same greeting mechanism knowledge bases and experiments use. The prompt is **platform-composed from the kit and the Agent's state**: the definition repository and ref to clone, the connection requirements and which were granted, the schedules and which are disabled, the bound channel, the declared parameters — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction. Every kit ships `ONBOARDING.md` beside `kit.yaml`. In V1 the agent clones its own definition; the platform does not seed it.
 
 ## Invariants
