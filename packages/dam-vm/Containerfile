@@ -20,8 +20,19 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       jq tar gzip && \
     dnf clean all
 
-ARG GVISOR_URL=https://storage.googleapis.com/gvisor/releases/release/latest/x86_64
-RUN curl -fsSL -o /usr/local/bin/runsc "${GVISOR_URL}/runsc" && \
+# gVisor names architectures the way the kernel does, and the build names them
+# the way Go does. A node built for the wrong one installs a runsc that cannot
+# exec, which looks like nothing at all until the first sandbox starts, so an
+# architecture this does not know about stops the build instead.
+ARG TARGETARCH
+ARG GVISOR_BASE=https://storage.googleapis.com/gvisor/releases/release/latest
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) gvarch=x86_64 ;; \
+      arm64) gvarch=aarch64 ;; \
+      *) echo "no gVisor build for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/runsc "${GVISOR_BASE}/${gvarch}/runsc"; \
     chmod 0755 /usr/local/bin/runsc
 
 # The gateway uid: Envoy runs as this, and it is the only reader of an
