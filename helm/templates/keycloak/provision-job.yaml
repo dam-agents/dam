@@ -1,0 +1,59 @@
+{{- if .Values.keycloak.enabled }}
+{{- $appName := include "platform.keycloak.fullname" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $appName }}-provision
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-provision
+  {{- $hooks := dict
+        "helm.sh/hook" "post-install,post-upgrade"
+        "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded"
+        "helm.sh/hook-weight" "5" }}
+  {{- include "platform.annotations" (dict "root" $ "internal" $hooks) | nindent 2 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-provision
+      {{- include "platform.podAnnotations" (dict "root" $) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: OnFailure
+      containers:
+        - name: config-cli
+          image: {{ .Values.keycloak.configCliImage }}
+          env:
+            - name: KEYCLOAK_URL
+              value: "http://{{ $appName }}:{{ .Values.keycloak.port }}"
+            - name: KEYCLOAK_USER
+              value: {{ .Values.keycloak.admin.user | quote }}
+            - name: KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.keycloak.secrets.fullname" . }}
+                  key: KEYCLOAK_ADMIN_PASSWORD
+            - name: IMPORT_FILES_LOCATIONS
+              value: "/config/*"
+            - name: KEYCLOAK_AVAILABILITYCHECK_ENABLED
+              value: "true"
+            - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
+              value: "120s"
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: "true"
+            - name: PLATFORM_API_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.keycloak.secrets.fullname" . }}
+                  key: PLATFORM_API_CLIENT_SECRET
+          volumeMounts:
+            - name: realm-config
+              mountPath: /config
+      volumes:
+        - name: realm-config
+          configMap:
+            name: {{ $appName }}-realm
+{{- end }}

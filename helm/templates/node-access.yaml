@@ -1,0 +1,31 @@
+{{- if .Values.nodeAccess.enabled }}
+{{- /*
+Node VMs run the api-server and the agent sandboxes; they are not members of
+this cluster. Each shared service they need is published on a fixed NodePort
+rather than an Ingress: these are raw TCP protocols — Postgres and Redis are
+not HTTP — and a node reaches them by address, not by name.
+*/ -}}
+{{- $svc := dict "postgres" (dict "port" 5432 "node" .Values.nodeAccess.postgres) "redis" (dict "port" .Values.redis.port "node" .Values.nodeAccess.redis) "keycloak" (dict "port" .Values.keycloak.port "node" .Values.nodeAccess.keycloak) "seaweedfs" (dict "port" 8333 "node" .Values.nodeAccess.seaweedfs) -}}
+{{- range $component, $cfg := $svc }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "platform.fullname" $ }}-{{ $component }}-node
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  type: NodePort
+  ports:
+    - port: {{ $cfg.port }}
+      targetPort: {{ $cfg.port }}
+      nodePort: {{ $cfg.node }}
+      protocol: TCP
+      name: {{ $component }}
+  selector:
+    {{- include "platform.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+{{- end }}
+{{- end }}

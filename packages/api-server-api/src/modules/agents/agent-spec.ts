@@ -21,10 +21,6 @@ export interface AgentSpecCR {
   registryAuth?: SecretRef;
   init?: string;
   l7Hosts?: string[];
-  mounts?: {
-    path: string;
-    persist: boolean;
-  }[];
   name?: string;
   resources?: {
     limits?: {

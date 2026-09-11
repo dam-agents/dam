@@ -1,0 +1,23 @@
+# The local cluster: k3s in one lima VM, node VMs outside it reaching these
+# services on the forwarded NodePorts. Keycloak's issuer is the URL a browser
+# uses; nodes fetch its keys on the same port through the lima host, which is
+# why the api-server takes both.
+domain: localhost
+scheme: http
+
+urls:
+  ui: http://localhost:4000
+  keycloak: http://localhost:30081
+
+keycloak:
+  # Upstream Keycloak, not the first-party themed build: the theme is branding,
+  # and its image is published per commit rather than at the chart's version.
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.4.0"
+  admin:
+    password: admin
+  testUser:
+    enabled: true
+    username: dev
+    password: dev

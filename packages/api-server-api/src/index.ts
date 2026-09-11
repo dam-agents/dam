@@ -14,7 +14,6 @@ export { podSessionsNoticeSchema } from "./modules/events/schemas.js";
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
   harnessFamilySchema,
-  mountSchema,
   resourcesSchema,
   skillSourceSeedSchema,
   templateSpecSchema,

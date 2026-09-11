@@ -1,0 +1,15 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.db.caCert }}
+{{- /* CA certificate for verifying an external DB's TLS cert. Mounted into the
+       Keycloak pod; the JDBC URL's sslrootcert points at this file, which the
+       PostgreSQL JDBC driver reads for verify-ca/verify-full. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-keycloak-db-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.keycloak.db.caCert | nindent 4 }}
+{{- end }}

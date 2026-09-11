@@ -1,0 +1,61 @@
+# The cluster VM. It runs k3s and nothing but the platform's shared services —
+# Postgres, Redis, Keycloak and SeaweedFS. Agents do not run here and neither
+# does the api-server: those live on node VMs, which reach these services over
+# the ports forwarded below. That is why this is small. The template it
+# replaces was sized for a cluster that also ran every agent, Istio and a
+# telemetry stack, and carried a page of tuning notes for workloads that are
+# no longer here.
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "6GiB"
+disk: "60GiB"
+
+# Node VMs reach these through the host, which is the one address every lima
+# guest can already resolve. The NodePorts are pinned in the chart's values so
+# the two halves agree without discovery.
+portForwards:
+  - guestPort: 30432
+    hostPort: 30432
+  - guestPort: 30379
+    hostPort: 30379
+  - guestPort: 30081
+    hostPort: 30081
+  - guestPort: 30333
+    hostPort: 30333
+  - guestPort: 6443
+    hostPort: 6443
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # Bound kubelet log usage so a looping pod cannot fill the disk.
+      mkdir -p /etc/rancher/k3s
+      cat > /etc/rancher/k3s/config.yaml <<'CONF'
+      write-kubeconfig-mode: "0644"
+      kubelet-arg:
+        - "container-log-max-size=10Mi"
+        - "container-log-max-files=3"
+      CONF
+      if [ ! -x /usr/local/bin/k3s ]; then
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+      fi
+      systemctl enable --now k3s
+
+copyToHost:
+  - guest: "/etc/rancher/k3s/k3s.yaml"
+    host: "{{.Dir}}/copied-from-guest/kubeconfig.yaml"
+    deleteOnStop: true
+
+probes:
+  - description: "k3s serves its API"
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      timeout 300s bash -c "until /usr/local/bin/k3s kubectl get --raw /readyz >/dev/null 2>&1; do sleep 3; done"

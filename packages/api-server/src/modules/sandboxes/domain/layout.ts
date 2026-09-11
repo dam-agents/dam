@@ -7,7 +7,6 @@ import { join } from "node:path";
  */
 export interface SandboxLayout {
   root: string;
-  work: string;
   home: string;
   gatewayConfig: string;
   credentials: string;
@@ -21,7 +20,6 @@ export function layoutFor(root: string, agentId: string): SandboxLayout {
   const dir = join(root, agentId);
   return {
     root: dir,
-    work: join(dir, "work"),
     home: join(dir, "home"),
     gatewayConfig: join(dir, "gateway", "envoy.yaml"),
     credentials: join(dir, "gateway", "credentials"),

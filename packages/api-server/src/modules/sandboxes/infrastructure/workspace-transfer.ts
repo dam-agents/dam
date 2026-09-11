@@ -8,10 +8,10 @@ import { join } from "node:path";
  * to run a build in, so an agent placed somewhere new has to fetch it from
  * wherever it ran last.
  *
- * The workspace is the two directories that survive hibernation, `home` and
- * `work`. They are siblings on the node and only become nested inside the
- * sandbox, so carrying one and not the other loses everything the agent was
- * actually working on.
+ * The workspace is one directory: the agent's home, with its work tree inside
+ * it exactly as the agent sees it. It used to be two siblings on the node that
+ * only nested inside the sandbox, which bought nothing and meant a transfer
+ * could carry one and silently lose the other.
  *
  * It goes node to node over the peer link rather than through an object store.
  * There is nothing an object store would add here: the node that has the
@@ -37,13 +37,13 @@ import { join } from "node:path";
  * whole transfer is checked before anything is swapped in, for the same
  * reason — a half-arrived workspace must fail loudly with the old one intact.
  */
-export const PERSISTED = ["home", "work"] as const;
+const PERSISTED = "home";
 
 export async function exportWorkspace(
   agentDir: string,
   out: NodeJS.WritableStream,
 ): Promise<void> {
-  const present = await stat(join(agentDir, PERSISTED[0])).then(
+  const present = await stat(join(agentDir, PERSISTED)).then(
     () => true,
     () => false,
   );
@@ -51,11 +51,9 @@ export async function exportWorkspace(
     out.end();
     return;
   }
-  await run(
-    "tar",
-    ["--create", "--zstd", "--directory", agentDir, ...PERSISTED],
-    { stdout: out },
-  );
+  await run("tar", ["--create", "--zstd", "--directory", agentDir, PERSISTED], {
+    stdout: out,
+  });
 }
 
 export async function importWorkspace(
@@ -70,20 +68,16 @@ export async function importWorkspace(
     ["--extract", "--zstd", "--directory", incoming, "--same-owner"],
     { stdin: input },
   );
-  for (const dir of PERSISTED) {
-    const arrived = await stat(join(incoming, dir)).then(
-      () => true,
-      () => false,
-    );
-    if (!arrived) {
-      await rm(incoming, { recursive: true, force: true });
-      throw new Error(`workspace transfer carried no ${dir}`);
-    }
+  const arrived = await stat(join(incoming, PERSISTED)).then(
+    () => true,
+    () => false,
+  );
+  if (!arrived) {
+    await rm(incoming, { recursive: true, force: true });
+    throw new Error("workspace transfer carried no home directory");
   }
-  for (const dir of PERSISTED) {
-    await rm(join(agentDir, dir), { recursive: true, force: true });
-    await rename(join(incoming, dir), join(agentDir, dir));
-  }
+  await rm(join(agentDir, PERSISTED), { recursive: true, force: true });
+  await rename(join(incoming, PERSISTED), join(agentDir, PERSISTED));
   await rm(incoming, { recursive: true, force: true });
 }
 

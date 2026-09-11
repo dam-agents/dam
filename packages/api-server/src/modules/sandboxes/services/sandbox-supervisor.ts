@@ -1,6 +1,6 @@
 import type { SecretRef } from "api-server-api";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { exec } from "../infrastructure/exec.js";
 import type {
   AgentRecord,
@@ -166,7 +166,7 @@ export function createSandboxSupervisor(
       await deps.runsc.stop(record.id, layout.sandbox);
       await deps.store.noteWorkspaceAt(record.id, deps.nodeId);
     }
-    for (const dir of [layout.work, layout.home]) {
+    for (const dir of [layout.home, join(layout.home, "work")]) {
       await mkdir(dir, { recursive: true, mode: 0o750 });
     }
     const caCert = await deps.pki.ensureCa();
@@ -212,7 +212,6 @@ export function createSandboxSupervisor(
       env: sandboxEnv(record, link, deps),
       mounts: [
         { source: layout.home, target: homeOf(record) },
-        { source: layout.work, target: `${homeOf(record)}/work` },
         { source: layout.caCert, target: SANDBOX_CA_PATH, readOnly: true },
       ],
       stateDir: layout.sandbox,

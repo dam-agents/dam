@@ -7,11 +7,6 @@ category: harness
 harness: claude-code
 image: quay.io/dam-agents/claude-code:latest
 hibernationTimeout: 30m
-mounts:
-  - path: $HOME
-    persist: true
-  - path: $HOME/work
-    persist: true
 resources:
   limits:
     cpu: "2"
