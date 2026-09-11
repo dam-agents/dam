@@ -311,7 +311,9 @@ export async function bootstrap() {
     credentials: peerCredentials,
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
-  const agentsRepo = createAgentsRepository(agentStore);
+  const liveNodes = async () =>
+    new Set((await nodeRegistry.ready()).map((n) => n.id));
+  const agentsRepo = createAgentsRepository(agentStore, liveNodes);
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -604,6 +606,7 @@ export async function bootstrap() {
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
     agentStore,
+    liveNodes,
     sandboxAddresses,
     secrets: secretStore,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -1023,6 +1026,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       agentStore,
+      liveNodes,
       sandboxAddresses,
       secrets: secretStore,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -1085,6 +1089,7 @@ export async function bootstrap() {
 
   const apiServerDeps: ApiServerDeps = {
     agentStore,
+    liveNodes,
     sandboxAddresses,
     periodicJobs,
     sharedRedis,

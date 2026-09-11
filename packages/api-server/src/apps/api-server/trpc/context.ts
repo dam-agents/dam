@@ -104,6 +104,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       agentStore: boot.agentStore,
+      liveNodes: boot.liveNodes,
       sandboxAddresses: boot.sandboxAddresses,
       secrets: secretStore,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,

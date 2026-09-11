@@ -8,6 +8,7 @@ const agent = (over: Partial<InfraAgent>): InfraAgent =>
     id: "agent-1",
     name: "a",
     assignedNode: "node-1",
+    supervised: true,
     spec: { name: "a", image: "img" },
     sweepable: false,
     lifetimeMs: 0,
@@ -26,20 +27,40 @@ describe("an agent's state when no node is running it", () => {
 
   // TEST_SCENARIO: the agent has been released — it is between nodes, or its last node left the install. The readiness on the record is what some node said before letting go.
   it("is not running once no node has it, whatever readiness still says", () => {
-    expect(computeAgentState(agent({ ready: true, assignedNode: null }))).toBe(
-      "starting",
-    );
+    expect(
+      computeAgentState(
+        agent({ ready: true, assignedNode: null, supervised: false }),
+      ),
+    ).toBe("starting");
+  });
+
+  // TEST_SCENARIO: the agent is still assigned, and the node holding it has stopped answering. Every call to it fails, so reporting it as running only sends callers at it.
+  it("is not running once its node has gone quiet", () => {
+    expect(
+      computeAgentState(
+        agent({ ready: true, assignedNode: "node-gone", supervised: false }),
+      ),
+    ).toBe("starting");
   });
 
   it("still reports an error ahead of anything else", () => {
     expect(
-      computeAgentState(agent({ ready: true, assignedNode: null, error: "x" })),
+      computeAgentState(
+        agent({
+          ready: true,
+          assignedNode: null,
+          supervised: false,
+          error: "x",
+        }),
+      ),
     ).toBe("error");
   });
 
   it("still reports hibernation for an agent at rest", () => {
     expect(
-      computeAgentState(agent({ hibernated: true, assignedNode: null })),
+      computeAgentState(
+        agent({ hibernated: true, assignedNode: null, supervised: false }),
+      ),
     ).toBe("hibernated");
   });
 });

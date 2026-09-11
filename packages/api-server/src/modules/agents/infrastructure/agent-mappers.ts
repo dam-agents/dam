@@ -36,6 +36,7 @@ export interface InfraAgent {
   ready: boolean;
   hibernated: boolean;
   assignedNode: string | null;
+  supervised: boolean;
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -58,16 +59,17 @@ export interface InfraAgent {
  * it stays published. An agent assigned to no node is being run by nobody, so
  * that readiness is the last thing that was true rather than what is — and
  * calling it running sends a caller to dial an address that answers to no one.
- * An agent assigned to a node that has stopped answering still reads as
- * running: liveness is not visible here, and inferring it from a stale
- * timestamp this layer cannot see would be a guess.
+ * "Supervised" is that question answered by whoever knows: assigned to a node,
+ * and that node still answering. A caller that is told an agent is running
+ * dials it, so the two ways of not being run — between nodes, and on a node
+ * that has gone quiet — have to read the same.
  */
 export function computeAgentState(
   infra: InfraAgent,
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
-  if (infra.ready && infra.assignedNode === null) return "starting";
+  if (infra.ready && !infra.supervised) return "starting";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
@@ -81,7 +83,10 @@ export function agentIsOwnedBy(record: AgentRecord, owner: string): boolean {
   return record.owner === owner;
 }
 
-export function parseInfraAgent(record: AgentRecord): InfraAgent {
+export function parseInfraAgent(
+  record: AgentRecord,
+  liveNodes?: ReadonlySet<string>,
+): InfraAgent {
   const crSpec = record.spec ?? ({} as AgentSpecCR);
   const spec: AgentSpec = { ...crSpec, name: crSpec.name ?? record.id };
 
@@ -95,6 +100,10 @@ export function parseInfraAgent(record: AgentRecord): InfraAgent {
     id: record.id,
     name: spec.name,
     assignedNode: record.assignedNode ?? null,
+    supervised:
+      record.assignedNode !== null &&
+      record.assignedNode !== undefined &&
+      (liveNodes?.has(record.assignedNode) ?? true),
     ...(record.templateId ? { templateId: record.templateId } : {}),
     owner: record.owner,
     spec,

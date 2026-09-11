@@ -62,8 +62,23 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
-export function createAgentsRepository(store: AgentStore): AgentsRepository {
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Reads and writes agents as the rest of the server
+ * wants them, rather than as rows.
+ *
+ * The two reads that answer "what state is this agent in" are given the set of
+ * nodes currently answering, because an agent is only being run if a node that
+ * is still there was given it. Every other caller means "assigned", so absent
+ * that set nothing is treated as unsupervised — a write path has no business
+ * deciding an agent is adrift.
+ */
+export function createAgentsRepository(
+  store: AgentStore,
+  liveNodes?: () => Promise<ReadonlySet<string>>,
+): AgentsRepository {
   const inflight = new Map<string, Promise<void>>();
+
+  const live = async () => (liveNodes ? await liveNodes() : undefined);
 
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
@@ -75,14 +90,15 @@ export function createAgentsRepository(store: AgentStore): AgentsRepository {
 
   const repo: AgentsRepository = {
     async list(owner?) {
-      return (await store.list(owner)).map((r) => parseInfraAgent(r));
+      const [records, nodes] = await Promise.all([store.list(owner), live()]);
+      return records.map((r) => parseInfraAgent(r, nodes));
     },
 
     async get(id, owner?) {
-      const record = await store.get(id);
+      const [record, nodes] = await Promise.all([store.get(id), live()]);
       if (!record) return null;
       if (owner && !agentIsOwnedBy(record, owner)) return null;
-      return parseInfraAgent(record);
+      return parseInfraAgent(record, nodes);
     },
 
     async create(spec, owner, name, templateId?, annotations?) {

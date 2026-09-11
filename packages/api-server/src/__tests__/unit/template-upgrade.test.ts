@@ -14,6 +14,7 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     id: "agent-1",
     name: "my-agent",
     assignedNode: "node-1",
+    supervised: true,
     templateId: "claude-code",
     spec: { name: "my-agent", image: "quay.io/dam-agents/claude-code:0.2.7" },
     sweepable: false,

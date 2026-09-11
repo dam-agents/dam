@@ -64,6 +64,7 @@ export type {
 
 export function composeAgentsModule(deps: {
   agentStore: AgentStore;
+  liveNodes?: () => Promise<ReadonlySet<string>>;
   sandboxAddresses: SandboxAddresses;
   secrets: SecretStore;
   agentIdleTimeoutMinutes: number;
@@ -92,7 +93,7 @@ export function composeAgentsModule(deps: {
   repo: AgentsRepository;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
-  const repo = createAgentsRepository(deps.agentStore);
+  const repo = createAgentsRepository(deps.agentStore, deps.liveNodes);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registryAuthPort = createAgentRegistryAuthPort(deps.secrets);
   const owner = deps.owner ?? "";

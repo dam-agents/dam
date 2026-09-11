@@ -59,6 +59,7 @@ import type { ApiVariables } from "../../core/http-context.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
+  liveNodes: () => Promise<ReadonlySet<string>>;
   config: Config;
   periodicJobs: PeriodicJobs;
   sharedRedis: Redis;
