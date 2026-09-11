@@ -24,10 +24,13 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * to. Releasing on hibernation is what makes the next wake a fresh placement
  * decision, which is where load balancing actually happens.
  *
- * An agent on a node that has stopped heartbeating keeps its assignment. Its
- * workspace is on that node's disk, so moving it elsewhere would silently
- * resume from whatever was last snapshotted; the agent reads as not running
- * until the node comes back, and moving it is a decision for an operator.
+ * An agent still wanting to run on a node that has stopped heartbeating keeps
+ * its assignment. Its workspace is on that node's disk, so placing it
+ * elsewhere would start it on an empty one; it reads as not running until the
+ * node comes back, and moving it is a decision for an operator. One that goes
+ * idle meanwhile is released like any other, and its next wake is placed
+ * wherever it fits — which fails loudly at the fetch while the node holding
+ * its workspace is away, rather than quietly starting it with nothing.
  */
 export interface Scheduler {
   tick(): Promise<void>;

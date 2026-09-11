@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Stop a node taking new agents (or let it again with --undo). Usage: mise run node:cordon <node-id> [--undo]"
+#MISE raw=true
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+
+# A node's state is an operator-managed field, like a budget override: the node
+# writes it once when it first registers and never again, so what is set here
+# survives its heartbeats and its restarts. Draining is then the ordinary
+# lifecycle — the scheduler stops choosing it, and each agent moves as it
+# hibernates and wakes.
+NODE_ID="${1:?usage: mise run node:cordon <node-id> [--undo]}"
+STATE=cordoned
+[ "${2:-}" = "--undo" ] && STATE=ready
+
+export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+NS="${DAM_NAMESPACE:-dam}"
+PGPW=$(kubectl -n "$NS" get secret dam-platform-postgres-secrets \
+  -o jsonpath='{.data.POSTGRES_ADMIN_PASSWORD}' | base64 -d)
+kubectl -n "$NS" exec -i dam-platform-postgres-0 -- \
+  env PGPASSWORD="$PGPW" psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U platform \
+  -d "${DAM_DATABASE_NAME:-platform}" -tAc \
+  "UPDATE nodes SET state='$STATE' WHERE id='$NODE_ID' RETURNING id||' is now '||state"

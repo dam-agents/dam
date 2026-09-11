@@ -164,7 +164,9 @@ onto a node — the alternative is a sandbox the node cannot start, reported as
 the agent's fault.
 
 An operator drains a node by **cordoning** it: it keeps its agents and its
-heartbeat but takes no new ones. Moving the agents off it is then the ordinary
+heartbeat but takes no new ones. The state is a field on the node's row that
+only an operator sets — a node writes it when it first registers and never
+again, so a cordon outlives the node's own restarts. Moving the agents off it is then the ordinary
 lifecycle — the scheduler releases them, whichever node picks each one up
 fetches its workspace, and nothing special-cases migration.
 
