@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/telemetry.ts"],
+  entry: ["src/index.ts", "src/telemetry.ts", "src/migrate-from-kubernetes.ts"],
   format: "esm",
   target: "node24",
   platform: "node",

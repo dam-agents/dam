@@ -1,7 +1,9 @@
 # Migrating an install from Kubernetes-hosted agents to nodes
 
-Status: planned. The database half is verified end to end (see *What was
-tested*); the importer described here is not written yet.
+Status: the importer exists and the whole path has been exercised against a
+database built by the released version's own migrations and a cluster holding
+the resources that version keeps there. What has not been exercised is the
+workspace copy, which needs real volumes.
 
 ## What actually changes
 
@@ -31,6 +33,11 @@ a public profile, a session directory entry, an identity link:
   served immediately afterwards.
 - Every pre-existing row survived, values intact.
 - The new tables were created and the node registered itself.
+- The importer moved an agent, its two credentials and its budget ceiling out
+  of the cluster, and the agent then appeared over the API under its own name.
+- The agent came up **at rest**: its last activity is whenever it was last used
+  before the cutover, so nothing is placed or started until someone asks for
+  it. A migrated install wakes on demand rather than stampeding.
 
 So an operator's Postgres needs no preparation, no dump and no conversion. It
 is upgraded by pointing the new api-server at it.
@@ -48,9 +55,12 @@ below is what actually keeps the window shut.
 
 ## The importer
 
-A one-shot command that reads the cluster and writes Postgres. It needs cluster
-read access and the new database; it is idempotent, so a partial run is
-re-runnable.
+A one-shot command that reads the cluster and writes Postgres. It needs
+`kubectl` pointed at the old cluster and the new database's URL, and it is
+idempotent, so a partial run is re-runnable and a second run changes nothing.
+It reads through the cluster's own client rather than a Kubernetes library:
+this runs once per install, and it is not worth re-introducing the dependency
+the rewrite removed.
 
 **Agent custom resource → agent record.** Carried over: name, description,
 image, environment, the granted secret and connection ids, the hibernation
