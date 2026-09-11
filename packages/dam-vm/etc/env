@@ -10,7 +10,6 @@ DAM_GATEWAY_PORT=3128
 DAM_SANDBOX_PORT=8080
 
 PORT=4000
-PLATFORM_RELEASE_NAME=dam
 
 # Node identity. Every api-server writes only its own row in `nodes`. The
 # address is this node's peer endpoint — where other nodes open tunnels to

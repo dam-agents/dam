@@ -93,10 +93,7 @@ import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
 } from "./modules/schedules/index.js";
-import {
-  createPgSecretStore,
-  createSecretStoreRegistry,
-} from "./modules/secret-store/index.js";
+import { createPgSecretStore } from "./modules/secret-store/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import {
@@ -273,7 +270,7 @@ export async function bootstrap() {
   const nodeRegistry = createNodeRegistry({
     db,
     nodeId: config.nodeId,
-    address: config.nodeAddress,
+    peerAddress: config.nodeAddress,
     staleAfterMs: config.nodeStaleAfterSeconds * 1000,
   });
   await nodeRegistry.register();
@@ -295,7 +292,8 @@ export async function bootstrap() {
     {
       nodeId: config.nodeId,
       addressOfNode: async (id) =>
-        (await nodeRegistry.list()).find((n) => n.id === id)?.address ?? null,
+        (await nodeRegistry.list()).find((n) => n.id === id)?.peerAddress ??
+        null,
       tunnels: peerTunnels,
       log: (message, fields) => getLogger().info(fields ?? {}, message),
     },
@@ -319,7 +317,7 @@ export async function bootstrap() {
     if (!peer) throw new Error(`node ${from} holds the workspace and is gone`);
     getLogger().info({ agentId: record.id, from }, "workspace.fetch.begin");
     const stream = await openPeerStream({
-      peerAddress: peer.address,
+      peerAddress: peer.peerAddress,
       credentials: peerCredentials,
       verb: "export",
       agentId: record.id,
@@ -461,14 +459,13 @@ export async function bootstrap() {
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
-  const secretStores = createSecretStoreRegistry();
-  secretStores.register(createPgSecretStore({ db }));
+  const secretStore = createPgSecretStore({ db });
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
-    secretStore: secretStores.default(),
+    secretStore: secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
       "oauth:connections",
@@ -517,7 +514,7 @@ export async function bootstrap() {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
-      secretStore: secretStores.default(),
+      secretStore: secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
@@ -623,7 +620,7 @@ export async function bootstrap() {
     cleanupHooks: [],
     agentStore,
     sandboxAddresses,
-    secrets: secretStores.default(),
+    secrets: secretStore,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
@@ -826,7 +823,7 @@ export async function bootstrap() {
     deliverySweeper.tick(),
   );
 
-  const registryAuthPort = createAgentRegistryAuthPort(secretStores.default());
+  const registryAuthPort = createAgentRegistryAuthPort(secretStore);
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
@@ -1042,7 +1039,7 @@ export async function bootstrap() {
     return composeAgentsModule({
       agentStore,
       sandboxAddresses,
-      secrets: secretStores.default(),
+      secrets: secretStore,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
@@ -1121,7 +1118,7 @@ export async function bootstrap() {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
-    secretStores,
+    secretStore,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
     getAgentCapabilities: (agentId) =>
@@ -1186,7 +1183,7 @@ export async function bootstrap() {
 
   const { supervisor } = composeSandboxes({
     store: agentStore,
-    secrets: secretStores.default(),
+    secrets: secretStore,
     sockets: harnessSockets,
     agentsRoot: config.agentsRoot,
     runRoot: config.runRoot,

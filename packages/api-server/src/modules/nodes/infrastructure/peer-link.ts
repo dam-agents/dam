@@ -53,6 +53,7 @@ export async function readPeerCredentials(
 }
 
 export const MAX_HEADER_BYTES = 256;
+const PEER_SERVER_NAME = "platform-node";
 
 export type PeerVerb = "dial" | "export";
 
@@ -172,29 +173,40 @@ export interface PeerTunnels {
   stop(): Promise<void>;
 }
 
+function dialPeer(opts: {
+  peerAddress: string;
+  credentials: PeerCredentials;
+  verb: PeerVerb;
+  agentId: string;
+  onReady: (socket: Socket) => void;
+  onError: (err: Error) => void;
+}): void {
+  const [host, port] = opts.peerAddress.split(":");
+  const socket = tlsConnect(
+    {
+      host,
+      port: Number(port),
+      ca: opts.credentials.ca,
+      cert: opts.credentials.cert,
+      key: opts.credentials.key,
+      servername: PEER_SERVER_NAME,
+    },
+    () => {
+      socket.write(`${opts.verb} ${opts.agentId}\n`);
+      opts.onReady(socket);
+    },
+  );
+  socket.once("error", opts.onError);
+}
+
 export function openPeerStream(opts: {
   peerAddress: string;
   credentials: PeerCredentials;
   verb: PeerVerb;
   agentId: string;
 }): Promise<NodeJS.ReadableStream> {
-  const [host, port] = opts.peerAddress.split(":");
   return new Promise((resolve, reject) => {
-    const socket = tlsConnect(
-      {
-        host,
-        port: Number(port),
-        ca: opts.credentials.ca,
-        cert: opts.credentials.cert,
-        key: opts.credentials.key,
-        servername: "platform-node",
-      },
-      () => {
-        socket.write(`${opts.verb} ${opts.agentId}\n`);
-        resolve(socket);
-      },
-    );
-    socket.once("error", reject);
+    dialPeer({ ...opts, onReady: resolve, onError: reject });
   });
 }
 
@@ -213,23 +225,15 @@ export function createPeerTunnels(opts: {
       if (existing?.peer === peerAddress) return existing.address;
       existing?.close();
 
-      const [peerHost, peerPort] = peerAddress.split(":");
       const server = createServer((downstream) => {
-        const up = tlsConnect(
-          {
-            host: peerHost,
-            port: Number(peerPort),
-            ca: opts.credentials.ca,
-            cert: opts.credentials.cert,
-            key: opts.credentials.key,
-            servername: "platform-node",
-          },
-          () => {
-            up.write(`dial ${agentId}\n`);
-            splice(downstream, up);
-          },
-        );
-        up.on("error", () => downstream.destroy());
+        dialPeer({
+          peerAddress,
+          credentials: opts.credentials,
+          verb: "dial",
+          agentId,
+          onReady: (up) => splice(downstream, up),
+          onError: () => downstream.destroy(),
+        });
       });
 
       const address = await new Promise<string>((resolve, reject) => {

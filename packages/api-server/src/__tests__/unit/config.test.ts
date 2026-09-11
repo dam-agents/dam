@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../config.js";
 
 const REQUIRED_ENV: Record<string, string> = {
-  PLATFORM_RELEASE_NAME: "platform",
   PLATFORM_HARNESS_SERVER_URL: "http://harness.local:8080",
   DATABASE_URL: "postgres://localhost:5432/test",
   ACTIVITY_HMAC_KEY: "test-activity-hmac-key",

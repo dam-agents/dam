@@ -8,11 +8,12 @@ export interface SecretMetadata {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: What a credential store must do, and the registry
- * that resolves a ref to the store that minted it. `list` is owner-scoped
- * because that is how the product asks the question; `listByPurpose` crosses
- * owners because an orphan sweep runs after the record that pointed at a
- * secret is gone, leaving it no owner to scope by.
+ * UNIT_BOUNDARY_DESCRIPTION: What a credential store must do. `list` is
+ * owner-scoped because that is how the product asks the question;
+ * `listByPurpose` crosses owners because an orphan sweep runs after the record
+ * that pointed at a secret is gone, leaving it no owner to scope by. A ref
+ * carries the id of the store that minted it, and a store refuses one that is
+ * not its own — which is the whole of what a registry used to be for.
  */
 export interface SecretStore {
   readonly storeId: string;
@@ -45,44 +46,4 @@ export interface SecretStore {
   listByPurpose(
     purpose: string,
   ): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]>;
-}
-
-export interface SecretStoreRegistry {
-  register(store: SecretStore): void;
-  default(): SecretStore;
-  resolve(ref: Pick<SecretRef, "storeId">): SecretStore;
-  all(): SecretStore[];
-}
-
-export class SecretStoreNotFoundError extends Error {
-  constructor(storeId: string | undefined) {
-    super(
-      `no secret store registered for id ${JSON.stringify(storeId ?? "default")}`,
-    );
-    this.name = "SecretStoreNotFoundError";
-  }
-}
-
-export function createSecretStoreRegistry(): SecretStoreRegistry {
-  const stores = new Map<string, SecretStore>();
-  let defaultId: string | undefined;
-  return {
-    register(store): void {
-      stores.set(store.storeId, store);
-      if (!defaultId) defaultId = store.storeId;
-    },
-    default(): SecretStore {
-      if (!defaultId) throw new SecretStoreNotFoundError(undefined);
-      return stores.get(defaultId)!;
-    },
-    resolve(ref): SecretStore {
-      const id = ref.storeId ?? defaultId;
-      const store = id ? stores.get(id) : undefined;
-      if (!store) throw new SecretStoreNotFoundError(ref.storeId);
-      return store;
-    },
-    all(): SecretStore[] {
-      return Array.from(stores.values());
-    },
-  };
 }

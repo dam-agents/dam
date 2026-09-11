@@ -52,7 +52,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
-    secretStores,
+    secretStore,
     runtimeMutator,
     contributionsProgress,
     getAgentCapabilities,
@@ -82,7 +82,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
-      secretStore: secretStores.default(),
+      secretStore,
       runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
@@ -105,7 +105,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { agents, isOwnedAgent } = composeAgentsModule({
       agentStore: boot.agentStore,
       sandboxAddresses: boot.sandboxAddresses,
-      secrets: secretStores.default(),
+      secrets: secretStore,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,

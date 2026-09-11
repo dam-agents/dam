@@ -832,7 +832,7 @@ export const installSecrets = pgTable("install_secrets", {
 
 export const nodes = pgTable("nodes", {
   id: text("id").primaryKey(),
-  address: text("address").notNull(),
+  peerAddress: text("address").notNull(),
   capacityCpuMilli: integer("capacity_cpu_milli").notNull(),
   capacityMemoryBytes: bigint("capacity_memory_bytes", {
     mode: "number",

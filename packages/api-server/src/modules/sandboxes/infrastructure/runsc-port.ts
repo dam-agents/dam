@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, CommandError } from "./exec.js";
+import { parseQuantity } from "../../../core/quantity.js";
 import type { Image, ImageStore } from "./image-store.js";
 
 /**
@@ -380,21 +381,4 @@ function resourcesFor(limits: { cpu?: string; memory?: string }) {
       ? { cpu: { quota: Math.round(cpu * 100_000), period: 100_000 } }
       : {}),
   };
-}
-
-export function parseQuantity(value: string): number | null {
-  const match = /^(\d+(?:\.\d+)?)(m|Ki|Mi|Gi|Ti|k|M|G|T)?$/.exec(value.trim());
-  if (!match) return null;
-  const scale: Record<string, number> = {
-    m: 1 / 1000,
-    Ki: 1024,
-    Mi: 1024 ** 2,
-    Gi: 1024 ** 3,
-    Ti: 1024 ** 4,
-    k: 1000,
-    M: 1000 ** 2,
-    G: 1000 ** 3,
-    T: 1000 ** 4,
-  };
-  return Number(match[1]) * (match[2] ? scale[match[2]]! : 1);
 }

@@ -1,3 +1,5 @@
+import { parseQuantity } from "../../../core/quantity.js";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Where an agent runs. Placement is decided at wake
  * rather than at create, because an agent's workspace is on the node's disk and
@@ -66,24 +68,6 @@ export function choosePlacement(input: {
       ? n
       : best,
   ).id;
-}
-
-export function parseQuantity(value: string | undefined): number | null {
-  if (!value) return null;
-  const match = /^(\d+(?:\.\d+)?)(m|Ki|Mi|Gi|Ti|k|M|G|T)?$/.exec(value.trim());
-  if (!match) return null;
-  const scale: Record<string, number> = {
-    m: 1 / 1000,
-    Ki: 1024,
-    Mi: 1024 ** 2,
-    Gi: 1024 ** 3,
-    Ti: 1024 ** 4,
-    k: 1000,
-    M: 1000 ** 2,
-    G: 1000 ** 3,
-    T: 1000 ** 4,
-  };
-  return Number(match[1]) * (match[2] ? scale[match[2]]! : 1);
 }
 
 export function demandOf(limits: Record<string, string> | undefined): NodeLoad {

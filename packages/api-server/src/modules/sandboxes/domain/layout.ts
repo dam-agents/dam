@@ -9,12 +9,10 @@ export interface SandboxLayout {
   root: string;
   work: string;
   home: string;
-  scratch: string;
   gatewayConfig: string;
   credentials: string;
   leafTls: string;
   caCert: string;
-  envFile: string;
   sandbox: string;
   registryAuth: string;
 }
@@ -25,12 +23,10 @@ export function layoutFor(root: string, agentId: string): SandboxLayout {
     root: dir,
     work: join(dir, "work"),
     home: join(dir, "home"),
-    scratch: join(dir, "scratch"),
     gatewayConfig: join(dir, "gateway", "envoy.yaml"),
     credentials: join(dir, "gateway", "credentials"),
     leafTls: join(dir, "gateway", "tls"),
     caCert: join(dir, "ca", "ca.crt"),
-    envFile: join(dir, "env"),
     sandbox: join(dir, "sandbox"),
     registryAuth: join(dir, "registry-auth"),
   };

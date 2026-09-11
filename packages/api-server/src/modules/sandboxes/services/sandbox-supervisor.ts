@@ -166,7 +166,7 @@ export function createSandboxSupervisor(
       await deps.runsc.stop(record.id, layout.sandbox);
       await deps.store.noteWorkspaceAt(record.id, deps.nodeId);
     }
-    for (const dir of [layout.work, layout.home, layout.scratch]) {
+    for (const dir of [layout.work, layout.home]) {
       await mkdir(dir, { recursive: true, mode: 0o750 });
     }
     const caCert = await deps.pki.ensureCa();

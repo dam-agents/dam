@@ -15,13 +15,13 @@ import { nodes, eq, sql, type Db } from "db";
  * kernel. Sandboxes are not the only thing on the node, so handing out all of
  * it would starve the thing doing the handing out.
  *
- * `address` is the node's peer endpoint — where its peers open tunnels to
- * reach the agents it holds — and not where a browser reaches it. Nothing in
- * the platform dials a node for anything else.
+ * A node is only ever dialled by another node, and only to reach an agent it
+ * holds, so `peerAddress` is the single address it publishes. Nothing in the
+ * platform needs to know where a browser reaches it.
  */
 export interface NodeRow {
   id: string;
-  address: string;
+  peerAddress: string;
   cpuMilli: number;
   memoryBytes: number;
   state: string;
@@ -41,7 +41,7 @@ const RESERVE_MEMORY_BYTES = 1024 ** 3;
 export interface NodeRegistryOpts {
   db: Db;
   nodeId: string;
-  address: string;
+  peerAddress: string;
   staleAfterMs: number;
 }
 
@@ -59,7 +59,7 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
     const now = Date.now();
     return (await opts.db.select().from(nodes)).map((row) => ({
       id: row.id,
-      address: row.address,
+      peerAddress: row.peerAddress,
       cpuMilli: row.capacityCpuMilli,
       memoryBytes: row.capacityMemoryBytes,
       state: row.state,
@@ -76,7 +76,7 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
         .insert(nodes)
         .values({
           id: opts.nodeId,
-          address: opts.address,
+          peerAddress: opts.peerAddress,
           capacityCpuMilli: cpuMilli,
           capacityMemoryBytes: memoryBytes,
           state: "ready",
@@ -84,7 +84,7 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
         .onConflictDoUpdate({
           target: nodes.id,
           set: {
-            address: opts.address,
+            peerAddress: opts.peerAddress,
             capacityCpuMilli: cpuMilli,
             capacityMemoryBytes: memoryBytes,
             lastHeartbeat: new Date(),
