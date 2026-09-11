@@ -22,6 +22,7 @@ else
   # loses the forward to whichever VM claimed it first.
   limactl start --name="$VM" --tty=false \
     --set=".portForwards[0].hostPort = ${DAM_PORT:-4000}" \
+    --set=".portForwards[1].hostPort = ${DAM_PEER_HOST_PORT:-4002}" \
     etc/lima/dam.yaml
 fi
 echo "VM up. Next: mise run vm:install"

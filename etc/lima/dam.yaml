@@ -21,11 +21,19 @@ mounts:
   - location: "/tmp/lima"
     writable: true
 
-# The api-server, which serves the UI too. Agent sandboxes are never exposed
-# off the VM; the shared services live on the cluster, not here.
+# The api-server, which serves the UI too, and the peer port nodes reach each
+# other on. Agent sandboxes are never exposed off the VM; the shared services
+# live on the cluster, not here.
+#
+# Two lima guests cannot address each other directly on this network — each
+# reaches the host and nothing else — so a node's address to its peers is the
+# host plus whatever this forwards to. That is a property of running nodes as
+# lima guests, not of the peer link.
 portForwards:
   - guestPort: 4000
     hostPort: 4000
+  - guestPort: 4002
+    hostPort: 4002
 
 provision:
   - mode: system
