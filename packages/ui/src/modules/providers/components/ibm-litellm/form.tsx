@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
+import { IBM_LITELLM_DESCRIPTION } from "../../lib/provider-rows.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
@@ -55,7 +56,7 @@ export function IbmLitellmForm({
       description={
         isEdit
           ? "Paste a new token to replace the existing one."
-          : "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS."
+          : IBM_LITELLM_DESCRIPTION
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
