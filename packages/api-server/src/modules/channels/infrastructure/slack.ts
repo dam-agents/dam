@@ -858,6 +858,28 @@ export function createSlackWorker(
     slackUserId: string;
   };
 
+  function turnRefFor(
+    anchor: {
+      channel: string;
+      threadTs: string;
+      hasThread: boolean;
+      hadAttachments: boolean;
+    },
+    message: { text: string; eventTs: string; slackUserId: string },
+    forwarded = false,
+  ): TurnRef {
+    return {
+      channel: anchor.channel,
+      threadTs: anchor.threadTs,
+      eventTs: message.eventTs,
+      text: message.text,
+      slackUserId: message.slackUserId,
+      hasThread: anchor.hasThread,
+      hadAttachments: anchor.hadAttachments,
+      forwarded,
+    };
+  }
+
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
@@ -1259,16 +1281,18 @@ export function createSlackWorker(
         ? ctx.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
         : lastMessage.text) + droppedNote;
 
-    const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
-      channel: ctx.channel,
-      threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
-      eventTs: m.eventTs,
-      forwarded: ctx.forwardedFrom !== undefined,
-      text: m.text,
-      slackUserId: m.slackUserId,
-      hasThread: ctx.hasThread,
-      hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
-    }));
+    const turnRefs: TurnRef[] = ctx.messages.map((m) =>
+      turnRefFor(
+        {
+          channel: ctx.channel,
+          threadTs: ctx.threadTs,
+          hasThread: ctx.hasThread,
+          hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
+        },
+        m,
+        ctx.forwardedFrom !== undefined,
+      ),
+    );
 
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
@@ -1286,7 +1310,7 @@ export function createSlackWorker(
     const contract = slackTurnContract({
       replyThreadTs: ctx.threadTs,
       eventTs,
-      batch: { count: ctx.messages.length, inThread: ctx.hasThread },
+      batch: { count: ctx.messages.length },
       identity: { brand, botUserId, agentName },
       reach: { isDirectMessage, ambient: ctx.ambient },
       roster: rosterCopy(ctx.roster, instanceName),
@@ -2290,20 +2314,12 @@ export function createSlackWorker(
     return msg.images.length > 0 || msg.files.length > 0;
   }
 
-  function steerFrame(
-    conversation: AddressedConversation,
-    batch: PendingMessage[],
-  ): string {
+  function steerFrame(batch: PendingMessage[]): string {
     const one = batch.length === 1;
     return [
       "<new-messages>",
       `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
       ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
-      ...(conversation.hasThread
-        ? []
-        : [
-            "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
-          ]),
       "</new-messages>",
     ].join("\n");
   }
@@ -2345,7 +2361,7 @@ export function createSlackWorker(
       steer: async (sessionId, batch) => {
         const outcome = await makeAcpClient(conversation.instanceName).steer(
           sessionId,
-          steerFrame(conversation, batch),
+          steerFrame(batch),
         );
         if (outcome === "injected") return "injected";
         getLogger().debug(
@@ -2360,17 +2376,15 @@ export function createSlackWorker(
       },
       onSteered: (batch) => {
         for (const msg of batch) {
-          const ref: TurnRef = {
-            channel: conversation.channelId,
-            threadTs: conversation.hasThread
-              ? conversation.threadTs
-              : msg.eventTs,
-            eventTs: msg.eventTs,
-            text: msg.text,
-            slackUserId: msg.slackUserId,
-            hasThread: conversation.hasThread,
-            hadAttachments: false,
-          };
+          const ref = turnRefFor(
+            {
+              channel: conversation.channelId,
+              threadTs: conversation.threadTs,
+              hasThread: conversation.hasThread,
+              hadAttachments: false,
+            },
+            msg,
+          );
           beginTurn(conversation.instanceName, ref);
           steeredRefs.push(ref);
           securityLog("info", "channel.authz", {
@@ -2531,15 +2545,17 @@ export function createSlackWorker(
     const gw = gateway;
 
     const multi = args.messages.length > 1;
-    const turnRefs: TurnRef[] = args.messages.map((m) => ({
-      channel: args.channel,
-      threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
-      eventTs: m.eventTs,
-      text: m.text,
-      slackUserId: m.slackUserId ?? args.externalActorId,
-      hasThread: args.hasThread,
-      hadAttachments: args.images.length > 0 || args.files.length > 0,
-    }));
+    const turnRefs: TurnRef[] = args.messages.map((m) =>
+      turnRefFor(
+        {
+          channel: args.channel,
+          threadTs: args.replyThreadTs,
+          hasThread: args.hasThread,
+          hadAttachments: args.images.length > 0 || args.files.length > 0,
+        },
+        { ...m, slackUserId: m.slackUserId ?? args.externalActorId },
+      ),
+    );
     const droppedNote = renderWithheldNote(
       args.droppedFiles.map((name) => ({
         name,
@@ -2566,7 +2582,7 @@ export function createSlackWorker(
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
-      batch: { count: args.messages.length, inThread: args.hasThread },
+      batch: { count: args.messages.length },
       identity: { brand, botUserId, agentName },
       reach: {
         isDirectMessage: isDirectMessageId(args.channel),
@@ -3214,7 +3230,11 @@ export function createSlackWorker(
         turn = resolved.ref;
       } else {
         const id = threadTs;
-        turn = findTurnRef(instanceName, (ref) => ref.threadTs === id);
+        turn = findTurnRef(
+          instanceName,
+          (ref) => ref.threadTs === id || ref.eventTs === id,
+        );
+        if (turn) threadTs = turn.threadTs;
       }
       const target = await resolveOutboundTarget(
         gw,
