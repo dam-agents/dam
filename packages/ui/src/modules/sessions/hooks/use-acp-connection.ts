@@ -28,6 +28,8 @@ import { draftKey } from "../lib/draft-key.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
+const REPLAY_IDLE_WINDOW_MS = 3000;
+
 export interface LiveConnection {
   connection: ClientSideConnection;
   ws: WebSocket;
@@ -71,6 +73,8 @@ export interface UseAcpConnectionResult {
     sid: string,
     replayBefore?: string,
   ) => Promise<Message[]>;
+  runtimeIdle: (sid: string) => boolean;
+  clearRuntimeIdle: (sid: string) => void;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
   reset: () => void;
 }
@@ -282,6 +286,7 @@ export function useAcpConnection(
   }, [selectedAgent, makeUpdateHandler, attachCloseHandler]);
 
   const loadChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const idleSessionsRef = useRef(new Map<string, number>());
 
   const runSessionLoad = useCallback(
     async (sid: string, replayBefore?: string): Promise<Message[]> => {
@@ -371,6 +376,9 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
+        if (turn.success && !turn.data.inFlight)
+          idleSessionsRef.current.set(sid, Date.now());
+        else idleSessionsRef.current.delete(sid);
         bindEngagement(sid);
         pendingReloadRef.current = false;
         setState("live");
@@ -508,11 +516,25 @@ export function useAcpConnection(
     reset();
   }, [sessionId, sessionMode, reset]);
 
+  const runtimeIdle = useCallback((sid: string): boolean => {
+    const answeredAt = idleSessionsRef.current.get(sid);
+    if (answeredAt === undefined) return false;
+    if (Date.now() - answeredAt <= REPLAY_IDLE_WINDOW_MS) return true;
+    idleSessionsRef.current.delete(sid);
+    return false;
+  }, []);
+
+  const clearRuntimeIdle = useCallback((sid: string): void => {
+    idleSessionsRef.current.delete(sid);
+  }, []);
+
   return {
     state,
     ensureLive,
     beginSession,
     loadSessionHistory,
+    runtimeIdle,
+    clearRuntimeIdle,
     connectionRef,
     reset,
   };

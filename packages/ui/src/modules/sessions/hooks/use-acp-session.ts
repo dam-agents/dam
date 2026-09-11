@@ -1,7 +1,14 @@
 import { SessionMode } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useStore } from "../../../store.js";
+import type { Attachment } from "../../../types.js";
 import {
   classifyResumeError,
   resumeFailureKind,
@@ -10,6 +17,7 @@ import {
 } from "../../acp/errors.js";
 import {
   appendUndelivered,
+  finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
@@ -18,7 +26,7 @@ import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
-import { useAcpPrompt } from "./use-acp-prompt.js";
+import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 import { usePromptDelivery } from "./use-prompt-delivery.js";
@@ -81,6 +89,8 @@ export function useAcpSession(
     ensureLive,
     beginSession,
     loadSessionHistory,
+    runtimeIdle,
+    clearRuntimeIdle,
     connectionRef,
     state: connectionState,
     reset: resetConnection,
@@ -97,6 +107,12 @@ export function useAcpSession(
     setMessages,
     delivery,
   });
+
+  useLayoutEffect(() => {
+    if (!sessionId || !runtimeIdle(sessionId)) return;
+    if (!hasStreamingAssistant(useStore.getState().messages)) return;
+    setMessages((p) => finalizeAllStreaming(p));
+  }, [sessionId, messages, runtimeIdle, setMessages]);
 
   useEffect(() => {
     if (!selectedAgent || sessionId !== null) return;
@@ -185,7 +201,7 @@ export function useAcpSession(
     [loadSessionHistory, setMessages],
   );
 
-  const { sendPrompt, stopAgent } = useAcpPrompt({
+  const { sendPrompt: promptAgent, stopAgent } = useAcpPrompt({
     selectedAgent,
     ensureConnection: ensureLive,
     beginSession,
@@ -194,6 +210,18 @@ export function useAcpSession(
     textareaRef,
     delivery,
   });
+
+  const sendPrompt = useCallback(
+    (
+      text: string,
+      attachments?: Attachment[],
+      opts?: SendPromptOptions,
+    ): Promise<void> => {
+      if (sessionId) clearRuntimeIdle(sessionId);
+      return promptAgent(text, attachments, opts);
+    },
+    [sessionId, clearRuntimeIdle, promptAgent],
+  );
 
   return {
     resetSession,
