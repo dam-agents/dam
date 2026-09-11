@@ -225,7 +225,8 @@ export function createSandboxSupervisor(
     await writeFile(layout.caCert, caCert, { mode: 0o644 });
 
     await deps.sockets.open(record.id);
-    await deps.network.create(link);
+    const rebuilt = await deps.network.create(link);
+    if (rebuilt) await deps.runsc.stop(record.id, layout.sandbox);
     liveLinks.set(record.id, link);
     await applyRuleset();
 

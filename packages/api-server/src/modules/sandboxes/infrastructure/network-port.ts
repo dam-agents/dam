@@ -18,7 +18,7 @@ import {
  * lost bind mount — so it is probed and recreated rather than trusted.
  */
 export interface NetworkPort {
-  create(link: SandboxLink): Promise<void>;
+  create(link: SandboxLink): Promise<boolean>;
   destroy(link: SandboxLink): Promise<void>;
   destroyNetns(netns: string): Promise<void>;
   applyRuleset(
@@ -28,6 +28,20 @@ export interface NetworkPort {
   list(): Promise<string[]>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Builds an agent's namespace and the one link into
+ * it, and says whether it had to.
+ *
+ * Both ends are checked, not just the host's: a pair whose host side exists
+ * while its sandbox side is missing from the namespace cannot be addressed, and
+ * a pass that trusts the host side alone fails forever on a device it never
+ * rebuilds. Converging means arriving at the whole link from whatever is
+ * actually there.
+ *
+ * Whether it rebuilt is the caller's business because a sandbox already running
+ * read its address when it booted: repairing the link under it leaves a network
+ * only the kernel can see, so the sandbox has to go and be started again.
+ */
 export function createNetworkPort(): NetworkPort {
   const ip = (...args: string[]) => exec("ip", args);
 
@@ -53,9 +67,32 @@ export function createNetworkPort(): NetworkPort {
         await ip("netns", "add", link.netns);
       }
 
-      const links = await exec("ip", ["-o", "link", "show"]).catch(() => "");
-      if (!links.includes(`${link.hostInterface}@`)) {
+      const hostLinks = await exec("ip", ["-o", "link", "show"]).catch(
+        () => "",
+      );
+      const nsLinks = await exec("ip", [
+        "netns",
+        "exec",
+        link.netns,
+        "ip",
+        "-o",
+        "link",
+        "show",
+      ]).catch(() => "");
+      const paired =
+        hostLinks.includes(`${link.hostInterface}@`) &&
+        new RegExp(`\\b${link.sandboxInterface}[@:]`).test(nsLinks);
+      if (!paired) {
         await ip("link", "del", link.hostInterface).catch(() => {});
+        await ip(
+          "netns",
+          "exec",
+          link.netns,
+          "ip",
+          "link",
+          "del",
+          link.sandboxInterface,
+        ).catch(() => {});
         await ip(
           "link",
           "add",
@@ -90,6 +127,7 @@ export function createNetworkPort(): NetworkPort {
       await inNs("link", "set", link.sandboxInterface, "up");
       await inNs("link", "set", "lo", "up");
       await nft(SANDBOX_NETNS_RULESET, link.netns);
+      return !paired;
     },
 
     async destroy(link) {
