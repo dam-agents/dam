@@ -1,5 +1,5 @@
 import type { SecretRef } from "api-server-api";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { exec } from "../infrastructure/exec.js";
 import type {
@@ -30,6 +30,19 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * the event. It ignores its own status writes, which would otherwise be a loop
  * with no fixed point.
  *
+ * An agent placed on a node that does not hold its workspace fetches it from
+ * the node that does, before the sandbox is built. A failure there stops the
+ * reconcile rather than starting the agent on an empty directory, because
+ * silently losing someone's work is worse than not starting. A sandbox that
+ * was already running is torn down first: its mounts point at the directories
+ * the transfer replaces, and the bundle it was built from does not change, so
+ * nothing else would notice.
+ *
+ * Deleting an agent removes its directory; being moved off a node does not,
+ * because that copy is what the new node fetches from. A copy is only removed
+ * once the record says some other node both runs the agent and holds its
+ * workspace, which is the point at which this one is certainly stale.
+ *
  * A node reconciles only the agents assigned to it. An agent that is not
  * assigned here is torn down here, whether it was deleted or the scheduler
  * moved it: the node that holds it now is the one that builds it. A sandbox
@@ -56,6 +69,8 @@ export interface SandboxSupervisorDeps {
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
   nodeId: string;
+  fetchWorkspace(record: AgentRecord): Promise<boolean>;
+  directories(): Promise<string[]>;
   sandboxCommand: string[];
   registryAuth: {
     materialize(ref: SecretRef, dir: string): Promise<string>;
@@ -131,9 +146,8 @@ export function createSandboxSupervisor(
 
   async function reconcileOne(agentId: string): Promise<void> {
     const record = await deps.store.get(agentId);
-    if (!record || record.assignedNode !== deps.nodeId) {
-      return teardown(agentId);
-    }
+    if (!record) return teardown(agentId, { forget: true });
+    if (record.assignedNode !== deps.nodeId) return teardown(agentId);
 
     const idleTimeoutMs = effectiveIdleTimeoutMs(
       record.spec.hibernationTimeout,
@@ -148,6 +162,10 @@ export function createSandboxSupervisor(
     const sockets = socketsFor(deps.runRoot, record.id);
 
     await mkdir(layout.root, { recursive: true, mode: 0o751 });
+    if (await deps.fetchWorkspace(record)) {
+      await deps.runsc.stop(record.id, layout.sandbox);
+      await deps.store.noteWorkspaceAt(record.id, deps.nodeId);
+    }
     for (const dir of [layout.work, layout.home, layout.scratch]) {
       await mkdir(dir, { recursive: true, mode: 0o750 });
     }
@@ -256,7 +274,10 @@ export function createSandboxSupervisor(
     });
   }
 
-  async function teardown(agentId: string): Promise<void> {
+  async function teardown(
+    agentId: string,
+    opts: { forget?: boolean } = {},
+  ): Promise<void> {
     await deps.runsc.stop(agentId, layoutFor(deps.agentsRoot, agentId).sandbox);
     await deps.gateway.stop(agentId);
     const known = liveLinks.get(agentId);
@@ -264,6 +285,12 @@ export function createSandboxSupervisor(
     liveLinks.delete(agentId);
     await deps.sockets.close(agentId);
     await applyRuleset();
+    if (opts.forget) {
+      await rm(layoutFor(deps.agentsRoot, agentId).root, {
+        recursive: true,
+        force: true,
+      });
+    }
   }
 
   async function applyRuleset(): Promise<void> {
@@ -292,6 +319,23 @@ export function createSandboxSupervisor(
           deps.log("sandbox.sweep.orphan", { agentId });
           await schedule(agentId);
         }
+      }
+
+      const all = await deps.store.list();
+      const mine = new Set(
+        all
+          .filter(
+            (r) => r.assignedNode === deps.nodeId || r.lastNode === deps.nodeId,
+          )
+          .map((r) => r.id),
+      );
+      for (const agentId of await deps.directories()) {
+        if (mine.has(agentId)) continue;
+        deps.log("sandbox.sweep.stale-workspace", { agentId });
+        await rm(layoutFor(deps.agentsRoot, agentId).root, {
+          recursive: true,
+          force: true,
+        });
       }
     },
 

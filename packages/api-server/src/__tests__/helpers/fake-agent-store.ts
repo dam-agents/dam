@@ -33,11 +33,12 @@ export function fakeAgentStore(initial: Partial<AgentRecord>[] = []) {
     async assign(id, nodeId) {
       const record = records.get(id);
       if (!record) return null;
-      return upsert({
-        ...record,
-        assignedNode: nodeId,
-        lastNode: nodeId ?? record.lastNode,
-      });
+      return upsert({ ...record, assignedNode: nodeId });
+    },
+    async noteWorkspaceAt(id, nodeId) {
+      const record = records.get(id);
+      if (!record) return null;
+      return upsert({ ...record, lastNode: nodeId });
     },
     async create(rec) {
       return upsert(normalize(rec));

@@ -13,8 +13,9 @@ import type { AgentSpecCR } from "api-server-api";
  *
  * Placement is a third thing, and neither of those two: `assignedNode` says
  * which node is running the agent and is written only by the scheduler, while
- * `lastNode` remembers where it ran so a wake can prefer the node that still
- * has its disk. A node's supervisor reconciles only the agents assigned to it.
+ * `lastNode` names the node whose disk holds the workspace and is written only
+ * by the supervisor on that node, as it takes the agent up. The next placement
+ * reads it for both things it needs: where to prefer, and where to fetch from. A node's supervisor reconciles only the agents assigned to it.
  *
  * The change stream reaches every node. A write announces locally and puts a
  * note on the shared bus; the nodes that receive it re-read the row rather
@@ -71,6 +72,7 @@ export interface AgentStore {
   list(owner?: string): Promise<AgentRecord[]>;
   listAssignedTo(nodeId: string): Promise<AgentRecord[]>;
   assign(id: string, nodeId: string | null): Promise<AgentRecord | null>;
+  noteWorkspaceAt(id: string, nodeId: string): Promise<AgentRecord | null>;
   create(rec: {
     id: string;
     owner: string;
@@ -219,12 +221,11 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
     },
 
     async assign(id, nodeId) {
-      return update(
-        id,
-        nodeId === null
-          ? { assignedNode: null }
-          : { assignedNode: nodeId, lastNode: nodeId },
-      );
+      return update(id, { assignedNode: nodeId });
+    },
+
+    async noteWorkspaceAt(id, nodeId) {
+      return update(id, { lastNode: nodeId }, true);
     },
 
     async create(rec) {

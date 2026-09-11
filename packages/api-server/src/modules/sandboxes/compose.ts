@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import type { Db } from "db";
 import type { AgentStore } from "../agents/infrastructure/agent-store.js";
 import type { SecretStore } from "../secret-store/index.js";
@@ -11,6 +12,7 @@ import { createAgentRegistryAuthPort } from "../agents/infrastructure/agent-regi
 import type { EnvoyOTelView } from "./domain/envoy-bootstrap.js";
 import {
   createSandboxSupervisor,
+  type SandboxSupervisorDeps,
   type SandboxSupervisor,
 } from "./services/sandbox-supervisor.js";
 
@@ -37,6 +39,7 @@ export function composeSandboxes(deps: {
   defaultIdleTimeoutMs: number;
   nodeId: string;
   pki: PkiPort;
+  fetchWorkspace: SandboxSupervisorDeps["fetchWorkspace"];
   sandboxCommand: string[];
   harnessBaseUrl: string;
   harnessAuthority: string;
@@ -75,6 +78,8 @@ export function composeSandboxes(deps: {
     gatewayGid: deps.gatewayGid,
     defaultIdleTimeoutMs: deps.defaultIdleTimeoutMs,
     nodeId: deps.nodeId,
+    fetchWorkspace: deps.fetchWorkspace,
+    directories: () => readdir(deps.agentsRoot).catch(() => [] as string[]),
     sandboxCommand: deps.sandboxCommand,
     harnessBaseUrl: deps.harnessBaseUrl,
     log: deps.log,

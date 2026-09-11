@@ -54,20 +54,27 @@ export async function readPeerCredentials(
 
 export const MAX_HEADER_BYTES = 256;
 
+export type PeerVerb = "dial" | "export";
+
 export type HeaderRead =
   | { done: false; overflow: boolean }
-  | { done: true; agentId: string; rest: Buffer };
+  | { done: true; verb: PeerVerb; agentId: string; rest: Buffer }
+  | { done: true; verb: null; agentId: string; rest: Buffer };
 
 export function readHeader(buffered: Buffer): HeaderRead {
   const split = buffered.indexOf(0x0a);
   if (split < 0) {
     return { done: false, overflow: buffered.length > MAX_HEADER_BYTES };
   }
-  return {
-    done: true,
-    agentId: buffered.subarray(0, split).toString("utf8").trim(),
-    rest: buffered.subarray(split + 1),
-  };
+  const line = buffered.subarray(0, split).toString("utf8").trim();
+  const rest = buffered.subarray(split + 1);
+  const space = line.indexOf(" ");
+  const verb = space < 0 ? "" : line.slice(0, space);
+  const agentId = space < 0 ? "" : line.slice(space + 1).trim();
+  if (verb !== "dial" && verb !== "export") {
+    return { done: true, verb: null, agentId, rest };
+  }
+  return { done: true, verb, agentId, rest };
 }
 
 const splice = (a: Socket, b: Socket) => {
@@ -91,6 +98,10 @@ export function startPeerServer(opts: {
   port: number;
   credentials: PeerCredentials;
   localAddressOf: (agentId: string) => string | null;
+  exportWorkspace: (
+    agentId: string,
+    out: NodeJS.WritableStream,
+  ) => Promise<void>;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): Promise<PeerServer> {
   const server = createTlsServer(
@@ -111,7 +122,21 @@ export function startPeerServer(opts: {
           return;
         }
         socket.off("data", onData);
-        const { agentId, rest } = read;
+        const { verb, agentId, rest } = read;
+        if (verb === null) {
+          opts.log("peer.bad-request", { agentId });
+          return socket.destroy();
+        }
+        if (verb === "export") {
+          opts.exportWorkspace(agentId, socket).catch((err: unknown) => {
+            opts.log("peer.export.failed", {
+              agentId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            socket.destroy();
+          });
+          return;
+        }
         const target = opts.localAddressOf(agentId);
         if (!target) {
           opts.log("peer.unknown-agent", { agentId });
@@ -147,6 +172,32 @@ export interface PeerTunnels {
   stop(): Promise<void>;
 }
 
+export function openPeerStream(opts: {
+  peerAddress: string;
+  credentials: PeerCredentials;
+  verb: PeerVerb;
+  agentId: string;
+}): Promise<NodeJS.ReadableStream> {
+  const [host, port] = opts.peerAddress.split(":");
+  return new Promise((resolve, reject) => {
+    const socket = tlsConnect(
+      {
+        host,
+        port: Number(port),
+        ca: opts.credentials.ca,
+        cert: opts.credentials.cert,
+        key: opts.credentials.key,
+        servername: "platform-node",
+      },
+      () => {
+        socket.write(`${opts.verb} ${opts.agentId}\n`);
+        resolve(socket);
+      },
+    );
+    socket.once("error", reject);
+  });
+}
+
 export function createPeerTunnels(opts: {
   credentials: PeerCredentials;
   log: (message: string, fields?: Record<string, unknown>) => void;
@@ -174,7 +225,7 @@ export function createPeerTunnels(opts: {
             servername: "platform-node",
           },
           () => {
-            up.write(`${agentId}\n`);
+            up.write(`dial ${agentId}\n`);
             splice(downstream, up);
           },
         );
