@@ -1,3 +1,4 @@
+import { normalizeGitUrl } from "agent-runtime-api";
 import { z } from "zod";
 
 import { resourceNameSchema } from "../shared.js";
@@ -95,11 +96,32 @@ export const skillListSourcesInputSchema = z
   .object({ agentId: z.string().min(1).optional() })
   .optional();
 
-export const skillCreateSourceInputSchema = z.object({
+export const INVALID_GIT_URL_MESSAGE =
+  "Enter a repository URL such as https://github.com/owner/repo";
+
+export const skillCreateSourceFieldsSchema = z.object({
   name: z.string().min(1).max(128),
-  gitUrl: z.string().url(),
+  gitUrl: z.string(),
   path: skillSourcePathSchema.optional(),
 });
+
+export const skillCreateSourceInputSchema =
+  skillCreateSourceFieldsSchema.transform((input, ctx) => {
+    const normalized = normalizeGitUrl(input.gitUrl);
+    if (!normalized) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gitUrl"],
+        message: INVALID_GIT_URL_MESSAGE,
+      });
+      return z.NEVER;
+    }
+    return {
+      name: input.name,
+      gitUrl: normalized.gitUrl,
+      path: input.path || normalized.path,
+    };
+  });
 
 export const skillDeleteSourceInputSchema = z.object({
   id: z.string().min(1),

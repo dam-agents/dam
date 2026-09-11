@@ -468,9 +468,11 @@ export type {
   SkillUninstallInput,
 } from "./modules/skills/types.js";
 export {
+  INVALID_GIT_URL_MESSAGE,
   localSkillSchema,
   MAX_SKILL_BATCH_ENTRIES,
   scanFailureSchema,
+  skillCreateSourceFieldsSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillInstallInputSchema,
