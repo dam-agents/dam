@@ -38,6 +38,12 @@ import { exec } from "./exec.js";
  * Directory modes are then repaired, because gVisor's root has no DAC
  * override and an image that ships a read-only directory would be one the
  * agent could never write into.
+ *
+ * One image is unpacked once at a time. Placement hands a fresh node several
+ * agents at once and they share an image, so without this they race into the
+ * same directory: the second one clears what the first is still writing, and
+ * the agent that loses fails to start with a filesystem error naming a path no
+ * one asked for. Everything waits on the first unpack and then finds it ready.
  */
 
 const MANIFEST_TYPES = [
@@ -95,8 +101,20 @@ export function createImageStore(opts: {
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): ImageStore {
   const arch = opts.arch ?? (process.arch === "arm64" ? "arm64" : "amd64");
+  const unpacking = new Map<string, Promise<ImageConfig>>();
 
-  async function unpack(
+  function unpack(
+    dir: string,
+    write: (rootfs: string) => Promise<unknown>,
+  ): Promise<ImageConfig> {
+    const running = unpacking.get(dir);
+    if (running) return running;
+    const work = unpackOnce(dir, write).finally(() => unpacking.delete(dir));
+    unpacking.set(dir, work);
+    return work;
+  }
+
+  async function unpackOnce(
     dir: string,
     write: (rootfs: string) => Promise<unknown>,
   ): Promise<ImageConfig> {
