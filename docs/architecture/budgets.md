@@ -1,73 +1,109 @@
 # Per-user resource budgets
 
-Last verified: 2026-09-07
+Last verified: 2026-09-11
 
 ## Overview
 
-A **Budget** is a per-user ceiling on the CPU and memory that user's *running* agents can use concurrently. The node has a fixed compute pool and every agent draws on it, so without a ceiling the first users to spin up agents can starve everyone else. Within their Ceiling a user is free: deploy whatever they want, for as long as they want — the Budget constrains **starting** an agent, never running one, with one exception: a blocked start may **reclaim** room by hibernating that same owner's unattended idle agents early (see [Reclaiming room](#reclaiming-room-for-a-blocked-start)). Admission pressure from one owner is the only thing that ever takes a running agent down for budget reasons — nothing is evicted because a ceiling changed, and no owner's demand touches another owner's agents.
+A **Budget** is a per-user ceiling on the CPU and memory that user's *running*
+agents may hold at once. Nodes have a fixed compute pool and every agent draws
+on it, so without a ceiling the first users to spin up agents can starve
+everyone else.
 
-Enforcement lives in the **supervisor, at the moment a sandbox starts**. The reconcile loop is the single actuator that brings an agent's pair up, so every wake path — UI, ACP/terminal/SSH relays, channels, the scheduler, or a bare activity stamp — converges on one check that no other code path can bypass. The api-server's role is legibility: it translates the supervisor's refusal into a typed, immediate error and serves the visibility surface.
+The Budget is today **a published figure and two narrow gates, not an admission
+control**. It is computed live, shown to the user, and enforced at the two
+points where a decision would otherwise be unrecoverable — growing a running
+agent, and spawning a worker whose Size could never fit. Nothing refuses an
+ordinary start: a user who starts agents one at a time can pass their Ceiling,
+see it on the meter, and keep going. [What is not enforced](#what-is-not-enforced)
+states that gap plainly, because a full set of consumers still expects the gate
+that used to exist.
 
 ## What is counted
 
-**Reserved** — the consumption side of a Budget — is the sum of **Sizes** (`spec.resources.limits`) across the owner's scaled-up agents:
+**Reserved** — the consumption side of a Budget — is the sum of **Sizes**
+across the owner's running agents. A hibernated agent counts nothing, which is
+what makes hibernation the way room is returned.
 
-- **Limits, because the Budget bounds what agents can actually use.** An agent's Size — its CPU/memory limits — is the one resource concept users see: the template's default at create, the Size picker in the agent's settings, else the small chart default (1 CPU / 2Gi). Limits hard-cap consumption (memory OOM-caps, CPU throttles), so Σ Sizes ≤ Ceiling is a deterministic guarantee: a user's agents can never consume past their Ceiling, even all bursting at once. The requests/limits split is deliberately *not* a user concept.
-- **Requests are derived scheduling internals.** The supervisor computes them at render: `max(limit × fraction, floor)` per dimension (default fraction 0.5, floors 100m/128Mi, clamped to the limit). The node packs on `Σ Sizes × fraction` — a fixed, operator-chosen overcommit ratio. A template that sets `requests` explicitly bypasses derivation (operator escape hatch).
-- **Straight off the spec.** The api-server stamps a concrete Size onto every agent record at create (an explicitly requested size wins, else template, else default) — user intent stays api-server-written. The supervisor **materializes** the node configuration's `legacyAgentSize` — the limits pre-Sizes agents actually ran with (default 1 CPU / 2Gi), so convergence records reality rather than silently shrinking a workload — into any spec missing a dimension: fill-if-absent on reconcile, never touching a set value. The fill is what makes limits effectively *required* without schema-level enforcement: every Agent converges to a concrete Size within one reconcile of existing, and the filling reconcile itself already renders and budgets with the filled values. An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
-- **Running means the supervisor has decided to start it** — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
-- **Deliberate exclusions:** the paired gateway (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run sandboxes (a known undercount, unchanged from the original design).
+An agent's **Size** is the CPU/memory limits on its spec: the one resource
+concept users see, chosen from the template's default at create, the Size picker
+in the agent's settings, or the install default. The limits are real — the
+supervisor applies them to the sandbox as kernel-enforced limits, so memory is
+capped and CPU throttled at exactly the figure the meter counts. There is no
+requests/limits split and no overcommit ratio: one number per dimension, used
+for the ceiling, for placement, and for the sandbox itself.
+
+The paired gateway is deliberately excluded — uniform per-agent platform
+overhead, which operators price into default ceilings — as are per-command Run
+sandboxes, a known undercount.
 
 ## The Ceiling
 
-Node-wide defaults live in the node configuration (`defaultUserCpuBudget`,
-`defaultUserMemoryBudget`). A row in `user_budgets` overrides them for one
-user — the owner's plaintext sub as the key, and a CPU and memory quantity:
+Install-wide defaults live in the node configuration. A row in `user_budgets`
+overrides them for one user — the owner's plaintext sub as the key, and a CPU
+and memory quantity:
 
 | owner | cpu | memory |
 |---|---|---|
 | `<keycloak-sub>` | `16` | `32Gi` |
 
-The owner is the row's primary key, which makes one-budget-per-user structural, and quantities are validated on the way in, so a malformed ceiling is rejected rather than silently parsed to zero. Budget overrides are operator-managed rows; there is no self-service path. Role-based budgets and approval flows are out of scope — when they arrive, richer policy in the api-server will *materialize* its results as override rows, and the supervisor's contract stays a dumb numeric invariant.
+The owner is the row's primary key, which makes one-budget-per-user structural,
+and quantities are validated on the way in, so a malformed ceiling is rejected
+rather than silently parsed to zero. Overrides are operator-managed rows; there
+is no self-service path. Role-based budgets and approval flows are out of
+scope — when they arrive, richer policy will *materialize* its results as
+override rows, and the numeric contract stays as dumb as it is now.
 
-## Enforcement
+## What is enforced
 
-On each reconcile that wants to start an agent (`shouldRun` true) whose pair is currently down, the supervisor sums the owner's Reserved, adds the candidate's footprint, and compares against the Ceiling (the override row, else the default, both read live). The read-decide-start sequence cannot interleave for two same-owner agents because reconciles are serialized per agent and the check itself runs under a per-owner lock. Outcomes:
+**A grow that would not fit is refused at save time.** Resizing an Agent always
+restarts its sandbox — a kernel limit is not changed under a running
+workload — and a *running* Agent resized upward is checked against the Ceiling
+before the spec is patched: the mutation fails with both figures and the
+settings dialog says which agents to stop. The check is grow-only (a shrink
+always helps, even for an owner already over) and the read-check-patch runs
+serialized per owner on a Postgres advisory lock, so two resizes by one owner
+cannot both slip under.
 
-- **Fits** — the pair starts exactly as before.
-- **Overflows** — the pair is stopped (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message. `Reconciled` stays true — the render succeeded; the start was refused.
+**A worker Size that could never fit is refused when it is spawned.** An
+Invocation target whose Size alone exceeds its owner's Ceiling would wait for
+room that no amount of freeing ever provides, so the spawn path rejects it
+synchronously with both figures rather than letting it hang until the
+Invocation's deadline reaps it.
 
-A denial is **remembered per wake attempt** (keyed by the `last-activity` value it was denied under, in leader memory): a parked agent does **not** start by itself when room frees — a spontaneous start would surprise the user and grab the freed room out from under whoever freed it. Only a *new deliberate start* (a fresh activity bump: the Start button, opening the sandbox, a schedule fire) retries the gate. Two kinds of agent are exempt from the memo and auto-start within ~30s of room freeing (a dedicated retry tick re-enqueues parked exempt agents on that cadence): a **never-hibernate** agent (effective timeout `0`, which declares "always run"), and a **sweepable** agent — an ephemeral Invocation target, whose driver is blocked polling for its result: the freed room belongs to the same owner and starting is exactly what that owner is waiting for, so an over-budget spawn simply queues until room frees (e.g. earlier invocations completing), bounded by the Invocation's own liveness deadline. That queue only helps a spawn that *can* fit: a target whose Size alone exceeds the Ceiling would park until its deadline reaped it hours later, so the spawn route rejects it synchronously with both figures — the one admission the api-server refuses up front, because no amount of freed room ever admits it. If a parked agent's activity window lapses, the idle checker's sweep restamps plain `Hibernated` and it becomes an ordinary sleeping agent. Already-running agents are never re-checked by resyncs or ceiling changes: budget-check reads happen only on a real 0→1 or on a **grown Size** (the live-resize gate below). (A controller restart forgets denials and re-evaluates once — an accepted, rare exception.)
+**Slots** are how the UI presents the rest. One slot is the install's default
+Size, and the budget read publishes that unit next to Reserved and Ceiling. An
+agent occupies as many slots as its larger dimension needs, rounded up; the
+Ceiling holds as many slots as its tighter dimension allows, rounded down.
+Users never touch CPU or memory directly: the Size picker offers a small fixed
+set of slot multiples, and the agent list and the home dashboard show the same
+slot meter — one cell per slot, colored working / awake / free, with the
+operator's budget-request link beside it. First-time users with no agents see
+none of it.
 
-Creates are never rejected. An over-budget create simply lands parked, and the UI's job is to make "free some room" obvious. This also means the whole enforcement path is invisible on the happy path: under-ceiling users never touch it.
+## What is not enforced
 
-**Slots** are how the UI presents all of this. One slot is the node configuration default Size, and the budget endpoint publishes that unit next to Reserved and Ceiling. An agent occupies as many slots as its larger dimension needs, rounded up; the Ceiling holds as many slots as its tighter dimension allows, rounded down. Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and every place that shows compute usage — the agent list and the home dashboard — shows the same slot meter: one cell per slot, colored working / awake / free, with the operator's budget-request link beside it. The multiples and copy live in the UI budgets module. A start the supervisor parks raises a dialog that names the cause and sends the user to that list to free room; the settings picker warns inline when the chosen Size needs more free slots than remain. First-time users with no agents see none of it.
+There is **no admission gate at start**. Starting an agent consults no budget:
+the supervisor brings up whatever the record says should run, and Reserved
+simply grows. The over-budget agent state, the parked-until-room-frees
+behaviour, the early-reclaim of an owner's idle agents, and the typed
+over-budget wake failure are all still *read* — by the agent list, the wake
+path and the UI's unavailable overlay — and nothing writes them, so that state
+never appears. A user over their Ceiling sees a full meter and no other
+consequence.
 
-**Resizing** changes an Agent's Size in the agent settings and always restarts the sandbox — a cgroup limit is not changed under a running workload here. A sleeping Agent's new Size simply rides its next start through the gate. A **running** Agent's resize never crosses that gate, so the supervisor gates it at render instead: when the new limits **grew** past the Ceiling, the pair parks — stopped *before* the new template applies (a sandbox at the denied size never launches), `OverBudget` with the figures — the same "doesn't fit ⇒ park" semantics as an over-budget start. The check is grow-only (a shrink always renders: even for an over-ceiling owner it only helps) and diff-keyed against the running sandbox's limits, which is what keeps "never re-checked" true for resyncs and ceiling changes. The api-server *additionally* rejects an over-ceiling grow synchronously (`FORBIDDEN` with the figures; read+check+patch serialized per owner via a Postgres advisory lock) so the settings dialog fails at save time instead of parking a moment later — a UX courtesy in front of the supervisor's gate, not the enforcement.
-
-**Self-healing races.** The api-server's courtesy check and the supervisor's gates read overlapping state without a shared lock, so a resize racing a wake *by the same owner* can transiently slip past the courtesy check. Nothing accumulates: every slip lands as a spec change the supervisor re-gates — an ungated grow of an up Agent parks within one reconcile, and a hibernated Agent resized mid-admit starts at the old Size, then its roll to the grown Size hits the same gate. The residual acceptance is UX, not overshoot: a live grow denied at the supervisor briefly *interrupts* the Agent (it parks; shrink it back or free room and start it) instead of erroring at save time.
-
-## Reclaiming room for a blocked start
-
-Before a refusal is published, the gate tries to make the room itself: it hibernates the owner's own **unattended idle** agents ahead of their idle timeout, longest-idle first, then re-runs the same arithmetic. The blocked start is usually blocked by room its owner has already finished with, sitting behind a timeout that hasn't lapsed — an hour on the node configuration default — and the alternative is asking the user to go stop something they thought they were done with. Every start path gets this, including schedule fires and channel-driven wakes, which is where a manual "free some room" resolution is worst: nobody is present to perform it.
-
-The verdict stays **synchronous**. Reserved counts what the supervisor has decided to run, so stopping a victim's pair frees budget the instant that decision is recorded and the same reconcile admits — there is no reclaim-in-progress state, and the fail-fast above needs no third outcome to distinguish. Processes draining afterwards are the kernel's business, which Budgets have never modelled.
-
-Four rules bound it:
-
-- **Unattended only.** A session pin (`active-session`), an Experiment pin, or a sweepable Invocation target (whose driver is blocked on its result) is never a candidate, and neither is a **never-hibernate** agent — effective timeout `0` declares "always run", not a default to be overridden. The pins carry this weight because the runtime's own idle flag reads an attached-but-turnless chat as idle: probe alone would reclaim a sandbox somebody is watching. Candidates are then probed exactly as an ordinary hibernation probes, so declared in-flight work is spared.
-- **An idle floor** (3 minutes) beneath which nothing is reclaimed. Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
-- **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
-- **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start. Without that, the victim's own next reconcile would take the room straight back. The mark is self-clearing: a deliberate touch outdates it.
-
-Reclaiming is **silent**. The eligibility rules confine it to agents with no attached viewer, the victim lands in ordinary `Hibernated` state indistinguishable from a lapsed timeout, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction. The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
-
-## Failure semantics upstream
-
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays, channels, and scheduler all inherit the same message: the figures plus "stop a running agent to free room." A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
-
-The fail-fast is a **heuristic**, not a raw condition read: a parked agent keeps its `OverBudget` condition standing, and the condition doesn't say which wake attempt it applies to — so a fresh wake's first poll would otherwise see the *previous* attempt's denial and fail a start that room now permits. The wake therefore treats `OverBudget` as its own denial only when it *observed the condition appear* during its own poll (the supervisor ruled on this attempt), or once a short grace window (~10s, comfortably above reconcile latency) passes with the refusal still standing. A stale denial inside the grace rides through to the reconcile of the wake's activity bump, which admits or re-denies well within the window. Deliberately local: the alternative — echoing the denied activity value back through status — buys exactness at the price of another status field and another contract, which this failure mode doesn't warrant.
+What does bound capacity is **placement**, and it bounds a different thing. An
+agent is only assigned to a node with room for its Size, and an agent that fits
+nowhere is left unplaced rather than crammed onto the emptiest node
+([platform-topology](platform-topology.md)). That keeps a node from being
+oversubscribed — it says nothing about how the room is divided between users,
+and it is install capacity, not a budget. The two failures are also not
+interchangeable in what they should tell a user: "you are using your share" and
+"the install is full" call for different actions, and an unplaced agent is
+currently surfaced by neither the meter nor any agent state.
 
 ## Freeing room
 
-Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)). Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
+Users free capacity by stopping a running agent (see
+[agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it
+hibernate. Reserved is computed from live state and never persisted, so a
+hibernate, stop, or delete credits the budget back with nothing to reconcile.

@@ -1,15 +1,15 @@
 # Security and credentials
 
-Last verified: 2026-09-10
+Last verified: 2026-09-11
 
 ## Overview
 
 Three rules carry the security model:
 
 1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub,
-   Anthropic, Slack, internal gateways) live in the node's credential store,
-   one file per secret under a directory named for the owner, root-owned and
-   0600. The Envoy process in the paired gateway injects them into outbound
+   Anthropic, Slack, internal gateways) live in the install's credential
+   store in Postgres, and are materialized on a node only for the gateways it
+   runs, root-owned and 0600. The Envoy process in the paired gateway injects them into outbound
    traffic on the wire — the sandbox never sees the bytes.
 2. **Identity flows from Keycloak.** Browser users authenticate against
    Keycloak; the api-server validates the JWT and stamps the owner on every
@@ -223,7 +223,7 @@ configuration under [`packages/dam-vm/etc/`](../../packages/dam-vm/etc/).
 
 ## Resource ownership
 
-Multi-tenancy is **soft** — a single node, with a
+Multi-tenancy is **soft** — one install shared by every user, with a
 `agent-platform.ai/owner` label on every owned resource carrying the authenticated
 user's `sub`. The api-server is the sole writer of resource spec and stamps
 the label on create; every list and get filters by it. There is no
@@ -237,7 +237,7 @@ owner leakage is structurally prevented by the label selector — a missing
 
 ## Credential storage
 
-Each connected service produces one stored secret per `(owner, connection)`, a file under the owner's directory in the node's credential store:
+Each connected service produces one stored secret per `(owner, connection)`, a row in the install's credential store in Postgres, addressed by owner and purpose. It is install-wide rather than node-local for the reason placement forces: any node may be asked to run any agent, so a credential that lived on one node's disk would be one the install could not use. A node materializes the bytes onto its own disk only for the gateways it is currently running, readable by that gateway's account alone, and removes them with the gateway:
 
 - **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the
   api-server's `/api/oauth/callback` writes the access + refresh token
@@ -356,20 +356,21 @@ Pulling the agent's container image from a private registry uses a
 **structurally separate** credential class from the egress credentials
 above. It does not ride the Envoy path at all:
 
-- **The image pull consumes it, not Envoy.** It is a docker config
-  directory named on the agent's spec; the pull reads it to authenticate
-  against the registry. It is never handed to the gateway and never mounted
+- **The image pull consumes it, not Envoy.** It is a registry credential
+  the agent's spec refers to by name in the credential store; the node
+  materializes it for the pull, which reads it to authenticate against the
+  registry. It is never handed to the gateway and never mounted
   into the sandbox — like egress credentials, the agent never holds the
   bytes, but here that is a property of *where the credential is consumed*
   rather than of Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
   owner-scoped and reusable across every Agent that owner runs; a pull
-  credential is agent-scoped — one directory per Agent, created with the
+  credential is agent-scoped — one entry per Agent, created with the
   Agent and torn down with it. There is no cross-agent reuse, and a pull
   only ever sees the credential for the image it is pulling.
 - **Per-agent precedence over the node-wide default.** An operator may
   configure a node-wide default registry credential. When an Agent carries
-  its own, the supervisor points that pull at the Agent's directory and the
+  its own, the supervisor points that pull at the Agent's credential and the
   node-wide one is retained as a fallback — override, not replace.
 
 The api-server builds the docker config from structured `{server, username,
@@ -418,9 +419,13 @@ The supervisor renders a per-Agent Envoy bootstrap and issues the leaf TLS
 material the gateway uses to terminate the agent's egress TLS. The gateway
 itself is a systemd unit instance, which is what drops it to the gateway
 account and gives it the namespace holding only that agent's files. The leaf is
-signed by the node's own CA, generated on first boot; the CA certificate —
-and only the certificate, never the key — is mounted read-only into the
-sandbox at `/etc/platform/ca/ca.crt`, so the agent's TLS clients trust
+signed by the **install CA**, whose key lives in Postgres: the first node to
+need one generates it and claims it with an insert that loses harmlessly to a
+concurrent one, and every node afterwards adopts what it finds. One CA per
+install rather than one per node is what lets a node trust a certificate
+another node issued — which is what the peer links between nodes are built on.
+The CA certificate — and only the certificate, never the key — is mounted
+read-only into the sandbox at `/etc/platform/ca/ca.crt`, so the agent's TLS clients trust
 Envoy's intercept cert. The leaf's SAN list is exactly the hosts the
 gateway terminates, so a host with no chain cannot be intercepted; adding
 one reissues the leaf and replaces the process.
@@ -638,10 +643,17 @@ opposite sides of the credential boundary, so the threat models differ:
   external hosts happens in the gateway, so anything in the sandbox that tries
   to resolve directly fails closed. Pairing is structural rather than
   configured: the link has exactly two ends.
-- **api-server → sandbox** needs no rule. The host end of the link is on this
-  node and nowhere else, so the api-server is the only thing that can reach
-  agent-runtime — which has verified the user JWT and agent ownership before
-  forwarding anything.
+- **api-server → sandbox** needs no rule. The host end of the link is on the
+  node holding the agent and nowhere else, so that node's api-server is the only
+  thing that can reach agent-runtime — which has verified the user JWT and agent
+  ownership before forwarding anything.
+- **Node → node** is the one hop that crosses a machine, and it is the only one
+  gated cryptographically: both ends present a leaf from the install CA and each
+  proves the node id it claims. What the link carries is a relay to an agent
+  that node holds and an export of an agent's workspace, so the certificate is
+  what stands between a peer and another node's agents. The caller has already
+  verified the user and ownership at its own public port; the peer link asserts
+  *which node* is asking, nothing about who asked it.
 - **Gateway → api-server harness.** All agent egress (the harness call
   included) flows through the paired gateway, so what arrives is
   gateway → harness, on a unix socket created for that one agent and present

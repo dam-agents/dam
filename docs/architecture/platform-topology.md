@@ -1,24 +1,42 @@
 # Platform topology
 
-Last verified: 2026-09-10
+Last verified: 2026-09-11
 
 ## Overview
 
-Platform runs on **one node**. A TypeScript **api-server** brokers user requests, relays agent traffic, and supervises the agents themselves; each agent is a paired **sandbox** (a gVisor container running agent-runtime) and **gateway** (an Envoy process holding that agent's credentials); a React **ui** is served by the api-server. Sandboxes are disposable — durable state lives in the agent's directory on the node, which is what makes the hibernate/wake cycle safe.
+Platform runs on a handful of **nodes**. A node is a VM running one TypeScript **api-server**, which brokers user requests, relays agent traffic, and supervises the agents placed on it; each agent is a paired **sandbox** (a gVisor container running agent-runtime) and **gateway** (an Envoy process holding that agent's credentials); a React **ui** is served by every node. Sandboxes are disposable — durable state lives in the agent's directory on the node holding it, which is what makes the hibernate/wake cycle safe.
 
-There is no orchestrator and no second control-plane process. The agent record in Postgres carries user intent as `spec` and observed state as `status`; the API surface writes only the former and the supervisor only the latter. That split was structural when `status` was a Kubernetes subresource and is now a discipline with a single enforcement point: `writeStatus` is the only path that touches observed state.
+Every node runs the same binary and nothing runs above them: there is no control-plane process and no orchestrator of agents. What makes several nodes one install is shared state. Postgres, Redis, Keycloak and an object store run in a Kubernetes cluster that no agent ever reaches, and that cluster also provisions the node VMs — **Kubernetes orchestrates nodes, never agents**, and is never told an agent exists. A node is created out of band, reads its identity and those endpoints from its own configuration, registers itself and heartbeats; that contract is the whole of what a node needs, which is why the same node image runs as a local VM or as a cluster-provisioned one without knowing which.
+
+Nodes coordinate through Postgres and Redis alone. A **scheduler**, running on whichever node holds the install-wide lock, assigns each agent that wants to run to a node, and every role that admits exactly one holder runs beside it. A browser reaches whichever node it lands on; a request for an agent held elsewhere is forwarded to that agent's node over a mutually authenticated peer link, so no caller knows or cares where an agent lives.
+
+The agent record in Postgres carries user intent as `spec`, observed state as `status`, and placement as a third thing beside them — placement is neither, and its only writer is the scheduler. The API surface writes only `spec` and the supervisor only `status`. That split was structural when `status` was a Kubernetes subresource and is now a discipline with a single enforcement point: `writeStatus` is the only path that touches observed state.
 
 ## Diagram
 
 ```mermaid
 flowchart LR
   browser[browser]
-  ui[ui]
-  api-server[api-server]
-  supervisor[sandbox supervisor]
-  agent-runtime[sandbox: agent-runtime]
-  gateway[paired gateway: Envoy]
-  postgres[(postgres)]
+
+  subgraph node-a [node A]
+    ui[ui]
+    api-server[api-server]
+    supervisor[sandbox supervisor]
+    agent-runtime[sandbox: agent-runtime]
+    gateway[paired gateway: Envoy]
+  end
+
+  subgraph node-b [node B]
+    api-server-b[api-server]
+    agent-runtime-b[sandbox: agent-runtime]
+  end
+
+  subgraph cluster [kubernetes cluster]
+    postgres[(postgres)]
+    redis[(redis)]
+    keycloak[keycloak]
+    object-store[(object store)]
+  end
 
   browser -->|HTTP + WS| ui
   ui -->|tRPC| api-server
@@ -28,10 +46,17 @@ flowchart LR
   agent-runtime -->|hello / MCP, via the gateway| gateway
   agent-runtime -->|the only route off its link| gateway
   gateway -->|harness + ext_authz, per-agent unix sockets| api-server
-  api-server -->|spec reads, status writes| postgres
+  api-server -->|spec + placement reads, status writes| postgres
+  api-server -->|change bus, job queues, ephemeral state| redis
+  api-server -->|token verification| keycloak
+  api-server -->|artifacts, knowledge-base snapshots| object-store
   api-server -.->|in-process| supervisor
   supervisor -->|runsc, netns, nftables| agent-runtime
   supervisor -->|render config, spawn| gateway
+  api-server -->|mTLS peer link: relay to an agent held there| api-server-b
+  api-server-b --> agent-runtime-b
+  api-server-b --> postgres
+  cluster -.->|provisions the node VMs| node-b
 ```
 
 ## Components
@@ -41,8 +66,12 @@ flowchart LR
 Not a process of its own: a module inside the api-server, holding the reconcile
 loop that a Kubernetes controller used to run. It is change-driven — it
 subscribes to the agent store's change stream — backed by a periodic sweep that
-re-reconciles every agent and tears down anything the node still holds that no
-record claims. For each running agent it creates the network namespace and the
+re-reconciles every agent assigned to this node and tears down anything the node
+still holds that no record assigns to it. Both halves are node-scoped, and the
+teardown half especially: a sweep that compared what it holds against every
+agent in the install would be correct on one node and would destroy another
+node's agents on two. An agent reassigned away is torn down here exactly as a
+deleted one is, except that its directory stays. For each running agent it creates the network namespace and the
 point-to-point link, writes the whole nftables ruleset, renders and issues the
 gateway's configuration and leaf certificate, materializes the credentials that
 gateway may inject, opens the agent's pair of control-plane sockets, and starts
@@ -79,9 +108,9 @@ The public port also accepts streamed bundled file imports per agent and proxies
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, the sandbox sweep, agent/invocation/experiment reapers) run this way, and the scheduler registrations are re-asserted periodically so a Redis dataset loss cannot silently stop the sweeps. Redis also holds state that outlives a request but not the install: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, and terminal-supersede signals; per-owner resize serialization and OAuth refresh backoff live in Postgres.
 
-There is one process, so every role that admits a single holder install-wide — the channel workers, whose transports accept one consumer each, and the agent watch — is held by construction. There is no election, no lease and no marshalling of calls to a holder. The per-agent MCP endpoint is nonetheless still **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — because a harness reconnects, and the api-server restarts, far more often than a harness re-initializes.
+Every role that admits a single holder install-wide — the channel workers, whose transports accept one consumer each; the agent watch; and the scheduler — runs on whichever node holds a **Postgres advisory lock** taken on a connection of its own. The lock dies with that connection, so a node that crashes or is partitioned from the database releases it without a lease to time out, and a node that loses it stands its singletons down rather than racing the new holder. Nothing else is elected: the recurring background jobs are already install-wide singletons through their Redis-backed queues, and every other surface is safe on any node. The per-agent MCP endpoint is nonetheless still **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — because a harness reconnects, and the api-server restarts, far more often than a harness re-initializes.
 
-**Domain events and live updates.** Services announce every state change by emitting a domain event in-process after the write commits. Events are non-durable and advisory by contract — nothing may depend on one arriving; every domain whose events matter carries a reconciliation bounding the loss. Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, the public-profile projection and Slack worker registration, and one that projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription. Those hints mean "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay. State the platform cannot observe from a write site or the agent record — the session list, the workspace directories a client has open, the file it has open — is hinted by the sandbox that owns it instead, over the agent's own tRPC surface. A watch exists only while a subscriber is attached — and the subscriber sets its scope: a tab viewing one agent watches that agent, while a Home tab makes the api-server watch the session lists of every running agent its owner has whose runtime serves that watch surface — an older image is left out and its rows are polled instead. An idle watch emits nothing either way, and with no subscriber anywhere there are no watches at all; they coalesce under load, and how a sandbox detects change is private to it. Agent lifecycle hints come from the agent store's change stream rather than from write sites — so they also carry supervisor-driven transitions — and each change is fingerprinted so reconcile bookkeeping and activity stamps don't fan out to browsers. The stream is in-process and cannot drop an event, which is what removed the reconnect and replay-sweep machinery a Kubernetes watch needed to avoid leaving a deleted agent's row on screen forever.
+**Domain events and live updates.** Services announce every state change by emitting a domain event in-process after the write commits. Events are non-durable and advisory by contract — nothing may depend on one arriving; every domain whose events matter carries a reconciliation bounding the loss. Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, the public-profile projection and Slack worker registration, and one that projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription. Those hints mean "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay. State the platform cannot observe from a write site or the agent record — the session list, the workspace directories a client has open, the file it has open — is hinted by the sandbox that owns it instead, over the agent's own tRPC surface. A watch exists only while a subscriber is attached — and the subscriber sets its scope: a tab viewing one agent watches that agent, while a Home tab makes the api-server watch the session lists of every running agent its owner has whose runtime serves that watch surface — an older image is left out and its rows are polled instead. An idle watch emits nothing either way, and with no subscriber anywhere there are no watches at all; they coalesce under load, and how a sandbox detects change is private to it. Agent lifecycle hints come from the agent store's change stream rather than from write sites — so they also carry supervisor-driven transitions — and each change is fingerprinted so reconcile bookkeeping and activity stamps don't fan out to browsers. The stream is in-process where the write happened and is republished to the other nodes over Redis, where each node re-reads the record and re-emits it locally — so a status written on the node holding an agent reaches a browser attached to any node, and no consumer has to know the difference. Within a node the stream cannot drop an event, which is what removed the reconnect and replay-sweep machinery a Kubernetes watch needed to avoid leaving a deleted agent's row on screen forever; across nodes the bus is advisory like every other Redis fan-out, and the periodic sweep is what bounds the loss.
 
 
 A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients follow it live — the write lands in the sandbox's metadata store, whose session-watch notice makes them re-read. There is no server-side mode-change side effect, and the notice carries no payload — it means re-read, never the new mode; mode stays a hint about which surface to render, and the running harness is unaffected. The UI's session *list*, though, is no longer an ACP read: agent-runtime composes it on its own tRPC surface, unioning what the harness reports with its own metadata store — so a session it has recorded but the harness has not yet persisted is listed with no title, rather than being invisible until its first turn lands. The same read carries each session's live turn status: whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently. A watch on that surface reports when any of it changes, and clients refresh from the notice instead of a timer. The ACP `session/list` intercept still serves the readers that hold ACP connections anyway — channel workers matching a thread, the CLI, and Home's feed reads. Neither the read nor the watch wakes a hibernated agent. Deferring hibernation splits by who holds the watch: a client-held watch keeps the activity stamp fresh while its view is open, while the api-server's own owner-wide watches refresh nothing. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this. A schedule's run time rides the same metadata: agent-runtime times each fire it serves — only machine-driven turns on a session belonging to a schedule, so a person replying in that session never counts — and reports the accumulated total with the number of fires behind it. A continuous schedule reuses one session across every fire, so that total spans them all rather than naming the last one.
@@ -103,7 +132,7 @@ The sandbox holds zero credentials and has no route to anything but its paired g
 
 ### gateway
 
-A per-agent Envoy process paired with the sandbox, running in the host namespace under its own uid. It reads the credentials the supervisor rendered for it, a leaf certificate issued by the node CA, and its own bootstrap — all under a directory only that uid can read. It binds the host end of the agent's link and nothing else, terminates the agent's egress TLS, injects credentials on the wire, and gates each request through the api-server's ext_authz over the agent's own socket. A configuration change replaces the process rather than reloading it: Envoy has no bootstrap reload, and a gateway still serving a superseded credential set is exactly the state worth avoiding. See [security-and-credentials](security-and-credentials.md).
+A per-agent Envoy process paired with the sandbox, running in the host namespace under its own uid. It reads the credentials the supervisor rendered for it, a leaf certificate issued by the install CA, and its own bootstrap — all under a directory only that uid can read. It binds the host end of the agent's link and nothing else, terminates the agent's egress TLS, injects credentials on the wire, and gates each request through the api-server's ext_authz over the agent's own socket. A configuration change replaces the process rather than reloading it: Envoy has no bootstrap reload, and a gateway still serving a superseded credential set is exactly the state worth avoiding. See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
@@ -114,6 +143,54 @@ The URL addresses what the user is looking at — an Agent's chat, and the sessi
 An unsent message is client state too: the composer's text is kept per session in the browser's `localStorage`, so a draft survives a reload or a browser close. It belongs to the session it was written for rather than to the composer, and it lives exactly as long as that session does — sending it, or losing the session by any route, takes the draft with it. Because the store is the browser's, every tab of that browser sees the same drafts; a tab only ever rewrites the draft it is editing, so no tab can revive one another tab has already sent, and the composer a person is typing in is never overwritten from elsewhere. That store belongs to the person who wrote into it — signing out empties it, and signing in as someone else empties it too, so an unsent message never waits for whoever logs in next. Staged attachments live only for the tab — a restored draft names the files it lost. The same storage surface briefly holds a different thing with a different lifetime: a sent message the sandbox never confirmed. Where a draft lives as long as its session, such an undelivered send is only in transit — held per session alongside the drafts, shown marked on the conversation, and handed to the sandbox's own undelivered record ([agent-lifecycle](agent-lifecycle.md)) the next time a session load reaches it, leaving the browser copy deleted only once the sandbox acknowledges. The ownership rule covers these copies too: signing out, or in as someone else, sweeps them with the drafts.
 
 Continuing such a conversation here makes a session outlive the surface it started on, and the agent has to be told which one it is answering. A messenger frames every turn it relays with a contract naming the thread and the tools that reach it, and that text stays in the session — so a turn typed here, unframed, is answered under the messenger's instructions: the reply goes to the thread and the person typing gets a tool call instead of an answer. Each surface therefore states its own provenance on the prompt, and a turn typed here into a session that also lives in a messenger thread is framed as what it is — answered in place, in plain text, reaching the messenger only if the person asks. Provenance is **stated, not enforced**: outbound stays reachable from every session ([channels](channels.md)), so the same turn can still post to a messenger on request, and the surfaces a turn can arrive from stay open-ended — a prompt naming no surface is framed by nothing and falls back to what the messenger's own contract says about a message that arrives without it.
+
+## Nodes
+
+**Registration.** A node is told who it is and where the shared services are,
+and that is all. At boot it writes its own row — address, capacity, state — and
+refreshes a heartbeat on the ordinary job schedule. Liveness is *computed on
+read* (`now - heartbeat < T`) rather than stored, so each row has exactly one
+writer and no arbiter decides who is alive; a node that stops heartbeating stops
+being eligible without anyone marking it down. Capacity is the VM's resources
+less a fixed reservation for the node's own work, so placement can use the whole
+number it sees.
+
+**Placement.** The scheduler assigns an agent that wants to run and has none,
+and releases one assigned to a node that no longer wants it. Policy is
+sticky-first: the node that ran the agent last, if it is ready and the agent
+still fits, otherwise the least full node by the larger of its CPU and memory
+fractions. An agent that fits nowhere stays unassigned rather than being forced
+onto a node — the alternative is a sandbox the node cannot start, reported as
+the agent's fault.
+
+An operator drains a node by **cordoning** it: it keeps its agents and its
+heartbeat but takes no new ones. Moving the agents off it is then the ordinary
+lifecycle — the scheduler releases them, whichever node picks each one up
+fetches its workspace, and nothing special-cases migration.
+
+**Peer links.** Nodes speak to each other over one mutually authenticated
+connection, both ends holding a leaf from the install CA and each proving the
+node id it claims. It carries two things: a relay to an agent held by that node,
+and a workspace export. Callers inside the api-server are unaware of it — an
+agent's address resolves either to its sandbox's link on this node or to a local
+address that tunnels to the node holding it, so the ~18 relays and proxies that
+dial an agent are written once, for the local case, and are correct for both.
+
+**Workspaces follow the agent.** An agent's home directory lives on the disk of
+the node that ran it — which is what makes it fast enough to build in — and the
+agent record names that node. A node placed with an agent it does not hold
+fetches the directory from the named node over the peer link before starting it;
+a node that already holds it does nothing, so a reconcile does not re-fetch on
+every sweep. The record, not the presence of a directory, decides: a node that
+ran the agent last month still has one, stale by exactly the work done since.
+
+The transfer is node to node rather than through the object store, because the
+node named on the record is the only place the workspace exists and a second
+copy would be a second truth to explain. The cost is stated rather than hidden:
+an agent cannot move off a node that is down. That is the same fact the record
+already carries — the agent is unavailable until its node returns — rather than
+a new failure mode, and it is why node-local disk is the durability story. A
+node VM that restarts comes back with its disk and its agents intact.
 
 ## Protocols
 
@@ -167,8 +244,9 @@ inbound traffic to the gateway port must sit behind an
 
 ## Node resource model
 
-One Postgres row per Agent carries both halves of the model, and the split
-between them is the same one the Kubernetes status subresource enforced:
+One Postgres row per Agent carries both halves of the model plus its
+placement, and the split between the first two is the same one the Kubernetes
+status subresource enforced:
 
 - `spec` — user intent. Written only by the API surface, validated on the way in.
 - `status` — observed state. Written only by the supervisor, through a single
@@ -196,14 +274,20 @@ between them is the same one the Kubernetes status subresource enforced:
   clearing it on hibernation is what makes dialing a stopped agent fail loudly
   rather than hang.
 
-Two domain resources live outside that row: **Templates** are YAML files under
-the node's template directory, loaded at boot (read-only, never reconciled),
+Placement is the third field: the node an agent is assigned to, and the node
+whose disk holds its workspace. The scheduler is the only writer of the first;
+the supervisor of the node that ran it writes the second when it stops holding
+the sandbox. Together they are what lets a node answer "is this mine" and "where
+do I fetch it from" without asking anyone.
+
+Two domain resources live outside that row: **Templates** are YAML files laid
+down on every node, loaded at boot (read-only, never reconciled),
 and **Schedules** are Postgres rows owned by the api-server — see
 [persistence](persistence.md).
 
 For each running Agent the supervisor holds: a **network namespace** with one
 /30 point-to-point link, an entry in the node's single **nftables ruleset**, a
-**data directory** (`work` and `home` persist, scratch does not), a **gateway
+**data directory** (the agent's home, which holds its work tree), a **gateway
 directory** (rendered bootstrap, leaf certificate, credential files, all
 readable only by the gateway uid), a **pair of unix sockets** for the harness
 and ext_authz endpoints, an **Envoy process**, and a **runsc sandbox** whose
@@ -213,8 +297,11 @@ deletion removes that too.
 ## Invariants
 
 - **Spec/status ownership.** The API surface never writes `status`; the supervisor never writes `spec`. One process now holds both, so the split is kept by having exactly one function that writes observed state.
-- **Relay-only ACP.** All ACP traffic is proxied through the api-server. A sandbox accepts connections only on its own link, whose host end is on this node, and the UI never dials one directly.
+- **Relay-only ACP.** All ACP traffic is proxied through the api-server. A sandbox accepts connections only on its own link, whose host end is on the node holding it, and the UI never dials one directly. A relay for an agent held elsewhere adds one node-to-node hop and changes nothing else.
+- **A node touches only its own agents.** Every supervisor read is scoped to the agents assigned to that node, teardown included. Nothing reconciles an agent it was not assigned.
+- **Placement has one writer.** Only the scheduler assigns and releases, and only one scheduler runs, because it is gated on the install-wide lock.
+- **Peers are named by certificate.** A node proves which node it is with a leaf from the install CA; nothing a peer sends on the wire can change which node it is taken to be. It is the same rule as identity-by-socket, one level out.
 - **One public listener.** The public port is user-authenticated. The harness and ext_authz endpoints are not ports at all — they are per-agent unix sockets — so there is no internal port to reach from anywhere.
-- **Credential isolation.** A sandbox never holds a real upstream credential. Its paired gateway intercepts its TLS using a leaf from the node CA and injects the credential from a file only that gateway's uid can read — and the sandbox has no route to anything but that gateway.
+- **Credential isolation.** A sandbox never holds a real upstream credential. Its paired gateway intercepts its TLS using a leaf from the install CA and injects the credential from a file only that gateway's uid can read — and the sandbox has no route to anything but that gateway.
 - **Identity by socket, per hop.** Three hops: (1) sandbox → gateway, admitted because it is the only address the sandbox's routing table can express; (2) gateway → harness and (3) gateway → ext_authz, each on a socket created for that one agent, owned by that gateway's uid, mode 0600. A harness request naming a different agent is refused at the socket. No app-layer header conveys identity, and nothing the caller sets can change which agent it is taken to be.
 - **Durable triggers.** Schedule fires are Postgres rows in the runtime outbox, delivered over the runtime channel only when the agent is ready; an undelivered fire survives sandbox and api-server restarts until it settles or expires (see [runtime delivery](runtime-delivery.md)).

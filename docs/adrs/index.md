@@ -77,7 +77,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 086 | [Pod-owned live updates over the agent's own tRPC surface](086-pod-owned-live-updates.md) |  | platform-topology | Pod-owned state is read and watched over the agent-runtime's own tRPC surface relayed over WebSocket; a Watch lives only as long as its subscriber and emits topic-plus-ids notices, never state. |
 | 087 | [Knowledge-base sharing via a published read-only MCP snapshot](087-knowledge-base-mcp-share.md) |  | knowledge-bases | Serve knowledge-base shares from a published object-store snapshot over a read-only aggregate MCP endpoint consumed in-cluster, not by proxying the live agent. |
 | 088 | [Image-shipped skills are platform-managed while untouched](088-image-skill-lifecycle.md) |  | agent-skills | The image carries hashes of every skill version it ever shipped; local copies matching that history are seeded, updated, and removed with the image, and a diverged copy becomes the user's. |
-| 089 | [One node, no orchestrator — the api-server supervises gVisor sandboxes](089-single-node-gvisor.md) | 041, 042, 058, 061, 065 | platform-topology | Drop Kubernetes; the platform runs as systemd services on one node and the api-server creates each agent's gVisor sandbox, network namespace and gateway itself. |
+| 090 | [Kubernetes orchestrates nodes, the node orchestrates agents](090-nodes-not-agents.md) | 089 | platform-topology | The platform runs on several node VMs; Kubernetes returns to run the shared services and provision the nodes, and is never told an agent exists. |
 
 ## Superseded
 
@@ -94,6 +94,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 061 | [Warm PVC pool for instant agent workspace provisioning](061-warm-pvc-pool.md) | 089 | persistence | The controller keeps size-keyed pools of pre-provisioned bound volumes on an immediate-binding class; new agents claim a spare at create or fall back to dynamic provisioning. |
 | 065 | [Shared CRDs across co-located environments](065-shared-crds-multi-env.md) | 089 | platform-topology | Co-located environments share one CRD set installed by the newest release; a CI gate blocks schema changes that break an environment on an older release. |
 | 076 | [Per-channel access modes — shared and person-scoped](076-channel-access-modes.md) | 079 | channels | Each channel binding picks its access mode at bind time — shared (place-scoped, Agent credentials, open speaker set) or person-scoped (identity linking, allow-list, per-turn forks). |
+| 089 | [One node, no orchestrator — the api-server supervises gVisor sandboxes](089-single-node-gvisor.md) | 090 | platform-topology | Drop Kubernetes; the platform runs as systemd services on one node and the api-server creates each agent's gVisor sandbox, network namespace and gateway itself. |
 
 ## Deprecated
 

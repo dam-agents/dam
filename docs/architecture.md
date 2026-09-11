@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-10
+Last verified: 2026-09-11
 
 ## System context
 
@@ -12,18 +12,22 @@ flowchart LR
   llm[LLM APIs]
   github[GitHub]
 
-  subgraph node[Platform node]
+  subgraph node[Platform node — one of several]
     ui[ui]
     api-server[api-server]
-    keycloak[keycloak]
-    postgres[(postgres)]
-    redis[(redis)]
     subgraph sandbox[agent sandbox]
       agent-runtime
     end
     subgraph gw[paired gateway]
       envoy[Envoy]
     end
+  end
+
+  subgraph cluster[kubernetes cluster]
+    keycloak[keycloak]
+    postgres[(postgres)]
+    redis[(redis)]
+    store[(object store)]
   end
 
   user -->|HTTP + WS| ui
@@ -40,6 +44,9 @@ flowchart LR
   api-server -->|BullMQ jobs| redis
   api-server -->|supervises| sandbox
   api-server -->|supervises| gw
+  api-server -->|artifacts, snapshots| store
+  api-server <-->|mTLS peer link| node2[other nodes]
+  cluster -.->|provisions| node
 
   agent-runtime -->|only route off its link| envoy
   envoy -->|ext_authz over a per-agent socket| api-server
@@ -47,11 +54,15 @@ flowchart LR
   envoy -->|inject credentials| github
 ```
 
-Platform is a **single node**: one machine, one api-server process, agents in
-gVisor sandboxes it supervises directly. The node boundary is the trust
-boundary. Browsers and Slack users reach Platform through the api-server; LLM
-and GitHub traffic from an agent always exits through its paired gateway,
-where Envoy injects credentials from files readable only by that gateway.
+Platform is a **handful of nodes**: each a machine running one api-server that
+supervises the agents placed on it, in gVisor sandboxes, directly. Shared
+services live in a Kubernetes cluster that no agent reaches and that also
+provisions the node VMs — Kubernetes orchestrates nodes, never agents. A
+scheduler on one node places each agent; a request for an agent held elsewhere
+is forwarded over a peer link, so the install answers as one. Browsers and
+Slack users reach Platform through whichever node they land on; LLM and GitHub
+traffic from an agent always exits through its paired gateway, where Envoy
+injects credentials readable only by that gateway.
 
 Egress isolation is **topological**: a sandbox's network namespace holds one
 point-to-point link and no default route, so its paired gateway is the only
@@ -67,8 +78,8 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components (api-server, agent-runtime, gateway, ui), the protocols between them, and the node's resource model.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced when a sandbox starts; per-user overrides for privileged users.
-- [persistence](architecture/persistence.md) — the two substrates (Postgres, the per-agent directory on the node) and what survives each lifecycle event.
-- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, the paired Envoy credential gateway, file-backed credential storage, ext_authz HITL, the sandbox network boundary.
+- [persistence](architecture/persistence.md) — the substrates (Postgres and the object store in the cluster, the per-agent directory on a node) and what survives each lifecycle event.
+- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, the paired Envoy credential gateway, install-wide credential storage, ext_authz HITL, the sandbox network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
 - [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated app-origin surface, reached from the Slack Agent Footer: names a channel-bound Agent and its owner off a Postgres projection, one generic page for everything else.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.

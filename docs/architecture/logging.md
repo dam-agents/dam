@@ -47,7 +47,7 @@ Two disjoint mechanisms feed the one logger:
 ## Invariants
 
 - **Single process, single stdout.** The public API, harness, and ext-authz gRPC apps run in one process, so one logger configuration and one stream cover the whole api-server.
-- **Once per event.** The domain bus is in-process, and on one node that is the whole install: an event is emitted and consumed in the same process, and logged exactly once.
+- **Once per event.** The domain bus is in-process: an event is emitted and consumed on the node that wrote it, and logged exactly once there. What crosses to other nodes is a re-read hint, not the event, so no second node logs it again.
 - **Non-blocking.** The egress gate logs on the proxy's request-blocking hop; the writer must never block or throw into a request path.
 
 ## Supervisor logging

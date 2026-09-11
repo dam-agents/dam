@@ -1,22 +1,22 @@
 # Persistence
 
-Last verified: 2026-09-10
+Last verified: 2026-09-11
 
 ## Overview
 
-Platform persists state on three durable substrates, split cleanly between the platform and the agent:
+Platform persists state on three durable substrates, split cleanly between the platform and the agent. Two of the three are **shared by every node** and run in the cluster beside the install rather than on any node; the third is the agent's own directory, which is deliberately node-local — see [platform-topology](platform-topology.md):
 
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server. Holds anything that has to be queryable when no sandbox is running (the agent records themselves, channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned, save for the one dimension the spend read path cannot lose to hibernation or agent deletion (see the session directory below). The bundled instance runs under three login roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate. Admin sessions carry a per-role `log_statement` default that puts every statement they issue into the journal; the server-wide default logs DDL only, so routine application DML stays out of the audit trail while every role and grant change is captured whoever issues it. A fourth role, `usage_readers`, carries no credential and cannot log in: it is the group an operator grants membership in to give a read-only login access to the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
-- **Object store** — bulk binary blobs behind an S3-compatible API; consumers: artifact-library content and the published read-only snapshots of shared knowledge bases. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued. The node runs a single-node SeaweedFS by default so a fresh install works without an external account; operators point it at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
+- **Object store** — bulk binary blobs behind an S3-compatible API; consumers: artifact-library content and the published read-only snapshots of shared knowledge bases. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued. The cluster runs a single-node SeaweedFS by default so a fresh install works without an external account; operators point it at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
 The agent record lives here too, carrying user intent as `spec` and observed state as `status` in one row. The API surface writes only the former, the supervisor only the latter.
 
 **Agent-owned**:
 
-- **The per-agent directory** — `work` and `home`, bind-mounted into the sandbox. The agent process reads and writes here freely; it has no access to Postgres or to the record that describes it. Persists across hibernation; removed when the Agent is deleted. A third directory, scratch, does not survive the sandbox.
+- **The per-agent directory** — the agent's home, holding its work tree, bind-mounted into the sandbox. The agent process reads and writes here freely; it has no access to Postgres or to the record that describes it. Persists across hibernation; removed when the Agent is deleted. It lives on the disk of the node holding the agent — which is what makes it fast enough to build in — and moves with the agent when placement does; the agent record names the node whose copy is current, so there is exactly one place to ask and no question of which copy to trust.
 
-Alongside the durable substrates, the node runs a **Redis** the api-server cannot boot without. It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)). Losing this state signs restricted viewers out, interrupts pending sign-ins and invalidates outstanding render grants; viewers must sign in again or reload the share page. No artifact content or viewer allowlist is lost; Postgres stays the source of truth for anything durable, and the scheduled sweeps re-assert their registrations so a dataset loss cannot silently stop them ([platform-topology](platform-topology.md)).
+Alongside the durable substrates, the install runs one **Redis** in the cluster that no api-server can boot without. It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, the cross-node change bus, and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)). Losing this state signs restricted viewers out, interrupts pending sign-ins and invalidates outstanding render grants; viewers must sign in again or reload the share page. No artifact content or viewer allowlist is lost; Postgres stays the source of truth for anything durable, and the scheduled sweeps re-assert their registrations so a dataset loss cannot silently stop them ([platform-topology](platform-topology.md)).
 
 **Choosing where state goes.** Durable platform state goes in Postgres; there is no second store to weigh it against. What the supervisor reconciles into running infrastructure is the agent record's `spec`, and what it observes about the result is that record's `status` — one row, two writers, one write path each. Templates are read-only files on the node because nothing writes them at runtime; schedules are rows because the api-server owns them end to end.
 
@@ -38,10 +38,11 @@ flowchart LR
     rec-spec[agent record<br/>spec]
     rec-status[agent record<br/>status]
     rec-anno[agent record<br/>annotations]
+    rec-place[agent record<br/>placement]
     other[everything else<br/>the api-server owns]
   end
 
-  dir[(Per-agent directory<br/>work + home)]
+  dir[(Per-agent directory<br/>the agent's home)]
 
   api-server -->|write| other
   api-server -->|read/write| objectstore
@@ -52,6 +53,8 @@ flowchart LR
   supervisor -->|write| rec-status
   supervisor -->|read| rec-spec
   supervisor -->|read| rec-anno
+  supervisor -->|read: is this mine| rec-place
+  scheduler[scheduler: on the node holding the lock] -->|assign / release| rec-place
 
   agent-runtime -->|read/write| dir
 ```
@@ -69,6 +72,8 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **session directory** — the kind of each Session (`agent_sessions`), reported by the agent that owns it. A deliberate copy of agent-owned state, kept only so spend can still be attributed to how the work was started once the agent hibernates or is deleted; it is not a Session store and no Session is read from it. Owned by [metrics](metrics.md#session-directory).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them. Owned by [agent-lifecycle](agent-lifecycle.md).
 - **public agent profiles** — a projection of each channel-bound Agent's name and owner (`agent_public_profiles`), serving the one unauthenticated read surface. What is unusual is _why_ it duplicates state the agent record already holds: the projection is narrow by construction, so an anonymous read cannot reach anything but a name and an owner, whatever the record beside it grows to carry. Owned by [public-agent-page](public-agent-page.md).
+- **credential material** — the credential bytes the gateway injects, one row per secret path with its owner and purpose, plus a small set of install-wide secrets of which the install CA's private key is one. Held here rather than on a node's disk for a plain reason: any node may be asked to run any agent, so a credential on one node's disk is a credential the install cannot use. Owned by [security-and-credentials](security-and-credentials.md).
+- **nodes** — one row per node: its address, its capacity, whether it is accepting work, and its heartbeat. Liveness is computed from the heartbeat on read rather than stored, so each row has one writer and nothing arbitrates. Owned by [platform-topology](platform-topology.md).
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping. The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running. Owned by [knowledge-bases](knowledge-bases.md#sharing).
 
 Two of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile stores the real sub, as channel bindings already do. The difference is the requirement, not an oversight — a public page names its Agent's owner, and a hash cannot be resolved back to a person. Neither table can stand in for the other, and the pseudonymized one must not be extended to serve the page.
@@ -90,28 +95,34 @@ strict single-writer split on each half:
 
 | Column | Holds | Written by |
 |---|---|---|
-| `spec` | Agent definition: image, mount declarations, env, secret refs, registry auth path, granted secret and connection IDs | api-server |
+| `spec` | Agent definition: image, env, secret refs, granted secret and connection IDs | api-server |
 | `status` | Observed state: readiness, hibernation, the sandbox's address and restart count, the reconcile error if any | supervisor |
 | `annotations` | Activity stamps and the flags derived state is computed from — last activity, active session, experiment active, stop requested | api-server |
+| placement | The node the Agent is assigned to, and the node whose disk holds its workspace | scheduler; the holding node's supervisor for the second |
 
 The split is held by having exactly one function that writes observed state:
 nothing else may touch `status`, and the supervisor writes nothing else.
+Placement is neither intent nor observation, which is why it is beside them and
+not inside either: a user does not ask for a node, and a node does not discover
+that an agent is its own.
 
 There is no stored desired state. Wake is a one-off activity stamp, the
 supervisor hibernates on idleness, and running-vs-hibernated is recorded as
 observed status; see [agent-lifecycle](agent-lifecycle.md).
 
-**Templates** are read-only YAML files under the node's template directory,
-loaded at boot — nothing writes them at runtime. **Schedules** are Postgres
+**Templates** are read-only YAML files laid down on every node and loaded at
+boot — nothing writes them at runtime. **Schedules** are Postgres
 rows the api-server owns end to end.
 
 ### The per-agent directory
 
-Every agent has one directory on the node, and its subdirectories carry the
-lifetimes: `work` and `home` persist, `scratch` does not, and the gateway's
-rendered configuration and credentials are rebuilt on every reconcile rather
-than persisted intent. A mount declared `persist: true` is bind-mounted from
-the persisted side; anything else is scratch that dies with the sandbox.
+Every agent has one directory on the node holding it, and that directory *is*
+the agent's home — its work tree is a directory inside it, exactly as the agent
+sees it, rather than a sibling that only looks nested from within the sandbox.
+One directory is what makes the lifetime answerable in one sentence: everything
+under it persists, everything outside it dies with the sandbox, and a transfer
+between nodes cannot carry half of it. The gateway's rendered configuration and
+credentials sit outside, rebuilt on every reconcile rather than persisted.
 
 A home directory starts empty and shadows whatever the image bakes at that
 path, so the image's boot seeds it on first start from the staged workspace: a
@@ -151,7 +162,9 @@ dependencies the agent relies on must be baked into the image at build time.
 | Hibernate | survives | survives | survives | survives |
 | Wake | survives | survives | survives | survives |
 | api-server restart | survives | survives | survives | survives |
-| Node reboot | survives | survives | survives | survives |
+| Node reboot | survives | survives | survives | survives (the node comes back with its disk) |
+| Agent moves to another node | survives | survives | survives | transferred to the new node before the sandbox starts |
+| Node lost | survives | survives | survives | intact but unreachable — the Agent is unavailable until that node returns |
 | Agent delete | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots are purged | row removed | directory removed by the supervisor |
 | Schedule delete | schedule row removed | n/a | n/a | n/a |
 
