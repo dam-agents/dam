@@ -3,6 +3,7 @@ import {
   Code,
   Download,
   Edit,
+  Launch,
   Maximize,
   Save,
   Share,
@@ -29,6 +30,7 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -79,6 +81,7 @@ export function ArtifactPreviewDialog({
     initialEdit,
   });
   const wantSource = !renderable || showSource || editor.editing;
+  const startSession = useStartArtifactSession(artifact);
 
   const { confirmDiscard } = editor;
   const asking = useRef(false);
@@ -217,6 +220,12 @@ export function ArtifactPreviewDialog({
             <Download size={16} />
             Download
           </Button>
+          {startSession.available && version === head && !editor.editing && (
+            <Button onClick={() => void startSession.start()}>
+              <Launch size={16} />
+              Start a new session
+            </Button>
+          )}
         </DialogFooter>
       </Modal>
 

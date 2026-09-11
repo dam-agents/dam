@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-09
+Last verified: 2026-09-10
 
 ## Overview
 
@@ -30,6 +30,14 @@ the platform makes for its own bookkeeping name the agent they were made for,
 so a single artifact's history never mixes a named author with a blank one.
 Only versions from before the platform tracked authorship name nobody, rather
 than attributing a write to whoever happens to own the library.
+
+Agent attribution is also what lets a person **continue** an artifact. From
+any surface that shows one, the user starts a new session on the Agent that
+published it, with the artifact's internal reference — the name the artifact
+tools take — already in the composer and nothing sent. The user reads that
+line, edits it, and decides whether to send, so no revision starts without a
+prompt the user wrote. An upload has no publishing Agent, so it offers no
+continuation.
 
 Concurrent revision publishes are detected — one wins, the other is refused
 with a conflict and leaves no partial version behind. An **interactive edit**
