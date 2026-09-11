@@ -61,6 +61,14 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * once the record says some other node both runs the agent and holds its
  * workspace, which is the point at which this one is certainly stale.
  *
+ * An agent's address is chosen once and held from that moment, not from the
+ * moment it is published. A published address is the only record of which
+ * addresses are in use, and an agent that is still starting has none — so two
+ * agents starting together, which is exactly what placement does to a node
+ * that has just joined, would otherwise choose the same one and fight over the
+ * interface it names. Choosing and holding happen without an await between
+ * them, which is what makes the pair indivisible.
+ *
  * A node reconciles only the agents assigned to it. An agent that is not
  * assigned here is torn down here, whether it was deleted or the scheduler
  * moved it: the node that holds it now is the one that builds it. A sandbox
@@ -119,6 +127,9 @@ async function serving(address: string, port: number): Promise<boolean> {
   }
 }
 
+const NETNS_PREFIX = "dam-";
+const netnsOf = (agentId: string) => `${NETNS_PREFIX}${agentId}`;
+
 export function createSandboxSupervisor(
   deps: SandboxSupervisorDeps,
 ): SandboxSupervisor {
@@ -166,7 +177,7 @@ export function createSandboxSupervisor(
       ? indexOfAddress(record.status.address)
       : null;
     if (existing !== null) return linkFor(record.id, existing);
-    const taken = (await deps.store.listAssignedTo(deps.nodeId)).flatMap(
+    const published = (await deps.store.listAssignedTo(deps.nodeId)).flatMap(
       (r) => {
         const index = r.status.address
           ? indexOfAddress(r.status.address)
@@ -174,7 +185,12 @@ export function createSandboxSupervisor(
         return index === null || r.id === record.id ? [] : [index];
       },
     );
-    return linkFor(record.id, allocateIndex(taken));
+    const held = [...liveLinks].flatMap(([id, link]) =>
+      id === record.id ? [] : [link.index],
+    );
+    const link = linkFor(record.id, allocateIndex([...published, ...held]));
+    liveLinks.set(record.id, link);
+    return link;
   }
 
   async function reconcileOne(agentId: string): Promise<void> {
@@ -318,6 +334,7 @@ export function createSandboxSupervisor(
     await deps.gateway.stop(agentId);
     const known = liveLinks.get(agentId);
     if (known) await deps.network.destroy(known).catch(() => {});
+    else await deps.network.destroyNetns(netnsOf(agentId)).catch(() => {});
     liveLinks.delete(agentId);
     await deps.sockets.close(agentId);
     await applyRuleset();
@@ -355,6 +372,14 @@ export function createSandboxSupervisor(
           deps.log("sandbox.sweep.orphan", { agentId });
           await schedule(agentId);
         }
+      }
+      for (const netns of await deps.network.list()) {
+        const agentId = netns.startsWith(NETNS_PREFIX)
+          ? netns.slice(NETNS_PREFIX.length)
+          : null;
+        if (!agentId || known.has(agentId)) continue;
+        deps.log("sandbox.sweep.orphan-netns", { agentId });
+        await schedule(agentId);
       }
 
       const all = await deps.store.list();

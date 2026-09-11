@@ -20,6 +20,7 @@ import {
 export interface NetworkPort {
   create(link: SandboxLink): Promise<void>;
   destroy(link: SandboxLink): Promise<void>;
+  destroyNetns(netns: string): Promise<void>;
   applyRuleset(
     links: readonly SandboxLink[],
     ports: { gatewayPort: number },
@@ -94,6 +95,10 @@ export function createNetworkPort(): NetworkPort {
     async destroy(link) {
       await ip("link", "del", link.hostInterface).catch(() => {});
       await ip("netns", "del", link.netns).catch(() => {});
+    },
+
+    async destroyNetns(netns) {
+      await ip("netns", "del", netns).catch(() => {});
     },
 
     async applyRuleset(links, ports) {
