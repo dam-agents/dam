@@ -1,8 +1,4 @@
-import {
-  type HarnessFamily,
-  type ProviderPresetType,
-  providersForHarness,
-} from "api-server-api";
+import type { ProviderPresetType } from "api-server-api";
 
 import type { SetupFlow } from "../hooks/use-setup-form.js";
 
@@ -29,11 +25,12 @@ export function setupProviderPolicy(flow: SetupFlow): SetupProviderPolicy {
   return POLICY_BY_FLOW[flow];
 }
 
-export function narrowPolicyToHarness(
+export function narrowPolicyToTemplate(
   policy: SetupProviderPolicy,
-  harness: HarnessFamily | undefined,
+  template: { providers?: readonly ProviderPresetType[] } | null | undefined,
 ): SetupProviderPolicy {
-  const compatible = providersForHarness(harness);
+  const compatible = template?.providers;
+  if (!compatible) return policy;
   const allow = (policy.allow ?? compatible).filter((p) =>
     compatible.includes(p),
   );

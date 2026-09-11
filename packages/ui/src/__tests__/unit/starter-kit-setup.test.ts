@@ -4,7 +4,7 @@
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
-import { narrowPolicyToHarness } from "../../modules/sandboxes/lib/setup-policy.js";
+import { narrowPolicyToTemplate } from "../../modules/sandboxes/lib/setup-policy.js";
 import {
   buildStarterKitApplyInput,
   connectTargets,
@@ -213,32 +213,32 @@ describe("connection families", () => {
   });
 });
 
-describe("narrowPolicyToHarness", () => {
-  test("keeps only providers the harness can run on", () => {
+describe("narrowPolicyToTemplate", () => {
+  const claudeCode = { providers: ["ibm-litellm", "anthropic"] as const };
+  test("keeps only providers the template declares it can run on", () => {
     expect(
-      narrowPolicyToHarness({ recommended: "ibm-litellm" }, "claude-code"),
+      narrowPolicyToTemplate({ recommended: "ibm-litellm" }, claudeCode),
     ).toEqual({
       allow: ["ibm-litellm", "anthropic"],
       recommended: "ibm-litellm",
     });
     expect(
-      narrowPolicyToHarness(
+      narrowPolicyToTemplate(
         { allow: ["openai", "anthropic"], recommended: "openai" },
-        "claude-code",
+        claudeCode,
       ),
     ).toEqual({ allow: ["anthropic"], recommended: "anthropic" });
     expect(
-      narrowPolicyToHarness(
+      narrowPolicyToTemplate(
         { allow: ["openai"], recommended: "openai" },
-        "claude-code",
+        claudeCode,
       ).allow,
     ).toEqual([]);
   });
-  test("leaves the policy alone when the harness is unknown", () => {
-    expect(narrowPolicyToHarness({ allow: ["bob"] }, undefined)).toEqual({
-      allow: ["bob"],
-      recommended: "bob",
-    });
+  test("leaves the policy alone when the template declares no providers", () => {
+    const base = { allow: ["bob" as const] };
+    expect(narrowPolicyToTemplate(base, { providers: undefined })).toBe(base);
+    expect(narrowPolicyToTemplate(base, null)).toBe(base);
   });
 });
 

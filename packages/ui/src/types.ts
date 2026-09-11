@@ -1,4 +1,4 @@
-import type { PromptBlock } from "api-server-api";
+import type { PromptBlock, ProviderPresetType } from "api-server-api";
 import type { AgentKind, EnvVar, HarnessFamily } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -94,6 +94,7 @@ export interface TemplateView {
   description?: string;
   category: "harness" | "preconfigured";
   harness?: HarnessFamily;
+  providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;

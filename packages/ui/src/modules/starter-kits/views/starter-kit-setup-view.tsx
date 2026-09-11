@@ -28,7 +28,7 @@ import {
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import {
-  narrowPolicyToHarness,
+  narrowPolicyToTemplate,
   setupProviderPolicy,
 } from "../../sandboxes/lib/setup-policy.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -109,12 +109,12 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   };
   const owned = connections.data ?? [];
   const statuses = requirementStatuses(kit, draft, owned);
-  const harnessFamily = kit.template
-    ? pinnedTemplate?.harness
-    : templates.data?.find((t) => t.id === form.templateId)?.harness;
-  const providerPolicy = narrowPolicyToHarness(
+  const selectedTemplate = kit.template
+    ? pinnedTemplate
+    : (templates.data?.find((t) => t.id === form.templateId) ?? null);
+  const providerPolicy = narrowPolicyToTemplate(
     providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
-    harnessFamily,
+    selectedTemplate,
   );
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
   const canApply =

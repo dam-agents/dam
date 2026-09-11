@@ -43,6 +43,10 @@ data:
     {{- with $tmpl.harness }}
     harness: {{ . | quote }}
     {{- end }}
+    {{- with $tmpl.providers }}
+    providers:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     {{- with $tmpl.tags }}
     tags:
       {{- toYaml . | nindent 6 }}

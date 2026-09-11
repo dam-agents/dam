@@ -1291,6 +1291,10 @@ controller:
 # but reachable from no creation flow, pending the specialized-sandbox redesign,
 # so an entry users must be able to pick should take the default category.
 # `experimental: true` badges the image as alpha.
+# `providers` lists the model-provider connection types the image can run on
+# (any of anthropic, ibm-litellm, openai, bob) — which env the harness inside
+# reads. Create flows narrow the provider picker to it; omit it to offer every
+# provider. Validated when templates load.
 # `harness` names the harness family running inside the image — which CLI the
 # template wraps, independent of the entry's key. It must be one of
 # claude-code, codex, pi, bob; any other value fails template validation and
@@ -1328,6 +1332,7 @@ controller:
 agentTemplates:
   claude-code:
     enabled: true
+    providers: [ibm-litellm, anthropic]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1347,6 +1352,7 @@ agentTemplates:
   # only when its source moved, so a deploy never rolls VMs for nothing.
   claude-code-vm:
     enabled: true
+    providers: [ibm-litellm, anthropic]
     displayName: "Claude Code VM"
     description: "Claude Code in a full VM — docker + k3s inside the sandbox"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1362,6 +1368,7 @@ agentTemplates:
 
   codex:
     enabled: true
+    providers: [ibm-litellm, openai]
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
     releaseNotesUrl: "https://github.com/openai/codex/releases"
@@ -1374,6 +1381,7 @@ agentTemplates:
 
   pi-agent:
     enabled: true
+    providers: [ibm-litellm, anthropic, openai]
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
     harness: pi
@@ -1385,6 +1393,7 @@ agentTemplates:
 
   bob:
     enabled: true
+    providers: [ibm-litellm, bob]
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
@@ -1410,6 +1419,7 @@ agentTemplates:
 
   k-search:
     enabled: true
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
@@ -1431,6 +1441,7 @@ agentTemplates:
   # below (the chart-wide class can't carry the GPU VM config for every agent).
   k-search-local:
     enabled: false
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
@@ -1466,6 +1477,7 @@ agentTemplates:
   # see packages/agents/nous/README.md.
   nous:
     enabled: true
+    providers: [ibm-litellm, anthropic]
     category: preconfigured
     experimental: true
     displayName: "NOUS"
@@ -1499,6 +1511,7 @@ agentTemplates:
 
   openevolve:
     enabled: true
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     displayName: "OpenEvolve"
@@ -1512,6 +1525,7 @@ agentTemplates:
 
   shinkaevolve:
     enabled: true
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     displayName: "ShinkaEvolve"
@@ -1525,6 +1539,7 @@ agentTemplates:
 
   gepa:
     enabled: true
+    providers: [ibm-litellm, anthropic]
     category: preconfigured
     experimental: true
     displayName: "GEPA"
@@ -1550,6 +1565,7 @@ agentTemplates:
   # the SKYDISCOVER_SEARCH env.
   adaevolve:
     enabled: true
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     displayName: "AdaEvolve"
@@ -1566,6 +1582,7 @@ agentTemplates:
 
   evox:
     enabled: true
+    providers: [ibm-litellm, openai]
     category: preconfigured
     experimental: true
     displayName: "EvoX"

@@ -68,7 +68,7 @@ Eventing and cache-freshness vocabulary shared by every bounded context. Three w
 
 | Term | Definition |
 |------|-----------|
-| Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
+| Template | A read-only catalog blueprint that defines the base image, mounts, env, resources, harness family and the model providers the image can run on, for creating an agent |
 | Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. The primary user-facing word too — see [User-Facing Terminology](#user-facing-terminology). A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
 | Sandbox | The isolated container an Agent runs in. In user-facing copy "sandbox" appears only where the copy describes that container — isolation, images, inside/outside boundaries; everywhere else the word is **agent**. See [User-Facing Terminology](#user-facing-terminology) for the rule and the retirement it reverses (#3216, reversing the #892 rename) |
 | Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain agents. The Home agents list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
