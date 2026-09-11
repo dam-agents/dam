@@ -1212,13 +1212,19 @@ export async function bootstrap() {
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
   await supervisor.start();
-  await periodicJobs.register("sandbox-sweep", 60_000, () =>
-    supervisor.sweep(),
-  );
-
-  await periodicJobs.register("node-heartbeat", 15_000, () =>
-    nodeRegistry.heartbeat(),
-  );
+  const nodeTimers = [
+    setInterval(() => {
+      void supervisor.sweep().catch((err: unknown) => {
+        getLogger().error({ err }, "sandbox.sweep.failed");
+      });
+    }, 60_000),
+    setInterval(() => {
+      void nodeRegistry.heartbeat().catch((err: unknown) => {
+        getLogger().error({ err }, "node.heartbeat.failed");
+      });
+    }, 15_000),
+  ];
+  for (const timer of nodeTimers) timer.unref();
 
   const scheduler = createScheduler({
     store: agentStore,
@@ -1270,6 +1276,7 @@ export async function bootstrap() {
     sandboxAddresses.stop();
     liveEventsModule.stopAgentWatch();
     liveEventsModule.stop();
+    for (const timer of nodeTimers) clearInterval(timer);
     await periodicJobs.close();
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();

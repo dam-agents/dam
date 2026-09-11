@@ -6,8 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createImageStore } from "../../modules/sandboxes/infrastructure/image-store.js";
 
-// A saved-image archive: a manifest naming one config and one layer, the layer
-// being a tarball of the rootfs.
+// TEST_SCENARIO: a saved-image archive — a manifest naming one config and one layer, the layer being a tarball of the rootfs.
 function savedImage(dir: string): string {
   const layerSrc = join(dir, "layer");
   mkdirSync(join(layerSrc, "etc"), { recursive: true });
@@ -65,7 +64,7 @@ describe.skipIf(process.platform !== "linux")(
 
       const rootfs = results[0]!.rootfs;
       for (const r of results) expect(r.rootfs).toBe(rootfs);
-      // The directory the losing unpack used to delete out from under the winner.
+      // TEST_SCENARIO: etc/ is the directory the losing unpack used to delete out from under the winner.
       expect(() =>
         execFileSync("test", ["-f", join(rootfs, "etc", "hosts")]),
       ).not.toThrow();

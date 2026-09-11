@@ -135,4 +135,4 @@ systemctl daemon-reload
 systemctl restart dam-api-server
 REMOTE
 
-echo "Installed. Next: mise run vm:status, then ${DAM_UI_URL:-http://localhost:4000} (dev/dev)"
+echo "Installed on ${VM} as ${DAM_NODE_ID:-node-1}. Next: mise run vm:status, then ${DAM_UI_URL:-http://localhost:4000} (dev/dev)"

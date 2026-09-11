@@ -18,6 +18,13 @@ import { nodes, eq, sql, type Db } from "db";
  * A node is only ever dialled by another node, and only to reach an agent it
  * holds, so `peerAddress` is the single address it publishes. Nothing in the
  * platform needs to know where a browser reaches it.
+ *
+ * Heartbeating is a node's own business and has to run on the node's own
+ * clock. The install's periodic-job queue is the opposite arrangement — it
+ * exists to make work happen once across every node — so a heartbeat put on it
+ * refreshes whichever node's worker received the tick and leaves every other
+ * node to go stale while it is running perfectly, dropping out of placement
+ * for a reason nothing reports.
  */
 export interface NodeRow {
   id: string;
