@@ -38,9 +38,14 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
 
+  // TEST_SCENARIO: reaching the setup page through the Coding agents view rather than Home's welcome card, which only renders for an owner with no agents at all — so any other project that had created one first (they share an install and are ordered only by their own dependencies) left this spec looking for a button that was never drawn.
   await test.step("open the coding agent setup page", async () => {
     await page
-      .getByRole("button", { name: /create a coding agent/i })
+      .getByRole("button", { name: /^coding agents$/i })
+      .first()
+      .click();
+    await page
+      .getByRole("button", { name: /create coding agent/i })
       .first()
       .click();
     await expect(page.getByTestId("provider-select")).toBeVisible();
