@@ -91,12 +91,21 @@ export function historyLegend(
 
 export function catchUpLegend(
   canLookupUsers: boolean,
-  opts: { botLabel: string | null },
+  opts: { botLabel: string | null; someOmitted?: boolean },
 ): string {
+  const omitted = opts.someOmitted
+    ? "Some messages from this gap were left out, so this is not everything " +
+      "you missed. "
+    : "";
   return (
-    "These messages arrived in this thread after your last turn in it, so " +
-    "you have not seen them — read them before answering, and don't repeat " +
-    "or contradict what another agent already said. " +
+    "You were away. The messages below arrived while you were not reading " +
+    "them, and each line carries the time it was sent. " +
+    omitted +
+    "Read them all, then act only on what is still open and still worth " +
+    "acting on. A question someone else has since answered, or a " +
+    "conversation that has moved on, needs nothing from you — staying silent " +
+    "on it is the right outcome, not a failure. Don't repeat or contradict " +
+    "what another agent already said. " +
     historyLegend(canLookupUsers, opts)
   );
 }

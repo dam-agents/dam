@@ -53,6 +53,19 @@ export interface SlackThreadRead {
   hasMore: boolean;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A channel read together with whether the messenger
+ * had more to give. Messages come back newest first, the order Slack's channel
+ * history uses, so a caller that wants them in the order they were sent
+ * reverses them itself. The paging signal matters for the same reason it does
+ * on a thread read: a caller that records how far it has read must not treat a
+ * capped window as the whole channel.
+ */
+export interface SlackChannelRead {
+  messages: SlackMessage[];
+  hasMore: boolean;
+}
+
 export const THREAD_TAIL_MAX_PAGES = 20;
 
 export interface SlackMessage {
@@ -172,7 +185,8 @@ export interface SlackGateway {
   getChannelHistory(args: {
     channel: string;
     limit: number;
-  }): Promise<SlackMessage[]>;
+    oldest?: string;
+  }): Promise<SlackChannelRead>;
   uploadFile(args: SlackUpload): Promise<void>;
   downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
   listBotChannels(): Promise<SlackChannelInfo[]>;
