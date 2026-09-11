@@ -1,5 +1,11 @@
 import { SessionMode } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
@@ -24,8 +30,6 @@ import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 import { usePromptDelivery } from "./use-prompt-delivery.js";
-
-const REPLAY_SETTLE_MS = 150;
 
 async function classifyResumeFailure(
   agentId: string,
@@ -104,17 +108,11 @@ export function useAcpSession(
     delivery,
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!sessionId || !runtimeIdle(sessionId)) return;
     if (!hasStreamingAssistant(useStore.getState().messages)) return;
-    const settle = setTimeout(() => {
-      clearRuntimeIdle(sessionId);
-      setMessages((p) => finalizeAllStreaming(p));
-    }, REPLAY_SETTLE_MS);
-    return () => {
-      clearTimeout(settle);
-    };
-  }, [sessionId, messages, runtimeIdle, clearRuntimeIdle, setMessages]);
+    setMessages((p) => finalizeAllStreaming(p));
+  }, [sessionId, messages, runtimeIdle, setMessages]);
 
   useEffect(() => {
     if (!selectedAgent || sessionId !== null) return;
