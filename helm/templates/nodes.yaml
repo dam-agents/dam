@@ -64,7 +64,9 @@ metadata:
     {{- include "platform.labels" $ | nindent 4 }}
     app.kubernetes.io/component: node
 spec:
-  running: true
+  # Always, not a one-shot: a node that stops is a node that should come back,
+  # and its disk is still where its agents' workspaces are.
+  runStrategy: Always
   template:
     metadata:
       labels:
