@@ -27,6 +27,8 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 export let mockEmpty = false;
 export let mockFirstRun = false;
 
+const createdConnections: Array<Record<string, unknown>> = [];
+
 export function setMockEmpty(value: boolean) {
   mockEmpty = value;
   if (value) mockFirstRun = false;
@@ -35,6 +37,20 @@ export function setMockEmpty(value: boolean) {
 export function setMockFirstRun(value: boolean) {
   mockFirstRun = value;
   if (value) mockEmpty = false;
+}
+
+function extractInput(
+  body: Record<string, unknown> | undefined,
+  idx: number,
+): Record<string, unknown> | undefined {
+  if (!body) return undefined;
+  const entry = (body as Record<string, unknown>)[String(idx)] as
+    | Record<string, unknown>
+    | undefined;
+  if (entry?.json) return entry.json as Record<string, unknown>;
+  if ((body as Record<string, unknown>).json)
+    return (body as Record<string, unknown>).json as Record<string, unknown>;
+  return undefined;
 }
 
 function getFixtures(): Record<string, unknown> {
@@ -51,7 +67,9 @@ function getFixtures(): Record<string, unknown> {
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
-    "connections.list": fresh ? [] : connections,
+    "connections.list": fresh
+      ? [...createdConnections]
+      : [...connections, ...createdConnections],
     "connections.getAgentConnections": fresh
       ? { connections: [] }
       : {
@@ -385,6 +403,15 @@ export const handlers = [
         return { result: { data: [] } };
       }
 
+      if (proc === "connections.get") {
+        const id = inputObj?.id as string | undefined;
+        const found =
+          createdConnections.find((c) => c.id === id) ??
+          connections.find((c) => c.id === id);
+        if (found) return { result: { data: { ...found, status: "active" } } };
+        return { result: { data: null } };
+      }
+
       const data = fixtures[proc];
       if (data !== undefined) {
         return { result: { data } };
@@ -397,12 +424,17 @@ export const handlers = [
   }),
 
   // tRPC batch mutations (POST)
-  http.post("/api/trpc/*", ({ request }) => {
+  http.post("/api/trpc/*", async ({ request }) => {
     const url = new URL(request.url);
     const procedurePath = url.pathname.replace("/api/trpc/", "");
     const procedures = procedurePath.split(",");
 
-    const results = procedures.map((proc) => {
+    let body: Record<string, unknown> | undefined;
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {}
+
+    const results = procedures.map((proc, idx) => {
       console.info(`[MSW] Mock mutation: ${proc}`);
       if (proc === "agents.create") {
         mockEmpty = false;
@@ -426,6 +458,32 @@ export const handlers = [
             data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
           },
         };
+      }
+      if (proc === "connections.startOAuth") {
+        return {
+          result: {
+            data: { authUrl: `${window.location.origin}?mock-oauth=1` },
+          },
+        };
+      }
+      if (proc === "connections.create") {
+        const input = extractInput(body, idx);
+        const templateId = (input?.templateId as string) ?? "github";
+        const tpl = connectionTemplates.find((t) => t.id === templateId);
+        const id = `conn-mock-${Date.now()}`;
+        const newConn = {
+          id,
+          templateId,
+          name: (input?.name as string) ?? tpl?.name ?? "New connection",
+          category: tpl?.category ?? "app",
+          status: "active",
+          authKind: tpl?.authKind ?? "header",
+          contributions: [],
+          hosts: [],
+          connectedAt: new Date().toISOString(),
+        };
+        createdConnections.push(newConn);
+        return { result: { data: { id } } };
       }
       return { result: { data: null } };
     });

@@ -29,10 +29,10 @@ export function DemoHeaderActions({ actions }: { actions: DemoActions }) {
         className="text-foreground/70 hover:bg-preset/10 hover:text-foreground"
         onClick={() => actions.backToPacks()}
       >
-        Back to presets
+        Back to starter kits
       </Button>
       <Button size="sm" onClick={() => actions.makeThisMine(actions.packId)}>
-        Create agent from this preset
+        Create agent from this starter kit
       </Button>
     </div>
   );

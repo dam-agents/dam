@@ -10,10 +10,6 @@ import {
   type ExperimentsSlice,
 } from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import {
-  createDismissalsSlice,
-  type DismissalsSlice,
-} from "./modules/home/store.js";
 import { createPacksSlice, type PacksSlice } from "./modules/packs/store.js";
 import {
   createDialogSlice,
@@ -62,7 +58,6 @@ export type PlatformStore = DialogSlice &
   ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
-  DismissalsSlice &
   PermissionsSlice &
   PacksSlice;
 
@@ -76,7 +71,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
-  ...createDismissalsSlice(...a),
   ...createPermissionsSlice(...a),
   ...createPacksSlice(...a),
 }));

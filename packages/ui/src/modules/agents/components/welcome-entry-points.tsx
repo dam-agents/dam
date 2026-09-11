@@ -1,6 +1,6 @@
 import { ArrowRight } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -13,16 +13,21 @@ import { useStore } from "../../../store.js";
 import { PackDetailSheet } from "../../packs/components/pack-detail-sheet.js";
 import { PackIngredientSummary } from "../../packs/components/pack-ingredient-summary.js";
 import { FEATURED_PRESET_IDS } from "../../packs/data/featured-presets.js";
-import { type Pack, PACKS } from "../../packs/data/packs.js";
+import type { Pack } from "../../packs/data/packs.js";
+import { usePacks } from "../../packs/hooks/use-packs.js";
 import { createDemoAgent } from "../../packs/lib/create-demo-agent.js";
 import { seedDemoChat } from "../../packs/lib/seed-demo-chat.js";
 import { useRecordEntryPoint } from "../../usage/api/mutations.js";
 
-const featuredPacks = FEATURED_PRESET_IDS.map((id) =>
-  PACKS.find((p) => p.id === id),
-).filter((p): p is Pack => p != null);
-
 export function WelcomeEntryPoints() {
+  const packs = usePacks();
+  const featuredPacks = useMemo(
+    () =>
+      FEATURED_PRESET_IDS.map((id) => packs.find((p) => p.id === id)).filter(
+        (p): p is Pack => p != null,
+      ),
+    [packs],
+  );
   const setView = useStore((s) => s.setView);
   const setPendingPack = useStore((s) => s.setPendingPack);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -65,7 +70,7 @@ export function WelcomeEntryPoints() {
       </p>
 
       <div className="mt-10">
-        <SectionLabel>Start with a preset</SectionLabel>
+        <SectionLabel>Start with a starter kit</SectionLabel>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {featuredPacks.map((pack) => {
             const PackIcon = pack.icon;
@@ -106,7 +111,7 @@ export function WelcomeEntryPoints() {
           onClick={() => setView("packs")}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
         >
-          Browse all presets
+          Browse all starter kits
           <ArrowRight size={16} className="shrink-0" />
         </button>
         <button

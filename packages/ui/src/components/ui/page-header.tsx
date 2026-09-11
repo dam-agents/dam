@@ -18,11 +18,9 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <header className={cn("mb-8", className)}>
+    <header className={cn("mb-6", className)}>
       {actions && (
-        <div className="mb-1 flex items-center justify-end gap-2">
-          {actions}
-        </div>
+        <div className="flex items-center justify-end gap-2">{actions}</div>
       )}
       <div className="flex min-h-10 min-w-0 items-center gap-3">
         <h1
@@ -34,7 +32,7 @@ export function PageHeader({
         {adornment}
       </div>
       {description && (
-        <p className="mt-3 max-w-[75%] text-[15px] leading-relaxed text-balance text-muted-foreground">
+        <p className="mt-3 max-w-[640px] text-sm text-balance text-muted-foreground">
           {description}
         </p>
       )}

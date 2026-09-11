@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
@@ -28,7 +27,6 @@ export function SchedulesPanel({
   const schedules = schedulesQuery.data ?? [];
 
   const [form, setForm] = useState<FormState>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
 
   const closeForm = () => setForm(null);
@@ -57,22 +55,18 @@ export function SchedulesPanel({
               Create Schedule
             </Button>
           </div>
-          <Inset className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
             {schedules.map((schedule) => (
               <ScheduleCard
                 key={schedule.id}
                 schedule={schedule}
-                isExpanded={expandedId === schedule.id}
-                onToggleExpanded={() =>
-                  setExpandedId((prev) =>
-                    prev === schedule.id ? null : schedule.id,
-                  )
-                }
+                isExpanded={false}
+                onToggleExpanded={() => {}}
                 onEdit={() => setForm({ mode: "edit", schedule })}
                 onViewResults={() => setResultsFor(schedule)}
               />
             ))}
-          </Inset>
+          </div>
         </>
       )}
 

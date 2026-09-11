@@ -3,6 +3,7 @@ import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -10,7 +11,6 @@ import { formatBytes } from "@/lib/format-size";
 
 import { api } from "../../../api.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { useStore } from "../../../store.js";
 import { useDeleteFolder, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
@@ -43,8 +43,6 @@ export function ArtifactsView() {
     useArtifacts();
   const { data: folders = EMPTY_FOLDERS, isLoading: foldersLoading } =
     useArtifactFolders();
-
-  const setView = useStore((s) => s.setView);
 
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<ArtifactDialog | null>(null);
@@ -148,15 +146,11 @@ export function ArtifactsView() {
 
   return (
     <div className="anim-in">
-      <PageHeader
-        title={hasContent ? "Artifacts" : "No artifacts yet"}
-        description={
-          hasContent
-            ? "Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
-            : "Artifacts from every agent collect here. Create an agent to get started."
-        }
-        actions={
-          hasContent ? (
+      {hasContent ? (
+        <PageHeader
+          title="Artifacts"
+          description="Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
+          actions={
             <>
               <Button
                 variant="outline"
@@ -168,11 +162,19 @@ export function ArtifactsView() {
                 Upload artifact
               </Button>
             </>
-          ) : (
-            <Button onClick={() => setView("home")}>Go to home</Button>
-          )
-        }
-      />
+          }
+        />
+      ) : (
+        <Callout tone="muted" className="flex flex-col gap-4 py-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Artifacts
+          </h1>
+          <p className="max-w-[480px] text-[14px] text-foreground/80">
+            Artifacts from every agent collect here. Create an agent to get
+            started.
+          </p>
+        </Callout>
+      )}
 
       {hasContent && (
         <div className="relative mt-7">

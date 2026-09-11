@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Folders,
   Gift,
+  Help,
   Home,
   Settings,
   Time,
@@ -15,6 +16,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { DOCS_URL } from "../constants.js";
+import { externalLinkProps } from "../lib/external-link.js";
 import { useStore } from "../store.js";
 
 interface Destination {
@@ -49,7 +52,7 @@ export function IconRail({
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
-    iconClassName: "text-purple-600 dark:text-purple-400",
+    iconClassName: "text-preset",
   };
   const schedules: Destination = {
     label: "Schedules",
@@ -133,19 +136,24 @@ export function IconRail({
         </div>
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...schedules} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...starterKits} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
+          <RailLink
+            label="Documentation"
+            icon={Help}
+            href={DOCS_URL}
+            expanded={expandedNav}
+          />
           <RailItem {...settings} expanded={expandedNav} />
         </div>
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, schedules, artifacts, starterKits].map((destination) => (
+          {[sandboxes, artifacts, starterKits].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>
@@ -177,8 +185,8 @@ function RailItem({
           ? cn(
               iconClassName,
               active
-                ? "bg-purple-100/50 dark:bg-purple-950/50"
-                : "bg-purple-100/50 hover:bg-purple-200/50 dark:bg-purple-950/50 dark:hover:bg-purple-900/50",
+                ? "bg-preset-light/50"
+                : "bg-preset-light/50 hover:bg-preset-border/30",
             )
           : active
             ? "text-primary bg-muted"
@@ -195,6 +203,40 @@ function RailItem({
   return (
     <Tooltip content={label} side="right">
       {button}
+    </Tooltip>
+  );
+}
+
+function RailLink({
+  label,
+  icon: Icon,
+  href,
+  expanded,
+}: {
+  label: string;
+  icon: CarbonIconType;
+  href: string;
+  expanded: boolean;
+}) {
+  const link = (
+    <a
+      href={href}
+      {...externalLinkProps}
+      className={cn(
+        "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
+        "text-foreground/80 hover:text-foreground hover:bg-muted",
+      )}
+    >
+      <Icon size={16} />
+      {expanded && (
+        <span className="truncate text-sm font-medium">{label}</span>
+      )}
+    </a>
+  );
+  if (expanded) return link;
+  return (
+    <Tooltip content={label} side="right">
+      {link}
     </Tooltip>
   );
 }

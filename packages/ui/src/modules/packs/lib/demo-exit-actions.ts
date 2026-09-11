@@ -2,7 +2,7 @@ import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { agentsKeys } from "../../agents/api/queries.js";
-import { PACKS } from "../data/packs.js";
+import { getActivePacks } from "../hooks/use-packs.js";
 
 function trpcAgentsListKey() {
   return [["agents", "list"], { input: undefined, type: "query" }];
@@ -12,7 +12,7 @@ export function makeThisMine(packId: string): void {
   const store = useStore.getState();
   store.clearDemoAgent(packId);
 
-  const pack = PACKS.find((p) => p.id === packId);
+  const pack = getActivePacks().find((p) => p.id === packId);
   if (pack) {
     store.setPendingPack(pack);
     store.setView("agent-new");

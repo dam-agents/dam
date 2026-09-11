@@ -1,5 +1,6 @@
 import { SessionType } from "api-server-api";
 
+import type { FeedTab } from "../components/feed-filter-bar.js";
 import type { FeedItem } from "./feed-item.js";
 
 export type FeedStatus = "all" | "attention" | "in-progress" | "unread";
@@ -63,6 +64,16 @@ export function filterFeed(
     const source = sourceOf(item);
     return source === null || includedSources.has(source);
   });
+}
+
+export function filterFeedByTab(
+  items: readonly FeedItem[],
+  tab: FeedTab,
+): FeedItem[] {
+  if (tab === "all") return items.slice();
+  if (tab === "in-progress")
+    return items.filter((i) => i.kind === "in-progress");
+  return items.filter((i) => sourceOf(i) === tab);
 }
 
 export function feedStats(items: readonly FeedItem[]): {

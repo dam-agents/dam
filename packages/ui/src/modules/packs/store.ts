@@ -11,6 +11,8 @@ export interface PacksSlice {
   clearDemoAgent: (packId: string) => void;
   createdFromPack: Map<string, string>;
   setCreatedFromPack: (agentId: string, packId: string) => void;
+  realPacks: boolean;
+  setRealPacks: (on: boolean) => void;
 }
 
 export const createPacksSlice: StateCreator<
@@ -41,4 +43,6 @@ export const createPacksSlice: StateCreator<
       next.set(agentId, packId);
       return { createdFromPack: next };
     }),
+  realPacks: false,
+  setRealPacks: (on) => set({ realPacks: on }),
 });

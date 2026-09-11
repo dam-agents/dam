@@ -1,4 +1,4 @@
-import { Chemistry, Code, Time } from "@carbon/icons-react";
+import { Time } from "@carbon/icons-react";
 
 import { useNow } from "@/hooks/use-now";
 
@@ -25,9 +25,7 @@ function sessionIcon(
   item: Extract<FeedItem, { kind: "unread" | "in-progress" }>,
 ) {
   if (item.session.scheduleId) return <Time size={16} className="shrink-0" />;
-  if (item.session.experimentId)
-    return <Chemistry size={16} className="shrink-0" />;
-  return <Code size={16} className="shrink-0" />;
+  return null;
 }
 
 function tickFor(items: readonly FeedItem[], from: number): number {

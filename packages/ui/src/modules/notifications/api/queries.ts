@@ -2,36 +2,31 @@ import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
-import { useAgents, useAgentsList } from "../../agents/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
 import { isDemoAgentId } from "../../packs/hooks/use-is-demo-agent.js";
 import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
-import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
+import { buildNotificationItems } from "../lib/build-items.js";
+import type { NotificationItem } from "../lib/notification-types.js";
 
 const SESSIONS_STALE_MS = 5_000;
 const SESSIONS_ERROR_RETRY_MS = 15_000;
 const SESSIONS_COMPAT_POLL_MS = 15_000;
 
-export const homeKeys = {
+export const notificationKeys = {
   sessions: (agentId: string) =>
-    [...acpSessionsKeys.agentLists(agentId), "home"] as const,
+    [...acpSessionsKeys.agentLists(agentId), "notifications"] as const,
 };
 
-export interface Feed {
-  items: FeedItem[];
+export interface Notifications {
+  items: NotificationItem[];
   agents: readonly AgentView[];
-  runningAgents: readonly AgentView[];
-  hasAgents: boolean;
-  loadingAgents: boolean;
-  loadingFeed: boolean;
-  unreadableAgents: number;
-  approvalsUnreadable: boolean;
+  loading: boolean;
 }
 
-export function useFeed(): Feed {
+export function useNotifications(): Notifications {
   const agents = useAgentsList();
-  const agentsQuery = useAgents();
   const approvals = useApprovalsForOwner();
 
   const runningAgents = useMemo(
@@ -42,7 +37,7 @@ export function useFeed(): Feed {
   const mockFn = (window as any).__mockListAgentSessions;
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
-      queryKey: homeKeys.sessions(agent.id),
+      queryKey: notificationKeys.sessions(agent.id),
       queryFn: () =>
         mockFn ? mockFn(agent.id) : listAgentSessionsOverAcp(agent.id),
       staleTime: mockFn ? Infinity : SESSIONS_STALE_MS,
@@ -59,11 +54,10 @@ export function useFeed(): Feed {
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),
       pending: results.some((result) => result.isPending),
-      failed: results.filter((result) => result.isError).length,
     }),
   });
 
-  const items = toFeedItems({
+  const items = buildNotificationItems({
     approvals: (approvals.data ?? []).filter((a) => a.status === "pending"),
     byAgent: runningAgents.map((agent, index) => ({
       agentId: agent.id,
@@ -73,12 +67,7 @@ export function useFeed(): Feed {
 
   return {
     items,
-    agents,
-    runningAgents,
-    hasAgents: agents.filter((a) => !isDemoAgentId(a.id)).length > 0,
-    loadingAgents: agentsQuery.isPending,
-    loadingFeed: approvals.isPending || sessions.pending,
-    unreadableAgents: sessions.failed,
-    approvalsUnreadable: approvals.isError,
+    agents: agents.filter((a) => !isDemoAgentId(a.id)),
+    loading: approvals.isPending || sessions.pending,
   };
 }

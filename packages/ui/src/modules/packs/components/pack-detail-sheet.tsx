@@ -24,8 +24,6 @@ import type { Pack, PackIngredientKind, PackSlot } from "../data/packs.js";
 import { PackIngredientSummary } from "./pack-ingredient-summary.js";
 
 const SETUP_GROUP_LABELS: Partial<Record<PackIngredientKind, string>> = {
-  harness: "Harness",
-  framework: "Framework",
   connection: "Connections",
   channel: "Channels",
   "knowledge-base": "Knowledge bases",
@@ -33,8 +31,6 @@ const SETUP_GROUP_LABELS: Partial<Record<PackIngredientKind, string>> = {
 };
 
 const SETUP_KIND_ORDER: PackIngredientKind[] = [
-  "harness",
-  "framework",
   "connection",
   "channel",
   "knowledge-base",
@@ -54,16 +50,20 @@ export function PackDetailSheet({
   onClose,
   onBack,
   onCreateFromPack,
+  onStartFromScratch,
 }: Props) {
   if (!pack) return null;
 
-  const Icon = pack.icon;
-
   const allSlots = [...pack.included, ...pack.required];
+  const frameworks = allSlots.filter((s) => s.kind === "framework");
   const skills = allSlots.filter((s) => s.kind === "skill");
   const schedules = allSlots.filter((s) => s.kind === "schedule");
   const setupSlots = allSlots.filter(
-    (s) => s.kind !== "skill" && s.kind !== "schedule",
+    (s) =>
+      s.kind !== "skill" &&
+      s.kind !== "schedule" &&
+      s.kind !== "framework" &&
+      s.kind !== "harness",
   );
 
   const setupGroups = SETUP_KIND_ORDER.map((kind) => ({
@@ -74,26 +74,10 @@ export function PackDetailSheet({
 
   return (
     <Modal widthClass="w-[1200px]">
-      <div className="flex shrink-0 items-center justify-end px-5 pt-4 md:px-6">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onClose}
-          aria-label="Close"
-          className="shrink-0 text-muted-foreground"
-        >
-          <Close size={16} />
-        </Button>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
+      <div className="flex h-[80vh] min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="border-b border-border px-5 pb-4 md:px-7">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
-                <Icon size={16} className="text-foreground" />
-              </div>
+          <div className="border-b border-border px-5 pb-4 pt-5 md:px-7">
+            <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-lg font-semibold text-foreground">
@@ -103,26 +87,43 @@ export function PackDetailSheet({
                     {pack.category}
                   </Badge>
                 </div>
-                <p className="mt-0.5 text-sm text-muted-foreground">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {pack.tagline}
                 </p>
+                <div className="mt-2.5">
+                  <PackIngredientSummary pack={pack} />
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Close size={16} />
+              </button>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {pack.description}
-            </p>
-            <div className="mt-3">
-              <PackIngredientSummary pack={pack} />
-            </div>
-
-            {(skills.length > 0 || schedules.length > 0) && (
+            {(frameworks.length > 0 ||
+              skills.length > 0 ||
+              schedules.length > 0) && (
               <div className="mt-6">
                 <p className="mb-3 text-base font-semibold text-foreground">
                   Included
                 </p>
+
+                {frameworks.length > 0 && (
+                  <div className="mb-4">
+                    <SectionLabel spaced>Framework</SectionLabel>
+                    <div className="flex flex-col gap-2">
+                      {frameworks.map((s) => (
+                        <FrameworkRow key={s.label} slot={s} />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {skills.length > 0 && (
                   <div className="mb-4">
@@ -172,15 +173,22 @@ export function PackDetailSheet({
           <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-4 md:px-7">
             <div>
               {onBack && (
-                <Button variant="outline" onClick={onBack}>
+                <Button variant="ghost" onClick={onBack}>
                   <ArrowLeft size={16} />
                   Back
                 </Button>
               )}
             </div>
-            <Button onClick={() => onCreateFromPack(pack)}>
-              Use this Starter Kit
-            </Button>
+            <div className="flex items-center gap-2">
+              {onStartFromScratch && (
+                <Button variant="outline" onClick={onStartFromScratch}>
+                  Start from scratch instead
+                </Button>
+              )}
+              <Button onClick={() => onCreateFromPack(pack)}>
+                Use this Starter Kit
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -198,9 +206,17 @@ export function PackDetailSheet({
   );
 }
 
+function FrameworkRow({ slot }: { slot: PackSlot }) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <p className="text-sm font-medium text-foreground">{slot.label}</p>
+    </div>
+  );
+}
+
 function SkillRow({ slot }: { slot: PackSlot }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/50 px-4 py-3">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{slot.label}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
@@ -224,17 +240,18 @@ function ScheduleRow({ slot }: { slot: PackSlot }) {
     : null;
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 px-4 py-3">
-      <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-        <Time size={16} className="text-muted-foreground" />
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
+        <Time size={16} className="text-preset" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{slot.label}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {slot.description}
+        <p className="truncate text-[15px] font-semibold text-foreground">
+          {slot.label}
         </p>
-        {rruleText && (
-          <p className="mt-1 text-sm text-muted-foreground/60">{rruleText}</p>
+        {(rruleText || slot.description) && (
+          <p className="truncate text-[14px] text-muted-foreground">
+            {rruleText ?? slot.description}
+          </p>
         )}
       </div>
     </div>
@@ -262,10 +279,15 @@ const KIND_FALLBACK_ICONS: Partial<Record<PackIngredientKind, CarbonIconType>> =
   };
 
 function resolveIconSlug(slot: PackSlot): string | null {
-  const label = slot.label.toLowerCase();
-  if (label === "github" || slot.templateId === "github") return "github";
-  if (label === "slack" || slot.templateId === "slack") return "slack";
-  if (label === "kubernetes" || slot.templateId === "kubernetes")
+  const text =
+    `${slot.label} ${slot.description} ${slot.demoValue ?? ""} ${slot.templateId ?? ""}`.toLowerCase();
+  if (slot.label.toLowerCase() === "github" || slot.templateId === "github")
+    return "github";
+  if (text.includes("slack") || text.includes("#")) return "slack";
+  if (
+    slot.label.toLowerCase() === "kubernetes" ||
+    slot.templateId === "kubernetes"
+  )
     return "kubernetes";
   return null;
 }
@@ -337,14 +359,21 @@ function SetupSlotIcon({ slot }: { slot: PackSlot }) {
 }
 
 function SetupSlotRow({ slot }: { slot: PackSlot }) {
+  const isChannel = slot.kind === "channel";
+  const isConnection = slot.kind === "connection";
+  const slug = resolveIconSlug(slot);
+  const displayLabel = isChannel && slug === "slack" ? "Slack" : slot.label;
+
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 px-4 py-3">
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
       <SetupSlotIcon slot={slot} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{slot.label}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {slot.description}
-        </p>
+        <p className="text-sm font-medium text-foreground">{displayLabel}</p>
+        {!isChannel && !isConnection && slot.description && (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {slot.description}
+          </p>
+        )}
       </div>
     </div>
   );

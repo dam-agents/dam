@@ -66,11 +66,13 @@ export function ConnectionsSetupSection({
   onToggle,
   oauthReturnView,
   children,
+  excludeIds,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   oauthReturnView: string;
   children?: React.ReactNode;
+  excludeIds?: Set<string>;
 }) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -78,10 +80,10 @@ export function ConnectionsSetupSection({
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
+      excludeProviderConnections(connectionsQ.data ?? []).filter(
+        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
       ),
-    [connectionsQ.data, grantedIds],
+    [connectionsQ.data, grantedIds, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
 

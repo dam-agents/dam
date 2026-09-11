@@ -26,10 +26,10 @@ export function BrowsePacksModal({
           Browse Starter Kits
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Pick a starter kit to pre-fill your agent setup
+          Pick a starter kit to pre-fill your agent setup.
         </p>
       </DialogHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="h-[70vh] min-h-0 overflow-y-auto">
         <PackBrowser
           onSelect={(pack) => {
             onSelect(pack);

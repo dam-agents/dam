@@ -98,7 +98,7 @@ const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
     connections: [
       {
         id: "demo-conn-github",
-        templateId: "conn-tpl-github",
+        templateId: "github",
         name: "GitHub",
         status: "connected",
       },
@@ -147,7 +147,7 @@ const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
     connections: [
       {
         id: "demo-conn-github",
-        templateId: "conn-tpl-github",
+        templateId: "github",
         name: "GitHub",
         status: "connected",
       },
