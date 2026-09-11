@@ -1,8 +1,10 @@
 # dam-vm — the whole platform as one bootc image.
 #
 # Everything the install used to get from a Kubernetes cluster is a systemd
-# unit here: Postgres, Redis, Keycloak, and the api-server that supervises the
-# agent sandboxes, calling runsc for each one directly. There is no
+# unit here: the api-server that supervises the agent sandboxes, calling runsc
+# for each one directly. The shared services — Postgres, Redis, Keycloak, the
+# object store — are not on the node: they run on the cluster, and a node is
+# told where to find them. There is no
 # orchestrator, so there is nothing to install into — the image *is* the
 # install, and `bootc upgrade` is the upgrade path.
 #
@@ -13,9 +15,7 @@ FROM quay.io/fedora/fedora-bootc:44
 # gVisor is the sandbox boundary, so runsc is not optional here the way a
 # RuntimeClass was in the cluster.
 RUN dnf install -y --setopt=install_weak_deps=False \
-      postgresql-server postgresql-contrib redis \
       envoy nftables iproute openssl \
-      java-21-openjdk-headless \
       nodejs npm \
       jq tar gzip && \
     dnf clean all
@@ -23,13 +23,6 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 ARG GVISOR_URL=https://storage.googleapis.com/gvisor/releases/release/latest/x86_64
 RUN curl -fsSL -o /usr/local/bin/runsc "${GVISOR_URL}/runsc" && \
     chmod 0755 /usr/local/bin/runsc
-
-ARG KEYCLOAK_VERSION=26.4.0
-RUN mkdir -p /opt/keycloak && \
-    curl -fsSL "https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz" \
-      | tar -xz -C /opt/keycloak --strip-components=1 && \
-    useradd --system --home-dir /opt/keycloak --shell /sbin/nologin keycloak && \
-    chown -R keycloak:keycloak /opt/keycloak
 
 # The gateway uid: Envoy runs as this, and it is the only reader of an
 # agent's credential files and control-plane sockets.
@@ -42,4 +35,4 @@ COPY etc/ /etc/dam/
 
 COPY --from=platform-ui:latest /usr/share/nginx/html /usr/share/dam-ui
 
-RUN systemctl enable postgresql redis dam-first-boot dam-keycloak dam-api-server
+RUN systemctl enable dam-first-boot dam-api-server

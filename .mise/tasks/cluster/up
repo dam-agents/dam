@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Start (and on first run, create) the cluster VM: k3s and the platform's
+# shared services. Node VMs are not members of it — they reach these services
+# on the NodePorts this VM forwards to the host.
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+VM="${DAM_CLUSTER_VM:-dam-cluster}"
+if limactl list --quiet 2>/dev/null | grep -qx "$VM"; then
+  limactl start "$VM"
+else
+  limactl start --name="$VM" --tty=false etc/lima/k3s.yaml
+fi
+echo "Cluster up. Next: mise run cluster:install"

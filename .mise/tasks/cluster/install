@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Install or upgrade the shared services — Postgres, Redis, Keycloak and
+# SeaweedFS — onto the cluster VM. Nothing the agents touch runs here.
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+helm upgrade --install dam helm \
+  --namespace "${DAM_NAMESPACE:-dam}" --create-namespace \
+  --values helm/values-local.yaml \
+  --wait --timeout 10m "$@"
+echo "Shared services installed. Next: mise run vm:install (see cluster:env)"

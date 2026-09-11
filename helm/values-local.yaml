@@ -15,6 +15,11 @@ keycloak:
   image:
     repository: quay.io/keycloak/keycloak
     tag: "26.4.0"
+  # Every node serves the UI, so every node's address is a valid redirect.
+  extraRedirectUris:
+    - http://localhost:5555/*
+  extraWebOrigins:
+    - http://localhost:5555
   admin:
     password: admin
   testUser:

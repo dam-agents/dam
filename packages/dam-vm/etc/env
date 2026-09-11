@@ -19,8 +19,10 @@ DAM_NODE_ADDRESS=127.0.0.1:4002
 DAM_PEER_PORT=4002
 PLATFORM_HARNESS_SERVER_URL=http://harness.dam.internal:4001
 
-DATABASE_URL=postgres://dam@/dam?host=/run/postgresql
-REDIS_URL=redis://127.0.0.1:6379
+# Postgres, Redis, Keycloak and the object store run on the cluster; the
+# install writes their addresses here.
+DATABASE_URL=
+REDIS_URL=
 
 # The api-server serves the SPA itself, so the UI and the API are one origin
 # and one process; there is no reverse proxy on the node.
@@ -29,10 +31,9 @@ UI_BASE_URL=http://localhost:4000
 SHARE_BASE_URL=http://share.localhost:4000
 CONTENT_BASE_URL=http://content.localhost:4000
 
-KEYCLOAK_URL=http://localhost:8081
-KEYCLOAK_EXTERNAL_URL=http://localhost:8081
+KEYCLOAK_URL=
+KEYCLOAK_EXTERNAL_URL=
 KEYCLOAK_REALM=platform
-KEYCLOAK_API_CLIENT_SECRET=
 
 # Node-local secrets. The install generates them on first run; they are here so
 # a hand-rolled node has one place to put its own.

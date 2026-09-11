@@ -24,23 +24,27 @@ limactl shell "$VM" sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" \
   "${DAM_UI_URL:-http://localhost:4000}" \
   "${DAM_NODE_ID:-node-1}" \
   "${DAM_NODE_ADDRESS:-127.0.0.1:4000}" \
-  "${DAM_KEYCLOAK_URL:-http://localhost:8081}" \
-  "${DAM_ROLE:-data}" \
-  "${DAM_DATABASE_URL:-postgres://dam:dam@127.0.0.1:5432/dam}" \
-  "${DAM_REDIS_URL:-redis://127.0.0.1:6379}" \
-  "${DAM_API_CLIENT_SECRET:-}" <<'REMOTE'
+  "${DAM_KEYCLOAK_URL:?}" "${DAM_KEYCLOAK_EXTERNAL_URL:-$DAM_KEYCLOAK_URL}" \
+  "${DAM_DATABASE_URL:?run: eval \"\$(mise run cluster:env)\"}" \
+  "${DAM_REDIS_URL:?}" "${DAM_API_CLIENT_SECRET:?}" \
+  "${DAM_OBJECT_STORAGE_ENDPOINT:?}" "${DAM_OBJECT_STORAGE_ACCESS_KEY_ID:?}" \
+  "${DAM_OBJECT_STORAGE_SECRET_ACCESS_KEY:?}" <<'REMOTE'
 set -euo pipefail
 REPO="$1"
 PNPM_VERSION="$2"
 UI_URL="$3"
 NODE_ID="$4"
 NODE_ADDRESS="$5"
+# The node and a browser reach Keycloak at different addresses: the node goes
+# straight to the cluster, the browser through whatever is published to it.
 KC_URL="$6"
-# A data node runs the shared services; a worker node points at another's.
-ROLE="$7"
+KC_EXTERNAL_URL="$7"
 DATABASE_URL="$8"
 REDIS_URL="$9"
 API_CLIENT_SECRET="${10}"
+S3_ENDPOINT="${11}"
+S3_KEY_ID="${12}"
+S3_SECRET="${13}"
 SHARE_URL="${UI_URL%%://*}://share.${UI_URL#*://}"
 CONTENT_URL="${UI_URL%%://*}://content.${UI_URL#*://}"
 
@@ -84,89 +88,28 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
   cat /var/lib/dam/hmac-keys
   echo "DATABASE_URL=${DATABASE_URL}"
   echo "REDIS_URL=${REDIS_URL}"
+  echo "KEYCLOAK_API_CLIENT_SECRET=${API_CLIENT_SECRET}"
+  echo "OBJECT_STORAGE_ENDPOINT=${S3_ENDPOINT}"
+  echo "OBJECT_STORAGE_AGENT_ENDPOINT=${S3_ENDPOINT}"
+  echo "OBJECT_STORAGE_ACCESS_KEY_ID=${S3_KEY_ID}"
+  echo "OBJECT_STORAGE_SECRET_ACCESS_KEY=${S3_SECRET}"
   echo "UI_BASE_URL=${UI_URL}"
   echo "SHARE_BASE_URL=${SHARE_URL}"
   echo "CONTENT_BASE_URL=${CONTENT_URL}"
-  echo "KEYCLOAK_EXTERNAL_URL=${KC_URL}"
+  echo "KEYCLOAK_URL=${KC_URL}"
+  echo "KEYCLOAK_EXTERNAL_URL=${KC_EXTERNAL_URL}"
   echo "DAM_NODE_ID=${NODE_ID}"
   echo "DAM_NODE_ADDRESS=${NODE_ADDRESS}"
 } >> /etc/dam/env
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
 
-if [ "$ROLE" = "data" ]; then
-  sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='dam'" | grep -q 1 || {
-    sudo -u postgres psql -c "CREATE ROLE dam LOGIN PASSWORD 'dam'"
-    sudo -u postgres createdb --owner dam dam
-  }
-fi
-
 install -m 0644 "$REPO/packages/dam-vm/system/dam-api-server.service" /usr/lib/systemd/system/
 install -m 0644 "$REPO/packages/dam-vm/system/dam-gateway@.service" /usr/lib/systemd/system/
-install -m 0644 "$REPO/packages/dam-vm/system/dam-keycloak.service" /usr/lib/systemd/system/
 
 # The api-server serves these itself; no reverse proxy, one origin, one port.
 install -d /usr/share/dam-ui
 rsync -a --delete "$REPO/packages/ui/dist/" /usr/share/dam-ui/
-
-if [ "$ROLE" = "data" ]; then
-  # Keycloak. The client secret and the dev user's password are generated once
-  # and kept, so a reinstall does not invalidate a logged-in browser session.
-  id keycloak >/dev/null 2>&1 || useradd --system --home-dir /opt/keycloak --shell /usr/sbin/nologin keycloak
-  chown -R keycloak:keycloak /opt/keycloak
-  [ -f /var/lib/dam/keycloak-secrets ] || {
-    umask 077
-    { echo "PLATFORM_API_CLIENT_SECRET=$(openssl rand -hex 24)"
-      echo "PLATFORM_TEST_USER=dev"
-      echo "PLATFORM_TEST_PASSWORD=dev"; } > /var/lib/dam/keycloak-secrets
-  }
-  . /var/lib/dam/keycloak-secrets
-  sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='keycloak'" | grep -q 1 || {
-    sudo -u postgres psql -c "CREATE ROLE keycloak LOGIN PASSWORD 'keycloak'"
-    sudo -u postgres createdb --owner keycloak keycloak
-  }
-  {
-    echo "KC_DB=postgres"
-    echo "KC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak"
-    echo "KC_DB_USERNAME=keycloak"
-    echo "KC_DB_PASSWORD=keycloak"
-    echo "KC_HTTP_ENABLED=true"
-    echo "KC_HTTP_PORT=8081"
-    echo "KC_HOSTNAME_STRICT=false"
-    echo "KC_BOOTSTRAP_ADMIN_USERNAME=admin"
-    echo "KC_BOOTSTRAP_ADMIN_PASSWORD=admin"
-    cat /var/lib/dam/keycloak-secrets
-  } > /etc/dam/keycloak-env
-  chmod 0640 /etc/dam/keycloak-env && chown root:keycloak /etc/dam/keycloak-env
-  echo "KEYCLOAK_API_CLIENT_SECRET=${PLATFORM_API_CLIENT_SECRET}" >> /etc/dam/env
-
-  # Keycloak substitutes nothing in an imported realm, so the node's URLs and
-  # secrets are rendered in here.
-  install -d -m 0750 -o root -g keycloak /etc/dam/keycloak-realm
-  sed -e "s#@UI_URL@#${UI_URL}#g" \
-      -e "s#@SHARE_URL@#${SHARE_URL}#g" \
-      -e "s#@API_CLIENT_SECRET@#${PLATFORM_API_CLIENT_SECRET}#g" \
-      -e "s#@TEST_USER@#${PLATFORM_TEST_USER}#g" \
-      -e "s#@TEST_PASSWORD@#${PLATFORM_TEST_PASSWORD}#g" \
-      "$REPO/packages/dam-vm/etc/keycloak-realm.json" > /etc/dam/keycloak-realm/platform-realm.json
-
-  systemctl daemon-reload
-  systemctl enable --now postgresql
-  systemctl enable --now redis-server 2>/dev/null || systemctl enable --now redis
-
-  # `build` bakes the database vendor into the distribution; `start --optimized`
-  # then refuses to re-derive it at boot, which is what keeps startup quick.
-  systemctl stop dam-keycloak 2>/dev/null || true
-  sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) /opt/keycloak/bin/kc.sh build >/dev/null
-  # Import is idempotent: an existing realm is left as it is.
-  sudo -u keycloak env $(grep -v '^#' /etc/dam/keycloak-env | xargs) \
-    /opt/keycloak/bin/kc.sh import --dir /etc/dam/keycloak-realm --override false >/dev/null
-  systemctl enable --now dam-keycloak
-else
-  # A worker is given the secret the data node generated; it authenticates to
-  # the same Keycloak and has no realm of its own to import.
-  echo "KEYCLOAK_API_CLIENT_SECRET=${API_CLIENT_SECRET}" >> /etc/dam/env
-fi
 
 systemctl enable dam-api-server
 

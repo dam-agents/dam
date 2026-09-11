@@ -17,13 +17,11 @@ mounts:
   - location: "/tmp/lima"
     writable: true
 
-# The api-server, which serves the UI too, and Keycloak. Agent sandboxes are
-# never exposed off the VM.
+# The api-server, which serves the UI too. Agent sandboxes are never exposed
+# off the VM; the shared services live on the cluster, not here.
 portForwards:
   - guestPort: 4000
     hostPort: 4000
-  - guestPort: 8081
-    hostPort: 8081
 
 provision:
   - mode: system
@@ -31,8 +29,7 @@ provision:
       #!/bin/bash
       set -eux -o pipefail
       apt-get update
-      apt-get install -y nftables iproute2 openssl \
-        postgresql redis-server rsync jq curl openjdk-21-jre-headless
+      apt-get install -y nftables iproute2 openssl rsync jq curl zstd
 
       # Node from upstream: the archive's is too old for the api-server, and
       # the version has to match what the repo builds against.
@@ -61,14 +58,6 @@ provision:
         "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${ENVOY_ARCH}"
       chmod 0755 /usr/local/bin/envoy
 
-      # Keycloak, which Ubuntu does not package.
-      KEYCLOAK_VERSION=26.4.0
-      test -d /opt/keycloak || {
-        mkdir -p /opt/keycloak
-        curl -fsSL "https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz" \
-          | tar -xz -C /opt/keycloak --strip-components=1
-      }
-
       id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
 
 probes:
@@ -78,5 +67,4 @@ probes:
       set -eux -o pipefail
       test -x /usr/local/bin/runsc
       test -x /usr/local/bin/envoy
-      test -x /opt/keycloak/bin/kc.sh
       command -v nft node

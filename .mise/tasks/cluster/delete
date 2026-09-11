@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Destroys the cluster VM and every shared service in it, database included.
+set -euo pipefail
+VM="${DAM_CLUSTER_VM:-dam-cluster}"
+limactl stop -f "$VM" 2>/dev/null || true
+limactl delete "$VM"
