@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { DbSql } from "db";
 import { createLeaderLock } from "../../core/leader-lock.js";
 
-function fakeSql(opts: { granted: boolean; failAfter?: number }) {
+function fakeSql(opts: {
+  granted: boolean;
+  failAfter?: number;
+  pidChangesAfter?: number;
+}) {
   let queries = 0;
   let released = 0;
   const reserved = (() => {
@@ -12,7 +16,11 @@ function fakeSql(opts: { granted: boolean; failAfter?: number }) {
       if (opts.failAfter !== undefined && queries > opts.failAfter) {
         throw new Error("connection terminated");
       }
-      return [{ ok: opts.granted }];
+      const pid =
+        opts.pidChangesAfter !== undefined && queries > opts.pidChangesAfter
+          ? 4242
+          : 1234;
+      return [{ ok: opts.granted, pid }];
     }) as unknown as Record<string, unknown>;
     fn.release = () => {
       released += 1;
@@ -86,6 +94,26 @@ describe("leader lock", () => {
     await vi.waitFor(() => expect(onLost).toHaveBeenCalled());
     expect(lock.isLeader()).toBe(false);
     expect(onLost).toHaveBeenCalledTimes(1);
+    expect(probe.releases()).toBeGreaterThan(0);
+    await lock.stop();
+  });
+
+  // TEST_SCENARIO: the connection is replaced underneath the node — every query still succeeds, and the lock went with the backend that is gone. This is the double-Slack case wearing the shape of good health, so a heartbeat that only proved the connection answers would leave two nodes holding the transports. Standing down first is the whole point: it re-takes the lock afterwards on the connection it actually holds.
+  it("stands down when its connection is replaced by a healthy one", async () => {
+    const probe = fakeSql({ granted: true, pidChangesAfter: 1 });
+    const order: string[] = [];
+    const lock = createLeaderLock({
+      sql: probe.sql,
+      key: 1,
+      pollMs: 5,
+      log: () => {},
+      onAcquired: () => void order.push("up"),
+      onLost: () => void order.push("down"),
+    });
+
+    lock.start();
+    await vi.waitFor(() => expect(order).toContain("down"));
+    expect(order.slice(0, 2)).toEqual(["up", "down"]);
     expect(probe.releases()).toBeGreaterThan(0);
     await lock.stop();
   });

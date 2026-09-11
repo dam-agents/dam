@@ -20,10 +20,15 @@ import type { DbSql } from "db";
  * A node that loses the lock must stand its singletons down before another
  * node picks them up; that is why losing is a callback and not a flag to poll.
  * The key is one arbitrary constant every node shares — holding it is the
- * whole election, so there is nothing else to agree on. The heartbeat is a
- * trivial query on the same connection: the lock lives on it, so proving the
- * connection is alive proves the lock is still held. Releasing a connection
- * that has already gone throws, which is precisely the case being handled.
+ * whole election, so there is nothing else to agree on.
+ *
+ * The heartbeat asks which backend is answering rather than merely whether
+ * something is. The lock belongs to a session, so a connection replaced
+ * underneath us is a lock we no longer hold while every query on it still
+ * succeeds — the one failure this election exists to prevent, wearing the
+ * shape of good health. A backend that is not the one that took the lock ends
+ * leadership here, whatever replaced it. Releasing a connection that has
+ * already gone throws, which is precisely the case being handled.
  */
 export interface LeaderLock {
   start(): void;
@@ -45,6 +50,7 @@ const DEFAULT_POLL_MS = 5_000;
 export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
   let reserved: Awaited<ReturnType<DbSql["reserve"]>> | null = null;
+  let backendPid: number | null = null;
   let leader = false;
   let timer: NodeJS.Timeout | null = null;
   let stopped = false;
@@ -52,6 +58,7 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
   async function release(): Promise<void> {
     const held = leader;
     leader = false;
+    backendPid = null;
     try {
       reserved?.release();
     } catch {
@@ -68,13 +75,21 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
     if (stopped) return;
     try {
       if (leader) {
-        await reserved!`SELECT 1`;
+        const beat = await reserved!`SELECT pg_backend_pid() AS pid`;
+        if (Number(beat[0]?.pid) !== backendPid) {
+          opts.log("leader.connection.replaced", {
+            was: backendPid,
+            now: beat[0]?.pid,
+          });
+          await release();
+        }
         return;
       }
       reserved ??= await opts.sql.reserve();
       const rows =
-        await reserved`SELECT pg_try_advisory_lock(${opts.key}::bigint) AS ok`;
+        await reserved`SELECT pg_try_advisory_lock(${opts.key}::bigint) AS ok, pg_backend_pid() AS pid`;
       if (rows[0]?.ok !== true) return;
+      backendPid = Number(rows[0].pid);
       leader = true;
       opts.log("leader.acquired");
       await opts.onAcquired();
