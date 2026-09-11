@@ -58,7 +58,7 @@ describe("agent-artifacts-sweeper", () => {
   it("respects batchSize per tick", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      agentStore: fakeStore([]),
+      agentStore: fakeStore(["agent-live"]),
       sources: [
         {
           name: "egress",
@@ -83,7 +83,7 @@ describe("agent-artifacts-sweeper", () => {
     const cleaned: string[] = [];
 
     const sweeper = createAgentArtifactsSweeper({
-      agentStore: fakeStore([]),
+      agentStore: fakeStore(["agent-live"]),
       sources: [
         {
           name: "egress",
@@ -119,7 +119,9 @@ describe("agent-artifacts-sweeper", () => {
   it("skips a candidate whose Agent exists by the time it is reaped", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      agentStore: fakeStore([], { appearsAfterList: ["agent-new"] }),
+      agentStore: fakeStore(["agent-live"], {
+        appearsAfterList: ["agent-new"],
+      }),
       sources: [
         {
           name: "usage-agents",
@@ -192,6 +194,27 @@ describe("agent-artifacts-sweeper", () => {
         {
           name: "egress",
           listAgentIds: async () => ["agent-1"],
+          cleanup: async (id) => {
+            cleaned.push(id);
+          },
+        },
+      ],
+      resolveOwner: async () => null,
+      batchSize: 100,
+    });
+
+    await sweeper.tick();
+    expect(cleaned).toEqual([]);
+  });
+  // TEST_SCENARIO: the upgrade window — every agent-scoped row still names an agent, and the store that lists agents has nothing in it yet. Reaping here is indistinguishable from deleting the whole install's channel bindings, schedules, keys and shares.
+  it("refuses to reap anything while no agent exists at all", async () => {
+    const cleaned: string[] = [];
+    const sweeper = createAgentArtifactsSweeper({
+      agentStore: fakeStore([]),
+      sources: [
+        {
+          name: "channels",
+          listAgentIds: async () => ["agent-1", "agent-2"],
           cleanup: async (id) => {
             cleaned.push(id);
           },

@@ -19,6 +19,17 @@ limactl shell "$VM" sudo rsync -a --delete \
   --exclude node_modules --exclude .git --exclude .worktrees \
   "${MISE_PROJECT_ROOT}/" /opt/dam/src/
 
+# Everything the chart used to configure and this task does not name — the
+# messenger tokens, the install-wide OAuth apps, branding, the telemetry
+# backend — is whatever the operator puts in this file. It is appended last,
+# so it also overrides anything above it.
+NODE_ENV_FILE="${DAM_NODE_ENV_FILE:-$MISE_PROJECT_ROOT/etc/node.env}"
+if [ -f "$NODE_ENV_FILE" ]; then
+  limactl copy "$NODE_ENV_FILE" "$VM":/tmp/node.env
+else
+  limactl shell "$VM" sh -c ': > /tmp/node.env'
+fi
+
 # A second node forwards the same guest ports to different host ports, so the
 # URLs the browser and Keycloak agree on are not the node's own defaults.
 limactl shell "$VM" sudo bash -s -- /opt/dam/src "${PNPM_VERSION}" \
@@ -101,6 +112,7 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
   echo "KEYCLOAK_EXTERNAL_URL=${KC_EXTERNAL_URL}"
   echo "DAM_NODE_ID=${NODE_ID}"
   echo "DAM_NODE_ADDRESS=${NODE_ADDRESS}"
+  cat /tmp/node.env
 } >> /etc/dam/env
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
