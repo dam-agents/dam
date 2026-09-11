@@ -553,7 +553,7 @@ export async function bootstrap() {
     cleanupHooks: [],
     agentStore,
     sandboxAddresses,
-    registryAuthRoot: config.registryAuthRoot,
+    secrets: secretStores.default(),
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
@@ -756,7 +756,7 @@ export async function bootstrap() {
     deliverySweeper.tick(),
   );
 
-  const registryAuthPort = createAgentRegistryAuthPort(config.registryAuthRoot);
+  const registryAuthPort = createAgentRegistryAuthPort(secretStores.default());
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
@@ -972,7 +972,7 @@ export async function bootstrap() {
     return composeAgentsModule({
       agentStore,
       sandboxAddresses,
-      registryAuthRoot: config.registryAuthRoot,
+      secrets: secretStores.default(),
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,

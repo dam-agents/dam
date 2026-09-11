@@ -3,6 +3,7 @@ import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import type { AgentStore } from "./infrastructure/agent-store.js";
+import type { SecretStore } from "../secret-store/index.js";
 import type { SandboxAddresses } from "./infrastructure/sandbox-addresses.js";
 import { createAgentRegistryAuthPort } from "./infrastructure/agent-registry-auth-port.js";
 import { createSandboxStatusClient } from "./infrastructure/sandbox-status-client.js";
@@ -64,7 +65,7 @@ export type {
 export function composeAgentsModule(deps: {
   agentStore: AgentStore;
   sandboxAddresses: SandboxAddresses;
-  registryAuthRoot: string;
+  secrets: SecretStore;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
   resizeGate?: ResizeGatePort;
@@ -93,7 +94,7 @@ export function composeAgentsModule(deps: {
 } {
   const repo = createAgentsRepository(deps.agentStore);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
-  const registryAuthPort = createAgentRegistryAuthPort(deps.registryAuthRoot);
+  const registryAuthPort = createAgentRegistryAuthPort(deps.secrets);
   const owner = deps.owner ?? "";
   return {
     agents: createAgentsService({

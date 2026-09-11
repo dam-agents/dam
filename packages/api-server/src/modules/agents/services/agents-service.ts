@@ -745,12 +745,11 @@ export function createAgentsService(deps: {
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
-        await deps.registryAuthPort.create(
+        spec.registryAuth = await deps.registryAuthPort.create(
           agentId,
           owner,
           input.registryCredential,
         );
-        spec.registryAuthPath = deps.registryAuthPort.configDir(agentId);
       }
 
       const createAnnotations: Record<string, string> = {};

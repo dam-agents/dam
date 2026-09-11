@@ -8,6 +8,7 @@ import { createGatewayPort } from "./infrastructure/gateway-port.js";
 import { createNetworkPort } from "./infrastructure/network-port.js";
 import { createPkiPort } from "./infrastructure/pki-port.js";
 import { createInstallCaStore } from "./infrastructure/install-ca-store.js";
+import { createAgentRegistryAuthPort } from "../agents/infrastructure/agent-registry-auth-port.js";
 import type { EnvoyOTelView } from "./domain/envoy-bootstrap.js";
 import {
   createSandboxSupervisor,
@@ -53,6 +54,7 @@ export function composeSandboxes(deps: {
     }),
     gateway: createGatewayPort({ log: (message) => deps.log(message) }),
     pki: createPkiPort(deps.pkiRoot, createInstallCaStore(deps.db)),
+    registryAuth: createAgentRegistryAuthPort(deps.secrets),
     envoyConfig: createEnvoyConfigPort({
       secrets: deps.secrets,
       gatewayPort: deps.gatewayPort,

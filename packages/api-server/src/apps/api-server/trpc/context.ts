@@ -105,7 +105,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { agents, isOwnedAgent } = composeAgentsModule({
       agentStore: boot.agentStore,
       sandboxAddresses: boot.sandboxAddresses,
-      registryAuthRoot: config.registryAuthRoot,
+      secrets: secretStores.default(),
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,

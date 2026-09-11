@@ -1,3 +1,4 @@
+import type { SecretRef } from "api-server-api";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { exec } from "../infrastructure/exec.js";
@@ -48,6 +49,9 @@ export interface SandboxSupervisorDeps {
   gatewayGid: number;
   defaultIdleTimeoutMs: number;
   sandboxCommand: string[];
+  registryAuth: {
+    materialize(ref: SecretRef, dir: string): Promise<string>;
+  };
   harnessBaseUrl: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
@@ -164,8 +168,13 @@ export function createSandboxSupervisor(
     await deps.runsc.ensureRunning({
       agentId: record.id,
       image: record.spec.image,
-      ...(record.spec.registryAuthPath
-        ? { registryAuthPath: record.spec.registryAuthPath }
+      ...(record.spec.registryAuth
+        ? {
+            registryAuthPath: await deps.registryAuth.materialize(
+              record.spec.registryAuth,
+              layout.registryAuth,
+            ),
+          }
         : {}),
       netns: link.netns,
       env: sandboxEnv(record, link, deps),

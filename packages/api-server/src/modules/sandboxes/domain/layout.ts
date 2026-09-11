@@ -16,6 +16,7 @@ export interface SandboxLayout {
   caCert: string;
   envFile: string;
   sandbox: string;
+  registryAuth: string;
 }
 
 export function layoutFor(root: string, agentId: string): SandboxLayout {
@@ -31,6 +32,7 @@ export function layoutFor(root: string, agentId: string): SandboxLayout {
     caCert: join(dir, "ca", "ca.crt"),
     envFile: join(dir, "env"),
     sandbox: join(dir, "sandbox"),
+    registryAuth: join(dir, "registry-auth"),
   };
 }
 

@@ -145,6 +145,19 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
         .where(and(eq(secrets.storeId, storeId), eq(secrets.path, path)));
     },
 
+    async listByPurpose(
+      purpose,
+    ): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]> {
+      const rows = await db
+        .select()
+        .from(secrets)
+        .where(and(eq(secrets.storeId, storeId), eq(secrets.purpose, purpose)));
+      return rows.map((row) => ({
+        ref: { storeId, path: row.path, field: "" },
+        metadata: row.metadata as unknown as SecretMetadata,
+      }));
+    },
+
     async list(scope): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]> {
       const where = scope.purpose
         ? and(

@@ -59,6 +59,7 @@ function makeSecretStoreFake() {
   const deleted: string[] = [];
   const store: SecretStore = {
     storeId: "test",
+    listByPurpose: async () => [],
     mintRef: (meta) => ({
       storeId: "test",
       path: `secret-${meta.purpose}`,

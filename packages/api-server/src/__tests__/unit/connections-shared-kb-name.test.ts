@@ -99,6 +99,7 @@ function makeSecretStoreFake(): {
   let minted = 0;
   const store: SecretStore = {
     storeId: "test",
+    listByPurpose: async () => [],
     mintRef: (meta) => ({
       storeId: "test",
       path: `secret-${meta.purpose}-${(minted += 1)}`,

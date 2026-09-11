@@ -1,3 +1,5 @@
+import type { SecretRef } from "../secret-store/types.js";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The desired state of an Agent, and the sole
  * durable per-agent definition. The api-server is its only writer; the
@@ -16,7 +18,7 @@ export interface AgentSpecCR {
   hibernationTimeout?: string;
   image: string;
   imagePullPolicy?: string;
-  registryAuthPath?: string;
+  registryAuth?: SecretRef;
   init?: string;
   l7Hosts?: string[];
   mounts?: {

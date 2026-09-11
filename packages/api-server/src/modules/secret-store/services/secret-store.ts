@@ -7,6 +7,13 @@ export interface SecretMetadata {
   extraAnnotations?: Record<string, string>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a credential store must do, and the registry
+ * that resolves a ref to the store that minted it. `list` is owner-scoped
+ * because that is how the product asks the question; `listByPurpose` crosses
+ * owners because an orphan sweep runs after the record that pointed at a
+ * secret is gone, leaving it no owner to scope by.
+ */
 export interface SecretStore {
   readonly storeId: string;
 
@@ -34,6 +41,10 @@ export interface SecretStore {
     owner: string;
     purpose?: string;
   }): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]>;
+
+  listByPurpose(
+    purpose: string,
+  ): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]>;
 }
 
 export interface SecretStoreRegistry {
