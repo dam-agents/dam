@@ -1,10 +1,14 @@
-import type {
-  StarterKitApplyInput,
-  StarterKitConnectionRequirement,
-  StarterKitView,
+import {
+  type ConnectionTemplateView,
+  PROVIDER_TEMPLATE_IDS,
+  type ProviderPresetType,
+  type StarterKitApplyInput,
+  type StarterKitConnectionRequirement,
+  type StarterKitView,
 } from "api-server-api";
 
 import type { ProviderRef } from "../../providers/components/provider-item.js";
+import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 
 export interface StarterKitSetupDraft {
   name: string;
@@ -79,4 +83,51 @@ export function buildStarterKitApplyInput(
     ...(kit.template ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
   };
+}
+
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
+export function shortKitVersion(version: string): string {
+  return FULL_SHA.test(version) ? version.slice(0, 7) : version;
+}
+
+function isProviderTemplate(id: string): id is ProviderPresetType {
+  return PROVIDER_TEMPLATE_IDS.has(id);
+}
+
+export function isProviderRequirement(
+  requirement: StarterKitConnectionRequirement,
+): boolean {
+  return requirement.templates.some(isProviderTemplate);
+}
+
+export function providerPolicyForKit(
+  kit: Pick<StarterKitView, "connections">,
+  base: SetupProviderPolicy,
+): SetupProviderPolicy {
+  const providerReq = kit.connections.find(isProviderRequirement);
+  if (!providerReq) return base;
+  const allow = providerReq.templates.filter(isProviderTemplate);
+  const recommended =
+    base.recommended && allow.includes(base.recommended)
+      ? base.recommended
+      : allow[0];
+  return { allow, recommended };
+}
+
+export function connectableTemplates(
+  requirement: StarterKitConnectionRequirement,
+  templateById: ReadonlyMap<string, ConnectionTemplateView>,
+): ConnectionTemplateView[] {
+  return requirement.templates.flatMap((id) => {
+    const t = templateById.get(id);
+    return t ? [t] : [];
+  });
+}
+
+export function describeTemplates(
+  ids: readonly string[],
+  templateById: ReadonlyMap<string, Pick<ConnectionTemplateView, "name">>,
+): string {
+  return ids.map((id) => templateById.get(id)?.name ?? id).join(" or ");
 }

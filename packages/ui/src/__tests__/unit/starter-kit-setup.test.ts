@@ -6,8 +6,12 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildStarterKitApplyInput,
+  describeTemplates,
+  isProviderRequirement,
   isStarterKitSetupComplete,
+  providerPolicyForKit,
   requirementStatuses,
+  shortKitVersion,
   type StarterKitSetupDraft,
 } from "../../modules/starter-kits/lib/setup.js";
 
@@ -108,5 +112,57 @@ describe("buildStarterKitApplyInput", () => {
     expect(() =>
       buildStarterKitApplyInput(kit, { ...complete, providerRef: null }, owned),
     ).toThrow();
+  });
+});
+
+describe("shortKitVersion", () => {
+  test("shortens a full commit sha and leaves refs alone", () => {
+    expect(shortKitVersion("4c525de66db6de74e9c8fd8342e443228c17aa69")).toBe(
+      "4c525de",
+    );
+    expect(shortKitVersion("v1.4.0")).toBe("v1.4.0");
+    expect(shortKitVersion("local")).toBe("local");
+  });
+});
+
+describe("providerPolicyForKit", () => {
+  const base = { recommended: "ibm-litellm" as const };
+  test("narrows the provider picker to the kit's provider requirement", () => {
+    const policy = providerPolicyForKit(
+      { connections: [{ templates: ["anthropic", "openai"], required: true }] },
+      base,
+    );
+    expect(policy).toEqual({
+      allow: ["anthropic", "openai"],
+      recommended: "anthropic",
+    });
+  });
+  test("keeps the base recommendation when the kit allows it", () => {
+    expect(
+      providerPolicyForKit(
+        {
+          connections: [
+            { templates: ["ibm-litellm", "anthropic"], required: true },
+          ],
+        },
+        base,
+      ).recommended,
+    ).toBe("ibm-litellm");
+  });
+  test("falls back to the base policy when no requirement names a provider", () => {
+    expect(providerPolicyForKit(kit, base)).toBe(base);
+    expect(isProviderRequirement(kit.connections[0])).toBe(false);
+    expect(isProviderRequirement({ templates: ["bob"], required: false })).toBe(
+      true,
+    );
+  });
+});
+
+describe("describeTemplates", () => {
+  test("names templates the catalog knows and falls back to the id", () => {
+    const byId = new Map([["github-app", { name: "GitHub App" }]]);
+    expect(describeTemplates(["github-app", "github-pat"], byId)).toBe(
+      "GitHub App or github-pat",
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { CheckmarkFilled, CircleDash } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,11 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import {
+  useAppConnections,
+  useConnectionTemplates,
+} from "../../connections/api/queries.js";
+import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
@@ -28,7 +32,11 @@ import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import {
   buildStarterKitApplyInput,
+  connectableTemplates,
+  describeTemplates,
+  isProviderRequirement,
   isStarterKitSetupComplete,
+  providerPolicyForKit,
   requirementStatuses,
   type StarterKitSetupDraft,
 } from "../lib/setup.js";
@@ -53,6 +61,18 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const connections = useAppConnections();
   const templates = useTemplates();
+  const connectionTemplates = useConnectionTemplates();
+  const templateById = useMemo(
+    () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
+    [connectionTemplates.data],
+  );
+  const [connectTemplateId, setConnectTemplateId] = useState<string | null>(
+    null,
+  );
+  const grantedIds = useMemo(
+    () => new Set(form.connectionIds),
+    [form.connectionIds],
+  );
 
   const onTemplateIdChange = useCallback(
     (templateId: string | null) => update({ templateId }),
@@ -146,7 +166,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
       <ProviderSection
         selected={form.providerRef}
         onSelect={(providerRef) => update({ providerRef })}
-        policy={setupProviderPolicy("starter-kit")}
+        policy={providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))}
       />
 
       {statuses.length > 0 && (
@@ -163,9 +183,9 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                 ) : (
                   <CircleDash className="mt-0.5 shrink-0 text-muted-foreground" />
                 )}
-                <div>
+                <div className="min-w-0 flex-1">
                   <div>
-                    {requirement.templates.join(" or ")}{" "}
+                    {describeTemplates(requirement.templates, templateById)}{" "}
                     <span className="text-muted-foreground">
                       ({requirement.required ? "required" : "suggested"})
                     </span>
@@ -173,6 +193,28 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                   {requirement.note && (
                     <div className="text-muted-foreground">
                       {requirement.note}
+                    </div>
+                  )}
+                  {!satisfied && isProviderRequirement(requirement) && (
+                    <div className="mt-1 text-muted-foreground">
+                      Pick one under Provider above.
+                    </div>
+                  )}
+                  {!satisfied && !isProviderRequirement(requirement) && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {connectableTemplates(requirement, templateById).map(
+                        (t) => (
+                          <Button
+                            key={t.id}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setConnectTemplateId(t.id)}
+                            data-testid={`starter-kit-connect-${t.id}`}
+                          >
+                            Connect {t.name}
+                          </Button>
+                        ),
+                      )}
                     </div>
                   )}
                 </div>
@@ -187,6 +229,14 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         onToggle={toggleConnection}
         oauthReturnView={returnPath}
       />
+      {connectTemplateId && (
+        <ConnectionCatalogModal
+          initialTemplateId={connectTemplateId}
+          onClose={() => setConnectTemplateId(null)}
+          sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
+          oauthReturnView={returnPath}
+        />
+      )}
 
       {slackChannel && (
         <section className="mb-8">

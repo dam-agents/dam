@@ -1,5 +1,5 @@
 import type { ConnectionView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
@@ -36,12 +36,14 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  initialTemplateId?: string;
 }
 
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  initialTemplateId,
 }: Props) {
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -64,6 +66,17 @@ export function ConnectionCatalogModal({
     [counts],
   );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
+
+  const openedInitial = useRef(false);
+  useEffect(() => {
+    if (openedInitial.current || !initialTemplateId) return;
+    const group = allGroups.find((g) =>
+      g.templates.some((t) => t.id === initialTemplateId),
+    );
+    if (!group) return;
+    openedInitial.current = true;
+    setPane({ kind: "create", providerId: group.provider.id });
+  }, [allGroups, initialTemplateId]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
@@ -140,6 +153,7 @@ export function ConnectionCatalogModal({
                 <CatalogCreatePane
                   group={group}
                   oauthReturnView={oauthReturnView}
+                  initialTemplateId={initialTemplateId}
                   onBack={() => setPane({ kind: "browse" })}
                   onCreated={onCreated}
                 />

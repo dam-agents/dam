@@ -1,5 +1,6 @@
 import { Launch } from "@carbon/icons-react";
-import type { StarterKitView } from "api-server-api";
+import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
+import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,9 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
+import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
+import { describeTemplates, shortKitVersion } from "../lib/setup.js";
 
 const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   knowledge: "Knowledge",
@@ -25,11 +28,14 @@ const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
-function needsLines(kit: StarterKitView): string[] {
+function needsLines(
+  kit: StarterKitView,
+  templateById: ReadonlyMap<string, ConnectionTemplateView>,
+): string[] {
   const lines: string[] = [];
   for (const req of kit.connections) {
     lines.push(
-      `${req.required ? "Requires" : "Suggests"} a ${req.templates.join(" or ")} connection`,
+      `${req.required ? "Requires" : "Suggests"} a ${describeTemplates(req.templates, templateById)} connection`,
     );
   }
   for (const ch of kit.channels) lines.push(`Suggests a ${ch.type} channel`);
@@ -55,7 +61,13 @@ function createsLines(kit: StarterKitView): string[] {
   return lines;
 }
 
-function KitCard({ kit }: { kit: StarterKitView }) {
+function KitCard({
+  kit,
+  templateById,
+}: {
+  kit: StarterKitView;
+  templateById: ReadonlyMap<string, ConnectionTemplateView>;
+}) {
   const navigateToStarterKitSetup = useStore(
     (s) => s.navigateToStarterKitSetup,
   );
@@ -72,7 +84,7 @@ function KitCard({ kit }: { kit: StarterKitView }) {
         <div>
           <div className="mb-1 font-medium">What it needs</div>
           <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-            {needsLines(kit).map((line) => (
+            {needsLines(kit, templateById).map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -86,11 +98,14 @@ function KitCard({ kit }: { kit: StarterKitView }) {
           </ul>
         </div>
       </CardContent>
-      <CardFooter className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          {kit.id}@{kit.version}
+      <CardFooter className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className="min-w-0 truncate font-mono text-xs text-muted-foreground"
+          title={`${kit.id}@${kit.version}`}
+        >
+          {kit.id}@{shortKitVersion(kit.version)}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {kit.docsUrl && (
             <Button asChild variant="ghost" size="sm">
               <a href={kit.docsUrl} target="_blank" rel="noreferrer">
@@ -109,6 +124,11 @@ function KitCard({ kit }: { kit: StarterKitView }) {
 
 export function StarterKitsView() {
   const kits = useStarterKits();
+  const templates = useConnectionTemplates();
+  const templateById = useMemo(
+    () => new Map((templates.data ?? []).map((t) => [t.id, t])),
+    [templates.data],
+  );
   const setView = useStore((s) => s.setView);
 
   return (
@@ -137,7 +157,7 @@ export function StarterKitsView() {
       {kits.data && kits.data.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
           {kits.data.map((kit) => (
-            <KitCard key={kit.id} kit={kit} />
+            <KitCard key={kit.id} kit={kit} templateById={templateById} />
           ))}
         </div>
       )}
