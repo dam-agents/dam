@@ -234,7 +234,7 @@ describe("starter kits: apply", () => {
     expect(calls.created).toEqual([]);
   });
 
-  it("requires a harness when the kit pins no template, and uses the pin when it does", async () => {
+  it("requires a harness when the kit brings no image, and uses the image when it does", async () => {
     const { service } = makeHarness(LOADED);
     await expect(
       service.apply({
@@ -247,7 +247,10 @@ describe("starter kits: apply", () => {
 
     const pinned = makeHarness({
       ...LOADED,
-      kit: kit({ template: "nous", connections: [] }),
+      kit: kit({
+        image: { ref: "quay.io/acme/nous:1.0.0", size: { memory: "8Gi" } },
+        connections: [],
+      }),
     });
     await pinned.service.apply({
       kitId: "code-reviewer",
@@ -256,7 +259,9 @@ describe("starter kits: apply", () => {
       connectionIds: [],
       skipSchedules: [],
     });
-    expect(pinned.calls.created[0].templateId).toBe("nous");
+    expect(pinned.calls.created[0].templateId).toBeUndefined();
+    expect(pinned.calls.created[0].image).toBe("quay.io/acme/nous:1.0.0");
+    expect(pinned.calls.created[0].size).toEqual({ memory: "8Gi" });
   });
 
   it("deletes the agent when seeding fails after create", async () => {

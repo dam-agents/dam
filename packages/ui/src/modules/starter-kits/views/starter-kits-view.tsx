@@ -19,7 +19,11 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
-import { describeAccepts, shortKitVersion } from "../lib/setup.js";
+import {
+  describeAccepts,
+  ownAgentLine,
+  shortKitVersion,
+} from "../lib/setup.js";
 
 const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   knowledge: "Knowledge",
@@ -46,11 +50,7 @@ function needsLines(
 
 function createsLines(kit: StarterKitView): string[] {
   const lines: string[] = [];
-  lines.push(
-    kit.template
-      ? `An agent on the ${kit.template} image`
-      : "An agent on the harness you pick",
-  );
+  lines.push(ownAgentLine(kit) ?? "An agent on the harness you pick");
   if (kit.schedules.length > 0) {
     const on = kit.schedules.filter((s) => s.enabled).length;
     lines.push(

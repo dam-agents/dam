@@ -204,6 +204,8 @@ describe("the shipped proof-of-concept catalog", () => {
     const reviewer = kits.find((k) => k.kit.id === "code-reviewer")!.kit;
     expect(reviewer.connections[0]).toMatchObject({ required: true });
     expect(reviewer.schedules.filter((s) => s.enabled)).toHaveLength(1);
-    expect(kits.find((k) => k.kit.id === "nous")!.kit.template).toBe("nous");
+    expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
+      /^quay\.io\/dam-agents\/nous:/,
+    );
   });
 });

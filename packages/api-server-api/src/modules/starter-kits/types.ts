@@ -7,6 +7,7 @@ import type {
   starterKitCatalogSchema,
   starterKitCategorySchema,
   starterKitConnectionRequirementSchema,
+  starterKitImageSchema,
   starterKitParameterSchema,
   starterKitScheduleSchema,
   starterKitSchema,
@@ -17,6 +18,7 @@ export type StarterKitConnectionRequirement = z.infer<
   typeof starterKitConnectionRequirementSchema
 >;
 export type StarterKitSchedule = z.infer<typeof starterKitScheduleSchema>;
+export type StarterKitImage = z.infer<typeof starterKitImageSchema>;
 export type StarterKitParameter = z.infer<typeof starterKitParameterSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 export type StarterKitCatalogEntry = z.infer<

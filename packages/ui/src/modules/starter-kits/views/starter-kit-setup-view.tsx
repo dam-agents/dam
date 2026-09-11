@@ -42,6 +42,7 @@ import {
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitScheduleCadence,
+  ownAgentLine,
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
@@ -93,13 +94,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     onTemplateIdChange,
   });
 
-  const pinnedTemplate = kit.template
-    ? (templates.data?.find((t) => t.id === kit.template) ?? null)
-    : null;
-  const pinMissing =
-    kit.template !== undefined &&
-    templates.data !== undefined &&
-    pinnedTemplate === null;
+  const bringsImage = kit.image !== undefined;
 
   const draft: StarterKitSetupDraft = {
     name: form.name,
@@ -122,17 +117,16 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     ))
       toggleConnection(id, true);
   }, [kit, connections.data, form.connectionIds, toggleConnection]);
-  const selectedTemplate = kit.template
-    ? pinnedTemplate
+  const providerSource = bringsImage
+    ? kit.image
     : (templates.data?.find((t) => t.id === form.templateId) ?? null);
   const providerPolicy = narrowPolicyToTemplate(
     providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
-    selectedTemplate,
+    providerSource,
   );
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
   const canApply =
     isStarterKitSetupComplete(kit, draft, owned) &&
-    !pinMissing &&
     !noCompatibleProvider &&
     !apply.isPending;
 
@@ -175,11 +169,12 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
 
       <section className="mb-8">
         <SectionLabel spaced>Harness</SectionLabel>
-        {kit.template ? (
-          <Callout tone={pinMissing ? "warning" : "default"}>
-            {pinMissing
-              ? `This kit runs on the "${kit.template}" image, which is not installed here.`
-              : `This kit runs on the ${pinnedTemplate?.name ?? kit.template} image. The harness is fixed by the kit.`}
+        {bringsImage ? (
+          <Callout tone="default">
+            <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">
+              {kit.image?.ref}
+            </div>
           </Callout>
         ) : (
           <HarnessGrid

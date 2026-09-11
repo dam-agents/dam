@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { agentSizeSchema } from "../agents/schemas.js";
+import {
+  isProviderPresetType,
+  type ProviderPresetType,
+} from "../connections/providers.js";
+import { harnessFamilySchema } from "../templates/schemas.js";
 
 export const starterKitIdSchema = z
   .string()
@@ -62,6 +68,20 @@ export const starterKitEnvVarSchema = z.object({
   value: z.string(),
 });
 
+export const starterKitImageSchema = z.object({
+  ref: z.string().min(1),
+  harness: harnessFamilySchema.optional(),
+  providers: z
+    .array(
+      z.custom<ProviderPresetType>(
+        (v) => typeof v === "string" && isProviderPresetType(v),
+        "unknown provider type",
+      ),
+    )
+    .optional(),
+  size: agentSizeSchema.optional(),
+});
+
 export const starterKitSchema = z.object({
   schemaVersion: z.literal("v1"),
   id: starterKitIdSchema,
@@ -70,7 +90,7 @@ export const starterKitSchema = z.object({
   category: starterKitCategorySchema,
   video: z.url().optional(),
   docsUrl: z.url().optional(),
-  template: z.string().min(1).optional(),
+  image: starterKitImageSchema.optional(),
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })
     .optional(),

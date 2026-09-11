@@ -7,7 +7,10 @@ description: >-
   image.
 category: research
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md
-template: nous
+image:
+  ref: quay.io/dam-agents/nous:0.2.18-dev-97ce11b16dd1
+  harness: claude-code
+  providers: [ibm-litellm, anthropic]
 connections:
   - accepts: [ibm-litellm, anthropic]
     required: true

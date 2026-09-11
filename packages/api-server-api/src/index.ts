@@ -183,6 +183,7 @@ export type {
   StarterKitCatalogEntry,
   StarterKitCategory,
   StarterKitConnectionRequirement,
+  StarterKitImage,
   StarterKitParameter,
   StarterKitSchedule,
   StarterKitView,

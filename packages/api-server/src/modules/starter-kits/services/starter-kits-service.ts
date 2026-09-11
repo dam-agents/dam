@@ -113,11 +113,10 @@ export function createStarterKitsService(
       const loaded = await requireKit(input.kitId);
       const { kit, version } = loaded;
 
-      const templateId = kit.template ?? input.templateId;
-      if (!templateId)
+      if (!kit.image && !input.templateId)
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "this kit does not pin a template; pick a harness",
+          message: "this kit brings no agent image; pick a harness",
         });
 
       const unmet = unmetRequiredConnections(
@@ -134,7 +133,12 @@ export function createStarterKitsService(
 
       const agent = await deps.agents.create({
         name: input.name,
-        templateId,
+        ...(kit.image
+          ? {
+              image: kit.image.ref,
+              ...(kit.image.size ? { size: kit.image.size } : {}),
+            }
+          : { templateId: input.templateId }),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),
         ...(kit.hibernationTimeoutMin !== undefined

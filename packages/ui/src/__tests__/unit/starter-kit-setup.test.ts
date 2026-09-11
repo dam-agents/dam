@@ -21,9 +21,9 @@ import {
   toggleSkipped,
 } from "../../modules/starter-kits/lib/setup.js";
 
-const kit: Pick<StarterKitView, "id" | "template" | "connections"> = {
+const kit: Pick<StarterKitView, "id" | "image" | "connections"> = {
   id: "code-reviewer",
-  template: undefined,
+  image: undefined,
   connections: [
     { accepts: ["github-app", "github-pat"], required: true },
     { accepts: ["slack"], required: false },
@@ -81,10 +81,10 @@ describe("isStarterKitSetupComplete", () => {
     }
   });
 
-  test("does not need a harness when the kit pins a template", () => {
+  test("does not need a harness when the kit brings its own image", () => {
     expect(
       isStarterKitSetupComplete(
-        { ...kit, template: "nous" },
+        { ...kit, image: { ref: "quay.io/acme/nous:1" } },
         { ...complete, templateId: null },
         owned,
       ),
@@ -110,9 +110,9 @@ describe("buildStarterKitApplyInput", () => {
     });
   });
 
-  test("omits the harness for a pinned kit and the Slack channel when blank", () => {
+  test("omits the harness for a kit with its own image and the Slack channel when blank", () => {
     const input = buildStarterKitApplyInput(
-      { ...kit, template: "nous" },
+      { ...kit, image: { ref: "quay.io/acme/nous:1" } },
       { ...complete, templateId: null, slackChannelId: "" },
       owned,
     );

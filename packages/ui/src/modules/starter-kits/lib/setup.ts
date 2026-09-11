@@ -3,6 +3,7 @@ import {
   connectionFamilyOf,
   type ConnectionTemplateView,
   expandConnectionClasses,
+  type HarnessFamily,
   PROVIDER_TEMPLATE_IDS,
   type ProviderPresetType,
   rruleToText,
@@ -62,12 +63,12 @@ export function requirementStatuses(
 }
 
 export function isStarterKitSetupComplete(
-  kit: Pick<StarterKitView, "template" | "connections">,
+  kit: Pick<StarterKitView, "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
 ): boolean {
   if (draft.name.trim().length === 0) return false;
-  if (!kit.template && draft.templateId === null) return false;
+  if (!kit.image && draft.templateId === null) return false;
   if (draft.providerRef === null) return false;
   return requirementStatuses(kit, draft, owned).every(
     (s) => s.satisfied || !s.requirement.required,
@@ -75,7 +76,7 @@ export function isStarterKitSetupComplete(
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<StarterKitView, "id" | "template" | "connections">,
+  kit: Pick<StarterKitView, "id" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
 ): StarterKitApplyInput {
@@ -89,7 +90,7 @@ export function buildStarterKitApplyInput(
     kitId: kit.id,
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
-    ...(kit.template ? {} : { templateId: draft.templateId ?? undefined }),
+    ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
     skipSchedules: draft.skippedSchedules,
   };
@@ -209,4 +210,25 @@ export function preselectedGrants(
     out.push(matches[0].id);
   }
   return out;
+}
+
+const HARNESS_LABEL: Record<HarnessFamily, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+  bob: "Bob",
+};
+
+export function harnessFamilyLabel(
+  harness: HarnessFamily | undefined,
+): string | undefined {
+  return harness ? HARNESS_LABEL[harness] : undefined;
+}
+
+export function ownAgentLine(
+  kit: Pick<StarterKitView, "image">,
+): string | undefined {
+  if (!kit.image) return undefined;
+  const on = harnessFamilyLabel(kit.image.harness);
+  return on ? `Its own agent, built on ${on}` : "Its own agent";
 }
