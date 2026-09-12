@@ -109,6 +109,7 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
+  | "no_capacity"
   | "error";
 
 export interface AgentView {
@@ -128,6 +129,7 @@ export interface AgentView {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  noCapacityMessage?: string;
   size: { cpu?: string; memory?: string };
   usage?: { cpuMilli?: number; memoryBytes?: number };
   sandboxTerminationReason?: string;

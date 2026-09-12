@@ -104,6 +104,43 @@ describe("placing agents on nodes", () => {
     ]);
   });
 
+  // TEST_SCENARIO: an agent that could not be placed and has since been stopped. The reason it could not be placed describes an attempt nobody is making any more, and left behind it reads as a live complaint about a machine that is no longer being asked for anything.
+  it("drops the placement complaint when the agent goes to rest", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          annotations: {
+            [LAST_ACTIVITY]: new Date(Date.now() - 3600_000).toISOString(),
+          },
+          status: { noCapacityMessage: "no node has room" },
+        }),
+      ],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
+    expect(statuses[0]?.[1]).toMatchObject({
+      hibernated: true,
+      noCapacityMessage: "",
+    });
+  });
+
+  // TEST_SCENARIO: a resting agent that already says it is resting but still carries a complaint about capacity — the shape a record takes if the complaint outlived the placement attempt. The state machine reads the complaint first, so leaving it there would report a machine shortage for an agent nobody is asking for.
+  it("still clears a stale complaint from an agent already at rest", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          annotations: {
+            [LAST_ACTIVITY]: new Date(Date.now() - 3600_000).toISOString(),
+          },
+          status: { hibernated: true, noCapacityMessage: "no node has room" },
+        }),
+      ],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
+    expect(statuses[0]?.[1]).toMatchObject({ noCapacityMessage: "" });
+  });
+
   it("says nothing about an agent already at rest", async () => {
     const { scheduler, statuses, assigns } = harness(
       [
@@ -119,6 +156,61 @@ describe("placing agents on nodes", () => {
     await scheduler.tick();
     expect(statuses).toEqual([]);
     expect(assigns).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an agent asking to run that fits nowhere. Nothing else in the system will say so — the supervisor never sees it, because it was never assigned — so it reads as coming up for as long as anyone watches it.
+  it("says on the record why it could not place an agent", async () => {
+    const { scheduler, statuses } = harness(
+      [record({ spec: { image: "img", resources: { limits: BIG } } as never })],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.[1].noCapacityMessage).toMatch(
+      /asks for 16.0 Gi of memory and the largest node has 8.0 Gi/,
+    );
+  });
+
+  // TEST_SCENARIO: an agent that would fit on an empty node but not on this one, which a neighbour is already holding most of. Worth waiting for, unlike the case above, and the message has to say which it is.
+  it("distinguishes a full node from a demand no node could meet", async () => {
+    const wants4Gi = record({
+      id: "agent-2",
+      spec: {
+        image: "img",
+        resources: { limits: { cpu: "1", memory: "4Gi" } },
+      } as never,
+    });
+    const holding6Gi = record({
+      assignedNode: "node-1",
+      spec: {
+        image: "img",
+        resources: { limits: { cpu: "1", memory: "6Gi" } },
+      } as never,
+    });
+    const { scheduler, statuses } = harness(
+      [holding6Gi, wants4Gi],
+      [{ id: "node-1", cpuMilli: 4000, memoryBytes: 8 * 1024 ** 3 }],
+    );
+    await scheduler.tick();
+    expect(statuses).toEqual([
+      [
+        "agent-2",
+        {
+          noCapacityMessage:
+            "No node has 4.0 Gi of memory free. This agent starts as soon as room frees up.",
+        },
+      ],
+    ]);
+  });
+
+  it("stops saying it once the agent is placed", async () => {
+    const { scheduler, statuses, assigns } = harness(
+      [record({ status: { noCapacityMessage: "no room" } })],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
+    expect(assigns).toEqual([["agent-1", "node-1"]]);
+    expect(statuses).toEqual([["agent-1", { noCapacityMessage: "" }]]);
   });
 
   it("releases an agent that has gone idle on a node, leaving its teardown to that node", async () => {

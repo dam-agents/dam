@@ -22,7 +22,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "The agent pod is starting up." },
+  starting: { description: "The agent's sandbox is starting up." },
   preparing_workspace: {
     description: "Setting up the workspace. This finishes shortly.",
   },
@@ -41,6 +41,12 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     description:
       "Starting this agent would exceed your compute budget. Pause or stop " +
       "a running agent to free room, then start this one again.",
+  },
+  no_capacity: {
+    Icon: Warning,
+    description:
+      "There is no room on any node for this agent right now. It starts on " +
+      "its own as soon as room frees up.",
   },
 };
 
@@ -90,9 +96,9 @@ export function AgentUnavailableOverlay({
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
   const description =
-    state === "error" && agent.error
-      ? agent.error
-      : OVERLAY_COPY[state].description;
+    (state === "error" ? agent.error : undefined) ??
+    (state === "no_capacity" ? agent.noCapacityMessage : undefined) ??
+    OVERLAY_COPY[state].description;
 
   return (
     <OverlayFrame onBack={onBack}>

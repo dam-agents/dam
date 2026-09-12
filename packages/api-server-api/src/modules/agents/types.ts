@@ -36,6 +36,7 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
+  | "no_capacity"
   | "error";
 
 export type AgentSpec = AgentSpecCR & { name: string };
@@ -57,6 +58,7 @@ export interface Agent {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  noCapacityMessage?: string;
   sandboxTerminationReason?: string;
   usage?: { cpuMilli?: number; memoryBytes?: number };
   contributionFailures: { kind: string; message: string }[];

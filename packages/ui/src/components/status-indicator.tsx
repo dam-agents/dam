@@ -10,6 +10,7 @@ const stateLabel: Record<AgentDisplayState, string> = {
   hibernated: "Hibernating",
   error: "Error",
   over_budget: "Over budget",
+  no_capacity: "Waiting for room",
 };
 
 const stateVariant: Record<
@@ -23,6 +24,7 @@ const stateVariant: Record<
   hibernated: "muted",
   error: "danger",
   over_budget: "warning",
+  no_capacity: "warning",
 };
 
 export const stateDotClass: Record<AgentDisplayState, string> = {
@@ -33,6 +35,7 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   hibernated: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
+  no_capacity: "bg-warning",
 };
 
 export function StatusBadge({ state }: { state: AgentDisplayState }) {

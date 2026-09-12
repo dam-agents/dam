@@ -208,8 +208,14 @@ turned away to keep cores idle. That keeps a node's *memory* from being
 oversubscribed — it says nothing about how the room is divided between users,
 and it is install capacity, not a budget. The two failures are also not
 interchangeable in what they should tell a user: "you are using your share" and
-"the install is full" call for different actions, and an unplaced agent is
-currently surfaced by neither the meter nor any agent state.
+"the install is full" call for different actions, so they do not share a state.
+An agent the scheduler cannot place reads as **no_capacity**, and the scheduler
+writes the reason on the record as it declines — distinguishing a node that
+would fit if something freed up ("no node has 4.0 Gi of memory free; this agent
+starts as soon as room frees up") from a demand no node in the install could
+ever meet ("the largest node has 6.7 Gi; it cannot start until an operator adds
+a bigger node"). One is worth waiting for and the other is not, and the agent
+overlay shows whichever applies instead of claiming the agent is starting.
 
 ## Freeing room
 

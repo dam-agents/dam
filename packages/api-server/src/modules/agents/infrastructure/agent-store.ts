@@ -42,6 +42,7 @@ export interface AgentStatus {
   gatewayNotReadyReason?: string;
   usageMemoryBytes?: number;
   usageCpuMilli?: number;
+  noCapacityMessage?: string;
 }
 
 export interface AgentRecord {

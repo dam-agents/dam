@@ -24,6 +24,12 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * to. Releasing on hibernation is what makes the next wake a fresh placement
  * decision, which is where load balancing actually happens.
  *
+ * When it cannot place an agent that wants to run it says so on the record,
+ * because otherwise nothing does: the agent reads as coming up for as long as
+ * anyone watches it. The message distinguishes a node that would fit if
+ * something freed up from a demand no node in the install could ever meet,
+ * since one is worth waiting for and the other is not.
+ *
  * It is also the only thing that can say an agent no node holds is at rest.
  * Status is published by the supervisor that ran the agent and stays
  * published; an agent that fits nowhere, or that arrived in the database from
@@ -31,6 +37,12 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * to say so. Without that it reads as starting for ever — a stop request has
  * no supervisor to act on it — which is a claim that something is coming up
  * when nothing is. It converges in one write and is then silent.
+ *
+ * A complaint about capacity left on a resting agent counts as not yet settled,
+ * so it is cleared on the next pass however it got there. The state machine
+ * reads that complaint ahead of rest, because an agent somebody has just asked
+ * for is not resting; the cost of that choice is that a stale one would read as
+ * a live one, and this is what stops one being stale.
  *
  * An agent still wanting to run on a node that has stopped heartbeating keeps
  * its assignment. Its workspace is on that node's disk, so placing it
@@ -51,6 +63,21 @@ export interface SchedulerOpts {
   registry: NodeRegistry;
   defaultIdleTimeoutMs: number;
   log: (message: string, fields?: Record<string, unknown>) => void;
+}
+
+const gi = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} Gi`;
+
+function noRoomMessage(
+  want: NodeLoad,
+  capacities: readonly { memoryBytes: number }[],
+): string {
+  const largest = capacities.reduce((a, n) => Math.max(a, n.memoryBytes), 0);
+  if (capacities.length === 0) {
+    return "No node is available to run this agent.";
+  }
+  return want.memoryBytes > largest
+    ? `This agent asks for ${gi(want.memoryBytes)} of memory and the largest node has ${gi(largest)}. It cannot start until an operator adds a bigger node.`
+    : `No node has ${gi(want.memoryBytes)} of memory free. This agent starts as soon as room frees up.`;
 }
 
 export function createScheduler(opts: SchedulerOpts): Scheduler {
@@ -93,7 +120,11 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         });
         continue;
       }
-      if (!running && !record.assignedNode && !record.status.hibernated) {
+      if (
+        !running &&
+        !record.assignedNode &&
+        (!record.status.hibernated || record.status.noCapacityMessage)
+      ) {
         await opts.store.writeStatus(record.id, {
           ready: false,
           hibernated: true,
@@ -101,6 +132,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
           address: "",
           sandboxReady: false,
           gatewayReady: false,
+          noCapacityMessage: "",
         });
         opts.log("placement.at-rest", { agentId: record.id });
         continue;
@@ -126,10 +158,19 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         preferred: record.lastNode,
       });
       if (!node) {
+        const message = noRoomMessage(want, capacities);
+        if (record.status.noCapacityMessage !== message) {
+          await opts.store.writeStatus(record.id, {
+            noCapacityMessage: message,
+          });
+        }
         opts.log("placement.no-capacity", { agentId: record.id, ...want });
         continue;
       }
       await opts.store.assign(record.id, node);
+      if (record.status.noCapacityMessage) {
+        await opts.store.writeStatus(record.id, { noCapacityMessage: "" });
+      }
       add(node, want);
       opts.log("placement.assigned", { agentId: record.id, node });
     }
