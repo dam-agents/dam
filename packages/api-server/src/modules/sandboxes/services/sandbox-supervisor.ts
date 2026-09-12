@@ -1,5 +1,6 @@
 import type { SecretRef } from "api-server-api";
 import type { UsageReader } from "../infrastructure/cgroup-usage.js";
+import type { UserCgroups } from "../infrastructure/user-cgroup.js";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { exec } from "../infrastructure/exec.js";
@@ -103,6 +104,7 @@ export interface SandboxSupervisorDeps {
     materialize(ref: SecretRef, dir: string): Promise<string>;
   };
   usage: UsageReader;
+  userCgroups: UserCgroups;
   harnessBaseUrl: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
@@ -208,6 +210,7 @@ export function createSandboxSupervisor(
       return hibernate(record);
     }
 
+    const cgroupParent = await deps.userCgroups.ensure(record.owner);
     const link = await linkForRecord(record);
     const layout = layoutFor(deps.agentsRoot, record.id);
     const sockets = socketsFor(deps.runRoot, record.id);
@@ -269,6 +272,7 @@ export function createSandboxSupervisor(
         { source: layout.caCert, target: SANDBOX_CA_PATH, readOnly: true },
       ],
       stateDir: layout.sandbox,
+      cgroupParent,
       ...(deps.sandboxCommand.length ? { command: deps.sandboxCommand } : {}),
       ...(record.spec.resources?.limits
         ? {
@@ -284,7 +288,7 @@ export function createSandboxSupervisor(
         : {}),
     });
 
-    const usage = await deps.usage.read(record.id);
+    const usage = await deps.usage.read(record.id, cgroupParent);
     const state = await deps.runsc.inspect(record.id);
     const sandboxReady =
       state?.running === true &&
@@ -392,6 +396,8 @@ export function createSandboxSupervisor(
         deps.log("sandbox.sweep.orphan-netns", { agentId });
         await schedule(agentId);
       }
+
+      await deps.userCgroups.prune();
 
       const all = await deps.store.list();
       const mine = new Set(

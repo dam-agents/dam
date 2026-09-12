@@ -56,6 +56,7 @@ export interface SandboxSpec {
   workingDir?: string;
   command?: string[];
   limits?: { cpu?: string; memory?: string };
+  cgroupParent?: string;
 }
 
 export interface SandboxState {
@@ -360,6 +361,9 @@ function buildOciSpec(
       })),
     ],
     linux: {
+      ...(spec.cgroupParent
+        ? { cgroupsPath: `/${spec.cgroupParent}/${containerId(spec.agentId)}` }
+        : {}),
       namespaces: [
         { type: "pid" },
         { type: "ipc" },

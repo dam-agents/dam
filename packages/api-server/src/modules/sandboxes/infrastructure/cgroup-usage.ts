@@ -29,7 +29,7 @@ export interface AgentUsage {
 }
 
 export interface UsageReader {
-  read(agentId: string): Promise<AgentUsage | null>;
+  read(agentId: string, parent?: string): Promise<AgentUsage | null>;
   forget(agentId: string): void;
 }
 
@@ -43,8 +43,10 @@ export function createUsageReader(
   const last = new Map<string, { usec: number; at: number }>();
 
   return {
-    async read(agentId) {
-      const dir = `${root}/dam-${agentId}`;
+    async read(agentId, parent) {
+      const dir = parent
+        ? `${root}/${parent}/dam-${agentId}`
+        : `${root}/dam-${agentId}`;
       const [current, stat] = await Promise.all([
         readFile(`${dir}/memory.current`, "utf8").catch(() => null),
         readFile(`${dir}/cpu.stat`, "utf8").catch(() => null),

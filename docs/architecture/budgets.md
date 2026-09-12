@@ -44,10 +44,29 @@ kind of promise, and the difference is deliberate:
   another.
 - **CPU is a weight, not a cap.** The supervisor sets it as the sandbox's CPU
   weight and sets no quota at all. An agent alone on a node uses the whole
-  node; agents that want the CPU at the same time divide it in proportion to
-  their Sizes. Measured on a four-core node: a one-core Size alone reached
-  3.99 cores; two equal Sizes contending took 2.01 and 1.97; a one-core and a
-  two-core Size contending took 1.29 and 2.69.
+  node; agents that want the CPU at the same time divide it. Measured on a
+  four-core node: a one-core Size alone reached 3.99 cores; two equal Sizes
+  contending took 2.01 and 1.97; a one-core and a two-core Size contending took
+  1.29 and 2.69.
+
+**The contest is between people, not agents.** Each user's sandboxes sit in a
+cgroup of their own on the node, and those groups are what compete at the top
+level, so a user running ten agents takes one user's share and divides it among
+their ten rather than taking ten shares. Without it the platform quietly
+rewards whoever leaves the most running, which is the opposite of what a
+per-user ceiling is for. Measured on the same four-core node, with one user
+running two agents and another running one: the first user's pair took 1.99
+cores together (0.98 and 1.01), the second user's single agent took 2.00.
+
+This is per node and needs no coordination between nodes, because contention is
+a property of a machine: dividing each machine between the people using *that*
+machine is the whole of the problem. A user with agents on two nodes gets a
+share of each, and the share they get on the second costs the first node's
+users nothing. It does not require a user's agents to be placed together.
+
+Only CPU is divided this way. Memory is promised per agent and subtracted from
+the node at placement, so a per-node copy of an install-wide memory ceiling
+would let a user hold the whole of it on every node at once.
 
 This is why a Size is a platform decision rather than a user's. It sets what an
 agent is guaranteed when the install is busy, not what it is allowed when it is
