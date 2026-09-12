@@ -10,6 +10,13 @@ services are through cloud-init — the same file a lima node gets from its
 install task, which is the whole contract between a node and whatever created
 it.
 
+The boot disk is a containerDisk, whose writes are discarded when the VM
+restarts; the data disk is a PersistentVolumeClaim, and it is the only copy of
+the agents' workspaces that node holds. Backing a node up is therefore backing
+that claim up — a snapshot of it on whatever storage class the operator chose,
+which is the same mechanism the per-agent claims had before the move, taken
+once per node instead of once per agent.
+
 Peers address each other by the per-node DNS name the headless Service below
 gives them, rather than by a pod IP that changes with every restart.
 */ -}}
@@ -87,6 +94,9 @@ spec:
               disk:
                 bus: virtio
             - name: data
+              # The guest finds this disk by its serial rather than by device
+              # order, which changes with the number of disks attached.
+              serial: damdata
               disk:
                 bus: virtio
             - name: cloudinit

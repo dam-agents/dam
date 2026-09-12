@@ -84,4 +84,4 @@ COPY templates/ /etc/dam/templates/
 
 COPY --from=platform-ui:latest /usr/share/nginx/html /usr/share/dam-ui
 
-RUN systemctl enable dam-first-boot dam-api-server
+RUN systemctl enable dam-data-disk dam-first-boot dam-api-server

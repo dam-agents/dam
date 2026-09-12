@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Mounts the node's data disk at /var/lib/dam, formatting it the first time.
+#
+# A node's disk is where its agents' workspaces live, and it is the only copy —
+# so it has to be the disk that outlives the guest. On KubeVirt the boot volume
+# is a containerDisk, whose writes go to an overlay that is discarded when the
+# VM restarts; without this, /var/lib/dam would land there and every agent's
+# history would go with the first reboot.
+#
+# The disk is found by the serial the VM spec gives it rather than by device
+# order, which changes with the number of disks attached. A node with no such
+# disk — a lima node, where the whole guest is persistent — is left alone.
+set -euo pipefail
+
+DEV="${DAM_DATA_DEVICE:-/dev/disk/by-id/virtio-damdata}"
+MOUNT=/var/lib/dam
+
+for _ in $(seq 1 30); do
+  [ -e "$DEV" ] && break
+  sleep 0.5
+done
+[ -e "$DEV" ] || { echo "no data disk at $DEV; using the root filesystem"; exit 0; }
+
+if ! blkid "$DEV" >/dev/null 2>&1; then
+  echo "formatting $DEV"
+  mkfs.ext4 -q -L dam-data "$DEV"
+fi
+
+mkdir -p "$MOUNT"
+if findmnt --noheadings --target "$MOUNT" --source "$(readlink -f "$DEV")" >/dev/null 2>&1; then
+  exit 0
+fi
+mount "$DEV" "$MOUNT"
+echo "mounted $DEV at $MOUNT"

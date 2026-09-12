@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount the node's data disk at /var/lib/dam
+After=local-fs.target
+Before=dam-first-boot.service dam-api-server.service
+# Nothing may write to /var/lib/dam before this has had its say, or it writes
+# to the root filesystem and is then hidden under the mount.
+RequiresMountsFor=/var/lib
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/dam/bin/dam-data-disk
+
+[Install]
+WantedBy=multi-user.target
