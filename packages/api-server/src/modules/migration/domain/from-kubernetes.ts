@@ -17,8 +17,12 @@ import {
  *
  * A credential keeps its name and changes its address. Grants are recorded by
  * name, so re-homing a secret under its owner leaves every agent's grant list
- * meaning what it meant before; what has to be rewritten is the one reference
- * that carries a whole address, the registry credential an agent pulls with.
+ * meaning what it meant before; what has to be rewritten is every reference
+ * that carries a whole address — the registry credential an agent pulls with,
+ * and the refs a connection holds in the row Postgres already had. Those rows
+ * migrate in place and so are easy to assume are finished, but each one names
+ * the store that minted it, and that store is gone: left alone, a connection
+ * survives the move intact and fails at its first upstream call.
  *
  * Only the platform's own annotations come across. The rest of what sits
  * beside them belongs to Kubernetes and to whatever applied the resource —
@@ -170,4 +174,34 @@ function pick(
     if (src[key] !== undefined) out[key] = src[key];
   }
   return out;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Re-addresses the credential references a row
+ * already in Postgres carries. A connection holds several — the value, and for
+ * an OAuth one the tokens and client secret — at whatever depth its kind puts
+ * them, so this walks the value rather than naming fields that would have to
+ * be kept in step with every connection template.
+ *
+ * Only a reference to a secret this migration actually moved is rewritten. One
+ * naming something else is left exactly as it is: it is not ours to guess at,
+ * and a wrong address that still reads like one is worse than the old one.
+ */
+export function rehomeRefs(
+  value: unknown,
+  moved: ReadonlyMap<string, string>,
+): unknown {
+  if (Array.isArray(value)) return value.map((v) => rehomeRefs(v, moved));
+  if (value === null || typeof value !== "object") return value;
+  const node = value as Record<string, unknown>;
+  const path = node.path;
+  if (typeof node.storeId === "string" && typeof path === "string") {
+    const destination = moved.get(path);
+    if (destination) {
+      return { ...node, storeId: SECRET_STORE_ID, path: destination };
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(node).map(([k, v]) => [k, rehomeRefs(v, moved)]),
+  );
 }

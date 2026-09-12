@@ -1,9 +1,10 @@
 # Migrating an install from Kubernetes-hosted agents to nodes
 
-Status: the importer exists and the whole path has been exercised against a
-database built by the released version's own migrations and a cluster holding
-the resources that version keeps there. What has not been exercised is the
-workspace copy, which needs real volumes.
+Status: exercised end to end, against a real install of the released version
+— its own cluster, its own database, its agents, their conversations and their
+volumes — migrated onto a node and verified there. The workspace copy is now
+included in that; see *The full rehearsal* below for what was carried and what
+had to be repaired to carry it.
 
 ## What actually changes
 
@@ -56,6 +57,59 @@ would have been every agent's. The sweep now refuses to act when no agent
 record exists at all, since that state is not the one it was built for, but the
 ordering below is what actually keeps the window shut.
 
+## The full rehearsal
+
+A release install was built for real — four agents, two connections, a granted
+credential, a cron schedule, an API key, a per-user budget, and a conversation
+held with an agent that left files in its volume — and then moved onto a node
+by the order of operations below. Everything arrived: the agents under their
+own names, the schedule with its next run recomputed, the API key with its
+scopes, the budget ceiling with the four agents counted against it, the
+conversation's session resumable by its old id, and the agent's own files —
+its notes, its harness memory, a nested file — readable from inside the gVisor
+sandbox on the new node.
+
+Three things did not arrive by themselves. Each was found by running the move,
+not by reading it:
+
+**A connection's credential was left pointing at a store that no longer
+exists.** A connection row was always in Postgres, so it migrates in place and
+looks finished — but the row carries the *address* of its secret, store id
+included, and the importer had just moved that secret to a different store
+under a different path. The row survived intact and pointed nowhere. Nothing
+fails at import: the gateway materializes credentials for its agents and simply
+produces an empty credential directory, and the agent starts perfectly and
+fails at its first upstream call. The importer now re-addresses every reference
+a connection holds, at whatever depth its kind puts them, and only to secrets
+this migration actually moved.
+
+**The node's api-server starts itself.** The unit is enabled in the node image,
+so "create the node VMs but do not start the api-server yet" is not what
+happens when a node VM boots — it reconciled the imported records and created
+empty home directories for two agents before their workspaces had been copied.
+Stop the unit as soon as the VM is up and start it at step 5, or the copy is
+racing a supervisor that is already building the agent an empty workspace.
+
+**An image only the old cluster could resolve.** An agent's image reference is
+carried across verbatim, which is right for a registry reference and useless
+for one that only ever worked because the image had been side-loaded into the
+old cluster's container runtime. A node pulls from registries; an unqualified
+name becomes a Docker Hub pull and a 401. Such an image has to be published
+somewhere the node can reach, or placed on the node, and the record's image
+rewritten before the agent will start.
+
+Two further notes, neither of them a defect:
+
+- **The identity provider has to be the same one.** Every owner column is a
+  Keycloak subject id. The chart's Keycloak keeps running across the move, so
+  this costs nothing — but an install that takes the opportunity to stand up a
+  *fresh* Keycloak orphans every agent, connection, schedule and key in the
+  database, because their owner no longer exists. There is no mapping step in
+  the importer and there should not be one; keep the realm.
+- **Users re-accept the terms** whenever the release changes their version,
+  which is what the acceptance record is for. The acceptance rows migrate; they
+  simply name the version that was accepted.
+
 ## The importer
 
 A one-shot command that reads the cluster and writes Postgres. It needs
@@ -84,6 +138,11 @@ arrive starts normally and fails at the first upstream call.
 
 **UserBudget resources → budget rows.** Owner, CPU and memory.
 
+**Connections → re-addressed in place.** A connection row does not move, but
+every credential reference it holds is rewritten to name the store and path the
+secret landed at. A reference to something this migration did not move is left
+alone.
+
 **Registry credentials.** The pull secret an agent referenced becomes a
 credential-store row, and the agent's spec refers to it by name rather than by
 a path on a node.
@@ -102,7 +161,8 @@ cluster to still be running.
    unavailable from here until step 5.
 2. **Stand up the new install.** The cluster keeps running the shared services
    — the chart is the same one, cut down — and the node VMs are created and
-   registered. Do not start the api-server on them yet.
+   registered. The api-server starts with the VM, so stop it on each node as
+   soon as it is up: it must not serve or reconcile until step 5.
 3. **Import.** Run the importer against the new database. It is safe to run
    more than once; run it until it reports no work left.
 4. **Copy the workspaces** onto the nodes the records name.
@@ -124,6 +184,9 @@ an install where every agent appears deleted to its users.
 - **Anything that was Kubernetes.** Node selectors, storage classes, runtime
   classes and pull policies have no counterpart. An install relying on them for
   placement should read the node registry's capacity model instead.
+- **An image the old cluster held and no registry does.** The reference comes
+  across as written; whether it resolves is the node's question, not the
+  cluster's.
 
 ## Rollback
 

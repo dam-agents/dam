@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentRecordFromCr,
   budgetRowFromCr,
+  rehomeRefs,
   secretRowFromK8s,
 } from "../../modules/migration/domain/from-kubernetes.js";
 
@@ -143,5 +144,83 @@ describe("converting a budget", () => {
     expect(
       budgetRowFromCr({ spec: { owner: "sub-1", cpu: "16", memory: "32Gi" } }),
     ).toEqual({ owner: "sub-1", cpu: "16", memory: "32Gi" });
+  });
+});
+
+describe("re-addressing what a migrated row points at", () => {
+  // TEST_SCENARIO: a connection row survives the move untouched — it was always in Postgres — while the secret it names moves to another store under another path. The row still reads as valid, so nothing complains until the agent makes its first upstream call.
+  const moved = new Map([
+    [
+      "platform-secret-connection-anthropic-abc",
+      "sub-1/platform-secret-connection-anthropic-abc",
+    ],
+  ]);
+
+  it("points a connection at where its credential landed", () => {
+    const auth = rehomeRefs(
+      {
+        kind: "header",
+        headerName: "x-api-key",
+        valueRef: {
+          storeId: "k8s",
+          path: "platform-secret-connection-anthropic-abc",
+          field: "value",
+        },
+      },
+      moved,
+    );
+    expect(auth).toEqual({
+      kind: "header",
+      headerName: "x-api-key",
+      valueRef: {
+        storeId: "pg",
+        path: "sub-1/platform-secret-connection-anthropic-abc",
+        field: "value",
+      },
+    });
+  });
+
+  it("finds the refs an OAuth connection buries", () => {
+    const moved2 = new Map([
+      ["access", "sub-1/access"],
+      ["refresh", "sub-1/refresh"],
+    ]);
+    expect(
+      rehomeRefs(
+        {
+          kind: "oauth",
+          accessTokenRef: { storeId: "k8s", path: "access", field: "value" },
+          nested: [
+            {
+              refreshTokenRef: {
+                storeId: "k8s",
+                path: "refresh",
+                field: "value",
+              },
+            },
+          ],
+        },
+        moved2,
+      ),
+    ).toEqual({
+      kind: "oauth",
+      accessTokenRef: { storeId: "pg", path: "sub-1/access", field: "value" },
+      nested: [
+        {
+          refreshTokenRef: {
+            storeId: "pg",
+            path: "sub-1/refresh",
+            field: "value",
+          },
+        },
+      ],
+    });
+  });
+
+  it("leaves a reference to something this migration did not move", () => {
+    const auth = {
+      valueRef: { storeId: "vault", path: "elsewhere", field: "value" },
+    };
+    expect(rehomeRefs(auth, moved)).toEqual(auth);
   });
 });
