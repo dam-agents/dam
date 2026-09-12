@@ -11,6 +11,11 @@
  * A volume mounted somewhere else entirely has nowhere to go. That is reported
  * rather than guessed at, because an agent whose data silently did not arrive
  * looks exactly like an agent that never had any.
+ *
+ * A move's destination is a path under the node's agent home, empty for the
+ * home itself. They come back ordered shortest-first so the home is restored
+ * before anything that lands inside it: extracting it over the top would bury
+ * what was already put there.
  */
 export interface MountedVolume {
   claimName: string;
@@ -19,7 +24,6 @@ export interface MountedVolume {
 
 export interface WorkspaceMove {
   claimName: string;
-  /** Path under the node's agent home, empty for the home itself. */
   destination: string;
 }
 
@@ -48,8 +52,6 @@ export function planWorkspace(
       unplaceable.push(volume);
     }
   }
-  // The home is restored before anything that lands inside it, or extracting
-  // it over the top would bury what was already put there.
   moves.sort((a, b) => a.destination.length - b.destination.length);
   return { moves, unplaceable };
 }
