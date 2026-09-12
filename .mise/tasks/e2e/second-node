@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#MISE description="Add a second e2e node, so cross-node behaviour can be exercised. Undo with --down."
+#MISE raw=true
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:?}"
+. "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
+
+# Two lima guests cannot address each other — each reaches the host and nothing
+# else — so a node's address to its peers is the host plus a forwarded port. A
+# one-node install publishes 127.0.0.1, which every guest reads as itself, so
+# the first node has to be re-addressed before a second can fetch from it. On
+# KubeVirt peers use the per-node DNS name instead and none of this applies.
+HOST_FOR_PEERS=192.168.5.2
+
+if [ "${1:-}" = "--down" ]; then
+  limactl stop "${DAM_VM}-2" 2>/dev/null || true
+  echo "Second node stopped. Its registry row goes stale and the scheduler stops choosing it."
+  echo "Re-address the first node with: mise run vm:install"
+  exit 0
+fi
+
+export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM}/copied-from-guest/kubeconfig.yaml"
+eval "$(mise run cluster:env)"
+
+DAM_NODE_ADDRESS="${HOST_FOR_PEERS}:4002" mise run vm:install
+mise run e2e:node-config
+
+DAM_VM="${DAM_VM}-2" DAM_NODE_ID=e2e-node-2 DAM_PORT=$((DAM_PORT + 1)) \
+  DAM_PEER_HOST_PORT=4102 DAM_NODE_ADDRESS="${HOST_FOR_PEERS}:4102" \
+  mise run vm:up
+DAM_VM="${DAM_VM}-2" DAM_NODE_ID=e2e-node-2 DAM_PORT=$((DAM_PORT + 1)) \
+  DAM_PEER_HOST_PORT=4102 DAM_NODE_ADDRESS="${HOST_FOR_PEERS}:4102" \
+  mise run vm:install
+DAM_VM="${DAM_VM}-2" DAM_NODE_ID=e2e-node-2 mise run e2e:node-config
+
+echo "Two nodes up. Check both: mise run cluster:kubectl -- -n dam exec dam-platform-postgres-0 -- psql -U platform_apiserver -d platform -c 'select id, address, state from nodes'"
+echo "Move an agent: mise run node:cordon e2e-node-1, then wake it."
