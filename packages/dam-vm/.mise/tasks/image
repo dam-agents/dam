@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE dir="{{vars.repo_root}}"
+#MISE depends=["//packages/api-server:image", "//packages/ui:image"]
+#MISE description="Build the node image — the whole platform as one bootc container."
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/dam-vm/Containerfile \
+  -t "${NODE_IMAGE_TAG:-platform-node:latest}" packages/dam-vm

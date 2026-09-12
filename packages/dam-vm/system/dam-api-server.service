@@ -18,6 +18,9 @@ Type=simple
 User=root
 WorkingDirectory=/opt/dam/api-server
 EnvironmentFile=/etc/dam/env
+# Written by first-boot provisioning, not shipped in the image: the same bytes
+# on every node would mean one node could mint another's API keys.
+EnvironmentFile=/var/lib/dam/hmac-keys
 ExecStart=/usr/local/bin/node /opt/dam/api-server/dist/index.js
 Restart=always
 RestartSec=2

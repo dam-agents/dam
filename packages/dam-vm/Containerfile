@@ -11,20 +11,46 @@
 # The agent images themselves are unchanged OCI images pulled at runtime;
 # this image carries no harness content.
 FROM quay.io/fedora/fedora-bootc:44
+ARG TARGETARCH
 
 # gVisor is the sandbox boundary, so runsc is not optional here the way a
 # RuntimeClass was in the cluster.
 RUN dnf install -y --setopt=install_weak_deps=False \
-      envoy nftables iproute openssl \
-      nodejs npm \
-      jq tar gzip && \
+      nftables iproute openssl \
+      jq tar gzip zstd && \
     dnf clean all
+
+# Node from upstream rather than the distribution's, for the same reason the
+# dev node's provisioning does it: the api-server is built against this version
+# and the packaged one trails it. Keep in step with etc/lima/dam.yaml.
+ARG NODE_VERSION=24.9.0
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) nodearch=x64 ;; \
+      arm64) nodearch=arm64 ;; \
+      *) echo "no Node build for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${nodearch}.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1
+
+# The paired gateway. No distribution we build on packages Envoy, so it comes
+# from its own release the way the dev node's provisioning takes it — keep this
+# version in step with etc/lima/dam.yaml, which installs it for a lima node.
+ARG ENVOY_VERSION=1.36.1
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) envoyarch=x86_64 ;; \
+      arm64) envoyarch=aarch_64 ;; \
+      *) echo "no Envoy build for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/envoy \
+      "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${envoyarch}"; \
+    chmod 0755 /usr/local/bin/envoy
 
 # gVisor names architectures the way the kernel does, and the build names them
 # the way Go does. A node built for the wrong one installs a runsc that cannot
 # exec, which looks like nothing at all until the first sandbox starts, so an
 # architecture this does not know about stops the build instead.
-ARG TARGETARCH
 ARG GVISOR_BASE=https://storage.googleapis.com/gvisor/releases/release/latest
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
@@ -43,6 +69,9 @@ COPY --from=platform-api-server:latest /app /opt/dam/api-server
 COPY system/*.service /usr/lib/systemd/system/
 COPY bin/ /opt/dam/bin/
 COPY etc/ /etc/dam/
+# The agent templates a node offers. Without them it serves a catalogue of
+# nothing and no agent can be created.
+COPY templates/ /etc/dam/templates/
 
 COPY --from=platform-ui:latest /usr/share/nginx/html /usr/share/dam-ui
 

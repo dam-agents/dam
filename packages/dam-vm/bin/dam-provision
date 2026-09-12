@@ -10,4 +10,16 @@ install -d -m 0700 -o root -g root \
   "${DAM_PKI_ROOT}"
 install -d -m 0755 -o root -g root "${DAM_AGENTS_ROOT}"
 
+# Keys this node keeps for itself: one pseudonymizes the activity log, the
+# other signs API keys. They are generated here rather than shipped in the
+# image, because an image is the same bytes on every node and these must not
+# be. They are generated once and kept, so a reprovision does not invalidate
+# every API key or re-pseudonymize the log. The api-server reads this file as
+# a second environment file, which is why it holds shell assignments.
+if [ ! -f /var/lib/dam/hmac-keys ]; then
+  ( umask 077
+    { echo "ACTIVITY_HMAC_KEY=$(openssl rand -hex 32)"
+      echo "API_KEY_HMAC_KEY=$(openssl rand -hex 32)"; } > /var/lib/dam/hmac-keys )
+fi
+
 touch /var/lib/dam/.provisioned

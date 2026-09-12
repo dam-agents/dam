@@ -1,7 +1,5 @@
 [Unit]
-Description=Platform first-boot provisioning (schema, realm, templates, CA)
-After=postgresql.service
-Requires=postgresql.service
+Description=Platform first-boot provisioning (node layout and per-node keys)
 Before=dam-api-server.service
 ConditionPathExists=!/var/lib/dam/.provisioned
 
