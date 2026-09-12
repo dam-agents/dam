@@ -83,6 +83,46 @@ The paired gateway is deliberately excluded — uniform per-agent platform
 overhead, which operators price into default ceilings — as are per-command Run
 sandboxes, a known undercount.
 
+## Fair use over time
+
+The per-user groups divide a busy node evenly between whoever is on it. On top
+of that, each node leans the division towards whoever has been using it
+**least**, so an hour of somebody's batch job does not cost the person who
+shows up wanting one answer the same as it costs the person who has been
+running builds all morning.
+
+It is a weight, not a quota, and it never stops anyone. There is no kernel
+primitive for "so many CPU-seconds an hour" — cgroup quotas are a rate over a
+hundred milliseconds, a cap rather than a budget — so what a node does instead
+is move each user's weight, and a weight only decides who yields when two
+people want the same core. A user throttled to the floor still gets a whole
+node that nobody else is using.
+
+Three choices make it a fair-use policy rather than a cliff:
+
+- **Recent use is an exponential average with a three-minute half-life.** One
+  number per user, no history to store, and it forgets at a stated rate: the
+  tilt is there a minute or two after somebody arrives, and a finished build is
+  forgotten inside a quarter of an hour.
+- **A user is only judged against the people who were actually competing.** An
+  idle user is not counted in the divisor, and a node with one busy user has
+  nothing to be fair about and is left alone — otherwise a user would be
+  charged for cores nobody wanted, and the first moment a second person
+  arrived would find the first already at the floor.
+- **The penalty is the inverse of how far over the share a user is**, floored
+  so nobody is starved: twice the share halves the weight, four times quarters
+  it, and it decays on its own as the throttle reduces the use that caused it.
+
+Measured on a four-core node with two users. While the heavy one was alone it
+stayed at full weight for three minutes of burning all four cores. Once a
+second person started wanting CPU its weight fell 70 → 65 → 61 → 59 → 57 over
+five minutes, and with both then asking for everything the split was 1.48 cores
+to the heavy user against 2.51 to the newcomer — where an even division would
+have given 2.00 each.
+
+Nothing tells a user they are being tilted yet; the node logs it. Showing it on
+the meter is the obvious next iteration.
+
 ## What is measured
 
 Separately from what an agent is promised, the node reports what each of its

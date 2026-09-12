@@ -190,6 +190,7 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createAgentStore } from "./modules/agents/infrastructure/agent-store.js";
 import { composeSandboxes } from "./modules/sandboxes/index.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { createFairShare } from "./modules/sandboxes/services/fair-share.js";
 import { gatewayOtelView } from "./modules/sandboxes/infrastructure/otel-view.js";
 import { resolveGatewayUser } from "./modules/sandboxes/infrastructure/gateway-user.js";
 import { startSandboxAddresses } from "./modules/agents/infrastructure/sandbox-addresses.js";
@@ -1224,7 +1225,17 @@ export async function bootstrap() {
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
   await supervisor.start();
+  const fairShare = createFairShare({
+    capacityMilli: async () => (await nodeRegistry.capacity()).cpuMilli,
+    log: (message, fields) => getLogger().info(fields ?? {}, message),
+  });
+
   const nodeTimers = [
+    setInterval(() => {
+      void fairShare.tick().catch((err: unknown) => {
+        getLogger().error({ err }, "fairshare.tick.failed");
+      });
+    }, 15_000),
     setInterval(() => {
       void supervisor.sweep().catch((err: unknown) => {
         getLogger().error({ err }, "sandbox.sweep.failed");

@@ -18,6 +18,10 @@ import { join } from "node:path";
  * problem. A user with agents on two nodes gets a share of each, and the second
  * node's share costs the first node's users nothing.
  *
+ * A group's children only get cpu and memory files of their own if the group
+ * delegates those controllers, which is why creating one is two steps rather
+ * than a mkdir.
+ *
  * Only CPU is shared this way. Memory is promised per agent and subtracted from
  * the node at placement, so a second ceiling here would either duplicate that
  * or contradict it — and a per-node copy of an install-wide ceiling would let a
@@ -38,7 +42,6 @@ export function createUserCgroups(root = ROOT): UserCgroups {
     async ensure(owner) {
       const name = userCgroupOf(owner);
       await mkdir(join(root, name), { recursive: true });
-      // Children only get cpu and memory files if the parent delegates them.
       await writeFile(
         join(root, name, "cgroup.subtree_control"),
         "+cpu +memory",

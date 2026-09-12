@@ -40,6 +40,7 @@ export interface NodeRegistry {
   heartbeat(): Promise<void>;
   list(): Promise<NodeRow[]>;
   ready(): Promise<NodeRow[]>;
+  capacity(): Promise<{ cpuMilli: number; memoryBytes: number }>;
 }
 
 const RESERVE_CPU_MILLI = 1000;
@@ -77,6 +78,8 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
   };
 
   return {
+    capacity,
+
     async register() {
       const { cpuMilli, memoryBytes } = await capacity();
       await opts.db
