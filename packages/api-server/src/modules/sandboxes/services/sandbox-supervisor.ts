@@ -77,6 +77,12 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * the node holds for an agent it has no record of goes through the same queue
  * as everything else rather than being torn down on the spot — otherwise the
  * sweep can destroy a namespace a reconcile is in the middle of using.
+ *
+ * Reclaiming a stale workspace is the one step of the sweep that can fail on
+ * one agent and must not end the pass: everything after it belongs to other
+ * agents, and a directory that will not go — a mount still held, a file still
+ * open — is one disk to reclaim later rather than a reason to stop reconciling
+ * the node.
  */
 export interface SandboxSupervisorDeps {
   store: AgentStore;
@@ -438,6 +444,11 @@ export function createSandboxSupervisor(
         await rm(layoutFor(deps.agentsRoot, agentId).root, {
           recursive: true,
           force: true,
+        }).catch((err: unknown) => {
+          deps.log("sandbox.sweep.stale-workspace.failed", {
+            agentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }
     },
