@@ -34,10 +34,14 @@ export function composeSpawnSizeGate(deps: {
   db: Db;
   owner: string;
   defaultCeiling: { cpu: string; memory: string };
+  largestNodeMemoryBytes?: () => Promise<number | null>;
 }): SpawnSizeGate {
   const userBudgets = createUserBudgetsReader(deps.db);
   return createSpawnSizeGate({
     readCeilingOverride: () => userBudgets.ceiling(deps.owner),
     defaultCeiling: deps.defaultCeiling,
+    ...(deps.largestNodeMemoryBytes
+      ? { largestNodeMemoryBytes: deps.largestNodeMemoryBytes }
+      : {}),
   });
 }

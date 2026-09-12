@@ -72,6 +72,7 @@ export interface HarnessApiServerAppDeps {
   usageSummary: AgentUsageSummaryService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
+  largestNodeMemoryBytes: () => Promise<number | null>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -119,6 +120,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
             cpu: config.defaultUserCpuBudget,
             memory: config.defaultUserMemoryBudget,
           },
+          largestNodeMemoryBytes: deps.largestNodeMemoryBytes,
         }),
       }),
     });

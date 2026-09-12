@@ -372,13 +372,33 @@ function buildOciSpec(
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What an agent's share buys it on the node.
+ *
+ * A share is a claim on a contended node, not a cap on an idle one. CPU is
+ * expressed as a weight rather than a quota: an agent alone on a node uses all
+ * of it, and agents that want it at the same time divide it in proportion to
+ * their shares. A quota does the opposite — it idles cores while an agent that
+ * needs them waits, which is most of the time, because an agent is a person's
+ * turn-taking assistant and is doing nothing between turns.
+ *
+ * Memory does not burst, and that asymmetry is the whole of the design rather
+ * than an omission. A core lent to a busy agent comes back the instant its
+ * owner wants it, so lending costs nothing; a gigabyte does not, so lending it
+ * means someone is killed when it is asked for. Memory therefore stays what it
+ * always was: a hard ceiling equal to the share, which is what lets the
+ * scheduler promise a node's memory exactly once and never have to break the
+ * promise. An agent that needs more memory is asking for a bigger share, and
+ * that is a question with an answer; an agent that needs more CPU for ninety
+ * seconds is not asking for anything at all.
+ */
+const SHARES_PER_CPU = 1024;
+
 function resourcesFor(limits: { cpu?: string; memory?: string }) {
   const memory = limits.memory ? parseQuantity(limits.memory) : null;
   const cpu = limits.cpu ? parseQuantity(limits.cpu) : null;
   return {
     ...(memory ? { memory: { limit: memory } } : {}),
-    ...(cpu
-      ? { cpu: { quota: Math.round(cpu * 100_000), period: 100_000 } }
-      : {}),
+    ...(cpu ? { cpu: { shares: Math.round(cpu * SHARES_PER_CPU) } } : {}),
   };
 }

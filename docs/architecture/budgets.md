@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-09-11
+Last verified: 2026-09-12
 
 ## Overview
 
@@ -24,13 +24,31 @@ that used to exist.
 across the owner's running agents. A hibernated agent counts nothing, which is
 what makes hibernation the way room is returned.
 
-An agent's **Size** is the CPU/memory limits on its spec: the one resource
+An agent's **Size** is the CPU/memory figures on its spec: the one resource
 concept users see, chosen from the template's default at create, the Size picker
-in the agent's settings, or the install default. The limits are real — the
-supervisor applies them to the sandbox as kernel-enforced limits, so memory is
-capped and CPU throttled at exactly the figure the meter counts. There is no
-requests/limits split and no overcommit ratio: one number per dimension, used
-for the ceiling, for placement, and for the sandbox itself.
+in the agent's settings, or the install default. The two dimensions are not the
+same kind of promise, and the difference is deliberate:
+
+- **Memory is a guarantee and a ceiling at once.** The supervisor sets it as
+  the sandbox's hard memory limit, and the scheduler subtracts it from the node
+  for as long as the agent is placed there. A node is therefore never promised
+  more memory than it has, and an agent is never killed to make room for
+  another.
+- **CPU is a weight, not a cap.** The supervisor sets it as the sandbox's CPU
+  weight and sets no quota at all. An agent alone on a node uses the whole
+  node; agents that want the CPU at the same time divide it in proportion to
+  their Sizes. Measured on a four-core node: a one-core Size alone reached
+  3.99 cores; two equal Sizes contending took 2.01 and 1.97; a one-core and a
+  two-core Size contending took 1.29 and 2.69.
+
+This is why a Size is worth picking but not worth agonising over. It sets what
+an agent is guaranteed when the install is busy, not what it is allowed when it
+is not — an agent doing nothing between somebody's turns holds no CPU, and an
+agent in the middle of a build is not held to a figure chosen weeks earlier.
+
+There is still no requests/limits split: one number per dimension, used for the
+ceiling, for placement, and for the sandbox itself. What changed is that the
+CPU number means a share of a contended node rather than a throttle.
 
 The paired gateway is deliberately excluded — uniform per-agent platform
 overhead, which operators price into default ceilings — as are per-command Run
@@ -92,9 +110,12 @@ never appears. A user over their Ceiling sees a full meter and no other
 consequence.
 
 What does bound capacity is **placement**, and it bounds a different thing. An
-agent is only assigned to a node with room for its Size, and an agent that fits
-nowhere is left unplaced rather than crammed onto the emptiest node
-([platform-topology](platform-topology.md)). That keeps a node from being
+agent is only assigned to a node with room for its Size's *memory*, and an agent
+that fits nowhere is left unplaced rather than crammed onto the emptiest node
+([platform-topology](platform-topology.md)). CPU never refuses a placement,
+because a CPU share cannot run out — a second agent on a busy node makes both
+slower in proportion to their Sizes, which is the bargain, rather than being
+turned away to keep cores idle. That keeps a node's *memory* from being
 oversubscribed — it says nothing about how the room is divided between users,
 and it is install capacity, not a budget. The two failures are also not
 interchangeable in what they should tell a user: "you are using your share" and

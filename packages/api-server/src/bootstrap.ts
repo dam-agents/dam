@@ -313,6 +313,10 @@ export async function bootstrap() {
   });
   const liveNodes = async () =>
     new Set((await nodeRegistry.ready()).map((n) => n.id));
+  const largestNodeMemoryBytes = async () => {
+    const ready = await nodeRegistry.ready();
+    return ready.length ? Math.max(...ready.map((n) => n.memoryBytes)) : null;
+  };
   const agentsRepo = createAgentsRepository(agentStore, liveNodes);
   const agentEnvRepo = createAgentEnvRepository(db);
 
@@ -1169,6 +1173,7 @@ export async function bootstrap() {
     ...harnessDeps,
     extAuthzGate,
     gatewayUser,
+    largestNodeMemoryBytes,
   });
 
   const agentStoreEndpoint =

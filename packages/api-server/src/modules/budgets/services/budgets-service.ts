@@ -75,8 +75,22 @@ export interface SpawnSizeGate {
   assertCanEverFit(limits: { cpu?: string; memory?: string }): Promise<void>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Refuses a Size that could never run, as opposed
+ * to one that cannot run yet. Two different things can make a Size impossible
+ * and they call for different answers: a Size over the owner's ceiling needs an
+ * operator to raise the budget, and one larger than any node's memory needs a
+ * bigger node. Waiting helps with neither, so both are refused where the Size
+ * is chosen rather than left to a scheduler that will quietly never place it.
+ *
+ * Only memory is checked against the nodes. A CPU share is a weight on a
+ * contended node rather than a reservation, so there is no CPU figure a node
+ * is too small to accept.
+ */
 export function createSpawnSizeGate(
-  deps: Pick<BudgetsServiceDeps, "readCeilingOverride" | "defaultCeiling">,
+  deps: Pick<BudgetsServiceDeps, "readCeilingOverride" | "defaultCeiling"> & {
+    largestNodeMemoryBytes?: () => Promise<number | null>;
+  },
 ): SpawnSizeGate {
   return {
     async assertCanEverFit(limits) {
@@ -91,6 +105,14 @@ export function createSpawnSizeGate(
           `worker size ${cores(cpuMilli)} / ${gi(memoryBytes)} exceeds your budget ceiling ` +
             `${cores(ceilCpu)} / ${gi(ceilMemory)} — it could never start; ` +
             `use a smaller size or ask an operator to raise your budget`,
+        );
+      }
+      const largest = (await deps.largestNodeMemoryBytes?.()) ?? null;
+      if (largest !== null && memoryBytes > largest) {
+        throw new SizeNeverFitsError(
+          `worker size needs ${gi(memoryBytes)} of memory and the largest node in this ` +
+            `install has ${gi(largest)} — it could never start; use a smaller size or ` +
+            `ask an operator for a bigger node`,
         );
       }
     },

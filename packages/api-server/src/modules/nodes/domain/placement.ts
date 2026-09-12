@@ -10,13 +10,24 @@ import { parseQuantity } from "../../../core/quantity.js";
  * agent still fits, since it is the one that already has the workspace on
  * local disk — anywhere else the agent has to be restored first. Otherwise the
  * emptiest node wins, measured as the larger of its CPU and memory fractions so
- * that neither dimension can hide behind the other. An agent's demand is read
- * from the Kubernetes-style quantities its limits are written in.
+ * that neither dimension can hide behind the other.
  *
- * An agent that fits nowhere is left unplaced rather than crammed onto the
- * emptiest node. It is visible as an unplaced agent and an operator adds a
- * node; overcommitting would instead make every agent on that node slower with
- * nothing saying why.
+ * Only memory decides whether an agent fits. An agent's CPU share is a weight
+ * on a contended node rather than a reservation, so there is no amount of it
+ * that can be used up: a second agent on a busy node makes both slower in
+ * proportion to what they asked for, which is the bargain, and it makes no
+ * sense to refuse the second one to keep cores idle between somebody's turns.
+ * Memory is the opposite — an agent cannot be asked to give it back while it
+ * is holding it — so the share of it an agent is promised is subtracted from
+ * the node for as long as the agent is placed there, and a node is never
+ * promised more than it has.
+ *
+ * CPU still counts towards fullness, so load spreads across nodes rather than
+ * piling onto whichever has the most memory free.
+ *
+ * An agent whose promised memory is larger than any node is left unplaced
+ * rather than crammed onto the emptiest one, because the promise could not be
+ * kept there.
  */
 export interface NodeCapacity {
   id: string;
@@ -36,10 +47,7 @@ export function fits(
   load: NodeLoad,
   want: NodeLoad,
 ): boolean {
-  return (
-    load.cpuMilli + want.cpuMilli <= node.cpuMilli &&
-    load.memoryBytes + want.memoryBytes <= node.memoryBytes
-  );
+  return load.memoryBytes + want.memoryBytes <= node.memoryBytes;
 }
 
 function fullness(node: NodeCapacity, load: NodeLoad): number {
@@ -70,6 +78,12 @@ export function choosePlacement(input: {
   ).id;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What an agent takes from a node while it is
+ * placed there — the share it is promised, which is what its limits are
+ * written as. It is not what the agent may use: the ceiling it can burst to is
+ * the node's business, not the scheduler's.
+ */
 export function demandOf(limits: Record<string, string> | undefined): NodeLoad {
   return {
     cpuMilli: Math.round((parseQuantity(limits?.cpu) ?? 0) * 1000),

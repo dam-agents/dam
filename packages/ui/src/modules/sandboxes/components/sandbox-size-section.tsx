@@ -61,8 +61,8 @@ export function SandboxSizeSection({
           label="About compute resources"
           content={`Compute counts toward your budget only when the sandbox is active. ${
             currentSize
-              ? "Changing the size restarts the sandbox on save."
-              : "The new size applies when the sandbox next starts."
+              ? "Size is the memory this agent is guaranteed and its share of the CPU when other agents want it too — it is not a speed limit. Changing it restarts the sandbox on save."
+              : "Size is the memory this agent is guaranteed and its share of the CPU when other agents want it too — it is not a speed limit. The new size applies when the sandbox next starts."
           }`}
         >
           <Help size={14} className="text-muted-foreground/60" />
