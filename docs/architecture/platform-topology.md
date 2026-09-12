@@ -268,16 +268,12 @@ status subresource enforced:
 
   Anything a consumer needs to know about an agent's workload is therefore the
   supervisor's job to observe and publish. Beyond readiness, status carries the
-  sandbox's **observed restart count** and the classified cause behind it.
-  Restarts are published because they are otherwise unrecoverable after the
-  fact: a sandbox that crashes and comes back reports ready again and its
-  termination cause is cleared, leaving a consumer unable to distinguish it
-  from one that never faltered. A one-shot workload cannot survive that — its
-  trigger has already fired and is recorded as delivered in the runtime's
-  persisted state, so the turn never resumes — which is what lets the
-  Invocation liveness sweep end such a target promptly instead of waiting out
-  its deadline. The count describes the sandbox currently backing the Agent, so
-  it resets when that sandbox is replaced and is cleared on hibernation; a
+  sandbox's **observed restart count** and the classified cause behind it,
+  because a sandbox that crashes and comes back reads as ready again and is
+  otherwise indistinguishable from one that never faltered — which a one-shot
+  workload cannot survive, its trigger having already been recorded as
+  delivered. The count describes the sandbox currently backing the Agent, so it
+  resets when that sandbox is replaced and is cleared on hibernation; a
   hibernated Agent never reads as crashed.
 
   Observed state is what a node saw while it held the agent, and it outlives
@@ -318,7 +314,8 @@ deletion removes that too.
 - **Spec/status ownership.** The API surface never writes `status`; the supervisor never writes `spec`. One process now holds both, so the split is kept by having exactly one function that writes observed state.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. A sandbox accepts connections only on its own link, whose host end is on the node holding it, and the UI never dials one directly. A relay for an agent held elsewhere adds one node-to-node hop and changes nothing else.
 - **A node touches only its own agents.** Every supervisor read is scoped to the agents assigned to that node, teardown included. Nothing reconciles an agent it was not assigned.
-- **Placement has one writer.** Only the scheduler assigns and releases, and only one scheduler runs, because it is gated on the install-wide lock.
+- **Placement has one writer.** Only the scheduler assigns and releases, and only one scheduler runs, because it is gated on the install-wide lock — so everything able to call it ends when the lock does.
+- **Peer links belong to the node, not the leader.** A relay and a workspace export are what a node does for the others whichever one leads, so both last as long as the node.
 - **Peers are named by certificate.** A node proves which node it is with a leaf from the install CA; nothing a peer sends on the wire can change which node it is taken to be. It is the same rule as identity-by-socket, one level out.
 - **One public listener.** The public port is user-authenticated. The harness and ext_authz endpoints are not ports at all — they are per-agent unix sockets — so there is no internal port to reach from anywhere.
 - **Credential isolation.** A sandbox never holds a real upstream credential. Its paired gateway intercepts its TLS using a leaf from the install CA and injects the credential from a file only that gateway's uid can read — and the sandbox has no route to anything but that gateway.

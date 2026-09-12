@@ -10,10 +10,13 @@ function fakeSql(opts: {
 }) {
   let queries = 0;
   let released = 0;
+  const statements: string[] = [];
   const reserved = (() => {
     const fn = (async (parts: TemplateStringsArray) => {
+      statements.push(parts.join(""));
       // TEST_SCENARIO: the deadline the heartbeat runs under is setup, not one of the queries these tests count.
       if (parts.join("").includes("set_config")) return [];
+      if (parts.join("").includes("pg_advisory_unlock_all")) return [];
       queries += 1;
       if (opts.failAfter !== undefined && queries > opts.failAfter) {
         throw new Error("connection terminated");
@@ -34,6 +37,7 @@ function fakeSql(opts: {
     sql: sql as unknown as DbSql,
     releases: () => released,
     queries: () => queries,
+    statements: () => statements,
   };
 }
 
@@ -117,6 +121,27 @@ describe("leader lock", () => {
     await vi.waitFor(() => expect(order).toContain("down"));
     expect(order.slice(0, 2)).toEqual(["up", "down"]);
     expect(probe.releases()).toBeGreaterThan(0);
+    await lock.stop();
+  });
+
+  // TEST_SCENARIO: standing down while the connection is still alive, which is what a replaced connection or a cancelled statement produces. The connection goes back to a pool rather than being owned, so merely stopping to use it hands back a live session with the lock still on it: no other node can take leadership and this one is not holding it either. These locks are also re-entrant, so reserving that same session again would answer "yes, you have it" to a node that never won it.
+  it("unlocks before handing the connection back", async () => {
+    const probe = fakeSql({ granted: true, pidChangesAfter: 1 });
+    const order: string[] = [];
+    const lock = createLeaderLock({
+      sql: probe.sql,
+      key: 1,
+      pollMs: 5,
+      log: () => {},
+      onAcquired: () => void order.push("up"),
+      onLost: () => void order.push("down"),
+    });
+    lock.start();
+    await vi.waitFor(() => expect(order).toContain("down"));
+    const unlocked = probe
+      .statements()
+      .findIndex((q) => q.includes("pg_advisory_unlock_all"));
+    expect(unlocked).toBeGreaterThanOrEqual(0);
     await lock.stop();
   });
 

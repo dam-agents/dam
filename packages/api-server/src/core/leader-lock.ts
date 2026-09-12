@@ -17,6 +17,16 @@ import type { DbSql } from "db";
  * Postgres — which is no cost at all here, because there is nothing to lead
  * without it.
  *
+ * Standing down has to unlock, and not merely stop using the connection. The
+ * connection is reserved out of the pool rather than owned, so releasing it
+ * hands a live session back with the lock still on it: no other node can take
+ * leadership, and the node that gave it up is not holding it either — the
+ * install has no leader and nothing says so. Worse, these locks are re-entrant
+ * per session, so reserving that same session again answers "yes, you have the
+ * lock" to a node that never won it. Unlocking everything on the session is
+ * the only thing that makes standing down mean what it says, and it is safe
+ * precisely because the session is used for nothing else.
+ *
  * A node that loses the lock must stand its singletons down before another
  * node picks them up; that is why losing is a callback and not a flag to poll.
  *
@@ -66,6 +76,11 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
     const held = leader;
     leader = false;
     backendPid = null;
+    try {
+      if (reserved) await reserved`SELECT pg_advisory_unlock_all()`;
+    } catch {
+      /* c8 ignore next */
+    }
     try {
       reserved?.release();
     } catch {

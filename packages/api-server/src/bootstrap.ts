@@ -1265,6 +1265,23 @@ export async function bootstrap() {
 
   const LEADER_LOCK_KEY = 0x64616d_6c6472;
   let unsubscribeScheduler: (() => void) | null = null;
+  let placementTimer: NodeJS.Timeout | null = null;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Everything that can ask the scheduler to place
+   * an agent, ended together. The leader drives placement from its own timer
+   * and its own subscription rather than from the install-wide queue: a queue
+   * answers "one worker in the install", which is a different question from
+   * "the node holding the lock", and it cannot be made to stop when the lock
+   * does — it would go on delivering to a node that had stopped leading, and
+   * re-acquiring would leave a second worker behind for the same job.
+   */
+  const stopPlacing = (): void => {
+    unsubscribeScheduler?.();
+    unsubscribeScheduler = null;
+    if (placementTimer) clearInterval(placementTimer);
+    placementTimer = null;
+    scheduler.stop();
+  };
   const leaderLock = createLeaderLock({
     sql,
     key: LEADER_LOCK_KEY,
@@ -1273,9 +1290,8 @@ export async function bootstrap() {
       unsubscribeScheduler = agentStore.onChange(() =>
         scheduler.scheduleSoon(),
       );
-      await periodicJobs.register("placement-sweep", 30_000, () =>
-        scheduler.tick(),
-      );
+      placementTimer = setInterval(() => void scheduler.tick(), 30_000);
+      placementTimer.unref();
       await scheduler.tick();
       void telegramWorker?.resolveIdentity();
       liveEventsModule.startAgentWatch();
@@ -1283,11 +1299,7 @@ export async function bootstrap() {
       await channelManager.bootstrap(channelsByInstance);
     },
     onLost: async () => {
-      unsubscribeScheduler?.();
-      unsubscribeScheduler = null;
-      scheduler.stop();
-      await peerServer.close();
-      await peerTunnels.stop();
+      stopPlacing();
       liveEventsModule.stopAgentWatch();
       await channelManager.standDown();
     },
@@ -1296,7 +1308,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     await leaderLock.stop();
-    scheduler.stop();
+    stopPlacing();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     kbShareAutoRefresh.unsubscribe();
@@ -1315,6 +1327,8 @@ export async function bootstrap() {
     await redisBus.close();
     turnAttendance.close();
     await supervisor.stop();
+    await peerServer.close();
+    await peerTunnels.stop();
     await harnessSockets.closeAll();
     await chatSdkState?.disconnect().catch(() => {});
     await sharedRedis.quit().catch(() => {});
