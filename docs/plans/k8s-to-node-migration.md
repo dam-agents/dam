@@ -76,12 +76,24 @@ not by reading it:
 exists.** A connection row was always in Postgres, so it migrates in place and
 looks finished — but the row carries the *address* of its secret, store id
 included, and the importer had just moved that secret to a different store
-under a different path. The row survived intact and pointed nowhere. Nothing
-fails at import: the gateway materializes credentials for its agents and simply
-produces an empty credential directory, and the agent starts perfectly and
-fails at its first upstream call. The importer now re-addresses every reference
-a connection holds, at whatever depth its kind puts them, and only to secrets
-this migration actually moved.
+under a different path. The row survived intact and pointed nowhere.
+
+What that breaks is worth being exact about, because the obvious guess is
+wrong. The gateway is *not* affected: it materializes an agent's credentials by
+listing what the store holds for that owner and matching the grant by name, so
+a migrated agent's egress injection keeps working. What breaks is every path
+that hands the stored reference back to the store, which refuses an address it
+did not mint: editing a connection's value fails outright, and an OAuth
+connection's refresh and token exchange fail — so it keeps working until its
+access token expires, and then stops, in a background job, hours after the
+cutover looked successful. Reproduced deliberately on the migrated install:
+with the old reference restored, `connections.update` returns 500 and the node
+logs `pg secret store cannot handle ref with storeId="k8s"`.
+
+The importer now re-addresses every reference a connection holds, at whatever
+depth its kind puts them, and only to secrets this migration actually moved.
+Across the whole schema this is the only column that stores one — checked
+against the released version's own database, not assumed.
 
 **The node's api-server starts itself.** The unit is enabled in the node image,
 so "create the node VMs but do not start the api-server yet" is not what
@@ -164,7 +176,10 @@ cluster to still be running.
    registered. The api-server starts with the VM, so stop it on each node as
    soon as it is up: it must not serve or reconcile until step 5.
 3. **Import.** Run the importer against the new database. It is safe to run
-   more than once; run it until it reports no work left.
+   more than once; run it until it reports no work left. Finish it before the
+   install carries traffic: it re-addresses connection references from what the
+   cluster says, so a run against an install that has since moved a credential
+   would undo that.
 4. **Copy the workspaces** onto the nodes the records name.
 5. **Start the nodes' api-servers.** Each reconciles the agents assigned to it.
    The first reconcile issues fresh gateway certificates from the install CA
