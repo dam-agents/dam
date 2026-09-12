@@ -430,8 +430,11 @@ nodeAccess:
 nodes:
   enabled: false
   count: 2
-  # The node image as a bootable container disk.
-  image: quay.io/dam-agents/node:latest
+  # The node image wrapped as a bootable container disk — what
+  # `mise run //packages/dam-vm:disk` produces, not the bootc image it is built
+  # from. Handing KubeVirt the latter gives it a filesystem where it expects a
+  # disk, and the machine does not boot.
+  image: quay.io/dam-agents/node-disk:latest
   cpu: 4
   memory: 8Gi
   # /var/lib/dam — the agent workspaces, the unpacked images, the node's own

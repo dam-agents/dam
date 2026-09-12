@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#MISE dir="{{vars.repo_root}}"
+#MISE depends=["//packages/dam-vm:image"]
+#MISE description="Wrap the node image as a KubeVirt containerDisk (bootc image -> qcow2 -> disk image)."
+# Three steps, of which only the middle is slow:
+#   1. the bootc OCI image (the task this depends on)
+#   2. a qcow2 from it via bootc-image-builder, cached on the image's content
+#   3. that qcow2 wrapped as a containerDisk, which is all KubeVirt wants
+#
+# bootc-image-builder reads images from a containers-storage rather than the
+# docker daemon and refuses to pull, so a containerized skopeo copies the image
+# into a named volume it can mount. A named volume and not a bind mount:
+# overlayfs does not run on a macOS-shared path.
+set -euo pipefail
+
+PKG=packages/dam-vm
+CACHE="$PKG/.build"
+BOOTC_TAG="${NODE_IMAGE_TAG:-platform-node:latest}"
+OUT_TAG="${NODE_DISK_TAG:-platform-node-disk:latest}"
+STORAGE_VOL=platform-node-storage
+# Digest-pinned: the builder decides the disk layout, so a moved tag would
+# change the output for an unchanged image.
+BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
+SKOPEO_IMAGE="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
+
+# The disk is assembled on loop devices. A host whose docker cannot attach one
+# can never build this, so say so now rather than fifteen minutes in. Detach
+# what the probe attaches: a leaked device per build exhausts the kernel's
+# handful and then every later build blames the environment.
+# Bounded: a registry that accepts the connection and then says nothing leaves
+# a pull waiting indefinitely, and a build that hangs for twenty minutes tells
+# nobody anything. Both images this needs live on one registry, so a host that
+# cannot reach it cannot build the disk — which is worth saying immediately.
+bounded_pull() {
+  docker pull "$1" >/dev/null 2>&1 &
+  local pid=$! i
+  for i in $(seq 1 120); do
+    kill -0 "$pid" 2>/dev/null || { wait "$pid"; return $?; }
+    sleep 1
+  done
+  kill -9 "$pid" 2>/dev/null
+  return 124
+}
+if ! bounded_pull "$SKOPEO_IMAGE"; then
+  echo "dam-vm:disk: could not pull $SKOPEO_IMAGE within two minutes." >&2
+  echo "Either the pinned digest is gone or this host cannot reach that" >&2
+  echo "registry — try 'docker pull' on it directly to tell the two apart." >&2
+  exit 1
+fi
+if ! docker run --rm --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
+  'truncate -s 1M /tmp/probe && d=$(losetup -f --show /tmp/probe) && losetup -d "$d"' >/dev/null 2>&1; then
+  echo "dam-vm:disk: this docker cannot attach loop devices, which the disk build needs." >&2
+  exit 1
+fi
+
+# Keyed on the layers rather than the image id: buildx stamps a fresh
+# attestation on every run, so the id changes when nothing did and the
+# expensive step would never be reused.
+hash=$(docker image inspect -f '{{.RootFS.Layers}}' "$BOOTC_TAG" \
+  | openssl dgst -sha256 -r | cut -c1-16)
+disk_dir="$CACHE/disk-$hash"
+
+if [ ! -f "$disk_dir/disk.qcow2" ]; then
+  echo "dam-vm:disk: building qcow2 for node image $hash"
+  mkdir -p "$disk_dir"
+  docker volume rm -f "$STORAGE_VOL" >/dev/null 2>&1 || true
+  trap 'docker volume rm -f "$STORAGE_VOL" >/dev/null 2>&1 || true' EXIT
+  docker run --rm --privileged \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$STORAGE_VOL:/var/lib/containers/storage" \
+    "$SKOPEO_IMAGE" copy \
+    "docker-daemon:$BOOTC_TAG" "containers-storage:localhost/dam-node:$hash"
+  # ext4, not xfs: the builder mounts the fresh root through the build host's
+  # kernel, and a newer mkfs.xfs sets incompat bits an older one refuses.
+  # --chown because the builder runs privileged and would leave root's files.
+  docker run --rm --privileged --security-opt label=disable \
+    -v "$STORAGE_VOL:/var/lib/containers/storage" \
+    -v "$PWD/$disk_dir:/output" \
+    "$BIB_IMAGE" build --type qcow2 --rootfs ext4 \
+    --chown "$(id -u):$(id -g)" \
+    "localhost/dam-node:$hash"
+  mv "$disk_dir/qcow2/disk.qcow2" "$disk_dir/disk.qcow2"
+  rm -rf "$disk_dir/qcow2" "$disk_dir/manifest-qcow2.json" 2>/dev/null || true
+  find "$CACHE" -maxdepth 1 -type d -name 'disk-*' ! -name "disk-$hash" -exec rm -rf {} +
+else
+  echo "dam-vm:disk: reusing the cached qcow2 for node image $hash"
+fi
+
+# 107:107 = qemu, the uid KubeVirt reads a containerDisk as.
+docker build -t "$OUT_TAG" -f - "$disk_dir" <<'DOCKERFILE'
+FROM scratch
+COPY --chown=107:107 disk.qcow2 /disk/disk.qcow2
+DOCKERFILE
+echo "dam-vm:disk: built $OUT_TAG"

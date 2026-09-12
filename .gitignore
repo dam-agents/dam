@@ -54,3 +54,4 @@ docs/superpowers/
 .beads-credential-key
 __pycache__/
 etc/node.env
+packages/dam-vm/.build/
