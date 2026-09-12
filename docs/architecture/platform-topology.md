@@ -173,7 +173,16 @@ fetches its workspace, and nothing special-cases migration.
 **Peer links.** Nodes speak to each other over one mutually authenticated
 connection, both ends holding a leaf from the install CA and each proving the
 node id it claims. It carries two things: a relay to an agent held by that node,
-and a workspace export. Callers inside the api-server are unaware of it — an
+and a workspace export.
+
+Holding a node's certificate is necessary and not sufficient. A workspace is an
+agent's whole history, so an export is served only to the node that agent is
+*assigned* to — the one node with a reason to fetch it — which is why the leaf
+carries its node id rather than only the name every node shares. One node
+compromised is otherwise every workspace in the install readable, and the
+install CA lives in Postgres, which is a shorter walk than it sounds. The relay
+needs no equivalent rule: a node only holds addresses for agents it runs, so
+there is nothing to ask it for. Callers inside the api-server are unaware of it — an
 agent's address resolves either to its sandbox's link on this node or to a local
 address that tunnels to the node holding it, so the ~18 relays and proxies that
 dial an agent are written once, for the local case, and are correct for both.
