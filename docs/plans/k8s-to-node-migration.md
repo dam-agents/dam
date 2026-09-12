@@ -207,5 +207,26 @@ an install where every agent appears deleted to its users.
 
 Until step 6 the old install is intact: its controller is scaled to zero but
 its resources, secrets and volumes are untouched, and the new tables are
-additive, so scaling the controller back up restores service. After step 6 the
-only way back is a database restore taken before step 3, so take one.
+additive, so scaling the controller back up restores service. Verified by doing
+it: scaling the controller back to one restored the agent that was awake at
+quiesce and left the rest asleep, which is what their last activity said.
+
+After step 6 the only way back is a database restore taken before step 3, so
+take one.
+
+**This is a swing, and that is a decision rather than an omission.** The
+alternative is a side-by-side cutover: both architectures serving one install
+at once, agents moved a few at a time, each revertible on its own. It buys
+per-agent rollback and a slow ramp, and it costs a bridge — both control planes
+against one database, and something deciding per agent which of them runs it —
+which is a body of code written to be thrown away.
+
+For an install of this size the swing is the better trade: the risk is
+concentrated but bounded, the old install stays whole until the last step, and
+the one failure that would have surfaced late rather than at cutover — a
+credential reference still addressed to the store the secrets left — is fixed
+and tested. What would change the answer is size: once a single install holds
+enough agents that one bad cutover cannot be undone inside a maintenance
+window, the bridge starts being worth building, and the number to watch is how
+long step 4 takes, since copying the workspaces is the only step whose cost
+grows with the install.
