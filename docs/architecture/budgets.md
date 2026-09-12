@@ -4,10 +4,19 @@ Last verified: 2026-09-12
 
 ## Overview
 
-A **Budget** is a per-user ceiling on the CPU and memory that user's *running*
-agents may hold at once. Nodes have a fixed compute pool and every agent draws
-on it, so without a ceiling the first users to spin up agents can starve
-everyone else.
+A **Budget** is a per-user ceiling on how much a user's *running* agents may
+hold at once. Nodes have a fixed compute pool and every agent draws on it, so
+without a ceiling the first users to spin up agents can starve everyone else.
+
+**Nobody chooses an agent's size.** A user picks no CPU and no memory, at
+create or ever: the figures come from the template the agent was made from, or
+from the install default. Asking someone to predict, before an agent has run
+once, how much memory it will want weeks later produced a number that was
+wrong in one direction or the other and that they then had to maintain. What a
+user does instead is watch what their agents actually use and stop the ones
+they are done with — which is the same decision, made with the evidence in
+front of them. The one resource question left to a user is how many agents
+they can have awake at once, and the answer to that is their Budget.
 
 The Budget is today **a published figure and two narrow gates, not an admission
 control**. It is computed live, shown to the user, and enforced at the two
@@ -24,10 +33,9 @@ that used to exist.
 across the owner's running agents. A hibernated agent counts nothing, which is
 what makes hibernation the way room is returned.
 
-An agent's **Size** is the CPU/memory figures on its spec: the one resource
-concept users see, chosen from the template's default at create, the Size picker
-in the agent's settings, or the install default. The two dimensions are not the
-same kind of promise, and the difference is deliberate:
+An agent's **Size** is the CPU/memory figures on its spec, set by its template
+or the install default and not by the user. The two dimensions are not the same
+kind of promise, and the difference is deliberate:
 
 - **Memory is a guarantee and a ceiling at once.** The supervisor sets it as
   the sandbox's hard memory limit, and the scheduler subtracts it from the node
@@ -41,10 +49,12 @@ same kind of promise, and the difference is deliberate:
   3.99 cores; two equal Sizes contending took 2.01 and 1.97; a one-core and a
   two-core Size contending took 1.29 and 2.69.
 
-This is why a Size is worth picking but not worth agonising over. It sets what
-an agent is guaranteed when the install is busy, not what it is allowed when it
-is not — an agent doing nothing between somebody's turns holds no CPU, and an
+This is why a Size is a platform decision rather than a user's. It sets what an
+agent is guaranteed when the install is busy, not what it is allowed when it is
+not — an agent doing nothing between somebody's turns holds no CPU, and an
 agent in the middle of a build is not held to a figure chosen weeks earlier.
+With every agent on the same Size, the Ceiling divided by it is simply how many
+agents a user may have awake, which is the form the meter shows.
 
 There is still no requests/limits split: one number per dimension, used for the
 ceiling, for placement, and for the sandbox itself. What changed is that the
@@ -53,6 +63,27 @@ CPU number means a share of a contended node rather than a throttle.
 The paired gateway is deliberately excluded — uniform per-agent platform
 overhead, which operators price into default ceilings — as are per-command Run
 sandboxes, a known undercount.
+
+## What is measured
+
+Separately from what an agent is promised, the node reports what each of its
+agents is **using**: memory from the sandbox's own cgroup, and CPU as a rate
+between two readings of the same cgroup's accounting. The supervisor takes a
+reading on each reconcile and publishes it on the agent record, so any node can
+answer for an agent it does not host and the figure survives a restart of the
+one that does.
+
+It is the same accounting the kernel enforces the memory ceiling with, so the
+number on the screen and the number that would get an agent killed are the same
+number. It counts the sentry as well as the processes inside it, because that
+is what the agent costs the node.
+
+This is what replaced the Size picker in the product. The meter ranks a user's
+running agents by what they are measured to be using — heaviest first, memory
+ordering the list because it is the dimension that is actually finite — so
+"which of my agents should I stop" has an answer drawn from the agent's real
+behaviour. A freshly started agent reports memory immediately and no CPU until
+its second reading, since a rate needs two.
 
 ## The Ceiling
 
@@ -92,11 +123,10 @@ Invocation's deadline reaps it.
 Size, and the budget read publishes that unit next to Reserved and Ceiling. An
 agent occupies as many slots as its larger dimension needs, rounded up; the
 Ceiling holds as many slots as its tighter dimension allows, rounded down.
-Users never touch CPU or memory directly: the Size picker offers a small fixed
-set of slot multiples, and the agent list and the home dashboard show the same
-slot meter — one cell per slot, colored working / awake / free, with the
-operator's budget-request link beside it. First-time users with no agents see
-none of it.
+Since every agent is the same Size, that arithmetic reduces to a count, and the
+meter says so: *N of M agents awake*, one cell per agent, coloured working /
+awake / free, with the measured consumers listed beneath it and the operator's
+budget-request link beside it. First-time users with no agents see none of it.
 
 ## What is not enforced
 

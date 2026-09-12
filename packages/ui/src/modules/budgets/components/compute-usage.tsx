@@ -1,4 +1,5 @@
 import { Help } from "@carbon/icons-react";
+import { Fragment } from "react";
 
 import { Card } from "@/components/ui/card";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -9,13 +10,12 @@ import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import type { AgentView } from "../../../types.js";
 import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
+import { formatCores, formatGi } from "../lib/format.js";
 import {
   type ComputeCellState,
   type ComputeSegment,
   computeView,
-  formatSizeLabel,
-  type SlotUnit,
-  slotUnitOf,
+  consumers,
 } from "../lib/slots.js";
 import { SlotBar } from "./slot-bar.js";
 
@@ -31,13 +31,9 @@ const STATE_LABEL: Record<HeldState, string> = {
   awake: "awake",
 };
 
-function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
-  if (segment.state === "available")
-    return `${segment.slots} ${segment.slots === 1 ? "slot" : "slots"} available`;
-  return `${segment.agentName} · ${formatSizeLabel(
-    { cpuMilli: segment.cpuMilli, memoryMi: segment.memoryMi },
-    unit,
-  )}`;
+function segmentLabel(segment: ComputeSegment): string {
+  if (segment.state === "available") return `room for ${segment.slots} more`;
+  return `${segment.agentName} · ${STATE_LABEL[segment.state]}`;
 }
 
 interface Props {
@@ -50,40 +46,52 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: links } = useLinks();
   if (!budget) return null;
 
-  const unit = slotUnitOf(budget);
-  const view = computeView(
-    agents.filter((a) => a.state === "running"),
-    workingAgentIds,
-    budget,
-  );
+  const running = agents.filter((a) => a.state === "running");
+  const view = computeView(running, workingAgentIds, budget);
+  const heaviest = consumers(running, workingAgentIds).slice(0, 4);
 
   return (
     <>
       <div className="mb-3 flex items-center justify-between text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
-          Compute resources
+          Compute
           <Tooltip
-            content="What your running agents are guaranteed when the install is busy — not a limit on what they use. An agent with a node to itself takes all the CPU it can. Stop or pause one to free up its guarantee."
+            content="How many agents you can have awake at once, and what they are using right now. Sizing is the platform's job — you stop an agent you are done with, or ask for a bigger allowance."
             side="bottom"
           >
             <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
         <span className="tabular-nums text-foreground">
-          {view.usedSlots}/{view.ceilingSlots} slots
+          {view.usedSlots} of {view.ceilingSlots} agents awake
         </span>
       </div>
       <div className="mb-3">
         <SlotBar
           segments={view.segments}
           totalSlots={view.totalSlots}
-          label={(segment) => segmentLabel(segment, unit)}
-          ariaLabel="Usage slots"
+          label={segmentLabel}
+          ariaLabel="Agents awake"
         />
       </div>
+      {heaviest.length > 0 && (
+        <dl className="mb-3 grid grid-cols-[1fr_auto_auto] items-baseline gap-x-4 gap-y-1 text-sm">
+          {heaviest.map((c) => (
+            <Fragment key={c.agentId}>
+              <dt className="truncate text-muted-foreground">{c.agentName}</dt>
+              <dd className="tabular-nums text-foreground">
+                {formatGi(c.memoryBytes)} Gi
+              </dd>
+              <dd className="tabular-nums text-muted-foreground">
+                {c.cpuMilli === null ? "—" : `${formatCores(c.cpuMilli)} cores`}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-          {view.groups.length === 0 && "No agent is holding compute."}
+          {view.groups.length === 0 && "No agent is awake."}
           {view.groups.map((group) => (
             <span key={group.state} className="flex items-center gap-1.5">
               <span

@@ -58,6 +58,7 @@ export interface Agent {
   overBudget: boolean;
   overBudgetMessage?: string;
   sandboxTerminationReason?: string;
+  usage?: { cpuMilli?: number; memoryBytes?: number };
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   channels: ChannelConfig[];

@@ -14,8 +14,6 @@ export const settingsSchema = z.object({
     .number({ message: "Enter a number of minutes (0 = never)" })
     .int()
     .nonnegative(),
-  sizeCpuMilli: z.number().int().positive(),
-  sizeMemoryMi: z.number().int().positive(),
 });
 export type SettingsValues = z.infer<typeof settingsSchema>;
 

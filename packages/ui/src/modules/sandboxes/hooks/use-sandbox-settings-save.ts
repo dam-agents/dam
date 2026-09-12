@@ -86,25 +86,11 @@ export function useSandboxSettingsSave({
     ) {
       return;
     }
-    const sizeDirty = dirtyFields.sizeCpuMilli || dirtyFields.sizeMemoryMi;
-    if (
-      sizeDirty &&
-      agent &&
-      !(agent.state === "hibernated" || agent.overBudget) &&
-      !(await showConfirm(
-        "Saving will restart the agent to apply its new size — in-flight work is interrupted.",
-        "Restart agent?",
-        { confirmLabel: "Save & restart" },
-      ))
-    ) {
-      return;
-    }
     try {
       if (
         dirtyFields.envVars ||
         dirtyFields.name ||
-        dirtyFields.hibernationTimeoutMin ||
-        sizeDirty
+        dirtyFields.hibernationTimeoutMin
       ) {
         await updateAgent.mutateAsync({
           id: agentId,
@@ -114,18 +100,6 @@ export function useSandboxSettingsSave({
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
           ...(dirtyFields.hibernationTimeoutMin
             ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
-            : {}),
-          ...(sizeDirty
-            ? {
-                size: {
-                  ...(dirtyFields.sizeCpuMilli
-                    ? { cpu: `${values.sizeCpuMilli}m` }
-                    : {}),
-                  ...(dirtyFields.sizeMemoryMi
-                    ? { memory: `${values.sizeMemoryMi}Mi` }
-                    : {}),
-                },
-              }
             : {}),
         });
       }
@@ -165,8 +139,6 @@ export function useSandboxSettingsSave({
         assignedAppIds: savedAppIds,
         envVars: values.envVars,
         hibernationTimeoutMin: values.hibernationTimeoutMin,
-        sizeCpuMilli: values.sizeCpuMilli,
-        sizeMemoryMi: values.sizeMemoryMi,
       });
     } catch {}
   });

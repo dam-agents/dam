@@ -12,7 +12,6 @@ import {
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import {
   type SandboxSettingsStatus,
   settingsSchema,
@@ -68,8 +67,6 @@ export function useSandboxSettingsForm() {
       assignedAppIds: [],
       envVars: [],
       hibernationTimeoutMin: 60,
-      sizeCpuMilli: 1000,
-      sizeMemoryMi: 1024,
     },
   });
   const { errors, isDirty, isSubmitting } = formState;
@@ -98,8 +95,6 @@ export function useSandboxSettingsForm() {
         .sort(),
       envVars: userInitialEnv,
       hibernationTimeoutMin: agent.hibernationTimeoutMin,
-      sizeCpuMilli: parseCpuMilli(agent.size.cpu) ?? 1000,
-      sizeMemoryMi: parseMemoryMi(agent.size.memory) ?? 1024,
     });
     setFormReady(true);
   }, [
@@ -202,14 +197,6 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
-    sizeCpuMilli: watch("sizeCpuMilli"),
-    sizeMemoryMi: watch("sizeMemoryMi"),
-    setSize: (patch: { sizeCpuMilli: number; sizeMemoryMi: number }) => {
-      setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
-      setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
-    },
-    sizeRestartsAgent:
-      agent !== null && !(agent.state === "hibernated" || agent.overBudget),
     harnessDraft,
     dirty,
     isSubmitDisabled,

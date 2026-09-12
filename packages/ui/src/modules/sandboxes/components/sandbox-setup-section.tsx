@@ -15,7 +15,6 @@ import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
-import { SandboxSizeSection } from "./sandbox-size-section.js";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 
@@ -48,14 +47,6 @@ export function SandboxSetupSection({ f }: Props) {
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
-
-      <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-      />
 
       <section className="mb-8">
         <FormField

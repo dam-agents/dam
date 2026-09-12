@@ -4,6 +4,7 @@ import type { AgentStore } from "../agents/infrastructure/agent-store.js";
 import type { SecretStore } from "../secret-store/index.js";
 import { createRunscPort } from "./infrastructure/runsc-port.js";
 import { createImageStore } from "./infrastructure/image-store.js";
+import { createUsageReader } from "./infrastructure/cgroup-usage.js";
 import { createEnvoyConfigPort } from "./infrastructure/envoy-config-port.js";
 import { createGatewayPort } from "./infrastructure/gateway-port.js";
 import { createNetworkPort } from "./infrastructure/network-port.js";
@@ -59,6 +60,7 @@ export function composeSandboxes(deps: {
     gateway: createGatewayPort({ log: (message) => deps.log(message) }),
     pki: deps.pki,
     registryAuth: createAgentRegistryAuthPort(deps.secrets),
+    usage: createUsageReader(),
     envoyConfig: createEnvoyConfigPort({
       secrets: deps.secrets,
       gatewayPort: deps.gatewayPort,

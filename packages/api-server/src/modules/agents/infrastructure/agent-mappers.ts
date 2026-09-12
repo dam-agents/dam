@@ -43,6 +43,8 @@ export interface InfraAgent {
   error?: string;
   errorReason?: string;
   sandboxTerminationReason?: string;
+  usageMemoryBytes?: number;
+  usageCpuMilli?: number;
   sandboxRestarts: number;
   sandboxRestartReason?: string;
   sandboxNotReadyReason?: string;
@@ -124,6 +126,12 @@ export function parseInfraAgent(
     error: status.error || undefined,
     errorReason: status.errorReason || undefined,
     sandboxTerminationReason: status.sandboxTerminationReason || undefined,
+    ...(status.usageMemoryBytes !== undefined
+      ? { usageMemoryBytes: status.usageMemoryBytes }
+      : {}),
+    ...(status.usageCpuMilli !== undefined
+      ? { usageCpuMilli: status.usageCpuMilli }
+      : {}),
     sandboxRestarts:
       typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
         ? restarts
@@ -162,6 +170,14 @@ export function assembleAgent(
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     sandboxTerminationReason: infra.sandboxTerminationReason,
+    usage: {
+      ...(infra.usageCpuMilli !== undefined
+        ? { cpuMilli: infra.usageCpuMilli }
+        : {}),
+      ...(infra.usageMemoryBytes !== undefined
+        ? { memoryBytes: infra.usageMemoryBytes }
+        : {}),
+    },
     contributionFailures,
     unsupportedContributionKinds,
     channels,

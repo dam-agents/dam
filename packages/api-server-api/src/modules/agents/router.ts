@@ -49,6 +49,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       memory: agent.spec.resources?.limits?.memory,
     },
     sandboxTerminationReason: agent.sandboxTerminationReason,
+    usage: agent.usage ?? {},
     contributionFailures: agent.contributionFailures,
     unsupportedContributionKinds: agent.unsupportedContributionKinds,
     channels: agent.channels,

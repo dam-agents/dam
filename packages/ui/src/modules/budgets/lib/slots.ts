@@ -188,3 +188,39 @@ export function computeView(
     ),
   };
 }
+
+export interface Consumer {
+  agentId: string;
+  agentName: string;
+  memoryBytes: number;
+  cpuMilli: number | null;
+  working: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Ranks running agents by what they are measured to
+ * be using — the answer to "which of mine should I stop", now that nobody
+ * chooses an agent's size and there is no reservation to compare them by.
+ *
+ * Memory orders the list because it is the figure that is actually finite. CPU
+ * is a share of whatever is spare, so it reads as near zero for an agent
+ * between turns, which is most agents most of the time, and ordering by it
+ * would rank by who happened to be mid-sentence.
+ */
+export function consumers(
+  runningAgents: readonly AgentView[],
+  workingAgentIds: ReadonlySet<string>,
+): Consumer[] {
+  return runningAgents
+    .map((agent) => ({
+      agentId: agent.id,
+      agentName: agent.name,
+      memoryBytes: agent.usage?.memoryBytes ?? 0,
+      cpuMilli: agent.usage?.cpuMilli ?? null,
+      working: workingAgentIds.has(agent.id),
+    }))
+    .sort(
+      (a, b) =>
+        b.memoryBytes - a.memoryBytes || (b.cpuMilli ?? 0) - (a.cpuMilli ?? 0),
+    );
+}

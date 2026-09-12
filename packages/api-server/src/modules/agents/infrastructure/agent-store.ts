@@ -40,6 +40,8 @@ export interface AgentStatus {
   sandboxRestartReason?: string;
   gatewayReady?: boolean;
   gatewayNotReadyReason?: string;
+  usageMemoryBytes?: number;
+  usageCpuMilli?: number;
 }
 
 export interface AgentRecord {

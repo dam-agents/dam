@@ -1,4 +1,5 @@
 import type { SecretRef } from "api-server-api";
+import type { UsageReader } from "../infrastructure/cgroup-usage.js";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { exec } from "../infrastructure/exec.js";
@@ -101,6 +102,7 @@ export interface SandboxSupervisorDeps {
   registryAuth: {
     materialize(ref: SecretRef, dir: string): Promise<string>;
   };
+  usage: UsageReader;
   harnessBaseUrl: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
@@ -282,6 +284,7 @@ export function createSandboxSupervisor(
         : {}),
     });
 
+    const usage = await deps.usage.read(record.id);
     const state = await deps.runsc.inspect(record.id);
     const sandboxReady =
       state?.running === true &&
@@ -299,6 +302,10 @@ export function createSandboxSupervisor(
       sandboxRestarts: state?.restarts ?? 0,
       gatewayReady,
       ...(gatewayReady ? {} : { gatewayNotReadyReason: "GatewayNotReady" }),
+      ...(usage ? { usageMemoryBytes: usage.memoryBytes } : {}),
+      ...(usage?.cpuMilli !== null && usage?.cpuMilli !== undefined
+        ? { usageCpuMilli: usage.cpuMilli }
+        : {}),
       error: "",
       errorReason: "",
     });
@@ -324,7 +331,10 @@ export function createSandboxSupervisor(
       gatewayReady: false,
       sandboxRestarts: 0,
       sandboxTerminationReason: "",
+      usageMemoryBytes: 0,
+      usageCpuMilli: 0,
     });
+    deps.usage.forget(record.id);
   }
 
   async function teardown(
