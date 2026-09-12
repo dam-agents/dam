@@ -2,7 +2,6 @@ import type { BudgetReserved } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
-import { formatCores, formatGi } from "./format.js";
 
 const BYTES_PER_MI = 1024 ** 2;
 
@@ -11,12 +10,10 @@ export interface SlotUnit {
   memoryMi: number;
 }
 
-export interface SizeMi {
+interface SizeMi {
   cpuMilli: number;
   memoryMi: number;
 }
-
-export const SIZE_MULTIPLIERS = [1, 2, 4] as const;
 
 export function slotUnitOf(budget: BudgetReserved): SlotUnit {
   return {
@@ -25,21 +22,14 @@ export function slotUnitOf(budget: BudgetReserved): SlotUnit {
   };
 }
 
-export function sizeInMi(size: { cpu?: string; memory?: string }): SizeMi {
+function sizeInMi(size: { cpu?: string; memory?: string }): SizeMi {
   return {
     cpuMilli: parseCpuMilli(size.cpu) ?? 0,
     memoryMi: parseMemoryMi(size.memory) ?? 0,
   };
 }
 
-export function sizeForMultiplier(unit: SlotUnit, multiplier: number): SizeMi {
-  return {
-    cpuMilli: unit.cpuMilli * multiplier,
-    memoryMi: unit.memoryMi * multiplier,
-  };
-}
-
-export function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
+function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
   const ratio = Math.max(
     size.cpuMilli / unit.cpuMilli,
     size.memoryMi / unit.memoryMi,
@@ -47,7 +37,7 @@ export function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
   return ratio > 0 ? ratio : 1;
 }
 
-export function slotsFor(size: SizeMi, unit: SlotUnit): number {
+function slotsFor(size: SizeMi, unit: SlotUnit): number {
   return Math.max(1, Math.ceil(sizeMultiplier(size, unit) - 1e-9));
 }
 
@@ -59,40 +49,6 @@ export function ceilingSlots(budget: BudgetReserved, unit: SlotUnit): number {
       Math.floor(budget.memory.ceilingBytes / BYTES_PER_MI / unit.memoryMi),
     ),
   );
-}
-
-export function freeSlots(
-  budget: BudgetReserved,
-  unit: SlotUnit,
-  ownReserved: SizeMi = { cpuMilli: 0, memoryMi: 0 },
-): number {
-  return Math.max(
-    0,
-    Math.min(
-      Math.floor(
-        (budget.cpu.ceilingMilli -
-          budget.cpu.reservedMilli +
-          ownReserved.cpuMilli) /
-          unit.cpuMilli,
-      ),
-      Math.floor(
-        ((budget.memory.ceilingBytes - budget.memory.reservedBytes) /
-          BYTES_PER_MI +
-          ownReserved.memoryMi) /
-          unit.memoryMi,
-      ),
-    ),
-  );
-}
-
-export function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
-  return `${String(Number(sizeMultiplier(size, unit).toFixed(2)))}x`;
-}
-
-export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
-  return `${formatMultiplier(size, unit)} · ${formatCores(size.cpuMilli)} CPU · ${formatGi(
-    size.memoryMi * BYTES_PER_MI,
-  )} Gi`;
 }
 
 export type ComputeCellState = "running" | "awake" | "available";

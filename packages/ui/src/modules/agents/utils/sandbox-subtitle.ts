@@ -1,17 +1,11 @@
 import { PROVIDERS, providerTypeForTemplateId } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
-import {
-  formatSizeLabel,
-  sizeInMi,
-  type SlotUnit,
-} from "../../budgets/lib/slots.js";
 import { kbTemplateName } from "../../knowledge-bases/lib/kb-templates.js";
 
 export interface SandboxSubtitleLookup {
   templateNameById: ReadonlyMap<string, string>;
   connectionTemplateIdById: ReadonlyMap<string, string>;
-  slotUnit: SlotUnit | null;
 }
 
 export function sandboxSubtitleParts(
@@ -53,15 +47,7 @@ export function sandboxSubtitle(
     return kinded || sandboxSubtitleParts(agent, lookup).harness;
   }
   const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-  return joinSubtitleSegments([harness, provider, sizeLabel(agent, lookup)]);
-}
-
-function sizeLabel(
-  agent: AgentView,
-  lookup: SandboxSubtitleLookup,
-): string | null {
-  if (!lookup.slotUnit || !agent.size.cpu || !agent.size.memory) return null;
-  return formatSizeLabel(sizeInMi(agent.size), lookup.slotUnit);
+  return joinSubtitleSegments([harness, provider]);
 }
 
 function experimentCountLabel(count: number | undefined): string | null {

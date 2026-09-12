@@ -4,10 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   ceilingSlots,
   computeView,
-  formatSizeLabel,
-  freeSlots,
-  sizeInMi,
-  slotsFor,
   slotUnitOf,
 } from "../../modules/budgets/lib/slots.js";
 import type { AgentView } from "../../types.js";
@@ -47,34 +43,38 @@ const agent = (
 });
 
 describe("slots", () => {
+  // TEST_SCENARIO: agents whose templates give them different sizes. Nobody picks a size any more, but the catalogue still has large and small templates, so the bar has to show a big agent as taking more of the allowance than a small one.
   it("counts an agent by its larger dimension, rounded up", () => {
-    expect(slotsFor(sizeInMi({ cpu: "2", memory: "4Gi" }), unit)).toBe(2);
-    expect(slotsFor(sizeInMi({ cpu: "500m", memory: "3Gi" }), unit)).toBe(2);
-    expect(slotsFor(sizeInMi({ cpu: "1", memory: "1Gi" }), unit)).toBe(1);
-    expect(slotsFor(sizeInMi({}), unit)).toBe(1);
+    const view = computeView(
+      [
+        agent("two-cores", { cpu: "2", memory: "4Gi" }),
+        agent("three-gigs", { cpu: "500m", memory: "3Gi" }),
+        agent("one-slot", { cpu: "1", memory: "1Gi" }),
+        agent("unsized", {}),
+      ],
+      new Set(),
+      budget,
+    );
+    expect(
+      view.segments
+        .filter((seg) => seg.agentName)
+        .map((seg) => [seg.agentName, seg.slots]),
+    ).toEqual([
+      ["two-cores", 2],
+      ["three-gigs", 2],
+      ["one-slot", 1],
+      ["unsized", 1],
+    ]);
   });
 
-  it("derives ceiling and free slots from the binding dimension", () => {
+  it("derives the ceiling from the binding dimension", () => {
     expect(ceilingSlots(budget, unit)).toBe(8);
-    expect(freeSlots(budget, unit)).toBe(5);
-    expect(freeSlots(budget, unit, sizeInMi({ cpu: "2", memory: "4Gi" }))).toBe(
-      7,
-    );
     expect(
       ceilingSlots(
         { ...budget, memory: { reservedBytes: 0, ceilingBytes: 6 * GI } },
         unit,
       ),
     ).toBe(3);
-  });
-
-  it("labels a size with its multiplier", () => {
-    expect(formatSizeLabel(sizeInMi({ cpu: "2", memory: "4Gi" }), unit)).toBe(
-      "2x · 2 CPU · 4 Gi",
-    );
-    expect(
-      formatSizeLabel(sizeInMi({ cpu: "1500m", memory: "2Gi" }), unit),
-    ).toBe("1.5x · 1.5 CPU · 2 Gi");
   });
 
   it("keeps the real ceiling when running agents exceed it", () => {
