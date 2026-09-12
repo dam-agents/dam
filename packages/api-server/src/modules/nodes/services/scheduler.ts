@@ -12,6 +12,7 @@ import {
   EMPTY_LOAD,
   type NodeLoad,
 } from "../domain/placement.js";
+import { parseQuantity } from "../../../core/quantity.js";
 import type { NodeRegistry } from "../infrastructure/node-registry.js";
 
 /**
@@ -23,6 +24,19 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * run and has none, and take the node back from one that has stopped wanting
  * to. Releasing on hibernation is what makes the next wake a fresh placement
  * decision, which is where load balancing actually happens.
+ *
+ * A per-user ceiling is enforced here for the same reason placement is: this
+ * is the one writer, so it is the one place where "would this exceed it" has a
+ * single answer. Enforcing it at the API instead would let two requests that
+ * each fit pass together, and enforcing it in a node's supervisor would give
+ * every node a different opinion about a ceiling that is install-wide. An
+ * agent over the ceiling is left unplaced and says so, which is what makes it
+ * recoverable: nothing is refused permanently, it starts when the owner frees
+ * room.
+ *
+ * Which of an owner's agents gets the last of their allowance is whichever the
+ * records come back in front of. There is no fairer order to pick and pretending
+ * otherwise would mean sorting by something arbitrary and calling it policy.
  *
  * When it cannot place an agent that wants to run it says so on the record,
  * because otherwise nothing does: the agent reads as coming up for as long as
@@ -62,10 +76,34 @@ export interface SchedulerOpts {
   store: AgentStore;
   registry: NodeRegistry;
   defaultIdleTimeoutMs: number;
+  ceilingFor: (owner: string) => Promise<{ cpu: string; memory: string }>;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
 
 const gi = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} Gi`;
+const cores = (milli: number) => String(Number((milli / 1000).toFixed(2)));
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether one more agent would take an owner past
+ * their ceiling, and what to tell them if it would. The message names the
+ * dimension that actually ran out, because "you are over your budget" leaves a
+ * person guessing which of two numbers to act on.
+ */
+function overCeiling(
+  held: NodeLoad,
+  want: NodeLoad,
+  ceiling: { cpu: string; memory: string },
+): string | null {
+  const ceilCpu = Math.round((parseQuantity(ceiling.cpu) ?? 0) * 1000);
+  const ceilMemory = Math.round(parseQuantity(ceiling.memory) ?? 0);
+  if (ceilCpu > 0 && held.cpuMilli + want.cpuMilli > ceilCpu) {
+    return `Starting this agent would take you to ${cores(held.cpuMilli + want.cpuMilli)} of ${cores(ceilCpu)} CPU. Stop or pause another agent to free room.`;
+  }
+  if (ceilMemory > 0 && held.memoryBytes + want.memoryBytes > ceilMemory) {
+    return `Starting this agent would take you to ${gi(held.memoryBytes + want.memoryBytes)} of ${gi(ceilMemory)} memory. Stop or pause another agent to free room.`;
+  }
+  return null;
+}
 
 function noRoomMessage(
   want: NodeLoad,
@@ -110,6 +148,13 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
     };
 
     const unplaced: AgentRecord[] = [];
+    const held = new Map<string, NodeLoad>();
+    const chargeOwner = (owner: string, want: NodeLoad) => {
+      const at = held.get(owner) ?? { ...EMPTY_LOAD };
+      at.cpuMilli += want.cpuMilli;
+      at.memoryBytes += want.memoryBytes;
+      held.set(owner, at);
+    };
     for (const record of records) {
       const running = wants(record, now);
       if (record.assignedNode && !running) {
@@ -123,7 +168,9 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
       if (
         !running &&
         !record.assignedNode &&
-        (!record.status.hibernated || record.status.noCapacityMessage)
+        (!record.status.hibernated ||
+          record.status.noCapacityMessage ||
+          record.status.overBudget)
       ) {
         await opts.store.writeStatus(record.id, {
           ready: false,
@@ -133,12 +180,16 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
           sandboxReady: false,
           gatewayReady: false,
           noCapacityMessage: "",
+          overBudget: false,
+          overBudgetMessage: "",
         });
         opts.log("placement.at-rest", { agentId: record.id });
         continue;
       }
       if (record.assignedNode) {
-        add(record.assignedNode, demandOf(record.spec.resources?.limits));
+        const want = demandOf(record.spec.resources?.limits);
+        add(record.assignedNode, want);
+        chargeOwner(record.owner, want);
       } else if (running) {
         unplaced.push(record);
       }
@@ -151,6 +202,24 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
     }));
     for (const record of unplaced) {
       const want = demandOf(record.spec.resources?.limits);
+
+      const ceiling = await opts.ceilingFor(record.owner);
+      const over = overCeiling(
+        held.get(record.owner) ?? EMPTY_LOAD,
+        want,
+        ceiling,
+      );
+      if (over) {
+        if (!record.status.overBudget) {
+          await opts.store.writeStatus(record.id, {
+            overBudget: true,
+            overBudgetMessage: over,
+          });
+        }
+        opts.log("placement.over-budget", { agentId: record.id });
+        continue;
+      }
+
       const node = choosePlacement({
         ready: capacities,
         loadOf: (id) => load.get(id) ?? EMPTY_LOAD,
@@ -168,10 +237,15 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         continue;
       }
       await opts.store.assign(record.id, node);
-      if (record.status.noCapacityMessage) {
-        await opts.store.writeStatus(record.id, { noCapacityMessage: "" });
+      if (record.status.noCapacityMessage || record.status.overBudget) {
+        await opts.store.writeStatus(record.id, {
+          noCapacityMessage: "",
+          overBudget: false,
+          overBudgetMessage: "",
+        });
       }
       add(node, want);
+      chargeOwner(record.owner, want);
       opts.log("placement.assigned", { agentId: record.id, node });
     }
   }

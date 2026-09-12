@@ -24,6 +24,7 @@ function record(over: Partial<AgentRecord>): AgentRecord {
 function harness(
   records: AgentRecord[],
   nodes: { id: string; cpuMilli: number; memoryBytes: number }[],
+  ceiling: { cpu: string; memory: string } = { cpu: "64", memory: "128Gi" },
 ) {
   const assigns: [string, string | null][] = [];
   const statuses: [string, AgentStatus][] = [];
@@ -41,6 +42,7 @@ function harness(
     } as never,
     registry: { ready: async () => nodes } as never,
     defaultIdleTimeoutMs: 60_000,
+    ceilingFor: async () => ceiling,
     log: () => {},
   });
   return { scheduler, assigns, statuses };
@@ -210,7 +212,72 @@ describe("placing agents on nodes", () => {
     );
     await scheduler.tick();
     expect(assigns).toEqual([["agent-1", "node-1"]]);
-    expect(statuses).toEqual([["agent-1", { noCapacityMessage: "" }]]);
+    expect(statuses).toEqual([
+      [
+        "agent-1",
+        { noCapacityMessage: "", overBudget: false, overBudgetMessage: "" },
+      ],
+    ]);
+  });
+
+  // TEST_SCENARIO: an owner whose running agents already fill their ceiling, asking for one more. Nothing else in the install can answer this: two API requests that each fit would both pass, and a node's supervisor only knows its own machine, while the ceiling is install-wide.
+  it("refuses to place an agent past its owner's ceiling", async () => {
+    const oneCore = {
+      image: "img",
+      resources: { limits: { cpu: "1", memory: "2Gi" } },
+    } as never;
+    const { scheduler, assigns, statuses } = harness(
+      [
+        record({ id: "held-1", spec: oneCore, assignedNode: "node-1" }),
+        record({ id: "held-2", spec: oneCore, assignedNode: "node-1" }),
+        record({ id: "asking", spec: oneCore }),
+      ],
+      [{ id: "node-1", cpuMilli: 64_000, memoryBytes: 128 * 1024 ** 3 }],
+      { cpu: "2", memory: "64Gi" },
+    );
+    await scheduler.tick();
+    expect(assigns).toEqual([]);
+    expect(statuses).toEqual([
+      [
+        "asking",
+        {
+          overBudget: true,
+          overBudgetMessage:
+            "Starting this agent would take you to 3 of 2 CPU. Stop or pause another agent to free room.",
+        },
+      ],
+    ]);
+  });
+
+  // TEST_SCENARIO: the same owner with room to spare. The ceiling has to be a limit rather than a discouragement, so the ordinary case must not be touched by it.
+  it("places an agent that fits inside the ceiling", async () => {
+    const { scheduler, assigns } = harness(
+      [record({})],
+      [{ id: "node-1", cpuMilli: 64_000, memoryBytes: 128 * 1024 ** 3 }],
+      { cpu: "4", memory: "8Gi" },
+    );
+    await scheduler.tick();
+    expect(assigns).toEqual([["agent-1", "node-1"]]);
+  });
+
+  // TEST_SCENARIO: a ceiling whose memory is the binding half. A message naming CPU when memory ran out leaves a person acting on the wrong number.
+  it("names the dimension that ran out", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          spec: {
+            image: "img",
+            resources: { limits: { cpu: "1", memory: "16Gi" } },
+          } as never,
+        }),
+      ],
+      [{ id: "node-1", cpuMilli: 64_000, memoryBytes: 128 * 1024 ** 3 }],
+      { cpu: "64", memory: "8Gi" },
+    );
+    await scheduler.tick();
+    expect(statuses[0]?.[1].overBudgetMessage).toMatch(
+      /16.0 Gi of 8.0 Gi memory/,
+    );
   });
 
   it("releases an agent that has gone idle on a node, leaving its teardown to that node", async () => {

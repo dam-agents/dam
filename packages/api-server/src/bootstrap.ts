@@ -191,6 +191,7 @@ import { createAgentStore } from "./modules/agents/infrastructure/agent-store.js
 import { composeSandboxes } from "./modules/sandboxes/index.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { createFairShare } from "./modules/sandboxes/services/fair-share.js";
+import { createUserBudgetsReader } from "./modules/budgets/infrastructure/user-budgets.js";
 import { gatewayOtelView } from "./modules/sandboxes/infrastructure/otel-view.js";
 import { resolveGatewayUser } from "./modules/sandboxes/infrastructure/gateway-user.js";
 import { startSandboxAddresses } from "./modules/agents/infrastructure/sandbox-addresses.js";
@@ -1249,10 +1250,16 @@ export async function bootstrap() {
   ];
   for (const timer of nodeTimers) timer.unref();
 
+  const userBudgetCeilings = createUserBudgetsReader(db);
   const scheduler = createScheduler({
     store: agentStore,
     registry: nodeRegistry,
     defaultIdleTimeoutMs: config.agentIdleTimeoutMinutes * 60_000,
+    ceilingFor: async (owner) =>
+      (await userBudgetCeilings.ceiling(owner)) ?? {
+        cpu: config.defaultUserCpuBudget,
+        memory: config.defaultUserMemoryBudget,
+      },
     log: (message, fields) => getLogger().info(fields ?? {}, message),
   });
 

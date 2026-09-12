@@ -38,5 +38,14 @@ resources:
 YAML
 
 grep -q '^E2E_ENABLED=' /etc/dam/env || echo "E2E_ENABLED=true" >> /etc/dam/env
+
+# The suite runs its specs in parallel, each with its own agent, so it wants
+# more agents awake at once than one person's default allowance covers. The
+# ceiling is a per-user policy and this node has one user running a test
+# harness; leaving the default in place would have the scheduler park specs'
+# agents as over-budget, which is the ceiling working rather than a failure to
+# reproduce. What still bounds this node is the memory placement subtracts.
+grep -q '^DEFAULT_USER_CPU_BUDGET=' /etc/dam/env || echo "DEFAULT_USER_CPU_BUDGET=64" >> /etc/dam/env
+grep -q '^DEFAULT_USER_MEMORY_BUDGET=' /etc/dam/env || echo "DEFAULT_USER_MEMORY_BUDGET=128Gi" >> /etc/dam/env
 systemctl restart dam-api-server
 REMOTE

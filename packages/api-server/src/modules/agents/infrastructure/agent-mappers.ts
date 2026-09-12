@@ -63,8 +63,11 @@ export interface InfraAgent {
  * it stays published. An agent assigned to no node is being run by nobody, so
  * that readiness is the last thing that was true rather than what is — and
  * calling it running sends a caller to dial an address that answers to no one.
- * An agent no node has room for is its own answer rather than a kind of
- * starting. "The install is full" and "you are using your share" ask a person
+ * Being over the owner's ceiling, and no node having room, are each their own
+ * answer rather than a kind of starting — and both are read before rest,
+ * because an agent that was asleep when somebody asked for it is still carrying
+ * the readiness and the hibernation of its last life. An agent no node has room
+ * for is its own answer rather than a kind of starting. "The install is full" and "you are using your share" ask a person
  * to do different things — wait, or stop one of their own — and an agent that
  * reports neither, for as long as anyone watches it, asks them to do nothing
  * and expect something.
@@ -79,6 +82,7 @@ export function computeAgentState(
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
+  if (infra.overBudget && !infra.supervised) return "over_budget";
   if (infra.noCapacityMessage && !infra.supervised) return "no_capacity";
   if (infra.ready && !infra.supervised) return "starting";
   if (infra.ready)

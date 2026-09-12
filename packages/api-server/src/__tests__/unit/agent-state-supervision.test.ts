@@ -64,3 +64,46 @@ describe("an agent's state when no node is running it", () => {
     ).toBe("hibernated");
   });
 });
+
+describe("an agent the scheduler refused", () => {
+  // TEST_SCENARIO: an agent that was asleep when somebody asked for it, and was then refused for the owner's ceiling. It still carries the hibernation of its last life, so reading rest first would report it as sleeping — which is the one thing it is not: somebody is waiting for it.
+  it("reports the refusal rather than the sleep it was in", () => {
+    expect(
+      computeAgentState(
+        agent({
+          supervised: false,
+          assignedNode: null,
+          hibernated: true,
+          overBudget: true,
+        }),
+      ),
+    ).toBe("over_budget");
+    expect(
+      computeAgentState(
+        agent({
+          supervised: false,
+          assignedNode: null,
+          hibernated: true,
+          noCapacityMessage: "no node has room",
+        }),
+      ),
+    ).toBe("no_capacity");
+  });
+
+  // TEST_SCENARIO: an agent actually being run by a node that also carries an old refusal. What a node observes wins over what the scheduler last thought, or an agent that is serving requests reads as refused.
+  it("lets a node that is running it overrule an old refusal", () => {
+    expect(
+      computeAgentState(
+        agent({ ready: true, overBudget: true, noCapacityMessage: "stale" }),
+      ),
+    ).toBe("running");
+  });
+
+  it("still reports rest when there is no refusal", () => {
+    expect(
+      computeAgentState(
+        agent({ supervised: false, assignedNode: null, hibernated: true }),
+      ),
+    ).toBe("hibernated");
+  });
+});
