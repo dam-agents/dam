@@ -60,7 +60,7 @@ export interface Agent {
   overBudgetMessage?: string;
   noCapacityMessage?: string;
   sandboxTerminationReason?: string;
-  usage?: { cpuMilli?: number; memoryBytes?: number };
+  usage?: { cpuMilli?: number; memoryBytes?: number; shareWeight?: number };
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   channels: ChannelConfig[];

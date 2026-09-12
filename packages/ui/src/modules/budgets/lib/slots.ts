@@ -224,3 +224,25 @@ export function consumers(
         b.memoryBytes - a.memoryBytes || (b.cpuMilli ?? 0) - (a.cpuMilli ?? 0),
     );
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How far a user's share of a busy node has been
+ * tilted away from an even split by their own recent use, as a percentage, or
+ * null when it has not been. The node writes that weight and the agents report
+ * it back, so this only has to notice that it is no longer the default.
+ *
+ * The lowest of a user's agents is the one to show. They are all in the same
+ * group on any one node, so a difference between them means they are on
+ * different nodes — and the honest answer to "how am I being treated" is the
+ * worst of the places the user is being treated.
+ */
+const DEFAULT_SHARE_WEIGHT = 100;
+
+export function shareTilt(runningAgents: readonly AgentView[]): number | null {
+  const weights = runningAgents.flatMap((a) =>
+    typeof a.usage?.shareWeight === "number" ? [a.usage.shareWeight] : [],
+  );
+  if (weights.length === 0) return null;
+  const lowest = Math.min(...weights);
+  return lowest >= DEFAULT_SHARE_WEIGHT ? null : lowest;
+}

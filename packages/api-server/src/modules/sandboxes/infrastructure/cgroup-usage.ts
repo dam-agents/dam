@@ -20,12 +20,18 @@ import { readFile } from "node:fs/promises";
  * on a timer and would be wrong for one that asks twice in a second, which is
  * why the gap is taken from the clock rather than assumed.
  *
+ * The owner's share weight comes back with it, read from the group the sandbox
+ * sits in. The node's fair-use policy writes that file; reading it here rather
+ * than asking the policy means the figure a user is shown is the one the kernel
+ * is actually dividing by, not a second copy of it that could disagree.
+ *
  * A missing cgroup is a hibernated or half-built agent and not an error: an
  * agent that is not running is using nothing, which is the answer.
  */
 export interface AgentUsage {
   memoryBytes: number;
   cpuMilli: number | null;
+  shareWeight: number | null;
 }
 
 export interface UsageReader {
@@ -47,9 +53,12 @@ export function createUsageReader(
       const dir = parent
         ? `${root}/${parent}/dam-${agentId}`
         : `${root}/dam-${agentId}`;
-      const [current, stat] = await Promise.all([
+      const [current, stat, weight] = await Promise.all([
         readFile(`${dir}/memory.current`, "utf8").catch(() => null),
         readFile(`${dir}/cpu.stat`, "utf8").catch(() => null),
+        parent
+          ? readFile(`${root}/${parent}/cpu.weight`, "utf8").catch(() => null)
+          : null,
       ]);
       if (current === null || stat === null) {
         last.delete(agentId);
@@ -65,7 +74,12 @@ export function createUsageReader(
         previous && Number.isFinite(usec) && elapsed >= MIN_SAMPLE_MS
           ? Math.max(0, Math.round((usec - previous.usec) / elapsed))
           : null;
-      return { memoryBytes: Number(current.trim()) || 0, cpuMilli };
+      const share = weight === null ? NaN : Number(weight.trim());
+      return {
+        memoryBytes: Number(current.trim()) || 0,
+        cpuMilli,
+        shareWeight: Number.isFinite(share) ? share : null,
+      };
     },
 
     forget(agentId) {

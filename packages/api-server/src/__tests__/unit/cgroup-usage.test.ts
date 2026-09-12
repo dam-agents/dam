@@ -7,8 +7,13 @@ import { createUsageReader } from "../../modules/sandboxes/infrastructure/cgroup
 
 const root = mkdtempSync(join(tmpdir(), "cg-"));
 
-function cgroup(agentId: string, memory: number, usageUsec: number) {
-  const dir = join(root, `dam-${agentId}`);
+function cgroup(
+  agentId: string,
+  memory: number,
+  usageUsec: number,
+  parent?: string,
+) {
+  const dir = join(root, ...(parent ? [parent] : []), `dam-${agentId}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "memory.current"), `${memory}\n`);
   writeFileSync(
@@ -17,6 +22,24 @@ function cgroup(agentId: string, memory: number, usageUsec: number) {
   );
 }
 
+describe("the share its owner is being given", () => {
+  // TEST_SCENARIO: an agent whose owner has been tilted by the node's fair-use policy. The weight is read from the group the sandbox sits in rather than asked of the policy that wrote it, so what a user is shown is the figure the kernel is dividing by.
+  it("reports the weight on the owner's group", async () => {
+    mkdirSync(join(root, "dam-user-sub1"), { recursive: true });
+    writeFileSync(join(root, "dam-user-sub1", "cpu.weight"), "57\n");
+    cgroup("w", 1024, 0, "dam-user-sub1");
+    const usage = await createUsageReader(root).read("w", "dam-user-sub1");
+    expect(usage?.shareWeight).toBe(57);
+  });
+
+  it("reports no weight for an agent read without a group", async () => {
+    cgroup("noparent", 1024, 0);
+    expect((await createUsageReader(root).read("noparent"))?.shareWeight).toBe(
+      null,
+    );
+  });
+});
+
 describe("what an agent is using", () => {
   it("reports memory from the first reading", async () => {
     cgroup("a", 512 * 1024 ** 2, 0);
@@ -24,6 +47,7 @@ describe("what an agent is using", () => {
     expect(await reader.read("a")).toEqual({
       memoryBytes: 512 * 1024 ** 2,
       cpuMilli: null,
+      shareWeight: null,
     });
   });
 

@@ -131,7 +131,7 @@ export interface AgentView {
   overBudgetMessage?: string;
   noCapacityMessage?: string;
   size: { cpu?: string; memory?: string };
-  usage?: { cpuMilli?: number; memoryBytes?: number };
+  usage?: { cpuMilli?: number; memoryBytes?: number; shareWeight?: number };
   sandboxTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];

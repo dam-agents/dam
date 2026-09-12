@@ -16,6 +16,7 @@ import {
   type ComputeSegment,
   computeView,
   consumers,
+  shareTilt,
 } from "../lib/slots.js";
 import { SlotBar } from "./slot-bar.js";
 
@@ -49,6 +50,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const running = agents.filter((a) => a.state === "running");
   const view = computeView(running, workingAgentIds, budget);
   const heaviest = consumers(running, workingAgentIds).slice(0, 4);
+  const tilted = shareTilt(running);
 
   return (
     <>
@@ -74,6 +76,14 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
           ariaLabel="Agents awake"
         />
       </div>
+      {tilted !== null && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Your agents are getting about {tilted}% of an even share while the
+          node is busy, because they have been using more than their share of it
+          recently. This lifts on its own within a few minutes of them easing
+          off.
+        </p>
+      )}
       {heaviest.length > 0 && (
         <dl className="mb-3 grid grid-cols-[1fr_auto_auto] items-baseline gap-x-4 gap-y-1 text-sm">
           {heaviest.map((c) => (

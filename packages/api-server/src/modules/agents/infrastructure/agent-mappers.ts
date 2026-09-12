@@ -46,6 +46,7 @@ export interface InfraAgent {
   usageMemoryBytes?: number;
   usageCpuMilli?: number;
   noCapacityMessage?: string;
+  shareWeight?: number;
   sandboxRestarts: number;
   sandboxRestartReason?: string;
   sandboxNotReadyReason?: string;
@@ -135,6 +136,9 @@ export function parseInfraAgent(
     errorReason: status.errorReason || undefined,
     sandboxTerminationReason: status.sandboxTerminationReason || undefined,
     noCapacityMessage: status.noCapacityMessage || undefined,
+    ...(status.shareWeight !== undefined
+      ? { shareWeight: status.shareWeight }
+      : {}),
     ...(status.usageMemoryBytes !== undefined
       ? { usageMemoryBytes: status.usageMemoryBytes }
       : {}),
@@ -188,6 +192,9 @@ export function assembleAgent(
         : {}),
       ...(infra.usageMemoryBytes !== undefined
         ? { memoryBytes: infra.usageMemoryBytes }
+        : {}),
+      ...(infra.shareWeight !== undefined
+        ? { shareWeight: infra.shareWeight }
         : {}),
     },
     contributionFailures,

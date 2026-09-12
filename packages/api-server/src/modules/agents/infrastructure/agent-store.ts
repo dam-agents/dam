@@ -43,6 +43,7 @@ export interface AgentStatus {
   usageMemoryBytes?: number;
   usageCpuMilli?: number;
   noCapacityMessage?: string;
+  shareWeight?: number;
 }
 
 export interface AgentRecord {

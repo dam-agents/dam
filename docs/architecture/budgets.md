@@ -120,8 +120,12 @@ five minutes, and with both then asking for everything the split was 1.48 cores
 to the heavy user against 2.51 to the newcomer — where an even division would
 have given 2.00 each.
 
-Nothing tells a user they are being tilted yet; the node logs it. Showing it on
-the meter is the obvious next iteration.
+A tilted user is told. The weight is read back from the group the sandbox sits
+in — not asked of the policy that wrote it, so the figure on the screen is the
+one the kernel is dividing by — and published with the agent's usage. The meter
+says what share of an even split the user is getting and that it lifts on its
+own. A user running on more than one node is shown the worst of them, since
+"how am I being treated" is not a question an average answers.
 
 ## What is measured
 

@@ -310,6 +310,9 @@ export function createSandboxSupervisor(
       ...(usage?.cpuMilli !== null && usage?.cpuMilli !== undefined
         ? { usageCpuMilli: usage.cpuMilli }
         : {}),
+      ...(usage?.shareWeight !== null && usage?.shareWeight !== undefined
+        ? { shareWeight: usage.shareWeight }
+        : {}),
       error: "",
       errorReason: "",
     });
