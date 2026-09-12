@@ -361,16 +361,38 @@ export function createSandboxSupervisor(
     }
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Rewrites the node's sandbox firewall, which is
+   * built from every live link at once rather than per agent — so reconciling
+   * an agent that did not change rewrites a table identical to the one already
+   * there. That costs a process and about ten milliseconds each time, measured
+   * flat from one link to two hundred, and a sweep does it once per agent.
+   *
+   * Skipping the identical ones needs somewhere to be wrong, so the signature
+   * is dropped at the start of every sweep: the table is rebuilt from scratch
+   * once a cycle whatever the cache believes, which is the guard against a
+   * ruleset that was changed underneath us.
+   */
+  let appliedSignature: string | null = null;
+
   async function applyRuleset(): Promise<void> {
-    await deps.network.applyRuleset([...liveLinks.values()], {
+    const links = [...liveLinks.values()];
+    const signature = links
+      .map((l) => `${l.netns}:${l.index}`)
+      .sort()
+      .join(",");
+    if (signature === appliedSignature) return;
+    await deps.network.applyRuleset(links, {
       gatewayPort: deps.gatewayPort,
     });
+    appliedSignature = signature;
   }
 
   return {
     reconcile: schedule,
 
     async sweep() {
+      appliedSignature = null;
       const records = await deps.store.listAssignedTo(deps.nodeId);
       for (const record of records) {
         const index = record.status.address
