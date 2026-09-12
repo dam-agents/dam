@@ -73,7 +73,32 @@ export interface RunscPort {
   list(): Promise<string[]>;
 }
 
-const RUNSC_FLAGS = ["--network=sandbox", "--overlay2=none"];
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The flags every invocation for one sandbox must
+ * carry, identical each time, because they are part of how runsc finds its own
+ * state.
+ *
+ * `file-access-mounts=exclusive` says the sentry is the only writer of the
+ * directories mounted into the sandbox, which lets it cache what it has
+ * already looked up instead of revalidating against the host on every access.
+ * The default is the other way round, and for a workload that is mostly small
+ * file operations — which is what a coding agent's tooling is — that revalidation
+ * is most of the cost: a git sequence over six hundred files measured 2.94x the
+ * same work outside the sandbox with the default, and 2.21x with this.
+ *
+ * It rests on an invariant the node keeps rather than on hope: nothing on the
+ * node writes an agent's workspace while its sandbox is running. The chown is
+ * before create, the teardown is after stop, and a workspace transfer only
+ * happens to an agent no node is running — so the sentry's cache cannot go
+ * stale under it. Breaking that invariant would show up as a sandbox reading
+ * files that are no longer there, which is why it is written down in
+ * platform-topology.
+ */
+const RUNSC_FLAGS = [
+  "--network=sandbox",
+  "--overlay2=none",
+  "--file-access-mounts=exclusive",
+];
 const containerId = (agentId: string) => `dam-${agentId}`;
 
 interface RunscState {
