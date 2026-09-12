@@ -106,7 +106,6 @@ export type AgentState =
   | "starting"
   | "preparing_workspace"
   | "running"
-  | "hibernating"
   | "hibernated"
   | "over_budget"
   | "no_capacity"

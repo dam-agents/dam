@@ -4,33 +4,6 @@ import { envVarSchema } from "../shared.js";
 
 const idSchema = z.object({ id: z.string().min(1) });
 
-const cpuQuantitySchema = z
-  .string()
-  .regex(/^\d+(\.\d+)?m?$/, "CPU must look like '2', '0.5' or '500m'")
-  .refine((v) => toCpuMilli(v) >= 100, {
-    message: "CPU must be at least 100m",
-  });
-const memoryQuantitySchema = z
-  .string()
-  .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '2Gi'")
-  .refine((v) => toMemoryMi(v) >= 384, {
-    message: "memory must be at least 384Mi",
-  });
-
-function toCpuMilli(v: string): number {
-  return v.endsWith("m") ? Number(v.slice(0, -1)) : Number(v) * 1000;
-}
-function toMemoryMi(v: string): number {
-  return v.endsWith("Gi")
-    ? Number(v.slice(0, -2)) * 1024
-    : Number(v.slice(0, -2));
-}
-
-export const agentSizeSchema = z.object({
-  cpu: cpuQuantitySchema.optional(),
-  memory: memoryQuantitySchema.optional(),
-});
-
 export const agentGetInputSchema = idSchema;
 export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;

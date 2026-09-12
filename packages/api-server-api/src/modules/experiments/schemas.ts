@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { agentSizeSchema } from "../agents/schemas.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 
 export const SCRIPT_CONTENT_MAX_BYTES = 256 * 1024;
@@ -143,7 +142,6 @@ export const experimentSandboxCreateInputSchema = z
     description: z.string().optional(),
     connectionIds: z.array(z.string()).optional(),
     egressPreset: egressPresetSchema.optional(),
-    size: agentSizeSchema.optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

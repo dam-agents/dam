@@ -1,6 +1,6 @@
 import type { AgentState, AgentView } from "../../../types.js";
 
-export type AgentDisplayState = AgentState | "over_budget";
+export type AgentDisplayState = AgentState | "hibernating";
 
 export interface AgentDisplay {
   state: AgentDisplayState;

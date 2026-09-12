@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
-import { agentSizeSchema } from "../agents/schemas.js";
 
 export const knowledgeBaseTemplateIdSchema = z.enum(["llm-wiki", "plain-wiki"]);
 
@@ -17,7 +16,6 @@ export const knowledgeBaseCreateInputSchema = z
     description: z.string().optional(),
     connectionIds: z.array(z.string()).optional(),
     egressPreset: egressPresetSchema.optional(),
-    size: agentSizeSchema.optional(),
     kbTemplateId: knowledgeBaseTemplateIdSchema.default("llm-wiki"),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {

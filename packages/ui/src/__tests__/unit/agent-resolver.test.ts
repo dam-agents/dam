@@ -34,7 +34,6 @@ describe("resolveAgentDisplay", () => {
     ["error", false, "restart"],
     ["hibernated", true, "start"],
     ["starting", false, null],
-    ["hibernating", false, null],
   ] as const)(
     "state=%s → clickable=%s powerAction=%s",
     (state, clickable, powerAction) => {
@@ -166,11 +165,11 @@ describe("transitionPausingAgents", () => {
     expect(next.get("a")).toEqual(entry());
   });
 
-  test("drops entry once the pod reports down — the real hibernated state carries the pill", () => {
+  test("drops entry once the agent reports down — the real hibernated state carries the pill", () => {
     const current = new Map([["a", entry()]]);
     const next = transitionPausingAgents(
       current,
-      [agent("a", "hibernating")],
+      [agent("a", "hibernated")],
       NOW,
     );
     expect(next.has("a")).toBe(false);
