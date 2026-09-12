@@ -19,6 +19,13 @@ import type { DbSql } from "db";
  *
  * A node that loses the lock must stand its singletons down before another
  * node picks them up; that is why losing is a callback and not a flag to poll.
+ *
+ * The heartbeat is given a deadline in the database rather than being left to
+ * the socket. A node partitioned from Postgres does not get an error, it gets
+ * silence, and the kernel's own retry budget runs for minutes — during which
+ * this node believes it leads and answers as the leader. A statement timeout
+ * turns that silence into the error the loss path already handles, so the
+ * window is two heartbeats rather than however long TCP takes to give up.
  * The key is one arbitrary constant every node shares — holding it is the
  * whole election, so there is nothing else to agree on.
  *
@@ -85,7 +92,10 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
         }
         return;
       }
-      reserved ??= await opts.sql.reserve();
+      if (!reserved) {
+        reserved = await opts.sql.reserve();
+        await reserved`SELECT set_config('statement_timeout', ${String(pollMs * 2)}, false)`;
+      }
       const rows =
         await reserved`SELECT pg_try_advisory_lock(${opts.key}::bigint) AS ok, pg_backend_pid() AS pid`;
       if (rows[0]?.ok !== true) return;

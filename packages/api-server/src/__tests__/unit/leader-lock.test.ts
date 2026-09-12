@@ -11,7 +11,9 @@ function fakeSql(opts: {
   let queries = 0;
   let released = 0;
   const reserved = (() => {
-    const fn = (async () => {
+    const fn = (async (parts: TemplateStringsArray) => {
+      // TEST_SCENARIO: the deadline the heartbeat runs under is setup, not one of the queries these tests count.
+      if (parts.join("").includes("set_config")) return [];
       queries += 1;
       if (opts.failAfter !== undefined && queries > opts.failAfter) {
         throw new Error("connection terminated");
