@@ -417,13 +417,6 @@ function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
   return { ...infra, spec: { ...infra.spec, env } };
 }
 
-export interface ResizeGatePort {
-  assertResizeFits(
-    agent: InfraAgent,
-    newSize: { cpu?: string; memory?: string },
-  ): Promise<void>;
-}
-
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
@@ -439,8 +432,6 @@ export function createAgentsService(deps: {
   contributionsProgress: ContributionsProgressPort;
   sandboxStatus: SandboxStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  resizeGate?: ResizeGatePort;
-  resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -699,7 +690,7 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size },
+          { description: input.description },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -709,7 +700,6 @@ export function createAgentsService(deps: {
           {
             image: input.image,
             description: input.description,
-            size: input.size,
           },
           deps.agentDefaultLimits,
         );
@@ -865,37 +855,11 @@ export function createAgentsService(deps: {
           input.hibernationTimeoutMin === null
             ? null
             : minutesToDuration(input.hibernationTimeoutMin);
-      let gateLiveResize:
-        | ((
-            apply: () => Promise<InfraAgent | null>,
-          ) => Promise<InfraAgent | null>)
-        | null = null;
-      if (input.size !== undefined) {
-        gateLiveResize = (apply) =>
-          deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
-            const current = await deps.repo.get(input.id, deps.owner);
-            if (!current) return null;
-            if (!current.hibernated && !current.overBudget) {
-              const gate = deps.resizeGate;
-              if (!gate) {
-                throw new TRPCError({
-                  code: "BAD_REQUEST",
-                  message: "Resizing a running sandbox is not supported here.",
-                });
-              }
-              await gate.assertResizeFits(current, input.size!);
-            }
-            return apply();
-          });
-        patch.resources = { limits: input.size };
-      }
       const applyPatch = () =>
         Object.keys(patch).length > 0
           ? deps.repo.updateSpec(input.id, deps.owner, patch)
           : deps.repo.get(input.id, deps.owner);
-      const infra = gateLiveResize
-        ? await gateLiveResize(applyPatch)
-        : await applyPatch();
+      const infra = await applyPatch();
       if (!infra) return null;
 
       let env = input.env;

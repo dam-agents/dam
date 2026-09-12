@@ -3,10 +3,8 @@ import type { Db } from "db";
 import { createUserBudgetsReader } from "./infrastructure/user-budgets.js";
 import {
   createBudgetsService,
-  createResizeGate,
   createSpawnSizeGate,
   type BudgetedAgent,
-  type ResizeGate,
   type SpawnSizeGate,
 } from "./services/budgets-service.js";
 
@@ -16,7 +14,7 @@ export function composeBudgetsModule(deps: {
   listAgents(): Promise<BudgetedAgent[]>;
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
-}): { budgets: BudgetsService; resizeGate: ResizeGate } {
+}): { budgets: BudgetsService } {
   const userBudgets = createUserBudgetsReader(deps.db);
   const serviceDeps = {
     listAgents: deps.listAgents,
@@ -24,10 +22,7 @@ export function composeBudgetsModule(deps: {
     defaultCeiling: deps.defaultCeiling,
     slotSize: deps.slotSize,
   };
-  return {
-    budgets: createBudgetsService(serviceDeps),
-    resizeGate: createResizeGate(serviceDeps),
-  };
+  return { budgets: createBudgetsService(serviceDeps) };
 }
 
 export function composeSpawnSizeGate(deps: {

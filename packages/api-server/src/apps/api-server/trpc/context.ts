@@ -89,7 +89,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
-    const { budgets, resizeGate } = composeBudgetsModule({
+    const { budgets } = composeBudgetsModule({
       db,
       owner: user.sub,
       listAgents: () => agentsRepo.list(user.sub),
@@ -112,7 +112,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
       },
-      resizeGate,
       owner: user.sub,
       db,
       telegramBinding: telegramBindFlows

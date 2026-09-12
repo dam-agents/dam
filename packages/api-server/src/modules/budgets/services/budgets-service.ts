@@ -15,55 +15,6 @@ export interface BudgetsServiceDeps {
   slotSize: { cpu: string; memory: string };
 }
 
-export interface ResizeGate {
-  assertResizeFits(
-    agent: BudgetedAgent,
-    newSize: { cpu?: string; memory?: string },
-  ): Promise<void>;
-}
-
-export function createResizeGate(
-  deps: Omit<BudgetsServiceDeps, "slotSize">,
-): ResizeGate {
-  return {
-    async assertResizeFits(agent, newSize) {
-      const current = agent.spec.resources?.limits;
-      const newCpu = parseCpuMilli(newSize.cpu ?? current?.cpu);
-      const newMemory = parseMemoryBytes(newSize.memory ?? current?.memory);
-      if (
-        newCpu <= parseCpuMilli(current?.cpu) &&
-        newMemory <= parseMemoryBytes(current?.memory)
-      ) {
-        return;
-      }
-      const [agents, override] = await Promise.all([
-        deps.listAgents(),
-        deps.readCeilingOverride(),
-      ]);
-      const ceiling = override ?? deps.defaultCeiling;
-      let cpuMilli = 0;
-      let memoryBytes = 0;
-      for (const a of agents) {
-        if (a.id === agent.id || a.hibernated || a.overBudget) continue;
-        cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
-        memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
-      }
-      const totalCpu = cpuMilli + newCpu;
-      const totalMemory = memoryBytes + newMemory;
-      const ceilCpu = parseCpuMilli(ceiling.cpu);
-      const ceilMemory = parseMemoryBytes(ceiling.memory);
-      if (totalCpu > ceilCpu || totalMemory > ceilMemory) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message:
-            `This size would take your running agents to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
-            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — pause, stop, or shrink another agent first.`,
-        });
-      }
-    },
-  };
-}
-
 export class SizeNeverFitsError extends Error {
   constructor(message: string) {
     super(message);

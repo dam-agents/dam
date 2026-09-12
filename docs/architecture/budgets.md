@@ -18,14 +18,11 @@ they are done with — which is the same decision, made with the evidence in
 front of them. The one resource question left to a user is how many agents
 they can have awake at once, and the answer to that is their Budget.
 
-The Budget is today **a published figure and two narrow gates, not an admission
-control**. It is computed live, shown to the user, and enforced at the two
-points where a decision would otherwise be unrecoverable — growing a running
-agent, and spawning a worker whose Size could never fit. Nothing refuses an
-ordinary start: a user who starts agents one at a time can pass their Ceiling,
-see it on the meter, and keep going. [What is not enforced](#what-is-not-enforced)
-states that gap plainly, because a full set of consumers still expects the gate
-that used to exist.
+The Budget is **enforced where placement is decided**. The scheduler is the one
+writer of which node runs what, so it is the one place where "would this take
+its owner over" has a single answer: an agent that would is left unplaced and
+says so, and it starts on its own as soon as its owner frees room. Nothing is
+refused permanently and nothing has to be retried by hand.
 
 ## What is counted
 
@@ -34,7 +31,9 @@ across the owner's running agents. A hibernated agent counts nothing, which is
 what makes hibernation the way room is returned.
 
 An agent's **Size** is the CPU/memory figures on its spec, set by its template
-or the install default and not by the user. The two dimensions are not the same
+or the install default. There is no way for a user to set it: the create and
+update calls do not carry one, so a Size arrives from the catalogue an operator
+publishes or from the node's configuration, and never from somebody guessing. The two dimensions are not the same
 kind of promise, and the difference is deliberate:
 
 - **Memory is a guarantee and a ceiling at once.** The supervisor sets it as
@@ -167,14 +166,23 @@ override rows, and the numeric contract stays as dumb as it is now.
 
 ## What is enforced
 
-**A grow that would not fit is refused at save time.** Resizing an Agent always
-restarts its sandbox — a kernel limit is not changed under a running
-workload — and a *running* Agent resized upward is checked against the Ceiling
-before the spec is patched: the mutation fails with both figures and the
-settings dialog says which agents to stop. The check is grow-only (a shrink
-always helps, even for an owner already over) and the read-check-patch runs
-serialized per owner on a Postgres advisory lock, so two resizes by one owner
-cannot both slip under.
+**A start that would pass the Ceiling is parked, not refused.** The scheduler
+sums what an owner's placed agents hold, and an agent that would take them over
+is left unplaced with `over_budget` on its record and a message naming the
+dimension that ran out — "starting this agent would take you to 3 of 2 CPU;
+stop or pause another agent to free room". The next pass places it the moment
+the owner frees room, with nothing to retry.
+
+Enforcing it there rather than at the API is what makes it a limit: two requests
+that each fit would otherwise both pass, and a node's supervisor only knows its
+own machine while the Ceiling is install-wide. Which of an owner's agents gets
+the last of their allowance is whichever the records come back in front of —
+there is no fairer order to pick, and sorting by something arbitrary would only
+look like policy.
+
+There is no separate resize gate any more, and no live-resize path to gate: the
+Size is not something a user sets, so the only way an owner's total changes is
+an agent starting or stopping, which is exactly what the scheduler weighs.
 
 **A worker Size that could never fit is refused when it is spawned.** An
 Invocation target whose Size alone exceeds its owner's Ceiling would wait for
@@ -193,14 +201,12 @@ budget-request link beside it. First-time users with no agents see none of it.
 
 ## What is not enforced
 
-There is **no admission gate at start**. Starting an agent consults no budget:
-the supervisor brings up whatever the record says should run, and Reserved
-simply grows. The over-budget agent state, the parked-until-room-frees
-behaviour, the early-reclaim of an owner's idle agents, and the typed
-over-budget wake failure are all still *read* — by the agent list, the wake
-path and the UI's unavailable overlay — and nothing writes them, so that state
-never appears. A user over their Ceiling sees a full meter and no other
-consequence.
+**An owner's idle agents are not reclaimed early** to make room for one they
+have just asked for. An agent that is awake holds its share until it hibernates
+on its own or somebody stops it, so an owner at their Ceiling waits for their
+own timeout rather than having the platform choose which of their agents to
+sacrifice. That is a deliberate omission rather than a gap: picking a victim
+among somebody's running work is not a decision to make silently.
 
 What does bound capacity is **placement**, and it bounds a different thing. An
 agent is only assigned to a node with room for its Size's *memory*, and an agent

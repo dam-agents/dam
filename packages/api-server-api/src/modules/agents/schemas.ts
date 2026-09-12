@@ -73,7 +73,6 @@ export const agentCreateInputSchema = z
       .object({ url: z.url(), ref: z.string().min(1).optional() })
       .optional(),
     connectionIds: z.array(z.string()).optional(),
-    size: agentSizeSchema.optional(),
     sweepable: z.boolean().optional(),
     lifetimeMs: z.number().int().min(0).optional(),
   })
@@ -88,7 +87,6 @@ export const agentUpdateInputSchema = z.object({
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
-  size: agentSizeSchema.optional(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

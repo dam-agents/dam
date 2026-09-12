@@ -1,6 +1,5 @@
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import type { AgentStore } from "./infrastructure/agent-store.js";
 import type { SecretStore } from "../secret-store/index.js";
@@ -18,7 +17,6 @@ import {
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsProgressPort,
-  type ResizeGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
 } from "./services/agents-service.js";
@@ -69,7 +67,6 @@ export function composeAgentsModule(deps: {
   secrets: SecretStore;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
-  resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
   readTemplateSpec: ReadTemplateSpec;
@@ -103,8 +100,6 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      resizeGate: deps.resizeGate,
-      resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
