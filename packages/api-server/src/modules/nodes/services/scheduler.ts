@@ -24,6 +24,14 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * to. Releasing on hibernation is what makes the next wake a fresh placement
  * decision, which is where load balancing actually happens.
  *
+ * It is also the only thing that can say an agent no node holds is at rest.
+ * Status is published by the supervisor that ran the agent and stays
+ * published; an agent that fits nowhere, or that arrived in the database from
+ * a migration and was never placed, is run by nobody, and nobody is then left
+ * to say so. Without that it reads as starting for ever — a stop request has
+ * no supervisor to act on it — which is a claim that something is coming up
+ * when nothing is. It converges in one write and is then silent.
+ *
  * An agent still wanting to run on a node that has stopped heartbeating keeps
  * its assignment. Its workspace is on that node's disk, so placing it
  * elsewhere would start it on an empty one; it reads as not running until the
@@ -83,6 +91,18 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
           agentId: record.id,
           node: record.assignedNode,
         });
+        continue;
+      }
+      if (!running && !record.assignedNode && !record.status.hibernated) {
+        await opts.store.writeStatus(record.id, {
+          ready: false,
+          hibernated: true,
+          hibernatedSince: new Date().toISOString(),
+          address: "",
+          sandboxReady: false,
+          gatewayReady: false,
+        });
+        opts.log("placement.at-rest", { agentId: record.id });
         continue;
       }
       if (record.assignedNode) {
