@@ -299,6 +299,8 @@ export async function bootstrap() {
     port: config.peerPort,
     credentials: peerCredentials,
     localAddressOf: (agentId) => sandboxAddresses.localAddress(agentId),
+    mayExport: async (agentId, toNodeId) =>
+      (await agentStore.get(agentId))?.assignedNode === toNodeId,
     exportWorkspace: (agentId, out) =>
       exportWorkspace(layoutFor(config.agentsRoot, agentId).root, out),
     log: (message, fields) => getLogger().info(fields ?? {}, message),

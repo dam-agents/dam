@@ -24,6 +24,13 @@ import { join } from "node:path";
  * that can open the peer port can drive any agent on that node. Both ends
  * present a certificate the install signed and both require one.
  *
+ * A workspace is an agent's whole history, so the export verb is not open to
+ * every node that holds a certificate: the caller must be the node the agent
+ * has just been assigned to, which is the only node with a reason to fetch it.
+ * A certificate proves which node is calling and the record says which node
+ * that agent is for, and one node compromised should not be every workspace in
+ * the install readable.
+ *
  * The server half accepts a connection naming an agent and joins it to that
  * agent's sandbox on this node; the client half hands out one loopback
  * `host:port` per remote agent. The name arrives as one newline-terminated
@@ -85,6 +92,26 @@ export function isNodeCertificate(cert: {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Which node is on the other end. Every node's leaf
+ * carries its own id beside the name they all share, so the certificate
+ * already answers this — what it could not do on its own is say whether that
+ * node has any business with the agent it is asking about.
+ *
+ * A node with two names and neither of them the shared one is not a shape this
+ * install issues, so it gets no identity rather than a guessed one.
+ */
+export function nodeIdFromCertificate(cert: {
+  subjectaltname?: string;
+}): string | null {
+  const names = (cert?.subjectaltname ?? "")
+    .split(",")
+    .map((n) => n.trim())
+    .flatMap((n) => (n.startsWith("DNS:") ? [n.slice(4)] : []))
+    .filter((n) => n !== PEER_SERVER_NAME);
+  return names.length === 1 ? (names[0] ?? null) : null;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: How long reaching a peer may take before it
  * counts as unreachable. A node whose peer is gone but whose packets are not
  * refused — a stopped guest, a dropped route — otherwise waits out the
@@ -142,6 +169,7 @@ export function startPeerServer(opts: {
   port: number;
   credentials: PeerCredentials;
   localAddressOf: (agentId: string) => string | null;
+  mayExport: (agentId: string, toNodeId: string) => Promise<boolean>;
   exportWorkspace: (
     agentId: string,
     out: NodeJS.WritableStream,
@@ -178,7 +206,15 @@ export function startPeerServer(opts: {
           return socket.destroy();
         }
         if (verb === "export") {
-          opts.exportWorkspace(agentId, socket).catch((err: unknown) => {
+          const caller = nodeIdFromCertificate(socket.getPeerCertificate());
+          void (async () => {
+            if (!caller || !(await opts.mayExport(agentId, caller))) {
+              opts.log("peer.export.refused", { agentId, caller });
+              socket.destroy();
+              return;
+            }
+            await opts.exportWorkspace(agentId, socket);
+          })().catch((err: unknown) => {
             opts.log("peer.export.failed", {
               agentId,
               error: err instanceof Error ? err.message : String(err),

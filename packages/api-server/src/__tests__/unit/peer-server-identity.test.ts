@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the peer server end to end, with real certificates from one authority — the situation that matters, because the install has exactly one and it signs every gateway's certificate as well as every node's. What is pinned is the outcome rather than the mechanism: a certificate shaped like a gateway's gets no workspace, whether it is TLS that turns it away for not being issued to authenticate a client or the server's own check of what the certificate is. Both are in force, and this fails if either stops being.
+// TEST_OVERVIEW: the peer server end to end, with real certificates from one authority — the situation that matters, because the install has exactly one and it signs every gateway's certificate as well as every node's. What is pinned is the outcome rather than the mechanism: a certificate shaped like a gateway's gets no workspace, whether it is TLS that turns it away for not being issued to authenticate a client or the server's own check of what the certificate is. Both are in force, and this fails if either stops being. Being a node is necessary and not sufficient — a workspace is an agent's whole history, and it goes only to the node that agent was assigned to.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -60,6 +60,7 @@ let port: number;
 let ca: string;
 let node: { cert: string; key: string };
 let gateway: { cert: string; key: string };
+let other: { cert: string; key: string };
 
 beforeAll(async () => {
   ssl([
@@ -83,6 +84,11 @@ beforeAll(async () => {
     "serverAuth,clientAuth",
     "DNS:node-1,DNS:platform-node",
   );
+  other = leaf(
+    "node-2",
+    "serverAuth,clientAuth",
+    "DNS:node-2,DNS:platform-node",
+  );
   gateway = leaf("gateway", "serverAuth", "DNS:api.anthropic.com");
 
   port = 24_000 + Math.floor(Math.random() * 1000);
@@ -90,6 +96,7 @@ beforeAll(async () => {
     port,
     credentials: { ca, cert: node.cert, key: node.key },
     localAddressOf: () => null,
+    mayExport: async (_agentId, toNodeId) => toNodeId === "node-1",
     exportWorkspace: async (_agentId, out) => {
       out.write("WORKSPACE-BYTES");
       out.end();
@@ -128,5 +135,10 @@ describe("who the peer server will export a workspace to", () => {
   // TEST_SCENARIO: a gateway's certificate asking for an agent's workspace. Its chain verifies, since one authority signs both, and it is refused anyway.
   it("gives a gateway nothing", async () => {
     expect(await ask(gateway)).toBe("");
+  });
+
+  // TEST_SCENARIO: a second node, holding a certificate this install issued, asking for an agent that was never assigned to it. This is the shape a compromised node takes — one valid certificate, every other agent's history behind it.
+  it("gives a node nothing for an agent that is not its own", async () => {
+    expect(await ask(other)).toBe("");
   });
 });
