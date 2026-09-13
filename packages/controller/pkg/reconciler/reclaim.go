@@ -21,7 +21,6 @@ const (
 
 type reclaimCandidate struct {
 	name      string
-	vm        bool
 	idleSince time.Time
 	cpu       resource.Quantity
 	mem       resource.Quantity
@@ -42,7 +41,7 @@ func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agen
 		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
 			return false, err
 		}
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, c.name, c.vm); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, c.name); err != nil {
 			return false, err
 		}
 		slog.InfoContext(ctx, "reclaimed idle agent to admit a blocked start",
@@ -129,7 +128,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			continue
 		}
 		cpu, mem := r.limitsOf(&peer.Spec)
-		out = append(out, reclaimCandidate{name: peer.Name, vm: peer.Spec.IsVM(), idleSince: idleSince, cpu: cpu, mem: mem})
+		out = append(out, reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem})
 	}
 	return out, nil
 }

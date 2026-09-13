@@ -13,7 +13,6 @@ import (
 // is chart-only (config.AgentBase); scheduling is chart-wide except
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
-// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.secretRef)",message="secretRef (envFrom projection) is not supported on the vm backend"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -66,20 +65,21 @@ type AgentSpec struct {
 	// +optional
 	RuntimeClassName string `json:"runtimeClassName,omitempty"`
 	// NodeSelector overrides the chart-wide node selector; empty = inherit.
-	// Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
+	// Container backend only — a vm agent has no pod to place.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// Backend selects the isolation substrate the agent workload runs on;
 	// nil = container. Immutable after create (enforced by the api-server,
-	// the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
-	// instead of the agent StatefulSet; the paired gateway is unaffected.
+	// the sole spec writer). `vm` runs the agent as a persistent microVM on
+	// the install's sandbox node instead of a StatefulSet: the controller
+	// drives the node's machine API, and the agent Service resolves to the
+	// machine's published port; the paired gateway is unaffected.
 	// +optional
 	Backend *Backend `json:"backend,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
-	// agent container (operator-supplied envs). Container backend only —
-	// rejected on the vm backend (nothing projects it into the guest).
+	// agent container (operator-supplied envs).
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 
@@ -260,7 +260,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=9
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=10
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

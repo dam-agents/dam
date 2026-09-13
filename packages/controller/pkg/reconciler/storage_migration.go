@@ -42,7 +42,6 @@ type StorageMigrationManager struct {
 	dynamic         dynamic.Interface
 	config          *config.Config
 	now             func() time.Time
-	skippedVM       map[string]bool
 	warnedSameClass map[string]bool
 	loggedReason    map[string]bool
 	warnedResolve   bool
@@ -54,7 +53,6 @@ func NewStorageMigrationManager(client kubernetes.Interface, dyn dynamic.Interfa
 		dynamic:         dyn,
 		config:          cfg,
 		now:             time.Now,
-		skippedVM:       map[string]bool{},
 		warnedSameClass: map[string]bool{},
 		loggedReason:    map[string]bool{},
 	}
@@ -259,13 +257,6 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 	for _, name := range names {
 		agent, ok := known[name]
 		if !ok {
-			continue
-		}
-		if agent.Spec.IsVM() {
-			if !m.skippedVM[name] {
-				slog.Warn("storage migration: skipping vm-backend agent — recreate it to move off shared storage", "agent", name)
-				m.skippedVM[name] = true
-			}
 			continue
 		}
 		if !inFlight[name] {

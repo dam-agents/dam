@@ -242,10 +242,9 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
 		}
 	}
-	if cfg.VM.ScratchSize == "" {
-		cfg.VM.ScratchSize = "30Gi"
-	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
-		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
+	cfg.VM.NodeToken = os.Getenv("SANDBOX_NODE_TOKEN")
+	if cfg.VM.Enabled && (cfg.VM.NodeURL == "" || cfg.VM.NodeAddress == "" || cfg.VM.NodeToken == "") {
+		return nil, fmt.Errorf("AGENT_VM: enabled needs nodeUrl and nodeAddress, plus SANDBOX_NODE_TOKEN")
 	}
 	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
 		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))

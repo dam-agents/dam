@@ -99,7 +99,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, name, isVMBackend(agent)); err != nil {
+		if err := c.hibernate(ctx, name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -195,17 +195,12 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	return !status.Idle
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, name string, vmBackend bool) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name, vmBackend)
+func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name)
 }
 
-func isVMBackend(agent *unstructured.Unstructured) bool {
-	t, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
-	return t == "vm"
-}
-
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
-	if err := scaleAgentPairToZero(ctx, kube, dyn, namespace, name, vmBackend); err != nil {
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string) error {
+	if err := scaleAgentPairToZero(ctx, kube, namespace, name); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
@@ -217,12 +212,7 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
-	if vmBackend {
-		if err := haltAgentVMs(ctx, dyn, namespace, name); err != nil {
-			return err
-		}
-	}
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, namespace, name string) error {
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,
 	})

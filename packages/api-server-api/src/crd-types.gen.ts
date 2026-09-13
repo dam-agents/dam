@@ -20,8 +20,10 @@ export interface AgentSpecCR {
   /**
    * Backend selects the isolation substrate the agent workload runs on;
    * nil = container. Immutable after create (enforced by the api-server,
-   * the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
-   * instead of the agent StatefulSet; the paired gateway is unaffected.
+   * the sole spec writer). `vm` runs the agent as a persistent microVM on
+   * the install's sandbox node instead of a StatefulSet: the controller
+   * drives the node's machine API, and the agent Service resolves to the
+   * machine's published port; the paired gateway is unaffected.
    */
   backend?: {
     type: "container" | "vm";
@@ -126,7 +128,7 @@ export interface AgentSpecCR {
   name?: string;
   /**
    * NodeSelector overrides the chart-wide node selector; empty = inherit.
-   * Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
+   * Container backend only — a vm agent has no pod to place.
    */
   nodeSelector?: {
     [k: string]: string;
@@ -149,8 +151,7 @@ export interface AgentSpecCR {
   runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
-   * agent container (operator-supplied envs). Container backend only —
-   * rejected on the vm backend (nothing projects it into the guest).
+   * agent container (operator-supplied envs).
    */
   secretRef?: string;
   /**

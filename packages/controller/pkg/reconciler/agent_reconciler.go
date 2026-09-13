@@ -6,9 +6,11 @@ import (
 	"sync"
 	"time"
 
+	stderrors "errors"
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +24,7 @@ import (
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
@@ -35,6 +38,8 @@ type AgentReconciler struct {
 	deniedWakes map[string]string
 	parkedRetry map[string]struct{}
 	busyProbe   func(ctx context.Context, agentName string) bool
+	vmNode      *sandboxnode.Client
+	requeue     func(name string, after time.Duration)
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
@@ -47,6 +52,16 @@ func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentR
 
 func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
 	r.dynamic = d
+	return r
+}
+
+func (r *AgentReconciler) WithSandboxNode(c *sandboxnode.Client) *AgentReconciler {
+	r.vmNode = c
+	return r
+}
+
+func (r *AgentReconciler) WithRequeue(fn func(name string, after time.Duration)) *AgentReconciler {
+	r.requeue = fn
 	return r
 }
 
@@ -167,7 +182,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}
-			if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
+			if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
@@ -204,35 +219,41 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
+	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
+	var machine sandboxnode.MachineStatus
 	if agentSpec.IsVM() {
-		if !r.config.VM.Enabled {
+		if r.vmNode == nil {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		if err := r.reconcileAgentVM(ctx, agent, ownerRef, gatewayIP, running); err != nil {
-			return fmt.Errorf("agent %s: vm: %w", name, err)
+		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && !hardStop)
+		if stderrors.Is(err, errLeafSecretPending) {
+			return fmt.Errorf("agent %s: %w, requeuing", name, err)
 		}
-		timer.mark("agentVirtualMachine")
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("reconciling vm machine: %v", err))
+		}
+		timer.mark("vmMachine")
 	} else {
+		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
 		if err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
 		}
 		timer.mark("workspaceClaims")
-		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 		applyPoolClaims(agentSS, claims)
 		stampRollRev(agentSS, rollRev)
 		if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 		}
+		timer.mark("agentStatefulSet")
+		if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
+		}
+		timer.mark("agentService")
 	}
-	timer.mark("agentStatefulSet")
-	if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
-	}
-	timer.mark("agentService")
 
-	if agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != "" {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
+	if hardStop {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -241,12 +262,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 
 	if running {
-		err = r.publishReadiness(ctx, agent)
+		if agentSpec.IsVM() {
+			err = r.publishVMReadiness(ctx, agent, machine)
+		} else {
+			err = r.publishReadiness(ctx, agent)
+		}
 		timer.mark("readiness")
 		return err
 	}
 	if parked {
-		if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
+		if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
@@ -262,20 +287,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
-	gen := agent.Generation
-	agentReady := false
-	if agent.Spec.IsVM() {
-		agentReady = r.vmCurrentAndReady(ctx, name)
-	} else {
-		agentReady = r.podCurrentAndReady(ctx, name)
-	}
-	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
-	ready := agentReady && gatewayReady
-
-	var agentPod *corev1.Pod
-	if !agent.Spec.IsVM() {
-		agentPod = r.getPod(ctx, name)
-	}
+	agentReady := r.podCurrentAndReady(ctx, name)
+	agentPod := r.getPod(ctx, name)
 
 	agentFailReason, agentFailMsg := "PodNotReady", ""
 	if !agentReady {
@@ -283,8 +296,15 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 			agentFailReason, agentFailMsg = reason, msg
 		}
 	}
-
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
+	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, agentRestarts, agentRestartReason)
+}
+
+func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, agentRestarts int32, agentRestartReason string) error {
+	name := agent.Name
+	gen := agent.Generation
+	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
+	ready := agentReady && gatewayReady
 
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
@@ -392,6 +412,11 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
+	if r.vmNode != nil {
+		if err := r.vmNode.Delete(ctx, name); err != nil {
+			slog.Warn("deleting sandbox machine", "agent", name, "error", err)
+		}
+	}
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
