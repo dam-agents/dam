@@ -115,3 +115,7 @@ mise run //packages/ui:run             # start UI dev server
 ```
 
 Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
+
+### vm-backend agents (sandbox node)
+
+Templates with `backend.type: vm` run as smolvm microVMs on a **sandbox node** — a machine outside the cluster running the `sandbox-node` agent. Enable it with `virtualization.enabled=true` plus `virtualization.node.{url,address,token}` pointing at that agent. Locally, `mise run cluster:install -- --set=virtualization.enabled=true` does all of it: it creates a second Lima VM (`platform-sandbox`, Apple silicon M3+ for nested KVM), installs smolvm and `sandbox-node` on it, puts both VMs on Lima's user-v2 network, routes the cluster's Service CIDR through the k3s VM, loads the vm image onto the node, and passes the node's address and token to the chart. `cluster:delete` removes both VMs. Changing an existing install's network is create-time only — recreate the cluster to switch.
