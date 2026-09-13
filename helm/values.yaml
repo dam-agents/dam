@@ -144,22 +144,26 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
-# agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
-# StatefulSet. Requires KubeVirt in the cluster (dev k3s: cluster:install
-# sets it up when this flag is on; prod: OpenShift Virtualization).
-# Off = vm-backend templates are not rendered and vm agents fail reconcile.
+# -- The vm backend (`backend.type: vm` on a template): the agent runs as a
+# persistent microVM (smolvm) on one sandbox node — a machine outside the
+# cluster that runs the platform's sandbox-node agent — instead of as a pod. The
+# controller drives that agent's machine API; the agent Service resolves to the
+# machine's port on the node; the paired gateway pod is unchanged and the
+# machine may reach nothing but it. Off = vm-backend templates are not rendered
+# and vm agents fail reconcile. One node for now; scheduling across several is
+# the upgrade path.
 virtualization:
   enabled: false
-  # emptyDisk scratch capacity attached to every VM (serial "scratch") for the
-  # guest's docker/k3s image stores. Global knob by design; contents die with
-  # hibernation like the rest of the guest rootfs.
-  scratchGi: 30
-  # virt-launcher pod placement — KVM-capable nodes (e.g.
-  # node-role.kubernetes.io/virtualization on OpenShift). Applied instead of
-  # controller.agent.base scheduling; a template's nodeSelector merges on top.
-  nodeSelector: {}
-  tolerations: []
+  node:
+    # The sandbox-node API, reachable from the controller pod.
+    url: ""
+    # The IP the cluster dials the machines' published ports on (the node's
+    # address as seen from the cluster network). The node must in turn route
+    # the cluster's Service CIDR to a Kubernetes node so machines reach their
+    # gateway's ClusterIP.
+    address: ""
+    # Bearer token the sandbox-node was started with.
+    token: ""
 
 # -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents
@@ -1342,12 +1346,11 @@ agentTemplates:
       tag: "" # @ci-pin claude-code-image-tag
     storageSize: "5Gi"
 
-  # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
-  # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
-  # inside the sandbox. Rendered only when `virtualization.enabled`; the image
-  # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
-  # Pinned by source sha like the workloads (@ci-pin): the disk is rebuilt
-  # only when its source moved, so a deploy never rolls VMs for nothing.
+  # Full-VM Claude Code: the claude-code image plus docker and k3s, run as a
+  # persistent microVM on the sandbox node — nested containers and a full
+  # Kubernetes inside the sandbox. Rendered only when `virtualization.enabled`;
+  # built by packages/agents/claude-code-vm and pinned by source sha like the
+  # other workloads (@ci-pin).
   claude-code-vm:
     enabled: true
     displayName: "Claude Code VM"
