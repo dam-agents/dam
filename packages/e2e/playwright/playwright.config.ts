@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
+const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4000";
 
 const storageState = "./.auth/user.json";
 
@@ -77,6 +77,12 @@ export default defineConfig({
       testMatch: /14-.*\.spec\.ts$/,
       dependencies: ["auth"],
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "cross-node",
+      testMatch: /18-.*\.spec\.ts$/,
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"], storageState },
     },
     {
       name: "kb-share",

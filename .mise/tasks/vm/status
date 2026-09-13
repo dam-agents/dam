@@ -5,7 +5,7 @@ set -euo pipefail
 limactl shell "${DAM_VM:-dam}" sudo bash -s <<'REMOTE'
 set -uo pipefail
 echo "=== units ==="
-systemctl is-active postgresql redis dam-keycloak dam-api-server 2>/dev/null | paste -d' ' <(echo -e "postgresql\nredis\nkeycloak\napi-server") -
+systemctl is-active dam-api-server 'dam-gateway@*' 2>/dev/null | paste -d' ' <(echo -e "api-server\ngateways") -
 echo
 echo "=== sandboxes ==="
 runsc --network=sandbox --overlay2=none list 2>/dev/null || echo "(none)"

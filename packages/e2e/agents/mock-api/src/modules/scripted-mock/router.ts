@@ -5,6 +5,8 @@ import {
   getReceivedPromptsResultSchema,
   performFetchInputSchema,
   performFetchResultSchema,
+  readWorkspaceFileInputSchema,
+  readWorkspaceFileResultSchema,
   resetResultSchema,
   setScriptInputSchema,
   spawnInvocationInputSchema,
@@ -34,6 +36,11 @@ export const scriptedMockRouter = t.router({
     .input(performFetchInputSchema)
     .output(performFetchResultSchema)
     .mutation(({ ctx, input }) => ctx.scriptedMock.performFetch(input)),
+
+  readWorkspaceFile: t.procedure
+    .input(readWorkspaceFileInputSchema)
+    .output(readWorkspaceFileResultSchema)
+    .query(({ ctx, input }) => ctx.scriptedMock.readWorkspaceFile(input)),
 
   spawnInvocation: t.procedure
     .input(spawnInvocationInputSchema)

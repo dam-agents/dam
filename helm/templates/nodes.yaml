@@ -112,7 +112,7 @@ spec:
       volumes:
         - name: boot
           containerDisk:
-            image: {{ $.Values.nodes.image | quote }}
+            image: {{ printf "%s:%s" $.Values.nodes.image.repository ($.Values.nodes.image.tag | default $.Chart.AppVersion) | quote }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ $name }}-data

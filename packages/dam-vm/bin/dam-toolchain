@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The binaries a node shells out to that no distribution we run on packages at
+# the version the platform is built against: Node, Envoy and runsc. One script
+# for the bootc image and the dev node, so the versions live in one place.
+# Idempotent: a binary already at its version is left alone, so a reinstall
+# downloads nothing. The architecture is the build's when given (buildx sets
+# TARGETARCH) and the machine's otherwise; each download names it differently,
+# and an unknown one stops here rather than producing binaries that cannot exec.
+set -euo pipefail
+NODE_VERSION=24.9.0
+ENVOY_VERSION=1.36.1
+GVISOR_BASE=https://storage.googleapis.com/gvisor/releases/release/latest
+
+arch="${1:-$(uname -m)}"
+case "$arch" in
+  amd64|x86_64) nodearch=x64; envoyarch=x86_64; gvarch=x86_64 ;;
+  arm64|aarch64) nodearch=arm64; envoyarch=aarch_64; gvarch=aarch64 ;;
+  *) echo "dam-toolchain: no Node, Envoy or gVisor build for $arch" >&2; exit 1 ;;
+esac
+
+fetch() { curl -fsSL -o "$2.tmp" "$1" && install -m 0755 "$2.tmp" "$2" && rm -f "$2.tmp"; }
+
+if [ "$(/usr/local/bin/node --version 2>/dev/null || true)" != "v${NODE_VERSION}" ]; then
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${nodearch}.tar.xz" \
+    | tar -xJ -C /usr/local --strip-components=1
+fi
+if ! /usr/local/bin/envoy --version 2>/dev/null | grep -q "/${ENVOY_VERSION}/"; then
+  fetch "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${envoyarch}" /usr/local/bin/envoy
+fi
+# gVisor publishes no pinned version under its release channel; it is fetched
+# when absent and kept.
+if [ ! -x /usr/local/bin/runsc ]; then
+  fetch "${GVISOR_BASE}/${gvarch}/runsc" /usr/local/bin/runsc
+fi

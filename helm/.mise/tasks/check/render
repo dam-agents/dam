@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE sources=["**/*.{yaml,yml,tpl}"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# Renders the chart as an install would see it. Nodes stay off: their env is
+# read from Secrets that only exist on a live cluster (`lookup`), which is
+# exactly the guard the template itself enforces.
+set -euo pipefail
+helm template platform . "$@" >/dev/null

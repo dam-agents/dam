@@ -2,7 +2,7 @@ min_version = "2026.9.3"
 monorepo_root = true
 
 [monorepo]
-config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "docs"]
+config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "docs", "helm"]
 
 [vars]
 repo_root = "{{config_root}}"

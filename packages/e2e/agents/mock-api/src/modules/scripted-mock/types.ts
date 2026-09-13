@@ -5,6 +5,8 @@ import type {
   getReceivedPromptsResultSchema,
   performFetchInputSchema,
   performFetchResultSchema,
+  readWorkspaceFileInputSchema,
+  readWorkspaceFileResultSchema,
   receivedPromptSchema,
   resetResultSchema,
   scriptEntrySchema,
@@ -26,6 +28,12 @@ export type GetEnvInput = z.infer<typeof getEnvInputSchema>;
 export type GetEnvResult = z.infer<typeof getEnvResultSchema>;
 export type PerformFetchInput = z.infer<typeof performFetchInputSchema>;
 export type PerformFetchResult = z.infer<typeof performFetchResultSchema>;
+export type ReadWorkspaceFileInput = z.infer<
+  typeof readWorkspaceFileInputSchema
+>;
+export type ReadWorkspaceFileResult = z.infer<
+  typeof readWorkspaceFileResultSchema
+>;
 export type SpawnInvocationInput = z.infer<typeof spawnInvocationInputSchema>;
 export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
 
@@ -35,5 +43,8 @@ export interface ScriptedMockService {
   reset(): ResetResult;
   getEnv(input: GetEnvInput): GetEnvResult;
   performFetch(input: PerformFetchInput): Promise<PerformFetchResult>;
+  readWorkspaceFile(
+    input: ReadWorkspaceFileInput,
+  ): Promise<ReadWorkspaceFileResult>;
   spawnInvocation(input: SpawnInvocationInput): Promise<SpawnInvocationResult>;
 }

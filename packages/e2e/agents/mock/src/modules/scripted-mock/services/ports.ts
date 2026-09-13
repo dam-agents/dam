@@ -11,6 +11,7 @@ export interface AcpChannel {
 
 export interface WorkspaceWriter {
   writeFile(relPath: string, content: string): Promise<void>;
+  readFile(relPath: string): Promise<string | undefined>;
 }
 
 export interface SlackReplyPoster {

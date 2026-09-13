@@ -21,7 +21,9 @@ EnvironmentFile=/etc/dam/env
 # Written by first-boot provisioning, not shipped in the image: the same bytes
 # on every node would mean one node could mint another's API keys.
 EnvironmentFile=/var/lib/dam/hmac-keys
-ExecStart=/usr/local/bin/node /opt/dam/api-server/dist/index.js
+# The --import preload wires OpenTelemetry before the app evaluates; a no-op
+# unless an OTLP endpoint is configured in the environment.
+ExecStart=/usr/local/bin/node --import /opt/dam/api-server/dist/telemetry.js /opt/dam/api-server/dist/index.js
 Restart=always
 RestartSec=2
 

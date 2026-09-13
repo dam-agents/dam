@@ -18,12 +18,15 @@ nodes on does not mint a second set that drifts from the first.
 {{- $pgSecret := lookup "v1" "Secret" $ns (include "platform.postgres.secrets.fullname" .) -}}
 {{- $kcSecret := lookup "v1" "Secret" $ns (include "platform.keycloak.secrets.fullname" .) -}}
 {{- $s3Secret := lookup "v1" "Secret" $ns (include "platform.seaweedfs.secrets.fullname" .) -}}
+{{- $redisSecret := lookup "v1" "Secret" $ns (printf "%s-auth" (include "platform.redis.fullname" .)) -}}
 {{- $pgPassword := "" -}}
+{{- $redisPassword := "" -}}
 {{- $apiClientSecret := "" -}}
 {{- $s3Key := "" -}}
 {{- $s3Secretkey := "" -}}
 {{- if $pgSecret }}{{- $pgPassword = index $pgSecret.data "POSTGRES_APISERVER_PASSWORD" | default "" | b64dec }}{{- end }}
 {{- if $kcSecret }}{{- $apiClientSecret = index $kcSecret.data "PLATFORM_API_CLIENT_SECRET" | default "" | b64dec }}{{- end }}
+{{- if $redisSecret }}{{- $redisPassword = index $redisSecret.data "password" | default "" | b64dec }}{{- end }}
 {{- if $s3Secret }}
 {{- $s3Key = index $s3Secret.data "accessKeyId" | default "" | b64dec }}
 {{- $s3Secretkey = index $s3Secret.data "secretAccessKey" | default "" | b64dec }}
@@ -36,7 +39,7 @@ the install that creates them they do not exist yet, and a node that boots with
 a blank database URL crash-loops for a reason nobody can see. Say so instead:
 enable nodes once the services they depend on are installed.
 */ -}}
-{{- if or (empty $pgPassword) (empty $apiClientSecret) }}
+{{- if or (empty $pgPassword) (empty $apiClientSecret) (empty $redisPassword) }}
 {{- fail "nodes.enabled requires the shared services to exist already: install the chart once with nodes disabled, then enable them" }}
 {{- end }}
 {{- range $i := until (int .Values.nodes.count) }}
@@ -62,7 +65,7 @@ stringData:
           DAM_NODE_ID={{ $name }}
           DAM_NODE_ADDRESS={{ $name }}.{{ $peers }}.{{ $ns }}.svc:4002
           DATABASE_URL=postgres://{{ $.Values.postgres.apiserverUser }}:{{ $pgPassword }}@{{ include "platform.postgres.fullname" $ }}.{{ $ns }}.svc:5432/platform
-          REDIS_URL=redis://{{ include "platform.redis.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.redis.port }}
+          REDIS_URL=redis://:{{ $redisPassword }}@{{ include "platform.redis.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.redis.port }}
           KEYCLOAK_URL=http://{{ include "platform.keycloak.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.keycloak.port }}
           KEYCLOAK_EXTERNAL_URL={{ $.Values.urls.keycloak }}
           KEYCLOAK_API_CLIENT_SECRET={{ $apiClientSecret }}
@@ -71,6 +74,19 @@ stringData:
           OBJECT_STORAGE_ACCESS_KEY_ID={{ $s3Key }}
           OBJECT_STORAGE_SECRET_ACCESS_KEY={{ $s3Secretkey }}
           UI_BASE_URL={{ $.Values.urls.ui }}
+          BRAND_NAME="{{ $.Values.brand.name }}"
+          BRAND_SHORT="{{ $.Values.brand.short }}"
+          BRAND_TITLE="{{ $.Values.brand.title }}"
+          BRAND_VENDOR="{{ $.Values.brand.vendor }}"
+          BRAND_THEME_LIGHT_ACCENT="{{ $.Values.brand.theme.light.accent }}"
+          BRAND_THEME_LIGHT_ACCENT_HOVER="{{ $.Values.brand.theme.light.accentHover }}"
+          BRAND_THEME_LIGHT_ACCENT_LIGHT="{{ $.Values.brand.theme.light.accentLight }}"
+          BRAND_THEME_DARK_ACCENT="{{ $.Values.brand.theme.dark.accent }}"
+          BRAND_THEME_DARK_ACCENT_HOVER="{{ $.Values.brand.theme.dark.accentHover }}"
+          BRAND_THEME_DARK_ACCENT_LIGHT="{{ $.Values.brand.theme.dark.accentLight }}"
+{{- with $.Values.brand.icon }}
+          BRAND_ICON_SVG='{{ replace "\n" " " . }}'
+{{- end }}
     runcmd:
       # The image ships the units and the defaults; this is the install's half.
       - [ sh, -c, "cat /etc/dam/env.cluster >> /etc/dam/env && systemctl enable --now dam-api-server" ]

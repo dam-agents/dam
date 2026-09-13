@@ -10,8 +10,15 @@ cd "${MISE_PROJECT_ROOT:?}"
 # vm:install lays /etc/dam/env and the templates down from the checkout every
 # time, so this runs after it rather than once at bootstrap — otherwise the
 # fast loop would reinstall the node and leave it without its e2e surface.
+
+# Every e2e node gets the mock archive, the second one included: the template
+# below names a path on the node's own disk, and nothing else puts it there.
+[ -f /tmp/platform-mock.tar ] || { echo "no /tmp/platform-mock.tar; run: mise run e2e:install" >&2; exit 1; }
+copy_to_node /tmp/platform-mock.tar /tmp/platform-mock.tar
+
 on_node bash -s <<'REMOTE'
 set -euo pipefail
+install -m 0644 /tmp/platform-mock.tar /var/lib/dam/images/mock.tar
 
 # The mock is the node's whole catalogue: every other template names an image
 # the e2e node has no reason to pull.

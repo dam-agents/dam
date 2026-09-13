@@ -12,7 +12,11 @@ domain: localhost
 # -- URL scheme (http for local dev, https for production)
 scheme: http
 # -- Port appended to public URLs (empty for standard 80/443)
-port: "4444"
+port: "4000"
+# The user-visible brand. On the cluster it names the Keycloak realm; a
+# cluster-provisioned node receives the same values in its configuration as
+# BRAND_*, which is where the api-server and the UI read them from. A node
+# made any other way is handed them in its own configuration file.
 brand:
   # Display name shown in the PWA manifest, OAuth dynamic client_name,
   # skill-publish git author, and the Keycloak realm display name (sign-in
@@ -71,19 +75,12 @@ urls:
   # routed to the api-server, which host-gates it onto the share-host app.
   # This host is browser-facing only — consumer agents read shared knowledge
   # bases over the in-cluster harness channel, never by dialing this host, so
-  # it does not need to be resolvable from agent pods.
+  # it does not need to be resolvable from a sandbox.
   share: "" # default: {scheme}://share.{domain}{:port}
-  # Content host that serves only artifact documents and raw bytes, framed by
-  # the share host. A second origin so artifact code can never act on the
-  # share host (no cookie, no sign-in, no app route there). Routed to the
-  # api-server, which host-gates it onto the content app.
-  content: "" # default: {scheme}://content.{domain}{:port}
-# -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
-# postgres, redis) AND controller-managed agent / executor pods. Set
-# `enabled: false` to drop all readiness/liveness/startup probes — escape
-# hatch for clusters where the kubelet's probe behavior is causing churn
-# (false-positive restarts, slow rollouts). Plumbed into the controller via
-# `AGENT_PROBES_ENABLED` so newly reconciled pods follow the same setting.
+# -- Kubelet probes for the chart's pods (keycloak, postgres, redis,
+# seaweedfs). Set `enabled: false` to drop all readiness/liveness/startup
+# probes — escape hatch for clusters where the kubelet's probe behavior is
+# causing churn (false-positive restarts, slow rollouts).
 probes:
   enabled: true
 # -- Annotations added to every chart-managed workload (Deployments,
@@ -99,15 +96,10 @@ commonAnnotations: {}
 # checksums) always win.
 commonPodAnnotations: {}
 # -- Pull secrets for all pods managed by this chart.
-# Agent pods (managed by the controller) also inherit these secrets.
 # Example:
 #   imagePullSecrets:
 #     - name: my-registry-secret
 imagePullSecrets: []
-# -- Target namespace for agent workloads (agents, templates, runs)
-agentNamespace: platform-agents
-# -- Whether to create the agent namespace (disable if it already exists or is managed externally)
-createAgentNamespace: true
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:
@@ -136,10 +128,7 @@ postgres:
   # are connected as, and the bootstrap superuser cannot be demoted anyway).
   #
   # The role/database layout is applied by the idempotent SQL in
-  # `postgres.yaml` (ConfigMap key `01-roles.sql`), run both on first PGDATA
-  # init and by the post-install/post-upgrade migration Job
-  # (`postgres-migrate-roles.yaml`); the latter converges an existing
-  # single-superuser cluster with no manual SQL.
+  # `postgres.yaml` (ConfigMap key `01-roles.sql`) on first PGDATA init.
   apiserverUser: platform_apiserver
   apiserverPassword: null
   keycloakUser: platform_keycloak
@@ -395,23 +384,6 @@ keycloak:
       cpu: "1"
       memory: 1536Mi
 
-# The api-server does not run in the cluster — it runs on every node VM — but
-# these two blocks name the database and object store the chart creates, and
-# the templates read them so both halves agree on one set of names.
-apiServer:
-  db:
-    host: ""
-    port: 5432
-    user: platform_apiserver
-    password: null
-    database: platform
-    sslmode: null
-    caCert: ""
-  objectStorage:
-    endpoint: ""
-    agentEndpoint: ""
-    accessKeyId: ""
-
 # Where node VMs reach these services. A node is not in the cluster, so each
 # service it needs is published on a fixed NodePort and the lima template
 # forwards the same numbers. Pinning them is what lets the two halves agree
@@ -433,8 +405,13 @@ nodes:
   # The node image wrapped as a bootable container disk — what
   # `mise run //packages/dam-vm:disk` produces, not the bootc image it is built
   # from. Handing KubeVirt the latter gives it a filesystem where it expects a
-  # disk, and the machine does not boot.
-  image: quay.io/dam-agents/node-disk:latest
+  # disk, and the machine does not boot. In published charts CI replaces the
+  # empty tag with the disk's content tag (see cd.yml `publish`), so a release
+  # that did not change the node does not reboot every VM. Empty falls back to
+  # .Chart.AppVersion.
+  image:
+    repository: quay.io/dam-agents/node-disk
+    tag: "" # @ci-pin node-disk-image-tag
   cpu: 4
   memory: 8Gi
   # /var/lib/dam — the agent workspaces, the unpacked images, the node's own

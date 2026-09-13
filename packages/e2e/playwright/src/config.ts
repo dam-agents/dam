@@ -1,7 +1,7 @@
-export const baseUrl = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
+export const baseUrl = process.env.PLATFORM_BASE_URL ?? "http://localhost:4000";
 
 export const keycloakUrl =
-  process.env.PLATFORM_KEYCLOAK_URL ?? "http://keycloak.localhost:4444";
+  process.env.PLATFORM_KEYCLOAK_URL ?? "http://localhost:30081";
 
 export const keycloakRealm = process.env.PLATFORM_KEYCLOAK_REALM ?? "platform";
 

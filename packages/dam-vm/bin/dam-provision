@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
-# First-boot provisioning. Everything here is idempotent: the unit is gated on
-# a marker, but a half-finished boot must be safe to repeat, so the marker is
-# written last and only on success. There is nothing here about databases or
-# identity: those live on the cluster, and this node is given their addresses.
+# The node's layout and per-node keys. Run once by the first-boot unit on a
+# bootc node and on every install of a dev node, so everything here is
+# idempotent: the unit is gated on a marker, but a half-finished boot must be
+# safe to repeat, so the marker is written last and only on success. There is
+# nothing here about databases or identity: those live on the cluster, and this
+# node is given their addresses in /etc/dam/env, which this reads for its roots.
 set -euo pipefail
 . /etc/dam/env
 
-install -d -m 0700 -o root -g root \
-  "${DAM_PKI_ROOT}"
-install -d -m 0755 -o root -g root "${DAM_AGENTS_ROOT}"
+install -d -m 0700 -o root -g root "${DAM_PKI_ROOT}" /var/lib/dam/secrets /var/lib/dam/registry-auth
+install -d -m 0755 -o root -g root "${DAM_IMAGES_ROOT}"
+# The gateway user must be able to traverse to its own agent's directory; what
+# it can see inside is settled by its unit's mount namespace.
+install -d -m 0751 -o root -g root "${DAM_AGENTS_ROOT}"
+
+# The gateway uid: Envoy runs as this, and it is the only reader of an agent's
+# credential files and control-plane sockets.
+id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
+
+# /run is a tmpfs, so these come back on every boot. tmpfiles.d owns them and
+# not the api-server unit: a RuntimeDirectory would be a private mount
+# namespace, which the supervisor cannot work in (see dam-api-server.service).
+printf 'd /run/netns 0755 root root -\nd %s 0751 root root -\nd %s/harness 0750 root dam-gateway -\nd %s/extauthz 0750 root dam-gateway -\n' \
+  "${DAM_RUN_ROOT}" "${DAM_RUN_ROOT}" "${DAM_RUN_ROOT}" > /etc/tmpfiles.d/dam.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/dam.conf
 
 # Keys this node keeps for itself: one pseudonymizes the activity log, the
 # other signs API keys. They are generated here rather than shipped in the

@@ -5,7 +5,12 @@ set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 . "${MISE_PROJECT_ROOT}/etc/e2e-env.sh"
 . "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
-export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM}/copied-from-guest/kubeconfig.yaml"
+# The same kubeconfig rule as cluster:env: in sandbox mode the cluster is this machine.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+else
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+fi
 
 PGPW=$(kubectl -n "$DAM_NAMESPACE" get secret dam-platform-postgres-secrets \
   -o jsonpath='{.data.POSTGRES_ADMIN_PASSWORD}' | base64 -d)

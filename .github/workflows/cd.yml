@@ -42,8 +42,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # CRD checks diff against history: crd-backwards-compatibility vs the
-          # latest v* tag, crd-schema-generation vs the origin/main merge-base.
           fetch-depth: 0
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -109,7 +107,7 @@ jobs:
           if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
             composite="${REF_NAME#v}"
           else
-            appver="$(grep -E '^appVersion:' helm/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            appver="$(jq -r .version packages/cli/package.json)"
             composite="${appver}-dev-${short}"
           fi
           echo "composite=$composite" >> "$GITHUB_OUTPUT"
@@ -127,6 +125,7 @@ jobs:
       workloads: ${{ steps.d.outputs.workloads }}
       claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
       source_shas: ${{ steps.d.outputs.source_shas }}
+      node_disk: ${{ steps.d.outputs.node_disk }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,10 +140,11 @@ jobs:
         env:
           # PR: reuse from the registry what the merge-base already built, and
           # never build workloads. main push: rebuild & republish platform-base
-          # and keycloak; agents, workloads and the VM rebuild only when their
-          # effective source moved — publish pins their source-sha tags into the
-          # chart, so an unchanged image keeps last deploy's tag (k-search + the
-          # VM disk alone are ~25 min otherwise). tag/schedule/dispatch rebuild
+          # and keycloak; agents, workloads and the node disk rebuild only when
+          # their effective source moved — publish pins their source-sha tags
+          # into the chart, so an unchanged image keeps last deploy's tag
+          # (k-search + the node disk alone are ~25 min otherwise).
+          # tag/schedule/dispatch rebuild
           # & republish all (releases get semver tags, the nightly keeps agents
           # on the freshly rebuilt base).
           EVENT: ${{ github.event_name }}
@@ -161,9 +161,9 @@ jobs:
   build-images:
     # Deliberately not gated on `check`: builds run in parallel with it and
     # push by digest only (no tags), so broken code never becomes referencable
-    # — merge-images, which creates the tags, requires `check`; e2e pulls these
-    # digests directly. PRs build amd64 only (changes.archs): the amd64 e2e is
-    # all a PR's images feed.
+    # — merge-images, which creates the tags, requires `check`. PRs build amd64
+    # only (changes.archs); the e2e job builds the api-server and UI from the
+    # checkout on the node and consumes none of these.
     needs: [changes]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
@@ -265,6 +265,63 @@ jobs:
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
+
+  build-node-disk:
+    name: build node disk
+    # The node image is a bootc container wrapping the api-server and UI
+    # images with the node's own units and scripts, and the disk is that image
+    # run through bootc-image-builder — a privileged container with loop
+    # devices, which the hosted runners allow but buildx cannot express. Gated
+    # by `changes` like the workloads: never on a PR (its e2e runs a node built
+    # from source), and on main only when the node's source moved.
+    # amd64 only: the KubeVirt clusters it boots on are x86_64.
+    needs: [merge-images, appversion, changes]
+    if: ${{ needs.changes.outputs.node_disk == 'true' && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digests-*-amd64
+          path: /tmp/digests
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/node-disk
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['node-disk'] }}
+      - name: Build the node image and its disk, and push
+        run: |
+          set -euo pipefail
+          # The Containerfile copies from the local platform-api-server and
+          # platform-ui tags: the amd64 images this run built, by digest.
+          for c in api-server ui; do
+            d="$(ls "/tmp/digests/digests-$c-amd64")"
+            docker pull "$IMAGE_PREFIX/$c@sha256:$d"
+            docker tag "$IMAGE_PREFIX/$c@sha256:$d" "platform-$c:latest"
+          done
+          docker build -f packages/dam-vm/Containerfile -t platform-node:latest packages/dam-vm
+          first="$(jq -cr '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          # By path, as `changes` does: the task's depends would rebuild the
+          # two images this job has just pulled.
+          NODE_DISK_TAG="$first" packages/dam-vm/.mise/tasks/disk
+          for t in $(jq -cr '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+            [ "$t" = "$first" ] || docker tag "$first" "$t"
+            docker push "$t"
+          done
 
   build-platform-base:
     # Not gated on `check` either — see build-images. merge-platform-base
@@ -497,16 +554,6 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # The VM sandbox's containerDisk (hidden behind the vm-sandboxes feature).
-  # Not part of build-agents/build-workloads: those are plain buildx Dockerfile
-  # builds, while this one runs bootc-image-builder to produce a qcow2 and wraps
-  # it as an OCI image — it needs a privileged container and loop devices, which
-  # GitHub-hosted runners allow but buildx cannot express.
-  #
-  # amd64 only: the feature is behind a hidden flag and its consumers are x86_64
-  # clusters. Add the arch matrix here when it graduates — the build is ~15 min
-  # per arch, so paying for arm64 now buys nothing.
-  #
   merge-workloads:
     name: merge multi-arch workload manifests
     needs: [build-workloads, appversion, changes]
@@ -602,18 +649,17 @@ jobs:
 
   e2e:
     name: mise e2e
-    # Not gated on `check` (via merge-images): e2e is a check itself, and the
-    # amd64 images it needs exist by digest as soon as build-images pushed them
-    # — waiting for lint + tags cost every PR ~6 min. Without a status-check
+    # Not gated on `check`: e2e is a check itself, and the one image it needs
+    # (the mock, with its sha tag) exists as soon as build-mock pushed it —
+    # waiting for lint + tags cost every PR ~6 min. Without a status-check
     # function the implicit success() applies, and it is false whenever any
     # transitive dependency was skipped — merge-platform-base skips on PRs that
     # don't touch platform-base, which silently skipped e2e on most PRs.
     # Require the direct needs explicitly instead.
-    needs: [build-images, build-mock]
+    needs: [build-mock]
     if: >-
       ${{ !startsWith(github.ref, 'refs/tags/v') &&
           !cancelled() &&
-          needs.build-images.result == 'success' &&
           needs.build-mock.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -631,23 +677,13 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: digests-*-amd64
-          path: /tmp/digests
-      - name: Pull built images from registry
+      - name: Pull the mock image from the registry
         env:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Platform images by the digest build-images pushed (untagged until
-          # merge-images; Quay keeps untagged manifests for hours, this gap is
-          # minutes). mock is pushed with its sha tag directly.
-          for c in api-server ui keycloak; do
-            d="$(ls "/tmp/digests/digests-$c-amd64")"
-            docker pull "$IMAGE_PREFIX/$c@sha256:$d"
-            docker tag "$IMAGE_PREFIX/$c@sha256:$d" "platform-$c:latest"
-          done
+          # The only built image the e2e install consumes: the node builds the
+          # api-server and UI from this checkout, and Keycloak is upstream's.
           docker pull "$IMAGE_PREFIX/mock:$SHA"
           docker tag "$IMAGE_PREFIX/mock:$SHA" "platform-mock:latest"
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
@@ -683,7 +719,7 @@ jobs:
   # the skipped branches are only defensive.
   publish:
     name: publish release
-    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
+    needs: [changes, merge-images, merge-agents, merge-workloads, build-node-disk, appversion]
     if: >-
       ${{ github.event_name == 'push' &&
           startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
@@ -692,7 +728,7 @@ jobs:
           needs.merge-images.result == 'success' &&
           needs.merge-agents.result == 'success' &&
           (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') &&
-          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
+          (needs.build-node-disk.result == 'success' || needs.build-node-disk.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -726,10 +762,6 @@ jobs:
             echo "npmTag=latest" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build Helm chart dependencies
-        # helm package below is not a mise task, so the chart deps provider does not run on its own.
-        run: mise -C helm deps
-
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
@@ -762,13 +794,14 @@ jobs:
   # on the dev channel only — releases keep the strict gate.
   publish-dev:
     name: publish dev chart
-    needs: [changes, merge-images, appversion]
+    needs: [changes, merge-images, build-node-disk, appversion]
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' && !cancelled() &&
           needs.changes.result == 'success' &&
           needs.appversion.result == 'success' &&
-          needs.merge-images.result == 'success' }}
+          needs.merge-images.result == 'success' &&
+          (needs.build-node-disk.result == 'success' || needs.build-node-disk.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -791,10 +824,6 @@ jobs:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
         run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
-
-      - name: Build Helm chart dependencies
-        # helm package below is not a mise task, so the chart deps provider does not run on its own.
-        run: mise -C helm deps
 
       - name: Pin content-tagged image tags
         env:

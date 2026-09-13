@@ -13,7 +13,12 @@ NODE_ID="${1:?usage: mise run node:cordon <node-id> [--undo]}"
 STATE=cordoned
 [ "${2:-}" = "--undo" ] && STATE=ready
 
-export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+# The same kubeconfig rule as cluster:env: in sandbox mode the cluster is this machine.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+else
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+fi
 NS="${DAM_NAMESPACE:-dam}"
 PGPW=$(kubectl -n "$NS" get secret dam-platform-postgres-secrets \
   -o jsonpath='{.data.POSTGRES_ADMIN_PASSWORD}' | base64 -d)

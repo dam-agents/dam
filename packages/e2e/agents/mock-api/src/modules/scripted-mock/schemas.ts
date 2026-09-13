@@ -72,3 +72,11 @@ export const spawnInvocationInputSchema = z
 export const spawnInvocationResultSchema = z
   .object({ id: z.string().min(1) })
   .strict();
+
+export const readWorkspaceFileInputSchema = z
+  .object({ path: z.string().min(1) })
+  .strict();
+
+export const readWorkspaceFileResultSchema = z
+  .object({ content: z.string().optional() })
+  .strict();

@@ -41,42 +41,15 @@ provision:
       #!/bin/bash
       set -eux -o pipefail
       apt-get update
-      apt-get install -y nftables iproute2 openssl rsync jq curl zstd
-
-      # Node from upstream: the archive's is too old for the api-server, and
-      # the version has to match what the repo builds against.
-      NODE_VERSION=24.9.0
-      case "$(uname -m)" in
-        aarch64) NODE_ARCH=arm64 ;;
-        x86_64)  NODE_ARCH=x64 ;;
-      esac
-      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
-        | tar -xJ -C /usr/local --strip-components=1
-
-      # gVisor: the sandbox boundary, so a dev VM without it is not a dev VM.
-      # The supervisor calls runsc itself, so there is no shim and no daemon.
-      ARCH_GVISOR=$(uname -m)
-      URL="https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH_GVISOR}"
-      curl -fsSL -o /usr/local/bin/runsc "${URL}/runsc"
-      chmod 0755 /usr/local/bin/runsc
-
-      # Envoy is the paired gateway, and Ubuntu ships no package for it.
-      ENVOY_VERSION=1.36.1
-      case "$(uname -m)" in
-        aarch64) ENVOY_ARCH=aarch_64 ;;
-        x86_64)  ENVOY_ARCH=x86_64 ;;
-      esac
-      curl -fsSL -o /usr/local/bin/envoy \
-        "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${ENVOY_ARCH}"
-      chmod 0755 /usr/local/bin/envoy
-
-      id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
+      # Only what the distribution packages. Node, Envoy and runsc come from
+      # their own releases through packages/dam-vm/bin/dam-toolchain, which
+      # vm:install runs from the mounted checkout — the same script the bootc
+      # image runs, so a dev node and a real one cannot drift apart.
+      apt-get install -y nftables iproute2 openssl rsync jq curl xz-utils zstd
 
 probes:
-  - description: "the node has everything the platform shells out to"
+  - description: "the node has what the platform shells out to that the distribution ships"
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      test -x /usr/local/bin/runsc
-      test -x /usr/local/bin/envoy
-      command -v nft node
+      command -v nft ip openssl curl

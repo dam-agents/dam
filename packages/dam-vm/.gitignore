@@ -1,4 +1,4 @@
-# mTLS material issued by `mise run dam-vm:issue-certs` into cert/.
+# Local mTLS material from the per-node PKI that predated the install CA in Postgres.
 # Never commit keys/certs.
 cert/
 *.key

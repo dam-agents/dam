@@ -19,7 +19,12 @@ if [ "${1:-}" = "--down" ]; then
   exit 0
 fi
 
-export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM}/copied-from-guest/kubeconfig.yaml"
+# The same kubeconfig rule as cluster:env: in sandbox mode the cluster is this machine.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+else
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
+fi
 eval "$(mise run cluster:env)"
 
 DAM_NODE_ADDRESS="${HOST_FOR_PEERS}:4002" mise run vm:install
@@ -33,5 +38,5 @@ DAM_VM="${DAM_VM}-2" DAM_NODE_ID=e2e-node-2 DAM_PORT=$((DAM_PORT + 1)) \
   mise run vm:install
 DAM_VM="${DAM_VM}-2" DAM_NODE_ID=e2e-node-2 mise run e2e:node-config
 
-echo "Two nodes up. Check both: mise run cluster:kubectl -- -n dam exec dam-platform-postgres-0 -- psql -U platform_apiserver -d platform -c 'select id, address, state from nodes'"
+echo "Two nodes up. Check both: KUBECONFIG=$KUBECONFIG kubectl -n dam exec dam-platform-postgres-0 -- psql -U platform_apiserver -d platform -c 'select id, peer_address, state from nodes'"
 echo "Move an agent: mise run node:cordon e2e-node-1, then wake it."

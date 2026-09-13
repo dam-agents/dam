@@ -9,6 +9,8 @@ cd "${MISE_PROJECT_ROOT:?}"
 if [ -n "${IS_SANDBOX:-}" ]; then
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   HOST="${DAM_CLUSTER_HOST:-127.0.0.1}"
+  # No lima, no forwards: the NodePorts are where k3s binds them.
+  DAM_CLUSTER_PORT_OFFSET=0
 else
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
   # Node VMs are not on the cluster network; they reach it through the lima

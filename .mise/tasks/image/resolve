@@ -19,7 +19,8 @@
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
 #   mise run image:resolve -- list-slow-builds           -> workloads (chart-pinned by source sha)
-#   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
+#   mise run image:resolve -- list-components            -> every published container image (cd.yml scans them all;
+#                                                            the node disk is not one — a qcow2 has nothing to scan)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
@@ -27,7 +28,7 @@
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule: publish all),
-# RESOLVE_REUSE_AGENTS=1 exempts agents, workloads and the VM from
+# RESOLVE_REUSE_AGENTS=1 exempts agents, workloads and the node disk from
 # RESOLVE_NO_REUSE (CI main: they rebuild only when their effective source moved
 # — the published chart pins their source-sha tags, so an unchanged one keeps
 # last deploy's tag).
@@ -54,6 +55,11 @@ WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
 # chart tag is pinned by source sha (pin-tags) and main pushes reuse the
 # unchanged ones.
 SLOW_BUILDS="$WORKLOADS"
+# The node disk wraps the api-server and UI images with the node's own files;
+# its Containerfile copies from the local platform-api-server / platform-ui
+# tags, so its source is theirs plus packages/dam-vm. Keep in sync with
+# packages/api-server/Dockerfile's COPY list.
+NODE_DISK_PATHS="packages/dam-vm packages/api-server packages/ui packages/db packages/api-server-api packages/agent-runtime-api packages/e2e/agents/mock-api packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -69,6 +75,7 @@ own_paths() {
     # release that doesn't touch these paths doesn't roll the Keycloak pod.
     keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml" ;;
     mock) echo "packages/e2e/agents/mock" ;;
+    node-disk) echo "$NODE_DISK_PATHS" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -76,7 +83,7 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    platform-base|keycloak) echo "" ;;
+    platform-base|keycloak|node-disk) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -138,7 +145,7 @@ build_or_reuse() {
   docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
-# Agents, workloads and the VM honour RESOLVE_REUSE_AGENTS despite
+# Agents, workloads and the node disk honour RESOLVE_REUSE_AGENTS despite
 # RESOLVE_NO_REUSE (see header); platform-base and keycloak keep the caller's mode.
 resolve_derived() {
   ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
@@ -151,12 +158,12 @@ tag_for() {
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src vm
+  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src node_disk
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak $AGENTS $SLOW_BUILDS; do
+  src="$(for a in platform-base keycloak node-disk $AGENTS $SLOW_BUILDS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
@@ -176,13 +183,15 @@ gha_outputs() {
     done
   fi
   workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  # Unlike workloads the VM does build on PRs — but only when its effective
-  # source moved (plain resolve; PRs never set RESOLVE_NO_REUSE). Its qcow2 is
-  # never byte-reproducible (bootc-image-builder draws fs UUIDs from
-  # crypto/rand), so skipping unchanged builds is the only way an unchanged
-  # VM keeps its digest.
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
+  # The node disk is a release artifact like the workloads: PRs never build it
+  # (their e2e runs a node built from source), and main builds it only when
+  # its effective source moved. Its qcow2 is never byte-reproducible
+  # (bootc-image-builder draws fs UUIDs from crypto/rand), so skipping
+  # unchanged builds is the only way an unchanged node keeps its digest.
+  node_disk=false
+  if [ "${EVENT:-}" != pull_request ] && [ "$(resolve_derived node-disk | cut -d' ' -f1)" = BUILD ]; then node_disk=true; fi
+  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\nnode_disk=%s\n' \
+    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src" "$node_disk"
 }
 
 self_check() {
@@ -196,6 +205,9 @@ self_check() {
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
   chk "$(base_of keycloak)" ""
+  chk "$(base_of node-disk)" ""
+  has "$(effective_paths node-disk)" packages/dam-vm
+  has "$(effective_paths node-disk)" packages/api-server
   has "$(effective_paths keycloak)" packages/keycloak-theme
   chk "$(local_tag platform-base)" platform-base
   chk "$(local_tag bob)" "platform-bob:latest"
@@ -217,11 +229,13 @@ self_check() {
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"platform-base":"'
+  has "$out" 'node_disk=true'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'workloads=[]'
   has "$out" 'archs=["amd64"]'
+  has "$out" 'node_disk=false'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 
@@ -232,7 +246,7 @@ case "${1:-}" in
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller platform-base keycloak $AGENTS $SLOW_BUILDS ;;
+  list-components) echo api-server ui platform-base keycloak $AGENTS $SLOW_BUILDS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
   *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;

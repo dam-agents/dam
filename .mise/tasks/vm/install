@@ -38,7 +38,7 @@ fi
 on_node bash -s -- /opt/dam/src "${PNPM_VERSION}" \
   "${DAM_UI_URL:-http://localhost:4000}" \
   "${DAM_NODE_ID:-node-1}" \
-  "${DAM_NODE_ADDRESS:-127.0.0.1:4000}" \
+  "${DAM_NODE_ADDRESS:-127.0.0.1:${DAM_PEER_HOST_PORT:-4002}}" \
   "${DAM_KEYCLOAK_URL:?}" "${DAM_KEYCLOAK_EXTERNAL_URL:-$DAM_KEYCLOAK_URL}" \
   "${DAM_DATABASE_URL:?run: eval \"\$(mise run cluster:env)\"}" \
   "${DAM_REDIS_URL:?}" "${DAM_API_CLIENT_SECRET:?}" \
@@ -63,17 +63,8 @@ S3_SECRET="${13}"
 SHARE_URL="${UI_URL%%://*}://share.${UI_URL#*://}"
 CONTENT_URL="${UI_URL%%://*}://content.${UI_URL#*://}"
 
-install -d -m 0700 /var/lib/dam/secrets /var/lib/dam/pki /var/lib/dam/registry-auth
-install -d -m 0755 /var/lib/dam/images
-# The gateway user must be able to traverse to its own agent's directory;
-# what it can see inside is settled by the unit's mount namespace.
-install -d -m 0751 /var/lib/dam/agents /run/dam /etc/dam
-install -d -m 0750 /run/dam/harness /run/dam/extauthz
-install -d -m 0755 /run/netns
-# /run is a tmpfs, so the directory has to be recreated on every boot.
-printf 'd /run/netns 0755 root root -\nd /run/dam 0755 root root -\nd /run/dam/harness 0750 root dam-gateway -\nd /run/dam/extauthz 0750 root dam-gateway -\n' > /etc/tmpfiles.d/dam.conf
-id dam-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dam-gateway
-chown dam-gateway /run/dam/harness /run/dam/extauthz
+# Node, Envoy and runsc, from the same script the node image runs.
+"$REPO/packages/dam-vm/bin/dam-toolchain"
 
 # The dependency tree is built here, not on the host: native modules (sharp,
 # argon2) are platform-specific, and a tree deployed from macOS loads none of
@@ -91,16 +82,9 @@ install -d /opt/dam/api-server/dist /opt/dam/api-server/packages/db/drizzle
 cp -a "$REPO/packages/api-server/dist/." /opt/dam/api-server/dist/
 cp -a "$REPO/packages/db/drizzle/." /opt/dam/api-server/packages/db/drizzle/
 
+install -d -m 0751 /etc/dam
 install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
-# Secrets are generated once and kept, so a reinstall does not invalidate
-# every API key and re-pseudonymize the activity log.
-[ -f /var/lib/dam/hmac-keys ] || {
-  umask 077
-  { echo "ACTIVITY_HMAC_KEY=$(openssl rand -hex 32)"
-    echo "API_KEY_HMAC_KEY=$(openssl rand -hex 32)"; } > /var/lib/dam/hmac-keys
-}
 {
-  cat /var/lib/dam/hmac-keys
   echo "DATABASE_URL=${DATABASE_URL}"
   echo "REDIS_URL=${REDIS_URL}"
   echo "KEYCLOAK_API_CLIENT_SECRET=${API_CLIENT_SECRET}"
@@ -117,6 +101,9 @@ install -m 0644 "$REPO/packages/dam-vm/etc/env" /etc/dam/env
   echo "DAM_NODE_ADDRESS=${NODE_ADDRESS}"
   cat /tmp/node.env
 } >> /etc/dam/env
+# The layout and the per-node keys, from the same script a bootc node runs on
+# its first boot. The api-server unit reads the keys as its second env file.
+"$REPO/packages/dam-vm/bin/dam-provision"
 install -d /etc/dam/templates
 cp -a "$REPO/packages/dam-vm/templates"/*.yaml /etc/dam/templates/
 install -m 0644 "$REPO/packages/dam-vm/etc/trusted-hosts" /etc/dam/trusted-hosts

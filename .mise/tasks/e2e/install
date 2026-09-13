@@ -17,16 +17,13 @@ mise run vm:up
 mise run vm:install
 
 # The mock harness is built here and carried in as a saved archive: the node
-# pulls from registries, and this image is never pushed to one.
-mise run //packages/platform-base:image
-docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
+# pulls from registries, and this image is never pushed to one. CI arrives
+# with platform-mock:latest already tagged and skips the build.
+if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+  mise run //packages/platform-base:image
+  docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
+fi
 docker save platform-mock:latest -o /tmp/platform-mock.tar
-copy_to_node /tmp/platform-mock.tar /tmp/platform-mock.tar
-
-on_node bash -s <<'REMOTE'
-set -euo pipefail
-install -m 0644 /tmp/platform-mock.tar /var/lib/dam/images/mock.tar
-REMOTE
 
 mise run e2e:node-config
 mise run e2e:gate

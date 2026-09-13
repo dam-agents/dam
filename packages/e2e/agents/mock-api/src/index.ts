@@ -21,6 +21,8 @@ export type {
   GetReceivedPromptsResult,
   PerformFetchInput,
   PerformFetchResult,
+  ReadWorkspaceFileInput,
+  ReadWorkspaceFileResult,
   ReceivedPrompt,
   ResetResult,
   ScriptEntry,

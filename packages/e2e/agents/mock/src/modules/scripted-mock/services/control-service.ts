@@ -4,13 +4,14 @@ import type {
   GetReceivedPromptsResult,
   PerformFetchInput,
   PerformFetchResult,
+  ReadWorkspaceFileInput,
   ReceivedPrompt,
   ScriptedMockService,
   SetScriptInput,
   SpawnInvocationInput,
 } from "mock-agent-api";
 import type { MockState } from "../domain/state.js";
-import type { HarnessSpawn } from "./ports.js";
+import type { HarnessSpawn, WorkspaceWriter } from "./ports.js";
 
 export type ProxyFetch = (
   input: PerformFetchInput,
@@ -20,12 +21,13 @@ export interface ScriptedMockDeps {
   state: MockState;
   proxyFetch: ProxyFetch;
   harnessSpawn: HarnessSpawn;
+  workspace: WorkspaceWriter;
 }
 
 export function createScriptedMockService(
   deps: ScriptedMockDeps,
 ): ScriptedMockService {
-  const { state, proxyFetch, harnessSpawn } = deps;
+  const { state, proxyFetch, harnessSpawn, workspace } = deps;
   return {
     setScript(input: SetScriptInput) {
       state.scriptEntries = input.entries;
@@ -48,6 +50,9 @@ export function createScriptedMockService(
     },
     performFetch(input: PerformFetchInput): Promise<PerformFetchResult> {
       return proxyFetch(input);
+    },
+    async readWorkspaceFile(input: ReadWorkspaceFileInput) {
+      return { content: await workspace.readFile(input.path) };
     },
     spawnInvocation(input: SpawnInvocationInput) {
       return harnessSpawn(input);

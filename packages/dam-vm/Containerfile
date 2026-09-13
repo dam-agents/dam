@@ -12,71 +12,31 @@
 # this image carries no harness content.
 FROM quay.io/fedora/fedora-bootc:44
 
-# Three things are downloaded per architecture below, and each names it
-# differently. TARGETARCH is what the builder says it is building for; a
-# builder that does not set it is building for the machine it is on, which is
-# what uname reports — assuming one or the other silently produces an image
-# whose binaries cannot run.
+# TARGETARCH is what the builder says it is building for; a builder that does
+# not set it is building for the machine it is on, which is what the toolchain
+# script falls back to.
 ARG TARGETARCH
 
 # gVisor is the sandbox boundary, so runsc is not optional here the way a
-# RuntimeClass was in the cluster.
+# RuntimeClass was in the cluster. cloud-init is how a cluster-provisioned node
+# receives its configuration on first boot; a lima node is handed the same file
+# by its install task instead.
 RUN dnf install -y --setopt=install_weak_deps=False \
-      nftables iproute openssl \
+      nftables iproute openssl cloud-init \
       jq tar gzip zstd && \
     dnf clean all
 
-# Node from upstream rather than the distribution's, for the same reason the
-# dev node's provisioning does it: the api-server is built against this version
-# and the packaged one trails it. Keep in step with etc/lima/dam.yaml.
-ARG NODE_VERSION=24.9.0
-RUN set -eux; \
-    arch="${TARGETARCH:-$(uname -m)}"; \
-    case "$arch" in \
-      amd64|x86_64) nodearch=x64 ;; \
-      arm64|aarch64) nodearch=arm64 ;; \
-      *) echo "no Node build for $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${nodearch}.tar.xz" \
-      | tar -xJ -C /usr/local --strip-components=1
+# Node, Envoy and runsc from their own releases — the same script the dev node
+# runs, so the two cannot drift apart on a version.
+COPY bin/ /opt/dam/bin/
+RUN /opt/dam/bin/dam-toolchain "${TARGETARCH:-}"
 
-# The paired gateway. No distribution we build on packages Envoy, so it comes
-# from its own release the way the dev node's provisioning takes it — keep this
-# version in step with etc/lima/dam.yaml, which installs it for a lima node.
-ARG ENVOY_VERSION=1.36.1
-RUN set -eux; \
-    arch="${TARGETARCH:-$(uname -m)}"; \
-    case "$arch" in \
-      amd64|x86_64) envoyarch=x86_64 ;; \
-      arm64|aarch64) envoyarch=aarch_64 ;; \
-      *) echo "no Envoy build for $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /usr/local/bin/envoy \
-      "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${envoyarch}"; \
-    chmod 0755 /usr/local/bin/envoy
-
-# gVisor names architectures the way the kernel does, and the build names them
-# the way Go does. A node built for the wrong one installs a runsc that cannot
-# exec, which looks like nothing at all until the first sandbox starts, so an
-# architecture this does not know about stops the build instead.
-ARG GVISOR_BASE=https://storage.googleapis.com/gvisor/releases/release/latest
-RUN set -eux; \
-    arch="${TARGETARCH:-$(uname -m)}"; \
-    case "$arch" in \
-      amd64|x86_64) gvarch=x86_64 ;; \
-      arm64|aarch64) gvarch=aarch64 ;; \
-      *) echo "no gVisor build for $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /usr/local/bin/runsc "${GVISOR_BASE}/${gvarch}/runsc"; \
-    chmod 0755 /usr/local/bin/runsc
-
-# The gateway uid: Envoy runs as this, and it is the only reader of an
-# agent's credential files and control-plane sockets.
+# The gateway uid, baked in so the units can name it from the first boot;
+# provisioning creates it too where the image did not.
 RUN useradd --system --no-create-home --shell /sbin/nologin dam-gateway
 
 COPY --from=platform-api-server:latest /app /opt/dam/api-server
 COPY system/*.service /usr/lib/systemd/system/
-COPY bin/ /opt/dam/bin/
 COPY etc/ /etc/dam/
 # The agent templates a node offers. Without them it serves a catalogue of
 # nothing and no agent can be created.
