@@ -67,13 +67,15 @@ stringData:
           DATABASE_URL=postgres://{{ $.Values.postgres.apiserverUser }}:{{ $pgPassword }}@{{ include "platform.postgres.fullname" $ }}.{{ $ns }}.svc:5432/platform
           REDIS_URL=redis://:{{ $redisPassword }}@{{ include "platform.redis.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.redis.port }}
           KEYCLOAK_URL=http://{{ include "platform.keycloak.fullname" $ }}.{{ $ns }}.svc:{{ $.Values.keycloak.port }}
-          KEYCLOAK_EXTERNAL_URL={{ $.Values.urls.keycloak }}
+          KEYCLOAK_EXTERNAL_URL={{ include "platform.url.keycloak" $ }}
           KEYCLOAK_API_CLIENT_SECRET={{ $apiClientSecret }}
           OBJECT_STORAGE_ENDPOINT=http://{{ include "platform.seaweedfs.fullname" $ }}.{{ $ns }}.svc:8333
           OBJECT_STORAGE_AGENT_ENDPOINT=http://{{ include "platform.seaweedfs.fullname" $ }}.{{ $ns }}.svc:8333
           OBJECT_STORAGE_ACCESS_KEY_ID={{ $s3Key }}
           OBJECT_STORAGE_SECRET_ACCESS_KEY={{ $s3Secretkey }}
-          UI_BASE_URL={{ $.Values.urls.ui }}
+          UI_BASE_URL={{ include "platform.url.ui" $ }}
+          SHARE_BASE_URL={{ include "platform.url.share" $ }}
+          CONTENT_BASE_URL={{ include "platform.url.content" $ }}
           BRAND_NAME="{{ $.Values.brand.name }}"
           BRAND_SHORT="{{ $.Values.brand.short }}"
           BRAND_TITLE="{{ $.Values.brand.title }}"

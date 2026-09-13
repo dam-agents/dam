@@ -153,6 +153,17 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
+{{- /* Content host framed by the share host: artifact documents and raw
+       bytes only, no cookie, no sign-in, no app route. A separate origin so
+       the browser keeps artifact code away from the share host. */ -}}
+{{- define "platform.url.content" -}}
+{{- if .Values.urls.content }}
+{{- .Values.urls.content }}
+{{- else }}
+{{- printf "%s://content.%s" .Values.scheme (include "platform.hostport" .) }}
+{{- end }}
+{{- end }}
+
 {{/* ---- Shared PostgreSQL ---- */}}
 
 {{/*

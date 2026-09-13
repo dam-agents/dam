@@ -77,6 +77,10 @@ urls:
   # bases over the in-cluster harness channel, never by dialing this host, so
   # it does not need to be resolvable from a sandbox.
   share: "" # default: {scheme}://share.{domain}{:port}
+  # Content host that serves only artifact documents and raw bytes, framed by
+  # the share host. A second origin so artifact code can never act on the
+  # share host (no cookie, no sign-in, no app route there).
+  content: "" # default: {scheme}://content.{domain}{:port}
 # -- Kubelet probes for the chart's pods (keycloak, postgres, redis,
 # seaweedfs). Set `enabled: false` to drop all readiness/liveness/startup
 # probes — escape hatch for clusters where the kubelet's probe behavior is
