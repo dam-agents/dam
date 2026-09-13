@@ -79,6 +79,14 @@ other than its paired gateway. Enforcement is layered:
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
+- **vm Backend egress.** A vm Agent's guest sits outside the cluster, so
+  no NetworkPolicy applies; the equivalent gate is the sandbox node's
+  per-machine egress allowlist, which the controller sets to exactly the
+  paired gateway's ClusterIP. The sandbox node routes the cluster's
+  Service CIDR through a Kubernetes node for that one hop. The guest's
+  inbound side is the machine's published node port, reachable from
+  anything that can reach the node — the node's own network boundary is
+  that gate today, not a kernel policy per pair.
 - **Agent ingress NetworkPolicy** (chart-rendered,
   `agent-ingress-platform-only`) admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
