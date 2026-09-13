@@ -107,17 +107,15 @@ Bring your own harness with [ACP](https://agentclientprotocol.com/get-started/in
 
 ## Run your own
 
-DAM is Apache 2.0 licensed and can be deployed on your own Kubernetes cluster using Helm.
+DAM is Apache 2.0 licensed. An install is a Kubernetes cluster running the shared services — Keycloak, Postgres, Redis and an object store — from the Helm chart, plus one or more **node** VMs that run the agents in gVisor sandboxes. Kubernetes never runs an agent. On a cluster with KubeVirt or OpenShift Virtualization the chart can provision the node VMs too (`nodes.enabled`); anywhere else a node is a VM booted from the node image and handed its configuration.
 
 ```sh
-helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
+helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
-The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
+Cluster-side settings live in [`helm/values.yaml`](helm/values.yaml); what a node is told is described in [`docs/configuration.md`](docs/configuration.md).
 
-Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](deploy/helm/platform/values.yaml).
-
-DAM requires an Istio ambient mesh. Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
+Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
 
 ---
 
@@ -146,7 +144,7 @@ The hosted deployment provides IBM internal model endpoints and integrations tha
 
 Podman is not supported.
 
-On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+Local development runs two lima VMs: a cluster VM with the shared services and a node VM with the api-server, the UI and the sandboxes. On Linux, install QEMU for lima, or set `IS_SANDBOX=1` to provision the machine you are on as both.
 
 ### Setup
 
@@ -155,10 +153,12 @@ git clone https://github.com/dam-agents/dam
 cd dam
 
 mise install
-mise run cluster:install
+mise run cluster:up && mise run cluster:install   # the shared services, in k3s
+eval "$(mise run cluster:env)"                     # their endpoints, for the node
+mise run vm:up && mise run vm:install              # the node: api-server, UI, sandboxes
 ```
 
-Open [localhost:4444](http://localhost:4444) and log in with:
+After a code change, `mise run vm:install` rebuilds and restarts the node. Open [localhost:4000](http://localhost:4000) and log in with:
 
 ```txt
 username: dev

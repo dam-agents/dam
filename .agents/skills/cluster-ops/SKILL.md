@@ -1,85 +1,55 @@
 ---
 name: cluster-ops
-description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "colima", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283".
+description: Operate the local dev install — a cluster VM (k3s via lima) running the shared services, and one or more node VMs running the api-server that supervises the agents — and the Playwright e2e suite. Use when working with cluster:*, vm:*, e2e:* or node:* tasks; when `vm:install` stops for want of `DAM_DATABASE_URL`; when the UI at localhost:4000 will not log in; when an agent never leaves "starting"; when a second node is needed; or when running in CI sandbox mode. Triggers on "cluster:up", "cluster:install", "cluster:env", "vm:install", "vm:logs", "vm:status", "e2e:loop", "e2e:second-node", "node:cordon", "lima", "k3s", "IS_SANDBOX".
 ---
 
-# Cluster operations
+# Cluster and node operations
 
-## Cluster lifecycle (k3s via lima)
+`mise tasks --all | grep -E '^//:(cluster|vm|e2e|node)'` lists every task named here with its description.
 
-`mise tasks` lists every `cluster:*` task with its description. The ones you'll reach for most:
+## Shape of a local install
 
-- `cluster:install` — create the k3s VM, build images, install cert-manager + the Platform chart (upgrades in place if already installed)
-- `cluster:build-apiserver` / `build-ui` / `build-controller` / `build-agent` / `build-keycloak` — rebuild one image and restart just that pod
-- `cluster:status` — pods and cluster state
-- `cluster:logs` — api-server pod logs
-- `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
-- `cluster:stop` / `cluster:uninstall` / `cluster:delete`
+Two kinds of lima VM. Guests cannot address each other; a node reaches the cluster through the lima host, and Kubernetes is never told an agent exists.
 
-The `cluster:build-*`, `cluster:fix-certs`, and `cluster:status` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
+- **cluster VM** (`dam-cluster`, `etc/lima/k3s.yaml`) — k3s running the shared services: Postgres, Redis, Keycloak, SeaweedFS. Published to the host on fixed NodePorts 30432 / 30379 / 30081 / 30333, shifted by `DAM_CLUSTER_PORT_OFFSET` (100 for the e2e cluster).
+- **node VM** (`dam`, `etc/lima/dam.yaml`) — the api-server as a systemd unit (`dam-api-server`), supervising gVisor sandboxes and one Envoy gateway unit per agent (`dam-gateway@<id>`). UI on host port 4000, peer port 4002. The repo checkout is mounted into it.
 
-Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
+## Lifecycle
 
-## E2E tests (Playwright)
-
-- `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
-- `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs. Options: `--headed --rebuild=apiserver,ui,controller,keycloak,mock-agent`
-- `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs), clear stored Playwright auth. Leaves the cluster running
-
-`e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.
-
-**Suite tiers.** **Smoke** (`src/tests/smoke/`) is the always-on tier — CI and plain `e2e` / `e2e:loop` run exactly it. **Full** = smoke plus the slow, scenario-heavy specs under `src/tests/full/`, run on demand only: `mise run e2e:loop -- --full` (or `mise run e2e -- --full` for the fresh-cluster path). Conventions for `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), each spec references its motivating ticket in the test title.
-
-## Disk space (two independent VMs)
-
-Local dev spans **two** VMs with separate, fixed-size virtual disks that cannot see each
-other's filesystems:
-
-- the **docker daemon VM** (colima, or Docker Desktop) — builds the images; holds the
-  buildkit cache and the local `platform-*:latest` tags
-- the **k3s VM** (`platform-k3s`, 200 GiB per `etc/lima/k3s.yaml`) — runs the cluster
-  and has its **own** containerd
-
-Images cross the gap by copy, not by mount: `docker save` to a tar, `limactl copy` into
-the guest, `k3s ctr images import`. So every image is stored on both disks, and neither
-`docker system prune` nor a cluster-side prune helps the other side.
-
-**Symptom.** An image build fails with `no space left on device` (often mid-`unpacking`,
-naming a path under `/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs`) while
-the Mac still reports plenty free. The full disk is the **docker daemon VM's**, not the
-host's and not the cluster's. Check the daemon's own view — `df -h /` on the host is
-about the wrong filesystem:
-
-```
-docker system df                      # images + build cache; build cache is usually the bulk
-colima ssh -- df -h /                 # the daemon VM's actual disk (if using colima)
+```sh
+mise run cluster:up && mise run cluster:install   # shared services
+eval "$(mise run cluster:env)"                     # DAM_DATABASE_URL, DAM_REDIS_URL, DAM_KEYCLOAK_URL, …
+mise run vm:up && mise run vm:install              # the node
 ```
 
-**Reclaim.** `mise run cluster:prune` prunes both sides: buildkit cache (capped, default
-`--keep=10GB`), dangling docker images, dangling k3s images, and leftover import tars.
+- `cluster:up` — create or start the cluster VM. `cluster:install -- [helm args]` — install or upgrade the chart. `cluster:env` — print the endpoints and credentials a node needs; `eval` it in the shell that runs `vm:install`. `cluster:delete` — destroy the VM, database included.
+- `vm:up`, `vm:install` (rebuild api-server and UI from the checkout, lay down `/etc/dam/env` and the templates, restart), `vm:logs` (the api-server journal, where the supervisor logs), `vm:status` (units, sandboxes, links, sockets, ruleset), `vm:shell`, `vm:stop`, `vm:delete` (workspaces included).
+- After a code change: `mise run vm:install` again. It needs the `cluster:env` variables in the shell.
+- `node:cordon <node-id> [--undo]` — stop a node taking new agents; the agents it holds move as they hibernate and wake.
 
-**Prevent.** Buildkit's default policy keeps cache until the disk is nearly full, which on
-a fixed-size VM disk shows up as a mid-build ENOSPC instead of a clean eviction. Cap it
-once in the daemon config so it can never fill the disk. For colima, in
-`~/.colima/default/colima.yaml` (survives restarts, then `colima restart`):
+Log in at [localhost:4000](http://localhost:4000) with `dev` / `dev`.
 
-```yaml
-docker:
-  builder:
-    gc:
-      enabled: true
-      defaultKeepStorage: "20GB"
-```
+## E2E (Playwright)
 
-Docker Desktop has the same setting under Settings → Builders → disk usage limit. Growing
-the VM disk is the other lever (`colima stop && colima start --disk 200`) — colima can
-grow but never shrink it, and the image is sparse, so it needs real host space to expand
-into.
+The e2e install is its own pair of VMs (`dam-e2e-cluster`, `dam-e2e`) on its own host ports (UI 5555, cluster NodePorts +100, peer 4202), configured by `etc/e2e-env.sh`, so it never disturbs the dev pair.
 
-## Cluster debugging (pre-approved in .claude/settings.json)
+- `mise run e2e` (alias of `e2e:run`) — fresh install, build the mock harness, run the smoke tier. `--headed`, `--full`.
+- `mise run e2e:loop` — rerun against the warm e2e node: reinstall the platform, wipe data, run. `--test=<filter>`.
+- `mise run e2e:reset` — wipe data only (agents, database, stored Playwright auth).
+- `mise run e2e:second-node` — add `dam-e2e-2`, so the cross-node spec runs instead of skipping. `--down` stops it.
 
-Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` instead of raw `kubectl` or `export KUBECONFIG=...`. These are auto-approved.
+**Suite tiers.** Smoke (`src/tests/smoke/`) is what CI and plain `e2e` / `e2e:loop` run. Full adds the slow specs under `src/tests/full/`, on demand with `--full`. A full spec is self-contained: its own agents, its own token, one `<area>-full` Playwright project per area.
 
-Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run cluster:kubeconfig)"`.
+## Sandbox mode (CI)
 
-If in-mesh traffic misbehaves — the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step with a misleading `Connection reset`, or a new agent never seeds its workspace (agent pod logs repeat `[runtime] hello failed`) — suspect expired Istio ambient workload SVIDs (issue #283). `mise run cluster:status` reports whether the expired-cert signature is present. The `ztunnel-cert-watchdog` CronJob in `istio-system` auto-rolls `ds/ztunnel` and the waypoint deployments within ~10 min when it sees the signature; `mise run cluster:fix-certs` is the manual escape hatch if you can't wait. The same suspend/resume clock skip can expire cert-manager's webhook serving cert (`cluster:install` fails at admission with `failed calling webhook ... certificate has expired`) — `cluster:status` probes for it and `cluster:fix-certs` heals it too.
+`IS_SANDBOX=1` means there is no lima: `cluster:up` provisions k3s on the machine itself, `vm:up` provisions it as the node, the kubeconfig is `/etc/rancher/k3s/k3s.yaml`, and no port is shifted. CI also sets `SKIP_IMAGE_BUILD=1`, so `platform-mock:latest` must already be tagged.
+
+## Debugging
+
+- Cluster: `eval "$(mise run cluster:env)"` exports `KUBECONFIG`; then `kubectl -n dam …`. The database is `dam-platform-postgres-0`; node rows are `select id, peer_address, state, last_heartbeat from nodes`.
+- Node: `mise run vm:logs` first. `sandbox.reconcile.failed` names what the supervisor could not do; `image.pull.*` and `image.resolve.failed` are the registry; `placement.no-capacity` is the node's memory; `placement.over-budget` is the owner's ceiling (`DEFAULT_USER_*_BUDGET` in `/etc/dam/env`; the e2e node raises them).
+- `vm:install` stops at `DAM_DATABASE_URL: run: eval "$(mise run cluster:env)"` — the variables are not in this shell.
+- The UI redirects to Keycloak and back for ever — the realm's issuer is the URL the browser uses. A cluster installed for a non-default UI or Keycloak port needs `cluster:install -- --set urls.keycloak=… --set urls.ui=…` (the e2e install does this).
+- An agent stays "starting" on a fresh node — the image: a template that names a registry the node cannot reach, or a private registry without a credential on the agent. The failure lands on the agent record as an image-pull failure.
+- A second dev node on the same host needs its own `DAM_VM`, `DAM_PORT`, `DAM_PEER_HOST_PORT` and a `DAM_NODE_ADDRESS` the other guest can reach (the lima host, `192.168.5.2`) — see `.mise/tasks/e2e/second-node` for the shape.
+- Docker daemon disk: image builds (`vm:install`, the mock) run in the docker VM, whose disk is separate from both lima VMs. `docker system df`, then `docker builder prune`.

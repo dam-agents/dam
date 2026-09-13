@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-11
+Last verified: 2026-09-13
 
 ## Overview
 
@@ -119,8 +119,9 @@ share a network or PID namespace with.
 
 ## Identity
 
-**Keycloak** is the only identity authority. It runs on the node as a systemd
-service and is the OIDC provider for every authenticated surface.
+**Keycloak** is the only identity authority. It runs in the cluster beside
+the other shared services and is the OIDC provider for every authenticated
+surface.
 
 Keycloak's branded login page ships two presentation variants selected
 per deployment: password-first (the default — username/password form,
@@ -128,7 +129,7 @@ with any identity-provider buttons offered below it) and SSO-first
 (identity-provider CTAs only, for deployments where corporate SSO is the
 expected sign-in path; the page falls back to the password form when the
 realm has no identity provider configured). The chart's `keycloak.login`
-values ([`packages/dam-vm/etc/env`](../../packages/dam-vm/etc/env))
+values ([`helm/values.yaml`](../../helm/values.yaml))
 select the variant and an optional "Request access" link; they reach the
 theme as container environment variables resolved through the theme's
 `theme.properties` placeholders, so switching variants is a values change
@@ -229,15 +230,17 @@ user's `sub`. The api-server is the sole writer of resource spec and stamps
 the label on create; every list and get filters by it. There is no
 namespace-per-user.
 
-The supervisor picks credentials per-Agent by listing stored secrets
-labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent
-in the owner's directory, then rendering the matching set for the paired gateway alone. Cross-
-owner leakage is structurally prevented by the label selector — a missing
-`agent-platform.ai/owner` label is treated as no owner and never mounted.
+The supervisor picks credentials per-Agent by reading the credential store
+scoped to that Agent's owner, then rendering the matching set for the paired
+gateway alone. Cross-owner leakage is structurally prevented by that scope: the
+owner is a column on the row and a clause in the query, not a property of the
+ref handed in, so a read can only ever return rows minted for the owner asked
+for. The ref's own shape is checked as well, but that check is against
+traversal and says nothing about who owns what.
 
 ## Credential storage
 
-Each connected service produces one stored secret per `(owner, connection)`, a row in the install's credential store in Postgres, addressed by owner and purpose. It is install-wide rather than node-local for the reason placement forces: any node may be asked to run any agent, so a credential that lived on one node's disk would be one the install could not use. A node materializes the bytes onto its own disk only for the gateways it is currently running, readable by that gateway's account alone, and removes them with the gateway:
+Each connected service produces one stored secret per `(owner, connection)`, a row in the install's credential store in Postgres, addressed by owner and purpose. The bytes are stored as they are: this table, and the install CA's private key beside it, are the reason the platform database is a secrets store and has to be operated as one — at-rest encryption, backup handling and access control on it are deployment concerns the platform does not provide and does not substitute for. It is install-wide rather than node-local for the reason placement forces: any node may be asked to run any agent, so a credential that lived on one node's disk would be one the install could not use. A node materializes the bytes onto its own disk only for the gateways it is currently running, readable by that gateway's account alone, and removes them with the gateway:
 
 - **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the
   api-server's `/api/oauth/callback` writes the access + refresh token
@@ -475,8 +478,8 @@ clients predict an interruption with the server's own rule, not the rule's
 shape. Connection-derived rules are excluded — their host is already
 TLS-terminated by the connection's own credential chain. Because each
 entry is interpolated into the gateway's Envoy bootstrap and cert SANs,
-the CRD constrains list items to DNS hostnames, so a rule host cannot
-inject config into the owner's gateway.
+the API surface constrains list items to DNS hostnames on the way in, so a
+rule host cannot inject config into the owner's gateway.
 That projection is a second write to the agent record that cannot share a
 transaction with the rule write, so a per-agent periodic reconcile
 re-derives it from the rules — converging a host whose patch failed, or

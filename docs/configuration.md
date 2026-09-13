@@ -104,6 +104,10 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 
 **Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/platform unbind` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
 
+## Branding
+
+The name, short identifier, tab title, vendor and theme colours a user sees are node configuration: `BRAND_NAME`, `BRAND_SHORT`, `BRAND_TITLE`, `BRAND_VENDOR`, `BRAND_THEME_{LIGHT,DARK}_{ACCENT,ACCENT_HOVER,ACCENT_LIGHT}` and, for a custom icon, the SVG itself in `BRAND_ICON_SVG`. The api-server serves them to the UI at runtime, so a change is a restart, not a rebuild. The chart's `brand.*` values are the same brand on the cluster side — they name the Keycloak realm — and a cluster-provisioned node receives them in its configuration, so one set of values brands the whole install; a lima node takes them from its operator file.
+
 ## Node configuration
 
 Everything above that a node reads lives in one file, `/etc/dam/env`, and a
@@ -126,4 +130,4 @@ mise run test               # run tests
 mise run //packages/ui:run             # start UI dev server
 ```
 
-Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
+With `IS_SANDBOX=1` (CI) there are no lima VMs: `cluster:up` provisions k3s on the machine itself and `vm:up` provisions the same machine as the node, which avoids nested virtualization.

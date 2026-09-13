@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-11
+Last verified: 2026-09-13
 
 ## System context
 
@@ -76,6 +76,7 @@ through are named per agent and readable only by its gateway.
 Each page is the authoritative, self-contained description of its subsystem — what it looks like today and why it is shaped that way.
 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components (api-server, agent-runtime, gateway, ui), the protocols between them, and the node's resource model.
+- [nodes](architecture/nodes.md) — registration and liveness, the scheduler placing agents onto nodes, cordoning, the peer link, and workspaces that follow the agent.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced when a sandbox starts; per-user overrides for privileged users.
 - [persistence](architecture/persistence.md) — the substrates (Postgres and the object store in the cluster, the per-agent directory on a node) and what survives each lifecycle event.

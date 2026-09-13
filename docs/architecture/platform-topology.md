@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-09-11
+Last verified: 2026-09-13
 
 ## Overview
 
@@ -10,7 +10,7 @@ Every node runs the same binary and nothing runs above them: there is no control
 
 Nodes coordinate through Postgres and Redis alone. A **scheduler**, running on whichever node holds the install-wide lock, assigns each agent that wants to run to a node, and every role that admits exactly one holder runs beside it. A browser reaches whichever node it lands on; a request for an agent held elsewhere is forwarded to that agent's node over a mutually authenticated peer link, so no caller knows or cares where an agent lives.
 
-The agent record in Postgres carries user intent as `spec`, observed state as `status`, and placement as a third thing beside them — placement is neither, and its only writer is the scheduler. The API surface writes only `spec` and the supervisor only `status`. That split was structural when `status` was a Kubernetes subresource and is now a discipline with a single enforcement point: `writeStatus` is the only path that touches observed state.
+The agent record in Postgres carries user intent as `spec`, observed state as `status`, and placement as a third thing beside them — placement is neither, and its only writer is the scheduler. The API surface writes only `spec`; `status` is written by the supervisor holding the agent and, for agents no node holds, by the scheduler. That split was structural when `status` was a Kubernetes subresource and is now a discipline with a single enforcement point: `writeStatus` is the only path that touches observed state.
 
 ## Diagram
 
@@ -83,7 +83,14 @@ registry API itself — manifest, config blob, layer tarballs, whiteouts — and
 unpacks each image once into a directory shared read-only by every sandbox on
 it, then gives each agent an overlay with its own upper. A daemon would add a
 second lifecycle to keep in step with the supervisor's, and its shim was the
-one thing that could not join a per-agent network namespace at all.
+one thing that could not join a per-agent network namespace at all. Reclaiming
+those directories falls here too: they are content-addressed, so each push to
+a followed tag strands one, and workspaces share the disk. A tag is resolved
+against its registry on a cadence of minutes, not on every reconcile, and a
+registry that stops answering leaves the last resolution standing — a registry
+outage or rate limit never takes a running agent down. A pull that does fail is
+published as its own class of failure, apart from every other reconcile error,
+because the owner is asked for something different.
 
 The bundle's `config.json` doubles as the record of what the running sandbox was
 given: a sandbox whose desired spec no longer matches it is replaced, which is
@@ -91,7 +98,7 @@ how an image or environment change reaches a running agent.
 
 Folding it in is what makes the api-server a privileged process: namespaces,
 nftables, mounts and sandbox creation are root-only work. The privileged surface is confined
-to one module's infrastructure layer, and the unit is hardened around a
+to one module, and the unit is hardened around a
 capability set rather than running unrestricted — but the blast radius is real,
 and it is the price of having no second daemon.
 
@@ -106,7 +113,7 @@ The api-server proxies all ACP traffic to sandboxes; clients never dial a sandbo
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, the sandbox sweep, agent/invocation/experiment reapers) run this way, and the scheduler registrations are re-asserted periodically so a Redis dataset loss cannot silently stop the sweeps. Redis also holds state that outlives a request but not the install: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, and terminal-supersede signals; per-owner resize serialization and OAuth refresh backoff live in Postgres.
+Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent/invocation/experiment reapers) run this way, and the scheduler registrations are re-asserted periodically so a Redis dataset loss cannot silently stop the sweeps. What a node does *for itself* — its heartbeat, its sandbox sweep, its fair-share pass — runs on the node's own timer instead: a queue that delivers once across the install would service whichever node received the tick and leave the rest unswept. Redis also holds state that outlives a request but not the install: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, and terminal-supersede signals; OAuth refresh backoff lives in Postgres.
 
 Every role that admits a single holder install-wide — the channel workers, whose transports accept one consumer each; the agent watch; and the scheduler — runs on whichever node holds a **Postgres advisory lock** taken on a connection of its own. The lock dies with that connection, so a node that crashes or is partitioned from the database releases it without a lease to time out, and a node that loses it stands its singletons down rather than racing the new holder. Nothing else is elected: the recurring background jobs are already install-wide singletons through their Redis-backed queues, and every other surface is safe on any node. The per-agent MCP endpoint is nonetheless still **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — because a harness reconnects, and the api-server restarts, far more often than a harness re-initializes.
 
@@ -119,20 +126,20 @@ A session's mode is agent-owned metadata: the client switching modes persists it
 
 The per-agent sandbox that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract. Its responsibilities are:
 
-- Accept ACP WebSocket connections on its end of the link (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
-- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
-- Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport. Available only on images that ship `sshd`.
+- Accept ACP WebSocket connections on its end of the link (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process, spawned through the harness's chat entrypoint.
+- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running the harness's terminal entrypoint, a binary frame protocol both ways, and kept scrollback so reattaching replays the screen. A detached PTY is reaped on the harness going quiet, not on the viewer leaving ([agent-lifecycle](agent-lifecycle.md)).
+- Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server), relaying raw bytes to a per-connection `sshd` running as the agent user. The SSH wire is opaque here — this is `dam ssh`'s transport, and only on images shipping `sshd`.
 - Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-sandbox handlers. See [runtime delivery](runtime-delivery.md).
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker in the agent's directory, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion. A scheduled or running flush reports the sandbox busy so hibernation waits ([knowledge bases](knowledge-bases.md)).
 - Expose a scoped tRPC router — in-sandbox file operations, the composed session list, and the watch subscriptions behind the live panels — over HTTP and WebSocket: the UI reaches it through the api-server's WebSocket relay, non-browser callers through the HTTP proxy, and a channel worker dials the sandbox directly to place an inbound attachment in the workspace ([channels](channels.md)).
-- Accept bundled file imports — extract the tarball to a staging directory in the agent's directory, then `rm`+`rename` each top-level entry into `<homeDir>/work` (top-level folders are atomic units; unrelated existing top-level entries in `work/` survive). One import per agent at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
-- Keep the agent alive under memory pressure and recover from it: near the sandbox's memory limit, SIGKILL the largest tool process under the harness so the sandbox is not OOM-killed whole; and mark each running turn in the agent's directory so the next boot resumes a turn an out-of-memory kill cut short. See [agent-lifecycle](agent-lifecycle.md).
+- Accept bundled file imports, staged in the agent's directory and landed one top-level entry at a time so a folder arrives whole and unrelated ones survive; one import per agent at a time (see [persistence](persistence.md)).
+- Keep the agent alive under memory pressure — shedding a tool process rather than letting the sandbox be killed whole — and resume a turn an out-of-memory kill cut short. See [agent-lifecycle](agent-lifecycle.md).
 
 The sandbox holds zero credentials and has no route to anything but its paired gateway: its namespace holds one /30 link and no default route, and no resolver, so a hostname is not even nameable inside it. Its `HTTPS_PROXY` value is the gateway's address on that link, but the value is decorative — the routing table admits nothing else. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
 ### gateway
 
-A per-agent Envoy process paired with the sandbox, running in the host namespace under its own uid. It reads the credentials the supervisor rendered for it, a leaf certificate issued by the install CA, and its own bootstrap — all under a directory only that uid can read. It binds the host end of the agent's link and nothing else, terminates the agent's egress TLS, injects credentials on the wire, and gates each request through the api-server's ext_authz over the agent's own socket. A configuration change replaces the process rather than reloading it: Envoy has no bootstrap reload, and a gateway still serving a superseded credential set is exactly the state worth avoiding. See [security-and-credentials](security-and-credentials.md).
+A per-agent Envoy process paired with the sandbox, running in the host namespace under its own uid. It reads the credentials the supervisor rendered for it, a leaf certificate issued by the install CA, and its own bootstrap — all under a directory only that uid can read. It binds the host end of the agent's link and nothing else, terminates the agent's egress TLS, injects credentials on the wire, and gates each request through the api-server's ext_authz over the agent's own socket. A configuration change replaces the process rather than reloading it: Envoy has no bootstrap reload, and a gateway still serving a superseded credential set is exactly the state worth avoiding. Gateways also stop with the api-server that supervises them — their control-plane sockets die with it — and the first reconcile after a restart brings each one back. See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
@@ -146,62 +153,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 
 ## Nodes
 
-**Registration.** A node is told who it is and where the shared services are,
-and that is all. At boot it writes its own row — address, capacity, state — and
-refreshes a heartbeat on the ordinary job schedule. Liveness is *computed on
-read* (`now - heartbeat < T`) rather than stored, so each row has exactly one
-writer and no arbiter decides who is alive; a node that stops heartbeating stops
-being eligible without anyone marking it down. Capacity is the VM's resources
-less a fixed reservation for the node's own work, so placement can use the whole
-number it sees.
-
-**Placement.** The scheduler assigns an agent that wants to run and has none,
-and releases one assigned to a node that no longer wants it. Policy is
-sticky-first: the node that ran the agent last, if it is ready and the agent
-still fits, otherwise the least full node by the larger of its CPU and memory
-fractions. An agent that fits nowhere stays unassigned rather than being forced
-onto a node — the alternative is a sandbox the node cannot start, reported as
-the agent's fault.
-
-An operator drains a node by **cordoning** it: it keeps its agents and its
-heartbeat but takes no new ones. The state is a field on the node's row that
-only an operator sets — a node writes it when it first registers and never
-again, so a cordon outlives the node's own restarts. Moving the agents off it is then the ordinary
-lifecycle — the scheduler releases them, whichever node picks each one up
-fetches its workspace, and nothing special-cases migration.
-
-**Peer links.** Nodes speak to each other over one mutually authenticated
-connection, both ends holding a leaf from the install CA and each proving the
-node id it claims. It carries two things: a relay to an agent held by that node,
-and a workspace export.
-
-Holding a node's certificate is necessary and not sufficient. A workspace is an
-agent's whole history, so an export is served only to the node that agent is
-*assigned* to — the one node with a reason to fetch it — which is why the leaf
-carries its node id rather than only the name every node shares. One node
-compromised is otherwise every workspace in the install readable, and the
-install CA lives in Postgres, which is a shorter walk than it sounds. The relay
-needs no equivalent rule: a node only holds addresses for agents it runs, so
-there is nothing to ask it for. Callers inside the api-server are unaware of it — an
-agent's address resolves either to its sandbox's link on this node or to a local
-address that tunnels to the node holding it, so the ~18 relays and proxies that
-dial an agent are written once, for the local case, and are correct for both.
-
-**Workspaces follow the agent.** An agent's home directory lives on the disk of
-the node that ran it — which is what makes it fast enough to build in — and the
-agent record names that node. A node placed with an agent it does not hold
-fetches the directory from the named node over the peer link before starting it;
-a node that already holds it does nothing, so a reconcile does not re-fetch on
-every sweep. The record, not the presence of a directory, decides: a node that
-ran the agent last month still has one, stale by exactly the work done since.
-
-The transfer is node to node rather than through the object store, because the
-node named on the record is the only place the workspace exists and a second
-copy would be a second truth to explain. The cost is stated rather than hidden:
-an agent cannot move off a node that is down. That is the same fact the record
-already carries — the agent is unavailable until its node returns — rather than
-a new failure mode, and it is why node-local disk is the durability story. A
-node VM that restarts comes back with its disk and its agents intact.
+How a node registers and is judged alive, how the scheduler places agents onto nodes and drains a cordoned one, how nodes authenticate to each other over the peer link, and how an agent's workspace follows it between nodes are the subject of [nodes](nodes.md). What this page keeps is the contract the rest of the system relies on: a node is told who it is and where the shared services are, and nothing else; placement is written by exactly one scheduler; and a request for an agent held elsewhere reaches it through a local address that tunnels to the holding node, so the relays are written once for the local case.
 
 ## Protocols
 
@@ -260,9 +212,11 @@ placement, and the split between the first two is the same one the Kubernetes
 status subresource enforced:
 
 - `spec` — user intent. Written only by the API surface, validated on the way in.
-- `status` — observed state. Written only by the supervisor, through a single
-  `writeStatus` path. The api-server routes on `ready` alone and **never
-  inspects the runtime itself**; the user-facing state projection additionally
+- `status` — observed state, through a single `writeStatus` path. The holding
+  node's supervisor writes what it observes; the scheduler writes what no
+  supervisor is placed to know — why an agent it could not place is not
+  running, and that an agent no node holds is at rest. The api-server routes on
+  `ready` alone and **never inspects the runtime itself**; the user-facing state projection additionally
   reads the sandbox and gateway flags, so a gateway-only restart (a credential
   or L7-chain change) is not presented as an agent restart.
 
@@ -282,7 +236,9 @@ status subresource enforced:
   are therefore read alongside it, and an agent nothing is running does not
   read as running — the two ways of that being true, between nodes and on a
   node that stopped answering, are the same answer to a caller who would
-  otherwise dial it.
+  otherwise dial it. That holds on the wake path as much as in a list: a wait
+  for readiness reads the node's heartbeat beside the flag, and times out
+  naming the node rather than handing back an address nobody answers.
 
   `status` also carries the agent's **address**, the sandbox end of its link.
   Publishing it is what lets every relay build a URL without a lookup, and
@@ -311,12 +267,10 @@ deletion removes that too.
 
 ## Invariants
 
-- **Spec/status ownership.** The API surface never writes `status`; the supervisor never writes `spec`. One process now holds both, so the split is kept by having exactly one function that writes observed state.
+- **Spec/status ownership.** The API surface never writes `status`; nothing that writes `status` writes `spec`. One process now holds all of them, so the split is kept by having exactly one function that writes observed state — and, since the writers are now on different nodes, by that function merging where the row is rather than where it was read.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. A sandbox accepts connections only on its own link, whose host end is on the node holding it, and the UI never dials one directly. A relay for an agent held elsewhere adds one node-to-node hop and changes nothing else.
-- **A node touches only its own agents.** Every supervisor read is scoped to the agents assigned to that node, teardown included. Nothing reconciles an agent it was not assigned.
-- **Placement has one writer.** Only the scheduler assigns and releases, and only one scheduler runs, because it is gated on the install-wide lock — so everything able to call it ends when the lock does.
-- **Peer links belong to the node, not the leader.** A relay and a workspace export are what a node does for the others whichever one leads, so both last as long as the node.
-- **Peers are named by certificate.** A node proves which node it is with a leaf from the install CA; nothing a peer sends on the wire can change which node it is taken to be. It is the same rule as identity-by-socket, one level out.
+- **A node touches only its own agents.** Every supervisor read is scoped to the agents assigned to that node, teardown included.
+- **Nodes.** Placement has one writer, peer links belong to the node rather than the leader, and peers are named by certificate — see [nodes](nodes.md).
 - **One public listener.** The public port is user-authenticated. The harness and ext_authz endpoints are not ports at all — they are per-agent unix sockets — so there is no internal port to reach from anywhere.
 - **Credential isolation.** A sandbox never holds a real upstream credential. Its paired gateway intercepts its TLS using a leaf from the install CA and injects the credential from a file only that gateway's uid can read — and the sandbox has no route to anything but that gateway.
 - **Identity by socket, per hop.** Three hops: (1) sandbox → gateway, admitted because it is the only address the sandbox's routing table can express; (2) gateway → harness and (3) gateway → ext_authz, each on a socket created for that one agent, owned by that gateway's uid, mode 0600. A harness request naming a different agent is refused at the socket. No app-layer header conveys identity, and nothing the caller sets can change which agent it is taken to be.

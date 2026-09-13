@@ -1,6 +1,6 @@
 # Release Process
 
-All monorepo packages (Helm chart, CLI, container images) are versioned and published together. A single version lives in `helm/Chart.yaml` (version + appVersion) and `packages/cli/package.json`. The `mise run check:version` task enforces they stay in sync.
+All monorepo packages (Helm chart, CLI, container images) are versioned and published together. The version lives in `packages/cli/package.json`; the chart is packaged with that version at publish time. The `mise run check:version` task checks it is valid semver and, on a tag build, that it matches the tag.
 
 ## Lifecycle
 
@@ -27,7 +27,7 @@ main (0.3.1)
 Run from a clean working directory. The task:
 
 1. Checks out and pulls `main`.
-2. Reads the current version (e.g. `0.3.0`) from Chart.yaml.
+2. Reads the current version (e.g. `0.3.0`) from `packages/cli/package.json`.
 3. Creates `release-v0.3.0` from `main`, bumps it to `0.3.0-rc1`, pushes.
 4. Opens a PR bumping `main` to `0.3.1`, with auto-merge enabled (`main` is protected and requires one approval, so direct pushes don't work).
 

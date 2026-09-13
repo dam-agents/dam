@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-11
+Last verified: 2026-09-13
 
 ## Overview
 
@@ -58,7 +58,7 @@ Creation is per-purpose: each kind in the GUI has its own setup form; the hidden
 
 The api-server writes a new agent record whose spec carries the Agent's image (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the supervisor derives from activity. An Agent that wants to run is then assigned to a node by the scheduler ([platform-topology](platform-topology.md)); that node's supervisor brings up everything the agent needs: its directory, its network namespace and /30 link, its pair of control-plane sockets, a rendered Envoy bootstrap and leaf certificate for the paired gateway, and the sandbox itself.
 
-When the create request carries a private-registry credential, the api-server writes an agent-scoped docker config *before* the agent record and rolls it back if that write fails; the supervisor then points the image pull at it, ahead of any node-wide default. Only the pull reads it — it never enters the sandbox, and a stuck pull surfaces as an image-pull failure on the sandbox rather than a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
+When the create request carries a private-registry credential, the api-server stores it in the install's credential store *before* the agent record, and removes it again if the record cannot be written; the node holding the agent materializes it for the pull alone. It never enters the sandbox, and a pull that fails surfaces on the agent as an image-pull failure — its own class, distinct from any other reconcile error — rather than as a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 The sandbox image is built from `platform-base` plus a harness-specific layer. The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume). agent-runtime otherwise treats the harness as opaque. The agent's directory is created on first wake and survives subsequent hibernations. See [persistence](persistence.md).
 
