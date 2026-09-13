@@ -20,7 +20,7 @@ export interface GatewayPort {
 const unitFor = (agentId: string) => `dam-gateway@${agentId}.service`;
 
 export function createGatewayPort(opts: {
-  log: (message: string) => void;
+  log: (message: string, fields?: Record<string, unknown>) => void;
 }): GatewayPort {
   const started = new Map<string, string>();
 
@@ -38,7 +38,7 @@ export function createGatewayPort(opts: {
       started.delete(agentId);
       await exec("systemctl", ["stop", unitFor(agentId)]).catch((err) => {
         if (!(err instanceof CommandError)) throw err;
-        opts.log(`gateway ${agentId} did not stop cleanly: ${err.message}`);
+        opts.log("gateway.stop.unclean", { agentId, error: err.message });
       });
     },
 

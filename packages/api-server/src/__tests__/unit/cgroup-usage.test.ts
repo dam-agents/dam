@@ -11,9 +11,9 @@ function cgroup(
   agentId: string,
   memory: number,
   usageUsec: number,
-  parent?: string,
+  parent = "dam-user-t",
 ) {
-  const dir = join(root, ...(parent ? [parent] : []), `dam-${agentId}`);
+  const dir = join(root, parent, `dam-${agentId}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "memory.current"), `${memory}\n`);
   writeFileSync(
@@ -31,20 +31,13 @@ describe("the share its owner is being given", () => {
     const usage = await createUsageReader(root).read("w", "dam-user-sub1");
     expect(usage?.shareWeight).toBe(57);
   });
-
-  it("reports no weight for an agent read without a group", async () => {
-    cgroup("noparent", 1024, 0);
-    expect((await createUsageReader(root).read("noparent"))?.shareWeight).toBe(
-      null,
-    );
-  });
 });
 
 describe("what an agent is using", () => {
   it("reports memory from the first reading", async () => {
     cgroup("a", 512 * 1024 ** 2, 0);
     const reader = createUsageReader(root);
-    expect(await reader.read("a")).toEqual({
+    expect(await reader.read("a", "dam-user-t")).toEqual({
       memoryBytes: 512 * 1024 ** 2,
       cpuMilli: null,
       shareWeight: null,
@@ -56,10 +49,10 @@ describe("what an agent is using", () => {
     let clock = 10_000;
     const reader = createUsageReader(root, () => clock);
     cgroup("b", 1024, 1_000_000);
-    expect((await reader.read("b"))?.cpuMilli).toBeNull();
+    expect((await reader.read("b", "dam-user-t"))?.cpuMilli).toBeNull();
     clock += 2_000;
     cgroup("b", 1024, 1_000_000 + 4_000_000);
-    expect((await reader.read("b"))?.cpuMilli).toBe(2000);
+    expect((await reader.read("b", "dam-user-t"))?.cpuMilli).toBe(2000);
   });
 
   // TEST_SCENARIO: two readings taken too close together. A rate over a few milliseconds is noise dressed as a measurement, and a meter that flickers between 0 and 8 cores tells a user less than one that waits.
@@ -67,14 +60,14 @@ describe("what an agent is using", () => {
     let clock = 50_000;
     const reader = createUsageReader(root, () => clock);
     cgroup("c", 1024, 0);
-    await reader.read("c");
+    await reader.read("c", "dam-user-t");
     clock += 50;
     cgroup("c", 1024, 40_000);
-    expect((await reader.read("c"))?.cpuMilli).toBeNull();
+    expect((await reader.read("c", "dam-user-t"))?.cpuMilli).toBeNull();
   });
 
   it("says nothing at all about an agent that is not running", async () => {
     const reader = createUsageReader(root);
-    expect(await reader.read("gone")).toBeNull();
+    expect(await reader.read("gone", "dam-user-t")).toBeNull();
   });
 });

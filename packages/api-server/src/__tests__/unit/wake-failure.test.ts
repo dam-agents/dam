@@ -1,3 +1,4 @@
+// TEST_OVERVIEW: why an agent did not come up, read off its record when a wake times out. The record carries several partial facts — placement, node liveness, a supervisor's error, the sandbox's own state — and the classifier turns them into one cause the caller can act on. Getting the ranking wrong tells an owner to fix an image when the install is merely full, or to wait when nothing will ever happen.
 import { describe, it, expect } from "vitest";
 import {
   AgentWakeTimeoutError,
@@ -18,53 +19,41 @@ describe("classifyWakeFailure", () => {
     snapshot: WakeConditionsSnapshot | null;
     expected: WakeFailureCause;
   }> = [
+    { name: "record gone", snapshot: null, expected: { kind: "not-found" } },
     {
-      name: "CR gone → not-found",
-      snapshot: null,
-      expected: { kind: "not-found" },
-    },
-    {
-      name: "Ready still Hibernated → scale-up never observed",
+      name: "still hibernated: nothing ever started it",
       snapshot: { ...base, hibernated: true },
       expected: { kind: "hibernated-not-started" },
     },
     {
-      name: "Reconciled=False → reconcile-error with message",
-      snapshot: { ...base, error: "applying statefulset: forbidden" },
-      expected: {
-        kind: "reconcile-error",
-        message: "applying statefulset: forbidden",
-        backoffExceeded: false,
-      },
+      name: "no node has room",
+      snapshot: { ...base, noCapacityMessage: "No node has 4 Gi free." },
+      expected: { kind: "no-capacity", message: "No node has 4 Gi free." },
     },
     {
-      name: "BackoffLimitExceeded reason marks the reconcile error",
+      name: "placed on a node that stopped heartbeating",
+      snapshot: { ...base, assignedNode: "node-2", supervised: false },
+      expected: { kind: "node-unreachable" },
+    },
+    {
+      name: "image pull failure is its own cause",
       snapshot: {
         ...base,
-        error: "reconcile agent: backoff limit exceeded",
-        errorReason: "BackoffLimitExceeded",
+        error: "pulling img: 401",
+        errorReason: "ImagePullFailure",
       },
-      expected: {
-        kind: "reconcile-error",
-        message: "reconcile agent: backoff limit exceeded",
-        backoffExceeded: true,
-      },
-    },
-    {
-      name: "ImagePullFailure → sandbox-failed",
-      snapshot: { ...base, sandboxNotReadyReason: "ImagePullFailure" },
       expected: {
         kind: "sandbox-failed",
         terminationReason: "ImagePullFailure",
       },
     },
     {
-      name: "OutOfMemory → sandbox-failed",
-      snapshot: { ...base, sandboxNotReadyReason: "OutOfMemory" },
-      expected: { kind: "sandbox-failed", terminationReason: "OutOfMemory" },
+      name: "any other reconcile error",
+      snapshot: { ...base, error: "nft failed", errorReason: "ReconcileError" },
+      expected: { kind: "reconcile-error", message: "nft failed" },
     },
     {
-      name: "ContainerTerminated → sandbox-failed",
+      name: "sandbox stopped on its own",
       snapshot: { ...base, sandboxNotReadyReason: "ContainerTerminated" },
       expected: {
         kind: "sandbox-failed",
@@ -72,35 +61,17 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
-      name: "plain PodNotReady → progressing (slow pull, attach, probes)",
-      snapshot: { ...base, sandboxNotReadyReason: "PodNotReady" },
+      name: "sandbox merely not up yet",
+      snapshot: { ...base, sandboxNotReadyReason: "SandboxNotReady" },
       expected: { kind: "sandbox-not-ready" },
     },
     {
-      name: "agent pod fine, gateway False → gateway-not-ready",
+      name: "sandbox fine, gateway not up",
       snapshot: { ...base, gatewayReady: false },
       expected: { kind: "gateway-not-ready" },
     },
     {
-      name: "gateway OutOfMemory → gateway-failed",
-      snapshot: {
-        ...base,
-        gatewayReady: false,
-        gatewayNotReadyReason: "OutOfMemory",
-      },
-      expected: { kind: "gateway-failed", gatewayReason: "OutOfMemory" },
-    },
-    {
-      name: "gateway plain PodNotReady → still progressing",
-      snapshot: {
-        ...base,
-        gatewayReady: false,
-        gatewayNotReadyReason: "PodNotReady",
-      },
-      expected: { kind: "gateway-not-ready" },
-    },
-    {
-      name: "nothing diagnostic on the CR → unknown",
+      name: "nothing diagnostic",
       snapshot: base,
       expected: { kind: "unknown" },
     },
@@ -112,19 +83,27 @@ describe("classifyWakeFailure", () => {
     });
   }
 
-  it("reconcile-error wins over pod reasons (precedence)", () => {
+  // TEST_SCENARIO: an unplaced agent has no node, so "the node is not answering" must not be said of it.
+  it("does not blame a node an unplaced agent does not have", () => {
+    expect(
+      classifyWakeFailure({ ...base, assignedNode: null, supervised: false })
+        .kind,
+    ).toBe("unknown");
+  });
+
+  it("ranks a reconcile error above the sandbox's own state", () => {
     expect(
       classifyWakeFailure({
         ...base,
         error: "boom",
-        sandboxNotReadyReason: "ImagePullFailure",
+        sandboxNotReadyReason: "ContainerTerminated",
       }).kind,
     ).toBe("reconcile-error");
   });
 });
 
 describe("wakeFailureReasonToken", () => {
-  it("appends the termination reason for pod failures", () => {
+  it("appends the termination reason for sandbox failures", () => {
     expect(
       wakeFailureReasonToken({
         kind: "sandbox-failed",
@@ -141,9 +120,13 @@ describe("wakeFailureReasonToken", () => {
 });
 
 describe("isTransientWakeFailure", () => {
-  it("marks progressing classes transient and hard causes not", () => {
+  it("marks what waiting can fix transient and the rest not", () => {
     expect(isTransientWakeFailure({ kind: "sandbox-not-ready" })).toBe(true);
     expect(isTransientWakeFailure({ kind: "gateway-not-ready" })).toBe(true);
+    expect(isTransientWakeFailure({ kind: "node-unreachable" })).toBe(true);
+    expect(isTransientWakeFailure({ kind: "no-capacity", message: "" })).toBe(
+      true,
+    );
     expect(isTransientWakeFailure({ kind: "unknown" })).toBe(true);
     expect(isTransientWakeFailure({ kind: "not-found" })).toBe(false);
     expect(isTransientWakeFailure({ kind: "hibernated-not-started" })).toBe(
@@ -152,21 +135,11 @@ describe("isTransientWakeFailure", () => {
     expect(
       isTransientWakeFailure({
         kind: "sandbox-failed",
-        terminationReason: "OutOfMemory",
+        terminationReason: "ContainerTerminated",
       }),
     ).toBe(false);
     expect(
-      isTransientWakeFailure({
-        kind: "reconcile-error",
-        message: "x",
-        backoffExceeded: false,
-      }),
-    ).toBe(false);
-    expect(
-      isTransientWakeFailure({
-        kind: "gateway-failed",
-        gatewayReason: "OutOfMemory",
-      }),
+      isTransientWakeFailure({ kind: "reconcile-error", message: "x" }),
     ).toBe(false);
   });
 });
@@ -189,12 +162,11 @@ describe("AgentWakeTimeoutError", () => {
     expect(isAgentWakeTimeoutError(new Error("x"))).toBe(false);
   });
 
-  it("never leaks raw controller messages into the description", () => {
+  it("never leaks raw reconcile messages into the description", () => {
     expect(
       describeWakeFailure({
         kind: "reconcile-error",
         message: "secret platform-conn-abc missing",
-        backoffExceeded: false,
       }),
     ).not.toContain("platform-conn-abc");
   });

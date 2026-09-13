@@ -4,8 +4,7 @@ import type { BudgetReserved, BudgetsService } from "api-server-api";
 export interface BudgetedAgent {
   id: string;
   spec: { resources?: { limits?: Record<string, string> } };
-  hibernated: boolean;
-  overBudget: boolean;
+  assignedNode: string | null;
 }
 
 export interface BudgetsServiceDeps {
@@ -80,7 +79,7 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
       let cpuMilli = 0;
       let memoryBytes = 0;
       for (const a of agents) {
-        if (a.hibernated || a.overBudget) continue;
+        if (a.assignedNode === null) continue;
         cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
         memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
       }

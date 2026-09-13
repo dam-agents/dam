@@ -6,6 +6,9 @@ import {
   e2ePerformFetchInputSchema,
   e2eSetScriptInputSchema,
   e2eSpawnInvocationInputSchema,
+  e2eReadWorkspaceFileInputSchema,
+  e2ePlacementResultSchema,
+  readWorkspaceFileResultSchema,
   spawnInvocationResultSchema,
   getEnvResultSchema,
   getReceivedPromptsResultSchema,
@@ -53,6 +56,22 @@ export const e2eRouter = t.router({
     .query(({ ctx, input }) => {
       gate(ctx);
       return ctx.e2e.getEnv(input.agentId, input.name);
+    }),
+
+  readWorkspaceFile: t.procedure
+    .input(e2eReadWorkspaceFileInputSchema)
+    .output(readWorkspaceFileResultSchema)
+    .query(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.readWorkspaceFile(input.agentId, input.path);
+    }),
+
+  placement: t.procedure
+    .input(e2eAgentIdInputSchema)
+    .output(e2ePlacementResultSchema)
+    .query(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.placement(input.agentId);
     }),
 
   spawnInvocation: t.procedure

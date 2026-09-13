@@ -53,7 +53,6 @@ export interface SandboxSpec {
   env: Record<string, string>;
   mounts: { source: string; target: string; readOnly?: boolean }[];
   stateDir: string;
-  workingDir?: string;
   command?: string[];
   limits?: { cpu?: string; memory?: string };
   cgroupParent?: string;
@@ -329,7 +328,7 @@ function buildOciSpec(
       user,
       args: command,
       env: [...env].map(([k, v]) => `${k}=${v}`),
-      cwd: spec.workingDir || image.config.workingDir || "/",
+      cwd: image.config.workingDir || "/",
       capabilities: {
         bounding: SANDBOX_CAPABILITIES,
         effective: SANDBOX_CAPABILITIES,

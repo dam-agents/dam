@@ -32,6 +32,17 @@ import { join } from "node:path";
  * is not counted in the divisor, and a node with one busy user has nothing to
  * be fair about and is left alone.
  *
+ * Use is never negative. A cgroup destroyed and recreated between two ticks
+ * restarts its counter, and the difference across that is a user who reads as
+ * having given time back — credit for work they did, which the average would
+ * then carry for a half-life.
+ *
+ * It says so when it cannot do its job. Every read and write here is against a
+ * path that either exists on this kernel or does not, and swallowing both
+ * leaves a policy that is a silent no-op on a node whose cgroup layout is a
+ * segment off — indistinguishable, from outside, from a node where nobody
+ * happens to be competing.
+ *
  * The loop is self-correcting in the direction that matters. Throttling a heavy
  * user lowers their use, which lowers their average, which lifts the throttle —
  * so the penalty decays on its own and nobody has to be let out of it. It
@@ -78,9 +89,15 @@ export function createFairShare(opts: FairShareOpts): FairShare {
 
   return {
     async tick() {
-      const names = (await readdir(root).catch(() => [])).filter((n) =>
-        n.startsWith(USER_PREFIX),
-      );
+      const names = (
+        await readdir(root).catch((err: unknown) => {
+          opts.log("fairshare.root-unreadable", {
+            root,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return [] as string[];
+        })
+      ).filter((n) => n.startsWith(USER_PREFIX));
       for (const gone of [...seen.keys()]) {
         if (!names.includes(gone)) seen.delete(gone);
       }
@@ -98,7 +115,7 @@ export function createFairShare(opts: FairShareOpts): FairShare {
         const elapsed = previous ? at - previous.at : 0;
         let recent = previous?.recent ?? 0;
         if (previous && elapsed > 0) {
-          const rate = (usec - previous.usec) / elapsed;
+          const rate = Math.max(0, (usec - previous.usec) / elapsed);
           const decay = Math.pow(0.5, elapsed / HALF_LIFE_MS);
           recent = recent * decay + rate * (1 - decay);
         }
@@ -114,10 +131,20 @@ export function createFairShare(opts: FairShareOpts): FairShare {
           : 0;
       for (const { name, recent } of rates) {
         const weight = weightFor(recent, fairMilli);
-        await writeFile(join(root, name, "cpu.weight"), String(weight)).catch(
-          () => {},
+        const wrote = await writeFile(
+          join(root, name, "cpu.weight"),
+          String(weight),
+        ).then(
+          () => true,
+          (err: unknown) => {
+            opts.log("fairshare.write-failed", {
+              cgroup: name,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return false;
+          },
         );
-        if (weight !== DEFAULT_WEIGHT) {
+        if (wrote && weight !== DEFAULT_WEIGHT) {
           opts.log("fairshare.throttled", {
             cgroup: name,
             weight,

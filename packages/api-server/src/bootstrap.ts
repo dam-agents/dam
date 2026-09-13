@@ -14,10 +14,6 @@ import { createPkiPort } from "./modules/sandboxes/infrastructure/pki-port.js";
 import { createInstallCaStore } from "./modules/sandboxes/infrastructure/install-ca-store.js";
 import { createScheduler } from "./modules/nodes/services/scheduler.js";
 import {
-  AGENTS_PLURAL,
-  LABEL_OWNER,
-} from "./modules/agents/infrastructure/labels.js";
-import {
   composeAgentsModule,
   composePublicAgentPage,
   createAgentsRepository,
@@ -541,6 +537,17 @@ export async function bootstrap() {
 
   const { service: e2eService } = composeE2eModule({
     addresses: sandboxAddresses,
+    placement: async (agentId) => {
+      const [record, ready] = await Promise.all([
+        agentStore.get(agentId),
+        nodeRegistry.ready(),
+      ]);
+      return {
+        assignedNode: record?.assignedNode ?? null,
+        lastNode: record?.lastNode ?? null,
+        readyNodes: ready.map((n) => n.id),
+      };
+    },
     slack: fakeSlackGateway,
   });
 
@@ -1199,6 +1206,7 @@ export async function bootstrap() {
     agentsRoot: config.agentsRoot,
     runRoot: config.runRoot,
     imagesRoot: config.imagesRoot,
+    imageRetentionMs: config.imageRetentionDays * 86_400_000,
     db,
     nodeId: config.nodeId,
     fetchWorkspace: (record) => workspaceCourier.fetch(record),

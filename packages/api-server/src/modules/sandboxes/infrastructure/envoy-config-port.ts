@@ -56,23 +56,28 @@ export function createEnvoyConfigPort(opts: EnvoyConfigOpts): EnvoyConfigPort {
   return {
     async render({ record, link, layout, sockets }) {
       const owned = await opts.secrets.list({ owner: record.owner });
-      const descriptors: (CredentialSecret & { path: string })[] = [];
-      for (const { ref, metadata } of owned) {
-        const fields = (await opts.secrets.get(ref)) ?? {};
-        descriptors.push({
+      const granted: GrantedCredential[] = [];
+      for (const { ref, metadata } of filterByGrants(
+        owned.map(({ ref, metadata }) => ({
+          ref,
+          metadata,
           name: nameOf(ref.path),
-          path: ref.path,
+          labels: metadata.extraLabels ?? {},
+          annotations: metadata.extraAnnotations ?? {},
+          fieldNames: [],
+        })),
+        record.spec.grantedSecretIds ?? [],
+        record.spec.grantedConnectionIds ?? [],
+      )) {
+        const fields = (await opts.secrets.get(ref)) ?? {};
+        granted.push({
+          name: nameOf(ref.path),
           labels: metadata.extraLabels ?? {},
           annotations: metadata.extraAnnotations ?? {},
           fieldNames: Object.keys(fields),
+          fields,
         });
       }
-
-      const granted = filterByGrants(
-        descriptors,
-        record.spec.grantedSecretIds ?? [],
-        record.spec.grantedConnectionIds ?? [],
-      );
       const { chains, warnings } = buildChains(
         granted,
         record.spec.l7Hosts ?? [],
@@ -82,7 +87,7 @@ export function createEnvoyConfigPort(opts: EnvoyConfigOpts): EnvoyConfigPort {
         opts.log(warning.message, { agentId: record.id, ...warning.fields });
       }
 
-      await materializeCredentials(opts.secrets, layout.credentials, granted);
+      await materializeCredentials(layout.credentials, granted);
 
       const config = renderEnvoyBootstrap({
         listenAddress: link.hostAddress,
@@ -125,18 +130,18 @@ export function createEnvoyConfigPort(opts: EnvoyConfigOpts): EnvoyConfigPort {
   };
 }
 
+type GrantedCredential = CredentialSecret & { fields: Record<string, string> };
+
 async function materializeCredentials(
-  store: SecretStore,
   root: string,
-  granted: (CredentialSecret & { path: string })[],
+  granted: GrantedCredential[],
 ): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o750 });
   const wanted = new Set(granted.map((s) => `cred-${s.name}`));
   for (const secret of granted) {
     const dir = join(root, `cred-${secret.name}`);
     await mkdir(dir, { recursive: true, mode: 0o750 });
-    const fields = (await store.get({ path: secret.path })) ?? {};
-    for (const [key, value] of Object.entries(fields)) {
+    for (const [key, value] of Object.entries(secret.fields)) {
       if (key.includes("/") || key.includes("..")) continue;
       await writeFile(join(dir, key), value, { mode: 0o640 });
     }

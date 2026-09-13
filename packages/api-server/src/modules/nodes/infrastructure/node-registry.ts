@@ -10,6 +10,15 @@ import { nodes, eq, sql, type Db } from "db";
  * to decide that a node has died and nothing can be wrong about it for longer
  * than one read.
  *
+ * Liveness is decided by the database's clock and no other. The heartbeat, the
+ * registration that refreshes it and the comparison that reads it all used a
+ * different one — the row was stamped by whichever node wrote it and judged
+ * against the clock of whichever node read it — so a node drifting past the
+ * staleness window read every node in the install as dead, the scheduler runs
+ * on exactly one node, and placement stopped for everyone with nothing saying
+ * why. `now()` on both sides of the comparison makes the drift unobservable
+ * rather than fatal, and costs a clause.
+ *
  * A node reports the capacity it is willing to lend to sandboxes, which is what
  * the machine has minus a reserve for the api-server, the gateways and the
  * kernel. Sandboxes are not the only thing on the node, so handing out all of
@@ -64,16 +73,20 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
   };
 
   const rows = async (): Promise<NodeRow[]> => {
-    const now = Date.now();
-    return (await opts.db.select().from(nodes)).map((row) => ({
-      id: row.id,
-      peerAddress: row.peerAddress,
-      cpuMilli: row.capacityCpuMilli,
-      memoryBytes: row.capacityMemoryBytes,
-      state: row.state,
-      ready:
-        row.state === "ready" &&
-        now - row.lastHeartbeat.getTime() < opts.staleAfterMs,
+    const staleAfterSeconds = opts.staleAfterMs / 1000;
+    const selected = await opts.db
+      .select({
+        id: nodes.id,
+        peerAddress: nodes.peerAddress,
+        cpuMilli: nodes.capacityCpuMilli,
+        memoryBytes: nodes.capacityMemoryBytes,
+        state: nodes.state,
+        beating: sql<boolean>`${nodes.lastHeartbeat} > now() - ${staleAfterSeconds}::double precision * interval '1 second'`,
+      })
+      .from(nodes);
+    return selected.map(({ beating, ...row }) => ({
+      ...row,
+      ready: row.state === "ready" && beating,
     }));
   };
 
@@ -97,7 +110,7 @@ export function createNodeRegistry(opts: NodeRegistryOpts): NodeRegistry {
             peerAddress: opts.peerAddress,
             capacityCpuMilli: cpuMilli,
             capacityMemoryBytes: memoryBytes,
-            lastHeartbeat: new Date(),
+            lastHeartbeat: sql`now()`,
           },
         });
     },

@@ -23,11 +23,7 @@ export {
   type KeycloakUserDirectory,
 } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
-export {
-  createAgentSweep,
-  isSweepDue,
-  type AgentSweep,
-} from "./services/agent-sweep.js";
+export { createAgentSweep, type AgentSweep } from "./services/agent-sweep.js";
 export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,

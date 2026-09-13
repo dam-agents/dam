@@ -5,6 +5,8 @@ import type {
   getEnvResultSchema,
   getReceivedPromptsResultSchema,
   performFetchResultSchema,
+  readWorkspaceFileResultSchema,
+  e2ePlacementResultSchema,
   resetResultSchema,
   setScriptInputSchema,
   slackFireCommandInputSchema,
@@ -31,6 +33,10 @@ export type SpawnInvocationInput = Omit<
   "agentId"
 >;
 export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
+export type ReadWorkspaceFileResult = z.infer<
+  typeof readWorkspaceFileResultSchema
+>;
+export type PlacementResult = z.infer<typeof e2ePlacementResultSchema>;
 
 export type SlackFireMentionInput = z.infer<typeof slackFireMentionInputSchema>;
 export type SlackFireMessageInput = SlackFireMentionInput;
@@ -56,6 +62,11 @@ export interface E2eService {
     agentId: string,
     input: SpawnInvocationInput,
   ): Promise<SpawnInvocationResult>;
+  readWorkspaceFile(
+    agentId: string,
+    path: string,
+  ): Promise<ReadWorkspaceFileResult>;
+  placement(agentId: string): Promise<PlacementResult>;
   slackFireMention(input: SlackFireMentionInput): Promise<ResetResult>;
   slackFireMessage(input: SlackFireMessageInput): Promise<ResetResult>;
   slackFireCommand(

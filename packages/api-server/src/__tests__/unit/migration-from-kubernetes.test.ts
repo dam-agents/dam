@@ -137,6 +137,16 @@ describe("converting a credential", () => {
         .extraLabels,
     ).toMatchObject({ "agent-platform.ai/secret-type": "connection" });
   });
+
+  // TEST_SCENARIO: a Secret's data is bytes and this store's is text. Decoding bytes that are not UTF-8 does not throw, it substitutes — so the row would look imported, the credential would work nowhere, and the cluster it came from is gone by the time anyone notices. Nothing the platform mints today is binary, which is why the day one is would go unremarked.
+  it("refuses a field that is not text rather than substituting it", () => {
+    expect(() =>
+      secretRowFromK8s({
+        ...secret,
+        data: { key: Buffer.from([0x30, 0x82, 0xff, 0xfe]).toString("base64") },
+      }),
+    ).toThrow(/not text/);
+  });
 });
 
 describe("converting a budget", () => {

@@ -35,7 +35,7 @@ export interface AgentUsage {
 }
 
 export interface UsageReader {
-  read(agentId: string, parent?: string): Promise<AgentUsage | null>;
+  read(agentId: string, parent: string): Promise<AgentUsage | null>;
   forget(agentId: string): void;
 }
 
@@ -50,15 +50,11 @@ export function createUsageReader(
 
   return {
     async read(agentId, parent) {
-      const dir = parent
-        ? `${root}/${parent}/dam-${agentId}`
-        : `${root}/dam-${agentId}`;
+      const dir = `${root}/${parent}/dam-${agentId}`;
       const [current, stat, weight] = await Promise.all([
         readFile(`${dir}/memory.current`, "utf8").catch(() => null),
         readFile(`${dir}/cpu.stat`, "utf8").catch(() => null),
-        parent
-          ? readFile(`${root}/${parent}/cpu.weight`, "utf8").catch(() => null)
-          : null,
+        readFile(`${root}/${parent}/cpu.weight`, "utf8").catch(() => null),
       ]);
       if (current === null || stat === null) {
         last.delete(agentId);

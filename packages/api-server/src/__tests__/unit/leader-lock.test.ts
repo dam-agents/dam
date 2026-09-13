@@ -7,6 +7,7 @@ function fakeSql(opts: {
   granted: boolean;
   failAfter?: number;
   pidChangesAfter?: number;
+  hangAfter?: number;
 }) {
   let queries = 0;
   let released = 0;
@@ -20,6 +21,10 @@ function fakeSql(opts: {
       queries += 1;
       if (opts.failAfter !== undefined && queries > opts.failAfter) {
         throw new Error("connection terminated");
+      }
+      // TEST_SCENARIO: silence, which is what a partition looks like from here — not an error, and no answer either.
+      if (opts.hangAfter !== undefined && queries > opts.hangAfter) {
+        return new Promise(() => {});
       }
       const pid =
         opts.pidChangesAfter !== undefined && queries > opts.pidChangesAfter
@@ -142,6 +147,27 @@ describe("leader lock", () => {
       .statements()
       .findIndex((q) => q.includes("pg_advisory_unlock_all"));
     expect(unlocked).toBeGreaterThanOrEqual(0);
+    await lock.stop();
+  });
+
+  // TEST_SCENARIO: the node is partitioned from Postgres. The query does not fail, it simply never answers, and the kernel will keep retrying for minutes. A statement timeout cannot end this — the server is what enforces it, and its error is on the far side of the partition — so the deadline has to be here. Until it fires this node believes it leads and the transports answer as the leader.
+  it("stands down when the heartbeat goes silent rather than failing", async () => {
+    const probe = fakeSql({ granted: true, hangAfter: 1 });
+    const onLost = vi.fn();
+    const lock = createLeaderLock({
+      sql: probe.sql,
+      key: 1,
+      pollMs: 5,
+      log: () => {},
+      onAcquired: vi.fn(),
+      onLost,
+    });
+
+    lock.start();
+    await vi.waitFor(() => expect(onLost).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(lock.isLeader()).toBe(false);
     await lock.stop();
   });
 

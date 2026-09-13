@@ -49,7 +49,6 @@ export const templateSpecSchema = z
     env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
-    registryAuthPath: z.string().optional(),
     hibernationTimeout: z.string().optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })

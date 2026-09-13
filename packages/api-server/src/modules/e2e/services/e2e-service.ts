@@ -21,6 +21,11 @@ export interface SlackE2eControl {
 
 export function createE2eService(deps: {
   addresses: SandboxAddresses;
+  placement: (agentId: string) => Promise<{
+    assignedNode: string | null;
+    lastNode: string | null;
+    readyNodes: string[];
+  }>;
   slack?: SlackE2eControl;
 }): E2eService {
   function requireSlack(): SlackE2eControl {
@@ -56,6 +61,13 @@ export function createE2eService(deps: {
   }
 
   return {
+    placement: (agentId) => deps.placement(agentId),
+
+    readWorkspaceFile: (agentId, path) =>
+      withClient(agentId, (c) =>
+        c.scriptedMock.readWorkspaceFile.query({ path }),
+      ),
+
     setScript: (agentId, input) =>
       withClient(agentId, (c) => c.scriptedMock.setScript.mutate(input)),
     getReceivedPrompts: (agentId) =>

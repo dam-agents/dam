@@ -41,7 +41,6 @@ export interface TemplateSpec {
   env?: EnvVar[];
   resources?: Resources;
   imagePullPolicy?: string;
-  registryAuthPath?: string;
   hibernationTimeout?: string;
   skillSources?: SkillSourceSeed[];
 }

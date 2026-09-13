@@ -4,7 +4,6 @@ import type {
   AgentRecord,
   AgentStore,
 } from "../../modules/agents/infrastructure/agent-store.js";
-import { mergePatch } from "../../modules/agents/infrastructure/agent-store.js";
 import type { AgentSpecCR } from "api-server-api";
 
 export function fakeAgentStore(initial: Partial<AgentRecord>[] = []) {
@@ -48,7 +47,11 @@ export function fakeAgentStore(initial: Partial<AgentRecord>[] = []) {
       if (!current) return null;
       return upsert({
         ...current,
-        spec: mergePatch(current.spec, patch) as AgentSpecCR,
+        spec: Object.fromEntries(
+          Object.entries({ ...current.spec, ...patch }).filter(
+            ([, value]) => value !== null,
+          ),
+        ) as unknown as AgentSpecCR,
       });
     },
     async patchAnnotations(id, patch) {

@@ -29,6 +29,13 @@ import {
  * `kubectl apply` alone parks a copy of the entire manifest there — and none
  * of it means anything to a reader of the agent record.
  *
+ * A credential is carried as text, and refused rather than mangled if it is
+ * not. A Secret's data is bytes; this store's is a string map. Decoding bytes
+ * that are not valid UTF-8 does not fail, it substitutes — so a binary
+ * credential would arrive looking imported, work nowhere, and have no original
+ * left to compare against, the cluster being gone. Nothing the platform mints
+ * today is binary, which is exactly why the day one is would go unnoticed.
+ *
  * Observed state is deliberately dropped. A restart count and a readiness
  * condition describe a pod that will not exist after this runs, and the
  * supervisor republishes both from what it finds within one reconcile —
@@ -134,7 +141,14 @@ export function secretRowFromK8s(secret: K8sObject): SecretRow {
   const purposeLabel = "agent-platform.ai/secret-purpose";
   const fields: Record<string, string> = {};
   for (const [k, v] of Object.entries(secret.data ?? {})) {
-    fields[k] = Buffer.from(v, "base64").toString("utf8");
+    const bytes = Buffer.from(v, "base64");
+    const text = bytes.toString("utf8");
+    if (!Buffer.from(text, "utf8").equals(bytes)) {
+      throw new Error(
+        `secret ${JSON.stringify(name)} field ${JSON.stringify(k)} is not text; importing it would corrupt it`,
+      );
+    }
+    fields[k] = text;
   }
   const extraLabels = Object.fromEntries(
     Object.entries(labels).filter(

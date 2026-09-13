@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { agentRecords, eq, type Db } from "db";
+import { agentRecords, eq, sql, type Db } from "db";
 import type { AgentSpecCR } from "api-server-api";
 
 /**
@@ -67,7 +67,7 @@ export type AgentChange =
       type: "upsert";
       id: string;
       record: AgentRecord;
-      statusOnly?: boolean;
+      observed?: boolean;
     }
   | { type: "delete"; id: string };
 
@@ -98,19 +98,42 @@ export interface AgentStore {
   onChange(listener: (change: AgentChange) => void): () => void;
 }
 
-export function mergePatch(target: unknown, patch: unknown): unknown {
-  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
-    return patch;
-  }
-  const base: Record<string, unknown> =
-    target && typeof target === "object" && !Array.isArray(target)
-      ? { ...(target as Record<string, unknown>) }
-      : {};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Applies a patch to one jsonb column inside the
+ * UPDATE that writes it, so a patch is never a read followed by a write.
+ *
+ * Read-modify-write was safe while the record lived in Kubernetes, which
+ * refused a write whose `resourceVersion` had moved. Nothing replaced that:
+ * two patches of the same column that overlap in time both merge onto the base
+ * they each read, and the later write silently carries the earlier one away.
+ * The writers are on different nodes — an activity stamp on whichever node the
+ * browser reached, a session flag on another, the scheduler's placement
+ * complaints against the supervisor's observations — so there is no process to
+ * serialize them in. `||` merges in the database instead, which is atomic
+ * because it is part of the statement.
+ *
+ * A patch is one level deep at every call site, which is what lets this be an
+ * operator rather than a lock: `||` is a shallow merge, and a null means
+ * delete the key, which is `-` and not a null value written into the column.
+ */
+type AgentRecordSet = {
+  [K in keyof typeof agentRecords.$inferInsert]?:
+    | (typeof agentRecords.$inferInsert)[K]
+    | ReturnType<typeof sql>;
+};
+
+function mergeInto<T extends object>(
+  column: (typeof agentRecords)["spec" | "status" | "annotations"],
+  patch: T,
+): ReturnType<typeof sql> {
+  const keep = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== null),
+  );
+  let merged = sql`(${column} || ${JSON.stringify(keep)}::jsonb)`;
   for (const [key, value] of Object.entries(patch)) {
-    if (value === null) delete base[key];
-    else base[key] = mergePatch(base[key], value);
+    if (value === null) merged = sql`${merged} - ${key}::text`;
   }
-  return base;
+  return merged;
 }
 
 export interface AgentChangeBus {
@@ -143,15 +166,15 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
       JSON.stringify({
         origin,
         id: change.id,
-        ...(change.type === "upsert" && change.statusOnly
-          ? { statusOnly: true }
+        ...(change.type === "upsert" && change.observed
+          ? { observed: true }
           : {}),
       }),
     );
   };
 
   bus?.subscribe(CHANGE_CHANNEL, (payload) => {
-    let note: { origin?: string; id?: string; statusOnly?: boolean };
+    let note: { origin?: string; id?: string; observed?: boolean };
     try {
       note = JSON.parse(payload) as typeof note;
     } catch {
@@ -171,7 +194,7 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
                 type: "upsert",
                 id,
                 record: toRecord(row),
-                ...(note.statusOnly ? { statusOnly: true } : {}),
+                ...(note.observed ? { observed: true } : {}),
               }
             : { type: "delete", id },
         );
@@ -181,8 +204,8 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
 
   async function update(
     id: string,
-    set: Partial<typeof agentRecords.$inferInsert>,
-    statusOnly = false,
+    set: AgentRecordSet,
+    observed = false,
   ): Promise<AgentRecord | null> {
     const [row] = await db
       .update(agentRecords)
@@ -195,7 +218,7 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
       type: "upsert",
       id,
       record,
-      ...(statusOnly ? { statusOnly } : {}),
+      ...(observed ? { observed } : {}),
     });
     return record;
   }
@@ -250,23 +273,21 @@ export function createAgentStore(db: Db, bus?: AgentChangeBus): AgentStore {
     },
 
     async patchSpec(id, patch) {
-      const current = await this.get(id);
-      if (!current) return null;
-      return update(id, {
-        spec: mergePatch(current.spec, patch) as AgentSpecCR,
-      });
+      return update(id, { spec: mergeInto(agentRecords.spec, patch) });
     },
 
     async patchAnnotations(id, patch) {
-      const current = await this.get(id);
-      if (!current) return null;
-      return update(id, { annotations: { ...current.annotations, ...patch } });
+      return update(id, {
+        annotations: mergeInto(agentRecords.annotations, patch),
+      });
     },
 
     async writeStatus(id, patch) {
-      const current = await this.get(id);
-      if (!current) return null;
-      return update(id, { status: { ...current.status, ...patch } }, true);
+      return update(
+        id,
+        { status: mergeInto(agentRecords.status, patch) },
+        true,
+      );
     },
 
     async delete(id) {

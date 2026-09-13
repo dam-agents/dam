@@ -48,6 +48,7 @@ const configSchema = z.object({
   peerLeafDir: z.string().default("/var/lib/dam/pki/peer"),
   uiRoot: z.string().default(""),
   imagesRoot: z.string().default("/var/lib/dam/images"),
+  imageRetentionDays: z.coerce.number().default(7),
   sandboxCommand: z
     .string()
     .default("")
@@ -213,6 +214,7 @@ export function loadConfig(): Config {
     peerLeafDir: process.env.DAM_PEER_LEAF_DIR,
     uiRoot: process.env.DAM_UI_ROOT,
     imagesRoot: process.env.DAM_IMAGES_ROOT,
+    imageRetentionDays: process.env.DAM_IMAGE_RETENTION_DAYS,
     sandboxCommand: process.env.DAM_SANDBOX_COMMAND,
     telemetryCollectorHost: process.env.PLATFORM_TELEMETRY_COLLECTOR_HOST,
     telemetryCollectorPort: process.env.PLATFORM_TELEMETRY_COLLECTOR_PORT,

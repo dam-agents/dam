@@ -52,6 +52,14 @@ import type { NodeRegistry } from "../infrastructure/node-registry.js";
  * no supervisor to act on it — which is a claim that something is coming up
  * when nothing is. It converges in one write and is then silent.
  *
+ * The two ways of not being placed are mutually exclusive and each clears the
+ * other, because they are not two facts about an agent but one fact with two
+ * possible reasons, and the reader ranks a budget complaint above a capacity
+ * one. An owner who frees room while the install stays full would otherwise go
+ * on being told to stop another of their agents — which they have just done —
+ * instead of being told to wait, and the whole point of carrying two messages
+ * is that those ask for different things.
+ *
  * A complaint about capacity left on a resting agent counts as not yet settled,
  * so it is cleared on the next pass however it got there. The state machine
  * reads that complaint ahead of rest, because an agent somebody has just asked
@@ -122,6 +130,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
   let queued: NodeJS.Timeout | null = null;
   let running = false;
   let again = false;
+  let generation = 0;
 
   const wants = (record: AgentRecord, now: Date) =>
     shouldRun(
@@ -134,6 +143,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
     );
 
   async function pass(): Promise<void> {
+    const startedIn = generation;
     const [records, ready] = await Promise.all([
       opts.store.list(),
       opts.registry.ready(),
@@ -156,8 +166,9 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
       held.set(owner, at);
     };
     for (const record of records) {
-      const running = wants(record, now);
-      if (record.assignedNode && !running) {
+      if (startedIn !== generation) return;
+      const wantsToRun = wants(record, now);
+      if (record.assignedNode && !wantsToRun) {
         await opts.store.assign(record.id, null);
         opts.log("placement.released", {
           agentId: record.id,
@@ -166,7 +177,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         continue;
       }
       if (
-        !running &&
+        !wantsToRun &&
         !record.assignedNode &&
         (!record.status.hibernated ||
           record.status.noCapacityMessage ||
@@ -190,7 +201,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         const want = demandOf(record.spec.resources?.limits);
         add(record.assignedNode, want);
         chargeOwner(record.owner, want);
-      } else if (running) {
+      } else if (wantsToRun) {
         unplaced.push(record);
       }
     }
@@ -201,6 +212,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
       memoryBytes: n.memoryBytes,
     }));
     for (const record of unplaced) {
+      if (startedIn !== generation) return;
       const want = demandOf(record.spec.resources?.limits);
 
       const ceiling = await opts.ceilingFor(record.owner);
@@ -210,10 +222,15 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
         ceiling,
       );
       if (over) {
-        if (!record.status.overBudget) {
+        if (
+          !record.status.overBudget ||
+          record.status.overBudgetMessage !== over ||
+          record.status.noCapacityMessage
+        ) {
           await opts.store.writeStatus(record.id, {
             overBudget: true,
             overBudgetMessage: over,
+            noCapacityMessage: "",
           });
         }
         opts.log("placement.over-budget", { agentId: record.id });
@@ -228,9 +245,14 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
       });
       if (!node) {
         const message = noRoomMessage(want, capacities);
-        if (record.status.noCapacityMessage !== message) {
+        if (
+          record.status.noCapacityMessage !== message ||
+          record.status.overBudget
+        ) {
           await opts.store.writeStatus(record.id, {
             noCapacityMessage: message,
+            overBudget: false,
+            overBudgetMessage: "",
           });
         }
         opts.log("placement.no-capacity", { agentId: record.id, ...want });
@@ -283,6 +305,7 @@ export function createScheduler(opts: SchedulerOpts): Scheduler {
     },
 
     stop(): void {
+      generation += 1;
       if (queued) clearTimeout(queued);
       queued = null;
     },

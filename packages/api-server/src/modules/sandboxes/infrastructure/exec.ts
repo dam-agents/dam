@@ -23,22 +23,15 @@ export class CommandError extends Error {
 export async function exec(
   file: string,
   args: string[],
-  opts: {
-    input?: string;
-    timeoutMs?: number;
-    env?: Record<string, string>;
-  } = {},
+  opts: { timeoutMs?: number } = {},
 ): Promise<string> {
   try {
-    const child = run(file, args, {
-      timeout: opts.timeoutMs ?? 120_000,
-      maxBuffer: 32 * 1024 * 1024,
-      ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
-    });
-    if (opts.input !== undefined) {
-      child.child.stdin?.end(opts.input);
-    }
-    return (await child).stdout;
+    return (
+      await run(file, args, {
+        timeout: opts.timeoutMs ?? 120_000,
+        maxBuffer: 32 * 1024 * 1024,
+      })
+    ).stdout;
   } catch (err) {
     const e = err as { code?: number; stderr?: string };
     throw new CommandError(

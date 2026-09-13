@@ -199,8 +199,8 @@ export function ExperimentDockPanel({
 function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const agents = useAgentsList();
-  const invocations = feed?.invocations ?? [];
   const rows = useMemo(() => {
+    const invocations = feed?.invocations ?? [];
     const agentById = new Map(agents.map((a) => [a.id, a]));
     const stageBySpan = new Map(
       (feed?.recentSpans ?? []).map((s) => [s.spanId, s.stage]),
@@ -218,7 +218,7 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
           : null,
       }))
       .sort((a, b) => rank(a.status) - rank(b.status));
-  }, [invocations, agents, feed?.recentSpans]);
+  }, [feed?.invocations, agents, feed?.recentSpans]);
 
   if (rows.length === 0) return null;
   return (

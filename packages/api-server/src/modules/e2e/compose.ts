@@ -7,6 +7,11 @@ import {
 
 export function composeE2eModule(deps: {
   addresses: SandboxAddresses;
+  placement: (agentId: string) => Promise<{
+    assignedNode: string | null;
+    lastNode: string | null;
+    readyNodes: string[];
+  }>;
   slack?: SlackE2eControl;
 }): {
   service: E2eService;

@@ -30,12 +30,24 @@ import type { DbSql } from "db";
  * A node that loses the lock must stand its singletons down before another
  * node picks them up; that is why losing is a callback and not a flag to poll.
  *
- * The heartbeat is given a deadline in the database rather than being left to
- * the socket. A node partitioned from Postgres does not get an error, it gets
- * silence, and the kernel's own retry budget runs for minutes — during which
- * this node believes it leads and answers as the leader. A statement timeout
- * turns that silence into the error the loss path already handles, so the
- * window is two heartbeats rather than however long TCP takes to give up.
+ * The heartbeat is given a deadline here, in this process. A node partitioned
+ * from Postgres does not get an error, it gets silence, and the kernel's own
+ * retry budget runs for minutes — during which this node believes it leads and
+ * answers as the leader. A statement timeout does not shorten that: it is
+ * enforced by the server, which aborts the query and sends back an error the
+ * partitioned client is by definition not receiving. It is still set, because
+ * it bounds a server that is reachable and stuck, but the timer that decides
+ * how long this node may go on believing it leads has to be on this side of
+ * the partition. The window is then two heartbeats rather than however long
+ * TCP takes to give up.
+ *
+ * Standing down also has to be bounded, for the same reason and more sharply:
+ * the unlock is a query on the connection that has just failed to answer one,
+ * so an unbounded unlock hangs the very path that exists to announce the loss,
+ * and the singletons stay up on a node that has already stopped leading. It
+ * cannot throw either: it runs from the failure path, where a rejection has
+ * nobody left to catch it and takes the process with it.
+ *
  * The key is one arbitrary constant every node shares — holding it is the
  * whole election, so there is nothing else to agree on.
  *
@@ -64,6 +76,26 @@ export interface LeaderLockOpts {
 
 const DEFAULT_POLL_MS = 5_000;
 
+function within<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${what} did not answer within ${ms}ms`)),
+      ms,
+    );
+    timer.unref();
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
   let reserved: Awaited<ReturnType<DbSql["reserve"]>> | null = null;
@@ -71,13 +103,20 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
   let leader = false;
   let timer: NodeJS.Timeout | null = null;
   let stopped = false;
+  let ticking = false;
 
   async function release(): Promise<void> {
     const held = leader;
     leader = false;
     backendPid = null;
     try {
-      if (reserved) await reserved`SELECT pg_advisory_unlock_all()`;
+      if (reserved) {
+        await within(
+          Promise.resolve(reserved`SELECT pg_advisory_unlock_all()`),
+          pollMs,
+          "leader unlock",
+        );
+      }
     } catch {
       /* c8 ignore next */
     }
@@ -89,15 +128,26 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
     reserved = null;
     if (held) {
       opts.log("leader.lost");
-      await opts.onLost();
+      try {
+        await opts.onLost();
+      } catch (err) {
+        opts.log("leader.standdown.failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 
   async function tick(): Promise<void> {
-    if (stopped) return;
+    if (stopped || ticking) return;
+    ticking = true;
     try {
       if (leader) {
-        const beat = await reserved!`SELECT pg_backend_pid() AS pid`;
+        const beat = await within(
+          Promise.resolve(reserved!`SELECT pg_backend_pid() AS pid`),
+          pollMs * 2,
+          "leader heartbeat",
+        );
         if (Number(beat[0]?.pid) !== backendPid) {
           opts.log("leader.connection.replaced", {
             was: backendPid,
@@ -113,6 +163,7 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
       }
       const rows =
         await reserved`SELECT pg_try_advisory_lock(${opts.key}::bigint) AS ok, pg_backend_pid() AS pid`;
+      if (stopped) return release();
       if (rows[0]?.ok !== true) return;
       backendPid = Number(rows[0].pid);
       leader = true;
@@ -123,6 +174,8 @@ export function createLeaderLock(opts: LeaderLockOpts): LeaderLock {
         error: err instanceof Error ? err.message : String(err),
       });
       await release();
+    } finally {
+      ticking = false;
     }
   }
 

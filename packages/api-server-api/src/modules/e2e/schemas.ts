@@ -191,3 +191,19 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
 export const slackReadOutboundResultSchema = z
   .object({ records: z.array(slackOutboundRecordSchema) })
   .strict();
+
+export const e2eReadWorkspaceFileInputSchema = z
+  .object({ agentId: z.string().min(1), path: z.string().min(1) })
+  .strict();
+
+export const readWorkspaceFileResultSchema = z
+  .object({ content: z.string().optional() })
+  .strict();
+
+export const e2ePlacementResultSchema = z
+  .object({
+    assignedNode: z.string().nullable(),
+    lastNode: z.string().nullable(),
+    readyNodes: z.array(z.string()),
+  })
+  .strict();

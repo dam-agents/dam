@@ -17,7 +17,7 @@ function agentRec(name: string, status: AgentStatus): AgentRecord {
     annotations: {},
     spec: { image: "x", name },
     status,
-    assignedNode: null,
+    assignedNode: "node-1",
     lastNode: null,
   };
 }
@@ -110,8 +110,8 @@ describe("ensureReady", () => {
       name: "ImagePullFailure → sandbox-failed",
       status: {
         ready: false,
-        sandboxReady: false,
-        sandboxNotReadyReason: "ImagePullFailure",
+        error: "pulling img: 401",
+        errorReason: "ImagePullFailure",
       },
       kind: "sandbox-failed",
       logCause: "wake-timeout:sandbox-failed:ImagePullFailure",
@@ -168,6 +168,24 @@ describe("ensureReady", () => {
       expect(warn?.cause).toBe(logCause);
     });
   }
+
+  // TEST_SCENARIO: the record still says ready because the node that published it has stopped heartbeating. Nothing will answer a dial there, so the wait must not take the stale flag at its word — it times out with the node named as the cause instead of handing the caller a connection to nowhere.
+  it("does not trust a ready flag published by a node that went quiet", async () => {
+    const { store, lines } = harness([agentRec("a1", READY)]);
+    const repo = createAgentsRepository(store, async () => new Set());
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("node-unreachable");
+    }
+    expect(lines.map((l) => l.msg)).toContain("agent.wake.begin");
+  });
 
   it("timeout with the agent deleted mid-wake → not-found", async () => {
     const { repo, records } = harness([agentRec("a1", HIBERNATED)]);

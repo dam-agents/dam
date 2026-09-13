@@ -79,6 +79,7 @@ export function createAgentsRepository(
   const inflight = new Map<string, Promise<void>>();
 
   const live = async () => (liveNodes ? await liveNodes() : undefined);
+  const dialable = (infra: InfraAgent) => infra.ready && infra.supervised;
 
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
@@ -233,7 +234,8 @@ export function createAgentsRepository(
     },
 
     async isReady(id) {
-      return (await store.get(id))?.status.ready === true;
+      const record = await store.get(id);
+      return record !== null && dialable(parseInfraAgent(record, await live()));
     },
 
     async ensureReady(id, opts) {
@@ -256,7 +258,7 @@ export function createAgentsRepository(
         if (current.annotations[STOP_REQUESTED_KEY]) {
           throw new AgentStoppedError(id);
         }
-        if (current.status.ready === true) {
+        if (dialable(parseInfraAgent(current, await live()))) {
           await bumpLastActivity(id);
           return;
         }
@@ -272,7 +274,7 @@ export function createAgentsRepository(
             if (record.annotations[STOP_REQUESTED_KEY]) {
               throw new AgentStoppedError(id);
             }
-            const infra = parseInfraAgent(record);
+            const infra = parseInfraAgent(record, await live());
             if (infra.overBudget) {
               const graceOver =
                 Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;
@@ -291,7 +293,7 @@ export function createAgentsRepository(
               return false;
             }
             sawNotOverBudget = true;
-            return infra.ready;
+            return dialable(infra);
           },
           {
             initialMs: WAKE_POLL_INITIAL_MS,
@@ -303,8 +305,8 @@ export function createAgentsRepository(
         const durationMs = Date.now() - startedAt;
         if (!ready) {
           const record = await store.get(id);
-          const infra = record ? parseInfraAgent(record) : null;
-          if (infra?.ready) {
+          const infra = record ? parseInfraAgent(record, await live()) : null;
+          if (infra && dialable(infra)) {
             getLogger().info(
               { agentId: id, durationMs, lateReady: true },
               "agent.wake.ready",
@@ -321,7 +323,7 @@ export function createAgentsRepository(
               hibernated: infra?.hibernated,
               sandboxNotReadyReason: infra?.sandboxNotReadyReason,
               gatewayReady: infra?.gatewayReady,
-              gatewayNotReadyReason: infra?.gatewayNotReadyReason,
+              supervised: infra?.supervised,
               errorReason: infra?.errorReason,
               sandboxTerminationReason: infra?.sandboxTerminationReason,
             },

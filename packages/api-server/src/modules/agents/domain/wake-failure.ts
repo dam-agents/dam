@@ -2,11 +2,12 @@ export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
   | { kind: "hibernated-not-started" }
+  | { kind: "no-capacity"; message: string }
   | { kind: "sandbox-failed"; terminationReason: string }
   | { kind: "sandbox-not-ready" }
   | { kind: "gateway-not-ready" }
-  | { kind: "gateway-failed"; gatewayReason: string }
-  | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }
+  | { kind: "node-unreachable" }
+  | { kind: "reconcile-error"; message: string }
   | { kind: "unknown" };
 
 export interface WakeConditionsSnapshot {
@@ -14,20 +15,15 @@ export interface WakeConditionsSnapshot {
   hibernated: boolean;
   overBudget?: boolean;
   overBudgetMessage?: string;
+  noCapacityMessage?: string;
+  assignedNode?: string | null;
   error?: string;
   errorReason?: string;
   sandboxTerminationReason?: string;
   sandboxNotReadyReason?: string;
   gatewayReady?: boolean;
-  gatewayNotReadyReason?: string;
+  supervised?: boolean;
 }
-
-const SANDBOX_FAILURE_REASONS = new Set([
-  "OutOfMemory",
-  "ImagePullFailure",
-  "InvalidImageName",
-  "ContainerTerminated",
-]);
 
 export function classifyWakeFailure(
   s: WakeConditionsSnapshot | null,
@@ -36,37 +32,25 @@ export function classifyWakeFailure(
   if (s.overBudget)
     return { kind: "over-budget", message: s.overBudgetMessage ?? "" };
   if (s.hibernated) return { kind: "hibernated-not-started" };
-  if (s.error !== undefined) {
-    return {
-      kind: "reconcile-error",
-      message: s.error,
-      backoffExceeded: s.errorReason === "BackoffLimitExceeded",
-    };
+  if (s.noCapacityMessage) {
+    return { kind: "no-capacity", message: s.noCapacityMessage };
   }
-  if (
-    s.sandboxNotReadyReason !== undefined &&
-    SANDBOX_FAILURE_REASONS.has(s.sandboxNotReadyReason)
-  ) {
-    return {
-      kind: "sandbox-failed",
-      terminationReason: s.sandboxNotReadyReason,
-    };
+  if (s.assignedNode && s.supervised === false) {
+    return { kind: "node-unreachable" };
+  }
+  if (s.errorReason === "ImagePullFailure") {
+    return { kind: "sandbox-failed", terminationReason: "ImagePullFailure" };
+  }
+  if (s.error !== undefined) {
+    return { kind: "reconcile-error", message: s.error };
+  }
+  if (s.sandboxNotReadyReason === "ContainerTerminated") {
+    return { kind: "sandbox-failed", terminationReason: "ContainerTerminated" };
   }
   if (s.sandboxNotReadyReason !== undefined) {
     return { kind: "sandbox-not-ready" };
   }
-  if (s.gatewayReady === false) {
-    if (
-      s.gatewayNotReadyReason !== undefined &&
-      SANDBOX_FAILURE_REASONS.has(s.gatewayNotReadyReason)
-    ) {
-      return {
-        kind: "gateway-failed",
-        gatewayReason: s.gatewayNotReadyReason,
-      };
-    }
-    return { kind: "gateway-not-ready" };
-  }
+  if (s.gatewayReady === false) return { kind: "gateway-not-ready" };
   return { kind: "unknown" };
 }
 
@@ -74,8 +58,6 @@ export function wakeFailureReasonToken(c: WakeFailureCause): string {
   switch (c.kind) {
     case "sandbox-failed":
       return `wake-timeout:sandbox-failed:${c.terminationReason}`;
-    case "gateway-failed":
-      return `wake-timeout:gateway-failed:${c.gatewayReason}`;
     case "over-budget":
       return "wake-rejected:over-budget";
     default:
@@ -87,6 +69,8 @@ export function isTransientWakeFailure(c: WakeFailureCause): boolean {
   return (
     c.kind === "sandbox-not-ready" ||
     c.kind === "gateway-not-ready" ||
+    c.kind === "no-capacity" ||
+    c.kind === "node-unreachable" ||
     c.kind === "unknown"
   );
 }
@@ -102,31 +86,18 @@ export function describeWakeFailure(c: WakeFailureCause): string {
       );
     case "hibernated-not-started":
       return "the sandbox was never started";
+    case "no-capacity":
+      return c.message;
     case "sandbox-failed":
-      switch (c.terminationReason) {
-        case "OutOfMemory":
-          return "the agent ran out of memory";
-        case "ImagePullFailure":
-          return "the agent image cannot be pulled";
-        case "InvalidImageName":
-          return "the agent image reference is invalid";
-        default:
-          return "the agent crashed while starting";
-      }
+      return c.terminationReason === "ImagePullFailure"
+        ? "the agent image cannot be pulled"
+        : "the agent crashed while starting";
     case "sandbox-not-ready":
       return "the agent is still starting";
     case "gateway-not-ready":
       return "the agent's gateway is still starting";
-    case "gateway-failed":
-      switch (c.gatewayReason) {
-        case "OutOfMemory":
-          return "the agent's gateway ran out of memory";
-        case "ImagePullFailure":
-        case "InvalidImageName":
-          return "the agent's gateway image cannot be pulled";
-        default:
-          return "the agent's gateway crashed while starting";
-      }
+    case "node-unreachable":
+      return "the node holding the agent is not answering";
     case "reconcile-error":
       return "the agent's configuration could not be applied";
     case "unknown":

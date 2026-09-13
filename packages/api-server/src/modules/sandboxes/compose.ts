@@ -33,6 +33,7 @@ export function composeSandboxes(deps: {
   agentsRoot: string;
   runRoot: string;
   imagesRoot: string;
+  imageRetentionMs: number;
   pkiRoot: string;
   gatewayPort: number;
   sandboxPort: number;
@@ -51,14 +52,14 @@ export function composeSandboxes(deps: {
   otel: (agentId: string) => EnvoyOTelView;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): SandboxesModule {
+  const images = createImageStore({ root: deps.imagesRoot, log: deps.log });
   const supervisor = createSandboxSupervisor({
     store: deps.store,
     network: createNetworkPort(),
-    runsc: createRunscPort({
-      images: createImageStore({ root: deps.imagesRoot, log: deps.log }),
-      log: deps.log,
-    }),
-    gateway: createGatewayPort({ log: (message) => deps.log(message) }),
+    runsc: createRunscPort({ images, log: deps.log }),
+    images,
+    imageRetentionMs: deps.imageRetentionMs,
+    gateway: createGatewayPort({ log: deps.log }),
     pki: deps.pki,
     registryAuth: createAgentRegistryAuthPort(deps.secrets),
     usage: createUsageReader(),

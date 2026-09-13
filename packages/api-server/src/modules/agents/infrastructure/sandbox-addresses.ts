@@ -15,6 +15,13 @@ import type { AgentRecord, AgentStore } from "./agent-store.js";
  * learned rather than when it is asked for, because callers ask synchronously.
  * `localAddress` is the other direction: the sandbox's own address on this
  * node, which is what a peer's tunnel is joined to.
+ *
+ * Opening one takes two awaits, and the placement it was opened for can be
+ * gone before they finish — the agent deleted, moved back here, or moved on
+ * again. What the record said when the work started is therefore remembered
+ * and re-read when it lands: a tunnel nobody wants any more is closed by the
+ * work that opened it, rather than being installed for an agent that has left
+ * and waiting for a forget that has already run.
  */
 export interface SandboxAddresses {
   baseUrl(agentId: string): string;
@@ -45,32 +52,43 @@ export interface PeerRouting {
 export async function startSandboxAddresses(
   store: AgentStore,
   port: number,
-  routing?: PeerRouting,
+  routing: PeerRouting,
 ): Promise<RunningSandboxAddresses> {
   const local = new Map<string, string>();
   const remote = new Map<string, string>();
+  const wanted = new Map<string, string>();
+
+  const dropRemote = (id: string) => {
+    remote.delete(id);
+    routing.tunnels.drop(id);
+  };
 
   const forget = (id: string) => {
     local.delete(id);
-    if (remote.delete(id)) routing?.tunnels.drop(id);
+    wanted.delete(id);
+    dropRemote(id);
   };
 
   function track(record: AgentRecord): void {
     const address = record.status.address;
     if (!address) return forget(record.id);
-    if (!routing || record.assignedNode === routing.nodeId) {
-      if (remote.delete(record.id)) routing?.tunnels.drop(record.id);
+    if (record.assignedNode === routing.nodeId) {
+      wanted.delete(record.id);
+      dropRemote(record.id);
       local.set(record.id, `${address}:${port}`);
       return;
     }
     local.delete(record.id);
     const node = record.assignedNode;
     if (!node) return forget(record.id);
+    wanted.set(record.id, node);
     void routing
       .addressOfNode(node)
       .then(async (peer) => {
         if (!peer) return forget(record.id);
-        remote.set(record.id, await routing.tunnels.ensure(record.id, peer));
+        const tunnel = await routing.tunnels.ensure(record.id, peer);
+        if (wanted.get(record.id) !== node) return dropRemote(record.id);
+        remote.set(record.id, tunnel);
       })
       .catch((err: unknown) => {
         routing.log("peer.tunnel.failed", {

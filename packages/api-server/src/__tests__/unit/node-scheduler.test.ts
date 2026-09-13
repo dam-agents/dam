@@ -200,6 +200,8 @@ describe("placing agents on nodes", () => {
         {
           noCapacityMessage:
             "No node has 4.0 Gi of memory free. This agent starts as soon as room frees up.",
+          overBudget: false,
+          overBudgetMessage: "",
         },
       ],
     ]);
@@ -244,6 +246,7 @@ describe("placing agents on nodes", () => {
           overBudget: true,
           overBudgetMessage:
             "Starting this agent would take you to 3 of 2 CPU. Stop or pause another agent to free room.",
+          noCapacityMessage: "",
         },
       ],
     ]);
@@ -295,6 +298,110 @@ describe("placing agents on nodes", () => {
     );
     await scheduler.tick();
     expect(assigns).toEqual([["agent-1", null]]);
+    expect(statuses).toEqual([]);
+  });
+});
+
+// TEST_OVERVIEW: the lock deciding who schedules can be lost in the middle of a pass. The pass in flight then belongs to a node that no longer leads, and every assignment it still makes races the node that does — so losing the lock has to stop the pass between records, not merely cancel the next one.
+describe("a pass interrupted by losing the lock", () => {
+  it("stops assigning as soon as stop() is called", async () => {
+    const records = ["a", "b", "c"].map((id) =>
+      record({
+        id,
+        spec: {
+          image: "img",
+          resources: { limits: { cpu: "1", memory: "1Gi" } },
+        } as never,
+      }),
+    );
+    const assigns: string[] = [];
+    let scheduler: ReturnType<typeof createScheduler>;
+    scheduler = createScheduler({
+      store: {
+        list: async () => records,
+        assign: async (id: string) => {
+          assigns.push(id);
+          scheduler.stop();
+          return null;
+        },
+        writeStatus: async () => null,
+      } as never,
+      registry: { ready: async () => [SMALL_NODE] } as never,
+      defaultIdleTimeoutMs: 60_000,
+      ceilingFor: async () => ({ cpu: "64", memory: "128Gi" }),
+      log: () => {},
+    });
+    await scheduler.tick();
+    expect(assigns).toEqual(["a"]);
+  });
+});
+
+// TEST_OVERVIEW: an agent that will not start has exactly one reason at a time, and the reader ranks a budget complaint above a capacity one. Each branch used to write only its own field, so an agent that changed reasons carried both and was described by whichever ranked higher rather than by whichever was true. The owner is then told to stop another of their agents after they already have, while the thing actually in the way is the install being full.
+describe("changing why an agent cannot be placed", () => {
+  const idle = new Date(Date.now() - 3600_000).toISOString();
+
+  // TEST_SCENARIO: over budget, then the owner frees room — but the install is full, so the answer is now "wait", not "stop one of yours".
+  it("clears the budget complaint when capacity becomes the reason", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          spec: { image: "img", resources: { limits: BIG } } as never,
+          status: { overBudget: true, overBudgetMessage: "over" },
+        }),
+      ],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
+    const [, patch] = statuses.at(-1)!;
+    expect(patch.overBudget).toBe(false);
+    expect(patch.overBudgetMessage).toBe("");
+    expect(patch.noCapacityMessage).toMatch(/largest node/);
+  });
+
+  // TEST_SCENARIO: the other direction — the install frees up while the owner is still over their ceiling.
+  it("clears the capacity complaint when the budget becomes the reason", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          status: { noCapacityMessage: "no room anywhere" },
+        }),
+      ],
+      [SMALL_NODE],
+      { cpu: "0.5", memory: "512Mi" },
+    );
+    await scheduler.tick();
+    const [, patch] = statuses.at(-1)!;
+    expect(patch.overBudget).toBe(true);
+    expect(patch.noCapacityMessage).toBe("");
+  });
+
+  // TEST_SCENARIO: the numbers in a budget message move as the owner's other agents come and go. The message is what the person reads, so a stale one is as wrong as a stale flag — and only the flag used to be checked.
+  it("rewrites a budget message whose figures have changed", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          status: { overBudget: true, overBudgetMessage: "an older figure" },
+        }),
+      ],
+      [SMALL_NODE],
+      { cpu: "0.5", memory: "512Mi" },
+    );
+    await scheduler.tick();
+    expect(statuses.at(-1)![1].overBudgetMessage).toMatch(/would take you to/);
+  });
+
+  // TEST_SCENARIO: nothing changed. A scheduler that rewrites an unchanged complaint every thirty seconds fans an invalidation hint out to every watching browser for no reason.
+  it("says nothing when the reason has not moved", async () => {
+    const { scheduler, statuses } = harness(
+      [
+        record({
+          annotations: { [LAST_ACTIVITY]: idle },
+          status: { hibernated: true },
+        }),
+      ],
+      [SMALL_NODE],
+    );
+    await scheduler.tick();
     expect(statuses).toEqual([]);
   });
 });

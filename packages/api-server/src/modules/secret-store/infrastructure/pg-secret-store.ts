@@ -15,7 +15,12 @@ import { pathSafe } from "../domain/ref-path.js";
  * The owner is baked into the ref at mint time, so every read is a primary-key
  * lookup rather than a scan, and a ref arriving from elsewhere is re-checked
  * for shape before it reaches a query — two segments, neither of them a dot
- * run, so a ref cannot name a row minted for a different owner.
+ * run. That check is against a ref that walks out of the keyspace, and nothing
+ * more: a well-formed ref naming somebody else's row is a well-formed ref, and
+ * this store has no caller to compare it against. Owner scoping is `list`,
+ * whose clause is the `owner` column, and it is the caller's business to reach
+ * a ref only through one. Saying the shape check does that work would be the
+ * kind of belief that leaves a hole where a check used to be.
  */
 const NAME_PREFIX = "platform-secret-";
 const REF_SEGMENT = /^(?!\.{1,2}$)[A-Za-z0-9._%-]+$/;
@@ -103,7 +108,7 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
           path,
           owner: meta.owner,
           purpose: meta.purpose,
-          metadata: meta as unknown as Record<string, unknown>,
+          metadata: extrasOf(meta),
           fields,
         })
         .onConflictDoUpdate({
@@ -111,7 +116,7 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
           set: {
             owner: meta.owner,
             purpose: meta.purpose,
-            metadata: meta as unknown as Record<string, unknown>,
+            metadata: extrasOf(meta),
             fields,
             updatedAt: new Date(),
           },
@@ -153,10 +158,7 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
         .select()
         .from(secrets)
         .where(and(eq(secrets.storeId, storeId), eq(secrets.purpose, purpose)));
-      return rows.map((row) => ({
-        ref: { storeId, path: row.path, field: "" },
-        metadata: row.metadata as unknown as SecretMetadata,
-      }));
+      return rows.map(metadataRow);
     },
 
     async list(scope): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]> {
@@ -168,10 +170,31 @@ export function createPgSecretStore(opts: PgSecretStoreOpts): SecretStore {
           )
         : and(eq(secrets.storeId, storeId), eq(secrets.owner, scope.owner));
       const rows = await db.select().from(secrets).where(where);
-      return rows.map((row) => ({
-        ref: { storeId, path: row.path, field: "" },
-        metadata: row.metadata as unknown as SecretMetadata,
-      }));
+      return rows.map(metadataRow);
     },
   };
+
+  function metadataRow(row: {
+    path: string;
+    owner: string;
+    purpose: string;
+    metadata: unknown;
+  }): { ref: SecretRef; metadata: SecretMetadata } {
+    return {
+      ref: { storeId, path: row.path, field: "" },
+      metadata: {
+        owner: row.owner,
+        purpose: row.purpose,
+        ...(row.metadata as Pick<
+          SecretMetadata,
+          "extraLabels" | "extraAnnotations"
+        >),
+      },
+    };
+  }
 }
+
+const extrasOf = (meta: SecretMetadata): Record<string, unknown> => ({
+  ...(meta.extraLabels ? { extraLabels: meta.extraLabels } : {}),
+  ...(meta.extraAnnotations ? { extraAnnotations: meta.extraAnnotations } : {}),
+});

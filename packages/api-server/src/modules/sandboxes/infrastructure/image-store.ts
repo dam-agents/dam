@@ -6,6 +6,7 @@ import {
   readdir,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -34,7 +35,7 @@ import { exec } from "./exec.js";
  *
  * Ownership is preserved and setuid bits are not: the node refuses to mint
  * setuid files at all, and inside the sandbox they would elevate nothing
- * anyway, since it runs with an empty capability set and no-new-privileges.
+ * anyway, since it runs with no-new-privileges.
  * Directory modes are then repaired, because gVisor's root has no DAC
  * override and an image that ships a read-only directory would be one the
  * agent could never write into.
@@ -44,6 +45,32 @@ import { exec } from "./exec.js";
  * same directory: the second one clears what the first is still writing, and
  * the agent that loses fails to start with a filesystem error naming a path no
  * one asked for. Everything waits on the first unpack and then finds it ready.
+ *
+ * Nothing removes an image on its own, so they are reclaimed by age. A
+ * directory is content-addressed by manifest digest, which means every push to
+ * a tag an agent follows leaves the previous rootfs behind for ever — and the
+ * workspaces are on the same disk, so a node that fills up takes people's work
+ * down with it. Under Kubernetes the kubelet did this; nothing replaced it.
+ *
+ * Age is the right measure because it needs no index to be kept correct: a
+ * reconcile resolves the image of every agent it is running, which stamps the
+ * directory, so anything that has gone untouched for the window is an image no
+ * agent on this node has wanted for that long. A half-finished unpack has no
+ * readiness marker and is judged by its own directory instead, which is what
+ * reclaims one a crash left behind.
+ *
+ * A tag is asked of the registry at most once per few minutes per node, and a
+ * registry that does not answer leaves the last answer standing. Every
+ * reconcile of every running agent passes through here, and a manifest fetch
+ * per pass is a pull against the registry's rate limit and, the moment the
+ * registry hiccups, a running agent published as failed. A pull that fails is
+ * reported as its own kind of failure, because "the image cannot be pulled"
+ * asks the owner for something different from any other reconcile error.
+ *
+ * Ceiling: a running sandbox has this directory as the lower half of its
+ * overlay, so the window must stay far longer than the reconcile interval that
+ * keeps stamping it — days against seconds. It is not disk-pressure aware; a
+ * node that fills faster than the window waits for the window.
  */
 
 const MANIFEST_TYPES = [
@@ -73,7 +100,19 @@ export interface Image {
 
 export interface ImageStore {
   ensure(reference: string, opts?: { authDir?: string }): Promise<Image>;
+  prune(maxAgeMs: number): Promise<void>;
 }
+
+export class ImagePullError extends Error {
+  constructor(reference: string, cause: unknown) {
+    super(
+      `pulling ${reference}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.name = "ImagePullError";
+  }
+}
+
+const RESOLVE_TTL_MS = 5 * 60_000;
 
 interface Descriptor {
   mediaType: string;
@@ -97,11 +136,41 @@ interface ImageRef {
 
 export function createImageStore(opts: {
   root: string;
-  arch?: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): ImageStore {
-  const arch = opts.arch ?? (process.arch === "arm64" ? "arm64" : "amd64");
+  const arch = process.arch === "arm64" ? "arm64" : "amd64";
   const unpacking = new Map<string, Promise<ImageConfig>>();
+  const resolved = new Map<
+    string,
+    { at: number; manifest: Manifest; digest: string }
+  >();
+
+  async function resolve(
+    reference: string,
+    ref: ImageRef,
+    auth: string | null,
+  ): Promise<{ manifest: Manifest; digest: string }> {
+    const key = `${reference}\n${auth ?? ""}`;
+    const known = resolved.get(key);
+    if (known && Date.now() - known.at < RESOLVE_TTL_MS) return known;
+    try {
+      const token = await authorize(ref, auth);
+      const fresh = {
+        at: Date.now(),
+        ...(await fetchManifest(ref, token, arch)),
+      };
+      resolved.set(key, fresh);
+      return fresh;
+    } catch (err) {
+      if (!known) throw new ImagePullError(reference, err);
+      opts.log("image.resolve.failed", {
+        reference,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      resolved.set(key, { ...known, at: Date.now() });
+      return known;
+    }
+  }
 
   function unpack(
     dir: string,
@@ -145,7 +214,32 @@ export function createImageStore(opts: {
     return readConfig(config);
   }
 
+  async function used(dir: string): Promise<void> {
+    const now = new Date();
+    await utimes(join(dir, ".ready"), now, now).catch(() => {});
+  }
+
   return {
+    async prune(maxAgeMs) {
+      const cutoff = Date.now() - maxAgeMs;
+      for (const name of await readdir(opts.root).catch(() => [])) {
+        const dir = join(opts.root, name);
+        if (unpacking.has(dir)) continue;
+        const marker = await stat(join(dir, ".ready")).catch(() => null);
+        const at = marker ?? (await stat(dir).catch(() => null));
+        if (!at || at.mtimeMs >= cutoff) continue;
+        opts.log("image.prune", { image: name, ready: marker !== null });
+        await rm(dir, { recursive: true, force: true }).catch(
+          (err: unknown) => {
+            opts.log("image.prune.failed", {
+              image: name,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          },
+        );
+      }
+    },
+
     async ensure(reference, { authDir } = {}) {
       if (reference.startsWith("/")) {
         const stamp = await stat(reference);
@@ -157,27 +251,32 @@ export function createImageStore(opts: {
         const config = await unpack(dir, (rootfs) =>
           applyArchive(reference, rootfs),
         );
+        await used(dir);
         opts.log("image.load.done", { reference });
         return { rootfs: join(dir, "rootfs"), config };
       }
 
       const ref = parseRef(reference);
       const auth = await readRegistryAuth(authDir, ref.registry);
-      const token = await authorize(ref, auth);
-
-      const { manifest, digest } = await fetchManifest(ref, token, arch);
+      const { manifest, digest } = await resolve(reference, ref, auth);
       const dir = join(opts.root, digest.replace(":", "_"));
-      opts.log("image.pull.begin", { reference, digest });
       const config = await unpack(dir, async (rootfs) => {
-        const blob = manifest.config
-          ? await fetchBlobJson(ref, token, manifest.config.digest)
-          : {};
-        for (const layer of manifest.layers ?? []) {
-          await applyLayer(ref, token, layer, rootfs);
+        opts.log("image.pull.begin", { reference, digest });
+        try {
+          const token = await authorize(ref, auth);
+          const blob = manifest.config
+            ? await fetchBlobJson(ref, token, manifest.config.digest)
+            : {};
+          for (const layer of manifest.layers ?? []) {
+            await applyLayer(ref, token, layer, rootfs);
+          }
+          opts.log("image.pull.done", { reference, digest });
+          return blob;
+        } catch (err) {
+          throw new ImagePullError(reference, err);
         }
-        return blob;
       });
-      opts.log("image.pull.done", { reference, digest });
+      await used(dir);
       return { rootfs: join(dir, "rootfs"), config };
     },
   };
@@ -247,6 +346,22 @@ export function parseRef(reference: string): ImageRef {
   return { registry, repository, reference: tagOrDigest };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Which stored login, if any, belongs to the
+ * registry about to be dialled. The entry has to name that registry and not
+ * merely end with it: matching on a suffix makes an `evilghcr.io` reference
+ * collect the credential filed under `ghcr.io`, and the reference is whatever
+ * the agent's image says. A docker config spells a host with a scheme, a port
+ * and sometimes a path, so it is reduced to a host and canonicalised the same
+ * way a reference is before the two are compared.
+ */
+function authHost(named: string): string {
+  const host = named.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  return host === "docker.io" || host === "index.docker.io"
+    ? "registry-1.docker.io"
+    : host;
+}
+
 async function readRegistryAuth(
   authDir: string | undefined,
   registry: string,
@@ -257,13 +372,7 @@ async function readRegistryAuth(
       await readFile(join(authDir, "config.json"), "utf8"),
     ) as { auths?: Record<string, { auth?: string }> };
     for (const [host, entry] of Object.entries(config.auths ?? {})) {
-      if (
-        host === registry ||
-        host.endsWith(`/${registry}`) ||
-        registry.endsWith(host)
-      ) {
-        return entry.auth ?? null;
-      }
+      if (authHost(host) === registry) return entry.auth ?? null;
     }
   } catch {
     return null;

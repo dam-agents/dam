@@ -303,6 +303,18 @@ export function openPeerStream(opts: {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One loopback listener per remote agent, opened at
+ * most once however many callers ask at once.
+ *
+ * Binding a listener takes an await, and the check for one that already exists
+ * happens before it — so two callers arriving together both found nothing,
+ * both bound, and the second one's bookkeeping erased the first, leaving a
+ * listener held open by nothing that could ever close it. Asking is what the
+ * change stream does on every status a remote node publishes, which is often.
+ * Requests for one agent are therefore run one after another, which makes the
+ * check and the bind indivisible without a lock.
+ */
 export function createPeerTunnels(opts: {
   credentials: PeerCredentials;
   log: (message: string, fields?: Record<string, unknown>) => void;
@@ -311,41 +323,58 @@ export function createPeerTunnels(opts: {
     string,
     { peer: string; address: string; close: () => void }
   >();
+  const queue = new Map<string, Promise<unknown>>();
+
+  async function openTunnel(
+    agentId: string,
+    peerAddress: string,
+  ): Promise<string> {
+    const existing = open.get(agentId);
+    if (existing?.peer === peerAddress) return existing.address;
+    existing?.close();
+
+    const server = createServer((downstream) => {
+      dialPeer({
+        peerAddress,
+        credentials: opts.credentials,
+        verb: "dial",
+        agentId,
+        onReady: (up) => splice(downstream, up),
+        onError: () => downstream.destroy(),
+      });
+    });
+
+    const address = await new Promise<string>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const info = server.address();
+        resolve(
+          typeof info === "object" && info ? `127.0.0.1:${info.port}` : "",
+        );
+      });
+    });
+
+    open.set(agentId, {
+      peer: peerAddress,
+      address,
+      close: () => server.close(),
+    });
+    opts.log("peer.tunnel.open", { agentId, peer: peerAddress, address });
+    return address;
+  }
 
   return {
-    async ensure(agentId, peerAddress) {
-      const existing = open.get(agentId);
-      if (existing?.peer === peerAddress) return existing.address;
-      existing?.close();
-
-      const server = createServer((downstream) => {
-        dialPeer({
-          peerAddress,
-          credentials: opts.credentials,
-          verb: "dial",
-          agentId,
-          onReady: (up) => splice(downstream, up),
-          onError: () => downstream.destroy(),
-        });
+    ensure(agentId, peerAddress) {
+      const after = queue.get(agentId) ?? Promise.resolve();
+      const next = after
+        .catch(() => {})
+        .then(() => openTunnel(agentId, peerAddress));
+      const tail = next.catch(() => {});
+      queue.set(agentId, tail);
+      void tail.then(() => {
+        if (queue.get(agentId) === tail) queue.delete(agentId);
       });
-
-      const address = await new Promise<string>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          const info = server.address();
-          resolve(
-            typeof info === "object" && info ? `127.0.0.1:${info.port}` : "",
-          );
-        });
-      });
-
-      open.set(agentId, {
-        peer: peerAddress,
-        address,
-        close: () => server.close(),
-      });
-      opts.log("peer.tunnel.open", { agentId, peer: peerAddress, address });
-      return address;
+      return next;
     },
 
     drop(agentId) {

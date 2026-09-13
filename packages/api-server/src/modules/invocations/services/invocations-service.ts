@@ -8,7 +8,7 @@ import {
   MAX_INVOCATION_TTL_MS,
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
-import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
+import { newAgentId } from "../../agents/infrastructure/agent-id.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import { invocationTargetName } from "../domain/target-name.js";
 import type { DriverResolution } from "./driver-resolution.js";
@@ -158,7 +158,7 @@ export function createInvocationsService(deps: {
         throw new UnresolvableDriverError(input.driverAgentId);
       }
 
-      const targetId = generateK8sName("agent");
+      const targetId = newAgentId("agent");
       const expiresAt = new Date(
         now().getTime() + resolveInvocationTtlMs(input.ttlMs),
       );

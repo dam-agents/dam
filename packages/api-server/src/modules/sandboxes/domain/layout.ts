@@ -3,7 +3,7 @@ import { join } from "node:path";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Where one agent's state lives on the node.
  * Everything under the agent's directory belongs to it and goes when it is
- * deleted; what survives hibernation is exactly `work` and `home`.
+ * deleted; what survives hibernation is exactly `home`.
  */
 export interface SandboxLayout {
   root: string;

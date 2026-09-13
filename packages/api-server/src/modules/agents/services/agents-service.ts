@@ -45,7 +45,7 @@ import {
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
 import { templateImageUpdate } from "../domain/template-update.js";
-import { generateK8sName } from "../infrastructure/configmap-mappers.js";
+import { newAgentId } from "../infrastructure/agent-id.js";
 import type { AgentRegistryAuthPort } from "../infrastructure/agent-registry-auth-port.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
@@ -732,7 +732,7 @@ export function createAgentsService(deps: {
         });
       }
       const owner = deps.owner;
-      const agentId = input.id ?? generateK8sName("agent");
+      const agentId = input.id ?? newAgentId("agent");
 
       if (input.registryCredential) {
         spec.registryAuth = await deps.registryAuthPort.create(

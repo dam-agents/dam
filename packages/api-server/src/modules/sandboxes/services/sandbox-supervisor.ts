@@ -1,7 +1,7 @@
 import type { SecretRef } from "api-server-api";
 import type { UsageReader } from "../infrastructure/cgroup-usage.js";
 import type { UserCgroups } from "../infrastructure/user-cgroup.js";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { exec } from "../infrastructure/exec.js";
 import type {
@@ -19,6 +19,7 @@ import { layoutFor, socketsFor } from "../domain/layout.js";
 import { effectiveIdleTimeoutMs, shouldRun } from "../domain/hibernation.js";
 import type { NetworkPort } from "../infrastructure/network-port.js";
 import type { RunscPort } from "../infrastructure/runsc-port.js";
+import { ImagePullError } from "../infrastructure/image-store.js";
 import type { GatewayPort } from "../infrastructure/gateway-port.js";
 import type { PkiPort } from "../infrastructure/pki-port.js";
 import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
@@ -36,9 +37,12 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * the node that does, before the sandbox is built. A failure there stops the
  * reconcile rather than starting the agent on an empty directory, because
  * silently losing someone's work is worse than not starting. A sandbox that
- * was already running is torn down first: its mounts point at the directories
+ * was already running is torn down first: its mounts point at the directory
  * the transfer replaces, and the bundle it was built from does not change, so
- * nothing else would notice.
+ * nothing else would notice. Whether a transfer is coming is read off the
+ * record rather than off the transfer's own result — waiting to be told one
+ * happened is being told after the directory has already moved under a
+ * running sandbox.
  *
  * Ready means dialable, not started. A running process is not a listening one,
  * and a sandbox now starts fast enough that a caller acting on readiness beats
@@ -83,6 +87,19 @@ import type { EnvoyConfigPort } from "../infrastructure/envoy-config-port.js";
  * agents, and a directory that will not go — a mount still held, a file still
  * open — is one disk to reclaim later rather than a reason to stop reconciling
  * the node.
+ *
+ * It refuses to reclaim anything when the record table is empty and the disk
+ * is not. "No agents in the install, but here are directories for some" is not
+ * the state this was built for — it is a database that has not been reached
+ * yet, or one being filled by a migration whose importer has not run — and the
+ * one thing that must not happen in it is deleting every agent's work on the
+ * node. An install genuinely down to zero agents leaves the directories for a
+ * later pass, which costs disk and nothing else.
+ *
+ * Hibernation publishes once and then stops. Its stamp is the time the agent
+ * went to rest, which is what the lifetime reaper measures from, so a stamp
+ * rewritten by every pass that finds the agent still at rest is one that says
+ * "just now" for ever.
  */
 export interface SandboxSupervisorDeps {
   store: AgentStore;
@@ -111,6 +128,8 @@ export interface SandboxSupervisorDeps {
   };
   usage: UsageReader;
   userCgroups: UserCgroups;
+  images: { prune(maxAgeMs: number): Promise<void> };
+  imageRetentionMs: number;
   harnessBaseUrl: string;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }
@@ -164,7 +183,10 @@ export function createSandboxSupervisor(
         return publishStatus(agentId, {
           ready: false,
           error: err instanceof Error ? err.message : String(err),
-          errorReason: "ReconcileError",
+          errorReason:
+            err instanceof ImagePullError
+              ? "ImagePullFailure"
+              : "ReconcileError",
         });
       })
       .finally(() => {
@@ -222,9 +244,10 @@ export function createSandboxSupervisor(
     const sockets = socketsFor(deps.runRoot, record.id);
 
     await mkdir(layout.root, { recursive: true, mode: 0o751 });
-    if (await deps.fetchWorkspace(record)) {
+    if (record.lastNode !== null && record.lastNode !== deps.nodeId) {
       await deps.runsc.stop(record.id, layout.sandbox);
     }
+    await deps.fetchWorkspace(record);
     if (record.lastNode !== deps.nodeId) {
       await deps.store.noteWorkspaceAt(record.id, deps.nodeId);
     }
@@ -233,7 +256,9 @@ export function createSandboxSupervisor(
     }
     const caCert = await deps.pki.ensureCa();
     await mkdir(layout.root + "/ca", { recursive: true, mode: 0o755 });
-    await writeFile(layout.caCert, caCert, { mode: 0o644 });
+    if ((await readFile(layout.caCert, "utf8").catch(() => "")) !== caCert) {
+      await writeFile(layout.caCert, caCert, { mode: 0o644 });
+    }
 
     await deps.sockets.open(record.id);
     const rebuilt = await deps.network.create(link);
@@ -335,6 +360,10 @@ export function createSandboxSupervisor(
     liveLinks.delete(record.id);
     await deps.sockets.close(record.id);
     await applyRuleset();
+    if (record.status.hibernated === true && !record.status.address) {
+      deps.usage.forget(record.id);
+      return;
+    }
     await publishStatus(record.id, {
       ready: false,
       hibernated: true,
@@ -429,8 +458,16 @@ export function createSandboxSupervisor(
       }
 
       await deps.userCgroups.prune();
+      await deps.images.prune(deps.imageRetentionMs);
 
       const all = await deps.store.list();
+      const directories = await deps.directories();
+      if (all.length === 0 && directories.length > 0) {
+        deps.log("sandbox.sweep.stale-workspace.refused", {
+          directories: directories.length,
+        });
+        return;
+      }
       const mine = new Set(
         all
           .filter(
@@ -438,7 +475,7 @@ export function createSandboxSupervisor(
           )
           .map((r) => r.id),
       );
-      for (const agentId of await deps.directories()) {
+      for (const agentId of directories) {
         if (mine.has(agentId)) continue;
         deps.log("sandbox.sweep.stale-workspace", { agentId });
         await rm(layoutFor(deps.agentsRoot, agentId).root, {
@@ -457,7 +494,7 @@ export function createSandboxSupervisor(
       stopped = false;
       unsubscribe = deps.store.onChange((change) => {
         if (stopped) return;
-        if (change.type === "upsert" && change.statusOnly) return;
+        if (change.type === "upsert" && change.observed) return;
         void schedule(change.id);
       });
       void this.sweep().catch((err: unknown) => {
@@ -504,7 +541,6 @@ function sandboxEnv(
     PLATFORM_AGENT_ID: record.id,
     API_SERVER_URL: harness,
     PLATFORM_MCP_URL: `${harness}/api/agents/${record.id}/mcp`,
-    PLATFORM_POD_FILES_EVENTS_URL: `${harness}/api/agents/${record.id}/pod-files/events`,
     PORT: String(deps.sandboxPort),
   };
   for (const e of record.spec.env ?? []) env[e.name] = e.value;
