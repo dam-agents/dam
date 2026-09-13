@@ -69,10 +69,10 @@ type AgentNPGateInit struct {
 }
 
 type VMConfig struct {
-	Enabled      bool                `json:"enabled,omitempty"`
-	ScratchSize  string              `json:"scratchSize,omitempty"`
-	NodeSelector map[string]string   `json:"nodeSelector,omitempty"`
-	Tolerations  []corev1.Toleration `json:"tolerations,omitempty"`
+	Enabled     bool   `json:"enabled,omitempty"`
+	NodeURL     string `json:"nodeUrl,omitempty"`
+	NodeAddress string `json:"nodeAddress,omitempty"`
+	NodeToken   string `json:"-"`
 }
 
 type AgentProbes struct {

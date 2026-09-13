@@ -1,0 +1,149 @@
+package reconciler
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
+)
+
+const (
+	vmInnerClusterNoProxy = "10.144.0.0/16,10.145.0.0/16"
+	vmPersistPathsEnv     = "PLATFORM_VM_PERSIST_PATHS"
+	vmReadinessPoll       = 3 * time.Second
+)
+
+var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
+
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (sandboxnode.MachineStatus, error) {
+	name := agent.Name
+	spec := &agent.Spec
+	defaults := r.config.AgentTemplateDefaults
+
+	env := map[string]string{}
+	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, agentProxyAddr(r.config, gatewayIP)) {
+		env[e.Name] = e.Value
+	}
+	env["NO_PROXY"] += "," + vmInnerClusterNoProxy
+	env["no_proxy"] = env["NO_PROXY"]
+	for _, e := range defaults.Env {
+		env[e.Name] = e.Value
+	}
+	if spec.SecretRef != "" {
+		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, spec.SecretRef, metav1.GetOptions{})
+		if err != nil {
+			return sandboxnode.MachineStatus{}, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
+		}
+		for k, v := range sec.Data {
+			env[k] = string(v)
+		}
+	}
+	env["IS_SANDBOX"] = "1"
+
+	var persist []string
+	storageGiB := 0
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if !m.Persist {
+			continue
+		}
+		persist = append(persist, m.Path)
+		if q, err := resource.ParseQuantity(effectiveMountSize(m, spec, defaults)); err == nil {
+			storageGiB += int((q.Value() + (1 << 30) - 1) >> 30)
+		}
+	}
+	env[vmPersistPathsEnv] = strings.Join(persist, ",")
+
+	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return sandboxnode.MachineStatus{}, errLeafSecretPending
+	}
+	if err != nil {
+		return sandboxnode.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
+	}
+
+	cpu, mem := r.limitsOf(spec)
+	machine := sandboxnode.MachineSpec{
+		Image:      spec.Image,
+		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
+		MemoryMiB:  max(int(mem.Value()>>20), 1),
+		StorageGiB: max(storageGiB, 1),
+		Env:        env,
+		CACert:     string(leaf.Data["ca.crt"]),
+		AllowCIDRs: []string{gatewayIP + "/32"},
+		Running:    running,
+	}
+	st, err := r.vmNode.Ensure(ctx, name, machine)
+	if err != nil {
+		return st, err
+	}
+
+	svc := BuildAgentService(name, r.config, ownerRef)
+	svc.Spec.Selector = nil
+	svc.Spec.ClusterIP = ""
+	if err := r.applyService(ctx, svc); err != nil {
+		return st, fmt.Errorf("applying agent service: %w", err)
+	}
+	if st.Port > 0 {
+		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, r.config.VM.NodeAddress, int32(st.Port), ownerRef)); err != nil {
+			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
+		}
+	}
+	return st, nil
+}
+
+func buildVMEndpointSlice(name, namespace, address string, port int32, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
+	portName, tcp, ready := "acp", corev1.ProtocolTCP, true
+	return &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				LabelAgent: name, LabelPair: name, LabelRole: RoleAgent,
+				discoveryv1.LabelServiceName: name,
+				discoveryv1.LabelManagedBy:   "platform-controller",
+			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{address}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}}},
+		Ports:       []discoveryv1.EndpointPort{{Name: &portName, Port: &port, Protocol: &tcp}},
+	}
+}
+
+func (r *AgentReconciler) applyEndpointSlice(ctx context.Context, desired *discoveryv1.EndpointSlice) error {
+	cli := r.client.DiscoveryV1().EndpointSlices(desired.Namespace)
+	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	desired.ResourceVersion = existing.ResourceVersion
+	_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
+	return err
+}
+
+func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st sandboxnode.MachineStatus) error {
+	msg := st.Message
+	if !st.Ready {
+		if msg == "" {
+			msg = "machine is " + st.State
+		}
+		if r.requeue != nil {
+			r.requeue(agent.Name, vmReadinessPoll)
+		}
+	}
+	return r.publishReadinessOf(ctx, agent, st.Ready, "MachineNotReady", msg, 0, "")
+}

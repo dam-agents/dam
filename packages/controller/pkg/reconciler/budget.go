@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
@@ -69,15 +68,7 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		return allowedVerdict, false, nil
 	}
 	newCPU, newMem := r.limitsOf(&agent.Spec)
-	if agent.Spec.IsVM() {
-		grew, err := r.vmResizeGrew(ctx, agent.Name, newCPU, newMem)
-		if err != nil {
-			return budgetVerdict{}, false, err
-		}
-		if !grew {
-			return allowedVerdict, false, nil
-		}
-	} else {
+	{
 		ns := r.config.Namespace
 		existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
 		if err != nil {
@@ -141,14 +132,19 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	if err != nil {
 		return cpu, mem, fmt.Errorf("listing agent statefulsets: %w", err)
 	}
+	hasAgentSS := make(map[string]bool, len(sss.Items))
+	for i := range sss.Items {
+		hasAgentSS[sss.Items[i].Labels[LabelAgent]] = hasAgentSS[sss.Items[i].Labels[LabelAgent]] || sss.Items[i].Name == sss.Items[i].Labels[LabelAgent]
+	}
 	up := make(map[string]bool, len(sss.Items))
 	for i := range sss.Items {
 		ss := &sss.Items[i]
-		if ss.Name != ss.Labels[LabelAgent] {
+		agentName := ss.Labels[LabelAgent]
+		if ss.Name != agentName && (hasAgentSS[agentName] || ss.Name != GatewayName(agentName)) {
 			continue
 		}
 		if ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1 {
-			up[ss.Name] = true
+			up[agentName] = true
 		}
 	}
 
@@ -168,12 +164,6 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 			return cpu, mem, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
 		isUp := up[item.GetName()]
-		if a.Spec.IsVM() {
-			isUp, err = r.vmDesiredUp(ctx, item.GetName())
-			if err != nil {
-				return cpu, mem, err
-			}
-		}
 		if !isUp {
 			continue
 		}
@@ -184,9 +174,9 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	return cpu, mem, nil
 }
 
-func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vmBackend bool) (bool, error) {
-	if vmBackend {
-		return r.vmDesiredUp(ctx, name)
+func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool) (bool, error) {
+	if vm {
+		name = GatewayName(name)
 	}
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -196,36 +186,6 @@ func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vmBac
 		return false, fmt.Errorf("reading agent statefulset: %w", err)
 	}
 	return ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1, nil
-}
-
-func (r *AgentReconciler) vmDesiredUp(ctx context.Context, name string) (bool, error) {
-	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if errors.IsNotFound(err) || errors.IsForbidden(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("reading virtualmachine: %w", err)
-	}
-	strategy, _, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
-	return strategy == vmRunStrategyAlways, nil
-}
-
-func (r *AgentReconciler) vmResizeGrew(ctx context.Context, name string, newCPU, newMem resource.Quantity) (bool, error) {
-	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if errors.IsNotFound(err) || errors.IsForbidden(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("reading virtualmachine: %w", err)
-	}
-	strategy, _, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
-	if strategy != vmRunStrategyAlways {
-		return false, nil
-	}
-	oldCores, _, _ := unstructured.NestedInt64(vm.Object, "spec", "template", "spec", "domain", "cpu", "cores")
-	oldMemStr, _, _ := unstructured.NestedString(vm.Object, "spec", "template", "spec", "domain", "memory", "guest")
-	oldMem := parseQuantityOr(oldMemStr, resource.Quantity{})
-	return vmGuestCores(newCPU) > oldCores || newMem.Cmp(oldMem) > 0, nil
 }
 
 func (r *AgentReconciler) ensureConcreteSize(ctx context.Context, agent *apiv1.Agent) error {

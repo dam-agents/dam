@@ -418,20 +418,6 @@ func TestStorageMigration_ConcurrencyCap(t *testing.T) {
 	assert.Equal(t, 2, gated, "only Concurrency agents admitted per pass")
 }
 
-func TestStorageMigration_SkipsVMBackend(t *testing.T) {
-	agent := agentCR()
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
-	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
-
-	m.Reconcile(context.Background())
-
-	ann := getAgentAnnotations(t, m, "my-agent")
-	assert.Empty(t, ann[annStorageMigration])
-	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
-	require.NoError(t, err)
-	assert.Empty(t, jobs.Items)
-}
-
 func renderedAgentSTS(name string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
