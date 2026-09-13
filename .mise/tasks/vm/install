@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Install (or reinstall) the platform into the running dev VM from this
+# Install (or reinstall) the platform into the running node VM from this
 # checkout: build the api-server and UI, lay down the node layout and config,
-# and start the units. This is the `cluster:install` of the VM world — it is
-# a dev-loop task, not the production install, which is the bootc image.
+# and start the units. `cluster:install` runs this as its last step; on its own
+# it is the dev loop after a code change. It is not the production install,
+# which is the bootc image.
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
 VM="${DAM_VM:-dam}"
+
+# Where the shared services are, read back from the cluster unless the caller
+# already did.
+[ -n "${DAM_DATABASE_URL:-}" ] || eval "$(mise run cluster:env)"
 
 DAM_VM="$VM"
 . "${MISE_PROJECT_ROOT}/etc/node-exec.sh"
@@ -40,7 +45,7 @@ on_node bash -s -- /opt/dam/src "${PNPM_VERSION}" \
   "${DAM_NODE_ID:-node-1}" \
   "${DAM_NODE_ADDRESS:-127.0.0.1:${DAM_PEER_HOST_PORT:-4002}}" \
   "${DAM_KEYCLOAK_URL:?}" "${DAM_KEYCLOAK_EXTERNAL_URL:-$DAM_KEYCLOAK_URL}" \
-  "${DAM_DATABASE_URL:?run: eval \"\$(mise run cluster:env)\"}" \
+  "${DAM_DATABASE_URL:?}" \
   "${DAM_REDIS_URL:?}" "${DAM_API_CLIENT_SECRET:?}" \
   "${DAM_OBJECT_STORAGE_ENDPOINT:?}" "${DAM_OBJECT_STORAGE_ACCESS_KEY_ID:?}" \
   "${DAM_OBJECT_STORAGE_SECRET_ACCESS_KEY:?}" <<'REMOTE'

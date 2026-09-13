@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Install or upgrade the shared services — Postgres, Redis, Keycloak and
-# SeaweedFS — onto the cluster VM. Nothing the agents touch runs here.
+# The local install, in one command: the cluster VM with the shared services —
+# Postgres, Redis, Keycloak and SeaweedFS — and then the node VM with the
+# platform built from this checkout. Arguments after `--` go to helm, which is
+# how a second install (the e2e one) gets its own URLs. Rerunning it upgrades
+# both halves in place; after a code change alone, `vm:install` is enough.
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:?}"
+
+mise run cluster:up
 if [ -n "${IS_SANDBOX:-}" ]; then
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 else
@@ -12,4 +17,6 @@ helm upgrade --install dam helm \
   --namespace "${DAM_NAMESPACE:-dam}" --create-namespace \
   --values helm/values-local.yaml \
   --wait --timeout 10m "$@"
-echo "Shared services installed. Next: mise run vm:install (see cluster:env)"
+
+mise run vm:up
+mise run vm:install

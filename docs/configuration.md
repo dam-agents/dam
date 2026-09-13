@@ -130,4 +130,4 @@ mise run test               # run tests
 mise run //packages/ui:run             # start UI dev server
 ```
 
-With `IS_SANDBOX=1` (CI) there are no lima VMs: `cluster:up` provisions k3s on the machine itself and `vm:up` provisions the same machine as the node, which avoids nested virtualization.
+`mise run cluster:install` is the local install: the cluster VM with the shared services and the node VM with the platform. With `IS_SANDBOX=1` (CI) there are no lima VMs: the same command provisions k3s on the machine itself and then provisions that machine as the node, which avoids nested virtualization.

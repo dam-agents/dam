@@ -24,7 +24,6 @@ if ! node_exists; then
   echo "No e2e install found — bootstrapping once (slow, ~minutes)..."
   mise run e2e:install
 else
-  eval "$(mise run cluster:env)"
   mise run vm:install
   mise run e2e:node-config
   mise run e2e:reset

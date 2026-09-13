@@ -25,8 +25,6 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${DAM_CLUSTER_VM:-dam-cluster}/copied-from-guest/kubeconfig.yaml"
 fi
-eval "$(mise run cluster:env)"
-
 DAM_NODE_ADDRESS="${HOST_FOR_PEERS}:4002" mise run vm:install
 mise run e2e:node-config
 

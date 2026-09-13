@@ -153,12 +153,10 @@ git clone https://github.com/dam-agents/dam
 cd dam
 
 mise install
-mise run cluster:up && mise run cluster:install   # the shared services, in k3s
-eval "$(mise run cluster:env)"                     # their endpoints, for the node
-mise run vm:up && mise run vm:install              # the node: api-server, UI, sandboxes
+mise run cluster:install
 ```
 
-After a code change, `mise run vm:install` rebuilds and restarts the node. Open [localhost:4000](http://localhost:4000) and log in with:
+That creates the cluster VM with the shared services and the node VM with the platform built from the checkout. After a code change, `mise run vm:install` rebuilds and restarts the node alone. Open [localhost:4000](http://localhost:4000) and log in with:
 
 ```txt
 username: dev
