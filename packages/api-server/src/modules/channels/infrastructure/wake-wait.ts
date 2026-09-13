@@ -48,7 +48,9 @@ export async function runWhileAgentStarts<T>(
       ) {
         throw err;
       }
-      if (attempt === 0) await opts.onStillStarting?.();
+      if (attempt === 0) {
+        await Promise.resolve(opts.onStillStarting?.()).catch(() => undefined);
+      }
       await sleep(backoffMs(attempt));
     }
   }
