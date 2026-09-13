@@ -69,10 +69,16 @@ spec:
             # controller.storageMigration.
             - name: STORAGE_MIGRATION
               value: {{ .Values.controller.storageMigration | toJson | quote }}
-            # KubeVirt vm backend (backend.type=vm); see `virtualization` in
-            # values.yaml. scratchGi ships as a K8s quantity string.
+            # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "scratchSize" (printf "%dGi" (int .Values.virtualization.scratchGi)) "nodeSelector" .Values.virtualization.nodeSelector "tolerations" .Values.virtualization.tolerations | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" .Values.virtualization.node.url "nodeAddress" .Values.virtualization.node.address | toJson | quote }}
+            {{- if .Values.virtualization.enabled }}
+            - name: SANDBOX_NODE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-sandbox-node
+                  key: token
+            {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET

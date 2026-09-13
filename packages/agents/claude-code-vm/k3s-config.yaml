@@ -1,0 +1,12 @@
+# Baked k3s server config for the inner cluster an agent may start in its VM.
+# kubeconfig readable by every guest user (the whole VM is the sandbox).
+write-kubeconfig-mode: "0644"
+
+# The inner cluster must not claim the ranges the *platform* cluster uses. k3s
+# defaults to 10.42.0.0/16 for pods and 10.43.0.0/16 for services — exactly what
+# the platform's k3s uses, and the paired gateway's ClusterIP sits in that
+# range; the inner flannel and kube-proxy would program routes and iptables
+# across it and black-hole the VM's only egress path.
+cluster-cidr: "10.144.0.0/16"
+service-cidr: "10.145.0.0/16"
+cluster-dns: "10.145.0.10"

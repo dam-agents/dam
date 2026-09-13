@@ -82,18 +82,16 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if .Values.virtualization.enabled }}
-  # KubeVirt vm backend (backend.type=vm): the agent side reconciles to a
-  # VirtualMachine whose runStrategy the controller flips (wake/hibernate).
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # vm agents have no pod: the controller publishes each machine's node port as
+  # the agent Service's endpoint itself (see `virtualization` in values.yaml).
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
