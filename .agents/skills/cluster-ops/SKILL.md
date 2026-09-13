@@ -16,15 +16,11 @@ Two kinds of lima VM. Guests cannot address each other; a node reaches the clust
 
 ## Lifecycle
 
-```sh
-mise run cluster:up && mise run cluster:install   # shared services
-eval "$(mise run cluster:env)"                     # DAM_DATABASE_URL, DAM_REDIS_URL, DAM_KEYCLOAK_URL, …
-mise run vm:up && mise run vm:install              # the node
-```
+`mise run cluster:install` is the whole local install: it creates or starts the cluster VM, installs the chart of shared services, creates or starts the node VM, and installs the platform built from the checkout into it. Arguments after `--` go to helm. Rerunning it upgrades both halves.
 
-- `cluster:up` — create or start the cluster VM. `cluster:install -- [helm args]` — install or upgrade the chart. `cluster:env` — print the endpoints and credentials a node needs; `eval` it in the shell that runs `vm:install`. `cluster:delete` — destroy the VM, database included.
-- `vm:up`, `vm:install` (rebuild api-server and UI from the checkout, lay down `/etc/dam/env` and the templates, restart), `vm:logs` (the api-server journal, where the supervisor logs), `vm:status` (units, sandboxes, links, sockets, ruleset), `vm:shell`, `vm:stop`, `vm:delete` (workspaces included).
-- After a code change: `mise run vm:install` again. It needs the `cluster:env` variables in the shell.
+- `cluster:up`, `cluster:env` (print the endpoints and credentials a node reads; `eval` it to get `KUBECONFIG` and the `DAM_*` variables in your shell), `cluster:delete` (destroys the VM, database included).
+- `vm:up`, `vm:install` (rebuild api-server and UI from the checkout, lay down `/etc/dam/env` and the templates, restart — reads the cluster endpoints itself), `vm:logs` (the api-server journal, where the supervisor logs), `vm:status` (units, sandboxes, links, sockets, ruleset), `vm:shell`, `vm:stop`, `vm:delete` (workspaces included).
+- After a code change: `mise run vm:install`.
 - `node:cordon <node-id> [--undo]` — stop a node taking new agents; the agents it holds move as they hibernate and wake.
 
 Log in at [localhost:4000](http://localhost:4000) with `dev` / `dev`.
@@ -48,7 +44,6 @@ The e2e install is its own pair of VMs (`dam-e2e-cluster`, `dam-e2e`) on its own
 
 - Cluster: `eval "$(mise run cluster:env)"` exports `KUBECONFIG`; then `kubectl -n dam …`. The database is `dam-platform-postgres-0`; node rows are `select id, peer_address, state, last_heartbeat from nodes`.
 - Node: `mise run vm:logs` first. `sandbox.reconcile.failed` names what the supervisor could not do; `image.pull.*` and `image.resolve.failed` are the registry; `placement.no-capacity` is the node's memory; `placement.over-budget` is the owner's ceiling (`DEFAULT_USER_*_BUDGET` in `/etc/dam/env`; the e2e node raises them).
-- `vm:install` stops at `DAM_DATABASE_URL: run: eval "$(mise run cluster:env)"` — the variables are not in this shell.
 - The UI redirects to Keycloak and back for ever — the realm's issuer is the URL the browser uses. A cluster installed for a non-default UI or Keycloak port needs `cluster:install -- --set urls.keycloak=… --set urls.ui=…` (the e2e install does this).
 - An agent stays "starting" on a fresh node — the image: a template that names a registry the node cannot reach, or a private registry without a credential on the agent. The failure lands on the agent record as an image-pull failure.
 - A second dev node on the same host needs its own `DAM_VM`, `DAM_PORT`, `DAM_PEER_HOST_PORT` and a `DAM_NODE_ADDRESS` the other guest can reach (the lima host, `192.168.5.2`) — see `.mise/tasks/e2e/second-node` for the shape.

@@ -422,3 +422,7 @@ nodes:
   # keys. It is the reason a node that restarts comes back with its agents.
   storage: 100Gi
   storageClass: ""
+  # Where the VMs may run. A cluster that keeps its virtualization hosts
+  # tainted names the taint here, as it would for any other VM.
+  nodeSelector: {}
+  tolerations: []
