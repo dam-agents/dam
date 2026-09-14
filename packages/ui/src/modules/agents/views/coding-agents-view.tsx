@@ -53,6 +53,7 @@ export function CodingAgentsView() {
         <ComputeUsageCard
           agents={agentsData?.list ?? []}
           workingAgentIds={workingAgentIds}
+          compact
         />
       )}
 

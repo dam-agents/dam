@@ -134,12 +134,21 @@ export function SlotBar({
             </TooltipPrimitive.Trigger>
             <TooltipContent
               side="top"
+              sideOffset={6}
               aria-label={label(segment)}
-              className="max-w-xs text-xs leading-relaxed"
+              className={cn(
+                "overflow-visible text-sm leading-relaxed",
+                held && content ? "w-64 p-3" : "max-w-xs px-3 py-2",
+              )}
               onPointerEnter={() => hover.show(id, true)}
               onPointerLeave={hover.scheduleHide}
             >
               {(held && content?.(segment)) || label(segment)}
+              <TooltipPrimitive.Arrow
+                width={12}
+                height={6}
+                className="fill-popover"
+              />
             </TooltipContent>
           </TooltipPrimitive.Root>
         );

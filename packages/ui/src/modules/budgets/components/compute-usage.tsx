@@ -46,8 +46,8 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
 function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   return (
-    <div className="flex flex-col gap-1">
-      <p>
+    <div className="flex flex-col gap-2">
+      <p className="text-foreground">
         <span className="font-semibold">{segment.agentName}</span> (
         {formatCores(segment.cpuMilli)} CPU ·{" "}
         {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
@@ -75,9 +75,10 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
 interface Props {
   agents: readonly AgentView[];
   workingAgentIds: ReadonlySet<string>;
+  compact?: boolean;
 }
 
-export function ComputeUsage({ agents, workingAgentIds }: Props) {
+export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -105,17 +106,19 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
         <a
           href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
           {...externalLinkProps}
-          className="shrink-0 text-accent hover:underline"
+          className="shrink-0 text-muted-foreground hover:underline"
         >
           Request more
         </a>
       </div>
-      <div className="mb-3">
-        <p className="text-2xl font-semibold tabular-nums text-foreground">
-          {view.usedSlots}/{view.ceilingSlots}
-        </p>
-        <p className="text-sm text-muted-foreground">Slots</p>
-      </div>
+      {!compact && (
+        <div className="mb-3">
+          <p className="text-2xl font-semibold tabular-nums text-foreground">
+            {view.usedSlots}/{view.ceilingSlots}
+          </p>
+          <p className="text-sm text-muted-foreground">Slots</p>
+        </div>
+      )}
       <div className="mb-3">
         <SlotBar
           segments={view.segments}
