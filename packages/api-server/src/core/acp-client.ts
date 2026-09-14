@@ -17,6 +17,25 @@ const DEFAULT_TURN_CEILING_MS = 60 * 60 * 1000;
 const STEER_METHOD = "_session/steering";
 const STEER_CEILING_MS = 30_000;
 
+export class AcpSessionLoadError extends Error {
+  constructor(message: string, opts?: { cause?: unknown }) {
+    super(message, opts);
+    this.name = "AcpSessionLoadError";
+  }
+}
+
+export type AcpTurnAbandonCause = "connection-lost" | "ceiling";
+
+export class AcpTurnAbandonedError extends Error {
+  constructor(
+    readonly abandonCause: AcpTurnAbandonCause,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AcpTurnAbandonedError";
+  }
+}
+
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -178,7 +197,10 @@ async function withAcpConnection<T>(
   const { stream, ws } = await wsStream(url);
 
   const ac = new AbortController();
-  let abortReason = "ACP connection aborted";
+  let abortError: Error = new AcpTurnAbandonedError(
+    "connection-lost",
+    "ACP connection aborted",
+  );
 
   let missedPongs = 0;
   ws.on("pong", () => {
@@ -186,7 +208,10 @@ async function withAcpConnection<T>(
   });
   const heartbeat = setInterval(() => {
     if (missedPongs >= MAX_MISSED_PONGS) {
-      abortReason = "ACP connection lost (agent unreachable)";
+      abortError = new AcpTurnAbandonedError(
+        "connection-lost",
+        "ACP connection lost (agent unreachable)",
+      );
       ac.abort();
       return;
     }
@@ -199,7 +224,10 @@ async function withAcpConnection<T>(
   }, PING_INTERVAL_MS);
 
   const ceiling = setTimeout(() => {
-    abortReason = `ACP turn exceeded the ${Math.round(turnCeilingMs / 1000)}s ceiling`;
+    abortError = new AcpTurnAbandonedError(
+      "ceiling",
+      `ACP turn exceeded the ${Math.round(turnCeilingMs / 1000)}s ceiling`,
+    );
     ac.abort();
   }, turnCeilingMs);
 
@@ -247,14 +275,12 @@ async function withAcpConnection<T>(
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
-          reject(new Error(abortReason));
+          reject(abortError);
           return;
         }
-        ac.signal.addEventListener(
-          "abort",
-          () => reject(new Error(abortReason)),
-          { once: true },
-        );
+        ac.signal.addEventListener("abort", () => reject(abortError), {
+          once: true,
+        });
       }),
     ]);
   } finally {
@@ -362,11 +388,18 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
         async (connection, init) => {
           let sessionId: string;
           if ("resumeSessionId" in sendOpts) {
-            await connection.loadSession({
-              sessionId: sendOpts.resumeSessionId,
-              cwd: ".",
-              mcpServers: [],
-            });
+            try {
+              await connection.loadSession({
+                sessionId: sendOpts.resumeSessionId,
+                cwd: ".",
+                mcpServers: [],
+              });
+            } catch (err) {
+              throw new AcpSessionLoadError(
+                `failed to load session ${sendOpts.resumeSessionId}`,
+                { cause: err },
+              );
+            }
             responseChunks.length = 0;
             sessionId = sendOpts.resumeSessionId;
           } else {
@@ -456,11 +489,18 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
           const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
 
           if ("resumeSessionId" in triggerOpts) {
-            await connection.unstable_resumeSession({
-              sessionId: triggerOpts.resumeSessionId,
-              cwd: ".",
-              mcpServers,
-            });
+            try {
+              await connection.unstable_resumeSession({
+                sessionId: triggerOpts.resumeSessionId,
+                cwd: ".",
+                mcpServers,
+              });
+            } catch (err) {
+              throw new AcpSessionLoadError(
+                `failed to resume session ${triggerOpts.resumeSessionId}`,
+                { cause: err },
+              );
+            }
             sessionId = triggerOpts.resumeSessionId;
           } else {
             const s = await connection.newSession({ cwd: ".", mcpServers });

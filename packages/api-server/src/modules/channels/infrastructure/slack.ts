@@ -48,6 +48,7 @@ import type {
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
+  AcpSessionLoadError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
@@ -1232,7 +1233,8 @@ export function createSlackWorker(
             resumeSessionId: existing.sessionId,
             ...sendOpts,
           });
-        } catch {
+        } catch (err) {
+          if (!(err instanceof AcpSessionLoadError)) throw err;
           args.onGhostTurn?.();
           return send(await args.buildFreshPrompt(), {
             platformMeta,

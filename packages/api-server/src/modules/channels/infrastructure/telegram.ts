@@ -13,7 +13,10 @@ import {
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { PostMessageOptions } from "../services/channel-manager.js";
-import { type AcpClientFactory } from "../../../core/acp-client.js";
+import {
+  AcpSessionLoadError,
+  type AcpClientFactory,
+} from "../../../core/acp-client.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -426,6 +429,7 @@ export function createTelegramWorker(deps: {
           outcome = "success";
           return;
         } catch (err) {
+          if (!(err instanceof AcpSessionLoadError)) throw err;
           process.stderr.write(
             `[telegram:${agentId}] resume failed, starting fresh: ${err}\n`,
           );
