@@ -67,8 +67,8 @@ pod may gain one sentence naming `_meta.platform.at`; do that in slice 01, not s
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Runtime stamps live frames with their time | Contract field; `session-transcript` stamps `append`/`appendEcho`, never `appendReplay` | — |
-| 02 | The Claude Code history reader passes its times through | `harness-history-lib.mjs` copies each stored message's timestamp onto the frames it emits | 01 |
+| 01 | ✅ Runtime stamps live frames with their time | Contract field; `session-transcript` stamps `append`/`appendEcho`, never `appendReplay` | — |
+| 02 | ✅ The Claude Code history reader passes its times through | `harness-history-lib.mjs` copies each stored message's timestamp onto the frames it emits | 01 |
 | 03 | The chat shows each message's time, and the day divider | `Message.at` through the projection; relative label + hover; `threadItems` derive with day dividers | 01 |
 | 04 | The run divider for scheduled runs | Runtime keeps run start times and surfaces them (load response + live notification); UI places run dividers | 03 |
 
