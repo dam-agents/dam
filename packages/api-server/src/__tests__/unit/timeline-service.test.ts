@@ -270,7 +270,7 @@ describe("traces across both tables", () => {
     }
   });
 
-  it("orders the merged listing newest first", async () => {
+  it("reads oldest first, so the listing runs the same way as the transcript", async () => {
     const { reader } = spyReader({
       traceShapes: async () => [
         shape({ traceId: "older", startedAt: "2026-09-14T11:00:00.000Z" }),
@@ -293,8 +293,35 @@ describe("traces across both tables", () => {
     const result = await service.traces({ sinceHours: 24, limit: 100 });
 
     expect(result.available && result.traces.map((t) => t.traceId)).toEqual([
-      "newer",
       "older",
+      "newer",
+    ]);
+  });
+
+  it("keeps the most recent traces when the cap bites, not the oldest", async () => {
+    /**
+     * TEST_SCENARIO: reading oldest-first must not turn the row cap into a
+     * window onto ancient history — the cap selects the newest, and only the
+     * display order is reversed.
+     */
+    const { reader } = spyReader({
+      traceShapes: async () => [
+        shape({ traceId: "t1", startedAt: "2026-09-14T10:00:00.000Z" }),
+        shape({ traceId: "t2", startedAt: "2026-09-14T11:00:00.000Z" }),
+        shape({ traceId: "t3", startedAt: "2026-09-14T12:00:00.000Z" }),
+      ],
+      logTraceShapes: async () => [],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.traces({ sinceHours: 24, limit: 2 });
+
+    expect(result.available && result.traces.map((t) => t.traceId)).toEqual([
+      "t2",
+      "t3",
     ]);
   });
 });

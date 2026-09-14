@@ -147,6 +147,13 @@ export function mergeShapes(
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
+export function newestFirstWindow(
+  shapes: readonly TraceShape[],
+  limit: number,
+): TraceShape[] {
+  return shapes.slice(0, limit).reverse();
+}
+
 function durationBetween(startedAt: string, endedAt: string): number {
   const from = Date.parse(startedAt);
   const to = Date.parse(endedAt);
@@ -197,7 +204,10 @@ export function createTimelineService(deps: {
         deps.reader.traceShapes(ids, window, query.limit),
         deps.reader.logTraceShapes(ids, window, query.limit),
       ]);
-      const shapes = mergeShapes(spanShapes, logShapes).slice(0, query.limit);
+      const shapes = newestFirstWindow(
+        mergeShapes(spanShapes, logShapes),
+        query.limit,
+      );
       if (shapes.length === 0) {
         return { available: true, traces: [], truncated: false };
       }
