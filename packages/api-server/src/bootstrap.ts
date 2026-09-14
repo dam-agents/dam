@@ -110,8 +110,7 @@ import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
-import { createTurnMetrics } from "./core/turn-metrics.js";
-import { startTurnMetricsSaga } from "./sagas/turn-metrics.js";
+import { composeUsageMetricsModule } from "./modules/usage-metrics/index.js";
 import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
@@ -528,9 +527,18 @@ export async function bootstrap() {
     db,
     namespace: config.namespace,
   });
-  const turnMetricsSub = startTurnMetricsSaga(
-    createTurnMetrics(metrics.getMeter("platform-apiserver")),
-  );
+  const usageMetrics = composeUsageMetricsModule({
+    meter: metrics.getMeter("platform-apiserver"),
+    templateOf: (agentId) => {
+      const agent = agentsRepo.peekCached(agentId);
+      return agent
+        ? { agent: "resolved", templateId: agent.templateId }
+        : { agent: "unresolved" };
+    },
+    knownTemplates: new Set((await templatesRepo.list()).map((t) => t.id)),
+    now: () => Date.now(),
+  });
+  usageMetrics.start();
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
   const usage = composeUsageModule({
@@ -1194,7 +1202,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
-    turnMetricsSub.unsubscribe();
+    usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();

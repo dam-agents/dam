@@ -9,6 +9,7 @@ export interface AgentChangeSubscription {
 
 export interface AgentStateCache {
   get(id: string): Promise<KubeObject | null>;
+  peekCached(id: string): KubeObject | null;
   list(owner?: string): Promise<KubeObject[]>;
   whenChanged(id: string): AgentChangeSubscription;
 }
@@ -33,6 +34,7 @@ function noChangeSignal(): AgentChangeSubscription {
 export function createLiveAgentStateCache(live: LiveReads): AgentStateCache {
   return {
     get: (id) => live.getCustomObject(AGENTS_PLURAL, id),
+    peekCached: () => null,
     list: (owner) =>
       live.listCustomObjects(AGENTS_PLURAL, ownerSelector(owner)),
     whenChanged: noChangeSignal,
@@ -115,6 +117,10 @@ export function startAgentStateCache(deps: {
   return {
     async get(id) {
       if (!synced) return deps.live.getCustomObject(AGENTS_PLURAL, id);
+      return deps.informer.get(id, deps.namespace) ?? null;
+    },
+    peekCached(id) {
+      if (!synced) return null;
       return deps.informer.get(id, deps.namespace) ?? null;
     },
     async list(owner) {
