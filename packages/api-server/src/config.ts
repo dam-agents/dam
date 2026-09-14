@@ -101,7 +101,8 @@ const configSchema = z.object({
   redisUrl: z.string().nullable().default(null),
   redisPassword: z.string().nullable().default(null),
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
-  acpTurnCeilingSeconds: z.coerce.number().int().positive().default(3600),
+  acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
+  acpTurnRunawayCapSeconds: z.coerce.number().int().nonnegative().default(21600),
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
@@ -151,11 +152,21 @@ const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 
 const validatedConfigSchema = configSchema
-  .refine((c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds, {
+  .refine((c) => c.acpTurnStallProbeSeconds >= c.approvalHoldSeconds, {
     message:
-      "acpTurnCeilingSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval does not die before the hold resolves",
-    path: ["acpTurnCeilingSeconds"],
+      "acpTurnStallProbeSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval is never probed for staleness before the hold resolves",
+    path: ["acpTurnStallProbeSeconds"],
   })
+  .refine(
+    (c) =>
+      c.acpTurnRunawayCapSeconds === 0 ||
+      c.acpTurnRunawayCapSeconds >= c.acpTurnStallProbeSeconds,
+    {
+      message:
+        "acpTurnRunawayCapSeconds must be 0 (disabled) or >= acpTurnStallProbeSeconds",
+      path: ["acpTurnRunawayCapSeconds"],
+    },
+  )
   .refine(
     (c) =>
       (c.objectStorageAccessKeyId == null) ===
@@ -246,7 +257,8 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
-    acpTurnCeilingSeconds: process.env.ACP_TURN_CEILING_SECONDS,
+    acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
+    acpTurnRunawayCapSeconds: process.env.ACP_TURN_RUNAWAY_CAP_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,

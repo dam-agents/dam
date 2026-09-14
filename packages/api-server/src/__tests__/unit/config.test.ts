@@ -16,10 +16,11 @@ const REQUIRED_ENV: Record<string, string> = {
 const MANAGED_KEYS = [
   ...Object.keys(REQUIRED_ENV),
   "APPROVAL_HOLD_SECONDS",
-  "ACP_TURN_CEILING_SECONDS",
+  "ACP_TURN_STALL_PROBE_SECONDS",
+  "ACP_TURN_RUNAWAY_CAP_SECONDS",
 ];
 
-describe("loadConfig — acpTurnCeilingSeconds vs approvalHoldSeconds invariant", () => {
+describe("loadConfig — turn watch invariants", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -37,24 +38,37 @@ describe("loadConfig — acpTurnCeilingSeconds vs approvalHoldSeconds invariant"
     }
   });
 
-  it("rejects a ceiling below the approval hold", () => {
+  it("rejects a stall probe below the approval hold", () => {
     process.env.APPROVAL_HOLD_SECONDS = "1800";
-    process.env.ACP_TURN_CEILING_SECONDS = "60";
+    process.env.ACP_TURN_STALL_PROBE_SECONDS = "60";
     expect(() => loadConfig()).toThrow(
-      /acpTurnCeilingSeconds must be >= approvalHoldSeconds/,
+      /acpTurnStallProbeSeconds must be >= approvalHoldSeconds/,
     );
   });
 
-  it("accepts a ceiling equal to the approval hold", () => {
+  it("accepts a stall probe equal to the approval hold", () => {
     process.env.APPROVAL_HOLD_SECONDS = "1800";
-    process.env.ACP_TURN_CEILING_SECONDS = "1800";
-    expect(loadConfig().acpTurnCeilingSeconds).toBe(1800);
+    process.env.ACP_TURN_STALL_PROBE_SECONDS = "1800";
+    expect(loadConfig().acpTurnStallProbeSeconds).toBe(1800);
   });
 
-  it("accepts the built-in defaults (1h ceiling, 30m hold)", () => {
+  it("rejects a nonzero runaway cap below the stall probe", () => {
+    process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "60";
+    expect(() => loadConfig()).toThrow(
+      /acpTurnRunawayCapSeconds must be 0 \(disabled\) or >=/,
+    );
+  });
+
+  it("accepts a zero runaway cap as disabled", () => {
+    process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "0";
+    expect(loadConfig().acpTurnRunawayCapSeconds).toBe(0);
+  });
+
+  it("accepts the built-in defaults (30m probe, 6h cap, 30m hold)", () => {
     const config = loadConfig();
     expect(config.approvalHoldSeconds).toBe(1800);
-    expect(config.acpTurnCeilingSeconds).toBe(3600);
+    expect(config.acpTurnStallProbeSeconds).toBe(1800);
+    expect(config.acpTurnRunawayCapSeconds).toBe(21600);
   });
 });
 

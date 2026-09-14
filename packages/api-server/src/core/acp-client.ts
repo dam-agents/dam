@@ -12,7 +12,11 @@ import { getLogger } from "./logger.js";
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
-const DEFAULT_TURN_CEILING_MS = 60 * 60 * 1000;
+const DEFAULT_STALL_PROBE_MS = 30 * 60 * 1000;
+const DEFAULT_RUNAWAY_CAP_MS = 6 * 60 * 60 * 1000;
+const RUNAWAY_CANCEL_GRACE_MS = 60_000;
+const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
+const RUN_RESULT_METHOD = "platform/runResult";
 
 const STEER_METHOD = "_session/steering";
 const STEER_CEILING_MS = 30_000;
@@ -24,15 +28,55 @@ export class AcpSessionLoadError extends Error {
   }
 }
 
-export type AcpTurnAbandonCause = "connection-lost" | "ceiling";
+export type AcpTurnAbandonCause = "connection-lost" | "stalled" | "runaway";
 
 export class AcpTurnAbandonedError extends Error {
+  readonly capSeconds: number | undefined;
+
   constructor(
     readonly abandonCause: AcpTurnAbandonCause,
     message: string,
+    opts?: { capSeconds?: number },
   ) {
     super(message);
     this.name = "AcpTurnAbandonedError";
+    this.capSeconds = opts?.capSeconds;
+  }
+}
+
+type ConnectionWatch =
+  | { kind: "deadline"; ms: number }
+  | {
+      kind: "turn";
+      stallProbeMs: number;
+      runawayCapMs: number;
+      sessionId: () => string | null;
+    };
+
+const runResultStatusSchema = z.object({ status: z.string() });
+
+async function probeTurnAlive(
+  connection: ClientSideConnection,
+  sessionId: string,
+): Promise<"alive" | "gone" | "unknown"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const raw = await Promise.race([
+      connection.extMethod(RUN_RESULT_METHOD, { sessionId }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("stall probe timed out")),
+          STALL_PROBE_RPC_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    const parsed = runResultStatusSchema.safeParse(raw);
+    if (!parsed.success) return "unknown";
+    return parsed.data.status === "pending" ? "alive" : "gone";
+  } catch {
+    return "unknown";
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -188,7 +232,7 @@ async function withAcpConnection<T>(
   url: string,
   clientName: string,
   handlers: { sessionUpdate?: (params: any) => Promise<void> },
-  turnCeilingMs: number,
+  watch: ConnectionWatch,
   fn: (
     connection: ClientSideConnection,
     init: InitializeResponse,
@@ -201,6 +245,10 @@ async function withAcpConnection<T>(
     "connection-lost",
     "ACP connection aborted",
   );
+  const abortWith = (err: Error) => {
+    abortError = err;
+    ac.abort();
+  };
 
   let missedPongs = 0;
   ws.on("pong", () => {
@@ -208,11 +256,12 @@ async function withAcpConnection<T>(
   });
   const heartbeat = setInterval(() => {
     if (missedPongs >= MAX_MISSED_PONGS) {
-      abortError = new AcpTurnAbandonedError(
-        "connection-lost",
-        "ACP connection lost (agent unreachable)",
+      abortWith(
+        new AcpTurnAbandonedError(
+          "connection-lost",
+          "ACP connection lost (agent unreachable)",
+        ),
       );
-      ac.abort();
       return;
     }
     missedPongs += 1;
@@ -223,13 +272,10 @@ async function withAcpConnection<T>(
     }
   }, PING_INTERVAL_MS);
 
-  const ceiling = setTimeout(() => {
-    abortError = new AcpTurnAbandonedError(
-      "ceiling",
-      `ACP turn exceeded the ${Math.round(turnCeilingMs / 1000)}s ceiling`,
-    );
-    ac.abort();
-  }, turnCeilingMs);
+  let lastFrameAt = Date.now();
+  ws.on("message", () => {
+    lastFrameAt = Date.now();
+  });
 
   const connection = new ClientSideConnection(
     () => ({
@@ -255,9 +301,79 @@ async function withAcpConnection<T>(
     stream,
   );
 
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let probeTimer: ReturnType<typeof setInterval> | undefined;
+  let capTimer: ReturnType<typeof setTimeout> | undefined;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  let runawayError: AcpTurnAbandonedError | null = null;
+
+  if (watch.kind === "deadline") {
+    deadlineTimer = setTimeout(() => {
+      abortWith(
+        new Error(
+          `ACP call exceeded its ${Math.round(watch.ms / 1000)}s deadline`,
+        ),
+      );
+    }, watch.ms);
+  } else {
+    let probing = false;
+    probeTimer = setInterval(() => {
+      if (probing) return;
+      if (Date.now() - lastFrameAt < watch.stallProbeMs) return;
+      const sessionId = watch.sessionId();
+      if (sessionId === null) return;
+      probing = true;
+      void probeTurnAlive(connection, sessionId)
+        .then((verdict) => {
+          if (verdict === "alive") {
+            lastFrameAt = Date.now();
+          } else if (verdict === "gone") {
+            abortWith(
+              new AcpTurnAbandonedError(
+                "stalled",
+                "ACP turn went silent and the agent reports it is no longer running",
+              ),
+            );
+          }
+        })
+        .finally(() => {
+          probing = false;
+        });
+    }, watch.stallProbeMs);
+
+    if (watch.runawayCapMs > 0) {
+      capTimer = setTimeout(() => {
+        const capSeconds = Math.round(watch.runawayCapMs / 1000);
+        runawayError = new AcpTurnAbandonedError(
+          "runaway",
+          `ACP turn cancelled at the ${capSeconds}s runaway cap`,
+          { capSeconds },
+        );
+        const sessionId = watch.sessionId();
+        if (sessionId !== null) {
+          void Promise.resolve(connection.cancel({ sessionId })).catch(
+            (err) => {
+              getLogger().debug(
+                { err, clientName, sessionId },
+                "acp runaway cancel failed",
+              );
+            },
+          );
+        }
+        graceTimer = setTimeout(
+          () => abortWith(runawayError!),
+          RUNAWAY_CANCEL_GRACE_MS,
+        );
+      }, watch.runawayCapMs);
+    }
+  }
+
   const cleanup = () => {
     clearInterval(heartbeat);
-    clearTimeout(ceiling);
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    if (probeTimer !== undefined) clearInterval(probeTimer);
+    if (capTimer !== undefined) clearTimeout(capTimer);
+    if (graceTimer !== undefined) clearTimeout(graceTimer);
     if (
       ws.readyState === WebSocket.OPEN ||
       ws.readyState === WebSocket.CONNECTING
@@ -271,7 +387,7 @@ async function withAcpConnection<T>(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    return await Promise.race([
+    const result = await Promise.race([
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
@@ -283,6 +399,8 @@ async function withAcpConnection<T>(
         });
       }),
     ]);
+    if (runawayError !== null) throw runawayError;
+    return result;
   } finally {
     cleanup();
   }
@@ -290,18 +408,28 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
+export interface AcpTurnWatchConfig {
+  stallProbeMs?: number;
+  runawayCapMs?: number;
+}
+
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
-  turnCeilingMs?: number;
+  turnWatch?: AcpTurnWatchConfig;
 }): AcpClient {
   return createAcpClientForUrl(
     `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
-    opts.turnCeilingMs ?? DEFAULT_TURN_CEILING_MS,
+    opts.turnWatch ?? {},
   );
 }
 
-function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
+function createAcpClientForUrl(
+  url: string,
+  turnWatch: AcpTurnWatchConfig,
+): AcpClient {
+  const stallProbeMs = turnWatch.stallProbeMs ?? DEFAULT_STALL_PROBE_MS;
+  const runawayCapMs = turnWatch.runawayCapMs ?? DEFAULT_RUNAWAY_CAP_MS;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       const { stream, ws } = await wsStream(url);
@@ -357,6 +485,8 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
     ): Promise<string> {
       const responseChunks: string[] = [];
       let live = false;
+      let watchSessionId: string | null =
+        "resumeSessionId" in sendOpts ? sendOpts.resumeSessionId : null;
 
       await withAcpConnection(
         url,
@@ -384,7 +514,12 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
             }
           },
         },
-        turnCeilingMs,
+        {
+          kind: "turn",
+          stallProbeMs,
+          runawayCapMs,
+          sessionId: () => watchSessionId,
+        },
         async (connection, init) => {
           let sessionId: string;
           if ("resumeSessionId" in sendOpts) {
@@ -411,6 +546,7 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
               }),
             } as Parameters<typeof connection.newSession>[0]);
             sessionId = s.sessionId;
+            watchSessionId = sessionId;
           }
           try {
             sendOpts.onSession?.(sessionId);
@@ -455,7 +591,7 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
           url,
           "platform-steer",
           {},
-          STEER_CEILING_MS,
+          { kind: "deadline", ms: STEER_CEILING_MS },
           async (connection, init) => {
             if (!steeringSupported(init)) return "unsupported";
             const raw = await connection.extMethod(STEER_METHOD, {
@@ -479,11 +615,18 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
     async triggerSession(
       triggerOpts: TriggerSessionOpts,
     ): Promise<TriggerSessionResult> {
+      let watchSessionId: string | null =
+        "resumeSessionId" in triggerOpts ? triggerOpts.resumeSessionId : null;
       return withAcpConnection(
         url,
         "platform-trigger",
         {},
-        turnCeilingMs,
+        {
+          kind: "turn",
+          stallProbeMs,
+          runawayCapMs,
+          sessionId: () => watchSessionId,
+        },
         async (connection, _init) => {
           let sessionId: string;
           const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
@@ -505,6 +648,7 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
           } else {
             const s = await connection.newSession({ cwd: ".", mcpServers });
             sessionId = s.sessionId;
+            watchSessionId = sessionId;
             await triggerOpts.onSessionCreated(sessionId);
           }
 
