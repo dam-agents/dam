@@ -217,13 +217,19 @@ func outerRouteConfig(t *testing.T, doc map[string]any) map[string]any {
 	return nil
 }
 
-func assertStripsAttribution(t *testing.T, got string) {
+func collectorChainRoute(t *testing.T, doc map[string]any) map[string]any {
 	t.Helper()
-	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
-	require.NotNil(t, rc, "the outer listener must have a route configuration")
-	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
-		rc["request_headers_to_remove"],
-		"every route out of the outer listener drops agent-supplied attribution")
+	chain := filterChainNamed(t, doc, "terminate_otel_collector")
+	require.NotNil(t, chain)
+	filters, _ := chain["filters"].([]any)
+	fm, _ := filters[0].(map[string]any)
+	hcm, _ := fm["typed_config"].(map[string]any)
+	rc, _ := hcm["route_config"].(map[string]any)
+	vhosts, _ := rc["virtual_hosts"].([]any)
+	vh, _ := vhosts[0].(map[string]any)
+	routes, _ := vh["routes"].([]any)
+	r, _ := routes[0].(map[string]any)
+	return r
 }
 
 func filterChainNamed(t *testing.T, doc map[string]any, name string) map[string]any {
@@ -524,18 +530,64 @@ func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsPromotedChain(t *testin
 		"the promoted chain must be dropped so server names stay unique")
 }
 
-// TEST_SCENARIO: the gateway forwards ordinary agent traffic to whatever host the request names, the collector's own address included. If an agent could present its own attribution headers on that path the collector would trust them, so every route out of the outer listener removes both headers and the collector chain is the only thing that can set them.
-func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionHeaders(t *testing.T) {
+// TEST_SCENARIO: the gateway forwards ordinary agent traffic to whatever host the request names, and the collector answers to more names than the one configured value — short service DNS, its cluster IP, a second port. Matching those to stamp selectively cannot be made exhaustive, so the outer listener stamps every request it forwards for the agent, overwriting whatever the agent set.
+func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil)
 	require.NoError(t, err)
-	assertStripsAttribution(t, got)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc, "the outer listener must have a route configuration")
+	assert.Equal(t, []any{map[string]any{
+		"header":        map[string]any{"key": "x-platform-agent-id", "value": "inst-1"},
+		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+	}}, rc["request_headers_to_add"],
+		"every request the gateway forwards carries the gateway's own agent id")
+	assert.Equal(t, []any{"x-platform-invocation-id"}, rc["request_headers_to_remove"],
+		"a non-target may not smuggle an invocation id on any route")
 }
 
-// TEST_SCENARIO: the strip cannot be conditional on telemetry being on, because the collector chain that sets the headers is itself conditional — gating both the same way would leave the headers forwardable in exactly the configurations that render no chain to overwrite them.
+// TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
+func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testing.T) {
+	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc)
+	assert.Equal(t, []any{
+		map[string]any{
+			"header":        map[string]any{"key": "x-platform-agent-id", "value": "driver-root"},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		},
+		map[string]any{
+			"header":        map[string]any{"key": "x-platform-invocation-id", "value": "target-1"},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		},
+	}, rc["request_headers_to_add"])
+	assert.NotContains(t, rc, "request_headers_to_remove",
+		"a target stamps its invocation id rather than removing it")
+}
+
+// TEST_SCENARIO: two places now apply the attribution stamp, and a stamp that differed between them would attribute the same agent's telemetry two ways depending on the route it took. They are rendered from one helper, and this pins that they agree.
+func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testing.T) {
+	for _, ids := range [][2]string{{"inst-1", ""}, {"target-1", "driver-root"}} {
+		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil)
+		require.NoError(t, err)
+		doc := mustParseBootstrap(t, got)
+		rc := outerRouteConfig(t, doc)
+		route := collectorChainRoute(t, doc)
+		assert.Equal(t, route["request_headers_to_add"], rc["request_headers_to_add"], ids[0])
+		assert.Equal(t, route["request_headers_to_remove"], rc["request_headers_to_remove"], ids[0])
+	}
+}
+
+// TEST_SCENARIO: with no telemetry backend there is no collector to attribute to, so the gateway has no reason to disclose the agent's id to every plaintext host it calls — it removes the headers instead of stamping them, and still forwards none the agent set.
 func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
 	require.NoError(t, err)
-	assertStripsAttribution(t, got)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc)
+	assert.NotContains(t, rc, "request_headers_to_add",
+		"nothing to attribute to, so nothing is disclosed")
+	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
+		rc["request_headers_to_remove"])
 }
 
 func secretWithEnvMappings(name, secretType string, rawJSON string) corev1.Secret {

@@ -35,11 +35,12 @@ data:
         limit_percentage: 80
         spike_limit_percentage: 25
       # Trusted agent attribution. The paired gateway Envoy stamps the
-      # x-platform-agent-id header (overwriting anything the agent set) on the
-      # telemetry it forwards here; promote it to the platform.agent.id resource
-      # attribute. Nothing else reaching this collector can present these headers:
-      # the gateway strips both from every other request it forwards here, so this
-      # processor does not need to ask which route a request took.
+      # x-platform-agent-id header (overwriting anything the agent set) on every
+      # request it forwards for the agent, not only the ones it recognizes as
+      # telemetry; promote it to the platform.agent.id resource attribute. So a
+      # request arriving here by any route — any of this Service's names, either
+      # port — carries a gateway value rather than the agent's own claim, and this
+      # processor does not need to ask which route it took.
       # delete-then-set so a forged value can never survive a missing header:
       # unconditionally drop any client-supplied platform.agent.id, then set it
       # ONLY from the trusted header. MUST run before `batch`, which emits a new
