@@ -1,9 +1,9 @@
-// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped and started; a running one that should stop is stopped; delete removes the machine and frees its port; the published port is stable for the machine's life and unique on the node.
+// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package sandboxnode
 
 import (
 	"bytes"
-	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +24,7 @@ case "$2" in
     [ -f "$FAKE_STATE/$name" ] || { echo "machine '$name' not found" >&2; exit 1; }
     echo "{\"state\":\"$(cat "$FAKE_STATE/$name")\"}" ;;
   create) echo created > "$FAKE_STATE/$4" ;;
-  start) echo running > "$FAKE_STATE/$4" ;;
+  start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"; echo running > "$FAKE_STATE/$4" ;;
   stop) echo stopped > "$FAKE_STATE/$4" ;;
   delete) rm -f "$FAKE_STATE/$4" ;;
 esac
@@ -32,6 +32,7 @@ esac
 
 type harness struct {
 	srv   *httptest.Server
+	node  *Server
 	log   string
 	state string
 }
@@ -45,25 +46,39 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, os.MkdirAll(h.state, 0o755))
 	t.Setenv("FAKE_LOG", h.log)
 	t.Setenv("FAKE_STATE", h.state)
-	s := &Server{Token: "secret", StateDir: filepath.Join(dir, "machines"), Smolvm: bin, PortMin: 31000, PortMax: 31001}
-	h.srv = httptest.NewServer(s.Handler())
+	h.node = &Server{Token: "secret", StateDir: filepath.Join(dir, "machines"), Smolvm: bin, PortMin: 31000, PortMax: 31001}
+	require.NoError(t, h.node.Start())
+	t.Cleanup(h.node.Close)
+	h.srv = httptest.NewServer(h.node.Handler())
 	t.Cleanup(h.srv.Close)
-	t.Cleanup(s.Close)
 	return h
+}
+
+func (h *harness) client() *Client {
+	c, _ := NewClient(h.srv.URL, "secret", "")
+	return c
 }
 
 func (h *harness) calls() string {
 	b, _ := os.ReadFile(h.log)
-	return string(b)
+	var ops []string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line != "" && !strings.HasPrefix(line, "machine status") {
+			ops = append(ops, line)
+		}
+	}
+	return strings.Join(ops, "\n") + "\n"
 }
 
-func (h *harness) waitIdle(t *testing.T, c *Client, id string) MachineStatus {
+func (h *harness) settle(t *testing.T, id string) MachineStatus {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		st, err := c.Status(t.Context(), id)
+		st, err := h.client().Status(t.Context(), id)
 		require.NoError(t, err)
-		if st.State != StateCreating && st.State != StateStarting && st.State != StateStopping {
+		switch st.State {
+		case StateCreating, StateStarting, StateStopping, StateRestarting:
+		default:
 			return st
 		}
 		require.True(t, time.Now().Before(deadline), "operation never finished: %+v", st)
@@ -72,7 +87,7 @@ func (h *harness) waitIdle(t *testing.T, c *Client, id string) MachineStatus {
 }
 
 func spec(running bool) MachineSpec {
-	return MachineSpec{Image: "quay.io/x/vm:1", CPUs: 2, MemoryMiB: 2048, StorageGiB: 5, Running: running,
+	return MachineSpec{Image: "quay.io/x/vm:1", CPUs: 2, MemoryMiB: 2048, StorageGiB: 5, Running: running, Revision: "r1",
 		Env: map[string]string{"HTTPS_PROXY": "http://10.0.0.1:10000", "A": "b"}, CACert: "PEM", AllowCIDRs: []string{"10.0.0.1/32"}}
 }
 
@@ -94,26 +109,27 @@ func TestRejectsWrongToken(t *testing.T) {
 	resp.Body.Close()
 }
 
-// TEST_SCENARIO: a vm agent waking for the first time: the machine is created with everything the guest needs to reach only its gateway, then started; the same request again is a no-op that reports the running machine and its port.
+// TEST_SCENARIO: a vm agent waking for the first time: the machine is created with everything the guest needs to reach only its gateway, then started; the same request again is a no-op that reports the running machine, its port and its applied size.
 func TestCreatesAndStartsAnAbsentMachine(t *testing.T) {
 	h := newHarness(t)
-	c := NewClient(h.srv.URL, "secret")
+	c := h.client()
 
 	st, err := c.Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	assert.Equal(t, StateCreating, st.State)
-
-	st = h.waitIdle(t, c, "agent-a")
+	st = h.settle(t, "agent-a")
 	assert.Equal(t, StateRunning, st.State)
 	assert.Equal(t, 31000, st.Port)
+	assert.Equal(t, 2, st.CPUs)
+	assert.Equal(t, 2048, st.MemoryMiB)
 	assert.False(t, st.Ready, "nothing listens on the guest side in this test")
 
 	calls := h.calls()
 	assert.Contains(t, calls, "machine create -n agent-a -I quay.io/x/vm:1")
-	assert.Contains(t, calls, "--cpus 2 --mem 2048 --storage 5 -u root --net -p 32000:8080")
+	assert.Contains(t, calls, "--cpus 2 --mem 2048 --storage 5 -u root --net --net-backend virtio-net -p 32000:8080")
 	assert.Contains(t, calls, "/agent-a/ca:/etc/platform/ca:ro --allow-cidr 10.0.0.1/32 -e A=b -e HTTPS_PROXY=http://10.0.0.1:10000")
 	assert.Contains(t, calls, "machine start -n agent-a")
-	ca, err := os.ReadFile(filepath.Join(filepath.Dir(h.state), "machines", "agent-a", "ca", "ca.crt"))
+	ca, err := os.ReadFile(filepath.Join(h.node.StateDir, "machines", "agent-a", "ca", "ca.crt"))
 	require.NoError(t, err)
 	assert.Equal(t, "PEM", string(ca))
 
@@ -121,82 +137,121 @@ func TestCreatesAndStartsAnAbsentMachine(t *testing.T) {
 	st, err = c.Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	assert.Equal(t, StateRunning, st.State)
-	assert.Equal(t, before, h.calls()[:len(before)])
 	assert.NotContains(t, h.calls()[len(before):], "create")
+	assert.NotContains(t, h.calls()[len(before):], "stop")
 }
 
-// TEST_SCENARIO: hibernate then wake: stopping keeps the machine and its port; the wake re-applies the shape (a template may have changed cpus, memory or env) before starting.
+// TEST_SCENARIO: hibernate then wake: stopping keeps the machine and its port; the wake re-applies the shape (a template may have changed cpus, memory, env or grown the disk) before starting, dropping env keys that went away. A machine that should not run is never created.
 func TestStopsAndRestartsKeepingThePort(t *testing.T) {
 	h := newHarness(t)
-	c := NewClient(h.srv.URL, "secret")
+	c := h.client()
 	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
-	h.waitIdle(t, c, "agent-a")
+	h.settle(t, "agent-a")
 
 	st, err := c.Ensure(t.Context(), "agent-a", spec(false))
 	require.NoError(t, err)
 	assert.Equal(t, StateStopping, st.State)
-	st = h.waitIdle(t, c, "agent-a")
+	st = h.settle(t, "agent-a")
 	assert.Equal(t, StateStopped, st.State)
 	assert.Equal(t, 31000, st.Port)
 
 	bigger := spec(true)
-	bigger.CPUs = 4
+	bigger.CPUs, bigger.StorageGiB = 4, 8
+	delete(bigger.Env, "A")
 	_, err = c.Ensure(t.Context(), "agent-a", bigger)
 	require.NoError(t, err)
-	st = h.waitIdle(t, c, "agent-a")
+	st = h.settle(t, "agent-a")
 	assert.Equal(t, StateRunning, st.State)
 	assert.Equal(t, 31000, st.Port)
-	assert.Contains(t, h.calls(), "machine update -n agent-a --cpus 4 --mem 2048 -e A=b")
+	assert.Equal(t, 4, st.CPUs)
+	assert.Contains(t, h.calls(), "machine update -n agent-a --cpus 4 --mem 2048 --storage 8 --remove-env A -e HTTPS_PROXY=http://10.0.0.1:10000")
 
 	_, err = c.Ensure(t.Context(), "agent-b", spec(false))
 	require.NoError(t, err)
 	assert.NotContains(t, h.calls(), "create -n agent-b", "a machine that should not run is never created")
 }
 
-// TEST_SCENARIO: ports are the node's scarce resource: two machines never share one, and deleting a machine gives its port back.
-func TestPortsAreUniqueAndReleasedOnDelete(t *testing.T) {
+// TEST_SCENARIO: the restart verb rolls the Agent's revision, and a resize or env change lands while the machine runs: each is a stop, an in-place update and a start — never a recreate, so the machine's disk and port stay.
+func TestRestartsInPlaceOnRevisionOrShapeChange(t *testing.T) {
 	h := newHarness(t)
-	c := NewClient(h.srv.URL, "secret")
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+
+	rolled := spec(true)
+	rolled.Revision = "r2"
+	st, err := c.Ensure(t.Context(), "agent-a", rolled)
+	require.NoError(t, err)
+	assert.Equal(t, StateRestarting, st.State)
+	st = h.settle(t, "agent-a")
+	assert.Equal(t, StateRunning, st.State)
+	assert.Empty(t, st.Message)
+	assert.True(t, strings.HasSuffix(h.calls(), "machine stop -n agent-a\nmachine update -n agent-a --cpus 2 --mem 2048 -e A=b -e HTTPS_PROXY=http://10.0.0.1:10000\nmachine start -n agent-a\n"), h.calls())
+
+	resized := rolled
+	resized.MemoryMiB = 4096
+	_, err = c.Ensure(t.Context(), "agent-a", resized)
+	require.NoError(t, err)
+	assert.Equal(t, 4096, h.settle(t, "agent-a").MemoryMiB)
+	assert.Contains(t, h.calls(), "machine update -n agent-a --cpus 2 --mem 4096")
+	assert.Equal(t, 1, strings.Count(h.calls(), "machine create"))
+	assert.NotContains(t, h.calls(), "delete")
+}
+
+// TEST_SCENARIO: ports are the node's scarce resource: two machines never share one, and deleting a machine gives its port back; a delete arriving while a start is still in flight waits for it instead of orphaning the VM.
+func TestPortsAreUniqueAndDeleteWaitsForInFlightWork(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
 	for _, id := range []string{"agent-a", "agent-b"} {
 		_, err := c.Ensure(t.Context(), id, spec(true))
 		require.NoError(t, err)
-		h.waitIdle(t, c, id)
+		h.settle(t, id)
 	}
-	assert.Equal(t, 31001, h.waitIdle(t, c, "agent-b").Port)
+	assert.Equal(t, 31001, h.settle(t, "agent-b").Port)
 
 	_, err := c.Ensure(t.Context(), "agent-c", spec(true))
 	require.NoError(t, err)
-	st := h.waitIdle(t, c, "agent-c")
+	st := h.settle(t, "agent-c")
 	assert.Equal(t, StateAbsent, st.State)
 	assert.Contains(t, st.Message, "no free machine port")
 
 	require.NoError(t, c.Delete(t.Context(), "agent-a"))
 	assert.Contains(t, h.calls(), "machine delete -n agent-a -f")
-	st, err = c.Status(t.Context(), "agent-a")
-	require.NoError(t, err)
-	assert.Equal(t, StateAbsent, st.State)
+	assert.Equal(t, StateAbsent, h.settle(t, "agent-a").State)
 
+	t.Setenv("FAKE_START_SLEEP", "0.3")
 	_, err = c.Ensure(t.Context(), "agent-c", spec(true))
 	require.NoError(t, err)
-	assert.Equal(t, 31000, h.waitIdle(t, c, "agent-c").Port)
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, c.Delete(t.Context(), "agent-c"))
+	assert.True(t, strings.HasSuffix(h.calls(), "machine start -n agent-c\nmachine delete -n agent-c -f\n"), h.calls())
 }
 
-// TEST_SCENARIO: a locally built image has no registry; when the node holds a docker-save archive named after the reference, the machine is created from that archive instead of pulling.
-func TestUsesLocalArchiveWhenPresent(t *testing.T) {
+// TEST_SCENARIO: the published port is the guest's only inbound path; with an allow-list only those sources get through, everyone else is dropped at accept. A locally loaded archive named after the reference beats a registry pull, so a dev cluster never needs a registry.
+func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	h := newHarness(t)
-	c := NewClient(h.srv.URL, "secret")
-	archive := filepath.Join(filepath.Dir(h.state), "machines", "images", "platform-claude-code-vm_latest.tar")
+	_, other, _ := net.ParseCIDR("203.0.113.0/24")
+	h.node.AllowFrom = []*net.IPNet{other}
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	conn, err := net.Dial("tcp", "127.0.0.1:31000")
+	require.NoError(t, err)
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, err = conn.Read(make([]byte, 1))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "timeout", "connection from a disallowed source is closed, not left hanging")
+
+	archive := filepath.Join(h.node.StateDir, "images", "platform-claude-code-vm_latest.tar")
 	require.NoError(t, os.MkdirAll(filepath.Dir(archive), 0o755))
 	require.NoError(t, os.WriteFile(archive, []byte("tar"), 0o644))
-
 	s := spec(true)
 	s.Image = "platform-claude-code-vm:latest"
-	_, err := c.Ensure(t.Context(), "agent-a", s)
+	_, err = h.client().Ensure(t.Context(), "agent-b", s)
 	require.NoError(t, err)
-	h.waitIdle(t, c, "agent-a")
+	h.settle(t, "agent-b")
 	assert.Contains(t, h.calls(), "-I "+archive)
-	var body bytes.Buffer
-	require.NoError(t, json.NewEncoder(&body).Encode(s))
-	assert.True(t, strings.Contains(h.calls(), "--max-image-size 16GiB"))
 }

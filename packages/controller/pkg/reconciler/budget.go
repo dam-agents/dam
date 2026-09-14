@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
 )
 
 type budgetVerdict struct {
@@ -68,7 +69,18 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		return allowedVerdict, false, nil
 	}
 	newCPU, newMem := r.limitsOf(&agent.Spec)
-	{
+	if agent.Spec.IsVM() {
+		if r.vmNode == nil {
+			return allowedVerdict, false, nil
+		}
+		st, err := r.vmNode.Status(ctx, agent.Name)
+		if err != nil {
+			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
+		}
+		if st.State != sandboxnode.StateRunning || (newCPU.MilliValue() <= int64(st.CPUs)*1000 && newMem.Value() <= int64(st.MemoryMiB)<<20) {
+			return allowedVerdict, false, nil
+		}
+	} else {
 		ns := r.config.Namespace
 		existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
 		if err != nil {

@@ -26,8 +26,10 @@ mkdir -p /var/lib/rancher/k3s/agent/images
 [ -e /var/lib/rancher/k3s/agent/images/k3s-airgap-images.tar.zst ] ||
 	ln -s /usr/local/share/platform-vm/k3s-airgap-images.tar.zst /var/lib/rancher/k3s/agent/images/
 
+# dockerd gives up when its containerd child misses a 15 s start deadline,
+# which a first boot still unpacking the image can blow; retry until it holds.
 if command -v dockerd >/dev/null 2>&1; then
-	dockerd >/var/log/dockerd.log 2>&1 &
+	(while ! dockerd >>/var/log/dockerd.log 2>&1; do sleep 5; done) &
 fi
 
 exec /usr/libexec/catatonit/catatonit -- /usr/local/bin/agent-entrypoint "$@"

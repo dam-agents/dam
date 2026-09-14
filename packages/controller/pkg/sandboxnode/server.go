@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -24,26 +25,30 @@ import (
 const (
 	guestAgentPort = 8080
 	loopbackOffset = 1000
+	opTimeout      = 30 * time.Minute
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type Server struct {
-	Token    string
-	StateDir string
-	Smolvm   string
-	PortMin  int
-	PortMax  int
+	Token     string
+	StateDir  string
+	Smolvm    string
+	PortMin   int
+	PortMax   int
+	AllowFrom []*net.IPNet
 
 	mu        sync.Mutex
+	locks     map[string]*sync.Mutex
 	pending   map[string]string
 	lastErr   map[string]string
 	listeners map[string]net.Listener
 }
 
 func (s *Server) Start() error {
-	entries, err := os.ReadDir(s.StateDir)
-	if err != nil {
+	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
+	entries, err := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	for _, e := range entries {
@@ -63,38 +68,6 @@ func (s *Server) Close() {
 		ln.Close()
 		delete(s.listeners, id)
 	}
-}
-
-func (s *Server) forward(id string, port int) error {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return fmt.Errorf("publishing machine %s on :%d: %w", id, port, err)
-	}
-	s.mu.Lock()
-	if s.listeners == nil {
-		s.listeners = map[string]net.Listener{}
-	}
-	s.listeners[id] = ln
-	s.mu.Unlock()
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer conn.Close()
-				guest, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port+loopbackOffset), 3*time.Second)
-				if err != nil {
-					return
-				}
-				defer guest.Close()
-				go func() { _, _ = io.Copy(guest, conn) }()
-				_, _ = io.Copy(conn, guest)
-			}()
-		}
-	}()
-	return nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -132,149 +105,105 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.status(id)
-	switch {
-	case st.State == StateCreating, st.State == StateStarting, st.State == StateStopping:
-	case spec.Running && st.State == StateAbsent:
-		s.spawn(id, StateCreating, func() error { return s.create(id, spec) })
-		st.State = StateCreating
-	case spec.Running && st.State == StateStopped:
-		s.spawn(id, StateStarting, func() error { return s.start(id, spec) })
-		st.State = StateStarting
-	case !spec.Running && st.State == StateRunning:
-		s.spawn(id, StateStopping, func() error { return s.smolvm("machine", "stop", "-n", id) })
-		st.State = StateStopping
+	if op := s.plan(id, spec, st); op != "" {
+		s.spawn(id, op, func() error { return s.ensure(id, spec) })
+		st.State = op
 	}
-	st.Message = s.errorOf(id)
 	writeJSON(w, st)
 }
 
-func (s *Server) get(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	st := s.status(id)
-	st.Message = s.errorOf(id)
-	writeJSON(w, st)
-}
-
-func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if st := s.status(id); st.State != StateAbsent {
-		if err := s.smolvm("machine", "delete", "-n", id, "-f"); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) string {
+	switch st.State {
+	case StateAbsent:
+		if spec.Running {
+			return StateCreating
+		}
+	case StateStopped:
+		if spec.Running {
+			return StateStarting
+		}
+	case StateRunning:
+		if !spec.Running {
+			return StateStopping
+		}
+		if applied := s.readSpec(id); applied == nil || needsRestart(*applied, spec) {
+			return StateRestarting
 		}
 	}
-	if err := os.RemoveAll(s.machineDir(id)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.mu.Lock()
-	delete(s.lastErr, id)
-	if ln := s.listeners[id]; ln != nil {
-		ln.Close()
-		delete(s.listeners, id)
-	}
-	s.mu.Unlock()
-	w.WriteHeader(http.StatusNoContent)
+	return ""
 }
 
-func (s *Server) spawn(id, state string, op func() error) {
-	s.mu.Lock()
-	if s.pending == nil {
-		s.pending = map[string]string{}
-		s.lastErr = map[string]string{}
-	}
-	s.pending[id] = state
-	s.mu.Unlock()
-	go func() {
-		err := op()
-		s.mu.Lock()
-		delete(s.pending, id)
-		if err != nil {
-			s.lastErr[id] = err.Error()
-			slog.Error("machine operation failed", "machine", id, "op", state, "error", err)
-		} else {
-			delete(s.lastErr, id)
+func needsRestart(applied, desired MachineSpec) bool {
+	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
+		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env)
+}
+
+func (s *Server) ensure(id string, spec MachineSpec) error {
+	state := s.machineState(id)
+	if !spec.Running {
+		if state == StateRunning {
+			return s.smolvm("machine", "stop", "-n", id)
 		}
-		s.mu.Unlock()
-	}()
-}
-
-func (s *Server) errorOf(id string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastErr[id]
-}
-
-func (s *Server) status(id string) MachineStatus {
-	s.mu.Lock()
-	pending := s.pending[id]
-	s.mu.Unlock()
-	port := s.port(id)
-	if pending != "" {
-		return MachineStatus{State: pending, Port: port}
+		return nil
 	}
-	out, err := exec.Command(s.Smolvm, "machine", "status", "-n", id, "--json").Output()
-	if err != nil {
-		return MachineStatus{State: StateAbsent}
-	}
-	var st struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal(out, &st); err != nil || st.State != "running" {
-		return MachineStatus{State: StateStopped, Port: port}
-	}
-	return MachineStatus{State: StateRunning, Port: port, Ready: s.healthy(port)}
-}
-
-func (s *Server) healthy(port int) bool {
-	if port == 0 {
-		return false
-	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port+loopbackOffset))
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
-
-func (s *Server) create(id string, spec MachineSpec) error {
-	dir := s.machineDir(id)
 	if err := s.writeCA(id, spec.CACert); err != nil {
 		return err
 	}
+	if state == StateAbsent {
+		if err := s.create(id, spec); err != nil {
+			return err
+		}
+		return s.writeSpec(id, spec)
+	}
+	applied := s.readSpec(id)
+	if state == StateRunning && (applied == nil || needsRestart(*applied, spec)) {
+		if err := s.smolvm("machine", "stop", "-n", id); err != nil {
+			return err
+		}
+		state = StateStopped
+	}
+	if state == StateStopped {
+		args := []string{"machine", "update", "-n", id, "--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB)}
+		if applied != nil && applied.StorageGiB < spec.StorageGiB {
+			args = append(args, "--storage", strconv.Itoa(spec.StorageGiB))
+		}
+		if applied != nil {
+			for k := range applied.Env {
+				if _, kept := spec.Env[k]; !kept {
+					args = append(args, "--remove-env", k)
+				}
+			}
+		}
+		if err := s.smolvm(append(args, envArgs(spec.Env)...)...); err != nil {
+			return err
+		}
+		if err := s.smolvm("machine", "start", "-n", id); err != nil {
+			return err
+		}
+	}
+	return s.writeSpec(id, spec)
+}
+
+func (s *Server) create(id string, spec MachineSpec) error {
 	port, err := s.allocatePort(id)
 	if err != nil {
 		return err
 	}
 	image := spec.Image
-	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_").Replace(image)+".tar"); fileExists(archive) {
+	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar"); fileExists(archive) {
 		image = archive
 	}
 	args := []string{"machine", "create", "-n", id, "-I", image, "--max-image-size", "16GiB",
 		"--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB), "--storage", strconv.Itoa(spec.StorageGiB),
-		"-u", "root", "--net", "-p", fmt.Sprintf("%d:%d", port+loopbackOffset, guestAgentPort),
-		"-v", filepath.Join(dir, "ca") + ":/etc/platform/ca:ro"}
+		"-u", "root", "--net", "--net-backend", "virtio-net", "-p", fmt.Sprintf("%d:%d", port+loopbackOffset, guestAgentPort),
+		"-v", filepath.Join(s.machineDir(id), "ca") + ":/etc/platform/ca:ro"}
 	for _, c := range spec.AllowCIDRs {
 		args = append(args, "--allow-cidr", c)
 	}
-	args = append(args, envArgs(spec.Env)...)
-	if err := s.smolvm(args...); err != nil {
+	if err := s.smolvm(append(args, envArgs(spec.Env)...)...); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
-		return err
-	}
-	return s.smolvm("machine", "start", "-n", id)
-}
-
-func (s *Server) start(id string, spec MachineSpec) error {
-	if err := s.writeCA(id, spec.CACert); err != nil {
-		return err
-	}
-	args := append([]string{"machine", "update", "-n", id, "--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB)}, envArgs(spec.Env)...)
-	if err := s.smolvm(args...); err != nil {
 		return err
 	}
 	return s.smolvm("machine", "start", "-n", id)
@@ -294,11 +223,174 @@ func envArgs(env map[string]string) []string {
 }
 
 func (s *Server) writeCA(id, ca string) error {
-	caDir := filepath.Join(s.machineDir(id), "ca")
-	if err := os.MkdirAll(caDir, 0o755); err != nil {
+	dir := filepath.Join(s.machineDir(id), "ca")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(caDir, "ca.crt"), []byte(ca), 0o644)
+	return os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(ca), 0o644)
+}
+
+func (s *Server) get(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.status(r.PathValue("id")))
+}
+
+func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	lock := s.lock(id)
+	lock.Lock()
+	defer lock.Unlock()
+	if s.machineState(id) != StateAbsent {
+		if err := s.smolvm("machine", "delete", "-n", id, "-f"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if err := os.RemoveAll(s.machineDir(id)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.mu.Lock()
+	delete(s.lastErr, id)
+	if ln := s.listeners[id]; ln != nil {
+		ln.Close()
+		delete(s.listeners, id)
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) lock(id string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, ok := s.locks[id]
+	if !ok {
+		l = &sync.Mutex{}
+		s.locks[id] = l
+	}
+	return l
+}
+
+func (s *Server) spawn(id, op string, fn func() error) {
+	s.mu.Lock()
+	s.pending[id] = op
+	s.mu.Unlock()
+	go func() {
+		lock := s.lock(id)
+		lock.Lock()
+		defer lock.Unlock()
+		err := fn()
+		s.mu.Lock()
+		delete(s.pending, id)
+		if err != nil {
+			s.lastErr[id] = err.Error()
+			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
+		} else {
+			delete(s.lastErr, id)
+		}
+		s.mu.Unlock()
+	}()
+}
+
+func (s *Server) status(id string) MachineStatus {
+	s.mu.Lock()
+	pending, lastErr := s.pending[id], s.lastErr[id]
+	s.mu.Unlock()
+	st := MachineStatus{State: StateAbsent, Port: s.port(id), Message: lastErr}
+	if spec := s.readSpec(id); spec != nil {
+		st.CPUs, st.MemoryMiB, st.StorageGiB = spec.CPUs, spec.MemoryMiB, spec.StorageGiB
+	}
+	if pending != "" {
+		st.State = pending
+		return st
+	}
+	st.State = s.machineState(id)
+	if st.State == StateRunning {
+		st.Ready = s.healthy(st.Port)
+	}
+	return st
+}
+
+func (s *Server) machineState(id string) string {
+	out, err := exec.Command(s.Smolvm, "machine", "status", "-n", id, "--json").Output()
+	if err != nil {
+		return StateAbsent
+	}
+	var st struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(out, &st); err != nil || st.State != "running" {
+		return StateStopped
+	}
+	return StateRunning
+}
+
+func (s *Server) healthy(port int) bool {
+	if port == 0 {
+		return false
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port+loopbackOffset))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func (s *Server) forward(id string, port int) error {
+	s.mu.Lock()
+	_, exists := s.listeners[id]
+	s.mu.Unlock()
+	if exists {
+		return nil
+	}
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return fmt.Errorf("publishing machine %s on :%d: %w", id, port, err)
+	}
+	s.mu.Lock()
+	s.listeners[id] = ln
+	s.mu.Unlock()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			if !s.allowed(conn.RemoteAddr()) {
+				conn.Close()
+				continue
+			}
+			go func() {
+				defer conn.Close()
+				guest, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port+loopbackOffset), 3*time.Second)
+				if err != nil {
+					return
+				}
+				defer guest.Close()
+				go func() { _, _ = io.Copy(guest, conn) }()
+				_, _ = io.Copy(conn, guest)
+			}()
+		}
+	}()
+	return nil
+}
+
+func (s *Server) allowed(addr net.Addr) bool {
+	if len(s.AllowFrom) == 0 {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	for _, n := range s.AllowFrom {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) allocatePort(id string) (int, error) {
@@ -308,7 +400,7 @@ func (s *Server) allocatePort(id string) (int, error) {
 		return p, nil
 	}
 	used := map[int]bool{}
-	entries, _ := os.ReadDir(s.StateDir)
+	entries, _ := os.ReadDir(filepath.Join(s.StateDir, "machines"))
 	for _, e := range entries {
 		used[s.port(e.Name())] = true
 	}
@@ -329,10 +421,31 @@ func (s *Server) port(id string) int {
 	return p
 }
 
-func (s *Server) machineDir(id string) string { return filepath.Join(s.StateDir, id) }
+func (s *Server) readSpec(id string) *MachineSpec {
+	b, err := os.ReadFile(filepath.Join(s.machineDir(id), "spec.json"))
+	if err != nil {
+		return nil
+	}
+	var spec MachineSpec
+	if json.Unmarshal(b, &spec) != nil {
+		return nil
+	}
+	return &spec
+}
+
+func (s *Server) writeSpec(id string, spec MachineSpec) error {
+	spec.Running = false
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.machineDir(id), "spec.json"), b, 0o600)
+}
+
+func (s *Server) machineDir(id string) string { return filepath.Join(s.StateDir, "machines", id) }
 
 func (s *Server) smolvm(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, s.Smolvm, args...).CombinedOutput()
 	if err != nil {

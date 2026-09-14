@@ -70,14 +70,20 @@ spec:
             - name: STORAGE_MIGRATION
               value: {{ .Values.controller.storageMigration | toJson | quote }}
             # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
+            {{- $node := .Values.virtualization.node }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" .Values.virtualization.node.url "nodeAddress" .Values.virtualization.node.address | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" (printf "https://%s:4600" $node.host) "nodeAddress" ($node.address | default $node.host) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: SANDBOX_NODE_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.fullname" . }}-sandbox-node
                   key: token
+            - name: SANDBOX_NODE_CA
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-sandbox-node
+                  key: tls.crt
             {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
