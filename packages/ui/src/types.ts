@@ -92,7 +92,7 @@ export interface TemplateView {
   name: string;
   image: string;
   description?: string;
-  category: "harness" | "preconfigured";
+  category: "harness";
   harness?: HarnessFamily;
   providers?: ProviderPresetType[];
   tags?: string[];

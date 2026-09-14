@@ -1,0 +1,23 @@
+schemaVersion: v1
+id: gepa
+name: GEPA
+description: >-
+  Reflective prompt and text-optimization agent. Brings its own agent, built on Claude Code.
+category: research
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md
+image:
+  ref: quay.io/dam-agents/gepa # @ci-pin gepa-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, anthropic]
+connections:
+  - accepts: [ibm-litellm, anthropic]
+    required: true
+    note: >-
+      GEPA's optimization loop needs an API-key style credential — the IBM LiteLLM proxy is the recommended choice; an Anthropic API key works too. An Anthropic OAuth token only covers the chat and cannot drive the loop.
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.
+parameters:
+  - name: target repository or problem definition
+    required: true
+  - name: optimization goal and how it is measured
+    required: true

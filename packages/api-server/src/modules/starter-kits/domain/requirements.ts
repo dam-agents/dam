@@ -28,14 +28,25 @@ export function unmetRequiredConnections(
   );
 }
 
-export function kitRef(kitId: string, version: string): string {
-  return `${kitId}@${version}`;
+export function kitRef(
+  catalog: string,
+  kitId: string,
+  version: string,
+): string {
+  return `${catalog}/${kitId}@${version}`;
 }
 
 export function parseKitRef(
   ref: string,
-): { kitId: string; version: string } | null {
+): { catalog: string; kitId: string; version: string } | null {
   const at = ref.lastIndexOf("@");
   if (at <= 0 || at === ref.length - 1) return null;
-  return { kitId: ref.slice(0, at), version: ref.slice(at + 1) };
+  const path = ref.slice(0, at);
+  const slash = path.indexOf("/");
+  if (slash <= 0 || slash === path.length - 1) return null;
+  return {
+    catalog: path.slice(0, slash),
+    kitId: path.slice(slash + 1),
+    version: ref.slice(at + 1),
+  };
 }

@@ -26,6 +26,7 @@ export interface NavigationSlice {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitCatalog: string | null;
   starterKitId: string | null;
   sandboxFocus: string | null;
   clearSandboxFocus: () => void;
@@ -38,7 +39,7 @@ export interface NavigationSlice {
     focus?: string,
   ) => void;
   navigateToKnowledgeBases: () => void;
-  navigateToStarterKitSetup: (kitId: string) => void;
+  navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -102,14 +103,15 @@ export const createNavigationSlice: StateCreator<
       sandboxFocus: focus ?? null,
     });
   },
-  navigateToStarterKitSetup: (kitId) => {
+  navigateToStarterKitSetup: (catalog, kitId) => {
     history.pushState(
       null,
       "",
-      routeToPath({ view: "starter-kit-new", kit: kitId }),
+      routeToPath({ view: "starter-kit-new", catalog, kit: kitId }),
     );
     set({
       view: "starter-kit-new",
+      starterKitCatalog: catalog,
       starterKitId: kitId,
       agentId: null,
       sandboxFocus: null,

@@ -6,6 +6,7 @@ description: >-
   structured review per PR, re-reviews on a label, and can nudge human
   reviewers on Slack. The definition is the Code Guardian repository.
 category: software
+harnesses: [claude-code, bob]
 docsUrl: https://github.com/dam-agents/code-guardian
 seed:
   url: https://github.com/dam-agents/code-guardian

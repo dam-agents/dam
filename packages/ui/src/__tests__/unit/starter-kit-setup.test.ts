@@ -7,9 +7,11 @@ import { describe, expect, test } from "vitest";
 
 import { narrowPolicyToTemplate } from "../../modules/sandboxes/lib/setup-policy.js";
 import {
+  allowedHarnesses,
   buildStarterKitApplyInput,
   connectTargets,
   describeAccepts,
+  harnessesLine,
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitScheduleCadence,
@@ -36,8 +38,9 @@ const templates: TemplateIndex = new Map([
   ["ibm-litellm", { id: "ibm-litellm", name: "IBM LiteLLM" }],
 ]);
 
-const kit: Pick<StarterKitView, "id" | "image" | "connections"> = {
+const kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections"> = {
   id: "code-reviewer",
+  catalog: "platform",
   image: undefined,
   connections: [
     { accepts: ["github-app", "github-pat"], required: true },
@@ -143,6 +146,7 @@ describe("buildStarterKitApplyInput", () => {
         templates,
       ),
     ).toEqual({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
@@ -325,5 +329,32 @@ describe("schedules", () => {
         timezone: "Europe/Prague",
       }),
     ).toMatch(/\(Europe\/Prague\)$/);
+  });
+});
+
+describe("harness matching", () => {
+  const catalogue = [
+    { id: "claude-code", harness: "claude-code" as const },
+    { id: "codex", harness: "codex" as const },
+    { id: "custom" },
+  ];
+  test("offers every harness when the kit names none, and only the named families otherwise", () => {
+    expect(allowedHarnesses({ harnesses: undefined }, catalogue)).toHaveLength(
+      3,
+    );
+    expect(
+      allowedHarnesses({ harnesses: ["codex"] }, catalogue).map((t) => t.id),
+    ).toEqual(["codex"]);
+  });
+  test("describes what the kit runs on", () => {
+    expect(
+      harnessesLine({ image: undefined, harnesses: ["claude-code", "bob"] }),
+    ).toBe("An agent on Claude Code or Bob");
+    expect(harnessesLine({ image: undefined, harnesses: undefined })).toBe(
+      "An agent on the harness you pick",
+    );
+    expect(harnessesLine({ image: { ref: "x" }, harnesses: undefined })).toBe(
+      "Its own agent",
+    );
   });
 });

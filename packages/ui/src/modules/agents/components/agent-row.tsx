@@ -14,7 +14,7 @@ import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { agentKindBadge } from "../utils/agent-kind.js";
+import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
   formatTemporaryDraw,
@@ -66,6 +66,7 @@ export function AgentRow({
   onDelete,
 }: Props) {
   const kindBadge = agentKindBadge(agent);
+  const kitBadge = starterKitBadge(agent);
   return (
     <Card
       data-testid="agent-row"
@@ -81,6 +82,15 @@ export function AgentRow({
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
+            </Badge>
+          )}
+          {kitBadge && (
+            <Badge
+              variant={kitBadge.variant}
+              className="shrink-0"
+              title={kitBadge.title}
+            >
+              {kitBadge.label}
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />

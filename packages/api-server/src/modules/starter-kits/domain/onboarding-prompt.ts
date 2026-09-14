@@ -2,6 +2,7 @@ import type { StarterKit } from "api-server-api";
 
 export interface OnboardingFacts {
   kit: StarterKit;
+  catalog: string;
   version: string;
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
@@ -62,7 +63,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     kit.onboarding?.prompt ??
     "Then follow ONBOARDING.md at the root of the cloned definition.";
   return [
-    `You were created from the "${kit.name}" starter kit (${kit.id}@${facts.version}).`,
+    `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
     definitionLine(kit),
     "",
     "The platform already set up the following. Do not recreate any of it; verify with the tools available to you and ask only for what remains.",

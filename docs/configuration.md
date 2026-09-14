@@ -19,7 +19,7 @@ Three kinds of source show up in the Skills panel:
 - **Platform** (blue) — seeded by the cluster admin; read-only.
 - **Agent** (purple) — declared by this instance's agent template; read-only.
 
-Seed Platform sources via `skills.skillSources`, or per-template sources via `agentTemplates.<name>.skillSources` — same shape either way:
+Seed Platform sources via `skills.skillSources`, or per-template sources via `harnessTemplates.<name>.skillSources` — same shape either way:
 
 ```yaml
 skills:
@@ -27,7 +27,7 @@ skills:
     - name: "Anthropic Skills"
       gitUrl: "https://github.com/anthropics/skills"
 
-agentTemplates:
+harnessTemplates:
   claude-code:
     skillSources:
       - name: "Anthropic Skills"

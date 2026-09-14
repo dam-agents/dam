@@ -11,6 +11,8 @@ export const starterKitIdSchema = z
   .min(1)
   .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits and dashes");
 
+export const starterKitCatalogNameSchema = starterKitIdSchema;
+
 export const starterKitCategorySchema = z.enum([
   "knowledge",
   "software",
@@ -91,6 +93,7 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
+  harnesses: z.array(harnessFamilySchema).min(1).optional(),
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })
     .optional(),
@@ -114,13 +117,17 @@ export const starterKitCatalogSchema = z.object({
   kits: z.array(starterKitCatalogEntrySchema),
 });
 
-export const starterKitGetInputSchema = z.object({ id: starterKitIdSchema });
+export const starterKitGetInputSchema = z.object({
+  catalog: starterKitCatalogNameSchema,
+  id: starterKitIdSchema,
+});
 
 export const starterKitOnboardingInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
 export const starterKitApplyInputSchema = z.object({
+  catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
   name: z
     .string()

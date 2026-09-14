@@ -35,10 +35,12 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import {
+  allowedHarnesses,
   buildStarterKitApplyInput,
   type ConnectTarget,
   connectTargets,
   describeAccepts,
+  harnessesLine,
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitScheduleCadence,
@@ -52,8 +54,9 @@ import {
 } from "../lib/setup.js";
 
 export function StarterKitSetupView() {
+  const catalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
-  const kit = useStarterKit(kitId);
+  const kit = useStarterKit(catalog, kitId);
   if (kit.data === undefined) {
     return <ListSkeleton rows={3} rowHeight={80} />;
   }
@@ -61,7 +64,11 @@ export function StarterKitSetupView() {
 }
 
 function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
-  const returnPath = routeToPath({ view: "starter-kit-new", kit: kit.id });
+  const returnPath = routeToPath({
+    view: "starter-kit-new",
+    catalog: kit.catalog,
+    kit: kit.id,
+  });
   const { form, update, toggleConnection, reset } = useSetupForm(
     "starter-kit",
     { name: kit.id },
@@ -95,6 +102,14 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   });
 
   const bringsImage = kit.image !== undefined;
+  const harnesses = allowedHarnesses(kit, catalogue.harnesses);
+  const noHarnessInstalled =
+    !bringsImage &&
+    kit.harnesses !== undefined &&
+    !catalogue.isLoading &&
+    harnesses.length === 0;
+  const harnessAllowed =
+    bringsImage || harnesses.some((t) => t.id === form.templateId);
 
   const draft: StarterKitSetupDraft = {
     name: form.name,
@@ -140,6 +155,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
   const canApply =
     isStarterKitSetupComplete(kit, draft, owned, templateById) &&
+    harnessAllowed &&
     !noCompatibleProvider &&
     !apply.isPending;
 
@@ -189,9 +205,14 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
               {kit.image?.ref}
             </div>
           </Callout>
+        ) : noHarnessInstalled ? (
+          <Callout tone="warning">
+            This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")},
+            and none of those is installed here.
+          </Callout>
         ) : (
           <HarnessGrid
-            harnesses={catalogue.harnesses}
+            harnesses={harnesses}
             loading={catalogue.isLoading}
             error={catalogue.isError}
             onRetry={catalogue.refetch}

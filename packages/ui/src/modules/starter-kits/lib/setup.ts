@@ -97,7 +97,7 @@ export function isStarterKitSetupComplete(
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<StarterKitView, "id" | "image" | "connections">,
+  kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -109,6 +109,7 @@ export function buildStarterKitApplyInput(
   }
   const slackChannelId = draft.slackChannelId.trim();
   return {
+    catalog: kit.catalog,
     kitId: kit.id,
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
@@ -254,4 +255,25 @@ export function ownAgentLine(
   if (!kit.image) return undefined;
   const on = harnessFamilyLabel(kit.image.harness);
   return on ? `Its own agent, built on ${on}` : "Its own agent";
+}
+
+export function allowedHarnesses<T extends { harness?: HarnessFamily }>(
+  kit: Pick<StarterKitView, "harnesses">,
+  harnesses: readonly T[],
+): T[] {
+  if (!kit.harnesses) return [...harnesses];
+  return harnesses.filter(
+    (t) => t.harness !== undefined && kit.harnesses!.includes(t.harness),
+  );
+}
+
+export function harnessesLine(
+  kit: Pick<StarterKitView, "image" | "harnesses">,
+): string {
+  const own = ownAgentLine(kit);
+  if (own) return own;
+  if (!kit.harnesses) return "An agent on the harness you pick";
+  return `An agent on ${kit.harnesses
+    .map((h) => harnessFamilyLabel(h) ?? h)
+    .join(" or ")}`;
 }

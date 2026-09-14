@@ -1,0 +1,26 @@
+schemaVersion: v1
+id: adaevolve
+name: AdaEvolve
+description: >-
+  Multi-island adaptive code and algorithm optimization (SkyDiscover). Brings its own agent, built on Claude Code.
+category: research
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md
+image:
+  ref: quay.io/dam-agents/skydiscover # @ci-pin skydiscover-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, openai]
+connections:
+  - accepts: [ibm-litellm, openai]
+    required: true
+    note: >-
+      OPENAI-compatible model provider; the IBM LiteLLM proxy is the recommended choice.
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.
+env:
+  - name: SKYDISCOVER_SEARCH
+    value: adaevolve
+parameters:
+  - name: target repository or problem definition
+    required: true
+  - name: optimization goal and how it is measured
+    required: true

@@ -39,18 +39,26 @@ export interface StarterKitsServiceDeps {
 }
 
 function toView(loaded: LoadedKit): StarterKitView {
-  return { ...loaded.kit, version: loaded.version, source: loaded.source };
+  return {
+    ...loaded.kit,
+    catalog: loaded.catalog,
+    version: loaded.version,
+    source: loaded.source,
+  };
 }
 
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  async function requireKit(kitId: string): Promise<LoadedKit> {
-    const loaded = await deps.repo.get(kitId);
+  async function requireKit(
+    catalog: string,
+    kitId: string,
+  ): Promise<LoadedKit> {
+    const loaded = await deps.repo.get(catalog, kitId);
     if (!loaded)
       throw new TRPCError({
         code: "NOT_FOUND",
-        message: `starter kit not found: ${kitId}`,
+        message: `starter kit not found: ${catalog}/${kitId}`,
       });
     return loaded;
   }
@@ -123,13 +131,13 @@ export function createStarterKitsService(
       return (await deps.repo.list()).map(toView);
     },
 
-    async get(id) {
-      const loaded = await deps.repo.get(id);
+    async get(catalog, id) {
+      const loaded = await deps.repo.get(catalog, id);
       return loaded ? toView(loaded) : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const loaded = await requireKit(input.kitId);
+      const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
 
       if (!kit.image && !input.templateId)
@@ -165,7 +173,7 @@ export function createStarterKitsService(
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
           : {}),
-        starterKit: kitRef(kit.id, version),
+        starterKit: kitRef(loaded.catalog, kit.id, version),
       });
 
       try {
@@ -205,7 +213,7 @@ export function createStarterKitsService(
         actorKind: "user",
         agentId: agent.id,
         result: "success",
-        target: kitRef(kit.id, version),
+        target: kitRef(loaded.catalog, kit.id, version),
       });
       return { agent, skills, skillsError };
     },
@@ -215,11 +223,12 @@ export function createStarterKitsService(
       if (!agent?.starterKit) return null;
       const ref = parseKitRef(agent.starterKit);
       if (!ref) return null;
-      const loaded = await deps.repo.get(ref.kitId);
+      const loaded = await deps.repo.get(ref.catalog, ref.kitId);
       if (!loaded) return null;
       const schedules = await deps.schedules.list(agentId);
       return composeOnboardingPrompt({
         kit: loaded.kit,
+        catalog: ref.catalog,
         version: ref.version,
         schedules: schedules.map((s) => ({
           name: s.name,

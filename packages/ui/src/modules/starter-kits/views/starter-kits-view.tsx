@@ -21,7 +21,7 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
 import {
   describeAccepts,
-  ownAgentLine,
+  harnessesLine,
   shortKitVersion,
 } from "../lib/setup.js";
 
@@ -50,7 +50,7 @@ function needsLines(
 
 function createsLines(kit: StarterKitView): string[] {
   const lines: string[] = [];
-  lines.push(ownAgentLine(kit) ?? "An agent on the harness you pick");
+  lines.push(harnessesLine(kit));
   if (kit.schedules.length > 0) {
     const on = kit.schedules.filter((s) => s.enabled).length;
     lines.push(
@@ -59,6 +59,18 @@ function createsLines(kit: StarterKitView): string[] {
   }
   if (kit.seed) lines.push("Its definition, cloned during onboarding");
   return lines;
+}
+
+function groupByCatalog(
+  kits: readonly StarterKitView[],
+): [string, StarterKitView[]][] {
+  const groups = new Map<string, StarterKitView[]>();
+  for (const kit of kits) {
+    const list = groups.get(kit.catalog) ?? [];
+    list.push(kit);
+    groups.set(kit.catalog, list);
+  }
+  return [...groups.entries()];
 }
 
 function KitCard({
@@ -101,9 +113,9 @@ function KitCard({
       <CardFooter className="flex flex-wrap items-center justify-between gap-2">
         <span
           className="min-w-0 truncate font-mono text-xs text-muted-foreground"
-          title={`${kit.id}@${kit.version}`}
+          title={`${kit.catalog}/${kit.id}@${kit.version}`}
         >
-          {kit.id}@{shortKitVersion(kit.version)}
+          {kit.catalog}/{kit.id}@{shortKitVersion(kit.version)}
         </span>
         <div className="flex shrink-0 items-center gap-2">
           {kit.docsUrl && (
@@ -113,7 +125,10 @@ function KitCard({
               </a>
             </Button>
           )}
-          <Button size="sm" onClick={() => navigateToStarterKitSetup(kit.id)}>
+          <Button
+            size="sm"
+            onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
+          >
             Use this kit
           </Button>
         </div>
@@ -130,6 +145,7 @@ export function StarterKitsView() {
     [templates.data],
   );
   const setView = useStore((s) => s.setView);
+  const catalogs = [...new Set((kits.data ?? []).map((k) => k.catalog))];
 
   return (
     <div>
@@ -154,13 +170,26 @@ export function StarterKitsView() {
         />
       )}
 
-      {kits.data && kits.data.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {kits.data.map((kit) => (
-            <KitCard key={kit.id} kit={kit} templateById={templateById} />
-          ))}
-        </div>
-      )}
+      {kits.data &&
+        kits.data.length > 0 &&
+        groupByCatalog(kits.data).map(([catalog, group]) => (
+          <section key={catalog} className="mb-8">
+            {catalogs.length > 1 && (
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {catalog}
+              </h2>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              {group.map((kit) => (
+                <KitCard
+                  key={`${kit.catalog}/${kit.id}`}
+                  kit={kit}
+                  templateById={templateById}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
     </div>
   );
 }

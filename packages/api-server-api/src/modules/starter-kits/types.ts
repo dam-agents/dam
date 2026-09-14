@@ -28,6 +28,7 @@ export type StarterKitCatalog = z.infer<typeof starterKitCatalogSchema>;
 export type StarterKitApplyInput = z.infer<typeof starterKitApplyInputSchema>;
 
 export interface StarterKitView extends StarterKit {
+  catalog: string;
   version: string;
   source: string;
 }
@@ -40,7 +41,7 @@ export interface StarterKitApplyResult {
 
 export interface StarterKitsService {
   list: () => Promise<StarterKitView[]>;
-  get: (id: string) => Promise<StarterKitView | null>;
+  get: (catalog: string, id: string) => Promise<StarterKitView | null>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
   onboardingPrompt: (agentId: string) => Promise<string | null>;
 }

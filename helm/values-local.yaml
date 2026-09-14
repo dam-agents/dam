@@ -55,7 +55,7 @@ nfsProvisioner:
 
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
-agentTemplates:
+harnessTemplates:
   claude-code:
     image:
       repository: platform-claude-code

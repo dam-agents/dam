@@ -11,13 +11,19 @@ import {
 
 export interface LoadedKit {
   kit: StarterKit;
+  catalog: string;
   version: string;
   source: string;
 }
 
+export interface NamedCatalog {
+  name: string;
+  source: CatalogSource;
+}
+
 export interface StarterKitsRepository {
   list(): Promise<LoadedKit[]>;
-  get(id: string): Promise<LoadedKit | null>;
+  get(catalog: string, id: string): Promise<LoadedKit | null>;
 }
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -25,7 +31,7 @@ const CATALOG_FILE = "catalog.yaml";
 const KIT_FILE = "kit.yaml";
 
 export function createStarterKitsRepository(opts: {
-  catalog: CatalogSource | null;
+  catalogs: readonly NamedCatalog[];
   sourceForEntry?: (gitUrl: string, ref: string) => CatalogSource;
   ttlMs?: number;
   now?: () => number;
@@ -40,9 +46,10 @@ export function createStarterKitsRepository(opts: {
   let inflight: Promise<LoadedKit[]> | null = null;
 
   async function loadEntry(
-    catalog: CatalogSource,
+    named: NamedCatalog,
     entry: StarterKitCatalogEntry,
   ): Promise<LoadedKit | null> {
+    const catalog = named.source;
     const source = entry.gitUrl
       ? sourceForEntry(entry.gitUrl, entry.ref ?? "HEAD")
       : catalog;
@@ -72,18 +79,18 @@ export function createStarterKitsRepository(opts: {
     }
     return {
       kit: parsed.data,
+      catalog: named.name,
       version: entry.gitUrl ? (entry.ref ?? "HEAD") : catalogVersion(catalog),
       source: source.locator,
     };
   }
 
-  async function loadAll(): Promise<LoadedKit[]> {
-    const catalog = opts.catalog;
-    if (!catalog) return [];
+  async function loadCatalog(named: NamedCatalog): Promise<LoadedKit[]> {
+    const catalog = named.source;
     const text = await catalog.readText(CATALOG_FILE);
     if (text === null) {
       getLogger().warn(
-        { source: catalog.locator },
+        { catalog: named.name, source: catalog.locator },
         "starter kits: catalog.yaml not found",
       );
       return [];
@@ -91,27 +98,36 @@ export function createStarterKitsRepository(opts: {
     const parsed = starterKitCatalogSchema.safeParse(yaml.load(text));
     if (!parsed.success) {
       getLogger().warn(
-        { source: catalog.locator, issues: parsed.error.issues },
+        {
+          catalog: named.name,
+          source: catalog.locator,
+          issues: parsed.error.issues,
+        },
         "starter kits: catalog.yaml rejected",
       );
       return [];
     }
     const loaded = await Promise.all(
-      parsed.data.kits.map((entry) => loadEntry(catalog, entry)),
+      parsed.data.kits.map((entry) => loadEntry(named, entry)),
     );
     const byId = new Map<string, LoadedKit>();
     for (const item of loaded) {
       if (!item) continue;
       if (byId.has(item.kit.id)) {
         getLogger().warn(
-          { id: item.kit.id, source: item.source },
-          "starter kits: duplicate kit id dropped",
+          { catalog: named.name, id: item.kit.id, source: item.source },
+          "starter kits: duplicate kit id within a catalog dropped",
         );
         continue;
       }
       byId.set(item.kit.id, item);
     }
     return [...byId.values()];
+  }
+
+  async function loadAll(): Promise<LoadedKit[]> {
+    const perCatalog = await Promise.all(opts.catalogs.map(loadCatalog));
+    return perCatalog.flat();
   }
 
   async function list(): Promise<LoadedKit[]> {
@@ -131,8 +147,11 @@ export function createStarterKitsRepository(opts: {
 
   return {
     list,
-    async get(id) {
-      return (await list()).find((k) => k.kit.id === id) ?? null;
+    async get(catalog, id) {
+      return (
+        (await list()).find((k) => k.catalog === catalog && k.kit.id === id) ??
+        null
+      );
     },
   };
 }

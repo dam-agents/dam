@@ -48,7 +48,7 @@ kits:
       "kit.yaml": KIT("pm-agent"),
     });
     const repo = createStarterKitsRepository({
-      catalog,
+      catalogs: [{ name: "platform", source: catalog }],
       sourceForEntry: (gitUrl, ref) => {
         expect(gitUrl).toBe("https://github.com/acme/pm-agent");
         expect(ref).toBe("v1.2.0");
@@ -57,12 +57,19 @@ kits:
     });
 
     const kits = await repo.list();
-    expect(kits.map((k) => [k.kit.id, k.version, k.source])).toEqual([
-      ["reviewer", "local", "/catalog"],
-      ["pm-agent", "v1.2.0", "https://github.com/acme/pm-agent#v1.2.0"],
-    ]);
-    expect((await repo.get("pm-agent"))?.kit.name).toBe("pm-agent");
-    expect(await repo.get("nope")).toBeNull();
+    expect(kits.map((k) => [k.catalog, k.kit.id, k.version, k.source])).toEqual(
+      [
+        ["platform", "reviewer", "local", "/catalog"],
+        [
+          "platform",
+          "pm-agent",
+          "v1.2.0",
+          "https://github.com/acme/pm-agent#v1.2.0",
+        ],
+      ],
+    );
+    expect((await repo.get("platform", "pm-agent"))?.kit.name).toBe("pm-agent");
+    expect(await repo.get("platform", "nope")).toBeNull();
   });
 
   it("drops a kit that fails validation and keeps the rest", async () => {
@@ -71,7 +78,9 @@ kits:
       "bad/kit.yaml": "schemaVersion: v1\nid: BAD ID\n",
       "good/kit.yaml": KIT("good"),
     });
-    const repo = createStarterKitsRepository({ catalog });
+    const repo = createStarterKitsRepository({
+      catalogs: [{ name: "platform", source: catalog }],
+    });
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["good"]);
   });
 
@@ -79,7 +88,9 @@ kits:
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: ../secrets\n",
     });
-    const repo = createStarterKitsRepository({ catalog });
+    const repo = createStarterKitsRepository({
+      catalogs: [{ name: "platform", source: catalog }],
+    });
     expect(await repo.list()).toEqual([]);
     expect(catalog.reads).toEqual(["catalog.yaml"]);
   });
@@ -91,7 +102,7 @@ kits:
     });
     let t = 0;
     const repo = createStarterKitsRepository({
-      catalog,
+      catalogs: [{ name: "platform", source: catalog }],
       ttlMs: 100,
       now: () => t,
     });
@@ -103,8 +114,32 @@ kits:
     expect(catalog.reads.filter((r) => r === "catalog.yaml")).toHaveLength(2);
   });
 
+  it("reads several catalogs and keeps same-id kits apart by catalog", async () => {
+    const a = memorySource("/a", {
+      "catalog.yaml": "kits:\n  - path: k\n",
+      "k/kit.yaml": KIT("shared"),
+    });
+    const b = memorySource("/b", {
+      "catalog.yaml": "kits:\n  - path: k\n",
+      "k/kit.yaml": KIT("shared"),
+    });
+    const repo = createStarterKitsRepository({
+      catalogs: [
+        { name: "platform", source: a },
+        { name: "acme", source: b },
+      ],
+    });
+    const kits = await repo.list();
+    expect(kits.map((k) => `${k.catalog}/${k.kit.id}`)).toEqual([
+      "platform/shared",
+      "acme/shared",
+    ]);
+    expect((await repo.get("acme", "shared"))?.source).toBe("/b");
+    expect(await repo.get("nope", "shared")).toBeNull();
+  });
+
   it("returns nothing when no catalog is configured", async () => {
-    const repo = createStarterKitsRepository({ catalog: null });
+    const repo = createStarterKitsRepository({ catalogs: [] });
     expect(await repo.list()).toEqual([]);
   });
 });
@@ -195,17 +230,27 @@ describe("catalog sources", () => {
 describe("the shipped proof-of-concept catalog", () => {
   it("validates and lists its kits", async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
-    const dir = path.resolve(here, "../../../../../starter-kits");
+    const dir = path.resolve(here, "../../../../../helm/starter-kits");
     const repo = createStarterKitsRepository({
-      catalog: createLocalCatalogSource(dir),
+      catalogs: [{ name: "platform", source: createLocalCatalogSource(dir) }],
     });
     const kits = await repo.list();
-    expect(kits.map((k) => k.kit.id).sort()).toEqual(["code-reviewer", "nous"]);
+    expect(kits.map((k) => k.kit.id).sort()).toEqual([
+      "adaevolve",
+      "code-reviewer",
+      "evox",
+      "gepa",
+      "k-search",
+      "nous",
+      "openevolve",
+      "shinkaevolve",
+    ]);
+    expect(new Set(kits.map((k) => k.catalog))).toEqual(new Set(["platform"]));
     const reviewer = kits.find((k) => k.kit.id === "code-reviewer")!.kit;
     expect(reviewer.connections[0]).toMatchObject({ required: true });
     expect(reviewer.schedules.filter((s) => s.enabled)).toHaveLength(1);
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
-      /^quay\.io\/dam-agents\/nous:/,
+      /^quay\.io\/dam-agents\/nous(:|$)/,
     );
   });
 });

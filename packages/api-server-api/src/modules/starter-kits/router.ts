@@ -17,7 +17,7 @@ export const starterKitsRouter = t.router({
   get: readAgentProcedure
     .input(starterKitGetInputSchema)
     .query(async ({ ctx, input }) => {
-      const kit = await ctx.starterKits.get(input.id);
+      const kit = await ctx.starterKits.get(input.catalog, input.id);
       if (!kit) throw new TRPCError({ code: "NOT_FOUND" });
       return kit;
     }),

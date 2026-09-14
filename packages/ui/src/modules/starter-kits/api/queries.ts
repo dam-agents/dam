@@ -9,10 +9,13 @@ export function useStarterKits() {
   });
 }
 
-export function useStarterKit(id: string | null) {
+export function useStarterKit(catalog: string | null, id: string | null) {
   return useQuery({
-    ...trpc.starterKits.get.queryOptions({ id: id ?? "" }),
-    enabled: id !== null,
+    ...trpc.starterKits.get.queryOptions({
+      catalog: catalog ?? "",
+      id: id ?? "",
+    }),
+    enabled: catalog !== null && id !== null,
     meta: { errorToast: "Couldn't load the starter kit" },
   });
 }

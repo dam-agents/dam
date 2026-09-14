@@ -16,7 +16,7 @@ export interface Resources {
 
 export const SPEC_VERSION = "agent-platform.ai/v1";
 
-export type TemplateCategory = "harness" | "preconfigured";
+export type TemplateCategory = "harness";
 
 export type HarnessFamily = z.infer<typeof harnessFamilySchema>;
 

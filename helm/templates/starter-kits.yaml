@@ -1,0 +1,21 @@
+{{/*
+The built-in starter kit catalog. Every file under helm/starter-kits/ becomes a
+data key (slashes folded to `__`); apiserver/app.yaml projects the keys back to
+their paths under /etc/platform/starter-kits, where the api-server reads it as
+the `platform` catalog with the same reader every other catalog gets.
+*/}}
+{{- if .Values.starterKits.builtin.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-starter-kits
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+data:
+  {{- range $path, $bytes := .Files.Glob "starter-kits/**" }}
+  {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
+    {{- $bytes | toString | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -91,8 +91,10 @@ function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
       async list() {
         return loaded ? [loaded] : [];
       },
-      async get(id) {
-        return loaded && loaded.kit.id === id ? loaded : null;
+      async get(catalog, id) {
+        return loaded && loaded.catalog === catalog && loaded.kit.id === id
+          ? loaded
+          : null;
       },
     },
     agents: {
@@ -161,7 +163,12 @@ function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
   return { service, calls };
 }
 
-const LOADED: LoadedKit = { kit: kit(), version: "abc123", source: "/catalog" };
+const LOADED: LoadedKit = {
+  kit: kit(),
+  catalog: "platform",
+  version: "abc123",
+  source: "/catalog",
+};
 
 const GITHUB = { id: "github", title: "GitHub" };
 const TEMPLATES = [
@@ -175,6 +182,7 @@ describe("starter kits: apply", () => {
   it("creates the agent, seeds schedules with optional ones disabled, binds Slack and wakes", async () => {
     const { service, calls } = makeHarness(LOADED);
     const result = await service.apply({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
@@ -192,7 +200,7 @@ describe("starter kits: apply", () => {
       name: "reviewer",
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-slack"],
-      starterKit: "code-reviewer@abc123",
+      starterKit: "platform/code-reviewer@abc123",
     });
     expect(calls.cron).toEqual([
       {
@@ -221,6 +229,7 @@ describe("starter kits: apply", () => {
   it("leaves out the schedules the user chose to skip", async () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
@@ -236,6 +245,7 @@ describe("starter kits: apply", () => {
     const { service, calls } = makeHarness(LOADED);
     await expect(
       service.apply({
+        catalog: "platform",
         kitId: "code-reviewer",
         name: "reviewer",
         templateId: "claude-code",
@@ -250,6 +260,7 @@ describe("starter kits: apply", () => {
     const { service } = makeHarness(LOADED);
     await expect(
       service.apply({
+        catalog: "platform",
         kitId: "code-reviewer",
         name: "r",
         connectionIds: ["c-gh"],
@@ -265,6 +276,7 @@ describe("starter kits: apply", () => {
       }),
     });
     await pinned.service.apply({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "nous-1",
       templateId: "claude-code",
@@ -313,6 +325,7 @@ describe("starter kits: apply", () => {
     });
     await expect(
       failing.apply({
+        catalog: "platform",
         kitId: "code-reviewer",
         name: "r",
         templateId: "t",
@@ -340,6 +353,7 @@ describe("starter kits: apply", () => {
       }),
     });
     const result = await service.apply({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
@@ -411,6 +425,7 @@ describe("starter kits: apply", () => {
       wakeAgent: async () => {},
     });
     const result = await service.apply({
+      catalog: "platform",
       kitId: "code-reviewer",
       name: "r",
       templateId: "t",
@@ -426,6 +441,7 @@ describe("starter kits: apply", () => {
     const { service } = makeHarness(null);
     await expect(
       service.apply({
+        catalog: "platform",
         kitId: "nope",
         name: "r",
         templateId: "t",
@@ -445,11 +461,11 @@ describe("starter kits: onboarding prompt", () => {
   it("states what the platform set up and points at ONBOARDING.md", async () => {
     const { service } = makeHarness(
       LOADED,
-      fakeAgent("agent-1", { starterKit: "code-reviewer@abc123" }),
+      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
     );
     const prompt = await service.onboardingPrompt("agent-1");
     expect(prompt).toContain(
-      '"Code reviewer" starter kit (code-reviewer@abc123)',
+      '"Code reviewer" starter kit (platform/code-reviewer@abc123)',
     );
     expect(prompt).toContain(
       "https://github.com/acme/code-guardian at ref v1.4.0",
@@ -465,6 +481,7 @@ describe("starter kits: onboarding prompt", () => {
   it("uses the kit's prompt as the instruction when one is declared", () => {
     const prompt = composeOnboardingPrompt({
       kit: kit({ onboarding: { prompt: "Run /setup." } }),
+      catalog: "platform",
       version: "v1",
       schedules: [],
       boundChannels: ["slack"],
@@ -505,11 +522,13 @@ describe("starter kits: domain helpers", () => {
   });
 
   it("parses kit refs", () => {
-    expect(parseKitRef("code-reviewer@abc")).toEqual({
+    expect(parseKitRef("platform/code-reviewer@abc")).toEqual({
+      catalog: "platform",
       kitId: "code-reviewer",
       version: "abc",
     });
+    expect(parseKitRef("code-reviewer@abc")).toBeNull();
     expect(parseKitRef("broken")).toBeNull();
-    expect(parseKitRef("@v1")).toBeNull();
+    expect(parseKitRef("platform/@v1")).toBeNull();
   });
 });

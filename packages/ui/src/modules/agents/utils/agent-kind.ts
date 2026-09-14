@@ -32,3 +32,13 @@ export function agentKindBadge(agent: AgentView): AgentKindBadge | null {
   if (!agent.kind) return null;
   return KIND_BADGE[agent.kind] ?? { label: agent.kind, variant: "muted" };
 }
+
+export function starterKitBadge(
+  agent: Pick<AgentView, "starterKit">,
+): (AgentKindBadge & { title: string }) | null {
+  if (!agent.starterKit) return null;
+  const at = agent.starterKit.lastIndexOf("@");
+  const path = at > 0 ? agent.starterKit.slice(0, at) : agent.starterKit;
+  const kit = path.slice(path.indexOf("/") + 1);
+  return { label: `Kit: ${kit}`, variant: "muted", title: agent.starterKit };
+}

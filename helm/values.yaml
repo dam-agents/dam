@@ -931,7 +931,7 @@ controller:
   #                           to every agent + executor pod.
   #   2. `templateDefaults` — chart-wide fallbacks for fields a template
   #                           can override (template wins when set).
-  #   3. agentTemplates.*   — per-template values (further down).
+  #   3. harnessTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
   # it at render time with the fixed agent home (/home/agent).
   agent:
@@ -1285,11 +1285,9 @@ controller:
 # non-image drift (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
-# `category` sorts the entry: "harness" (base coding harnesses; the default when
-# omitted) or "preconfigured" (curated workload images, e.g. Bugstone). Only
-# harnesses are offered in the UI today — a "preconfigured" entry is installed
-# but reachable from no creation flow, pending the specialized-sandbox redesign,
-# so an entry users must be able to pick should take the default category.
+# Every entry is a harness image the platform delivers. Workload images
+# (research frameworks and other pre-built agents) are starter kits in the
+# built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
 # (any of anthropic, ibm-litellm, openai, bob) — which env the harness inside
@@ -1329,7 +1327,7 @@ controller:
 #     # ...
 #     imagePullSecretRef: "icr-pull-secret"
 #
-agentTemplates:
+harnessTemplates:
   claude-code:
     enabled: true
     providers: [ibm-litellm, anthropic]
@@ -1417,189 +1415,6 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
-  k-search:
-    enabled: true
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
-    image:
-      repository: quay.io/dam-agents/k-search
-      tag: ""
-    storageSize: "5Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
-
-  # Same image as k-search, evaluating on an in-cluster NVIDIA GPU
-  # (KSEARCH_EVAL_MODE=local). Disabled by default — stays Pending without a GPU.
-  # GPU passthrough under Kata needs a GPU-capable runtime class set per-template
-  # below (the chart-wide class can't carry the GPU VM config for every agent).
-  k-search-local:
-    enabled: false
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
-    image:
-      repository: quay.io/dam-agents/k-search
-      tag: ""
-    storageSize: "10Gi"
-    # GPU Kata runtime class (cluster-specific; e.g. "kata-nvidia-gpu" on
-    # OpenShift). Adds a podFixed overhead (~1 CPU / 4Gi).
-    # runtimeClassName: "kata-nvidia-gpu"
-    # Optional — the GPU request already pins to the GPU node.
-    # nodeSelector:
-    #   nvidia.com/gpu.present: "true"
-    env:
-      - name: KSEARCH_EVAL_MODE
-        value: "local"
-      - name: KSEARCH_TARGET_GPU
-        value: "A100"
-    resources:
-      requests:
-        cpu: "1"
-        memory: "8Gi"
-        nvidia.com/gpu: "1"
-      limits:
-        cpu: "2"
-        memory: "16Gi"
-        nvidia.com/gpu: "1"
-
-  # Published by CI (build-workloads / merge-workloads in cd.yml); the
-  # published chart pins each workload tag to its source sha (@ci-pin), so an
-  # unchanged workload keeps last deploy's tag and never rebuilds just for a
-  # deploy. Experimental: the harness drives long-running Nous campaigns —
-  # see packages/agents/nous/README.md.
-  nous:
-    enabled: true
-    providers: [ibm-litellm, anthropic]
-    category: preconfigured
-    experimental: true
-    displayName: "NOUS"
-    description: "Nous hypothesis-driven experimentation agent"
-    # The image is claude-code-based and Nous drives campaigns through the
-    # Claude Agent SDK, whose subprocesses inherit the pod env — so the
-    # standard telemetry env rail covers campaign turns, not just chat.
-    telemetry: true
-    tags: ["Any provider"]
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
-    image:
-      repository: quay.io/dam-agents/nous
-      tag: "" # @ci-pin nous-image-tag
-    # Never auto-hibernate ("0s"). A Nous campaign runs as a background process
-    # detached from any session, which the idle checker can't see (see the
-    # "background work" blind spot in docs/architecture/agent-lifecycle.md), so
-    # it would otherwise hibernate the pod mid-campaign and kill the run. The
-    # cost is no scale-to-zero: a nous agent holds CPU/memory until deleted or
-    # its timeout is raised by hand. Users can still override this per agent.
-    hibernationTimeout: "0s"
-    # Campaigns clone, build, and run target systems (plus per-arm git
-    # worktrees and a Python venv), so give it more disk than a chat agent.
-    storageSize: "10Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
-
-  openevolve:
-    enabled: true
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    displayName: "OpenEvolve"
-    description: "OpenEvolve — evolutionary code-optimization agent"
-    tags: ["OpenAI-compatible"]
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md"
-    image:
-      repository: quay.io/dam-agents/openevolve
-      tag: "" # @ci-pin openevolve-image-tag
-    storageSize: "5Gi"
-
-  shinkaevolve:
-    enabled: true
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    displayName: "ShinkaEvolve"
-    description: "ShinkaEvolve — sample-efficient evolutionary program-optimization agent"
-    tags: ["OpenAI-compatible"]
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md"
-    image:
-      repository: quay.io/dam-agents/shinkaevolve
-      tag: "" # @ci-pin shinkaevolve-image-tag
-    storageSize: "5Gi"
-
-  gepa:
-    enabled: true
-    providers: [ibm-litellm, anthropic]
-    category: preconfigured
-    experimental: true
-    displayName: "GEPA"
-    description: "GEPA — reflective prompt & text-optimization agent"
-    tags: ["Any provider"]
-    setupNote:
-      title: "Model provider connection required"
-      body: >-
-        GEPA's optimization loop needs a model-provider connection with
-        API-key-style credentials — the IBM LiteLLM proxy is the recommended
-        choice (it also powers the agent's own chat); an Anthropic API key
-        works too. An Anthropic OAuth-token connection only covers the chat
-        and cannot drive the optimization loop.
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md"
-    image:
-      repository: quay.io/dam-agents/gepa
-      tag: "" # @ci-pin gepa-image-tag
-    storageSize: "5Gi"
-
-  # AdaEvolve and EvoX are SkyDiscover's two own search strategies, exposed as
-  # two presets over the single skydiscover image (same one-image/N-templates
-  # pattern as k-search/k-search-local): each bakes its default `--search` via
-  # the SKYDISCOVER_SEARCH env.
-  adaevolve:
-    enabled: true
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    displayName: "AdaEvolve"
-    description: "AdaEvolve — multi-island adaptive code & algorithm optimization (SkyDiscover)"
-    tags: ["OpenAI-compatible"]
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
-    image:
-      repository: quay.io/dam-agents/skydiscover
-      tag: "" # @ci-pin skydiscover-image-tag
-    storageSize: "5Gi"
-    env:
-      - name: SKYDISCOVER_SEARCH
-        value: "adaevolve"
-
-  evox:
-    enabled: true
-    providers: [ibm-litellm, openai]
-    category: preconfigured
-    experimental: true
-    displayName: "EvoX"
-    description: "EvoX — self-evolving code & algorithm optimization (SkyDiscover)"
-    tags: ["OpenAI-compatible"]
-    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
-    image:
-      repository: quay.io/dam-agents/skydiscover
-      tag: "" # @ci-pin skydiscover-image-tag
-    storageSize: "5Gi"
-    env:
-      - name: SKYDISCOVER_SEARCH
-        value: "evox"
-
-# -- E2E test affordances. Gated test-only surface: the api-server
-# registers a control tRPC namespace that drives the mock Agent harness over
-# the existing ACP relay. Default off — flipped on by the e2e/local install.
 e2e:
   enabled: false
 
@@ -1608,14 +1423,22 @@ e2e:
 # `{name, gitUrl, path?}` shape works for per-template sources under
 # `<templateKey>.skillSources`. `path` is an optional repo-relative
 # subdirectory to scan; omit it to scan `skills/` then the repo root.
-# -- Starter kit catalog the api-server reads kits from: a public GitHub
-# repository URL (optionally `/tree/<ref>/<dir>` to name a directory, or
-# `#<ref>` to pin), or an absolute directory path inside the pod. Empty
-# hides the catalog. Rendered into the api-server pod as STARTER_KITS_CATALOG.
+# -- Starter kit catalogs. The api-server reads every catalog listed here, in
+# order, through one reader; kits are addressed as `<catalog>/<kit>`.
+# `builtin` is the platform's own catalog, shipped inside this chart
+# (helm/starter-kits) and mounted into the api-server — versioned with the
+# release, no network needed. `catalogs` adds external ones: each names a
+# public git repository holding catalog.yaml (optionally `/tree/<ref>/<dir>`
+# to name a directory or `#<ref>` to pin). Rendered as STARTER_KITS_CATALOGS.
 starterKits:
-  catalog: ""
-  # Example — the proof-of-concept catalog in the platform repository:
-  # catalog: "https://github.com/dam-agents/dam/tree/main/starter-kits"
+  builtin:
+    enabled: true
+    name: platform
+  catalogs: []
+  # Example:
+  # catalogs:
+  #   - name: acme
+  #     url: https://github.com/acme/starter-kits
 
 skills:
   skillSources: []

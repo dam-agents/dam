@@ -140,6 +140,7 @@ import { createTemplatesRepository } from "./modules/templates/infrastructure/te
 import {
   createCatalogSourceFromLocator,
   createStarterKitsRepository,
+  parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
 import { composeTemplatesModule } from "./modules/templates/compose.js";
 import {
@@ -288,7 +289,10 @@ export async function bootstrap() {
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const starterKitsRepo = createStarterKitsRepository({
-    catalog: createCatalogSourceFromLocator(config.starterKitsCatalog),
+    catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
+      const source = createCatalogSourceFromLocator(c.locator);
+      return source ? [{ name: c.name, source }] : [];
+    }),
   });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({

@@ -36,7 +36,7 @@ export type Route =
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
   | { view: "starter-kits" }
-  | { view: "starter-kit-new"; kit: string }
+  | { view: "starter-kit-new"; catalog: string; kit: string }
   | { view: "artifacts" };
 
 export type View = Route["view"];
@@ -110,11 +110,14 @@ export function parseRoute(path: string): Route {
   if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
   if (path === "/starter-kits") return { view: "starter-kits" };
-  const starterKitNewMatch = path.match(/^\/starter-kits\/([^/]+)\/new$/);
+  const starterKitNewMatch = path.match(
+    /^\/starter-kits\/([^/]+)\/([^/]+)\/new$/,
+  );
   if (starterKitNewMatch)
     return {
       view: "starter-kit-new",
-      kit: decodeSegment(starterKitNewMatch[1]!),
+      catalog: decodeSegment(starterKitNewMatch[1]!),
+      kit: decodeSegment(starterKitNewMatch[2]!),
     };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
@@ -175,7 +178,7 @@ export function routeToPath(route: Route): string {
     case "starter-kits":
       return "/starter-kits";
     case "starter-kit-new":
-      return `/starter-kits/${encodeURIComponent(route.kit)}/new`;
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
     default: {
@@ -190,11 +193,13 @@ export function routeToNavigationState(route: Route): {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitCatalog: string | null;
   starterKitId: string | null;
 } {
   return {
     view: route.view,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
+    starterKitCatalog: route.view === "starter-kit-new" ? route.catalog : null,
     starterKitId: route.view === "starter-kit-new" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:

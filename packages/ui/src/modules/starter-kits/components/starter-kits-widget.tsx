@@ -43,7 +43,10 @@ export function StarterKitsWidget() {
       </div>
       <ul className="flex flex-col divide-y divide-border">
         {shown.map((kit) => (
-          <li key={kit.id} className="flex items-start gap-3 py-3">
+          <li
+            key={`${kit.catalog}/${kit.id}`}
+            className="flex items-start gap-3 py-3"
+          >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">{kit.name}</span>
@@ -58,7 +61,7 @@ export function StarterKitsWidget() {
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => navigateToStarterKitSetup(kit.id)}
+              onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
               data-testid={`starter-kits-widget-use-${kit.id}`}
             >
               Use

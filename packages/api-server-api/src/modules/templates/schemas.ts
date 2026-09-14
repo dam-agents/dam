@@ -31,9 +31,7 @@ export const skillSourceSeedSchema = z.object({
   path: skillSourcePathSchema.optional(),
 });
 
-export const templateCategorySchema = z
-  .enum(["harness", "preconfigured"])
-  .default("harness");
+export const templateCategorySchema = z.enum(["harness"]).default("harness");
 
 export const harnessFamilySchema = z.enum([
   "claude-code",
