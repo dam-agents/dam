@@ -7,6 +7,11 @@ set -euo pipefail
 PROTO=${PROTO:-/opt/proto}; cd "$PROTO"
 [ -f noble.img ] || curl -sSL -o noble.img https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img
 qemu-img convert -f qcow2 -O raw noble.img noble.raw && qemu-img resize -f raw noble.raw 8G >/dev/null
+# Firecracker's CI kernel has neither GPT nor the ext4 orphan_file feature:
+# carve the root partition into a partition-less image and strip the feature.
+read -r start size < <(sfdisk -J noble.raw | python3 -c 'import sys,json; p=[x for x in json.load(sys.stdin)["partitiontable"]["partitions"] if x["node"].endswith("1")][0]; print(p["start"], p["size"])')
+dd if=noble.raw of=noble-root.raw bs=512 skip="$start" count="$size" status=none && truncate -s 6G noble-root.raw
+e2fsck -fy noble-root.raw >/dev/null 2>&1; tune2fs -O ^orphan_file noble-root.raw >/dev/null; e2fsck -fy noble-root.raw >/dev/null 2>&1; resize2fs noble-root.raw >/dev/null 2>&1
 cat > user-data <<'YAML'
 #cloud-config
 password: proto
