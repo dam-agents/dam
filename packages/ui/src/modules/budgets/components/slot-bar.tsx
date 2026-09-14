@@ -28,34 +28,58 @@ function useHoveredSegment() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const openTimer = useRef<number>(undefined);
   const closeTimer = useRef<number>(undefined);
+  const pendingOpenId = useRef<string | null>(null);
 
-  const clearTimers = () => {
+  useEffect(
+    () => () => {
+      window.clearTimeout(openTimer.current);
+      window.clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  const cancelOpen = (id: string) => {
+    if (pendingOpenId.current !== id) return;
     window.clearTimeout(openTimer.current);
-    window.clearTimeout(closeTimer.current);
+    pendingOpenId.current = null;
   };
-  useEffect(() => clearTimers, []);
+
+  useEffect(() => {
+    if (hoveredId === null) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHoveredId(null);
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [hoveredId]);
 
   return {
     hoveredId,
     show: (id: string, instant = false) => {
-      clearTimers();
-      if (instant || hoveredId !== null) setHoveredId(id);
-      else
-        openTimer.current = window.setTimeout(
-          () => setHoveredId(id),
-          OPEN_DELAY_MS,
-        );
+      window.clearTimeout(openTimer.current);
+      window.clearTimeout(closeTimer.current);
+      pendingOpenId.current = null;
+      if (instant || hoveredId !== null) {
+        setHoveredId(id);
+        return;
+      }
+      pendingOpenId.current = id;
+      openTimer.current = window.setTimeout(() => {
+        pendingOpenId.current = null;
+        setHoveredId(id);
+      }, OPEN_DELAY_MS);
     },
-    scheduleHide: () => {
-      clearTimers();
-      closeTimer.current = window.setTimeout(
-        () => setHoveredId(null),
-        CLOSE_GRACE_MS,
-      );
+    scheduleHide: (id: string) => {
+      cancelOpen(id);
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = window.setTimeout(() => {
+        setHoveredId((current) => (current === id ? null : current));
+      }, CLOSE_GRACE_MS);
     },
-    hide: () => {
-      clearTimers();
-      setHoveredId(null);
+    hide: (id: string) => {
+      cancelOpen(id);
+      window.clearTimeout(closeTimer.current);
+      setHoveredId((current) => (current === id ? null : current));
     },
   };
 }
@@ -84,9 +108,6 @@ export function SlotBar({
           <TooltipPrimitive.Root
             key={id}
             open={hover.hoveredId === id}
-            onOpenChange={(next) => {
-              if (!next) hover.scheduleHide();
-            }}
             disableHoverableContent
           >
             <TooltipPrimitive.Trigger asChild>
@@ -112,12 +133,12 @@ export function SlotBar({
                   gridTemplateColumns: `repeat(${segment.slots}, minmax(0, 1fr))`,
                 }}
                 onPointerEnter={() => hover.show(id)}
-                onPointerLeave={hover.scheduleHide}
+                onPointerLeave={() => hover.scheduleHide(id)}
                 onFocus={(event) => {
                   if (event.currentTarget.matches(":focus-visible"))
                     hover.show(id, true);
                 }}
-                onBlur={hover.hide}
+                onBlur={() => hover.hide(id)}
               >
                 {Array.from({ length: segment.slots }, (_, cell) => (
                   <span
@@ -134,21 +155,16 @@ export function SlotBar({
             </TooltipPrimitive.Trigger>
             <TooltipContent
               side="top"
-              sideOffset={6}
+              tail
               aria-label={label(segment)}
               className={cn(
-                "overflow-visible text-sm leading-relaxed",
+                "text-sm leading-relaxed",
                 held && content ? "w-64 p-3" : "max-w-xs px-3 py-2",
               )}
               onPointerEnter={() => hover.show(id, true)}
-              onPointerLeave={hover.scheduleHide}
+              onPointerLeave={() => hover.scheduleHide(id)}
             >
               {(held && content?.(segment)) || label(segment)}
-              <TooltipPrimitive.Arrow
-                width={12}
-                height={6}
-                className="fill-popover"
-              />
             </TooltipContent>
           </TooltipPrimitive.Root>
         );
