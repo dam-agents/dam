@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true also creates the sandbox node VM for vm-backend agents (the chart provisions it over SSH). Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's sandbox node pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 #MISE raw=true
 #MISE depends=["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
 #
@@ -40,10 +40,10 @@ AGENT_VALUE_FLAGS=()
 [ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
-# virtualization.enabled drives extra provisioning below (a second lima VM as
-# the sandbox node, smolvm + sandbox-node on it) — resolve it from the values
-# file + --set flags (chart default is false) so one flag configures the whole
-# stack.
+# virtualization.enabled drives extra provisioning below (nested virt on the
+# k3s VM, the vm image archive loaded onto the sandbox node pod) — resolve it
+# from the values file + --set flags (chart default is false) so one flag
+# configures the whole stack.
 VIRT_ENABLED=""
 if [ -n "$HELM_VALUES" ] && [ "$(yq '.virtualization.enabled // false' "$HELM_VALUES")" = "true" ]; then
   VIRT_ENABLED=1
@@ -54,12 +54,10 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
     --set=virtualization.enabled=false) VIRT_ENABLED="" ;;
   esac
 done
-if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ]; then
-  echo "FATAL: virtualization.enabled=true needs a second lima VM as the sandbox node; not available in sandbox mode." >&2
+if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && [ ! -e /dev/kvm ]; then
+  echo "FATAL: virtualization.enabled=true needs /dev/kvm on this host (the sandbox node pod runs microVMs on it)." >&2
   exit 1
 fi
-SANDBOX_INSTANCE="platform-sandbox"
-SANDBOX_TEMPLATE="etc/lima/sandbox.yaml"
 
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
@@ -94,16 +92,14 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
-    # With the vm backend the k3s VM joins lima's user-v2 network so it and the
-    # sandbox node VM can dial each other directly. Create-time only — an
-    # existing VM needs cluster:delete + reinstall to gain it.
-    # PLATFORM_NESTED_VIRT=1 additionally exposes /dev/kvm inside the k3s VM
-    # (macOS: vz on M3+/macOS 15) for anything that wants KVM in-cluster.
-    LIMA_SET=""
-    [ -n "${PLATFORM_NESTED_VIRT:-}" ] && LIMA_SET='.vmType = "vz" | .nestedVirtualization = true'
-    [ -n "$VIRT_ENABLED" ] && LIMA_SET="${LIMA_SET:+$LIMA_SET | }"'.vmType = "vz" | .networks = [{"lima": "user-v2"}]'
-    if [ -n "$LIMA_SET" ]; then
-      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false --set "$LIMA_SET"
+    # Nested virtualization exposes /dev/kvm inside the VM, which the sandbox
+    # node pod needs to run vm-backend agents as microVMs (macOS: vz on
+    # M3+/macOS 15). Enabled automatically with virtualization.enabled=true;
+    # PLATFORM_NESTED_VIRT=1 forces it for a plain install. Create-time only —
+    # an existing VM needs cluster:delete + reinstall to gain it.
+    if [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
+        --set '.vmType = "vz" | .nestedVirtualization = true'
     else
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
     fi
@@ -113,11 +109,12 @@ else
     echo "Starting k3s VM..."
     limactl start "$LIMA_INSTANCE"
   fi
-  # Pre-existing VM off the user-v2 network (create-time only): the sandbox
-  # node could never reach it — stop early with the fix.
-  if [ -n "$VIRT_ENABLED" ] && [ "$(limactl list "$LIMA_INSTANCE" --json | yq '.config.networks[0].lima // ""')" != "user-v2" ]; then
-    echo "FATAL: VM '$LIMA_INSTANCE' is not on lima's user-v2 network, which the sandbox node needs." >&2
-    echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true." >&2
+  # Pre-existing VM without nested virt (create-time only): the sandbox node
+  # pod would have no /dev/kvm — stop early with the fix.
+  if [ -n "$VIRT_ENABLED" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the sandbox node needs it." >&2
+    echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true" >&2
+    echo "(nested virtualization needs Apple silicon M3+ on macOS 15+)." >&2
     exit 1
   fi
   echo "Waiting for k3s to be ready..."
@@ -422,30 +419,6 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# 2c. Sandbox node — the second lima VM that runs vm-backend agents as smolvm
-# machines. The install only creates/starts it and hands the chart an SSH
-# identity for it (lima's own key and user); the chart's provision-node hook
-# Job does the rest (smolvm, sandbox-node, token/TLS, the Service-CIDR route),
-# exactly as it would for a real machine. The vm image archive is the one
-# dev-only extra: there is no registry, so it is copied onto the node below.
-if [ -n "$VIRT_ENABLED" ]; then
-  if ! limactl list -q 2>/dev/null | grep -qx "$SANDBOX_INSTANCE"; then
-    echo "Creating sandbox node VM ($SANDBOX_INSTANCE)..."
-    limactl create --name="$SANDBOX_INSTANCE" "$SANDBOX_TEMPLATE" --tty=false
-  fi
-  if [ "$(limactl list "$SANDBOX_INSTANCE" --json | yq '.status')" != "Running" ]; then
-    echo "Starting sandbox node VM..."
-    limactl start "$SANDBOX_INSTANCE"
-  fi
-  limactl shell "$SANDBOX_INSTANCE" test -e /dev/kvm || { echo "FATAL: sandbox node has no /dev/kvm (nested virtualization needs Apple silicon M3+ on macOS 15+)." >&2; exit 1; }
-  SANDBOX_IP=$(limactl shell "$SANDBOX_INSTANCE" ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
-  NODE_FLAGS=(--set "virtualization.node.host=$SANDBOX_IP" --set "virtualization.node.sshUser=$(limactl shell "$SANDBOX_INSTANCE" whoami)"
-    --set-file "virtualization.node.sshKey=${LIMA_HOME:-$HOME/.lima}/_config/user")
-  HELM_EXTRA_ARGS+=("${NODE_FLAGS[@]}")
-  AGENT_VALUE_FLAGS+=("${NODE_FLAGS[@]}")
-  echo "Sandbox node at $SANDBOX_IP"
-fi
-
 # Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
 # clickstack.enabled=false.
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
@@ -485,7 +458,8 @@ else
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      # vm-backend images run on the sandbox node, never in k3s.
+      # vm-backend images run inside the sandbox node pod's machines, never
+      # as k3s containers; they are loaded onto that pod after the install.
       if [ "$backend" = vm ]; then VM_IMAGES+=("$image"); else AGENT_IMAGES+=("$image"); fi
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
@@ -516,20 +490,6 @@ else
     limactl shell "$LIMA_INSTANCE" rm -f "$tar"
   fi
   rm -f "$tar"
-  # The sandbox node has no registry to pull from: sandbox-node creates a
-  # machine from a docker-save archive named after the image reference when
-  # one is present (the dir is created here since the chart's provisioner has
-  # not set the node up yet at this point).
-  for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
-    echo "Loading $image onto the sandbox node..."
-    tar="/tmp/$(printf '%s' "$image" | tr '/:@' '___').tar"
-    docker save -o "$tar" "$image"
-    limactl copy "$tar" "$SANDBOX_INSTANCE":"$tar"
-    # smolvm reads the archive as the machine's own unprivileged uid.
-    limactl shell "$SANDBOX_INSTANCE" sudo install -D -m 644 "$tar" "/var/lib/platform-sandbox/images/$(basename "$tar")"
-    limactl shell "$SANDBOX_INSTANCE" rm -f "$tar"
-    rm -f "$tar"
-  done
 fi
 
 # 4. Helm install or upgrade.
@@ -584,6 +544,22 @@ fi
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
+
+# 6b. vm-backend images onto the sandbox node. It has no registry to pull
+# from: sandbox-node creates a machine from a docker-save archive named after
+# the image reference when one is present in its state dir, which lives on the
+# node's PVC — so this is copied into the running pod, once it exists.
+for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
+  echo "Loading $image onto the sandbox node..."
+  tar="/tmp/$(printf '%s' "$image" | tr '/:@' '___').tar"
+  docker save -o "$tar" "$image"
+  pod=$(kubectl --kubeconfig="$KUBECONFIG" get pod -l app.kubernetes.io/component=sandbox-node -o jsonpath='{.items[0].metadata.name}')
+  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- mkdir -p /var/lib/platform-sandbox/images
+  kubectl --kubeconfig="$KUBECONFIG" cp "$tar" "$pod:/var/lib/platform-sandbox/images/$(basename "$tar")"
+  # smolvm reads the archive as the machine's own unprivileged uid.
+  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- chmod 644 "/var/lib/platform-sandbox/images/$(basename "$tar")"
+  rm -f "$tar"
+done
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not

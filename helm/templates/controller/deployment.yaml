@@ -70,9 +70,9 @@ spec:
             - name: STORAGE_MIGRATION
               value: {{ .Values.controller.storageMigration | toJson | quote }}
             # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
-            {{- $node := .Values.virtualization.node }}
+            {{- $nodeHost := printf "%s-sandbox-node.%s.svc" (include "platform.fullname" .) .Release.Namespace }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" (printf "https://%s:4600" $node.host) "nodeAddress" ($node.address | default $node.host) | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" (printf "https://%s:4600" $nodeHost) "nodeAddress" $nodeHost | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: SANDBOX_NODE_TOKEN
               valueFrom:

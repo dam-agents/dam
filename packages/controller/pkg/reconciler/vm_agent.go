@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -95,7 +96,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, fmt.Errorf("applying agent service: %w", err)
 	}
 	if st.Port > 0 {
-		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, r.config.VM.NodeAddress, int32(st.Port), ownerRef)); err != nil {
+		addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", r.config.VM.NodeAddress)
+		if err != nil || len(addrs) == 0 {
+			return st, fmt.Errorf("resolving sandbox node %s: %w", r.config.VM.NodeAddress, err)
+		}
+		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, addrs[0].String(), int32(st.Port), ownerRef)); err != nil {
 			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
 		}
 	}

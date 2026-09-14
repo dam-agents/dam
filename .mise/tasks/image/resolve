@@ -217,7 +217,7 @@ case "${1:-}" in
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller platform-base keycloak $AGENTS $SLOW_BUILDS ;;
+  list-components) echo api-server ui controller sandbox-node platform-base keycloak $AGENTS $SLOW_BUILDS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
   *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;

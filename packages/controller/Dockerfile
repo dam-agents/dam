@@ -14,18 +14,12 @@ ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -o /controller . && \
-    for arch in amd64 arm64; do \
-      CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -o /sandbox-node-$arch ./cmd/sandbox-node; \
-    done
+    go build -o /controller .
 
 FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER 65532
 
 COPY --from=builder --chown=65532:0 /controller /usr/local/bin/controller
-# Both node architectures ship in every image: the provisioner Job uploads the
-# one matching the sandbox node, which need not match the cluster's.
-COPY --from=builder --chown=65532:0 /sandbox-node-amd64 /sandbox-node-arm64 /usr/local/lib/platform/
 
 ENTRYPOINT ["controller"]

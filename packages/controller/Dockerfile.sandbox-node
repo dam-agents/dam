@@ -1,0 +1,34 @@
+# The sandbox node: smolvm plus the platform's sandbox-node agent, run as one
+# pod that holds /dev/kvm (a device-plugin resource, or privileged locally) and
+# hosts vm-backend agents as microVMs. Same image everywhere; only the pod's
+# device grant differs per cluster.
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS builder
+
+ENV GOTOOLCHAIN=auto
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+ARG TARGETOS TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -o /sandbox-node ./cmd/sandbox-node
+
+FROM quay.io/fedora/fedora:41 AS runner
+
+# tar unpacks image archives, e2fsprogs makes and grows machine disks; the
+# smolvm release itself comes from GitHub, pinned. Its multi-GiB ext4
+# templates are sparse and stay so in the layer.
+ARG SMOLVM_VERSION=1.16.0
+RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-core && dnf clean all && \
+    (umask 022; curl -sSL https://smolmachines.com/install.sh | HOME=/opt bash -s -- --version ${SMOLVM_VERSION} --prefix /opt/smolvm) && \
+    chmod -R a+rX /opt/smolvm
+
+COPY --from=builder /sandbox-node /usr/local/bin/sandbox-node
+
+# smolvm keeps machines and their disks under $HOME/.cache; the chart mounts a
+# volume there so they outlive the pod.
+ENV HOME=/var/lib/smolvm
+ENTRYPOINT ["sandbox-node", "--smolvm", "/opt/smolvm/smolvm"]
