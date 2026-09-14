@@ -1,8 +1,6 @@
 package sandboxnode
 
 import (
-	"bytes"
-	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -12,15 +10,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -35,7 +30,7 @@ var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 type Server struct {
 	Token     string
 	StateDir  string
-	Smolvm    string
+	Runtime   Runtime
 	PortMin   int
 	PortMax   int
 	AllowFrom []*net.IPNet
@@ -142,10 +137,10 @@ func needsRestart(applied, desired MachineSpec) bool {
 }
 
 func (s *Server) ensure(id string, spec MachineSpec) error {
-	state := s.machineState(id)
+	state := s.Runtime.State(id)
 	if !spec.Running {
 		if state == StateRunning {
-			return s.smolvm("machine", "stop", "-n", id)
+			return s.Runtime.Stop(id)
 		}
 		return nil
 	}
@@ -160,27 +155,16 @@ func (s *Server) ensure(id string, spec MachineSpec) error {
 	}
 	applied := s.readSpec(id)
 	if state == StateRunning && (applied == nil || needsRestart(*applied, spec)) {
-		if err := s.smolvm("machine", "stop", "-n", id); err != nil {
+		if err := s.Runtime.Stop(id); err != nil {
 			return err
 		}
 		state = StateStopped
 	}
 	if state == StateStopped {
-		args := []string{"machine", "update", "-n", id, "--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB)}
-		if applied != nil && applied.StorageGiB < spec.StorageGiB {
-			args = append(args, "--storage", strconv.Itoa(spec.StorageGiB))
-		}
-		if applied != nil {
-			for k := range applied.Env {
-				if _, kept := spec.Env[k]; !kept {
-					args = append(args, "--remove-env", k)
-				}
-			}
-		}
-		if err := s.smolvm(append(args, envArgs(spec.Env)...)...); err != nil {
+		if err := s.Runtime.Update(id, spec, applied); err != nil {
 			return err
 		}
-		if err := s.start(id); err != nil {
+		if err := s.Runtime.Start(id); err != nil {
 			return err
 		}
 	}
@@ -196,77 +180,13 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar"); fileExists(archive) {
 		image = archive
 	}
-	args := []string{"machine", "create", "-n", id, "-I", image, "--max-image-size", "16GiB",
-		"--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB), "--storage", strconv.Itoa(spec.StorageGiB),
-		"-u", "root", "--net", "--net-backend", "virtio-net", "-p", fmt.Sprintf("%d:%d", port+loopbackOffset, guestAgentPort),
-		"-v", filepath.Join(s.machineDir(id), "ca") + ":/etc/platform/ca:ro"}
-	for _, c := range spec.AllowCIDRs {
-		args = append(args, "--allow-cidr", c)
-	}
-	if err := s.smolvm(append(args, envArgs(spec.Env)...)...); err != nil {
+	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(s.machineDir(id), "ca")); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
-	return s.start(id)
-}
-
-func (s *Server) start(id string) error {
-	if dir := s.vmDir(id); dir != "" {
-		_ = s.smolvm("machine", "stop", "-n", id)
-		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid", "overlay.qcow2", "overlay.formatted"} {
-			_ = os.Remove(filepath.Join(dir, f))
-		}
-	}
-	err := s.smolvm("machine", "start", "-n", id)
-	if err != nil {
-		for _, pid := range orphanPIDs("/proc", s.vmDir(id)) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-		}
-	}
-	return err
-}
-
-func (s *Server) vmDir(id string) string {
-	names, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms", "*", "name"))
-	for _, f := range names {
-		if b, err := os.ReadFile(f); err == nil && strings.TrimSpace(string(b)) == id {
-			return filepath.Dir(f)
-		}
-	}
-	return ""
-}
-
-func orphanPIDs(procRoot, vmDir string) []int {
-	if vmDir == "" {
-		return nil
-	}
-	entries, _ := os.ReadDir(procRoot)
-	var pids []int
-	for _, e := range entries {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		if cmd, _ := os.ReadFile(filepath.Join(procRoot, e.Name(), "cmdline")); bytes.Contains(cmd, []byte(vmDir+"/")) {
-			pids = append(pids, pid)
-		}
-	}
-	return pids
-}
-
-func envArgs(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var args []string
-	for _, k := range keys {
-		args = append(args, "-e", k+"="+env[k])
-	}
-	return args
+	return s.Runtime.Start(id)
 }
 
 func (s *Server) writeCA(id, ca string) error {
@@ -286,8 +206,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	lock := s.lock(id)
 	lock.Lock()
 	defer lock.Unlock()
-	if s.machineState(id) != StateAbsent {
-		if err := s.smolvm("machine", "delete", "-n", id, "-f"); err != nil {
+	if s.Runtime.State(id) != StateAbsent {
+		if err := s.Runtime.Delete(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -350,25 +270,11 @@ func (s *Server) status(id string) MachineStatus {
 		st.State = pending
 		return st
 	}
-	st.State = s.machineState(id)
+	st.State = s.Runtime.State(id)
 	if st.State == StateRunning {
 		st.Ready = s.healthy(st.Port)
 	}
 	return st
-}
-
-func (s *Server) machineState(id string) string {
-	out, err := exec.Command(s.Smolvm, "machine", "status", "-n", id, "--json").Output()
-	if err != nil {
-		return StateAbsent
-	}
-	var st struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal(out, &st); err != nil || st.State != "running" {
-		return StateStopped
-	}
-	return StateRunning
 }
 
 func (s *Server) healthy(port int) bool {
@@ -490,16 +396,6 @@ func (s *Server) writeSpec(id string, spec MachineSpec) error {
 }
 
 func (s *Server) machineDir(id string) string { return filepath.Join(s.StateDir, "machines", id) }
-
-func (s *Server) smolvm(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, s.Smolvm, args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
