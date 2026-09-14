@@ -26,7 +26,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$VALUES" ] || { echo "no such values file: $VALUES" >&2; exit 1; }
 KIT_FILES="$(find "$(dirname "$VALUES")/starter-kits" -name kit.yaml 2>/dev/null || true)"
 
-for comp in keycloak $("$here/resolve" list-slow-builds); do
+for comp in $("$here/resolve" list-pinned-tags); do
   tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
   [ -n "$tag" ] || { echo "empty source sha for $comp" >&2; exit 1; }
   tmp="$(mktemp)"
