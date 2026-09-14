@@ -26,6 +26,8 @@ export interface BoltSlackGatewayDeps {
   commandName: string;
 }
 
+const CHANNEL_HISTORY_PAGE_SIZE = 200;
+
 function toSlackMessage(m: {
   ts?: string;
   user?: string;
@@ -285,23 +287,27 @@ export function createBoltSlackGateway(
 
     async getChannelHistory(args) {
       if (!app) return { messages: [], hasMore: false };
-      const history = await app.client.conversations.history({
-        channel: args.channel,
-        limit: args.limit,
-        ...(args.oldest ? { oldest: args.oldest } : {}),
-      });
-      return {
-        messages: (history.messages ?? []).map((m) => ({
-          ts: m.ts,
-          user: m.user,
-          text: m.text,
-          blocks: m.blocks as SlackMessage["blocks"],
-          ...(m.edited ? { edited: true } : {}),
-        })),
-        hasMore: Boolean(
-          history.has_more || history.response_metadata?.next_cursor,
-        ),
-      };
+      const pageSize = Math.min(args.limit, CHANNEL_HISTORY_PAGE_SIZE);
+      const collected: SlackMessage[] = [];
+      let cursor: string | undefined;
+      for (;;) {
+        const history = await app.client.conversations.history({
+          channel: args.channel,
+          limit: pageSize,
+          ...(args.oldest ? { oldest: args.oldest } : {}),
+          ...(cursor ? { cursor } : {}),
+        });
+        collected.push(...(history.messages ?? []).map(toSlackMessage));
+        cursor = history.response_metadata?.next_cursor || undefined;
+        const more = Boolean(history.has_more || cursor);
+        if (collected.length >= args.limit) {
+          return {
+            messages: collected.slice(0, args.limit),
+            hasMore: more || collected.length > args.limit,
+          };
+        }
+        if (!cursor) return { messages: collected, hasMore: false };
+      }
     },
 
     async uploadFile(args) {

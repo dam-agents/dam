@@ -517,6 +517,8 @@ const THREAD_LOOKBACK = 50;
 
 const CHANNEL_LOOKBACK = 50;
 
+const CHANNEL_CATCH_UP_CAP = 500;
+
 const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function windowFloorTs(nowMs: number): string {
@@ -539,7 +541,7 @@ async function readConversation(
   }
   const read = await gateway.getChannelHistory({
     channel,
-    limit: CHANNEL_LOOKBACK,
+    limit: since === undefined ? CHANNEL_LOOKBACK : CHANNEL_CATCH_UP_CAP,
     ...(since ? { oldest: since } : {}),
   });
   return { messages: read.messages.slice().reverse(), hasMore: read.hasMore };
