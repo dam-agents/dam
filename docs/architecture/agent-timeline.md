@@ -7,7 +7,7 @@ Last verified: 2026-09-14
 The **agent timeline** is the user-facing read path over the raw signals an agent
 produced: the **Telemetry Traces** it emitted, the **Telemetry Spans** inside each one, and
 the **Telemetry Log Records** those spans carry. It answers *what did my agent actually do,
-and where did the time and money go* — the structural counterpart to
+and where did the time and money go in this exchange* — the structural counterpart to
 [metrics](metrics.md), which answers *how much have my agents spent*.
 
 Both read the columnar telemetry store that [observability](observability.md) fills, and
@@ -40,26 +40,30 @@ flowchart LR
   reader -->|read| store
 ```
 
-## What a trace is here
+## The unit is a Turn, not a trace
 
-A **Telemetry Trace** is every record sharing one trace identifier, across *both* the span
-table and the log table. It is deliberately not "the spans of a trace": the harness's span
-export is a beta surface whose shape moves between releases, while its per-call log records
-have carried a trace identifier since the spend read path was built. Defining the unit
-across both tables means the surface degrades rather than disappears — with no spans, a
-trace is still a correlated, time-ordered set of records.
+A **Turn** is everything one exchange produced: the records and spans between one prompt and
+the next, in time order. It is deliberately **not** the OpenTelemetry trace.
 
-**How much structure a trace has is the harness's business, not this subsystem's.** The
-Claude Code CLI documents a per-prompt interaction span with model-call and tool spans
-beneath it, but what a given install actually emits depends on the harness version and on
-how it was launched: driven through the agent protocol rather than as an interactive CLI
-session, it emits each model call as its own parentless root, so a trace there is one call
-and the hierarchy is absent entirely. The read path assumes neither shape. It groups by
-trace identifier, names the root by whatever span has no parent, and renders whatever depth
-it finds — one bar or a nested tree.
+The trace is the obvious unit and the wrong one, because what a trace contains is the
+harness's business and it varies turn to turn. Observed on one live install inside a single
+session: one exchange emitted records carrying **no trace identifier at all** alongside a
+span that had one of its own; the next emitted a tidy interaction root with a model-call
+child; the third emitted records and no spans whatever. Grouping on the trace identifier
+turns that into three rows of three different shapes — one of them invisible — for three
+exchanges that a reader watching the conversation would call the same kind of thing.
 
-A Session is therefore *many* traces in either case, correlated by the session attribute the
-spans carry, which is what the surface filters on when narrowing to a Session.
+Grouping on time bounded by the prompt event survives all three. Every record and span the
+session produced is ordered by timestamp and cut at each prompt; the pieces between two cuts
+are one Turn. A Turn therefore reports how much structure it happens to have — how many
+spans, how many records, which traces it touched — rather than depending on that structure
+to exist. Records that arrive before any prompt (the first exchange of a session often does)
+form a leading Turn rather than being discarded, because that is where its cost is.
+
+**This is why the surface reads next to the conversation.** One Turn is one exchange, so the
+listing runs in the same order as the transcript beside it and lines up with it row for
+message. Reaching a Turn's detail is a time range within a Session, not a trace lookup —
+which is what lets a Turn hold spans from several traces, or from none.
 
 ## Correlating a log record to the call it describes
 
@@ -127,15 +131,15 @@ neither query has to span two tables.
 
 ## Contract
 
-Three owner-scoped reads, all query-only, all narrowing to a single owned agent on request
-and to a Session within it. The field-level shapes live in the contract package
+Three owner-scoped reads, all query-only. The two Turn reads are always scoped to one owned
+agent and one Session; the record read narrows on request. The field-level shapes live in the contract package
 [`packages/api-server-api/`](../../packages/api-server-api/).
 
-- **Traces** — the listing for an agent over a window: each trace's root name, when it
-  started, how long it took, how many spans and errors it holds, which Sessions it touched,
+- **Turns** — the listing for one Session over a window: when each Turn started, how long it
+  took, how many spans and records it holds, which traces it touched, which models it called,
   and what it cost.
-- **Trace** — one trace in full: its spans, its log records, and the resolved attachment
-  between them.
+- **Turn** — one Turn in full, addressed by its time range: its spans, its log records, and
+  the resolved attachment between them.
 - **Log records** — a flat read across traces, filtered by Session, by event, or by a text
   match over the record and its attributes; the way to answer *what did my agent do* without
   starting from a trace.

@@ -748,8 +748,8 @@ export {
 } from "./modules/kb-publish/harness.js";
 
 export {
-  timelineTracesInputSchema,
-  timelineTraceInputSchema,
+  timelineTurnsInputSchema,
+  timelineTurnInputSchema,
   timelineLogsInputSchema,
   timelineExportQuerySchema,
   timelineExportSignalSchema,
@@ -770,21 +770,21 @@ export {
 } from "./modules/timeline/constants.js";
 export type {
   TimelineService,
-  TimelineTracesQuery,
-  TimelineTraceQuery,
+  TimelineTurnsQuery,
+  TimelineTurnQuery,
   TimelineLogsQuery,
   TimelineExportQuery,
   TimelineExportSignal,
-  TraceSummary,
-  TraceDetail,
+  TurnSummary,
+  TurnDetail,
   TimelineSpan,
   TimelineLog,
   LogAttachment,
   TimelineUnavailable,
-  TimelineTraces,
-  TimelineTrace,
+  TimelineTurns,
+  TimelineTurn,
   TimelineLogs,
-  TimelineTracesResult,
-  TimelineTraceResult,
+  TimelineTurnsResult,
+  TimelineTurnResult,
   TimelineLogsResult,
 } from "./modules/timeline/types.js";

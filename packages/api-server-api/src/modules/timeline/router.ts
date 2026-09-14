@@ -5,22 +5,22 @@ import {
 } from "../../auth-procedures.js";
 import {
   timelineLogsInputSchema,
-  timelineTraceInputSchema,
-  timelineTracesInputSchema,
+  timelineTurnInputSchema,
+  timelineTurnsInputSchema,
 } from "./schemas.js";
 
 export const timelineRouter = t.router({
-  traces: readAgentProcedure
-    .input(timelineTracesInputSchema)
+  turns: readAgentProcedure
+    .input(timelineTurnsInputSchema)
     .query(({ ctx, input }) => {
-      if (input.agentId) checkAgentBinding(ctx, input.agentId);
-      return ctx.timeline.traces(input);
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.timeline.turns(input);
     }),
-  trace: readAgentProcedure
-    .input(timelineTraceInputSchema)
+  turn: readAgentProcedure
+    .input(timelineTurnInputSchema)
     .query(({ ctx, input }) => {
-      if (input.agentId) checkAgentBinding(ctx, input.agentId);
-      return ctx.timeline.trace(input);
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.timeline.turn(input);
     }),
   logs: readAgentProcedure
     .input(timelineLogsInputSchema)

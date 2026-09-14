@@ -3,27 +3,28 @@ import type {
   timelineExportQuerySchema,
   timelineExportSignalSchema,
   timelineLogsInputSchema,
-  timelineTraceInputSchema,
-  timelineTracesInputSchema,
+  timelineTurnInputSchema,
+  timelineTurnsInputSchema,
 } from "./schemas.js";
 
-export type TimelineTracesQuery = z.infer<typeof timelineTracesInputSchema>;
-export type TimelineTraceQuery = z.infer<typeof timelineTraceInputSchema>;
+export type TimelineTurnsQuery = z.infer<typeof timelineTurnsInputSchema>;
+export type TimelineTurnQuery = z.infer<typeof timelineTurnInputSchema>;
 export type TimelineLogsQuery = z.infer<typeof timelineLogsInputSchema>;
 export type TimelineExportQuery = z.infer<typeof timelineExportQuerySchema>;
 export type TimelineExportSignal = z.infer<typeof timelineExportSignalSchema>;
 
-export interface TraceSummary {
-  traceId: string;
+export interface TurnSummary {
+  turnId: string;
   startedAt: string;
   endedAt: string;
   durationMs: number;
+  prompted: boolean;
   rootName: string;
   spanCount: number;
-  errorCount: number;
-  services: string[];
-  sessionIds: string[];
   recordCount: number;
+  errorCount: number;
+  traceIds: string[];
+  models: string[];
   calls: number;
   costUsd: number;
   inputTokens: number;
@@ -63,8 +64,8 @@ export interface TimelineLog {
   attachedBy: LogAttachment;
 }
 
-export interface TraceDetail {
-  traceId: string;
+export interface TurnDetail {
+  turnId: string;
   startedAt: string;
   durationMs: number;
   spans: TimelineSpan[];
@@ -78,15 +79,15 @@ export interface TimelineUnavailable {
   reason: string;
 }
 
-export interface TimelineTraces {
+export interface TimelineTurns {
   available: true;
-  traces: TraceSummary[];
+  turns: TurnSummary[];
   truncated: boolean;
 }
 
-export interface TimelineTrace {
+export interface TimelineTurn {
   available: true;
-  trace: TraceDetail;
+  turn: TurnDetail;
 }
 
 export interface TimelineLogs {
@@ -95,12 +96,12 @@ export interface TimelineLogs {
   truncated: boolean;
 }
 
-export type TimelineTracesResult = TimelineTraces | TimelineUnavailable;
-export type TimelineTraceResult = TimelineTrace | TimelineUnavailable;
+export type TimelineTurnsResult = TimelineTurns | TimelineUnavailable;
+export type TimelineTurnResult = TimelineTurn | TimelineUnavailable;
 export type TimelineLogsResult = TimelineLogs | TimelineUnavailable;
 
 export interface TimelineService {
-  traces(query: TimelineTracesQuery): Promise<TimelineTracesResult>;
-  trace(query: TimelineTraceQuery): Promise<TimelineTraceResult>;
+  turns(query: TimelineTurnsQuery): Promise<TimelineTurnsResult>;
+  turn(query: TimelineTurnQuery): Promise<TimelineTurnResult>;
   logs(query: TimelineLogsQuery): Promise<TimelineLogsResult>;
 }

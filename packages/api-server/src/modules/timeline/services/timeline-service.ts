@@ -1,21 +1,20 @@
-import { TRPCError } from "@trpc/server";
-import {
-  TIMELINE_MAX_TRACE_HOURS,
-  type TimelineLogsQuery,
-  type TimelineLogsResult,
-  type TimelineService,
-  type TimelineSpan,
-  type TimelineTraceQuery,
-  type TimelineTraceResult,
-  type TimelineTracesQuery,
-  type TimelineTracesResult,
-  type TraceSummary,
+import type {
+  TimelineLogsQuery,
+  TimelineLogsResult,
+  TimelineService,
+  TimelineSpan,
+  TimelineTurnQuery,
+  TimelineTurnResult,
+  TimelineTurnsQuery,
+  TimelineTurnsResult,
+  TurnSummary,
 } from "api-server-api";
 
 import {
   attachLogsToSpans,
   type UnattachedLog,
 } from "../domain/attach-logs.js";
+import { groupIntoTurns } from "../domain/group-turns.js";
 
 export const TIMELINE_DISABLED_REASON =
   "The telemetry backend is not enabled on this deployment, so agent traces and logs are not recorded here.";
@@ -27,29 +26,6 @@ export interface TimelineWindow {
   sessionId?: string;
 }
 
-export interface TraceSpend {
-  traceId: string;
-  calls: number;
-  costUsd: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-}
-
-export interface TraceShape {
-  traceId: string;
-  startedAt: string;
-  endedAt: string;
-  durationMs: number;
-  rootName: string;
-  spanCount: number;
-  errorCount: number;
-  services: string[];
-  sessionIds: string[];
-  recordCount: number;
-}
-
 export interface TimelineLogFilter extends TimelineWindow {
   traceId?: string;
   event?: string;
@@ -57,25 +33,9 @@ export interface TimelineLogFilter extends TimelineWindow {
 }
 
 export interface TimelineReader {
-  traceShapes(
+  sessionSpans(
     agentIds: readonly string[],
     window: TimelineWindow,
-    limit: number,
-  ): Promise<TraceShape[]>;
-  logTraceShapes(
-    agentIds: readonly string[],
-    window: TimelineWindow,
-    limit: number,
-  ): Promise<TraceShape[]>;
-  spendByTrace(
-    agentIds: readonly string[],
-    window: TimelineWindow,
-    traceIds: readonly string[],
-  ): Promise<TraceSpend[]>;
-  spansForTrace(
-    agentIds: readonly string[],
-    window: TimelineWindow,
-    traceId: string,
     limit: number,
   ): Promise<TimelineSpan[]>;
   logRecords(
@@ -99,86 +59,11 @@ export function ownedTimelineScope(
   return ids.includes(agentId) ? [agentId] : [];
 }
 
-function detailWindow(query: TimelineTraceQuery): TimelineWindow {
-  if (query.startedAt === undefined) return { hours: query.sinceHours };
-  const started = Date.parse(query.startedAt);
-  if (Number.isNaN(started)) return { hours: query.sinceHours };
-  return {
-    fromIso: new Date(started - 60_000).toISOString(),
-    toIso: new Date(
-      started + TIMELINE_MAX_TRACE_HOURS * 60 * 60 * 1000,
-    ).toISOString(),
-  };
-}
-
-export function mergeShapes(
-  spanShapes: readonly TraceShape[],
-  logShapes: readonly TraceShape[],
-): TraceShape[] {
-  const merged = new Map<string, TraceShape>();
-  for (const shape of logShapes) merged.set(shape.traceId, shape);
-  for (const shape of spanShapes) {
-    const fromLogs = merged.get(shape.traceId);
-    merged.set(
-      shape.traceId,
-      fromLogs === undefined
-        ? shape
-        : {
-            ...shape,
-            startedAt:
-              fromLogs.startedAt !== "" && fromLogs.startedAt < shape.startedAt
-                ? fromLogs.startedAt
-                : shape.startedAt,
-            endedAt:
-              fromLogs.endedAt > shape.endedAt
-                ? fromLogs.endedAt
-                : shape.endedAt,
-            sessionIds: [
-              ...new Set([...shape.sessionIds, ...fromLogs.sessionIds]),
-            ],
-          },
-    );
-  }
-  return [...merged.values()]
-    .map((shape) => ({
-      ...shape,
-      durationMs: durationBetween(shape.startedAt, shape.endedAt),
-    }))
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-}
-
-export function newestFirstWindow(
-  shapes: readonly TraceShape[],
+export function newestTurns(
+  turns: readonly TurnSummary[],
   limit: number,
-): TraceShape[] {
-  return shapes.slice(0, limit).reverse();
-}
-
-function durationBetween(startedAt: string, endedAt: string): number {
-  const from = Date.parse(startedAt);
-  const to = Date.parse(endedAt);
-  return Number.isNaN(from) || Number.isNaN(to) ? 0 : Math.max(0, to - from);
-}
-
-function boundsOf(
-  spans: readonly TimelineSpan[],
-  logs: readonly UnattachedLog[],
-): { startedAt: string; durationMs: number } {
-  const starts = [
-    ...spans.map((s) => Date.parse(s.startedAt)),
-    ...logs.map((l) => Date.parse(l.at)),
-  ].filter((n) => !Number.isNaN(n));
-  const ends = [
-    ...spans.map((s) => Date.parse(s.startedAt) + s.durationMs),
-    ...logs.map((l) => Date.parse(l.at)),
-  ].filter((n) => !Number.isNaN(n));
-  if (starts.length === 0)
-    return { startedAt: new Date(0).toISOString(), durationMs: 0 };
-  const from = Math.min(...starts);
-  return {
-    startedAt: new Date(from).toISOString(),
-    durationMs: Math.max(0, Math.max(...ends) - from),
-  };
+): TurnSummary[] {
+  return turns.slice(Math.max(0, turns.length - limit));
 }
 
 export function createTimelineService(deps: {
@@ -186,85 +71,64 @@ export function createTimelineService(deps: {
   listOwnedAgents: () => Promise<readonly OwnedAgent[]>;
 }): TimelineService {
   return {
-    async traces(query: TimelineTracesQuery): Promise<TimelineTracesResult> {
-      const ids = ownedTimelineScope(
-        await deps.listOwnedAgents(),
-        query.agentId,
-      );
-      if (ids.length === 0)
-        return { available: true, traces: [], truncated: false };
-
-      const window: TimelineWindow = {
-        hours: query.sinceHours,
-        ...(query.sessionId === undefined
-          ? {}
-          : { sessionId: query.sessionId }),
-      };
-      const [spanShapes, logShapes] = await Promise.all([
-        deps.reader.traceShapes(ids, window, query.limit),
-        deps.reader.logTraceShapes(ids, window, query.limit),
-      ]);
-      const shapes = newestFirstWindow(
-        mergeShapes(spanShapes, logShapes),
-        query.limit,
-      );
-      if (shapes.length === 0) {
-        return { available: true, traces: [], truncated: false };
-      }
-
-      const spend = await deps.reader.spendByTrace(
-        ids,
-        window,
-        shapes.map((s) => s.traceId),
-      );
-      const byTrace = new Map(spend.map((s) => [s.traceId, s]));
-      const traces: TraceSummary[] = shapes.map((shape) => {
-        const s = byTrace.get(shape.traceId);
-        return {
-          ...shape,
-          calls: s?.calls ?? 0,
-          costUsd: s?.costUsd ?? 0,
-          inputTokens: s?.inputTokens ?? 0,
-          outputTokens: s?.outputTokens ?? 0,
-          cacheReadTokens: s?.cacheReadTokens ?? 0,
-          cacheCreationTokens: s?.cacheCreationTokens ?? 0,
-        };
-      });
-      return {
-        available: true,
-        traces,
-        truncated:
-          spanShapes.length >= query.limit || logShapes.length >= query.limit,
-      };
-    },
-
-    async trace(query: TimelineTraceQuery): Promise<TimelineTraceResult> {
+    async turns(query: TimelineTurnsQuery): Promise<TimelineTurnsResult> {
       const ids = ownedTimelineScope(
         await deps.listOwnedAgents(),
         query.agentId,
       );
       if (ids.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Trace not found." });
+        return { available: true, turns: [], truncated: false };
       }
-      const window = detailWindow(query);
-      const [spans, logs] = await Promise.all([
-        deps.reader.spansForTrace(ids, window, query.traceId, query.spanLimit),
-        deps.reader.logRecords(
-          ids,
-          { ...window, traceId: query.traceId },
-          query.logLimit,
-        ),
+
+      const window: TimelineWindow = {
+        hours: query.sinceHours,
+        sessionId: query.sessionId,
+      };
+      const [logs, spans] = await Promise.all([
+        deps.reader.logRecords(ids, window, query.logLimit),
+        deps.reader.sessionSpans(ids, window, query.spanLimit),
       ]);
-      if (spans.length === 0 && logs.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Trace not found." });
-      }
-      const { startedAt, durationMs } = boundsOf(spans, logs);
+
+      const grouped = groupIntoTurns(logs, spans);
       return {
         available: true,
-        trace: {
-          traceId: query.traceId,
-          startedAt,
-          durationMs,
+        turns: newestTurns(grouped, query.limit),
+        truncated:
+          grouped.length > query.limit ||
+          logs.length >= query.logLimit ||
+          spans.length >= query.spanLimit,
+      };
+    },
+
+    async turn(query: TimelineTurnQuery): Promise<TimelineTurnResult> {
+      const ids = ownedTimelineScope(
+        await deps.listOwnedAgents(),
+        query.agentId,
+      );
+      const window: TimelineWindow = {
+        fromIso: query.from,
+        toIso: query.to,
+        sessionId: query.sessionId,
+      };
+      const [logs, spans] =
+        ids.length === 0
+          ? [[] as UnattachedLog[], [] as TimelineSpan[]]
+          : await Promise.all([
+              deps.reader.logRecords(ids, window, query.logLimit),
+              deps.reader.sessionSpans(ids, window, query.spanLimit),
+            ]);
+
+      const startedMs = Date.parse(query.from);
+      const endedMs = Date.parse(query.to);
+      return {
+        available: true,
+        turn: {
+          turnId: query.from,
+          startedAt: query.from,
+          durationMs:
+            Number.isNaN(startedMs) || Number.isNaN(endedMs)
+              ? 0
+              : Math.max(0, endedMs - startedMs),
           spans,
           logs: attachLogsToSpans(spans, logs),
           spansTruncated: spans.length >= query.spanLimit,
@@ -309,8 +173,8 @@ export function createDisabledTimelineService(): TimelineService {
     reason: TIMELINE_DISABLED_REASON,
   } as const;
   return {
-    traces: async () => unavailable,
-    trace: async () => unavailable,
+    turns: async () => unavailable,
+    turn: async () => unavailable,
     logs: async () => unavailable,
   };
 }

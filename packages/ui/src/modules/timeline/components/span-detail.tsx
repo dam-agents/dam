@@ -1,4 +1,4 @@
-import type { TimelineSpan, TraceDetail } from "api-server-api";
+import type { TimelineSpan, TurnDetail } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -31,7 +31,7 @@ export function SpanDetail({
   trace,
   span,
 }: {
-  trace: TraceDetail;
+  trace: TurnDetail;
   span: TimelineSpan;
 }) {
   const attached = trace.logs.filter((l) => l.attachedTo === span.spanId);

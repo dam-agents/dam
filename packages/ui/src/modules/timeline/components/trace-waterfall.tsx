@@ -1,4 +1,4 @@
-import type { TimelineLog, TraceDetail } from "api-server-api";
+import type { TimelineLog, TurnDetail } from "api-server-api";
 
 import { cn } from "@/lib/utils";
 
@@ -72,7 +72,7 @@ export function TraceWaterfall({
   onSelectSpan,
   compact = false,
 }: {
-  trace: TraceDetail;
+  trace: TurnDetail;
   selectedSpanId: string | null;
   onSelectSpan: (spanId: string) => void;
   compact?: boolean;

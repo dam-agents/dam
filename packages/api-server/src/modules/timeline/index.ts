@@ -6,16 +6,20 @@ export {
   type UnattachedLog,
 } from "./domain/attach-logs.js";
 export {
+  groupIntoTurns,
+  TURN_BOUNDARY_EVENT,
+  type TurnGroup,
+} from "./domain/group-turns.js";
+export {
   createDisabledTimelineService,
   createTimelineService,
+  newestTurns,
   ownedTimelineScope,
   TIMELINE_DISABLED_REASON,
   type OwnedAgent,
   type TimelineLogFilter,
   type TimelineReader,
   type TimelineWindow,
-  type TraceShape,
-  type TraceSpend,
 } from "./services/timeline-service.js";
 export {
   createClickhouseTimelineReader,

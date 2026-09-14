@@ -6,8 +6,6 @@ import type {
   TimelineLogFilter,
   TimelineReader,
   TimelineWindow,
-  TraceShape,
-  TraceSpend,
 } from "../services/timeline-service.js";
 
 const OWNER = "ResourceAttributes['platform.agent.id']";
@@ -37,9 +35,13 @@ function windowClauses(w: TimelineWindow): string[] {
 }
 
 export const ownedSpans = (w: TimelineWindow): string =>
-  [`${OWNER} IN {agentIds:Array(String)}`, ...windowClauses(w)].join(
-    "\n  AND ",
-  );
+  [
+    `${OWNER} IN {agentIds:Array(String)}`,
+    ...windowClauses(w),
+    ...(w.sessionId === undefined
+      ? []
+      : ["SpanAttributes['session.id'] = {sessionId:String}"]),
+  ].join("\n  AND ");
 
 export const ownedLogs = (f: TimelineLogFilter): string =>
   [
@@ -73,9 +75,6 @@ const logParams = (agentIds: readonly string[], f: TimelineLogFilter) => ({
   ...(f.contains === undefined ? {} : { contains: f.contains }),
 });
 
-const TOK = (a: string) => `toInt64OrZero(LogAttributes['${a}'])`;
-const COST_USD = `${TOK("cost_usd_micros")} / 1e6`;
-
 const n = (v: unknown): number => Number(v ?? 0);
 const s = (v: unknown): string => String(v ?? "");
 
@@ -88,8 +87,6 @@ export const toIsoUtc = (v: unknown): string => {
   const naive = CLICKHOUSE_NAIVE.exec(raw);
   return naive ? `${naive[1]}T${naive[2]}Z` : raw;
 };
-const list = (v: unknown): string[] =>
-  Array.isArray(v) ? v.map(s).filter((x) => x !== "") : [];
 const attrs = (v: unknown): Record<string, string> =>
   v !== null && typeof v === "object" && !Array.isArray(v)
     ? Object.fromEntries(
@@ -118,114 +115,7 @@ export function createClickhouseTimelineReader(
   };
 
   return {
-    async traceShapes(agentIds, window, limit) {
-      const sessionFilter =
-        window.sessionId === undefined
-          ? ""
-          : "\n         HAVING has(sessionIds, {sessionId:String})";
-      const r = await rows(
-        `SELECT
-           TraceId AS traceId,
-           min(Timestamp) AS startedAt,
-           max(Timestamp + toIntervalNanosecond(Duration)) AS endedAt,
-           count() AS spanCount,
-           countIf(position(StatusCode, 'ERROR') > 0 OR StatusCode = 'Error') AS errorCount,
-           coalesce(
-             nullIf(toString(argMinIf(SpanName, Timestamp, ParentSpanId = '')), ''),
-             toString(argMin(SpanName, Timestamp))
-           ) AS rootName,
-           arrayFilter(x -> x != '', groupUniqArray(10)(toString(ServiceName))) AS services,
-           arrayFilter(x -> x != '', groupUniqArray(10)(SpanAttributes['session.id'])) AS sessionIds
-         FROM otel_traces
-         WHERE ${ownedSpans({ ...window, sessionId: undefined })}
-         GROUP BY TraceId${sessionFilter}
-         ORDER BY startedAt DESC
-         LIMIT {limit:UInt32}`,
-        { ...windowParams(agentIds, window), limit },
-      );
-      return r.map((x) => {
-        const startedAt = toIsoUtc(x.startedAt);
-        const endedAt = toIsoUtc(x.endedAt);
-        const from = Date.parse(startedAt);
-        const to = Date.parse(endedAt);
-        return {
-          traceId: s(x.traceId),
-          startedAt,
-          endedAt,
-          durationMs:
-            Number.isNaN(from) || Number.isNaN(to) ? 0 : Math.max(0, to - from),
-          rootName: s(x.rootName),
-          spanCount: n(x.spanCount),
-          errorCount: n(x.errorCount),
-          services: list(x.services),
-          sessionIds: list(x.sessionIds),
-          recordCount: 0,
-        };
-      }) satisfies TraceShape[];
-    },
-
-    async logTraceShapes(agentIds, window, limit) {
-      const r = await rows(
-        `SELECT
-           TraceId AS traceId,
-           min(Timestamp) AS startedAt,
-           max(Timestamp) AS endedAt,
-           count() AS spanCount,
-           argMin(Body, Timestamp) AS rootName,
-           arrayFilter(x -> x != '', groupUniqArray(10)(toString(ServiceName))) AS services,
-           arrayFilter(x -> x != '', groupUniqArray(10)(LogAttributes['session.id'])) AS sessionIds
-         FROM otel_logs
-         WHERE ${ownedLogs(window)}
-           AND TraceId != ''
-         GROUP BY TraceId
-         ORDER BY startedAt DESC
-         LIMIT {limit:UInt32}`,
-        { ...logParams(agentIds, window), limit },
-      );
-      return r.map((x) => ({
-        traceId: s(x.traceId),
-        startedAt: toIsoUtc(x.startedAt),
-        endedAt: toIsoUtc(x.endedAt),
-        durationMs: 0,
-        rootName: s(x.rootName),
-        spanCount: 0,
-        errorCount: 0,
-        services: list(x.services),
-        sessionIds: list(x.sessionIds),
-        recordCount: n(x.spanCount),
-      })) satisfies TraceShape[];
-    },
-
-    async spendByTrace(agentIds, window, traceIds) {
-      if (traceIds.length === 0) return [];
-      const r = await rows(
-        `SELECT
-           TraceId AS traceId,
-           count() AS calls,
-           sum(${COST_USD}) AS costUsd,
-           sum(${TOK("input_tokens")}) AS inputTokens,
-           sum(${TOK("output_tokens")}) AS outputTokens,
-           sum(${TOK("cache_read_tokens")}) AS cacheReadTokens,
-           sum(${TOK("cache_creation_tokens")}) AS cacheCreationTokens
-         FROM otel_logs
-         WHERE ${ownedLogs({ ...window, sessionId: undefined })}
-           AND Body = 'claude_code.api_request'
-           AND TraceId IN {traceIds:Array(String)}
-         GROUP BY TraceId`,
-        { ...windowParams(agentIds, window), traceIds },
-      );
-      return r.map((x) => ({
-        traceId: s(x.traceId),
-        calls: n(x.calls),
-        costUsd: n(x.costUsd),
-        inputTokens: n(x.inputTokens),
-        outputTokens: n(x.outputTokens),
-        cacheReadTokens: n(x.cacheReadTokens),
-        cacheCreationTokens: n(x.cacheCreationTokens),
-      })) satisfies TraceSpend[];
-    },
-
-    async spansForTrace(agentIds, window, traceId, limit) {
+    async sessionSpans(agentIds, window, limit) {
       const r = await rows(
         `SELECT
            SpanId AS spanId,
@@ -242,10 +132,9 @@ export function createClickhouseTimelineReader(
            SpanAttributes AS attributes
          FROM otel_traces
          WHERE ${ownedSpans(window)}
-           AND TraceId = {traceId:String}
          ORDER BY Timestamp
          LIMIT {limit:UInt32}`,
-        { ...windowParams(agentIds, window), traceId, limit },
+        { ...windowParams(agentIds, window), limit },
       );
       return r.map((x) => ({
         spanId: s(x.spanId),

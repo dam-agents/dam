@@ -25,9 +25,9 @@ const sinceHours = z.coerce
   .max(TIMELINE_MAX_SINCE_HOURS)
   .default(TIMELINE_DEFAULT_SINCE_HOURS);
 
-export const timelineTracesInputSchema = z.object({
-  agentId: z.string().min(1).optional(),
-  sessionId: z.string().min(1).optional(),
+export const timelineTurnsInputSchema = z.object({
+  agentId: z.string().min(1),
+  sessionId: z.string().min(1),
   sinceHours,
   limit: z.coerce
     .number()
@@ -35,13 +35,25 @@ export const timelineTracesInputSchema = z.object({
     .positive()
     .max(TIMELINE_MAX_TRACES)
     .default(TIMELINE_DEFAULT_TRACES),
+  spanLimit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(TIMELINE_MAX_SPANS)
+    .default(TIMELINE_DEFAULT_SPANS),
+  logLimit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(TIMELINE_MAX_LOGS)
+    .default(TIMELINE_DEFAULT_LOGS),
 });
 
-export const timelineTraceInputSchema = z.object({
-  traceId,
-  agentId: z.string().min(1).optional(),
-  startedAt: z.string().datetime().optional(),
-  sinceHours,
+export const timelineTurnInputSchema = z.object({
+  agentId: z.string().min(1),
+  sessionId: z.string().min(1),
+  from: z.string().datetime(),
+  to: z.string().datetime(),
   spanLimit: z.coerce
     .number()
     .int()

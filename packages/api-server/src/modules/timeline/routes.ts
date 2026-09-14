@@ -94,23 +94,5 @@ async function exportSpans(
   window: { hours: number; sessionId?: string },
 ): Promise<unknown[]> {
   if (ids.length === 0) return [];
-  const shapes = await reader.traceShapes(ids, window, 500);
-  const out: unknown[] = [];
-  for (const shape of shapes) {
-    if (out.length >= TIMELINE_EXPORT_MAX_ROWS) break;
-    const endsAt = Date.parse(shape.endedAt);
-    const spans = await reader.spansForTrace(
-      ids,
-      {
-        fromIso: shape.startedAt,
-        toIso: Number.isNaN(endsAt)
-          ? shape.endedAt
-          : new Date(endsAt + 1000).toISOString(),
-      },
-      shape.traceId,
-      2000,
-    );
-    for (const span of spans) out.push({ traceId: shape.traceId, ...span });
-  }
-  return out.slice(0, TIMELINE_EXPORT_MAX_ROWS);
+  return reader.sessionSpans(ids, window, TIMELINE_EXPORT_MAX_ROWS);
 }

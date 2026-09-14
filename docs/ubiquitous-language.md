@@ -297,6 +297,7 @@ The user-facing read path over the raw signals an agent produced — the structu
 
 | Term | Definition |
 |------|-----------|
+| Turn (telemetry) | Everything one exchange produced — the records and spans between one prompt and the next, in time order. The unit the timeline lists, chosen over the OpenTelemetry trace because what a trace holds varies exchange to exchange: sometimes a whole exchange, sometimes one model call, sometimes nothing at all. Addressed by its time range within a Session, so it can hold spans from several traces or from none |
 | Telemetry Trace | Every record sharing one OpenTelemetry trace identifier, across both the span and log tables — deliberately not "the spans of a trace", so the surface still works for a harness whose span export is thin or absent. On the Claude Code rail one Telemetry Trace is one **turn**; a Session is many of them, correlated by the session attribute. Not the Experiments **Trace**, which is one Experiment's append-only stream of stage executions |
 | Telemetry Span | One unit of work inside a Telemetry Trace — the turn itself, a model call, a tool run — carrying a name, timing, status and its parent. Not the Experiments **Span**, which is one execution of a declared skeleton stage |
 | Telemetry Log Record | One structured event a harness emitted, such as the per-call record carrying a model call's token counters and its cost. Carries the trace identifier, which is what places it inside a Telemetry Trace |

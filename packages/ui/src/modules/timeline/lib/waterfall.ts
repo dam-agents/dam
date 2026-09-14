@@ -1,4 +1,4 @@
-import type { TimelineLog, TimelineSpan, TraceDetail } from "api-server-api";
+import type { TimelineLog, TimelineSpan, TurnDetail } from "api-server-api";
 
 export interface WaterfallSpan {
   span: TimelineSpan;
@@ -25,7 +25,7 @@ export function spanKindLabel(name: string): string {
   return short === "" ? name : short;
 }
 
-export function buildWaterfall(trace: TraceDetail): Waterfall {
+export function buildWaterfall(trace: TurnDetail): Waterfall {
   const spans = [...trace.spans].sort(
     (a, b) => startOf(a.startedAt) - startOf(b.startedAt),
   );

@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import type { TimelineSpan } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,6 +6,7 @@ import {
   createTimelineService,
   ownedTimelineScope,
   type TimelineReader,
+  type UnattachedLog,
 } from "../../modules/timeline/index.js";
 
 /**
@@ -16,19 +17,7 @@ import {
 function spyReader(over: Partial<TimelineReader> = {}) {
   const seen: { ids: readonly string[] }[] = [];
   const reader: TimelineReader = {
-    traceShapes: async (ids) => {
-      seen.push({ ids });
-      return [];
-    },
-    logTraceShapes: async (ids) => {
-      seen.push({ ids });
-      return [];
-    },
-    spendByTrace: async (ids) => {
-      seen.push({ ids });
-      return [];
-    },
-    spansForTrace: async (ids) => {
+    sessionSpans: async (ids) => {
       seen.push({ ids });
       return [];
     },
@@ -45,6 +34,44 @@ const owned = [
   { id: "a1", name: "one" },
   { id: "a2", name: null },
 ];
+
+const log = (over: Partial<UnattachedLog>): UnattachedLog => ({
+  at: "2026-09-14T12:00:00.000Z",
+  spanId: "",
+  traceId: "",
+  event: "claude_code.api_request",
+  severity: "INFO",
+  service: "claude-code",
+  agentId: "a1",
+  invocationId: null,
+  attributes: {},
+  ...over,
+});
+
+const span = (over: Partial<TimelineSpan>): TimelineSpan => ({
+  spanId: "s1",
+  parentSpanId: "",
+  name: "claude_code.llm_request",
+  kind: "SPAN_KIND_INTERNAL",
+  service: "claude-code",
+  startedAt: "2026-09-14T12:00:00.000Z",
+  durationMs: 100,
+  statusCode: "STATUS_CODE_UNSET",
+  statusMessage: "",
+  agentId: "a1",
+  invocationId: null,
+  attributes: {},
+  ...over,
+});
+
+const TURNS_QUERY = {
+  agentId: "a1",
+  sessionId: "s1",
+  sinceHours: 24,
+  limit: 100,
+  spanLimit: 1000,
+  logLimit: 1000,
+};
 
 describe("ownedTimelineScope", () => {
   it("spans every owned agent when none is named", () => {
@@ -68,9 +95,9 @@ describe("createTimelineService", () => {
       listOwnedAgents: async () => owned,
     });
 
-    await service.traces({ sinceHours: 24, limit: 100 });
+    await service.turns(TURNS_QUERY);
 
-    expect(seen[0]?.ids).toEqual(["a1", "a2"]);
+    expect(seen[0]?.ids).toEqual(["a1"]);
   });
 
   it("returns nothing, and never queries, for an unowned agent", async () => {
@@ -81,102 +108,121 @@ describe("createTimelineService", () => {
       listOwnedAgents: async () => owned,
     });
 
-    const result = await service.traces({
-      agentId: "not-mine",
-      sinceHours: 24,
-      limit: 100,
-    });
+    const result = await service.turns({ ...TURNS_QUERY, agentId: "not-mine" });
 
-    expect(result).toEqual({ available: true, traces: [], truncated: false });
+    expect(result).toEqual({ available: true, turns: [], truncated: false });
     expect(seen).toHaveLength(0);
   });
 
-  it("reports a trace with no owned rows as not found", async () => {
+  it("builds a turn from log records alone when the harness emitted no spans", async () => {
     /**
-     * TEST_SCENARIO: an empty owner-gated read is indistinguishable from a
-     * trace that does not exist, and must not confirm which.
+     * TEST_SCENARIO: span export is intermittent, so a turn known only to the
+     * log table must still be listed, with its cost.
      */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({
+          at: "2026-09-14T12:00:01.000Z",
+          attributes: { cost_usd_micros: "12500", model: "opus" },
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available).toBe(true);
+    if (result.available) {
+      expect(result.turns).toHaveLength(1);
+      expect(result.turns[0]?.spanCount).toBe(0);
+      expect(result.turns[0]?.recordCount).toBe(2);
+      expect(result.turns[0]?.costUsd).toBeCloseTo(0.0125);
+      expect(result.turns[0]?.models).toEqual(["opus"]);
+    }
+  });
+
+  it("keeps the newest turns when the cap bites", async () => {
+    /**
+     * TEST_SCENARIO: reading oldest-first must not turn the row cap into a
+     * window onto ancient history.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T10:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({
+          at: "2026-09-14T11:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns({ ...TURNS_QUERY, limit: 2 });
+
+    expect(result.available && result.turns.map((t) => t.startedAt)).toEqual([
+      "2026-09-14T11:00:00.000Z",
+      "2026-09-14T12:00:00.000Z",
+    ]);
+    expect(result.available && result.truncated).toBe(true);
+  });
+
+  it("answers an empty turn rather than failing when nothing is in range", async () => {
     const { reader } = spyReader();
     const service = createTimelineService({
       reader,
       listOwnedAgents: async () => owned,
     });
 
-    await expect(
-      service.trace({
-        traceId: "abc123",
-        sinceHours: 24,
-        spanLimit: 100,
-        logLimit: 100,
-      }),
-    ).rejects.toThrow(TRPCError);
-  });
-
-  it("builds a trace from log records alone when no spans exist", async () => {
-    /**
-     * TEST_SCENARIO: a harness that exports no spans still has a readable
-     * trace, which is why the unit is the TraceId across both tables.
-     */
-    const { reader } = spyReader({
-      logRecords: async () => [
-        {
-          at: "2026-09-14T10:00:00.000Z",
-          spanId: "",
-          traceId: "abc123",
-          event: "claude_code.api_request",
-          severity: "INFO",
-          service: "nous",
-          agentId: "a1",
-          invocationId: null,
-          attributes: {},
-        },
-      ],
-    });
-    const service = createTimelineService({
-      reader,
-      listOwnedAgents: async () => owned,
-    });
-
-    const result = await service.trace({
-      traceId: "abc123",
-      sinceHours: 24,
+    const result = await service.turn({
+      agentId: "a1",
+      sessionId: "s1",
+      from: "2026-09-14T12:00:00.000Z",
+      to: "2026-09-14T12:00:05.000Z",
       spanLimit: 100,
       logLimit: 100,
     });
 
     expect(result.available).toBe(true);
     if (result.available) {
-      expect(result.trace.spans).toHaveLength(0);
-      expect(result.trace.logs).toHaveLength(1);
-      expect(result.trace.logs[0]?.attachedBy).toBe("trace-root");
+      expect(result.turn.spans).toHaveLength(0);
+      expect(result.turn.durationMs).toBe(5000);
     }
   });
 
-  it("flags truncation when the row cap is reached", async () => {
-    const { reader } = spyReader({
-      traceShapes: async () => [
-        {
-          traceId: "t1",
-          startedAt: "2026-09-14T10:00:00.000Z",
-          endedAt: "2026-09-14T10:00:01.000Z",
-          durationMs: 1000,
-          rootName: "claude_code.interaction",
-          spanCount: 3,
-          errorCount: 0,
-          services: ["nous"],
-          sessionIds: ["s1"],
-          recordCount: 0,
-        },
-      ],
-    });
+  it("never queries the store for a turn on an unowned agent", async () => {
+    const { reader, seen } = spyReader();
     const service = createTimelineService({
       reader,
       listOwnedAgents: async () => owned,
     });
 
-    const result = await service.traces({ sinceHours: 24, limit: 1 });
+    await service.turn({
+      agentId: "not-mine",
+      sessionId: "s1",
+      from: "2026-09-14T12:00:00.000Z",
+      to: "2026-09-14T12:00:05.000Z",
+      spanLimit: 100,
+      logLimit: 100,
+    });
 
-    expect(result.available && result.truncated).toBe(true);
+    expect(seen).toHaveLength(0);
   });
 });
 
@@ -188,42 +234,37 @@ describe("createDisabledTimelineService", () => {
      */
     const service = createDisabledTimelineService();
 
-    const result = await service.traces({ sinceHours: 24, limit: 10 });
+    const result = await service.turns(TURNS_QUERY);
 
     expect(result.available).toBe(false);
   });
 });
 
-describe("traces across both tables", () => {
-  const shape = (over: Record<string, unknown>) => ({
-    traceId: "t1",
-    startedAt: "2026-09-14T11:39:25.000Z",
-    endedAt: "2026-09-14T11:39:26.000Z",
-    durationMs: 0,
-    rootName: "claude_code.llm_request",
-    spanCount: 1,
-    errorCount: 0,
-    services: ["claude-code"],
-    sessionIds: ["s1"],
-    recordCount: 0,
-    ...over,
-  });
-
-  it("lists a trace that has log records but no spans", async () => {
+describe("turns line up with the conversation", () => {
+  it("splits on the prompt that starts each turn", async () => {
     /**
-     * TEST_SCENARIO: the harness emits a span for only some calls, so a trace
-     * known solely to the log table must still appear — the listing used to
-     * read the span table alone and dropped it.
+     * TEST_SCENARIO: three prompts should read as three rows, whatever the
+     * harness did or did not span in between.
      */
     const { reader } = spyReader({
-      traceShapes: async () => [],
-      logTraceShapes: async () => [
-        shape({
-          traceId: "logs-only",
-          rootName: "claude_code.api_request",
-          spanCount: 0,
-          recordCount: 2,
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T12:00:01.000Z" }),
+        log({
+          at: "2026-09-14T12:01:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({ at: "2026-09-14T12:01:01.000Z" }),
+        log({
+          at: "2026-09-14T12:02:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+      ],
+      sessionSpans: async () => [
+        span({ startedAt: "2026-09-14T12:01:00.500Z" }),
       ],
     });
     const service = createTimelineService({
@@ -231,26 +272,29 @@ describe("traces across both tables", () => {
       listOwnedAgents: async () => owned,
     });
 
-    const result = await service.traces({ sinceHours: 24, limit: 100 });
+    const result = await service.turns(TURNS_QUERY);
 
-    expect(result.available).toBe(true);
+    expect(result.available && result.turns).toHaveLength(3);
     if (result.available) {
-      expect(result.traces.map((t) => t.traceId)).toEqual(["logs-only"]);
-      expect(result.traces[0]?.spanCount).toBe(0);
-      expect(result.traces[0]?.recordCount).toBe(2);
+      expect(result.turns.map((t) => t.spanCount)).toEqual([0, 1, 0]);
+      expect(result.turns.every((t) => t.prompted)).toBe(true);
     }
   });
 
-  it("shows a trace once when both tables know it, keeping the span shape", async () => {
+  it("keeps records that arrived before any prompt rather than dropping them", async () => {
+    /**
+     * TEST_SCENARIO: the first turn of a session emitted its records before any
+     * prompt event, and those records carry the cost.
+     */
     const { reader } = spyReader({
-      traceShapes: async () => [shape({ traceId: "both", spanCount: 1 })],
-      logTraceShapes: async () => [
-        shape({
-          traceId: "both",
-          rootName: "claude_code.api_request",
-          spanCount: 0,
-          recordCount: 3,
-          startedAt: "2026-09-14T11:39:24.000Z",
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          attributes: { cost_usd_micros: "5000" },
+        }),
+        log({
+          at: "2026-09-14T12:01:00.000Z",
+          event: "claude_code.user_prompt",
         }),
       ],
     });
@@ -259,69 +303,45 @@ describe("traces across both tables", () => {
       listOwnedAgents: async () => owned,
     });
 
-    const result = await service.traces({ sinceHours: 24, limit: 100 });
+    const result = await service.turns(TURNS_QUERY);
 
-    expect(result.available).toBe(true);
+    expect(result.available && result.turns).toHaveLength(2);
     if (result.available) {
-      expect(result.traces).toHaveLength(1);
-      expect(result.traces[0]?.rootName).toBe("claude_code.llm_request");
-      expect(result.traces[0]?.spanCount).toBe(1);
-      expect(result.traces[0]?.startedAt).toBe("2026-09-14T11:39:24.000Z");
+      expect(result.turns[0]?.prompted).toBe(false);
+      expect(result.turns[0]?.costUsd).toBeCloseTo(0.005);
     }
   });
 
-  it("reads oldest first, so the listing runs the same way as the transcript", async () => {
-    const { reader } = spyReader({
-      traceShapes: async () => [
-        shape({ traceId: "older", startedAt: "2026-09-14T11:00:00.000Z" }),
-      ],
-      logTraceShapes: async () => [
-        shape({
-          traceId: "newer",
-          startedAt: "2026-09-14T12:00:00.000Z",
-          endedAt: "2026-09-14T12:00:01.000Z",
-          spanCount: 0,
-          recordCount: 1,
-        }),
-      ],
-    });
-    const service = createTimelineService({
-      reader,
-      listOwnedAgents: async () => owned,
-    });
-
-    const result = await service.traces({ sinceHours: 24, limit: 100 });
-
-    expect(result.available && result.traces.map((t) => t.traceId)).toEqual([
-      "older",
-      "newer",
-    ]);
-  });
-
-  it("keeps the most recent traces when the cap bites, not the oldest", async () => {
+  it("folds an untraced record and a separately-traced span into one turn", async () => {
     /**
-     * TEST_SCENARIO: reading oldest-first must not turn the row cap into a
-     * window onto ancient history — the cap selects the newest, and only the
-     * display order is reversed.
+     * TEST_SCENARIO: the live install produced a turn whose records carried no
+     * trace id at all while its span had one of its own — grouping on time
+     * rather than on trace id is what keeps them together.
      */
     const { reader } = spyReader({
-      traceShapes: async () => [
-        shape({ traceId: "t1", startedAt: "2026-09-14T10:00:00.000Z" }),
-        shape({ traceId: "t2", startedAt: "2026-09-14T11:00:00.000Z" }),
-        shape({ traceId: "t3", startedAt: "2026-09-14T12:00:00.000Z" }),
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          traceId: "",
+          attributes: { cost_usd_micros: "7000" },
+        }),
       ],
-      logTraceShapes: async () => [],
+      sessionSpans: async () => [
+        span({ startedAt: "2026-09-14T12:00:00.100Z" }),
+      ],
     });
     const service = createTimelineService({
       reader,
       listOwnedAgents: async () => owned,
     });
 
-    const result = await service.traces({ sinceHours: 24, limit: 2 });
+    const result = await service.turns(TURNS_QUERY);
 
-    expect(result.available && result.traces.map((t) => t.traceId)).toEqual([
-      "t2",
-      "t3",
-    ]);
+    expect(result.available && result.turns).toHaveLength(1);
+    if (result.available) {
+      expect(result.turns[0]?.spanCount).toBe(1);
+      expect(result.turns[0]?.recordCount).toBe(1);
+      expect(result.turns[0]?.costUsd).toBeCloseTo(0.007);
+    }
   });
 });
