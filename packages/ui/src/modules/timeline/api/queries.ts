@@ -6,6 +6,12 @@ const LIVE_POLL_MS = 5_000;
 const OPEN_TRACE_POLL_MS = 10_000;
 const SETTLED_AFTER_MS = 5 * 60_000;
 
+function keepUnlessUnavailable<T extends { available: boolean }>(
+  previous: T | undefined,
+): T | undefined {
+  return previous?.available === false ? undefined : previous;
+}
+
 export function useTraces(
   agentId: string | null,
   sessionId: string | null,
@@ -25,7 +31,7 @@ export function useTraces(
     staleTime: 2_000,
     refetchInterval: LIVE_POLL_MS,
     retry: false,
-    placeholderData: (previous) => previous,
+    placeholderData: keepUnlessUnavailable,
   });
 }
 
@@ -51,6 +57,6 @@ export function useTrace(
     staleTime: inFlight ? 2_000 : 300_000,
     refetchInterval: inFlight ? OPEN_TRACE_POLL_MS : false,
     retry: false,
-    placeholderData: (previous) => previous,
+    placeholderData: keepUnlessUnavailable,
   });
 }

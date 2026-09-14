@@ -78,9 +78,10 @@ export function SessionTimelinePanel({
   const [spanId, setSpanId] = useState<string | null>(null);
 
   const traces = useTraces(agentId, sessionId, sinceHours, true);
-  const rows = traces.data?.available === true ? traces.data.traces : [];
   const unavailable =
     traces.data !== undefined && traces.data.available === false;
+  const rows =
+    !unavailable && traces.data?.available === true ? traces.data.traces : [];
 
   const openSummary = rows.find((t) => t.traceId === openTraceId) ?? null;
   const detail = useTrace(agentId, openTraceId, openSummary?.startedAt ?? null);
