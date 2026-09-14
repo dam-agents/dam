@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-09-09
+Last verified: 2026-09-14
 
 ## Overview
 
@@ -131,5 +131,5 @@ For each `Agent`, the controller reconciles **two paired StatefulSets** (agent +
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
 - **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway. See [security-and-credentials](security-and-credentials.md).
-- **SPIFFE identity per hop.** Three hops, the latter two gated by per-agent Istio AuthorizationPolicies: (1) agent → gateway on the CONNECT proxy port (admitted by NetworkPolicy — the agent pod sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the paired gateway pod's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service. The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA. For long-lived pairs both pods share the per-agent SA, so the gateway hop is identity-equivalent to the agent. No app-layer header conveys identity.
+- **SPIFFE identity per hop.** Three hops, the latter two gated by per-agent Istio AuthorizationPolicies: (1) agent → gateway on the CONNECT proxy port (admitted by NetworkPolicy — the agent pod sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the paired gateway pod's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service. The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA. For long-lived pairs both pods share the per-agent SA, so the gateway hop is identity-equivalent to the agent. No app-layer header *admits* any of these hops: the gateway does stamp a trusted attribution header onto the agent traffic it forwards, but that names the producing agent for [observability](observability.md) and is never read as an admission decision.
 - **Durable triggers.** Schedule fires are Postgres rows in the runtime outbox, delivered over the runtime channel only when the agent is Ready; an undelivered fire survives pod and api-server restarts until it settles or expires (see [runtime delivery](runtime-delivery.md)).

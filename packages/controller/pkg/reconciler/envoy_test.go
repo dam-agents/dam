@@ -189,6 +189,49 @@ func internalFilterChains(t *testing.T, doc map[string]any) []map[string]any {
 	return nil
 }
 
+func outerRouteConfig(t *testing.T, doc map[string]any) map[string]any {
+	t.Helper()
+	sr, _ := doc["static_resources"].(map[string]any)
+	listeners, _ := sr["listeners"].([]any)
+	for _, l := range listeners {
+		lm, _ := l.(map[string]any)
+		if lm["name"] != "agent_egress" {
+			continue
+		}
+		chains, _ := lm["filter_chains"].([]any)
+		for _, c := range chains {
+			cm, _ := c.(map[string]any)
+			filters, _ := cm["filters"].([]any)
+			for _, f := range filters {
+				fm, _ := f.(map[string]any)
+				hcm, _ := fm["typed_config"].(map[string]any)
+				if hcm == nil {
+					continue
+				}
+				if rc, ok := hcm["route_config"].(map[string]any); ok {
+					return rc
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func collectorChainRoute(t *testing.T, doc map[string]any) map[string]any {
+	t.Helper()
+	chain := filterChainNamed(t, doc, "terminate_otel_collector")
+	require.NotNil(t, chain)
+	filters, _ := chain["filters"].([]any)
+	fm, _ := filters[0].(map[string]any)
+	hcm, _ := fm["typed_config"].(map[string]any)
+	rc, _ := hcm["route_config"].(map[string]any)
+	vhosts, _ := rc["virtual_hosts"].([]any)
+	vh, _ := vhosts[0].(map[string]any)
+	routes, _ := vh["routes"].([]any)
+	r, _ := routes[0].(map[string]any)
+	return r
+}
+
 func filterChainNamed(t *testing.T, doc map[string]any, name string) map[string]any {
 	t.Helper()
 	for _, c := range internalFilterChains(t, doc) {
@@ -359,12 +402,12 @@ func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
 
 	assert.NotContains(t, got, "key: x-platform-invocation-id",
 		"invocation id must not be stamped without an override")
-	assert.Contains(t, got, "request_headers_to_remove")
-	assert.Contains(t, got, "x-platform-invocation-id",
-		"the strip (request_headers_to_remove) still names the header")
 
 	chainYAML, err := yaml.Marshal(chain)
 	require.NoError(t, err)
+	assert.Contains(t, string(chainYAML), "request_headers_to_remove")
+	assert.Contains(t, string(chainYAML), "x-platform-invocation-id",
+		"the collector chain strips a smuggled invocation id; the outer listener never sees it")
 	assert.NotContains(t, string(chainYAML), "ext_authz")
 	assert.NotContains(t, string(chainYAML), "credential_injector")
 
@@ -392,7 +435,8 @@ func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, got, "terminate_otel_collector")
 	assert.NotContains(t, got, "otel_collector")
-	assert.NotContains(t, got, "x-platform-agent-id")
+	assert.Equal(t, 1, strings.Count(got, "x-platform-agent-id"),
+		"with telemetry off the header may appear only in the strip, never in a stamp")
 }
 
 func TestRenderEnvoyBootstrap_TelemetryAttributionOverride(t *testing.T) {
@@ -419,7 +463,9 @@ func TestRenderEnvoyBootstrap_TelemetryAttributionOverrideEqualToInstanceIsNoop(
 	require.NoError(t, err)
 	assert.Contains(t, got, "value: inst-1")
 	assert.NotContains(t, got, "key: x-platform-invocation-id")
-	assert.Contains(t, got, "request_headers_to_remove")
+	chainYAML, err := yaml.Marshal(filterChainNamed(t, mustParseBootstrap(t, got), "terminate_otel_collector"))
+	require.NoError(t, err)
+	assert.Contains(t, string(chainYAML), "request_headers_to_remove")
 }
 
 func hasVolumeNamed(vols []corev1.Volume, name string) bool {
@@ -453,17 +499,95 @@ func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
 	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
-func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *testing.T) {
+// TEST_SCENARIO: a credential grant names the telemetry collector host, so an egress chain and the collector chain both want the same server name. Two filter chains matching one server name is a fatal Envoy config, so exactly one may render. The collector chain is the only one that stamps trusted attribution, so it is the one that survives.
+func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsCredentialedChain(t *testing.T) {
 	cfg := telemetryTestCfg()
-	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{
-		credentialedChain("platform-conn-collector", cfg.TelemetryCollectorHost),
-	})
+	colliding := credentialedChain("platform-conn-collector", cfg.TelemetryCollectorHost)
+	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{colliding})
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
-	assert.Nil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
-		"collector chain must be suppressed when its host collides with a credentialed chain")
-	assert.Nil(t, clusterNamed(t, doc, "otel_collector"),
-		"collector cluster must be suppressed alongside its chain")
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
+		"the stamping collector chain must survive a host collision")
+	assert.NotNil(t, clusterNamed(t, doc, "otel_collector"),
+		"the collector cluster must survive alongside its chain")
+	assert.Nil(t, filterChainNamed(t, doc, "terminate_"+colliding.ChainID),
+		"the colliding chain must be dropped so server names stay unique")
+	assert.Nil(t, clusterNamed(t, doc, colliding.UpstreamCluster),
+		"the dropped chain must not leave its upstream cluster behind")
+}
+
+// TEST_SCENARIO: an owner permanently allows one narrowly-scoped request to the telemetry collector. That promotes the collector host into this agent's egress chains as an allow-only chain, which reaches the same collision by a route any user can take from the approvals inbox. The collector chain still wins, so the agent keeps exporting attributed telemetry.
+func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsPromotedChain(t *testing.T) {
+	cfg := telemetryTestCfg()
+	promoted := allowOnlyChain("l7", cfg.TelemetryCollectorHost)
+	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{promoted})
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
+		"an l7-promoted host must not cost the agent its trusted attribution")
+	assert.NotNil(t, clusterNamed(t, doc, "otel_collector"))
+	assert.Nil(t, filterChainNamed(t, doc, "terminate_"+promoted.ChainID),
+		"the promoted chain must be dropped so server names stay unique")
+}
+
+// TEST_SCENARIO: the gateway forwards ordinary agent traffic to whatever host the request names, and the collector answers to more names than the one configured value — short service DNS, its cluster IP, a second port. Matching those to stamp selectively cannot be made exhaustive, so the outer listener stamps every request it forwards for the agent, overwriting whatever the agent set.
+func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc, "the outer listener must have a route configuration")
+	assert.Equal(t, []any{map[string]any{
+		"header":        map[string]any{"key": "x-platform-agent-id", "value": "inst-1"},
+		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+	}}, rc["request_headers_to_add"],
+		"every request the gateway forwards carries the gateway's own agent id")
+	assert.Equal(t, []any{"x-platform-invocation-id"}, rc["request_headers_to_remove"],
+		"a non-target may not smuggle an invocation id on any route")
+}
+
+// TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
+func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testing.T) {
+	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc)
+	assert.Equal(t, []any{
+		map[string]any{
+			"header":        map[string]any{"key": "x-platform-agent-id", "value": "driver-root"},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		},
+		map[string]any{
+			"header":        map[string]any{"key": "x-platform-invocation-id", "value": "target-1"},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		},
+	}, rc["request_headers_to_add"])
+	assert.NotContains(t, rc, "request_headers_to_remove",
+		"a target stamps its invocation id rather than removing it")
+}
+
+// TEST_SCENARIO: two places now apply the attribution stamp, and a stamp that differed between them would attribute the same agent's telemetry two ways depending on the route it took. They are rendered from one helper, and this pins that they agree.
+func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testing.T) {
+	for _, ids := range [][2]string{{"inst-1", ""}, {"target-1", "driver-root"}} {
+		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil)
+		require.NoError(t, err)
+		doc := mustParseBootstrap(t, got)
+		rc := outerRouteConfig(t, doc)
+		route := collectorChainRoute(t, doc)
+		assert.Equal(t, route["request_headers_to_add"], rc["request_headers_to_add"], ids[0])
+		assert.Equal(t, route["request_headers_to_remove"], rc["request_headers_to_remove"], ids[0])
+	}
+}
+
+// TEST_SCENARIO: with no telemetry backend there is no collector to attribute to, so the gateway has no reason to disclose the agent's id to every plaintext host it calls — it removes the headers instead of stamping them, and still forwards none the agent set.
+func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
+	require.NoError(t, err)
+	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
+	require.NotNil(t, rc)
+	assert.NotContains(t, rc, "request_headers_to_add",
+		"nothing to attribute to, so nothing is disclosed")
+	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
+		rc["request_headers_to_remove"])
 }
 
 func secretWithEnvMappings(name, secretType string, rawJSON string) corev1.Secret {
