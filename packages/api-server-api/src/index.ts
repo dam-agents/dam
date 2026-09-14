@@ -746,3 +746,45 @@ export {
   type KbPublishWorkCaps,
   type KbPublishWorkOrder,
 } from "./modules/kb-publish/harness.js";
+
+export {
+  timelineTracesInputSchema,
+  timelineTraceInputSchema,
+  timelineLogsInputSchema,
+  timelineExportQuerySchema,
+  timelineExportSignalSchema,
+} from "./modules/timeline/schemas.js";
+export {
+  TIMELINE_MAX_SINCE_HOURS,
+  TIMELINE_DEFAULT_SINCE_HOURS,
+  TIMELINE_MAX_TRACES,
+  TIMELINE_DEFAULT_TRACES,
+  TIMELINE_MAX_SPANS,
+  TIMELINE_DEFAULT_SPANS,
+  TIMELINE_MAX_LOGS,
+  TIMELINE_DEFAULT_LOGS,
+  TIMELINE_MAX_LOG_ROWS,
+  TIMELINE_DEFAULT_LOG_ROWS,
+  TIMELINE_MAX_TRACE_HOURS,
+  TIMELINE_EXPORT_MAX_ROWS,
+} from "./modules/timeline/constants.js";
+export type {
+  TimelineService,
+  TimelineTracesQuery,
+  TimelineTraceQuery,
+  TimelineLogsQuery,
+  TimelineExportQuery,
+  TimelineExportSignal,
+  TraceSummary,
+  TraceDetail,
+  TimelineSpan,
+  TimelineLog,
+  LogAttachment,
+  TimelineUnavailable,
+  TimelineTraces,
+  TimelineTrace,
+  TimelineLogs,
+  TimelineTracesResult,
+  TimelineTraceResult,
+  TimelineLogsResult,
+} from "./modules/timeline/types.js";

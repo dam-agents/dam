@@ -58,6 +58,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     }),
   );
 
+  boot.mountTimelineRoutes(app);
   boot.mountUsageRoutes(app);
   boot.mountCaseStudiesRoutes(app);
 

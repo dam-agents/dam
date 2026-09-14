@@ -94,6 +94,10 @@ import {
   listUsageAgentIds,
 } from "./modules/usage/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
+import {
+  composeTimelineReader,
+  createTimelineRoutes,
+} from "./modules/timeline/index.js";
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
   composeMetricsReader,
@@ -575,6 +579,7 @@ export async function bootstrap() {
     graceDays: config.caseStudiesTombstoneGraceDays,
   });
   const metricsReader = composeMetricsReader(config);
+  const timelineReader = composeTimelineReader(config);
 
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
@@ -1141,10 +1146,19 @@ export async function bootstrap() {
         .get(agentId)
         .then((r) => r?.runtimeCapabilities ?? null),
     schedulesBoot,
+    mountTimelineRoutes: (app) =>
+      app.route(
+        "/",
+        createTimelineRoutes({
+          reader: timelineReader,
+          listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+        }),
+      ),
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
     metricsReader,
+    timelineReader,
     sessionDirectory,
     terms: termsService,
     isTermsAccepted,

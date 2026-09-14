@@ -24,6 +24,7 @@ import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
+import type { TimelineService } from "./modules/timeline/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 import type { UsageService } from "./modules/usage/types.js";
@@ -59,6 +60,7 @@ export interface ApiContext {
   liveEvents: LiveEventsService;
   podSessions: PodSessionsService;
   metrics: MetricsService;
+  timeline: TimelineService;
   terms: TermsService;
   usage: UsageService;
   e2e: E2eService;
