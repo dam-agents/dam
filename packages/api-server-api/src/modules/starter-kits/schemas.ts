@@ -59,9 +59,13 @@ export const starterKitExternalSkillSchema = z.object({
   name: z.string().min(1),
 });
 
-export const starterKitBundledSkillSchema = z.object({
+export const starterKitBundledSkillsSchema = z.object({
+  path: z.string().min(1),
+});
+
+export const resolvedSkillSchema = z.object({
   name: z.string().min(1),
-  note: z.string().optional(),
+  description: z.string(),
 });
 
 export const starterKitParameterSchema = z.object({
@@ -112,22 +116,17 @@ export const starterKitSchema = z.object({
   channels: z.array(starterKitChannelSchema).default([]),
   schedules: z.array(starterKitScheduleSchema).default([]),
   skills: z.array(starterKitExternalSkillSchema).default([]),
-  bundledSkills: z.array(starterKitBundledSkillSchema).default([]),
+  bundledSkills: starterKitBundledSkillsSchema.optional(),
   env: z.array(starterKitEnvVarSchema).default([]),
   hibernationTimeoutMin: z.number().int().min(0).optional(),
   parameters: z.array(starterKitParameterSchema).default([]),
 });
 
-export const starterKitCatalogEntrySchema = z
-  .object({
-    path: z.string().min(1).default("."),
-    gitUrl: z.url().optional(),
-    ref: z.string().min(1).optional(),
-  })
-  .refine((e) => e.gitUrl === undefined || e.ref !== undefined, {
-    message: "a kit in another repository must pin a ref",
-    path: ["ref"],
-  });
+export const starterKitCatalogEntrySchema = z.object({
+  path: z.string().min(1).default("."),
+  gitUrl: z.url().optional(),
+  ref: z.string().min(1).optional(),
+});
 
 export const starterKitCatalogSchema = z.object({
   kits: z.array(starterKitCatalogEntrySchema),

@@ -179,6 +179,7 @@ const LOADED: LoadedKit = {
   catalog: "platform",
   version: "abc123",
   source: "/catalog",
+  skillsInKit: [],
 };
 
 const GITHUB = { id: "github", title: "GitHub" };

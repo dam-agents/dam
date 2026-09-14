@@ -29,6 +29,7 @@ import {
   connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
+  scanPublicGithubArchive,
 } from "./modules/skills/index.js";
 import {
   composeKbShareServing,
@@ -141,6 +142,9 @@ import { createTemplatesRepository } from "./modules/templates/infrastructure/te
 import {
   createCatalogSourceFromLocator,
   createOnboardingMarker,
+  createCatalogRefresh,
+  createGitRefResolver,
+  createResolvedCatalogRepository,
   createStarterKitsRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
@@ -290,12 +294,23 @@ export async function bootstrap() {
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const resolvedCatalog = createResolvedCatalogRepository(db);
   const starterKitsRepo = createStarterKitsRepository({
+    resolved: resolvedCatalog,
+  });
+  const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
       const source = createCatalogSourceFromLocator(c.locator);
       return source ? [{ name: c.name, source }] : [];
     }),
+    repo: resolvedCatalog,
+    refs: createGitRefResolver(),
     appVersion: config.appVersion,
+    scanSkills: async (gitUrl, ref, subPath) =>
+      (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+      })),
   });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
@@ -416,6 +431,15 @@ export async function bootstrap() {
     resolveOwner: resolveAgentOwner,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
+  await periodicJobs.register("starter-kits-refresh", 600_000, () =>
+    starterKitsRefresh.run(),
+  );
+  void starterKitsRefresh
+    .run()
+    .catch((err: unknown) =>
+      getLogger().warn({ err }, "starter kits: initial refresh failed"),
+    );
+
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );

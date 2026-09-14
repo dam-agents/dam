@@ -44,7 +44,4 @@ schedules:
     task: Run the monthly model benchmark.
     enabled: false
 bundledSkills:
-  - name: issue-fit
-    note: >-
-      Review-time check that a pull request delivers what its linked issue
-      asked, and flags missing or undeclared scope.
+  path: .agents/skills

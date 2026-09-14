@@ -65,6 +65,7 @@ function toView(loaded: LoadedKit): StarterKitView {
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
+    skillsInKit: loaded.skillsInKit,
   };
 }
 

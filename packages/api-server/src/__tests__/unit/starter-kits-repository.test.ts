@@ -9,9 +9,50 @@ import {
   parseGithubRepoUrl,
 } from "../../modules/starter-kits/infrastructure/catalog-source.js";
 import {
-  createStarterKitsRepository,
+  createCatalogRefresh,
+  type CatalogRefreshDeps,
   type NamedCatalog,
-} from "../../modules/starter-kits/infrastructure/kits-repository.js";
+} from "../../modules/starter-kits/infrastructure/catalog-refresh.js";
+import { createStarterKitsRepository } from "../../modules/starter-kits/infrastructure/kits-repository.js";
+import type {
+  ResolvedCatalogRepository,
+  ResolvedKitRow,
+} from "../../modules/starter-kits/infrastructure/resolved-catalog-repository.js";
+
+const SHA = "a".repeat(40);
+
+function memoryResolved(): ResolvedCatalogRepository {
+  const rows = new Map<string, ResolvedKitRow>();
+  return {
+    list: async () => [...rows.values()],
+    get: async (catalog, kitId) => rows.get(`${catalog}/${kitId}`) ?? null,
+    replaceCatalog: async (catalog, next) => {
+      for (const key of [...rows.keys()])
+        if (key.startsWith(`${catalog}/`)) rows.delete(key);
+      for (const row of next) rows.set(`${catalog}/${row.kitId}`, row);
+    },
+  };
+}
+
+function harness(
+  catalogs: NamedCatalog[],
+  opts: {
+    resolve?: (gitUrl: string, ref?: string) => Promise<string | null>;
+    scanSkills?: CatalogRefreshDeps["scanSkills"];
+    sourceForEntry?: CatalogRefreshDeps["sourceForEntry"];
+  } = {},
+) {
+  const resolved = memoryResolved();
+  const refresh = createCatalogRefresh({
+    catalogs,
+    repo: resolved,
+    appVersion: APP_VERSION,
+    refs: { resolve: opts.resolve ?? (async () => SHA) },
+    scanSkills: opts.scanSkills ?? (async () => []),
+    ...(opts.sourceForEntry ? { sourceForEntry: opts.sourceForEntry } : {}),
+  });
+  return { refresh, repo: createStarterKitsRepository({ resolved }) };
+}
 
 const APP_VERSION = "1.4.2";
 
@@ -26,11 +67,12 @@ ${extra}`;
 function memorySource(
   locator: string,
   files: Record<string, string>,
-): CatalogSource & { reads: string[] } {
+): CatalogSource & { reads: string[]; files: Record<string, string> } {
   const reads: string[] = [];
   return {
     locator,
     reads,
+    files,
     async readText(relPath) {
       reads.push(relPath);
       return files[relPath] ?? null;
@@ -52,15 +94,15 @@ kits:
     const external = memorySource("https://github.com/acme/pm-agent#v1.2.0", {
       "kit.yaml": KIT("pm-agent"),
     });
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: catalog }],
-      sourceForEntry: (gitUrl, ref) => {
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }], {
+      resolve: async (gitUrl, ref) => {
         expect(gitUrl).toBe("https://github.com/acme/pm-agent");
         expect(ref).toBe("v1.2.0");
-        return external;
+        return SHA;
       },
+      sourceForEntry: () => external,
     });
+    await refresh.run();
 
     const kits = await repo.list();
     expect(kits.map((k) => [k.catalog, k.kit.id, k.version, k.source])).toEqual(
@@ -69,7 +111,7 @@ kits:
         [
           "platform",
           "pm-agent",
-          "v1.2.0",
+          SHA,
           "https://github.com/acme/pm-agent#v1.2.0",
         ],
       ],
@@ -93,13 +135,15 @@ kits:
         },
       },
     };
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: catalog }, exploding],
-      sourceForEntry: () => {
-        throw new Error("unsupported git host");
+    const { refresh, repo } = harness(
+      [{ name: "platform", source: catalog }, exploding],
+      {
+        sourceForEntry: () => {
+          throw new Error("unsupported git host");
+        },
       },
-    });
+    );
+    await refresh.run();
 
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["ok"]);
   });
@@ -110,10 +154,8 @@ kits:
       "bad/kit.yaml": "schemaVersion: v1\nid: BAD ID\n",
       "good/kit.yaml": KIT("good"),
     });
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: catalog }],
-    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }]);
+    await refresh.run();
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["good"]);
   });
 
@@ -121,32 +163,25 @@ kits:
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: ../secrets\n",
     });
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: catalog }],
-    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }]);
+    await refresh.run();
     expect(await repo.list()).toEqual([]);
     expect(catalog.reads).toEqual(["catalog.yaml"]);
   });
 
-  it("serves the cached list within the ttl and reloads after it", async () => {
+  it("replaces a catalog's kits on each refresh", async () => {
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: a\n",
       "a/kit.yaml": KIT("a"),
+      "b/kit.yaml": KIT("b"),
     });
-    let t = 0;
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: catalog }],
-      ttlMs: 100,
-      now: () => t,
-    });
-    await repo.list();
-    await repo.list();
-    expect(catalog.reads.filter((r) => r === "catalog.yaml")).toHaveLength(1);
-    t = 101;
-    await repo.list();
-    expect(catalog.reads.filter((r) => r === "catalog.yaml")).toHaveLength(2);
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }]);
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a"]);
+
+    catalog.files["catalog.yaml"] = "kits:\n  - path: b\n";
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["b"]);
   });
 
   it("reads several catalogs and keeps same-id kits apart by catalog", async () => {
@@ -158,13 +193,11 @@ kits:
       "catalog.yaml": "kits:\n  - path: k\n",
       "k/kit.yaml": KIT("shared"),
     });
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [
-        { name: "platform", source: a },
-        { name: "acme", source: b },
-      ],
-    });
+    const { refresh, repo } = harness([
+      { name: "platform", source: a },
+      { name: "acme", source: b },
+    ]);
+    await refresh.run();
     const kits = await repo.list();
     expect(kits.map((k) => `${k.catalog}/${k.kit.id}`)).toEqual([
       "platform/shared",
@@ -175,10 +208,8 @@ kits:
   });
 
   it("returns nothing when no catalog is configured", async () => {
-    const repo = createStarterKitsRepository({
-      catalogs: [],
-      appVersion: APP_VERSION,
-    });
+    const { refresh, repo } = harness([]);
+    await refresh.run();
     expect(await repo.list()).toEqual([]);
   });
 });
@@ -270,10 +301,10 @@ describe("the shipped proof-of-concept catalog", () => {
   it("validates and lists its kits", async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const dir = path.resolve(here, "../../../../../helm/starter-kits");
-    const repo = createStarterKitsRepository({
-      appVersion: APP_VERSION,
-      catalogs: [{ name: "platform", source: createLocalCatalogSource(dir) }],
-    });
+    const { refresh, repo } = harness([
+      { name: "platform", source: createLocalCatalogSource(dir) },
+    ]);
+    await refresh.run();
     const kits = await repo.list();
     expect(kits.map((k) => k.kit.id).sort()).toEqual([
       "adaevolve",

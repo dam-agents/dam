@@ -456,18 +456,21 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         </section>
       )}
 
-      {(kit.bundledSkills.length > 0 || kit.skills.length > 0) && (
+      {(kit.skillsInKit.length > 0 || kit.skills.length > 0) && (
         <section className="mb-8">
           <SectionLabel spaced>Skills</SectionLabel>
           <ul className="space-y-2 text-sm">
-            {kit.bundledSkills.map((skill) => (
+            {kit.skillsInKit.map((skill) => (
               <li key={`bundled:${skill.name}`}>
                 {skill.name}{" "}
                 <Badge variant="muted" size="sm">
                   in the kit
                 </Badge>
-                {skill.note ? (
-                  <span className="text-muted-foreground"> — {skill.note}</span>
+                {skill.description ? (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    — {skill.description}
+                  </span>
                 ) : null}
               </li>
             ))}

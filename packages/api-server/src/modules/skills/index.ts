@@ -9,3 +9,4 @@ export {
   parseSeedSources,
   type SkillSourceSeed,
 } from "./infrastructure/seed-sources.js";
+export { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
