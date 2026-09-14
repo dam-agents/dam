@@ -393,6 +393,26 @@ describe("scheduler-runner precheck", () => {
     ]);
   });
 
+  // TEST_SCENARIO: the count answers "has the check found anything since work last happened?", so a real run has to clear it rather than let a lifetime total drown the recent picture.
+  it("clears the decline count when a run finally happens", async () => {
+    const { runner, runs } = makeDeps({ precheck: "true" });
+    const fireAt = new Date("2026-06-12T10:30:00Z");
+
+    await runner.buildFireHandler()(SCHEDULE_ID, fireAt);
+    await runner.reportFire(AGENT_ID, {
+      scheduleId: SCHEDULE_ID,
+      fireAt: fireAt.toISOString(),
+      verdict: "declined",
+    });
+    await runner.reportFire(AGENT_ID, {
+      scheduleId: SCHEDULE_ID,
+      fireAt: fireAt.toISOString(),
+      verdict: "allowed",
+    });
+
+    expect(runs).toHaveLength(1);
+  });
+
   // TEST_SCENARIO: a report must only ever touch the reporting Agent's own Schedule — the harness surface is reached by any pod that knows a schedule id.
   it("ignores a report for a schedule that belongs to another agent", async () => {
     const { runner, declines, restored } = makeDeps({ precheck: "true" });

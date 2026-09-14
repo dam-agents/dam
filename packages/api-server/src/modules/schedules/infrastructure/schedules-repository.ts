@@ -265,6 +265,8 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastFiredAt: at,
           lastFiredResult: result,
           lastPrecheckError: precheckError,
+          lastDeclinedAt: null,
+          declinedCount: 0,
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));

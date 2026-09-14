@@ -17,6 +17,15 @@ import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SCHEDULES = 5;
 
+function precheckAlert(
+  schedule: Schedule,
+): { text: string; urgent: boolean } | null {
+  if (!schedule.status?.lastPrecheckError) return null;
+  return schedule.enabled
+    ? { text: "Precheck failed — running every time", urgent: true }
+    : { text: "Precheck failed", urgent: false };
+}
+
 interface RowProps {
   schedule: Schedule;
   agentName: string;
@@ -26,6 +35,7 @@ interface RowProps {
 
 function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
   const toggle = useToggleSchedule();
+  const alert = precheckAlert(schedule);
   return (
     <div
       className={cn(
@@ -40,10 +50,15 @@ function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
         className="min-w-0 flex-1 text-left"
       >
         <p className="truncate text-sm text-foreground">{schedule.name}</p>
-        {schedule.status?.lastPrecheckError ? (
-          <p className="flex items-center gap-1 truncate text-sm text-destructive">
+        {alert ? (
+          <p
+            className={cn(
+              "flex items-center gap-1 truncate text-sm",
+              alert.urgent ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
             <WarningAlt size={14} className="shrink-0" />
-            Precheck failed — running every time
+            {alert.text}
           </p>
         ) : (
           <p className="truncate text-sm text-muted-foreground">
@@ -79,8 +94,8 @@ export function SchedulesWidget() {
     .filter((s) => live.has(s.agentId))
     .sort(
       (a, b) =>
-        Number(Boolean(b.status?.lastPrecheckError)) -
-        Number(Boolean(a.status?.lastPrecheckError)),
+        Number(precheckAlert(b)?.urgent ?? false) -
+        Number(precheckAlert(a)?.urgent ?? false),
     );
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;

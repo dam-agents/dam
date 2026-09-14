@@ -56,7 +56,7 @@ The third row is why you must not write a command that exits non-zero for "nothi
 
 ### What the command gets
 
-- Runs under `bash -lc` with the working directory set to your workspace, in this pod's environment — so `git`, `gh` and any tool you can use in a terminal work here, with the same credentials.
+- Runs under `bash -lc` **from the workspace root, `/home/agent/work`**, in this pod's environment — so `git`, `gh` and any tool you can use in a terminal work here, with the same credentials. Relative paths resolve against that root, not against a repo inside it: a script in a repo you cloned is `./<repo>/scripts/check.sh`. When in doubt write the absolute path — `/home/agent/work/<repo>/scripts/check.sh` — because a path that does not resolve exits `127`, which counts as the check breaking and runs the task every time.
 - `PLATFORM_LAST_RUN_AT` — ISO timestamp of the last fire that actually ran, **empty string if it never has**. Handle the empty case, or the first run will misbehave.
 - `PLATFORM_FIRE_AT` — the occurrence being decided.
 - `PLATFORM_SCHEDULE_ID` — this schedule's id.
@@ -82,7 +82,7 @@ Stdout is appended to your prompt under a `Precheck output:` heading (capped at 
 
 ❌ `precheck: "test -f /tmp/ready || exit 2"` — `2` means broken, so the task runs every time. Use `exit 1`, or just `test -f /tmp/ready`.
 
-❌ `precheck: "./scripts/check.sh"` when the script lives in a cloned repo subdirectory — the path is relative to the workspace root, and a missing file exits `127`, which reads as broken and runs the task every time. Give the full path from the workspace root.
+❌ `precheck: "./scripts/check.sh"` when the repo is cloned into `/home/agent/work/my-repo` — that path resolves to `/home/agent/work/scripts/check.sh`, which does not exist, exits `127`, reads as broken and runs the task every time. Write `./my-repo/scripts/check.sh` or the absolute path.
 
 ❌ A precheck that does the work itself and then declines — the run is where work belongs. The precheck only decides.
 

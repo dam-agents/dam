@@ -56,7 +56,7 @@ const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
 const PRECHECK_HINT =
-  "A shell command run in the agent's workspace before each fire. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
+  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
 
 interface Props {
   agentId?: string;

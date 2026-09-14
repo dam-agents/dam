@@ -50,9 +50,6 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           <p className="mt-1 mb-1 font-mono text-xs break-all whitespace-pre-wrap text-foreground">
             {precheck}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {declined ?? "No runs declined yet."}
-          </p>
           {status?.lastPrecheckError && (
             <p className="mt-1 text-xs break-all whitespace-pre-wrap text-destructive">
               Precheck failed — ran anyway:{" "}
@@ -72,16 +69,23 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </span>
         </DetailCard>
         <DetailCard label="Last run">
-          {status?.lastRun ? (
-            <div className="flex flex-col gap-0.5">
-              <span>{formatRunTime(status.lastRun)}</span>
-              {lastStatus && (
-                <span className={lastStatus.className}>{lastStatus.label}</span>
-              )}
-            </div>
-          ) : (
-            <span className="text-muted-foreground">Never run</span>
-          )}
+          <div className="flex flex-col gap-0.5">
+            {declined && <span>{declined}</span>}
+            {status?.lastRun ? (
+              <span className={declined ? "text-muted-foreground" : undefined}>
+                {declined
+                  ? `(last ran ${formatRunTime(status.lastRun)})`
+                  : formatRunTime(status.lastRun)}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                {declined ? "(never ran)" : "Never run"}
+              </span>
+            )}
+            {lastStatus && (
+              <span className={lastStatus.className}>{lastStatus.label}</span>
+            )}
+          </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
         <DetailCard label="Session mode">
