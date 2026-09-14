@@ -1,13 +1,14 @@
 # Experimental features
 
-Last verified: 2026-09-03
+Last verified: 2026-09-14
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces. Every
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
-current feature is advanced connection types. Graduating a feature to
+current features are advanced connection types, VM sandboxes, session costs
+and the [starter kit](starter-kits.md) catalog. Graduating a feature to
 always-on is deletion: drop its id from the enum and its gates from the UI —
 stored rows for a dropped id are simply never read again (Experiments and
 Knowledge Bases graduated this way).

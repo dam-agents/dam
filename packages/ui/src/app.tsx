@@ -11,6 +11,7 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { useFeatures } from "./modules/features/api/queries.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -61,6 +62,7 @@ const SETUP_VIEWS = new Set<Route["view"]>([
 
 function MainApp() {
   const view = useStore((s) => s.view);
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -129,9 +131,9 @@ function MainApp() {
                 <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
-              ) : view === "starter-kits" ? (
+              ) : view === "starter-kits" && kitsEnabled ? (
                 <StarterKitsView />
-              ) : view === "starter-kit-new" ? (
+              ) : view === "starter-kit-new" && kitsEnabled ? (
                 <StarterKitSetupView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />

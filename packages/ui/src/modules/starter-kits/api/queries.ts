@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-export function useStarterKits() {
+export function useStarterKits(enabled = true) {
   return useQuery({
     ...trpc.starterKits.list.queryOptions(),
+    enabled,
     meta: { errorToast: "Couldn't load starter kits" },
   });
 }

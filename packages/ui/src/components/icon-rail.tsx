@@ -16,6 +16,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { useFeatures } from "../modules/features/api/queries.js";
 import { useStore } from "../store.js";
 
 interface Destination {
@@ -38,6 +39,7 @@ export function IconRail({
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
 
   const sandboxes: Destination = {
     label: "Home",
@@ -145,6 +147,7 @@ export function IconRail({
           <RailItem {...sandboxes} expanded={expandedNav} />
           <RailItem {...codingAgents} expanded={expandedNav} />
           <RailItem {...knowledgeBases} expanded={expandedNav} />
+          {kitsEnabled && <RailItem {...starterKits} expanded={expandedNav} />}
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
@@ -159,7 +162,7 @@ export function IconRail({
             sandboxes,
             codingAgents,
             knowledgeBases,
-            starterKits,
+            ...(kitsEnabled ? [starterKits] : []),
             artifacts,
             settings,
           ].map((destination) => (

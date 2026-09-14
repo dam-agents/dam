@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
 
 const TOP_KITS = 4;
@@ -17,13 +18,14 @@ const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
 };
 
 export function StarterKitsWidget() {
-  const kits = useStarterKits();
+  const enabled = useFeatures().data?.["starter-kits"] ?? false;
+  const kits = useStarterKits(enabled);
   const setView = useStore((s) => s.setView);
   const navigateToStarterKitSetup = useStore(
     (s) => s.navigateToStarterKitSetup,
   );
 
-  if (!kits.data || kits.data.length === 0) return null;
+  if (!enabled || !kits.data || kits.data.length === 0) return null;
   const shown = kits.data.slice(0, TOP_KITS);
 
   return (
