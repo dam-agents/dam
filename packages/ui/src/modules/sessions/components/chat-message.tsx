@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
+import type { MessageTime } from "../lib/thread-items.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -13,11 +14,11 @@ import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 
 export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
-interface Props {
+type Props = BaseProps & MessageTime;
+
+interface BaseProps {
   message: Message;
   isLast: boolean;
-  timeLabel?: string;
-  timeTitle?: string;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;

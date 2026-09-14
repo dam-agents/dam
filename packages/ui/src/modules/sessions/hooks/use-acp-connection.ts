@@ -23,11 +23,6 @@ import {
   settleReplay,
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
-
-interface CollectedUpdate {
-  update: AcpUpdate;
-  at?: string;
-}
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -39,6 +34,11 @@ const REPLAY_IDLE_WINDOW_MS = 3000;
 export interface LiveConnection {
   connection: ClientSideConnection;
   ws: WebSocket;
+}
+
+interface CollectedUpdate {
+  update: AcpUpdate;
+  at?: string;
 }
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
@@ -280,7 +280,10 @@ export function useAcpConnection(
           updateSessionId === collector.sid &&
           frame?.replayFor === collector.token
         ) {
-          collector.updates.push({ update, ...(frame.at && { at: frame.at }) });
+          collector.updates.push({
+            update,
+            ...(frame.at !== undefined && { at: frame.at }),
+          });
           return;
         }
         handler(update, updateSessionId, frame);
@@ -342,9 +345,12 @@ export function useAcpConnection(
       const superseded = platformSupersededMetaSchema.safeParse(
         platformMeta?.superseded,
       );
-      const runStarts = platformRunStartsMetaSchema.safeParse(
-        platformMeta?.runStarts,
-      );
+      const runStarts = Array.isArray(platformMeta?.runStarts)
+        ? platformMeta.runStarts.filter(
+            (at): at is string =>
+              platformRunStartsMetaSchema.element.safeParse(at).success,
+          )
+        : [];
       const clipped =
         clippedRaw === undefined
           ? null
@@ -393,9 +399,7 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
-        useStore
-          .getState()
-          .setRunStarts(runStarts.success ? runStarts.data : []);
+        useStore.getState().setRunStarts(runStarts);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

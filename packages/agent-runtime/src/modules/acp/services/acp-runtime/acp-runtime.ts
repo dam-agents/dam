@@ -501,27 +501,26 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  function announceRunStart(sessionId: string, at: string): void {
-    const line = JSON.stringify(
-      buildPlatformRunStartedNotification({ sessionId, at }),
-    );
-    for (const [channel, sessions] of engagedSessions) {
-      if (!sessions.has(sessionId)) continue;
-      if (!channel.isOpen()) continue;
-      if (nonViewerChannels.has(channel)) continue;
-      channel.send(line);
-    }
-  }
-
-  function hasEngagedViewer(sessionId: string): boolean {
+  function* engagedViewersOf(sessionId: string): Generator<ClientChannel> {
     for (const [channel, sessions] of engagedSessions) {
       if (
         sessions.has(sessionId) &&
         channel.isOpen() &&
         !nonViewerChannels.has(channel)
       )
-        return true;
+        yield channel;
     }
+  }
+
+  function announceRunStart(sessionId: string, at: string): void {
+    const line = JSON.stringify(
+      buildPlatformRunStartedNotification({ sessionId, at }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
+  function hasEngagedViewer(sessionId: string): boolean {
+    for (const _ of engagedViewersOf(sessionId)) return true;
     return false;
   }
 

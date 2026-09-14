@@ -46,37 +46,32 @@ function dayDividers(timed: readonly Timed[]): Map<number, Timed> {
   return marks;
 }
 
-function dividerIndexFor(
-  timed: readonly Timed[],
-  startMs: number,
-  end: number,
-): number {
-  let newest: Timed | undefined;
-  for (const candidate of timed) {
-    if (candidate.date.getTime() > startMs) continue;
-    if (
-      newest === undefined ||
-      candidate.date.getTime() >= newest.date.getTime()
-    )
-      newest = candidate;
-  }
-  if (newest?.role === "user") return newest.index;
-  return timed.find((t) => t.date.getTime() >= startMs)?.index ?? end;
-}
-
 function runDividers(
   timed: readonly Timed[],
   runStarts: readonly string[],
   end: number,
-): Map<number, string[]> {
-  const marks = new Map<number, string[]>();
+): Map<number, string> {
+  const marks = new Map<number, string>();
   const starts = [...new Set(runStarts)]
     .map((at) => ({ at, ms: Date.parse(at) }))
     .filter((start) => Number.isFinite(start.ms))
     .sort((a, b) => a.ms - b.ms);
+  if (starts.length === 0) return marks;
+
+  const byTime = [...timed].sort((a, b) => a.date.getTime() - b.date.getTime());
+  let cursor = 0;
+  let newest: Timed | undefined;
   for (const start of starts) {
-    const index = dividerIndexFor(timed, start.ms, end);
-    marks.set(index, [...(marks.get(index) ?? []), start.at]);
+    while (
+      cursor < byTime.length &&
+      byTime[cursor]!.date.getTime() <= start.ms
+    ) {
+      newest = byTime[cursor];
+      cursor += 1;
+    }
+    const index =
+      newest?.role === "user" ? newest.index : (byTime[cursor]?.index ?? end);
+    marks.set(index, start.at);
   }
   return marks;
 }
@@ -91,9 +86,9 @@ export function threadItems(
   const items: ThreadItem[] = [];
 
   const pushRuns = (index: number): void => {
-    for (const at of runs.get(index) ?? []) {
-      items.push({ kind: "divider", variant: "run", at, key: `run:${at}` });
-    }
+    const at = runs.get(index);
+    if (at === undefined) return;
+    items.push({ kind: "divider", variant: "run", at, key: `run:${at}` });
   };
 
   messages.forEach((message, index) => {
@@ -123,10 +118,11 @@ export function dividerLabel(
     : day;
 }
 
-export function timeProps(
-  at: string | undefined,
-  now: Date,
-): { timeLabel?: string; timeTitle?: string } {
+export type MessageTime =
+  | { timeLabel: string; timeTitle: string }
+  | { timeLabel?: undefined; timeTitle?: undefined };
+
+export function timeProps(at: string | undefined, now: Date): MessageTime {
   if (at === undefined) return {};
   return {
     timeLabel: timeAgo(at, now),

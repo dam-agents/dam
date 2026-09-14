@@ -432,7 +432,7 @@ function patchToolChip(
       ? m
       : {
           ...m,
-          ...(at !== undefined && { at }),
+          ...(at !== undefined && m.streaming && { at }),
           parts: m.parts.map((p) =>
             p.kind === "tool" && p.toolCallId === u.toolCallId
               ? {

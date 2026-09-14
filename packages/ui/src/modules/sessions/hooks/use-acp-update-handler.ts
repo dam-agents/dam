@@ -36,7 +36,7 @@ export function useAcpUpdateHandler(
         dismissStalePermission(update.toolCallId);
       }
 
-      if (kind === "platform_run_started") {
+      if (kind === "platform_run_started" && viewing === sessionId) {
         useStore.getState().addRunStart(update.at);
       }
 

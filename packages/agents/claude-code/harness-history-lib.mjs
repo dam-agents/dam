@@ -46,12 +46,16 @@ function stampOf(message) {
   return Number.isFinite(Date.parse(timestamp)) ? timestamp : null;
 }
 
+function objectOr(value) {
+  return typeof value === "object" && value !== null ? value : {};
+}
+
 function withStamp(notification, at) {
   if (at === null) return notification;
-  const meta = notification._meta ?? {};
+  const meta = objectOr(notification._meta);
   return {
     ...notification,
-    _meta: { ...meta, platform: { ...meta.platform, at } },
+    _meta: { ...meta, platform: { ...objectOr(meta.platform), at } },
   };
 }
 

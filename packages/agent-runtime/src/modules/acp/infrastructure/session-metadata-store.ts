@@ -164,7 +164,7 @@ export function createSessionMetadataStore(
       });
     },
     runStartsOf(sessionId) {
-      return store.read().sessions[sessionId]?.runStarts ?? [];
+      return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
     },
     all() {
       return store.read().sessions;
