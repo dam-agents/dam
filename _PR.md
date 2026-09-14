@@ -6,8 +6,11 @@
 smolvm microVMs inside one **sandbox node** pod — a single-replica Deployment
 from `packages/controller/Dockerfile.sandbox-node` (Fedora + smolvm + the
 `sandbox-node` agent) that holds `/dev/kvm` and `/dev/net/tun` as
-device-plugin resources (KubeVirt's, by default) and runs as root with
-NET_ADMIN, not privileged. The controller talks to it over a TLS +
+device-plugin resources and runs as root with NET_ADMIN, not privileged. The
+chart ships squat's generic-device-plugin as a DaemonSet
+(`virtualization.devicePlugin.enabled`) so any node with /dev/kvm qualifies —
+the dev cluster's Kata pool has it (probed: 64 CPU / 252 GiB, vmx) — with
+KubeVirt's plugins as the alternative. The controller talks to it over a TLS +
 bearer-token machine API through a headless Service. The gateway pair,
 credential plane, ACP relay and api-server are unchanged; the api-server dials
 `<agent>.<ns>.svc:8080` as before because the agent Service becomes
@@ -15,10 +18,10 @@ selector-less with an EndpointSlice pointing at the node pod's IP and the
 machine's published port.
 
 Locally, `mise run cluster:install -- --set=virtualization.enabled=true`
-creates the k3s Lima VM with nested virtualization and runs the same image
-privileged (no device plugin in k3s). On the dev cluster the pod needs the
-virt nodes' toleration and an SCC binding (`virtualization.node.scc:
-privileged`).
+creates the k3s Lima VM with nested virtualization and runs the same pod spec
+with the same device plugin. On the dev cluster point the plugin and the node
+at the Kata pool (nodeSelector/tolerations) and bind the SCC
+(`virtualization.node.scc: privileged`).
 
 History: the first cut of this branch was an SSH-provisioned machine outside
 the cluster (second Lima VM locally); a KubeVirt-hosted node was ruled out for

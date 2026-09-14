@@ -117,7 +117,9 @@ spec:
           resources:
             {{- $res := deepCopy ($node.resources | default dict) }}
             {{- if not $node.privileged }}
-            {{- $_ := set $res "limits" (merge (deepCopy ($res.limits | default dict)) $node.devices) }}
+            {{- $dp := .Values.virtualization.devicePlugin }}
+            {{- $devices := $node.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) 1 (printf "%s/tun" $dp.domain) 1) (dict "devices.kubevirt.io/kvm" 1 "devices.kubevirt.io/tun" 1) $dp.enabled) }}
+            {{- $_ := set $res "limits" (merge (deepCopy ($res.limits | default dict)) $devices) }}
             {{- end }}
             {{- toYaml $res | nindent 12 }}
           volumeMounts:

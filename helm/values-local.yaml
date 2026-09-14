@@ -24,16 +24,18 @@ controller:
       imagePullPolicy: IfNotPresent
 
 # The sandbox node (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
-# nested virtualization and there is no device plugin, so the pod is
-# privileged here. Rendered only with virtualization.enabled.
+# nested virtualization, handed to the pod by the chart's own device plugin
+# exactly as on a cluster without KubeVirt. Rendered only with
+# virtualization.enabled.
 virtualization:
   node:
     image:
       repository: platform-sandbox-node
       tag: latest
       pullPolicy: Never
-    privileged: true
     storage: 40Gi
+  devicePlugin:
+    enabled: true
   # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
   # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
