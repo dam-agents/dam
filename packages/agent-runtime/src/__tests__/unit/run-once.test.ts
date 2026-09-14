@@ -46,7 +46,12 @@ describe("runOnce", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toEqual({ kind: "exited", code: 3, stderr: "boom" });
+    expect(result.error).toEqual({
+      kind: "exited",
+      code: 3,
+      stderr: "boom",
+      stdout: "",
+    });
     expect(describeFailure("git clone", result.error)).toBe(
       "git clone exited 3: boom",
     );

@@ -28,7 +28,7 @@ export type ProcessFailure =
   | { kind: "not-spawnable"; message: string }
   | { kind: "timed-out"; timeoutMs: number }
   | { kind: "output-capped"; maxOutputBytes: number }
-  | { kind: "exited"; code: number | null; stderr: string };
+  | { kind: "exited"; code: number | null; stderr: string; stdout: string };
 
 export type RunOnceResult = Result<ProcessOutput, ProcessFailure>;
 
@@ -165,7 +165,7 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
       flushStdout();
       flushStderr();
       if (code !== 0) {
-        settle(err({ kind: "exited", code, stderr }));
+        settle(err({ kind: "exited", code, stderr, stdout }));
         return;
       }
       settle(ok({ stdout, stderr }));

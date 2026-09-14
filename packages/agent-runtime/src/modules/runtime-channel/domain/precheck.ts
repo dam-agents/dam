@@ -29,7 +29,10 @@ function capped(stdout: string): string | undefined {
  * point: a typo that exited 127 would otherwise silence a Schedule forever and
  * look exactly like "nothing changed". Stdout becomes context appended to the
  * task prompt, capped so a runaway `git log` cannot flood the turn it was meant
- * to save; stderr belongs to the pod log and never reaches the prompt.
+ * to save; stderr belongs to the pod log and never reaches the prompt. A broken
+ * Precheck still produces context, because the task was written expecting some:
+ * a prompt that says "see the precheck output below" must never be followed by
+ * nothing, or the turn acts on a reference it cannot resolve.
  */
 export function verdictFor(result: RunOnceResult): PrecheckOutcome {
   if (result.ok) {
@@ -38,8 +41,15 @@ export function verdictFor(result: RunOnceResult): PrecheckOutcome {
   }
   if (result.error.kind === "exited" && result.error.code === 1)
     return { verdict: "declined" };
+
+  const detail = describeFailure("precheck", result.error);
+  const printed =
+    result.error.kind === "exited" ? capped(result.error.stdout) : undefined;
   return {
     verdict: "precheck-failed",
-    detail: describeFailure("precheck", result.error),
+    detail,
+    context: printed
+      ? `${printed}\n\n[The precheck failed after printing the above (${detail}), so it may be incomplete. Check it before acting on it.]`
+      : `[none — the precheck failed (${detail}). This run started anyway, so there is no precheck result to work from.]`,
   };
 }

@@ -66,6 +66,8 @@ The third row is why you must not write a command that exits non-zero for "nothi
 
 Stdout is appended to your prompt under a `Precheck output:` heading (capped at 8 KB). Print the thing the run will need, so the turn does not fetch it a second time. stderr goes to the operator's log only.
 
+You can therefore write a task that refers to the output — "process the items listed below" — and it will be there. When the precheck **broke**, the heading is still there and says so: it carries whatever the command managed to print, marked as unverified, or `none` when it printed nothing. So a run that was started by a broken check can tell, instead of acting on a reference to output that never arrived. Read that marker before trusting the list.
+
 ### Examples
 
 ✅ new commits on the remote

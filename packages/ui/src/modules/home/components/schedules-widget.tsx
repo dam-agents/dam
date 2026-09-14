@@ -12,19 +12,13 @@ import { useToggleSchedule } from "../../schedules/api/mutations.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import { useScheduleEditGuard } from "../../schedules/hooks/use-schedule-edit-guard.js";
-import { scheduleCadenceText } from "../../schedules/lib/schedule-format.js";
+import {
+  precheckAlert,
+  scheduleCadenceText,
+} from "../../schedules/lib/schedule-format.js";
 import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SCHEDULES = 5;
-
-function precheckAlert(
-  schedule: Schedule,
-): { text: string; urgent: boolean } | null {
-  if (!schedule.status?.lastPrecheckError) return null;
-  return schedule.enabled
-    ? { text: "Precheck failed — running every time", urgent: true }
-    : { text: "Precheck failed", urgent: false };
-}
 
 interface RowProps {
   schedule: Schedule;

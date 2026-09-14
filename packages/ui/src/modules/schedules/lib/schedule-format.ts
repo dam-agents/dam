@@ -58,3 +58,21 @@ const CLAMP_CHARS = 300;
 export function clampText(text: string, max: number = CLAMP_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
+
+export interface PrecheckAlert {
+  text: string;
+  reason: string;
+  urgent: boolean;
+}
+
+export function precheckAlert(schedule: Schedule): PrecheckAlert | null {
+  const reason = schedule.status?.lastPrecheckError;
+  if (!reason) return null;
+  return schedule.enabled
+    ? {
+        text: "Precheck failed — running every time",
+        reason: clampText(reason),
+        urgent: true,
+      }
+    : { text: "Precheck failed", reason: clampText(reason), urgent: false };
+}
