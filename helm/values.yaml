@@ -145,44 +145,49 @@ istio:
   waypointName: apiserver-waypoint
 
 # -- The vm backend (`backend.type: vm` on a template): the agent runs as a
-# persistent microVM (smolvm) on one sandbox node — a Linux machine with KVM
-# outside the cluster — instead of as a pod. The chart provisions that machine
-# itself: a post-install/upgrade Job SSHes in and installs smolvm plus the
-# platform's sandbox-node agent, so an operator only supplies a reachable host
-# and an SSH identity. The controller drives the node's machine API (TLS,
+# persistent microVM (smolvm) instead of as a pod, hosted by the **sandbox
+# node** — one chart-rendered pod that holds /dev/kvm and runs the platform's
+# sandbox-node agent plus smolvm. The controller drives its machine API (TLS,
 # bearer token; both minted by the chart); the agent Service resolves to the
-# machine's port on the node; the paired gateway pod is unchanged and the
+# machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = vm-backend templates are not
 # rendered and vm agents fail reconcile. One node for now; scheduling across
 # several is the upgrade path.
 virtualization:
   enabled: false
-  # smolvm release the provisioner installs on the node (from smolmachines.com;
-  # the node needs outbound internet for that step).
-  smolvmVersion: "1.16.0"
   node:
-    # IP or DNS name the cluster reaches the node on: the SSH provisioning
-    # hop, the machine API and the machines' published ports all use it.
-    host: ""
-    sshPort: 22
-    # A user with passwordless sudo on the node, and its private key (PEM,
-    # e.g. `--set-file virtualization.node.sshKey=~/.ssh/id_ed25519`).
-    sshUser: ""
-    sshKey: ""
-    # Optional `ssh-keyscan` line pinning the node's host key; unset trusts
-    # the key seen on first contact.
-    sshHostKey: ""
-    # Override for the address the cluster dials machine ports on, when it
-    # differs from `host` (defaults to host).
-    address: ""
-    # Extra sources allowed to dial machines' published ports. The cluster's
-    # node addresses are always allowed — that is where pod traffic leaves the
-    # cluster from; add the pod CIDR here on a CNI that does not SNAT it.
+    image:
+      repository: quay.io/dam-agents/sandbox-node
+      tag: ""
+      pullPolicy: IfNotPresent
+    # KVM (and the tun device smolvm's per-machine network needs) arrive as
+    # device-plugin resources, so the pod needs no privilege for them. The
+    # defaults are KubeVirt's plugins, present on every node virt-handler
+    # runs on; a cluster without KubeVirt can use any plugin that exposes
+    # /dev/kvm and /dev/net/tun, or `privileged: true` (dev only).
+    devices:
+      devices.kubevirt.io/kvm: 1
+      devices.kubevirt.io/tun: 1
+    privileged: false
+    # OpenShift: name of a built-in SCC to bind to the node's ServiceAccount
+    # (the pod runs as root with NET_ADMIN, so `privileged` is the one that
+    # admits it; the pod still requests only what it needs). Empty = no
+    # binding rendered.
+    scc: ""
+    # Machine disks — every vm agent's workspace — and smolvm's image cache
+    # live here and survive pod restarts. Node-local by nature: not shared,
+    # not migrated.
+    storage: 100Gi
+    storageClass: ""
+    # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
+    # taints). Machines take their CPUs and RAM from this pod's limits, so
+    # size them for the sum of the machines expected at once.
+    nodeSelector: {}
+    tolerations: []
+    resources: {}
+    # Sources allowed to dial machines' published ports; empty admits any
+    # (the pod sits inside the cluster network like an agent pod would).
     ingressCidrs: []
-    # Cluster Service CIDR the node routes through a Kubernetes node so
-    # machines reach their gateway's ClusterIP; discovered from the
-    # ServiceCIDR API when empty.
-    serviceCidr: ""
 
 # -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents

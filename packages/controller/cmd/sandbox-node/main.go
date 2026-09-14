@@ -42,9 +42,16 @@ func main() {
 			srv.AllowFrom = append(srv.AllowFrom, n)
 		}
 	}
-	if err := os.MkdirAll(*stateDir, 0o755); err != nil {
-		slog.Error("creating state dir", "path", *stateDir, "error", err)
-		os.Exit(1)
+	for _, dev := range []string{"/dev/kvm", "/dev/net/tun"} {
+		if err := os.Chmod(dev, 0o666); err != nil {
+			slog.Warn("device not writable for machine uids", "path", dev, "error", err)
+		}
+	}
+	for _, dir := range []string{os.Getenv("HOME"), *stateDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil || os.Chmod(dir, 0o755) != nil {
+			slog.Error("creating state dir", "path", dir, "error", err)
+			os.Exit(1)
+		}
 	}
 	if err := srv.Start(); err != nil {
 		slog.Error("republishing machines", "error", err)

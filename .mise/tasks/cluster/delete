@@ -16,7 +16,7 @@ if [ "$FORCE" != "true" ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then
     echo "This will uninstall k3s and delete all cluster data."
   else
-    echo "This will delete the k3s VM ($LIMA_INSTANCE), the sandbox node VM if any, and all cluster data."
+    echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
   fi
   read -p "Continue? [y/N] " -r
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -30,7 +30,5 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   echo "k3s uninstalled from host."
 else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
-  # The sandbox node (vm backend) exists only on virtualization-enabled installs.
-  limactl delete --force platform-sandbox 2>/dev/null || true
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi

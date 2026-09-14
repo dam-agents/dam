@@ -193,11 +193,14 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        component: [controller, api-server, ui, keycloak]
+        component: [controller, sandbox-node, api-server, ui, keycloak]
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
         include:
           - component: controller
             dockerfile: packages/controller/Dockerfile
+            context: packages/controller
+          - component: sandbox-node
+            dockerfile: packages/controller/Dockerfile.sandbox-node
             context: packages/controller
           - component: api-server
             dockerfile: packages/api-server/Dockerfile
@@ -255,7 +258,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [controller, api-server, ui, keycloak]
+        component: [controller, sandbox-node, api-server, ui, keycloak]
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

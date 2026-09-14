@@ -3,18 +3,28 @@
 ## What this branch does
 
 `backend.type: vm` agents no longer run under KubeVirt. They run as persistent
-smolvm microVMs on one **sandbox node** — a Linux/KVM machine outside the
-cluster — driven by a small `sandbox-node` agent that the controller talks to
-over a TLS + bearer-token machine API. The gateway pair, credential plane, ACP
-relay and api-server are unchanged; the api-server dials
+smolvm microVMs inside one **sandbox node** pod — a single-replica Deployment
+from `packages/controller/Dockerfile.sandbox-node` (Fedora + smolvm + the
+`sandbox-node` agent) that holds `/dev/kvm` and `/dev/net/tun` as
+device-plugin resources (KubeVirt's, by default) and runs as root with
+NET_ADMIN, not privileged. The controller talks to it over a TLS +
+bearer-token machine API through a headless Service. The gateway pair,
+credential plane, ACP relay and api-server are unchanged; the api-server dials
 `<agent>.<ns>.svc:8080` as before because the agent Service becomes
-selector-less with an EndpointSlice pointing at the machine's node port.
+selector-less with an EndpointSlice pointing at the node pod's IP and the
+machine's published port.
 
-The chart provisions the node itself: a post-install/upgrade hook Job SSHes in
-(operator-supplied host, user, key) and installs smolvm, `sandbox-node`, the
-minted token/TLS pair, the units and a route to the Service CIDR. Locally,
-`mise run cluster:install -- --set=virtualization.enabled=true` creates a second
-Lima VM and lets that same hook provision it.
+Locally, `mise run cluster:install -- --set=virtualization.enabled=true`
+creates the k3s Lima VM with nested virtualization and runs the same image
+privileged (no device plugin in k3s). On the dev cluster the pod needs the
+virt nodes' toleration and an SCC binding (`virtualization.node.scc:
+privileged`).
+
+History: the first cut of this branch was an SSH-provisioned machine outside
+the cluster (second Lima VM locally); a KubeVirt-hosted node was ruled out for
+local use because Linux KVM on Apple silicon cannot nest a second time
+(measured), and a privileged pod was ruled out on blast radius. The
+device-plugin pod keeps the same node agent and image.
 
 ## Verified locally (Apple M3, lima/vz nested KVM)
 
@@ -43,13 +53,14 @@ Lima VM and lets that same hook provision it.
   loopback hosts only and the in-guest puller (reqwest + webpki roots) cannot
   trust a private CA. The CLI takes an archive directly and can resize in
   place, so the node stays on the CLI.
-- **Lima networking:** `vzNAT` passes no traffic on this Mac (no DHCP, no ARP);
-  `networks: [{lima: user-v2}]` gives both VMs 192.168.104.x and direct
-  reachability. Host port forwards cannot carry NodePorts (lima forwards only
-  detected listeners), so the machine reaches its gateway by ClusterIP with the
-  sandbox VM routing 10.43.0.0/16 via the k3s VM — which also keeps the egress
-  allow-list exact (`--allow-cidr <gateway>/32`; a NodePort would expose every
-  gateway).
+- **Capabilities:** measured with a capability bounding set — smolvm runs a
+  machine with virtio-net and working guest egress under the default container
+  caps plus NET_ADMIN; no SYS_ADMIN, no privileged. KVM and tun come as device
+  grants.
+- **Memory:** smolvm machines negotiate virtio-balloon free-page reporting;
+  `--mem` is a cap, the host commits only touched pages and got 1.5 GiB back
+  within ~50 s of the guest freeing it. Guest page cache stays until the guest
+  drops it.
 - **smolvm quirks:** `-p` binds 127.0.0.1 only (sandbox-node forwards
   `0.0.0.0:P` → `127.0.0.1:P+1000` with a source allow-list); archives must be
   world-readable (per-VM uid 2000000+); the guest image flattener rejects

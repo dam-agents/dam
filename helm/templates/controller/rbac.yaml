@@ -141,17 +141,6 @@ rules:
     resources: ["customresourcedefinitions"]
     verbs: ["get"]
     resourceNames: ["agents.agent-platform.ai", "userbudgets.agent-platform.ai"]
-{{- if .Values.virtualization.enabled }}
-  # The sandbox-node provisioner (a hook Job on the controller SA) reads node
-  # addresses (the machines' ingress allow-list and the Service-CIDR route's
-  # next hop) and the cluster's Service CIDR.
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list"]
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["servicecidrs"]
-    verbs: ["get", "list"]
-{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

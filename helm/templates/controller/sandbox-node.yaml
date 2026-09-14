@@ -1,0 +1,160 @@
+{{- if .Values.virtualization.enabled }}
+{{- /*
+The sandbox node: one pod that holds /dev/kvm and runs vm-backend agents as
+smolvm microVMs, driven by the controller over its machine API (see
+`virtualization` in values.yaml). Its Service is headless so the controller
+can publish the pod's own IP and machine ports as each vm agent's endpoint.
+Machine disks live on the PVC, so a pod restart keeps every workspace.
+*/}}
+{{- $name := printf "%s-sandbox-node" (include "platform.fullname" .) }}
+{{- $node := .Values.virtualization.node }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ $node.storage }}
+  {{- with $node.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+spec:
+  clusterIP: None
+  selector:
+    {{- include "platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+  ports:
+    - name: machine-api
+      port: 4600
+      targetPort: 4600
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+  {{- include "platform.annotations" (dict "root" $ "component" $node) | nindent 2 }}
+spec:
+  replicas: 1
+  # Two pods would both claim the machine store; a roll is a stop of every
+  # machine anyway (they are processes of this pod).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox-node
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sandbox-node
+        # smolvm NATs each machine out of a nested netns; ztunnel's redirect
+        # breaks that, so this pod stays off the ambient mesh.
+        istio.io/dataplane-mode: none
+      {{- include "platform.podAnnotations" (dict "root" $ "component" $node) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      {{- with $node.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $node.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sandbox-node
+          image: "{{ $node.image.repository }}:{{ $node.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ $node.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - --tls-cert=/etc/platform-sandbox/tls.crt
+            - --tls-key=/etc/platform-sandbox/tls.key
+            - --allow-from={{ join "," $node.ingressCidrs }}
+          ports:
+            - name: machine-api
+              containerPort: 4600
+          readinessProbe:
+            tcpSocket:
+              port: machine-api
+          securityContext:
+            # Root for smolvm's per-machine uid switch and NET_ADMIN for the
+            # netns + NAT it gives each machine; KVM comes as a device grant,
+            # not privilege (see `virtualization.node.devices`).
+            runAsUser: 0
+            privileged: {{ $node.privileged }}
+            capabilities:
+              add: ["NET_ADMIN"]
+          resources:
+            {{- $res := deepCopy ($node.resources | default dict) }}
+            {{- if not $node.privileged }}
+            {{- $_ := set $res "limits" (merge (deepCopy ($res.limits | default dict)) $node.devices) }}
+            {{- end }}
+            {{- toYaml $res | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/smolvm
+              subPath: smolvm
+            - name: state
+              mountPath: /var/lib/platform-sandbox
+              subPath: platform-sandbox
+            - name: credentials
+              mountPath: /etc/platform-sandbox
+              readOnly: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ $name }}
+        - name: credentials
+          secret:
+            secretName: {{ $name }}
+{{- with $node.scc }}
+---
+{{- /* OpenShift: `use` on a built-in SCC comes as an auto-generated ClusterRole. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-scc
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: sandbox-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:{{ . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

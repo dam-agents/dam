@@ -24,7 +24,6 @@ import (
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
-	"github.com/kagenti/platform/packages/controller/pkg/nodeprovision"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
 	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
 	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
@@ -32,14 +31,6 @@ import (
 
 func main() {
 	level := logLevel()
-	if len(os.Args) > 1 && os.Args[1] == "provision-node" {
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-		if err := provisionNode(); err != nil {
-			slog.Error("provisioning sandbox node failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	telemetryShutdown, telemetryEnabled, telemetryErr := telemetry.Setup(context.Background())
 	slog.SetDefault(slog.New(telemetry.NewHandler(level, telemetryEnabled)))
@@ -119,31 +110,6 @@ func main() {
 			},
 		},
 	})
-}
-
-func provisionNode() error {
-	cfg, err := nodeprovision.ConfigFromEnv()
-	if err != nil {
-		return err
-	}
-	restCfg, err := rest.InClusterConfig()
-	if err != nil {
-		return err
-	}
-	kube, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		return err
-	}
-	dyn, err := dynamic.NewForConfig(restCfg)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-	defer cancel()
-	if err := cfg.DiscoverCluster(ctx, kube, dyn); err != nil {
-		return err
-	}
-	return nodeprovision.Run(ctx, cfg)
 }
 
 func logLevel() slog.Level {
