@@ -1,0 +1,45 @@
+# Schedules
+
+Last verified: 2026-09-14
+
+## Overview
+
+A **Schedule** is a recurring task attached to an Agent: a cron or RRULE recurrence, a task prompt, and an optional **Precheck** that decides each occurrence before any model is woken. Schedules are the one way work starts on an Agent with nobody watching, which is why they own three things no other caller needs — arming the next occurrence durably, waking a hibernated Agent to receive a fire, and deciding whether a fire is worth a turn at all.
+
+The subsystem straddles two components. The api-server owns the schedule rows, the queue that arms them, and the decision to fire; agent-runtime owns what a fire *becomes* — the Session it opens, the Precheck it runs first, and the verdict it reports back. Everything between the two — the outbox, the delivery worker, the event's TTL — belongs to [runtime delivery](runtime-delivery.md) and is not restated here. Waking and hibernating the Agent a fire lands on belong to [agent-lifecycle](agent-lifecycle.md).
+
+## Fire
+
+Schedules are Postgres rows owned by the api-server, each armed as a delayed job on a Redis-backed queue — one pending job per schedule, re-armed after every fire. Fires are idempotent per occurrence, so at-least-once delivery cannot run one twice and a boot cannot swallow one that is due; a periodic reconcile re-arms any schedule whose queue job vanished. The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window. Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
+
+When a fire is due:
+
+1. The api-server inserts a `trigger` event into the Agent's runtime outbox in the same transaction that bumps the Agent's version, then signals the delivery worker. The fire is durable from this point; the schedule re-arms once the commit succeeds; a failed commit is retried by the queue, then by the reconcile.
+2. The api-server pokes the Agent's activity annotation so the reconciler scales a hibernated Agent up. The poke never waits on readiness; a poke that errors is recorded as a failed fire on the schedule's status, but the committed event still delivers if the Agent comes `Ready` within its TTL.
+3. The delivery worker pushes the event over the runtime channel's `applyState` — only once the Agent is `Ready`. A waking Agent picks pending events up on its boot-time `hello` catch-up. Every event carries a TTL, so an Agent that stays down through several occurrences (error state, failed poke) doesn't replay a backlog of stale fires when it eventually wakes. Outbox mechanics — versioning, the sweep, expiry — are owned by [runtime delivery](runtime-delivery.md#event-lifecycle).
+4. agent-runtime's trigger handler runs the schedule's **Precheck**, if it has one (below), and unless that declines, opens an ACP session against the harness over an in-process channel and submits the task as a prompt. The event settles once the prompt is submitted — or once a Precheck declines, since a declined occurrence is a finished fire, not a failed one; the turn itself runs asynchronously in the harness.
+
+A failed or undelivered event stays pending in Postgres and is redelivered until it settles or expires. The agent keeps a last-fire timestamp per schedule on the PVC and skips any fire at or before it, so a redelivered or superseded fire never runs twice.
+
+## Precheck
+
+A schedule carries an optional shell command that decides its own fires. Most fires of a periodic check — "did a new PR land?", "is the queue backing up?" — find nothing to do, and reaching that answer through a model is the most expensive way to ask a question a timestamp comparison could settle. The Precheck moves the question out of the turn.
+
+It runs in the agent pod, in the workspace directory, under `bash -lc` with the runtime process's own environment — so `HTTPS_PROXY` still points at the paired gateway and a check may reach GitHub or an API with the same injected credentials the agent gets ([security-and-credentials](security-and-credentials.md)). Running it there is the point: the inputs a real check needs — the workspace, the checkout, credentialed network access — are already present, with no new plumbing to feed them anywhere else. The schedule's id, the occurrence being decided, and the time of the last fire that actually started a run arrive as environment variables, so "anything new since last time?" needs no bookkeeping of its own.
+
+The exit code is the verdict, split the way `grep` splits it: `0` allows the run, `1` declines this occurrence, and every other way the command can end — a higher code, the two-minute deadline, a command that will not spawn — means the Precheck itself broke. A broken Precheck **allows** the run and records the reason, because an optimization that breaks should degrade to the unoptimized behaviour rather than silently stop the work; the opposite default would let one typo exiting `127` silence a schedule for weeks while looking exactly like "nothing changed". A runtime image too old to know the field ignores it and runs, which is the same fail-open. Whatever the command prints on stdout is appended to the task prompt (byte-capped), so the expensive turn does not re-derive what the cheap check just found; stderr goes to the pod log only.
+
+Only the pod knows the verdict, so it reports each one back over the harness API, scoped to the Agent making the call, and the api-server records it on the schedule. A **declined fire** is counted on its own, never on the last-run pair, so a quiet schedule reads as quiet rather than as broken and "how much did the Precheck save" is a number; a broken Precheck is recorded separately again, and cleared by the next verdict that isn't one.
+
+The declined report also undoes the fire's own cost. The poke in step 2 stamps `last-activity`, which is what keeps a woken Agent from hibernating; a Precheck firing more often than the idle timeout would therefore hold its Agent awake permanently and spend more compute than the turns it saved. So the api-server stashes the stamp it wrote — per occurrence, expiring with the event — and on a declined report restores the value that preceded it, compare-and-restore against its own stamp, the same shape the [pause flow](agent-lifecycle.md#hibernate) uses, so activity that arrived during the check keeps the Agent warm. What it does not undo is the cleared hard stop: a fire overrides a stop by design, and a declined one leaves the Agent started rather than racing a user who may have started it by hand meanwhile.
+
+The honest limit: this keeps the prompt, the context and the cache out of a declined path, but the Agent still wakes to run the check. Deciding without waking it at all would mean running user code with credentials outside today's boundary, and is not attempted here.
+
+## Session continuity
+
+The session model differs by schedule mode:
+
+- **Fresh schedule** — every fire creates a new session via `session/new`. The schedule accumulates a list of sessions over time, browseable under the schedules tab.
+- **Continuous schedule** — the first fire creates a session via `session/new`; every subsequent fire calls `session/resume` against the same session id. One schedule, one session, history retained across fires.
+
+The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC. Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh. Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session. Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.

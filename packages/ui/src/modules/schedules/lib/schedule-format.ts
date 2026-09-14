@@ -40,3 +40,15 @@ export function lastRunStatus(lastResult?: string): LastRunStatus | null {
     return { label: "Succeeded", className: "text-success" };
   return { label: `Failed: ${lastResult}`, className: "text-destructive" };
 }
+
+export function declinedSummary(status?: {
+  declinedCount?: number;
+  lastDeclinedAt?: string;
+}): string | null {
+  const count = status?.declinedCount ?? 0;
+  if (count === 0) return null;
+  const times = count === 1 ? "once" : `${count} times`;
+  return status?.lastDeclinedAt
+    ? `Declined ${times}, last ${formatRunTime(status.lastDeclinedAt)}`
+    : `Declined ${times}`;
+}

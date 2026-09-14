@@ -1,8 +1,13 @@
+import type { ScheduleFireReportInput } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
+import type { AgentActivityStamp } from "../../agents/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import type { TtlStore } from "../../../core/ttl-store.js";
 import { emit, EventType } from "../../../events.js";
+
+export type ActivityStamp = AgentActivityStamp;
 
 export interface SchedulerRunner {
   buildFireHandler(): (
@@ -14,16 +19,23 @@ export interface SchedulerRunner {
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
   restoreAll(): Promise<void>;
+  reportFire(agentId: string, input: ScheduleFireReportInput): Promise<void>;
 }
 
 export interface SchedulerRunnerDeps {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
-  wakeAgent: (agentId: string) => Promise<void>;
+  wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
+  restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
+  activityStamps?: TtlStore<ActivityStamp>;
   log?: (msg: string) => void;
   now?: () => Date;
   triggerTtlSeconds?: number;
+}
+
+function stampKey(scheduleId: string, fireAt: Date): string {
+  return `${scheduleId}:${fireAt.getTime()}`;
 }
 
 export function createSchedulerRunner(
@@ -58,8 +70,11 @@ export function createSchedulerRunner(
     const payload: Record<string, unknown> = {
       scheduleId,
       task: sched.spec.task ?? "",
+      fireAt: fireAt.toISOString(),
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
+    if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
+    if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
 
     const emitFired = async (outcome: "success" | "failure") => {
       try {
@@ -86,7 +101,11 @@ export function createSchedulerRunner(
         { id: eventId, kind: "trigger", payload, expiresAt },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-      await deps.wakeAgent(sched.agentId);
+      const stamp = await deps.wakeAgent(sched.agentId);
+      if (stamp && sched.spec.precheck && deps.activityStamps)
+        await deps.activityStamps
+          .set(stampKey(scheduleId, fireAt), stamp)
+          .catch(() => {});
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
@@ -140,6 +159,32 @@ export function createSchedulerRunner(
         },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
+    },
+
+    async reportFire(agentId, input): Promise<void> {
+      const sched = await deps.repo.getById(input.scheduleId);
+      if (!sched || sched.agentId !== agentId) return;
+      switch (input.verdict) {
+        case "allowed":
+          await deps.repo.recordPrecheckError(input.scheduleId, null);
+          return;
+        case "precheck-failed":
+          await deps.repo.recordPrecheckError(
+            input.scheduleId,
+            input.detail ?? "precheck failed",
+          );
+          return;
+        case "declined": {
+          await deps.repo.recordDecline(input.scheduleId, now());
+          const key = stampKey(input.scheduleId, new Date(input.fireAt));
+          const stamp = await deps.activityStamps?.consume(key);
+          if (stamp && deps.restoreActivity)
+            await deps.restoreActivity(agentId, stamp).catch((err: Error) => {
+              log(`report: activity restore failed: ${err.message}`);
+            });
+          return;
+        }
+      }
     },
 
     async restoreAll(): Promise<void> {

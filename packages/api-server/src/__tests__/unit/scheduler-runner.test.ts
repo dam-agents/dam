@@ -4,6 +4,8 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type { AgentActivityStamp } from "../../modules/agents/index.js";
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import {
   events$,
   ofType,
@@ -13,8 +15,18 @@ import {
 
 const AGENT_ID = "agent-1";
 const SCHEDULE_ID = "sched-1";
+const WAKE_STAMP = "2026-06-12T10:30:00.000Z";
 
-function makeSchedule(storedNextRun?: string, cron = "0 * * * *"): Schedule {
+function makeSchedule(
+  storedNextRun?: string,
+  cron = "0 * * * *",
+  precheck?: string,
+  lastRun?: string,
+): Schedule {
+  const status = {
+    ...(storedNextRun ? { nextRun: storedNextRun } : {}),
+    ...(lastRun ? { lastRun } : {}),
+  };
   return {
     id: SCHEDULE_ID,
     agentId: AGENT_ID,
@@ -26,8 +38,9 @@ function makeSchedule(storedNextRun?: string, cron = "0 * * * *"): Schedule {
       task: "do the thing",
       enabled: true,
       createdBy: "user",
+      ...(precheck ? { precheck } : {}),
     },
-    ...(storedNextRun ? { status: { nextRun: storedNextRun } } : {}),
+    ...(Object.keys(status).length > 0 ? { status } : {}),
   };
 }
 
@@ -35,6 +48,8 @@ function makeDeps(opts?: {
   wakeError?: Error;
   storedNextRun?: string;
   cron?: string;
+  precheck?: string;
+  lastRun?: string;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -42,11 +57,21 @@ function makeDeps(opts?: {
   const ensured: Date[] = [];
   const events: string[] = [];
   const expiries: Date[] = [];
+  const payloads: Record<string, unknown>[] = [];
+  const declines: Date[] = [];
+  const precheckErrors: (string | null)[] = [];
+  const restored: { previous: string | null; written: string }[] = [];
+  const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
   const repo = {
     async getById(id: string) {
       return id === SCHEDULE_ID
-        ? makeSchedule(opts?.storedNextRun, opts?.cron)
+        ? makeSchedule(
+            opts?.storedNextRun,
+            opts?.cron,
+            opts?.precheck,
+            opts?.lastRun,
+          )
         : null;
     },
     async getOwnerById() {
@@ -56,6 +81,12 @@ function makeDeps(opts?: {
       fires.push({ result, nextRun });
     },
     async setNextRun() {},
+    async recordDecline(_id: string, at: Date) {
+      declines.push(at);
+    },
+    async recordPrecheckError(_id: string, detail: string | null) {
+      precheckErrors.push(detail);
+    },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
     },
@@ -78,6 +109,7 @@ function makeDeps(opts?: {
       for (const e of evts) {
         events.push(e.id);
         expiries.push(e.expiresAt);
+        payloads.push(e.payload as Record<string, unknown>);
       }
       return 1;
     },
@@ -93,12 +125,29 @@ function makeDeps(opts?: {
     wakeAgent: async (agentId) => {
       calls.push(`wake:${agentId}`);
       if (opts?.wakeError) throw opts.wakeError;
+      return { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP };
     },
+    restoreActivity: async (_agentId, stamp) => {
+      restored.push(stamp);
+    },
+    activityStamps: stamps,
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
 
-  return { runner, calls, fires, enqueued, ensured, events, expiries };
+  return {
+    runner,
+    calls,
+    fires,
+    enqueued,
+    ensured,
+    events,
+    expiries,
+    payloads,
+    declines,
+    precheckErrors,
+    restored,
+  };
 }
 
 describe("scheduler-runner fire", () => {
@@ -261,5 +310,62 @@ describe("scheduler-runner fire", () => {
 
     expect(ensured).toHaveLength(1);
     expect(ensured[0]!.toISOString()).toBe(stored);
+  });
+});
+
+describe("scheduler-runner precheck", () => {
+  // TEST_SCENARIO: the pod decides the verdict, so a Precheck that finds nothing needs everything it will ask for in the fire's payload — the command, the occurrence it belongs to, and when a run last happened.
+  it("carries the precheck, the occurrence and the last run into the fire payload", async () => {
+    const { runner, payloads } = makeDeps({
+      precheck:
+        "git fetch -q && git log --oneline HEAD..origin/main | grep -q .",
+      lastRun: "2026-06-12T09:00:00.000Z",
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(payloads[0]).toMatchObject({
+      precheck:
+        "git fetch -q && git log --oneline HEAD..origin/main | grep -q .",
+      fireAt: "2026-06-12T10:30:00.000Z",
+      lastRunAt: "2026-06-12T09:00:00.000Z",
+    });
+  });
+
+  // TEST_SCENARIO: a Declined Fire already woke the Agent, so leaving the poke's activity stamp standing would hold a frequently-prechecked Agent awake forever and cost more compute than the turns it saved.
+  it("a declined report counts the decline and restores the activity stamp the poke wrote", async () => {
+    const { runner, declines, restored } = makeDeps({
+      precheck: "test -f /tmp/ready",
+    });
+    const fireAt = new Date("2026-06-12T10:30:00Z");
+
+    await runner.buildFireHandler()(SCHEDULE_ID, fireAt);
+    await runner.reportFire(AGENT_ID, {
+      scheduleId: SCHEDULE_ID,
+      fireAt: fireAt.toISOString(),
+      verdict: "declined",
+    });
+
+    expect(declines).toHaveLength(1);
+    expect(restored).toEqual([
+      { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP },
+    ]);
+  });
+
+  // TEST_SCENARIO: a report must only ever touch the reporting Agent's own Schedule — the harness surface is reached by any pod that knows a schedule id.
+  it("ignores a report for a schedule that belongs to another agent", async () => {
+    const { runner, declines, restored } = makeDeps({ precheck: "true" });
+
+    await runner.reportFire("agent-other", {
+      scheduleId: SCHEDULE_ID,
+      fireAt: "2026-06-12T10:30:00.000Z",
+      verdict: "declined",
+    });
+
+    expect(declines).toHaveLength(0);
+    expect(restored).toHaveLength(0);
   });
 });

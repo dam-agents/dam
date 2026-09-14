@@ -451,6 +451,9 @@ export const schedules = pgTable(
     nextRun: timestamp("next_run", { withTimezone: true }),
     lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
     lastFiredResult: text("last_fired_result"),
+    lastDeclinedAt: timestamp("last_declined_at", { withTimezone: true }),
+    declinedCount: integer("declined_count").notNull().default(0),
+    lastPrecheckError: text("last_precheck_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

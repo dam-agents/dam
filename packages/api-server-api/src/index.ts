@@ -125,6 +125,9 @@ export {
   scheduleSpecSchema,
   scheduleStatusSchema,
   scheduleResetSessionInputSchema,
+  scheduleFireReportInputSchema,
+  precheckVerdictSchema,
+  precheckSchema,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
@@ -138,6 +141,9 @@ export type {
   ScheduleCreateRRuleInput,
   ScheduleUpdateRRuleInput,
   SchedulesService,
+  ScheduleFireReporting,
+  ScheduleFireReportInput,
+  PrecheckVerdict,
 } from "./modules/schedules/types.js";
 export type {
   ExperimentStatus,

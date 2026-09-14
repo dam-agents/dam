@@ -92,12 +92,23 @@ export async function composeRuntimeChannel(
     log,
   };
 
+  const harnessClient: HarnessClient = createHarnessClient({
+    apiServerUrl: opts.apiServerUrl,
+    agentId: opts.agentId,
+  });
+
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
+      workDir: opts.workDir,
+      log,
+      reporter: {
+        report: (input) =>
+          harnessClient.schedules.v1.reportFire.mutate(input) as Promise<void>,
+      },
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -135,11 +146,6 @@ export async function composeRuntimeChannel(
     drivers: eventDrivers(resolved),
     registry,
     env,
-  });
-
-  const harnessClient: HarnessClient = createHarnessClient({
-    apiServerUrl: opts.apiServerUrl,
-    agentId: opts.agentId,
   });
 
   const contributionKinds = Object.keys(

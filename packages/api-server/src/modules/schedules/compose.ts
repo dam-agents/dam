@@ -1,6 +1,9 @@
 import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
+import type { Redis } from "ioredis";
 import type { SchedulesService } from "api-server-api";
+import { createRedisTtlStore } from "../../core/ttl-store.js";
+import type { AgentActivityStamp } from "../agents/index.js";
 import {
   createSchedulesRepository,
   type SchedulesRepository,
@@ -18,6 +21,8 @@ import {
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
+const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
+
 export interface SchedulesBoot {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
@@ -30,7 +35,12 @@ export interface ComposeSchedulesAtBootOpts {
   db: Db;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
-  wakeAgent: (agentId: string) => Promise<void>;
+  wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
+  restoreActivity: (
+    agentId: string,
+    stamp: AgentActivityStamp,
+  ) => Promise<void>;
+  redis: Redis;
   log?: (msg: string) => void;
 }
 
@@ -45,6 +55,12 @@ export function composeSchedulesAtBoot(
     queue,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    restoreActivity: opts.restoreActivity,
+    activityStamps: createRedisTtlStore<AgentActivityStamp>(
+      opts.redis,
+      "schedule:activity-stamp",
+      ACTIVITY_STAMP_TTL_MS,
+    ),
     log,
   });
   const worker = startScheduleWorker({

@@ -24,12 +24,15 @@ export const scheduleGetInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const precheckSchema = z.string().trim().min(1).max(8_000);
+
 export const scheduleCreateCronInputSchema = z.object({
   name: z.string().min(1),
   agentId: z.string().min(1),
   cron: z.string().min(1),
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
+  precheck: precheckSchema.optional(),
 });
 
 export const scheduleCreateRRuleInputSchema = z.object({
@@ -40,6 +43,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   quietHours: z.array(quietWindowSchema).optional(),
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
+  precheck: precheckSchema.optional(),
 });
 
 export const scheduleUpdateRRuleInputSchema = z.object({
@@ -50,6 +54,7 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   quietHours: z.array(quietWindowSchema),
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
+  precheck: precheckSchema.nullable().optional(),
 });
 
 export const scheduleDeleteInputSchema = z.object({
@@ -78,6 +83,7 @@ const scheduleSpecCronSchema = z
     type: z.literal("cron"),
     cron: z.string(),
     task: z.string().optional(),
+    precheck: z.string().optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -92,6 +98,7 @@ const scheduleSpecRRuleSchema = z
     timezone: z.string(),
     quietHours: z.array(quietWindowConfigMapSchema).optional(),
     task: z.string().optional(),
+    precheck: z.string().optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -107,4 +114,20 @@ export const scheduleStatusSchema = z.object({
   lastRun: z.string().optional(),
   nextRun: z.string().optional(),
   lastResult: z.string().optional(),
+  lastDeclinedAt: z.string().optional(),
+  declinedCount: z.number().int().nonnegative().optional(),
+  lastPrecheckError: z.string().optional(),
+});
+
+export const precheckVerdictSchema = z.enum([
+  "allowed",
+  "declined",
+  "precheck-failed",
+]);
+
+export const scheduleFireReportInputSchema = z.object({
+  scheduleId: z.string().min(1),
+  fireAt: z.string().datetime({ offset: true }),
+  verdict: precheckVerdictSchema,
+  detail: z.string().max(2_000).optional(),
 });

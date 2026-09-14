@@ -4,6 +4,7 @@ import {
   asc,
   eq,
   inArray,
+  sql,
   type Db,
   schedules as schedulesTable,
 } from "db";
@@ -47,6 +48,8 @@ export interface SchedulesRepository {
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  recordDecline(id: string, at: Date): Promise<void>;
+  recordPrecheckError(id: string, detail: string | null): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
@@ -60,6 +63,9 @@ interface InternalRow {
   nextRun: Date | null;
   lastFiredAt: Date | null;
   lastFiredResult: string | null;
+  lastDeclinedAt: Date | null;
+  declinedCount: number;
+  lastPrecheckError: string | null;
 }
 
 function rowToSchedule(row: InternalRow): Schedule {
@@ -69,6 +75,13 @@ function rowToSchedule(row: InternalRow): Schedule {
     ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
     ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
     ...(row.lastFiredResult ? { lastResult: row.lastFiredResult } : {}),
+    ...(row.lastDeclinedAt
+      ? { lastDeclinedAt: row.lastDeclinedAt.toISOString() }
+      : {}),
+    ...(row.declinedCount > 0 ? { declinedCount: row.declinedCount } : {}),
+    ...(row.lastPrecheckError
+      ? { lastPrecheckError: row.lastPrecheckError }
+      : {}),
   };
   return {
     id: row.id,
@@ -237,6 +250,25 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           nextRun,
           updatedAt: new Date(),
         })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async recordDecline(id, at): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastDeclinedAt: at,
+          declinedCount: sql`${schedulesTable.declinedCount} + 1`,
+          lastPrecheckError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async recordPrecheckError(id, detail): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({ lastPrecheckError: detail, updatedAt: new Date() })
         .where(eq(schedulesTable.id, id));
     },
 

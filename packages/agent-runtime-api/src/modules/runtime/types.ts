@@ -117,6 +117,9 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   mcpServers: z.array(z.unknown()).optional(),
+  precheck: z.string().min(1).optional(),
+  fireAt: z.string().datetime({ offset: true }).optional(),
+  lastRunAt: z.string().datetime({ offset: true }).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
 

@@ -5,7 +5,11 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import { formatRunTime, lastRunStatus } from "../lib/schedule-format.js";
+import {
+  declinedSummary,
+  formatRunTime,
+  lastRunStatus,
+} from "../lib/schedule-format.js";
 
 function DetailCard({
   label,
@@ -23,10 +27,11 @@ function DetailCard({
 }
 
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
-  const { task, timezone, sessionMode, enabled, status } = schedule;
+  const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
   const nextRun =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
+  const declined = declinedSummary(status ?? undefined);
 
   return (
     <div className="border-t border-border p-4">
@@ -35,6 +40,20 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           <SectionLabel>Task</SectionLabel>
           <p className="mt-1 mb-4 text-sm whitespace-pre-wrap text-foreground">
             {task}
+          </p>
+        </>
+      )}
+      {precheck && (
+        <>
+          <SectionLabel>Precheck</SectionLabel>
+          <p className="mt-1 mb-1 font-mono text-xs break-all whitespace-pre-wrap text-foreground">
+            {precheck}
+          </p>
+          <p className="mb-4 text-xs text-muted-foreground">
+            {declined ?? "No runs declined yet."}
+            {status?.lastPrecheckError
+              ? ` · Precheck failed — ran anyway: ${status.lastPrecheckError}`
+              : ""}
           </p>
         </>
       )}

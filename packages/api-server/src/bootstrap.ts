@@ -845,9 +845,10 @@ export async function bootstrap() {
     db,
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    wakeAgent: async (agentId) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    },
+    wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    restoreActivity: (agentId, stamp) =>
+      agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
+    redis: sharedRedis,
   });
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
