@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUpdateAgent } from "../api/mutations.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
@@ -63,7 +64,9 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <h2 className="text-lg font-bold text-foreground">{name}</h2>
+        <h2 className="text-5xl font-normal tracking-tight text-foreground">
+          {name}
+        </h2>
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
@@ -77,7 +80,9 @@ export function AgentUnavailableOverlay({
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
         <div className="flex flex-col items-center gap-2">
-          <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+          <h2 className="text-5xl font-normal tracking-tight text-foreground">
+            {agent.name}
+          </h2>
           <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-sm text-muted-foreground">
@@ -95,22 +100,26 @@ export function AgentUnavailableOverlay({
       ? agent.error
       : OVERLAY_COPY[state].description;
 
+  const waiting = state === "starting" || state === "preparing_workspace";
+
   return (
-    <OverlayFrame onBack={onBack}>
+    <OverlayFrame
+      onBack={onBack}
+      footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
+    >
       {Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />
       )}
       <div className="flex flex-col items-center gap-2">
-        <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+        <h2 className="text-5xl font-normal tracking-tight text-foreground">
+          {agent.name}
+        </h2>
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {!Icon && <StartupTip sandbox={agent.name} />}
-      {(state === "starting" || state === "preparing_workspace") && (
-        <SkipTheWait agent={agent} />
-      )}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
@@ -133,14 +142,23 @@ export function AgentUnavailableOverlay({
 
 function SkipTheWait({ agent }: { agent: AgentView }) {
   const updateAgent = useUpdateAgent();
+  const showConfirm = useStore((s) => s.showConfirm);
   if (agent.hibernationTimeoutMin === 0) return null;
+
+  const keepAlwaysOn = async () => {
+    const ok = await showConfirm(
+      "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
+      "Keep always on",
+      { icon: Power, confirmLabel: "Keep always on" },
+    );
+    if (ok) updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 });
+  };
+
   return (
     <Button
       variant="outline"
       disabled={updateAgent.isPending}
-      onClick={() =>
-        updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 })
-      }
+      onClick={() => void keepAlwaysOn()}
       data-testid="skip-the-wait"
     >
       <Power size={14} /> Skip the wait — keep always-on
