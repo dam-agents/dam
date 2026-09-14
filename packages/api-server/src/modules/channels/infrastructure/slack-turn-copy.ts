@@ -126,7 +126,7 @@ export function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
   canLookupUsers: boolean;
-  batch?: { count: number; inThread: boolean };
+  batch?: { count: number };
   permalink: string | null;
   identity: SlackBotIdentity;
   reach: SlackTurnReach;
@@ -138,16 +138,10 @@ export function slackTurnContract(ctx: {
     ? "a 1:1 direct message"
     : "a shared channel or group DM";
   const replyBullet =
-    multi && ctx.batch?.inThread === false
-      ? `• ${TOOL}reply — post a message threaded under the batched message ` +
-        "you are answering: pass its [ts …] tag as threadTs (several messages " +
-        "share this turn, so an id-less reply is refused). Pass " +
-        "alsoSendToChannel when that message is old enough that people " +
-        "watching the channel would miss a thread-only reply."
-      : `• ${TOOL}reply — post a message into this thread ` +
-        `(threadTs="${ctx.replyThreadTs}"). Pass alsoSendToChannel when this ` +
-        "thread is old enough that people watching the channel would miss a " +
-        "thread-only reply.";
+    `• ${TOOL}reply — post a message into this thread ` +
+    `(threadTs="${ctx.replyThreadTs}"). Pass alsoSendToChannel when this ` +
+    "thread is old enough that people watching the channel would miss a " +
+    "thread-only reply.";
   const reactIds = multi
     ? "messageTs = the [ts …] tag of the message you are reacting to"
     : `messageTs="${ctx.eventTs}"`;
