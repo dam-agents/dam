@@ -49,7 +49,7 @@ export function declinedSummary(status?: {
   if (count === 0) return null;
   const times = count === 1 ? "once" : `${count} times`;
   return status?.lastDeclinedAt
-    ? `Declined ${times} · ${formatRunTime(status.lastDeclinedAt)}`
+    ? `Declined ${times} · last: ${formatRunTime(status.lastDeclinedAt)}`
     : `Declined ${times}`;
 }
 
