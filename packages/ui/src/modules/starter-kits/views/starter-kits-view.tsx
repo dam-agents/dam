@@ -1,11 +1,4 @@
-import {
-  Book,
-  type CarbonIconType,
-  Catalog,
-  Chat,
-  Code,
-  Search,
-} from "@carbon/icons-react";
+import { Search } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -29,13 +22,7 @@ import {
   kitBadges,
   matchesSearch,
 } from "../lib/catalog-cards.js";
-
-const CATEGORY_ICON: Record<StarterKitView["category"], CarbonIconType> = {
-  knowledge: Book,
-  software: Code,
-  productivity: Chat,
-  research: Catalog,
-};
+import { kitIcon } from "../lib/kit-icon.js";
 
 type Filter = StarterKitView["category"] | "all";
 
@@ -71,7 +58,7 @@ function Illustration({
   kit: StarterKitView;
   className?: string;
 }) {
-  const Icon = CATEGORY_ICON[kit.category];
+  const Icon = kitIcon(kit);
   return (
     <div
       className={cn(
@@ -96,7 +83,7 @@ function FeaturedCard({
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
   onOpen: () => void;
 }) {
-  const Icon = CATEGORY_ICON[kit.category];
+  const Icon = kitIcon(kit);
   return (
     <button
       type="button"
@@ -262,7 +249,7 @@ export function StarterKitsView() {
 
           {shown.length === 0 ? (
             <p className="py-8 text-sm text-muted-foreground">
-              No kit matches that search.
+              No presets match &quot;{query}&quot;
             </p>
           ) : (
             <div className="flex flex-col gap-4">

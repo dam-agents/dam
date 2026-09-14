@@ -4,6 +4,7 @@ name: OpenEvolve
 description: >-
   Evolutionary code-optimization agent: evolves programs against a fitness function you define. Brings its own agent, built on Claude Code.
 category: research
+icon: chart
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md
 image:
   ref: quay.io/dam-agents/openevolve # @ci-pin openevolve-image-tag

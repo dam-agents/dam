@@ -6,6 +6,7 @@ description: >-
   agent clones, builds, patches and measures. Runs on the pre-built Nous
   image.
 category: research
+icon: microscope
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md
 image:
   ref: quay.io/dam-agents/nous # @ci-pin nous-image-tag

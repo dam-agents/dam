@@ -4,6 +4,7 @@ name: AdaEvolve
 description: >-
   Multi-island adaptive code and algorithm optimization (SkyDiscover). Brings its own agent, built on Claude Code.
 category: research
+icon: chart
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md
 image:
   ref: quay.io/dam-agents/skydiscover # @ci-pin skydiscover-image-tag

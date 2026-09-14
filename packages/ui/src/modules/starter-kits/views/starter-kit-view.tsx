@@ -25,6 +25,7 @@ import {
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
+import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
   harnessesLine,
@@ -150,6 +151,7 @@ export function StarterKitDetailView() {
 }
 
 function KitDetail({ kit }: { kit: StarterKitView }) {
+  const KitIcon = kitIcon(kit);
   const setView = useStore((s) => s.setView);
   const navigateToStarterKitSetup = useStore(
     (s) => s.navigateToStarterKitSetup,
@@ -185,6 +187,9 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
         onClose={close}
       >
         <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground">
+            <KitIcon size={14} />
+          </span>
           {kit.connections.flatMap((req) =>
             acceptedTemplates(req.accepts, templates.data ?? [])
               .flatMap((t) => (t.family ? [t.family] : []))
@@ -234,6 +239,20 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                 }
               />
             ))}
+          </Section>
+        )}
+
+        {kit.image && (
+          <Section label="Framework">
+            <Row
+              title={kit.name}
+              detail={kit.image.ref}
+              trailing={
+                <Badge variant="muted" size="sm">
+                  brings its own agent
+                </Badge>
+              }
+            />
           </Section>
         )}
 
@@ -346,16 +365,14 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
           </Section>
         )}
 
-        <Section label="Harness">
-          <Row
-            title={harnessesLine(kit)}
-            detail={
-              kit.image
-                ? kit.image.ref
-                : "Chosen on the next step, from the harnesses installed here."
-            }
-          />
-        </Section>
+        {!kit.image && (
+          <Section label="Harness">
+            <Row
+              title={harnessesLine(kit)}
+              detail="Chosen on the next step, from the harnesses installed here."
+            />
+          </Section>
+        )}
 
         {kit.parameters.length > 0 && (
           <Section label="Onboarding will ask you for">
@@ -372,6 +389,21 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
               />
             ))}
           </Section>
+        )}
+        <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
+          See it in action
+        </h2>
+        {kit.video ? (
+          <a
+            href={kit.video}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 text-sm text-foreground underline underline-offset-2"
+          >
+            Watch the walkthrough <Launch size={16} />
+          </a>
+        ) : (
+          <p className="text-sm text-muted-foreground">Video coming soon.</p>
         )}
       </DialogBody>
 
