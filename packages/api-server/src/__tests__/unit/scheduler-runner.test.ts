@@ -6,6 +6,7 @@ import type { ScheduleQueue } from "../../modules/schedules/infrastructure/sched
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import type { ScheduleStatusPatch } from "../../modules/schedules/domain/status-transitions.js";
 import {
   events$,
   ofType,
@@ -58,8 +59,7 @@ function makeDeps(opts?: {
   const events: string[] = [];
   const expiries: Date[] = [];
   const payloads: Record<string, unknown>[] = [];
-  const declines: Date[] = [];
-  const runs: { at: Date; result: string; precheckError: string | null }[] = [];
+  const patches: ScheduleStatusPatch[] = [];
   const restored: { previous: string | null; written: string }[] = [];
   const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
@@ -81,16 +81,8 @@ function makeDeps(opts?: {
       fires.push({ result, nextRun });
     },
     async setNextRun() {},
-    async recordDecline(_id: string, at: Date) {
-      declines.push(at);
-    },
-    async recordRun(
-      _id: string,
-      at: Date,
-      result: string,
-      precheckError: string | null,
-    ) {
-      runs.push({ at, result, precheckError });
+    async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
+      patches.push(patch);
     },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
@@ -149,8 +141,7 @@ function makeDeps(opts?: {
     events,
     expiries,
     payloads,
-    declines,
-    runs,
+    patches,
     restored,
   };
 }
@@ -341,8 +332,8 @@ describe("scheduler-runner precheck", () => {
   });
 
   // TEST_SCENARIO: a Declined Fire already woke the Agent, so leaving the poke's activity stamp standing would hold a frequently-prechecked Agent awake forever and cost more compute than the turns it saved.
-  it("a declined report counts the decline and restores the activity stamp the poke wrote", async () => {
-    const { runner, declines, restored } = makeDeps({
+  it("a declined report restores the activity stamp the poke wrote", async () => {
+    const { runner, patches, restored } = makeDeps({
       precheck: "test -f /tmp/ready",
     });
     const fireAt = new Date("2026-06-12T10:30:00Z");
@@ -354,7 +345,7 @@ describe("scheduler-runner precheck", () => {
       verdict: "declined",
     });
 
-    expect(declines).toHaveLength(1);
+    expect(patches).toHaveLength(1);
     expect(restored).toEqual([
       { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP },
     ]);
@@ -373,9 +364,9 @@ describe("scheduler-runner precheck", () => {
     expect(enqueued).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: a Precheck that broke let the run through, so the run is recorded — with the reason beside it, which is the only thing that keeps a permanently broken check from looking healthy.
-  it("records the run when a broken precheck let it through", async () => {
-    const { runner, runs } = makeDeps({ precheck: "true" });
+  // TEST_SCENARIO: a Precheck that broke let the run through, so the run is recorded with the reason beside it — the runner's job is to hand the verdict to the transition, not to decide the columns itself.
+  it("records a broken precheck's run through the status transition", async () => {
+    const { runner, patches } = makeDeps({ precheck: "true" });
 
     await runner.reportFire(AGENT_ID, {
       scheduleId: SCHEDULE_ID,
@@ -384,62 +375,16 @@ describe("scheduler-runner precheck", () => {
       detail: "precheck exited 127",
     });
 
-    expect(runs).toEqual([
-      {
-        at: new Date("2026-06-12T10:30:00Z"),
-        result: "success",
-        precheckError: "precheck exited 127",
-      },
-    ]);
-  });
-
-  // TEST_SCENARIO: the count answers "has the check found anything since work last happened?", so a real run has to clear it rather than let a lifetime total drown the recent picture.
-  it("clears the decline count when a run finally happens", async () => {
-    const { runner, runs } = makeDeps({ precheck: "true" });
-    const fireAt = new Date("2026-06-12T10:30:00Z");
-
-    await runner.buildFireHandler()(SCHEDULE_ID, fireAt);
-    await runner.reportFire(AGENT_ID, {
-      scheduleId: SCHEDULE_ID,
-      fireAt: fireAt.toISOString(),
-      verdict: "declined",
+    expect(patches[0]).toMatchObject({
+      lastFiredAt: new Date("2026-06-12T10:30:00Z"),
+      lastPrecheckError: "precheck exited 127",
+      precheckFailedCount: { kind: "increment" },
     });
-    await runner.reportFire(AGENT_ID, {
-      scheduleId: SCHEDULE_ID,
-      fireAt: fireAt.toISOString(),
-      verdict: "allowed",
-    });
-
-    expect(runs).toHaveLength(1);
-  });
-
-  // TEST_SCENARIO: a Precheck that broke still lets the run through, so a run cannot clear its failure count — only the script running and returning a verdict again can, which is what separates one hiccup from a week of breakage.
-  it("counts consecutive precheck failures and clears them on a verdict", async () => {
-    const { runner, runs, declines } = makeDeps({ precheck: "true" });
-    const report = (verdict: "precheck-failed" | "declined") =>
-      runner.reportFire(AGENT_ID, {
-        scheduleId: SCHEDULE_ID,
-        fireAt: "2026-06-12T10:30:00.000Z",
-        verdict,
-        ...(verdict === "precheck-failed"
-          ? { detail: "precheck exited 2" }
-          : {}),
-      });
-
-    await report("precheck-failed");
-    await report("precheck-failed");
-    await report("declined");
-
-    expect(runs.map((r) => r.precheckError)).toEqual([
-      "precheck exited 2",
-      "precheck exited 2",
-    ]);
-    expect(declines).toHaveLength(1);
   });
 
   // TEST_SCENARIO: a report must only ever touch the reporting Agent's own Schedule — the harness surface is reached by any pod that knows a schedule id.
   it("ignores a report for a schedule that belongs to another agent", async () => {
-    const { runner, declines, restored } = makeDeps({ precheck: "true" });
+    const { runner, patches, restored } = makeDeps({ precheck: "true" });
 
     await runner.reportFire("agent-other", {
       scheduleId: SCHEDULE_ID,
@@ -447,7 +392,7 @@ describe("scheduler-runner precheck", () => {
       verdict: "declined",
     });
 
-    expect(declines).toHaveLength(0);
+    expect(patches).toHaveLength(0);
     expect(restored).toHaveLength(0);
   });
 });

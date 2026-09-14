@@ -170,6 +170,8 @@ export function createSchedulesService(deps: {
       else if (input.precheck !== undefined) delete spec.precheck;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
+      if (updated && !spec.precheck && current.spec.precheck)
+        await deps.repo.clearPrecheckStatus(input.id);
       if (updated) {
         await deps.runner.sync(updated.id);
         emit({

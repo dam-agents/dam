@@ -2,6 +2,7 @@ import type { ScheduleFireReportInput } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
+import { statusForVerdict } from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
@@ -179,28 +180,21 @@ export function createSchedulerRunner(
           log(`report: emit failed: ${(err as Error).message}`);
         }
       };
-      switch (input.verdict) {
-        case "allowed":
-          await deps.repo.recordRun(input.scheduleId, now(), "success", null);
-          break;
-        case "precheck-failed":
-          await deps.repo.recordRun(
-            input.scheduleId,
-            now(),
-            "success",
-            input.detail ?? "precheck failed",
-          );
-          break;
-        case "declined": {
-          await deps.repo.recordDecline(input.scheduleId, now());
-          const key = stampKey(input.scheduleId, new Date(input.fireAt));
-          const stamp = await deps.activityStamps?.consume(key);
-          if (stamp && deps.restoreActivity)
-            await deps.restoreActivity(agentId, stamp).catch((err: Error) => {
-              log(`report: activity restore failed: ${err.message}`);
-            });
-          break;
-        }
+      await deps.repo.applyStatusPatch(
+        input.scheduleId,
+        statusForVerdict(
+          input.verdict,
+          now(),
+          input.detail ?? "precheck failed",
+        ),
+      );
+      if (input.verdict === "declined") {
+        const key = stampKey(input.scheduleId, new Date(input.fireAt));
+        const stamp = await deps.activityStamps?.consume(key);
+        if (stamp && deps.restoreActivity)
+          await deps.restoreActivity(agentId, stamp).catch((err: Error) => {
+            log(`report: activity restore failed: ${err.message}`);
+          });
       }
       await emitPrecheckReported();
     },

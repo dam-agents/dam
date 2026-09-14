@@ -10,9 +10,22 @@ import {
 } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
+import type {
+  CounterWrite,
+  ScheduleStatusPatch,
+} from "../domain/status-transitions.js";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
+
+function counter(
+  column:
+    | typeof schedulesTable.declinedCount
+    | typeof schedulesTable.precheckFailedCount,
+  write: CounterWrite,
+) {
+  return write.kind === "increment" ? sql`${column} + 1` : write.value;
+}
 
 function clampLimit(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_LIMIT;
@@ -48,13 +61,8 @@ export interface SchedulesRepository {
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
-  recordRun(
-    id: string,
-    at: Date,
-    result: string,
-    precheckError: string | null,
-  ): Promise<void>;
-  recordDecline(id: string, at: Date): Promise<void>;
+  applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
+  clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
@@ -262,29 +270,35 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(eq(schedulesTable.id, id));
     },
 
-    async recordRun(id, at, result, precheckError): Promise<void> {
+    async applyStatusPatch(id, patch): Promise<void> {
       await db
         .update(schedulesTable)
         .set({
-          lastFiredAt: at,
-          lastFiredResult: result,
-          lastPrecheckError: precheckError,
-          lastDeclinedAt: null,
-          declinedCount: 0,
-          precheckFailedCount: precheckError
-            ? sql`${schedulesTable.precheckFailedCount} + 1`
-            : 0,
+          ...(patch.lastFiredAt ? { lastFiredAt: patch.lastFiredAt } : {}),
+          ...(patch.lastFiredResult
+            ? { lastFiredResult: patch.lastFiredResult }
+            : {}),
+          lastDeclinedAt: patch.lastDeclinedAt,
+          declinedCount: counter(
+            schedulesTable.declinedCount,
+            patch.declinedCount,
+          ),
+          lastPrecheckError: patch.lastPrecheckError,
+          precheckFailedCount: counter(
+            schedulesTable.precheckFailedCount,
+            patch.precheckFailedCount,
+          ),
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
     },
 
-    async recordDecline(id, at): Promise<void> {
+    async clearPrecheckStatus(id): Promise<void> {
       await db
         .update(schedulesTable)
         .set({
-          lastDeclinedAt: at,
-          declinedCount: sql`${schedulesTable.declinedCount} + 1`,
+          lastDeclinedAt: null,
+          declinedCount: 0,
           lastPrecheckError: null,
           precheckFailedCount: 0,
           updatedAt: new Date(),

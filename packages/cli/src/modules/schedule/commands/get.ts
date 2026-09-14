@@ -48,10 +48,18 @@ function renderSchedule(view: ScheduleView): string {
     const when = view.status.lastDeclinedAt
       ? `, last ${view.status.lastDeclinedAt}`
       : "";
-    lines.push(`Declined:    ${view.status.declinedCount}${when}`);
+    lines.push(
+      `Declined:    ${view.status.declinedCount} since the last run${when}`,
+    );
   }
   if (view.status?.lastPrecheckError) {
-    lines.push(`Precheck:    failed — ${view.status.lastPrecheckError}`);
+    const inARow =
+      (view.status.precheckFailedCount ?? 0) > 1
+        ? ` (${view.status.precheckFailedCount} times in a row)`
+        : "";
+    lines.push(
+      `Precheck:    failed${inARow} — ${view.status.lastPrecheckError}`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
