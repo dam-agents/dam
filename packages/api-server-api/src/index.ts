@@ -178,6 +178,7 @@ export {
 export type {
   StarterKit,
   StarterKitApplyInput,
+  StarterKitBundledSkill,
   StarterKitApplyResult,
   StarterKitCatalog,
   StarterKitCatalogEntry,

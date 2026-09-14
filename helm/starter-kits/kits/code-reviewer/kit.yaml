@@ -43,15 +43,8 @@ schedules:
     timezone: Europe/Prague
     task: Run the monthly model benchmark.
     enabled: false
-parameters:
-  - name: repository to review
-    required: true
-    note: owner/repo, host-prefixed when it is not github.com
-  - name: bot display name
-    note: Defaults to Code Guardian.
-  - name: re-review label
-    note: Defaults to code-guardian-review.
-  - name: reviewer roster
-    note: Only with Slack on — one Slack member ID per reviewer and an escalation owner.
-  - name: state repository
-    note: Optional repository that backs up the agent's runtime state.
+bundledSkills:
+  - name: issue-fit
+    note: >-
+      Review-time check that a pull request delivers what its linked issue
+      asked, and flags missing or undeclared scope.

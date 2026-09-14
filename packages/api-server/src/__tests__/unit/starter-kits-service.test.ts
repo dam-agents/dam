@@ -73,7 +73,11 @@ function connection(id: string, templateId: string): ConnectionView {
   } as ConnectionView;
 }
 
-function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
+function makeHarness(
+  loaded: LoadedKit | null,
+  agent: Agent | null = null,
+  agentGrants: { connectionId: string; grantedAt: string }[] = [],
+) {
   const calls = {
     created: [] as AgentCreateInput[],
     deleted: [] as string[],
@@ -142,6 +146,9 @@ function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
       },
       async listTemplates() {
         return TEMPLATES;
+      },
+      async getAgentConnections(agentId: string) {
+        return { agentId, connections: agentGrants };
       },
     },
     skills: {
@@ -352,6 +359,10 @@ describe("starter kits: apply", () => {
       connections: {
         listConnections: async () => [connection("c-gh", "github-app")],
         listTemplates: async () => TEMPLATES,
+        getAgentConnections: async (agentId: string) => ({
+          agentId,
+          connections: [],
+        }),
       },
       skills: {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
@@ -451,6 +462,10 @@ describe("starter kits: apply", () => {
       connections: {
         listConnections: async () => [connection("c-gh", "github-app")],
         listTemplates: async () => TEMPLATES,
+        getAgentConnections: async (agentId: string) => ({
+          agentId,
+          connections: [],
+        }),
       },
       skills: {
         applyEntries: async () => {
@@ -497,6 +512,7 @@ describe("starter kits: onboarding prompt", () => {
     const { service } = makeHarness(
       LOADED,
       fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+      [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
     );
     const prompt = await service.onboardingPrompt("agent-1");
     expect(prompt).toContain(
@@ -506,11 +522,33 @@ describe("starter kits: onboarding prompt", () => {
       "https://github.com/acme/code-guardian at ref v1.4.0",
     );
     expect(prompt).toContain(
-      "Connection (required, granted at create): github-app or github-pat",
+      "Connection (required, connected): github-app or github-pat",
     );
     expect(prompt).toContain('Schedule "benchmark": disabled');
     expect(prompt).toContain("repository to review (required)");
     expect(prompt).toContain("follow ONBOARDING.md");
+  });
+
+  it("reports a suggested connection the user never granted as NOT connected", async () => {
+    const { service } = makeHarness(
+      LOADED,
+      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+      [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+    );
+    const prompt = await service.onboardingPrompt("agent-1");
+    expect(prompt).toContain("Connection (suggested, NOT connected): slack");
+  });
+
+  it("drops a granted connection the user has since deleted", async () => {
+    const { service } = makeHarness(
+      LOADED,
+      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+      [{ connectionId: "c-gone", grantedAt: "2026-09-14T00:00:00Z" }],
+    );
+    const prompt = await service.onboardingPrompt("agent-1");
+    expect(prompt).toContain(
+      "Connection (required, NOT connected): github-app or github-pat",
+    );
   });
 
   it("does not tell a seedless kit to follow a cloned definition", () => {
@@ -518,6 +556,7 @@ describe("starter kits: onboarding prompt", () => {
       kit: kit({ seed: undefined }),
       catalog: "platform",
       version: "v1",
+      granted: [],
       schedules: [],
       boundChannels: [],
       familyTitles: new Map(),
@@ -532,6 +571,7 @@ describe("starter kits: onboarding prompt", () => {
       kit: kit({ onboarding: { prompt: "Run /setup." } }),
       catalog: "platform",
       version: "v1",
+      granted: [],
       schedules: [],
       boundChannels: ["slack"],
       familyTitles: new Map(),

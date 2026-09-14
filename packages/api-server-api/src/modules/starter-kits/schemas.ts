@@ -59,6 +59,11 @@ export const starterKitExternalSkillSchema = z.object({
   name: z.string().min(1),
 });
 
+export const starterKitBundledSkillSchema = z.object({
+  name: z.string().min(1),
+  note: z.string().optional(),
+});
+
 export const starterKitParameterSchema = z.object({
   name: z.string().min(1),
   required: z.boolean().default(false),
@@ -107,6 +112,7 @@ export const starterKitSchema = z.object({
   channels: z.array(starterKitChannelSchema).default([]),
   schedules: z.array(starterKitScheduleSchema).default([]),
   skills: z.array(starterKitExternalSkillSchema).default([]),
+  bundledSkills: z.array(starterKitBundledSkillSchema).default([]),
   env: z.array(starterKitEnvVarSchema).default([]),
   hibernationTimeoutMin: z.number().int().min(0).optional(),
   parameters: z.array(starterKitParameterSchema).default([]),

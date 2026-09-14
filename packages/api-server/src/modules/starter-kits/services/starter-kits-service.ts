@@ -35,7 +35,10 @@ export interface StarterKitsServiceDeps {
     SchedulesService,
     "createCron" | "createRRule" | "toggle" | "list"
   >;
-  connections: Pick<ConnectionsService, "listConnections" | "listTemplates">;
+  connections: Pick<
+    ConnectionsService,
+    "listConnections" | "listTemplates" | "getAgentConnections"
+  >;
   skills: Pick<SkillsService, "applyEntries">;
   wakeAgent: (agentId: string) => Promise<void>;
 }
@@ -89,6 +92,7 @@ export function createStarterKitsService(
 
   async function grantedTemplates(
     connectionIds: string[],
+    onUnknown: "throw" | "skip" = "throw",
   ): Promise<GrantedTemplate[]> {
     if (connectionIds.length === 0) return [];
     const [owned, templates] = await Promise.all([
@@ -101,15 +105,19 @@ export function createStarterKitsService(
         t.family ? [[t.id, t.family.id] as const] : [],
       ),
     );
-    return connectionIds.map((id) => {
+    return connectionIds.flatMap((id) => {
       const conn = byId.get(id);
-      if (!conn)
+      if (!conn) {
+        if (onUnknown === "skip") return [];
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `unknown connection: ${id}`,
         });
+      }
       const familyId = familyOf.get(conn.templateId);
-      return { templateId: conn.templateId, ...(familyId ? { familyId } : {}) };
+      return [
+        { templateId: conn.templateId, ...(familyId ? { familyId } : {}) },
+      ];
     });
   }
 
@@ -238,11 +246,18 @@ export function createStarterKitsService(
       if (!ref) return null;
       const loaded = await deps.repo.get(ref.catalog, ref.kitId);
       if (!loaded) return null;
-      const schedules = await deps.schedules.list(agentId);
+      const [schedules, agentConnections] = await Promise.all([
+        deps.schedules.list(agentId),
+        deps.connections.getAgentConnections(agentId),
+      ]);
       return composeOnboardingPrompt({
         kit: loaded.kit,
         catalog: ref.catalog,
         version: ref.version,
+        granted: await grantedTemplates(
+          agentConnections.connections.map((c) => c.connectionId),
+          "skip",
+        ),
         schedules: schedules.map((s) => ({
           name: s.name,
           enabled: s.spec.enabled,

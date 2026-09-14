@@ -3,6 +3,7 @@ import type { Agent } from "../agents/types.js";
 import type { SkillSetApplyResult } from "../skills/types.js";
 import type {
   starterKitApplyInputSchema,
+  starterKitBundledSkillSchema,
   starterKitCatalogEntrySchema,
   starterKitCatalogSchema,
   starterKitCategorySchema,
@@ -17,6 +18,9 @@ import type {
 export type StarterKitCategory = z.infer<typeof starterKitCategorySchema>;
 export type StarterKitConnectionRequirement = z.infer<
   typeof starterKitConnectionRequirementSchema
+>;
+export type StarterKitBundledSkill = z.infer<
+  typeof starterKitBundledSkillSchema
 >;
 export type StarterKitSchedule = z.infer<typeof starterKitScheduleSchema>;
 export type StarterKitImage = z.infer<typeof starterKitImageSchema>;

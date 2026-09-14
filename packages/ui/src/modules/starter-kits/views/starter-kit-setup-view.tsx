@@ -456,6 +456,39 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         </section>
       )}
 
+      {(kit.bundledSkills.length > 0 || kit.skills.length > 0) && (
+        <section className="mb-8">
+          <SectionLabel spaced>Skills</SectionLabel>
+          <ul className="space-y-2 text-sm">
+            {kit.bundledSkills.map((skill) => (
+              <li key={`bundled:${skill.name}`}>
+                {skill.name}{" "}
+                <Badge variant="muted" size="sm">
+                  in the kit
+                </Badge>
+                {skill.note ? (
+                  <span className="text-muted-foreground"> — {skill.note}</span>
+                ) : null}
+              </li>
+            ))}
+            {kit.skills.map((skill) => (
+              <li key={`external:${skill.source}`}>
+                {skill.name}{" "}
+                <Badge variant="muted" size="sm">
+                  installed at create
+                </Badge>
+                <span className="text-muted-foreground"> — {skill.source}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Skills marked <em>in the kit</em> arrive with the definition the
+            agent clones and are discovered as files — the platform installs
+            nothing for them.
+          </p>
+        </section>
+      )}
+
       {kit.parameters.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Onboarding will ask you for</SectionLabel>

@@ -1,9 +1,12 @@
 import type { StarterKit } from "api-server-api";
+import type { GrantedTemplate } from "./requirements.js";
+import { satisfiesRequirement } from "./requirements.js";
 
 export interface OnboardingFacts {
   kit: StarterKit;
   catalog: string;
   version: string;
+  granted: GrantedTemplate[];
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
   familyTitles: ReadonlyMap<string, string>;
@@ -25,9 +28,12 @@ function connectionLines(facts: OnboardingFacts): string[] {
   const { kit } = facts;
   if (kit.connections.length === 0) return ["- Connections: none declared."];
   return kit.connections.map((req) => {
-    const level = req.required ? "required, granted at create" : "suggested";
+    const connected = satisfiesRequirement(req, facts.granted)
+      ? "connected"
+      : "NOT connected";
+    const level = req.required ? "required" : "suggested";
     const note = req.note ? ` — ${req.note}` : "";
-    return `- Connection (${level}): ${describeAccepts(req.accepts, facts.familyTitles)}${note}`;
+    return `- Connection (${level}, ${connected}): ${describeAccepts(req.accepts, facts.familyTitles)}${note}`;
   });
 }
 
@@ -70,7 +76,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
     definitionLine(kit),
     "",
-    "The platform already set up the following. Do not recreate any of it; verify with the tools available to you and ask only for what remains.",
+    "This is the agent's state right now, read when this turn was composed. Do not recreate anything marked connected or created; anything marked NOT connected or disabled is not available to you — say so rather than assuming it, and do not ask the user to connect it unless the work needs it.",
     ...connectionLines(facts),
     ...scheduleLines(facts),
     channelLine(facts),
