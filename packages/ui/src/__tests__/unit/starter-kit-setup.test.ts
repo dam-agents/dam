@@ -14,6 +14,7 @@ import {
   harnessesLine,
   isProviderRequirement,
   isStarterKitSetupComplete,
+  kitResourcesLine,
   kitScheduleCadence,
   ownedMatches,
   preselectedGrants,
@@ -356,5 +357,19 @@ describe("harness matching", () => {
     expect(harnessesLine({ image: { ref: "x" }, harnesses: undefined })).toBe(
       "Its own agent",
     );
+  });
+  test("summarizes the size a kit declares, and nothing when it declares none", () => {
+    expect(
+      kitResourcesLine({
+        resources: { cpu: "2", memory: "4Gi", storage: "10Gi" },
+      }),
+    ).toBe("2 CPU · 4Gi memory · 10Gi disk");
+    expect(kitResourcesLine({ resources: { storage: "5Gi" } })).toBe(
+      "5Gi disk",
+    );
+    expect(kitResourcesLine({ resources: undefined })).toBeUndefined();
+    expect(
+      kitResourcesLine({ resources: { note: "explains nothing else" } }),
+    ).toBeUndefined();
   });
 });

@@ -252,5 +252,13 @@ describe("the shipped proof-of-concept catalog", () => {
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
       /^quay\.io\/dam-agents\/nous(:|$)/,
     );
+    expect(kits.find((k) => k.kit.id === "nous")!.kit.resources).toMatchObject({
+      cpu: "2",
+      memory: "4Gi",
+      storage: "10Gi",
+    });
+    expect(
+      kits.find((k) => k.kit.id === "openevolve")!.kit.resources,
+    ).toMatchObject({ storage: "5Gi" });
   });
 });

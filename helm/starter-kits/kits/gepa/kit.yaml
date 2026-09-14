@@ -9,6 +9,8 @@ image:
   ref: quay.io/dam-agents/gepa # @ci-pin gepa-image-tag
   harness: claude-code
   providers: [ibm-litellm, anthropic]
+resources:
+  storage: 5Gi
 connections:
   - accepts: [ibm-litellm, anthropic]
     required: true

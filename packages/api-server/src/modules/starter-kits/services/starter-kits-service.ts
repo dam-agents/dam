@@ -1,11 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import type {
+  AgentCreateInput,
   AgentsService,
   ConnectionsService,
   SchedulesService,
   SkillsService,
   StarterKitApplyInput,
   StarterKitApplyResult,
+  StarterKitResources,
   StarterKitsService,
   StarterKitView,
 } from "api-server-api";
@@ -36,6 +38,19 @@ export interface StarterKitsServiceDeps {
   connections: Pick<ConnectionsService, "listConnections" | "listTemplates">;
   skills: Pick<SkillsService, "applyEntries">;
   wakeAgent: (agentId: string) => Promise<void>;
+}
+
+function agentShape(
+  resources: StarterKitResources | undefined,
+): Pick<AgentCreateInput, "size" | "storage"> {
+  if (!resources) return {};
+  const { cpu, memory, storage } = resources;
+  return {
+    ...(cpu !== undefined || memory !== undefined
+      ? { size: { cpu, memory } }
+      : {}),
+    ...(storage !== undefined ? { storage } : {}),
+  };
 }
 
 function toView(loaded: LoadedKit): StarterKitView {
@@ -163,11 +178,9 @@ export function createStarterKitsService(
       const agent = await deps.agents.create({
         name: input.name,
         ...(kit.image
-          ? {
-              image: kit.image.ref,
-              ...(kit.image.size ? { size: kit.image.size } : {}),
-            }
+          ? { image: kit.image.ref }
           : { templateId: input.templateId }),
+        ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),
         ...(kit.hibernationTimeoutMin !== undefined

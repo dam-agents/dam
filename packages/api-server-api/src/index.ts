@@ -185,6 +185,7 @@ export type {
   StarterKitConnectionRequirement,
   StarterKitImage,
   StarterKitParameter,
+  StarterKitResources,
   StarterKitSchedule,
   StarterKitView,
   StarterKitsService,

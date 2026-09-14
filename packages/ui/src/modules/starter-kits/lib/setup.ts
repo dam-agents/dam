@@ -257,6 +257,19 @@ export function ownAgentLine(
   return on ? `Its own agent, built on ${on}` : "Its own agent";
 }
 
+export function kitResourcesLine(
+  kit: Pick<StarterKitView, "resources">,
+): string | undefined {
+  const r = kit.resources;
+  if (!r) return undefined;
+  const parts = [
+    r.cpu ? `${r.cpu} CPU` : undefined,
+    r.memory ? `${r.memory} memory` : undefined,
+    r.storage ? `${r.storage} disk` : undefined,
+  ].filter((p): p is string => p !== undefined);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 export function allowedHarnesses<T extends { harness?: HarnessFamily }>(
   kit: Pick<StarterKitView, "harnesses">,
   harnesses: readonly T[],

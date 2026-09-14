@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agentSizeSchema } from "../agents/schemas.js";
+import { agentSizeSchema, storageQuantitySchema } from "../agents/schemas.js";
 import {
   isProviderPresetType,
   type ProviderPresetType,
@@ -81,7 +81,11 @@ export const starterKitImageSchema = z.object({
       ),
     )
     .optional(),
-  size: agentSizeSchema.optional(),
+});
+
+export const starterKitResourcesSchema = agentSizeSchema.extend({
+  storage: storageQuantitySchema.optional(),
+  note: z.string().min(1).optional(),
 });
 
 export const starterKitSchema = z.object({
@@ -93,6 +97,7 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
+  resources: starterKitResourcesSchema.optional(),
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })

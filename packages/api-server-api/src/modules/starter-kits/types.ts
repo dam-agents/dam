@@ -9,6 +9,7 @@ import type {
   starterKitConnectionRequirementSchema,
   starterKitImageSchema,
   starterKitParameterSchema,
+  starterKitResourcesSchema,
   starterKitScheduleSchema,
   starterKitSchema,
 } from "./schemas.js";
@@ -20,6 +21,7 @@ export type StarterKitConnectionRequirement = z.infer<
 export type StarterKitSchedule = z.infer<typeof starterKitScheduleSchema>;
 export type StarterKitImage = z.infer<typeof starterKitImageSchema>;
 export type StarterKitParameter = z.infer<typeof starterKitParameterSchema>;
+export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 export type StarterKitCatalogEntry = z.infer<
   typeof starterKitCatalogEntrySchema

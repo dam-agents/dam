@@ -9,6 +9,10 @@ docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/k-search/RE
 image:
   ref: quay.io/dam-agents/k-search
   providers: [ibm-litellm, openai]
+resources:
+  cpu: "2"
+  memory: 4Gi
+  storage: 5Gi
 connections:
   - accepts: [ibm-litellm, openai]
     required: true

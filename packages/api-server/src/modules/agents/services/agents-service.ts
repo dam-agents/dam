@@ -695,7 +695,11 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size },
+          {
+            description: input.description,
+            size: input.size,
+            storage: input.storage,
+          },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -706,6 +710,7 @@ export function createAgentsService(deps: {
             image: input.image,
             description: input.description,
             size: input.size,
+            storage: input.storage,
           },
           deps.agentDefaultLimits,
         );

@@ -9,6 +9,8 @@ image:
   ref: quay.io/dam-agents/skydiscover # @ci-pin skydiscover-image-tag
   harness: claude-code
   providers: [ibm-litellm, openai]
+resources:
+  storage: 5Gi
 connections:
   - accepts: [ibm-litellm, openai]
     required: true

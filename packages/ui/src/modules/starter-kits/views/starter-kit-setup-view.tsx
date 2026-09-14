@@ -43,6 +43,7 @@ import {
   harnessesLine,
   isProviderRequirement,
   isStarterKitSetupComplete,
+  kitResourcesLine,
   kitScheduleCadence,
   ownAgentLine,
   ownedMatches,
@@ -102,6 +103,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   });
 
   const bringsImage = kit.image !== undefined;
+  const resourcesLine = kitResourcesLine(kit);
   const harnesses = allowedHarnesses(kit, catalogue.harnesses);
   const noHarnessInstalled =
     !bringsImage &&
@@ -221,6 +223,25 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
           />
         )}
       </section>
+
+      {resourcesLine && (
+        <section className="mb-8">
+          <SectionLabel spaced>Size</SectionLabel>
+          <Callout tone="default">
+            <div>{resourcesLine}</div>
+            {kit.resources?.note && (
+              <div className="mt-1 text-muted-foreground">
+                {kit.resources.note}
+              </div>
+            )}
+            <div className="mt-1 text-muted-foreground">
+              The kit sizes the agent instead of the install default. CPU and
+              memory count against your compute ceiling and can be changed on
+              the agent later; disk is fixed at create.
+            </div>
+          </Callout>
+        </section>
+      )}
 
       {noCompatibleProvider ? (
         <section className="mb-8">

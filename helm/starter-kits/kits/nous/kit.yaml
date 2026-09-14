@@ -11,6 +11,14 @@ image:
   ref: quay.io/dam-agents/nous # @ci-pin nous-image-tag
   harness: claude-code
   providers: [ibm-litellm, anthropic]
+resources:
+  cpu: "2"
+  memory: 4Gi
+  storage: 10Gi
+  note: >-
+    A campaign clones, builds and runs the target system, with a git worktree
+    per arm and its own Python environment — more CPU, memory and disk than a
+    chat agent.
 connections:
   - accepts: [ibm-litellm, anthropic]
     required: true
