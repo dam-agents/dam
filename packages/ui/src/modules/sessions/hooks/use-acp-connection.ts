@@ -399,7 +399,12 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
-        useStore.getState().setRunStarts(runStarts);
+        useStore
+          .getState()
+          .setRunStarts([
+            ...useStore.getState().runStarts,
+            ...runStarts,
+          ]);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);
