@@ -288,7 +288,7 @@ export function createBoltSlackGateway(
     async getChannelHistory(args) {
       if (!app) return { messages: [], hasMore: false };
       const pageSize = Math.min(args.limit, CHANNEL_HISTORY_PAGE_SIZE);
-      const collected: SlackMessage[] = [];
+      const newestFirst: SlackMessage[] = [];
       let cursor: string | undefined;
       for (;;) {
         const history = await app.client.conversations.history({
@@ -297,16 +297,16 @@ export function createBoltSlackGateway(
           ...(args.oldest ? { oldest: args.oldest } : {}),
           ...(cursor ? { cursor } : {}),
         });
-        collected.push(...(history.messages ?? []).map(toSlackMessage));
+        newestFirst.push(...(history.messages ?? []).map(toSlackMessage));
         cursor = history.response_metadata?.next_cursor || undefined;
-        const more = Boolean(history.has_more || cursor);
-        if (collected.length >= args.limit) {
+        const olderRemain = Boolean(history.has_more || cursor);
+        if (newestFirst.length >= args.limit) {
           return {
-            messages: collected.slice(0, args.limit),
-            hasMore: more || collected.length > args.limit,
+            messages: newestFirst.slice(0, args.limit),
+            hasMore: olderRemain || newestFirst.length > args.limit,
           };
         }
-        if (!cursor) return { messages: collected, hasMore: false };
+        if (!cursor) return { messages: newestFirst, hasMore: false };
       }
     },
 
