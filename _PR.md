@@ -14,9 +14,9 @@ log on this branch for the individual fixes).
 - Deployment on the OpenShift `vm-test` project was **not** completed: the
   node disk image cannot be built on this Mac (see below) and pushing to quay
   from the sandboxed shell is blocked.
-- Uncommitted dam-vm image/disk-task changes remain in this checkout
-  (Containerfile native-toolchain stage, disk task running skopeo/bib on the
-  host arch with `--target-arch`, cloud-init left to the preset).
+- The dam-vm image builds on the Mac again: the toolchain is fetched in a
+  `--platform=$BUILDPLATFORM` stage and the disk task runs skopeo/bib on the
+  host architecture with `--target-arch`; the qcow2 itself still needs x86.
 
 ## Findings
 
