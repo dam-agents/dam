@@ -2,6 +2,7 @@ import type { SessionUpdate } from "@agentclientprotocol/sdk/dist/schema/types.g
 import type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
+  PlatformRunStartedParams,
   PlatformTurnEndedParams,
 } from "api-server-api";
 
@@ -12,6 +13,7 @@ export type AcpUpdate =
       sessionUpdate: "platform_prompt_accepted";
     } & PlatformPromptAcceptedParams)
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
+  | ({ sessionUpdate: "platform_run_started" } & PlatformRunStartedParams)
   | { sessionUpdate: "platform_clipped_replay"; older?: string };
 
 export interface FrameMeta {

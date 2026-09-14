@@ -70,7 +70,7 @@ pod may gain one sentence naming `_meta.platform.at`; do that in slice 01, not s
 | 01 | ✅ Runtime stamps live frames with their time | Contract field; `session-transcript` stamps `append`/`appendEcho`, never `appendReplay` | — |
 | 02 | ✅ The Claude Code history reader passes its times through | `harness-history-lib.mjs` copies each stored message's timestamp onto the frames it emits | 01 |
 | 03 | ✅ The chat shows each message's time, and the day divider | `Message.at` through the projection; relative label + hover; `threadItems` derive with day dividers | 01 |
-| 04 | The run divider for scheduled runs | Runtime keeps run start times and surfaces them (load response + live notification); UI places run dividers | 03 |
+| 04 | ✅ The run divider for scheduled runs | Runtime keeps run start times and surfaces them (load response + live notification); UI places run dividers | 03 |
 
 01 → 02 → 03 → 04 is a fine linear order. 02 is image-side and verifiable on its own; 03 is fully
 visible once 01 is in (live turns) and richer once 02 is in (reopened threads).
@@ -101,10 +101,13 @@ visible once 01 is in (live turns) and richer once 02 is in (reopened threads).
 - **Run divider placement.** A run start `T` is recorded when the turn *starts*; the run's prompt
   echo is appended at *acceptance*, a few milliseconds earlier. So "before the first message with
   `at ≥ T`" would drop the divider between the prompt and its answer. The rule is instead: place
-  the divider immediately before the **user** message with the greatest `at ≤ T` — that is the
-  prompt that started the run, and a human message sent long before the fire loses to the echo
-  because the echo's `at` is greater. If no user message has `at ≤ T`, place it before the first
-  message with `at ≥ T`; if none, at the end of the thread (the run has begun, its echo is pending).
+  the divider immediately before the newest message with `at ≤ T`, **and only when that message is
+  a user message** — the echo is appended milliseconds before the run starts, so at time `T` the
+  run's own prompt is the newest thing in the thread. That bound matters: without it a fire whose
+  echo has not landed yet would anchor to the *previous* run's prompt, since that is still a user
+  message with `at ≤ T`. When the newest such message is not a user message, place the divider
+  before the first message with `at ≥ T`; if none, at the end of the thread (the run has begun, its
+  echo is pending).
   Run starts are deduplicated by ISO string and sorted ascending before placement.
 - **Labels.** `dayLabel(d, now)` → `Today` | `Yesterday` | `Wednesday, Aug 19` (same year) |
   `Aug 19, 2025` (other year). `clockLabel(d)` → locale short time (`2:18PM`). Hover = `dayLabel +

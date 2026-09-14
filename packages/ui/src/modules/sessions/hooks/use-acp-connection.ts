@@ -2,6 +2,7 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
+  platformRunStartsMetaSchema,
   platformSupersededMetaSchema,
   platformUndeliveredMetaSchema,
   SessionMode,
@@ -328,6 +329,7 @@ export function useAcpConnection(
               turn?: unknown;
               undelivered?: unknown;
               superseded?: unknown;
+              runStarts?: unknown;
             };
           };
         } | null
@@ -339,6 +341,9 @@ export function useAcpConnection(
       );
       const superseded = platformSupersededMetaSchema.safeParse(
         platformMeta?.superseded,
+      );
+      const runStarts = platformRunStartsMetaSchema.safeParse(
+        platformMeta?.runStarts,
       );
       const clipped =
         clippedRaw === undefined
@@ -388,6 +393,9 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
+        useStore
+          .getState()
+          .setRunStarts(runStarts.success ? runStarts.data : []);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

@@ -31,6 +31,7 @@ export interface SessionsSlice {
   sessionId: string | null;
   sessionMode: SessionMode | null;
   messages: Message[];
+  runStarts: string[];
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -45,6 +46,8 @@ export interface SessionsSlice {
   setTerminalPaused: (paused: boolean) => void;
   setSessionsSectionOpen: (open: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+  setRunStarts: (list: string[]) => void;
+  addRunStart: (at: string) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
@@ -103,6 +106,7 @@ export const createSessionsSlice: StateCreator<
 
   return {
     sessionId: null,
+    runStarts: [],
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -128,6 +132,11 @@ export const createSessionsSlice: StateCreator<
       set((s) => ({
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
+    setRunStarts: (list) => set({ runStarts: list }),
+    addRunStart: (at) =>
+      set((s) =>
+        s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
+      ),
     setSessionError: (e) => set({ sessionError: e }),
     toggleSessionFilter: (category) =>
       set((s) => ({
@@ -197,6 +206,7 @@ export const createSessionsSlice: StateCreator<
         sessionId: null,
         sessionMode: null,
         messages: [],
+        runStarts: [],
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,

@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
+  buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
   platformUndeliveredPromptSchema,
   SessionType,
@@ -159,8 +160,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, channel }) => {
       deps.activeTurns.record(sessionId);
-      if (nonViewerChannels.has(channel) && isMachineSession(sessionId))
-        deps.sessionMetadata?.startRun(sessionId);
+      if (nonViewerChannels.has(channel) && isMachineSession(sessionId)) {
+        const at = deps.sessionMetadata?.startRun(sessionId);
+        if (at) announceRunStart(sessionId, at);
+      }
     },
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
@@ -245,6 +248,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     supersededFor(sessionId) {
       return [...(supersededEchoes.get(sessionId) ?? [])];
+    },
+    runStartsOf(sessionId) {
+      return deps.sessionMetadata?.runStartsOf(sessionId) ?? [];
     },
     engage(channel, sessionId) {
       engage(channel, sessionId);
@@ -493,6 +499,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (sessions.has(sessionId) && channel.isOpen()) return true;
     }
     return false;
+  }
+
+  function announceRunStart(sessionId: string, at: string): void {
+    const line = JSON.stringify(
+      buildPlatformRunStartedNotification({ sessionId, at }),
+    );
+    for (const [channel, sessions] of engagedSessions) {
+      if (!sessions.has(sessionId)) continue;
+      if (!channel.isOpen()) continue;
+      if (nonViewerChannels.has(channel)) continue;
+      channel.send(line);
+    }
   }
 
   function hasEngagedViewer(sessionId: string): boolean {

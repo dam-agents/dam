@@ -2,6 +2,7 @@ import {
   platformFrameMetaSchema,
   platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
+  platformRunStartedParamsSchema,
   platformTurnEndedParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
@@ -78,6 +79,15 @@ export function routeExtNotification(
       if (!p) return null;
       return {
         update: { sessionUpdate: "platform_prompt_started", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/runStarted": {
+      const p = parseExtParams(method, platformRunStartedParamsSchema, params);
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_run_started", ...p },
         sessionId: p.sessionId,
         frame,
       };

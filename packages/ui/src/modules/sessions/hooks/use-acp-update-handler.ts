@@ -36,6 +36,10 @@ export function useAcpUpdateHandler(
         dismissStalePermission(update.toolCallId);
       }
 
+      if (kind === "platform_run_started") {
+        useStore.getState().addRunStart(update.at);
+      }
+
       delivery.handleUpdate(update);
       setMessages((prev) => applyUpdate(prev, update, frame?.at));
     };

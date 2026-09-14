@@ -162,6 +162,7 @@ export function ChatView() {
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
   const now = useNow(60_000);
+  const runStarts = useStore((s) => s.runStarts);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -704,7 +705,7 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {threadItems(messages).map((item) =>
+                    {threadItems(messages, runStarts).map((item) =>
                       item.kind === "divider" ? (
                         <ThreadDivider
                           key={item.key}

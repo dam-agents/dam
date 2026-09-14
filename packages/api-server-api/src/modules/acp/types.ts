@@ -158,6 +158,37 @@ export type PlatformRunResultResponse = z.infer<
   typeof platformRunResultResponseSchema
 >;
 
+export const platformRunStartsMetaSchema = z.array(
+  z.string().datetime({ offset: true }),
+);
+
+export const platformRunStartedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  at: z.string().datetime({ offset: true }),
+});
+export type PlatformRunStartedParams = z.infer<
+  typeof platformRunStartedParamsSchema
+>;
+
+export const platformRunStartedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/runStarted"),
+  params: platformRunStartedParamsSchema,
+});
+export type PlatformRunStartedNotification = z.infer<
+  typeof platformRunStartedNotificationSchema
+>;
+
+export function buildPlatformRunStartedNotification(
+  params: PlatformRunStartedParams,
+): PlatformRunStartedNotification {
+  return platformRunStartedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/runStarted",
+    params,
+  });
+}
+
 export const platformPromptStartedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),
