@@ -39,6 +39,7 @@ export interface NavigationSlice {
     focus?: string,
   ) => void;
   navigateToKnowledgeBases: () => void;
+  navigateToStarterKit: (catalog: string, kitId: string) => void;
   navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
@@ -101,6 +102,20 @@ export const createNavigationSlice: StateCreator<
       agentId,
       sandboxSection: section,
       sandboxFocus: focus ?? null,
+    });
+  },
+  navigateToStarterKit: (catalog, kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit", catalog, kit: kitId }),
+    );
+    set({
+      view: "starter-kit",
+      starterKitCatalog: catalog,
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
     });
   },
   navigateToStarterKitSetup: (catalog, kitId) => {

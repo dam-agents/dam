@@ -67,7 +67,10 @@ export function IconRail({
     label: "Starter kits",
     shortLabel: "Kits",
     icon: Catalog,
-    active: view === "starter-kits" || view === "starter-kit-new",
+    active:
+      view === "starter-kits" ||
+      view === "starter-kit" ||
+      view === "starter-kit-new",
     badge: 0,
     navigate: () => setView("starter-kits"),
   };

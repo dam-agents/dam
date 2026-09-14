@@ -23,6 +23,7 @@ import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { StarterKitSetupView } from "./modules/starter-kits/views/starter-kit-setup-view.js";
+import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
 import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
@@ -133,6 +134,8 @@ function MainApp() {
                 <KnowledgeBasesListView />
               ) : view === "starter-kits" && kitsEnabled ? (
                 <StarterKitsView />
+              ) : view === "starter-kit" && kitsEnabled ? (
+                <StarterKitDetailView />
               ) : view === "starter-kit-new" && kitsEnabled ? (
                 <StarterKitSetupView />
               ) : view === "artifacts" ? (

@@ -81,9 +81,7 @@ function KitCard({
   kit: StarterKitView;
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
 }) {
-  const navigateToStarterKitSetup = useStore(
-    (s) => s.navigateToStarterKitSetup,
-  );
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   return (
     <Card className="flex flex-col" data-testid={`starter-kit-card-${kit.id}`}>
       <CardHeader>
@@ -128,7 +126,7 @@ function KitCard({
           )}
           <Button
             size="sm"
-            onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
+            onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
           >
             Use this kit
           </Button>
