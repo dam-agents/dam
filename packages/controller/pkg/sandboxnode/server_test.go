@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start that smolvm gives up on leaves no guest process behind (smolvm's ready timeout abandons a still-booting VM); delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package sandboxnode
 
 import (
@@ -254,4 +254,19 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
 	assert.Contains(t, h.calls(), "-I "+archive)
+}
+
+// TEST_SCENARIO: smolvm abandoned a machine's boot: of three processes only the one whose command line names that machine's vm dir is an orphan to kill.
+func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
+	proc := t.TempDir()
+	for pid, cmdline := range map[string]string{
+		"100":  "/proc/self/exe\x00_boot-vm\x00/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
+		"101":  "/proc/self/exe\x00_boot-vm\x00/home/smolvm/.cache/smolvm/vms/abc1234/boot-config.json",
+		"self": "sandbox-node",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Join(proc, pid), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(proc, pid, "cmdline"), []byte(cmdline), 0o644))
+	}
+	assert.Equal(t, []int{100}, orphanPIDs(proc, "/home/smolvm/.cache/smolvm/vms/abc123"))
+	assert.Empty(t, orphanPIDs(proc, ""))
 }

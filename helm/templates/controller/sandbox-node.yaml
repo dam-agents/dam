@@ -104,8 +104,10 @@ spec:
             - name: machine-api
               containerPort: 4600
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: machine-api
+              scheme: HTTPS
           securityContext:
             # Root for smolvm's per-machine uid switch and NET_ADMIN for the
             # netns + NAT it gives each machine; KVM comes as a device grant,
@@ -114,6 +116,11 @@ spec:
             privileged: {{ $node.privileged }}
             capabilities:
               add: ["NET_ADMIN"]
+            # containerd's default AppArmor profile stops libkrun from booting
+            # a guest at all (measured: the VM process exits before the guest
+            # kernel prints a line); the capability set above is the gate here.
+            appArmorProfile:
+              type: Unconfined
           resources:
             {{- $res := deepCopy ($node.resources | default dict) }}
             {{- if not $node.privileged }}

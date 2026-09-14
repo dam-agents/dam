@@ -1,6 +1,7 @@
 package sandboxnode
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -72,6 +74,7 @@ func (s *Server) Close() {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("PUT /machines/{id}", s.guard(s.put))
 	mux.HandleFunc("GET /machines/{id}", s.guard(s.get))
 	mux.HandleFunc("DELETE /machines/{id}", s.guard(s.delete))
@@ -177,7 +180,7 @@ func (s *Server) ensure(id string, spec MachineSpec) error {
 		if err := s.smolvm(append(args, envArgs(spec.Env)...)...); err != nil {
 			return err
 		}
-		if err := s.smolvm("machine", "start", "-n", id); err != nil {
+		if err := s.start(id); err != nil {
 			return err
 		}
 	}
@@ -206,7 +209,45 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
-	return s.smolvm("machine", "start", "-n", id)
+	return s.start(id)
+}
+
+func (s *Server) start(id string) error {
+	err := s.smolvm("machine", "start", "-n", id)
+	if err != nil {
+		for _, pid := range orphanPIDs("/proc", s.vmDir(id)) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+	return err
+}
+
+func (s *Server) vmDir(id string) string {
+	names, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms", "*", "name"))
+	for _, f := range names {
+		if b, err := os.ReadFile(f); err == nil && strings.TrimSpace(string(b)) == id {
+			return filepath.Dir(f)
+		}
+	}
+	return ""
+}
+
+func orphanPIDs(procRoot, vmDir string) []int {
+	if vmDir == "" {
+		return nil
+	}
+	entries, _ := os.ReadDir(procRoot)
+	var pids []int
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		if cmd, _ := os.ReadFile(filepath.Join(procRoot, e.Name(), "cmdline")); bytes.Contains(cmd, []byte(vmDir+"/")) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 func envArgs(env map[string]string) []string {
