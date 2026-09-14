@@ -49,10 +49,15 @@ import type {
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
   AcpSessionLoadError,
+  AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
+import {
+  turnFailureReasonToken,
+  turnFailureUserCopy,
+} from "./turn-failure-copy.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -746,6 +751,23 @@ async function resolveOutboundTarget(
 
 export const TURN_LINGER_MS = 60 * 60_000;
 
+const MAY_STILL_RUN_REASONS = new Set([
+  "acp-error",
+  "relay-lost",
+  "turn-stalled",
+  "turn-runaway",
+]);
+
+function mayLeaveHarnessRunning(
+  ghostTurn: boolean,
+  failureReason: string | undefined,
+): boolean {
+  return (
+    ghostTurn ||
+    (failureReason !== undefined && MAY_STILL_RUN_REASONS.has(failureReason))
+  );
+}
+
 const USER_CACHE_TTL_MS = 10 * 60_000;
 
 const userLookupSemaphore = createSemaphore(5);
@@ -1423,7 +1445,9 @@ export function createSlackWorker(
         ? "agent-stopped"
         : isAgentWakeTimeoutError(err)
           ? wakeFailureReasonToken(err.failure)
-          : "acp-error";
+          : err instanceof AcpTurnAbandonedError
+            ? turnFailureReasonToken(err)
+            : "acp-error";
       getLogger().warn(
         {
           agentId: instanceName,
@@ -1436,7 +1460,9 @@ export function createSlackWorker(
         ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
           ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
-          : `Error: ${formatError(err)}.${renderTurnFiles(ctx)}`;
+          : err instanceof AcpTurnAbandonedError
+            ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
+            : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
       await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,
@@ -1462,7 +1488,7 @@ export function createSlackWorker(
     } finally {
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
-          harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+          harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
       }
       if (
@@ -2727,7 +2753,9 @@ export function createSlackWorker(
         ? "agent-stopped"
         : isAgentWakeTimeoutError(err)
           ? wakeFailureReasonToken(err.failure)
-          : "acp-error";
+          : err instanceof AcpTurnAbandonedError
+            ? turnFailureReasonToken(err)
+            : "acp-error";
       getLogger().warn(
         {
           agentId: args.instanceName,
@@ -2739,7 +2767,7 @@ export function createSlackWorker(
     } finally {
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {
-          harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+          harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
       }
       emit({
