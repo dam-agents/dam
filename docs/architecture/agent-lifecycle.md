@@ -171,7 +171,7 @@ Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port 
 
 ### Hibernate
 
-Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the sandbox node, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disk, so a wake is a boot of the same guest. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
+Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the sandbox node, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the timeout, skipping any already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
 
