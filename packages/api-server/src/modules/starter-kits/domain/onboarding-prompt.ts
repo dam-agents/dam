@@ -85,5 +85,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     ...parameterLines(kit),
     "",
     instruction,
+    "",
+    "Every schedule on this agent is HELD until you call the mark_onboarding_complete tool, so nothing fires against a half-configured agent. Call it once, when the configuration above is genuinely in place — not before. If the user leaves onboarding unfinished, leave it uncalled.",
   ].join("\n");
 }

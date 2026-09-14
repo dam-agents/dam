@@ -82,6 +82,7 @@ function makeHarness(
     created: [] as AgentCreateInput[],
     deleted: [] as string[],
     woken: [] as string[],
+    onboarded: [] as { id: string; at: string }[],
     cron: [] as { name: string; agentId: string; cron: string }[],
     rrule: [] as { name: string; rrule: string; timezone: string }[],
     toggled: [] as string[],
@@ -165,6 +166,9 @@ function makeHarness(
     },
     wakeAgent: async (id) => {
       calls.woken.push(id);
+    },
+    markAgentOnboarded: async (id, at) => {
+      calls.onboarded.push({ id, at });
     },
   });
   return { service, calls };
@@ -368,6 +372,7 @@ describe("starter kits: apply", () => {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
       },
       wakeAgent: async () => {},
+      markAgentOnboarded: async () => {},
     });
     await expect(
       failing.apply({
@@ -473,6 +478,7 @@ describe("starter kits: apply", () => {
         },
       },
       wakeAgent: async () => {},
+      markAgentOnboarded: async () => {},
     });
     const result = await service.apply({
       catalog: "platform",
@@ -551,6 +557,36 @@ describe("starter kits: onboarding prompt", () => {
     );
   });
 
+  it("holds schedules until the agent marks onboarding complete", async () => {
+    const { service, calls } = makeHarness(
+      LOADED,
+      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+    );
+    const prompt = await service.onboardingPrompt("agent-1");
+    expect(prompt).toContain("mark_onboarding_complete");
+
+    await service.markOnboarded("agent-1");
+    expect(calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
+    expect(calls.onboarded[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("refuses to mark an agent that came from no kit, and is idempotent", async () => {
+    const plain = makeHarness(LOADED, fakeAgent("agent-9"));
+    await expect(plain.service.markOnboarded("agent-9")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    const already = makeHarness(
+      LOADED,
+      fakeAgent("agent-1", {
+        starterKit: "platform/code-reviewer@abc123",
+        starterKitOnboarded: "2026-09-14T09:00:00.000Z",
+      }),
+    );
+    await already.service.markOnboarded("agent-1");
+    expect(already.calls.onboarded).toEqual([]);
+  });
+
   it("does not tell a seedless kit to follow a cloned definition", () => {
     const prompt = composeOnboardingPrompt({
       kit: kit({ seed: undefined }),
@@ -576,7 +612,7 @@ describe("starter kits: onboarding prompt", () => {
       boundChannels: ["slack"],
       familyTitles: new Map(),
     });
-    expect(prompt.endsWith("Run /setup.")).toBe(true);
+    expect(prompt).toContain("Run /setup.");
     expect(prompt).not.toContain("ONBOARDING.md");
     expect(prompt).toContain("Channels bound: slack");
   });

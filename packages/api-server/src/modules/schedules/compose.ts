@@ -31,6 +31,7 @@ export interface ComposeSchedulesAtBootOpts {
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  onboardingPending?: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
 }
 
@@ -45,6 +46,9 @@ export function composeSchedulesAtBoot(
     queue,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    ...(opts.onboardingPending
+      ? { onboardingPending: opts.onboardingPending }
+      : {}),
     log,
   });
   const worker = startScheduleWorker({

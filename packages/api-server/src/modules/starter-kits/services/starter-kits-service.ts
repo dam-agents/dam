@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { securityLog } from "../../../core/security-log.js";
 import type {
   AgentCreateInput,
   AgentsService,
@@ -11,7 +12,6 @@ import type {
   StarterKitsService,
   StarterKitView,
 } from "api-server-api";
-import { securityLog } from "../../../core/security-log.js";
 import {
   composeOnboardingPrompt,
   describeAccepts,
@@ -26,6 +26,7 @@ import type {
   LoadedKit,
   StarterKitsRepository,
 } from "../infrastructure/kits-repository.js";
+import { createOnboardingMarker } from "./onboarding-marker.js";
 
 export interface StarterKitsServiceDeps {
   owner: string;
@@ -41,6 +42,8 @@ export interface StarterKitsServiceDeps {
   >;
   skills: Pick<SkillsService, "applyEntries">;
   wakeAgent: (agentId: string) => Promise<void>;
+  markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
+  now?: () => Date;
 }
 
 function agentShape(
@@ -237,6 +240,10 @@ export function createStarterKitsService(
         target: kitRef(loaded.catalog, kit.id, version),
       });
       return { agent, skills, skillsError };
+    },
+
+    async markOnboarded(agentId) {
+      await createOnboardingMarker(deps)(agentId, deps.owner);
     },
 
     async onboardingPrompt(agentId) {

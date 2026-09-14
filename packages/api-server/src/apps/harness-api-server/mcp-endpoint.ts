@@ -27,6 +27,7 @@ import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
@@ -95,6 +96,7 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
+  markOnboardingComplete: (agentId: string) => Promise<void>;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
@@ -610,6 +612,23 @@ export function createMcpSession(
   );
 
   server.tool(
+    "mark_onboarding_complete",
+    "Call this ONCE, and only when the starter kit's onboarding is genuinely finished: every value you needed from the user has been collected and written where the kit expects it, and the agent is ready to do its job unattended. Until you call this the agent counts as not fully configured, and the platform HOLDS every schedule on it — a held occurrence is skipped, not queued, so nothing fires against a half-configured agent. Calling it early is worse than calling it late: a schedule that starts running before the configuration is in place does the wrong work on a cadence. If the user abandons onboarding halfway, do not call it. Only meaningful on an agent created from a starter kit.",
+    {},
+    async () => {
+      await deps.markOnboardingComplete(agentId);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Onboarding marked complete. Schedules on this agent are now live.",
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
@@ -861,6 +880,7 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  markOnboardingComplete: OnboardingMarker;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -906,6 +926,8 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       k8s: deps.k8s,
       skills,
       schedules,
+      markOnboardingComplete: (id) =>
+        deps.markOnboardingComplete(id, verified.owner),
       artifactLibrary,
       invocations,
       experiments,

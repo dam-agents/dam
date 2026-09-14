@@ -42,6 +42,8 @@ export const ANN_AGENT_KIND = "agent-platform.ai/agent-kind";
 export const ANN_KB_TEMPLATE = "agent-platform.ai/kb-template";
 
 export const ANN_STARTER_KIT = "agent-platform.ai/starter-kit";
+export const ANN_STARTER_KIT_ONBOARDED =
+  "agent-platform.ai/starter-kit-onboarded";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
 

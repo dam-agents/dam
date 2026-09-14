@@ -1,7 +1,10 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import { composeAgentsModule } from "../../../modules/agents/index.js";
-import { EXPERIMENT_ACTIVE_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import {
+  ANN_STARTER_KIT_ONBOARDED,
+  EXPERIMENT_ACTIVE_KEY,
+} from "../../../modules/agents/infrastructure/labels.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../../modules/templates/index.js";
@@ -249,6 +252,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       wakeAgent: async (agentId) => {
         await agentsRepo.wakeIfHibernated(agentId);
       },
+      markAgentOnboarded: (agentId, at) =>
+        agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

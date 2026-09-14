@@ -6,3 +6,7 @@ export {
 } from "./infrastructure/kits-repository.js";
 export { parseCatalogSeeds } from "./infrastructure/catalog-seeds.js";
 export { createCatalogSourceFromLocator } from "./infrastructure/catalog-source.js";
+export {
+  createOnboardingMarker,
+  type OnboardingMarker,
+} from "./services/onboarding-marker.js";

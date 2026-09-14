@@ -63,6 +63,7 @@ export interface Agent {
   kind?: AgentKind;
   kbTemplateId?: string;
   starterKit?: string;
+  starterKitOnboarded?: string;
   features: RuntimeFeatures;
 }
 

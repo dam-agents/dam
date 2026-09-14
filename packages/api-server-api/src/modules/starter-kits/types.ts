@@ -50,4 +50,5 @@ export interface StarterKitsService {
   get: (catalog: string, id: string) => Promise<StarterKitView | null>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
   onboardingPrompt: (agentId: string) => Promise<string | null>;
+  markOnboarded: (agentId: string) => Promise<void>;
 }

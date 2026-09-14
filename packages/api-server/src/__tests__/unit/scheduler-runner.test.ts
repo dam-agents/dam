@@ -35,6 +35,7 @@ function makeDeps(opts?: {
   wakeError?: Error;
   storedNextRun?: string;
   cron?: string;
+  onboardingPending?: boolean;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -94,6 +95,9 @@ function makeDeps(opts?: {
       calls.push(`wake:${agentId}`);
       if (opts?.wakeError) throw opts.wakeError;
     },
+    ...(opts?.onboardingPending !== undefined
+      ? { onboardingPending: async () => opts.onboardingPending === true }
+      : {}),
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
@@ -102,6 +106,37 @@ function makeDeps(opts?: {
 }
 
 describe("scheduler-runner fire", () => {
+  it("holds the occurrence while the agent has not finished onboarding, and keeps the cadence", async () => {
+    const { runner, calls, fires, enqueued } = makeDeps({
+      onboardingPending: true,
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([]);
+    expect(fires).toEqual([
+      {
+        result: "held: onboarding not complete",
+        nextRun: new Date("2026-06-12T11:00:00Z"),
+      },
+    ]);
+    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
+  });
+
+  it("fires normally once onboarding is complete", async () => {
+    const { runner, calls } = makeDeps({ onboardingPending: false });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toContain(`wake:${AGENT_ID}`);
+  });
+
   it("commits the trigger event, then pokes the agent awake", async () => {
     const { runner, calls, fires } = makeDeps();
 

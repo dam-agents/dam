@@ -3,6 +3,7 @@ import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
+  ANN_STARTER_KIT_ONBOARDED,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -139,6 +140,7 @@ import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
   createCatalogSourceFromLocator,
+  createOnboardingMarker,
   createStarterKitsRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
@@ -850,6 +852,13 @@ export async function bootstrap() {
     wakeAgent: async (agentId) => {
       await agentsRepo.wakeIfHibernated(agentId);
     },
+    onboardingPending: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return (
+        agent?.starterKit !== undefined &&
+        agent.starterKitOnboarded === undefined
+      );
+    },
   });
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
@@ -1194,6 +1203,12 @@ export async function bootstrap() {
       ? createAgentUsageSummary({ reader: metricsReader })
       : createUnavailableAgentUsageSummary(),
     wakeAgent: wakeAgentFor,
+    markOnboardingComplete: (agentId: string, owner: string) =>
+      createOnboardingMarker({
+        agents: harnessAgentsServiceFor(owner),
+        markAgentOnboarded: (id, at) =>
+          agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
+      })(agentId, owner),
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,
