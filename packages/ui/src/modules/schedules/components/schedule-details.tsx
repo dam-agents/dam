@@ -52,7 +52,9 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </p>
           {status?.lastPrecheckError && (
             <p className="mt-1 text-xs break-all whitespace-pre-wrap text-destructive">
-              Precheck failed — ran anyway:{" "}
+              {(status.precheckFailedCount ?? 0) > 1
+                ? `Precheck failed ${status.precheckFailedCount} times in a row — ran anyway: `
+                : "Precheck failed — ran anyway: "}
               {clampText(status.lastPrecheckError)}
             </p>
           )}

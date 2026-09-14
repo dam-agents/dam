@@ -71,6 +71,7 @@ interface InternalRow {
   lastDeclinedAt: Date | null;
   declinedCount: number;
   lastPrecheckError: string | null;
+  precheckFailedCount: number;
 }
 
 function rowToSchedule(row: InternalRow): Schedule {
@@ -86,6 +87,9 @@ function rowToSchedule(row: InternalRow): Schedule {
     ...(row.declinedCount > 0 ? { declinedCount: row.declinedCount } : {}),
     ...(row.lastPrecheckError
       ? { lastPrecheckError: row.lastPrecheckError }
+      : {}),
+    ...(row.precheckFailedCount > 0
+      ? { precheckFailedCount: row.precheckFailedCount }
       : {}),
   };
   return {
@@ -267,6 +271,9 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastPrecheckError: precheckError,
           lastDeclinedAt: null,
           declinedCount: 0,
+          precheckFailedCount: precheckError
+            ? sql`${schedulesTable.precheckFailedCount} + 1`
+            : 0,
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
@@ -279,6 +286,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastDeclinedAt: at,
           declinedCount: sql`${schedulesTable.declinedCount} + 1`,
           lastPrecheckError: null,
+          precheckFailedCount: 0,
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));

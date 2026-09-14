@@ -45,6 +45,7 @@ export interface ScheduleStatus {
   lastDeclinedAt?: string;
   declinedCount?: number;
   lastPrecheckError?: string;
+  precheckFailedCount?: number;
 }
 
 export type PrecheckVerdict = z.infer<typeof precheckVerdictSchema>;

@@ -68,11 +68,12 @@ export interface PrecheckAlert {
 export function precheckAlert(schedule: Schedule): PrecheckAlert | null {
   const reason = schedule.status?.lastPrecheckError;
   if (!reason) return null;
-  return schedule.enabled
-    ? {
-        text: "Precheck failed — running every time",
-        reason: clampText(reason),
-        urgent: true,
-      }
-    : { text: "Precheck failed", reason: clampText(reason), urgent: false };
+  const count = schedule.status?.precheckFailedCount ?? 0;
+  const failed =
+    count > 1 ? `Precheck failed ${count} times in a row` : "Precheck failed";
+  return {
+    text: schedule.enabled ? `${failed} — running every time` : failed,
+    reason: clampText(reason),
+    urgent: schedule.enabled,
+  };
 }

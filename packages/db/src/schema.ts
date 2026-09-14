@@ -454,6 +454,7 @@ export const schedules = pgTable(
     lastDeclinedAt: timestamp("last_declined_at", { withTimezone: true }),
     declinedCount: integer("declined_count").notNull().default(0),
     lastPrecheckError: text("last_precheck_error"),
+    precheckFailedCount: integer("precheck_failed_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

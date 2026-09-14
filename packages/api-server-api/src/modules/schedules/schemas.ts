@@ -119,6 +119,7 @@ export const scheduleStatusSchema = z.object({
   lastDeclinedAt: z.string().optional(),
   declinedCount: z.number().int().nonnegative().optional(),
   lastPrecheckError: z.string().optional(),
+  precheckFailedCount: z.number().int().nonnegative().optional(),
 });
 
 export const precheckVerdictSchema = z.enum([

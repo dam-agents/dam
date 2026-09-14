@@ -413,6 +413,30 @@ describe("scheduler-runner precheck", () => {
     expect(runs).toHaveLength(1);
   });
 
+  // TEST_SCENARIO: a Precheck that broke still lets the run through, so a run cannot clear its failure count — only the script running and returning a verdict again can, which is what separates one hiccup from a week of breakage.
+  it("counts consecutive precheck failures and clears them on a verdict", async () => {
+    const { runner, runs, declines } = makeDeps({ precheck: "true" });
+    const report = (verdict: "precheck-failed" | "declined") =>
+      runner.reportFire(AGENT_ID, {
+        scheduleId: SCHEDULE_ID,
+        fireAt: "2026-06-12T10:30:00.000Z",
+        verdict,
+        ...(verdict === "precheck-failed"
+          ? { detail: "precheck exited 2" }
+          : {}),
+      });
+
+    await report("precheck-failed");
+    await report("precheck-failed");
+    await report("declined");
+
+    expect(runs.map((r) => r.precheckError)).toEqual([
+      "precheck exited 2",
+      "precheck exited 2",
+    ]);
+    expect(declines).toHaveLength(1);
+  });
+
   // TEST_SCENARIO: a report must only ever touch the reporting Agent's own Schedule — the harness surface is reached by any pod that knows a schedule id.
   it("ignores a report for a schedule that belongs to another agent", async () => {
     const { runner, declines, restored } = makeDeps({ precheck: "true" });

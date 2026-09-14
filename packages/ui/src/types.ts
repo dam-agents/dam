@@ -174,6 +174,7 @@ export interface Schedule {
     lastDeclinedAt?: string;
     declinedCount?: number;
     lastPrecheckError?: string;
+    precheckFailedCount?: number;
   } | null;
 }
 
