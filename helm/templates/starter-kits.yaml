@@ -1,10 +1,22 @@
 {{/*
-The built-in starter kit catalog. Every file under helm/starter-kits/ becomes a
-data key (slashes folded to `__`); apiserver/app.yaml projects the keys back to
-their paths under /etc/platform/starter-kits, where the api-server reads it as
-the `platform` catalog with the same reader every other catalog gets.
+The built-in starter kit catalog. Every file under helm/starter-kits/kits/<id>/
+becomes a data key (slashes folded to `__`) when the kit is enabled
+(`starterKits.builtin.kits.<id>.enabled`, default true); catalog.yaml is
+re-rendered to list only enabled kits, so a disabled kit never reaches the
+api-server. apiserver/app.yaml projects the keys back to their paths under
+/etc/platform/starter-kits, where the api-server reads the `platform` catalog
+with the same reader every other catalog gets.
 */}}
 {{- if .Values.starterKits.builtin.enabled }}
+{{- $root := . }}
+{{- $catalog := .Files.Get "starter-kits/catalog.yaml" | fromYaml }}
+{{- $enabledEntries := list }}
+{{- range $catalog.kits }}
+{{- $id := .path | trimPrefix "kits/" }}
+{{- if include "platform.starterKits.kitEnabled" (dict "root" $root "id" $id) }}
+{{- $enabledEntries = append $enabledEntries . }}
+{{- end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,8 +26,13 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 data:
-  {{- range $path, $bytes := .Files.Glob "starter-kits/**" }}
+  catalog.yaml: |-
+    {{- dict "kits" $enabledEntries | toYaml | nindent 4 }}
+  {{- range $path, $bytes := .Files.Glob "starter-kits/kits/*/**" }}
+  {{- $id := index (splitList "/" $path) 2 }}
+  {{- if include "platform.starterKits.kitEnabled" (dict "root" $root "id" $id) }}
   {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
     {{- $bytes | toString | nindent 4 }}
+  {{- end }}
   {{- end }}
 {{- end }}

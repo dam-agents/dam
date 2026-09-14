@@ -549,9 +549,14 @@ spec:
           configMap:
             name: {{ include "platform.fullname" . }}-starter-kits
             items:
-              {{- range $path, $_ := .Files.Glob "starter-kits/**" }}
+              - key: catalog.yaml
+                path: catalog.yaml
+              {{- range $path, $_ := .Files.Glob "starter-kits/kits/*/**" }}
+              {{- $id := index (splitList "/" $path) 2 }}
+              {{- if include "platform.starterKits.kitEnabled" (dict "root" $ "id" $id) }}
               - key: {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}
                 path: {{ $path | trimPrefix "starter-kits/" | quote }}
+              {{- end }}
               {{- end }}
         {{- end }}
         - name: git-repos

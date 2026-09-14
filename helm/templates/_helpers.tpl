@@ -530,3 +530,13 @@ API Server ServiceAccount name
 - name: BOB_TELEMETRY_LF_SECRET_KEY
   value: "unused"
 {{- end }}
+
+{{/*
+Whether a built-in starter kit is enabled: `starterKits.builtin.kits.<id>.enabled`,
+defaulting to true when the kit has no entry. Usage:
+  {{ include "platform.starterKits.kitEnabled" (dict "root" $ "id" $id) }} -> "true" | ""
+*/}}
+{{- define "platform.starterKits.kitEnabled" -}}
+{{- $cfg := index (.root.Values.starterKits.builtin.kits | default dict) .id -}}
+{{- if or (not $cfg) (ne $cfg.enabled false) -}}true{{- end -}}
+{{- end -}}

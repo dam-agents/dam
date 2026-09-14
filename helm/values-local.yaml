@@ -207,3 +207,16 @@ keycloak:
 terms:
   version: dev
   text: "Dev placeholder Terms of Use."
+
+# The local cluster builds only the harness images; workload kits point at
+# published images this install did not build, so keep them out of the catalog.
+starterKits:
+  builtin:
+    kits:
+      nous: { enabled: false }
+      openevolve: { enabled: false }
+      shinkaevolve: { enabled: false }
+      gepa: { enabled: false }
+      adaevolve: { enabled: false }
+      evox: { enabled: false }
+      k-search: { enabled: false }

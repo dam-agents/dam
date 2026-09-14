@@ -1434,6 +1434,18 @@ starterKits:
   builtin:
     enabled: true
     name: platform
+    # Per-kit switch, the same one the workload templates had: a kit whose
+    # image this install does not build or cannot pull is left out of the
+    # rendered catalog and never reaches the UI. Missing entry = enabled.
+    kits:
+      code-reviewer: { enabled: true }
+      nous: { enabled: true }
+      openevolve: { enabled: true }
+      shinkaevolve: { enabled: true }
+      gepa: { enabled: true }
+      adaevolve: { enabled: true }
+      evox: { enabled: false }
+      k-search: { enabled: true }
   catalogs: []
   # Example:
   # catalogs:
