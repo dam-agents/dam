@@ -5,6 +5,13 @@ export interface AgentWatchOptions {
   plural: string;
   ownerLabel: string;
   log: (message: string) => void;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Called in-process for every agent whose content
+   * changed, beside the hint published to browsers. Lease-elected consumers on
+   * this replica react to a wake or a hibernation without scanning every agent
+   * on a timer.
+   */
+  onAgentChanged: (agentId: string) => void;
   debounceMs?: number;
   volatileAnnotations?: readonly string[];
 }
@@ -36,6 +43,7 @@ export function startAgentWatch(
     const timer = setTimeout(() => {
       pending.delete(agentId);
       bus.publish(ownerSub, { topic: "agents", agentId });
+      opts.onAgentChanged(agentId);
     }, debounceMs);
     timer.unref();
     pending.set(agentId, timer);

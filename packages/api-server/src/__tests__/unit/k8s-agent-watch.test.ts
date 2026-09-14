@@ -19,6 +19,7 @@ describe("k8s agent watch", () => {
 
   function harness() {
     const hints: { ownerSub: string; agentId?: string }[] = [];
+    const changed: string[] = [];
     const bus = {
       publish: (ownerSub: string, hint: { agentId?: string }) =>
         void hints.push({ ownerSub, agentId: hint.agentId }),
@@ -39,9 +40,15 @@ describe("k8s agent watch", () => {
           };
         },
       },
-      { plural: "agents", ownerLabel: "owner", log: () => {}, debounceMs: 1 },
+      {
+        plural: "agents",
+        ownerLabel: "owner",
+        log: () => {},
+        onAgentChanged: (id: string) => changed.push(id),
+        debounceMs: 1,
+      },
     );
-    return { hints, conns, watch };
+    return { hints, conns, watch, changed };
   }
 
   // TEST_SCENARIO: a watch replay carries no synthetic DELETED — an agent deleted during a reconnect gap must still get a hint once the replay settles, or open tabs show it forever.

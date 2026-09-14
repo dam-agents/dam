@@ -27,7 +27,14 @@ also no page that owns the feed at all. Follow
    - seen and dismissed as per-user watermarks, what each currently derives from, and that read
      state is still per session until the sharing epic makes it per person;
    - terminal sessions: one viewer at a time, activity stamped while detached;
-   - retention at 90 days, and that the rows follow their Agent.
+   - retention at 90 days, and that the rows follow their Agent;
+   - the limits, so they are written down rather than rediscovered: the producer is one
+     lease-elected holder, so its ceiling is concurrent *awake* agents rather than agents;
+     the escape hatches if that ceiling is ever reached are widening the pod's existing
+     session-directory report into a push (cost then tracks events, not awake agents, but
+     it needs a fleet-wide agent image before hibernated agents contribute) or sharding the
+     lease so each row still has exactly one writer; and the watcher trusts its in-memory
+     comparison state, so a record the retention job trims is re-created on the next hold.
 
 2. **Index it.** Add the one-line entry to `docs/architecture.md`, in the list's existing voice.
    The index has a tighter 8k cap and sits near it, so keep the line to one sentence.

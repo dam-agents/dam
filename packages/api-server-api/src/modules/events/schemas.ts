@@ -16,6 +16,11 @@ export const liveEventSchema = z.discriminatedUnion("topic", [
   }),
 
   z.object({
+    topic: z.literal("attention"),
+    agentId: z.string().min(1),
+  }),
+
+  z.object({
     topic: z.literal("artifacts"),
     artifactId: z.string().min(1).optional(),
     agentId: z.string().min(1).optional(),

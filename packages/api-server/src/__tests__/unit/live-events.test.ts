@@ -37,6 +37,7 @@ function harness() {
     namespace: "test",
     agentsRepo: { list: async () => [] },
     runtimeFeaturesFor: async () => new Map(),
+    onAgentChanged: () => {},
   });
   return { bus, subscribedChannels, warnings, module };
 }

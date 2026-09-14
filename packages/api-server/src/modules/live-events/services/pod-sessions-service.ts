@@ -1,8 +1,8 @@
 import type { PodSessionsNotice, PodSessionsService } from "api-server-api";
 
-export interface PodSessionWatch {
-  close(): void;
-}
+import type { PodSessionWatch } from "../../attention/infrastructure/pod-session-watch.js";
+
+export type { PodSessionWatch };
 
 export interface PodSessionsDeps {
   listRunningAgentIds(ownerSub: string): Promise<string[]>;

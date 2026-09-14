@@ -5,7 +5,7 @@ import { createRedisLiveEventsBus } from "./infrastructure/redis-live-events-bus
 import { startAgentWatch } from "./infrastructure/k8s-agent-watch.js";
 import { createLiveEventsService } from "./services/live-events-service.js";
 import { createPodSessionsService } from "./services/pod-sessions-service.js";
-import { createPodSessionWatcher } from "./infrastructure/pod-session-watch.js";
+import { createPodSessionClient } from "../attention/infrastructure/pod-session-watch.js";
 import { startLiveHintsSaga } from "./sagas/live-hints.js";
 import {
   AGENTS_PLURAL,
@@ -35,6 +35,7 @@ export function composeLiveEventsModule(deps: {
   runtimeFeaturesFor: (
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
+  onAgentChanged: (agentId: string) => void;
 }): LiveEventsModule {
   const bus = createRedisLiveEventsBus(deps.bus, deps.log);
   let saga: Subscription | null = null;
@@ -48,7 +49,7 @@ export function composeLiveEventsModule(deps: {
       const features = await deps.runtimeFeaturesFor(running);
       return running.filter((id) => features.get(id)?.liveUpdates);
     },
-    watchAgent: createPodSessionWatcher(deps.namespace, deps.log),
+    watchAgent: createPodSessionClient(deps.namespace, deps.log).watchAgent,
     onAgentsChanged: (ownerSub, listener) =>
       bus.subscribe(ownerSub, (event) => {
         if (event.topic === "agents" || event.topic === "sync") listener();
@@ -71,6 +72,7 @@ export function composeLiveEventsModule(deps: {
         plural: AGENTS_PLURAL,
         ownerLabel: LABEL_OWNER,
         volatileAnnotations: [LAST_ACTIVITY_KEY],
+        onAgentChanged: deps.onAgentChanged,
         log: deps.log,
       });
     },
