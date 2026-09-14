@@ -211,6 +211,31 @@ describe("scanPublicGithubArchive", () => {
     ]);
   });
 
+  // TEST_SCENARIO: the same path is a skill and a parent of skills — both were reachable before the path could name a skill, so neither may be lost.
+  it("scans a subPath that is a skill and a parent of skills", async () => {
+    const sha = "d1d2d3d4d5d6d7d8d9d0e1e2e3e4e5e6e7e8e9e0";
+    const tarball = await makeTarball("acme-mono-d1d2d3d", {
+      "skills/bundle/SKILL.md": "---\nname: bundle\n---\nbody",
+      "skills/bundle/inner/SKILL.md": "---\nname: inner\n---\nbody",
+    });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/mono/tar.gz/${sha}`,
+      ),
+    );
+
+    const skills = await scanPublicGithubArchive(
+      "https://github.com/acme/mono",
+      "skills/bundle",
+    );
+
+    expect(skills.map((s) => s.dir).sort()).toEqual([
+      "skills/bundle",
+      "skills/bundle/inner",
+    ]);
+  });
+
   it("rejects a traversal subPath", async () => {
     const sha = "b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1";
     const tarball = await makeTarball("acme-mono-b0a9f8e", {

@@ -3,27 +3,38 @@
 -- a pasted `/tree/<branch>/<dir>` URL each registered as a separate source and
 -- only one of them scanned. New rows are normalized by
 -- `normalizeGitUrl` (packages/agent-runtime-api) before they reach Postgres;
--- this migration rewrites the rows that were stored before that. Sources that
--- collapse onto one canonical URL are merged into the oldest row, and installed
--- refs follow them. The directory of a pasted `/tree/` URL becomes the source's
--- path when it has none, so the source keeps scanning what the link pointed at.
+-- this migration rewrites the rows that were stored before that, by the same
+-- rules. Sources that collapse onto one canonical URL are merged into the
+-- oldest row, and installed refs follow them. The directory of a pasted
+-- `/tree/` URL becomes the source's path when it has none, so the source keeps
+-- scanning what the link pointed at.
 CREATE FUNCTION skill_source_canonical_url(url text) RETURNS text AS $$
-  SELECT regexp_replace(
-           regexp_replace(
-             regexp_replace(url, '^(https?://[^/]+/[^/]+/[^/]+)/(tree|blob)/.*$', '\1'),
-             '^http://', 'https://'),
-           '(\.git)?/*$', '');
-$$ LANGUAGE sql IMMUTABLE;
+DECLARE
+  out text := url;
+BEGIN
+  out := regexp_replace(out, '[?#].*$', '');
+  out := regexp_replace(out, '^(https?://)[^/@]*@', '\1');
+  out := regexp_replace(out, '^http://', 'https://');
+  out := regexp_replace(out, '^(https://[^/:]+):(80|443)(/|$)', '\1\3');
+  out := regexp_replace(out, '^https://www\.github\.com(/|$)', 'https://github.com\1');
+  out := regexp_replace(out, '/-/(tree|blob)/', '/\1/');
+  out := regexp_replace(out, '^(https://[^/]+/[^/]+/[^/]+(?:/[^/]+)*?)/(tree|blob)/.*$', '\1');
+  IF out ~ '^https://github\.com/' THEN
+    out := lower(regexp_replace(out, '^(https://github\.com/[^/]+/[^/]+).*$', '\1'));
+  END IF;
+  RETURN regexp_replace(out, '(\.git)?/*$', '');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
 --> statement-breakpoint
 UPDATE "skill_sources"
-SET "path" = substring("git_url" from '^https?://[^/]+/[^/]+/[^/]+/tree/[^/]+/(.+)$')
+SET "path" = substring(regexp_replace("git_url", '/-/tree/', '/tree/') from '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/tree/[^/]+/(.+)$')
 WHERE "path" IS NULL
-  AND "git_url" ~ '^https?://[^/]+/[^/]+/[^/]+/tree/[^/]+/.+$';
+  AND regexp_replace("git_url", '/-/tree/', '/tree/') ~ '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/tree/[^/]+/.+$';
 --> statement-breakpoint
 UPDATE "skill_sources"
-SET "path" = substring("git_url" from '^https?://[^/]+/[^/]+/[^/]+/blob/[^/]+/(.+)/[^/]+$')
+SET "path" = substring(regexp_replace("git_url", '/-/blob/', '/blob/') from '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/blob/[^/]+/(.+)/[^/]+$')
 WHERE "path" IS NULL
-  AND "git_url" ~ '^https?://[^/]+/[^/]+/[^/]+/blob/[^/]+/.+/[^/]+$';
+  AND regexp_replace("git_url", '/-/blob/', '/blob/') ~ '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/blob/[^/]+/.+/[^/]+$';
 --> statement-breakpoint
 DELETE FROM "skill_sources" s
 WHERE EXISTS (

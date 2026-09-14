@@ -9,7 +9,12 @@ function duplicateOf(
   sources: readonly SkillSource[],
   gitUrl: string,
 ): SkillSource | undefined {
-  return sources.find((s) => normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl);
+  return sources.find(
+    (s) =>
+      !s.system &&
+      !s.fromTemplate &&
+      normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl,
+  );
 }
 
 function buildSchema(sources: readonly SkillSource[]) {

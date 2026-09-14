@@ -50,6 +50,16 @@ describe("findSkillDirsInClone", () => {
     });
   });
 
+  // TEST_SCENARIO: a skill directory that also holds skills below it — both were reachable before, so neither may be lost. The directory itself comes first, which is the precedence install resolution relies on.
+  it("returns the path and the skills below it when the path is both", async () => {
+    await writeSkill("skills/one");
+    await writeSkill("skills/one/nested");
+    expect(await repo.findSkillDirsInClone(repoDir, "skills/one")).toEqual({
+      kind: "found",
+      dirs: ["skills/one", "skills/one/nested"],
+    });
+  });
+
   // TEST_SCENARIO: a path that is neither a skill nor a parent of one — still named rather than read as an empty repo.
   it("reports path-empty when the path holds no skill at all", async () => {
     await writeSkill("skills/one");

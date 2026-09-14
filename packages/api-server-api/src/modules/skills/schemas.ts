@@ -1,4 +1,4 @@
-import { normalizeGitUrl } from "agent-runtime-api";
+import { canonicalSourceLocation } from "agent-runtime-api";
 import { z } from "zod";
 
 import { resourceNameSchema } from "../shared.js";
@@ -107,8 +107,8 @@ export const skillCreateSourceFieldsSchema = z.object({
 
 export const skillCreateSourceInputSchema =
   skillCreateSourceFieldsSchema.transform((input, ctx) => {
-    const normalized = normalizeGitUrl(input.gitUrl);
-    if (!normalized) {
+    const location = canonicalSourceLocation(input.gitUrl, input.path);
+    if (!location) {
       ctx.addIssue({
         code: "custom",
         path: ["gitUrl"],
@@ -116,11 +116,7 @@ export const skillCreateSourceInputSchema =
       });
       return z.NEVER;
     }
-    return {
-      name: input.name,
-      gitUrl: normalized.gitUrl,
-      path: input.path || normalized.path,
-    };
+    return { name: input.name, ...location };
   });
 
 export const skillDeleteSourceInputSchema = z.object({

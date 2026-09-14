@@ -484,10 +484,10 @@ async function findSkillDirsInClone(
       if (isMissingDir(err)) return { kind: "path-missing", subPath };
       throw err;
     }
-    if (await isSkillDir(root)) {
-      return { kind: "found", dirs: [path.relative(repoDir, root)] };
-    }
-    const dirs = await skillDirsIn(repoDir, root, entries);
+    const dirs = [
+      ...((await isSkillDir(root)) ? [path.relative(repoDir, root)] : []),
+      ...(await skillDirsIn(repoDir, root, entries)),
+    ];
     return dirs.length > 0
       ? { kind: "found", dirs }
       : { kind: "path-empty", subPath };

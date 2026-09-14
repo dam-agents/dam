@@ -4,12 +4,19 @@ export interface NormalizedGitUrl {
   ref?: string;
 }
 
+export interface SourceLocation {
+  gitUrl: string;
+  path?: string;
+}
+
 export interface GithubRepo {
   owner: string;
   repo: string;
 }
 
 const BROWSE_MARKERS = ["tree", "blob"];
+const DEFAULT_PORTS = ["80", "443"];
+const GITHUB_HOST = "github.com";
 
 export function normalizeGitUrl(input: string): NormalizedGitUrl | null {
   const trimmed = input.trim();
@@ -23,22 +30,41 @@ export function normalizeGitUrl(input: string): NormalizedGitUrl | null {
   url.protocol = "https:";
   url.search = "";
   url.hash = "";
+  url.username = "";
+  url.password = "";
+  if (DEFAULT_PORTS.includes(url.port)) url.port = "";
+  if (url.hostname === `www.${GITHUB_HOST}`) url.hostname = GITHUB_HOST;
   if (url.hostname.length === 0) return null;
+  const isGithub = url.hostname === GITHUB_HOST;
 
   const segments = url.pathname.split("/").filter((s) => s.length > 0);
   const browsed = splitBrowseUrl(segments);
   const repoSegments = stripRepoSuffix(
-    url.hostname === "github.com"
-      ? browsed.repoSegments.slice(0, 2)
+    isGithub
+      ? browsed.repoSegments.slice(0, 2).map((s) => s.toLowerCase())
       : browsed.repoSegments,
   );
   if (repoSegments.length < 2) return null;
 
   url.pathname = `/${repoSegments.join("/")}`;
+  const path = browsed.path && decodePath(browsed.path);
   return {
     gitUrl: url.toString().replace(/\/$/, ""),
-    ...(browsed.path !== undefined ? { path: browsed.path } : {}),
+    ...(path ? { path } : {}),
     ...(browsed.ref !== undefined ? { ref: browsed.ref } : {}),
+  };
+}
+
+export function canonicalSourceLocation(
+  gitUrl: string,
+  path?: string,
+): SourceLocation | null {
+  const normalized = normalizeGitUrl(gitUrl);
+  if (!normalized) return null;
+  const resolved = path?.trim() || normalized.path;
+  return {
+    gitUrl: normalized.gitUrl,
+    ...(resolved ? { path: resolved } : {}),
   };
 }
 
@@ -55,6 +81,24 @@ function parseUrl(candidate: string): URL | null {
   } catch {
     return null;
   }
+}
+
+function decodePath(path: string): string | null {
+  const decoded: string[] = [];
+  for (const segment of path.split("/")) {
+    let value: string;
+    try {
+      value = decodeURIComponent(segment);
+    } catch {
+      return null;
+    }
+    if (value === "" || value === "." || value === "..") return null;
+    if (value.includes("/") || value.includes("\\") || value.includes("\0")) {
+      return null;
+    }
+    decoded.push(value);
+  }
+  return decoded.join("/");
 }
 
 interface BrowseSplit {
