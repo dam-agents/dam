@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — comes back dirty and makes the next boot exit at once) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package sandboxnode
 
 import (
@@ -24,7 +24,9 @@ case "$2" in
     [ -f "$FAKE_STATE/$name" ] || { echo "machine '$name' not found" >&2; exit 1; }
     echo "{\"state\":\"$(cat "$FAKE_STATE/$name")\"}" ;;
   create) echo created > "$FAKE_STATE/$4" ;;
-  start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"; echo running > "$FAKE_STATE/$4" ;;
+  start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"
+    if [ -n "$FAKE_START_FAIL_ONCE" ] && [ ! -f "$FAKE_STATE/.failed-once" ]; then touch "$FAKE_STATE/.failed-once"; echo "$FAKE_START_FAIL_ONCE" >&2; exit 1; fi
+    echo running > "$FAKE_STATE/$4" ;;
   stop) echo stopped > "$FAKE_STATE/$4" ;;
   delete) rm -f "$FAKE_STATE/$4" ;;
 esac
@@ -256,7 +258,7 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	assert.Contains(t, h.calls(), "-I "+archive)
 }
 
-// TEST_SCENARIO: a machine directory holds the sockets, lock and root overlay of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk, before smolvm boots it.
+// TEST_SCENARIO: a machine directory holds the sockets and lock of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk and the root overlay, before smolvm boots it; when that boot dies at once the overlay is discarded and the start retried.
 func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("HOME", t.TempDir())
@@ -268,12 +270,18 @@ func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
 	require.NoError(t, h.node.Runtime.Start("m1"))
-	for _, f := range []string{"agent.ready", "vm.lock", "overlay.qcow2"} {
+	for _, f := range []string{"agent.ready", "vm.lock"} {
 		assert.NoFileExists(t, filepath.Join(dir, f))
 	}
 	assert.FileExists(t, filepath.Join(dir, "storage.raw"))
+	assert.FileExists(t, filepath.Join(dir, "overlay.qcow2"))
 	log, _ := os.ReadFile(h.log)
 	assert.Contains(t, string(log), "machine stop -n m1\nmachine start -n m1")
+
+	t.Setenv("FAKE_START_FAIL_ONCE", "boot process exited (code 1) before the agent was ready")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+	require.NoError(t, h.node.Runtime.Start("m1"))
+	assert.NoFileExists(t, filepath.Join(dir, "overlay.qcow2"))
 }
 
 // TEST_SCENARIO: smolvm abandoned a machine's boot: of three processes only the one whose command line names that machine's vm dir is an orphan to kill.
