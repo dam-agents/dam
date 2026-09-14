@@ -137,6 +137,10 @@ import {
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
+import {
+  createCatalogSourceFromLocator,
+  createStarterKitsRepository,
+} from "./modules/starter-kits/index.js";
 import { composeTemplatesModule } from "./modules/templates/compose.js";
 import {
   composeInvocationLivenessSweep,
@@ -283,6 +287,9 @@ export async function bootstrap() {
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const starterKitsRepo = createStarterKitsRepository({
+    catalog: createCatalogSourceFromLocator(config.starterKitsCatalog),
+  });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -1148,6 +1155,7 @@ export async function bootstrap() {
     agentsRepo,
     connectionsBoot,
     templatesRepo,
+    starterKitsRepo,
     reposService,
     userDirectory,
     apiKeysModule,

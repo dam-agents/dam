@@ -1,0 +1,56 @@
+schemaVersion: v1
+id: code-reviewer
+name: Code reviewer
+description: >-
+  Reviews every open pull request in a repository on a heartbeat, posts one
+  structured review per PR, re-reviews on a label, and can nudge human
+  reviewers on Slack. The definition is the Code Guardian repository.
+category: software
+docsUrl: https://github.com/dam-agents/code-guardian
+seed:
+  url: https://github.com/dam-agents/code-guardian
+  ref: main
+connections:
+  - accepts: [github, github-enterprise]
+    required: true
+    note: >-
+      Connect as a bot account (a GitHub App or a token for a machine user),
+      not as the account that opens the pull requests it reviews.
+  - accepts: [slack]
+    note: >-
+      Used by the shepherd and weekly-audit schedules, which are created
+      disabled. Turn them on under Schedules once Slack is connected.
+channels:
+  - type: slack
+    note: >-
+      Where reviewer nudges and the weekly audit post land once those
+      schedules are on. Skip it to keep everything in chat.
+schedules:
+  - name: code-guardian-review-active
+    cron: "*/5 8-21 * * 1-5"
+    task: Run the review heartbeat (preflight review, then review what is due).
+  - name: code-guardian-shepherd
+    cron: "0 9-17 * * 1-5"
+    task: Run the shepherd sweep and nudge reviewers on Slack.
+    enabled: false
+  - name: code-guardian-audit
+    cron: "0 9 * * 5"
+    task: Run the weekly audit and publish the trend report.
+    enabled: false
+  - name: code-guardian-benchmark
+    rrule: FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=6;BYMINUTE=0
+    timezone: Europe/Prague
+    task: Run the monthly model benchmark.
+    enabled: false
+parameters:
+  - name: repository to review
+    required: true
+    note: owner/repo, host-prefixed when it is not github.com
+  - name: bot display name
+    note: Defaults to Code Guardian.
+  - name: re-review label
+    note: Defaults to code-guardian-review.
+  - name: reviewer roster
+    note: Only with Slack on — one Slack member ID per reviewer and an escalation owner.
+  - name: state repository
+    note: Optional repository that backs up the agent's runtime state.

@@ -32,6 +32,7 @@ const agent = (
   templateUpdate: null,
   features: { liveUpdates: true },
   kbTemplateId: null,
+  starterKit: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],

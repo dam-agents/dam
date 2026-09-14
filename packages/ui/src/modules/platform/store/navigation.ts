@@ -18,13 +18,15 @@ type ParameterlessView =
   | "coding-agents"
   | "coding-agent-new"
   | "knowledge-base-new"
-  | "knowledge-bases";
+  | "knowledge-bases"
+  | "starter-kits";
 
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitId: string | null;
   sandboxFocus: string | null;
   clearSandboxFocus: () => void;
   hydrateRoute: () => void;
@@ -36,6 +38,7 @@ export interface NavigationSlice {
     focus?: string,
   ) => void;
   navigateToKnowledgeBases: () => void;
+  navigateToStarterKitSetup: (kitId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -97,6 +100,19 @@ export const createNavigationSlice: StateCreator<
       agentId,
       sandboxSection: section,
       sandboxFocus: focus ?? null,
+    });
+  },
+  navigateToStarterKitSetup: (kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit-new", kit: kitId }),
+    );
+    set({
+      view: "starter-kit-new",
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
     });
   },
   navigateToKnowledgeBases: () => {

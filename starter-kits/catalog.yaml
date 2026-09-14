@@ -1,0 +1,6 @@
+# Proof-of-concept starter kit catalog. Entries are either inline kits
+# (a directory in this catalog holding kit.yaml) or external kits pinned
+# to a ref of the repository that holds them.
+kits:
+  - path: kits/code-reviewer
+  - path: kits/nous

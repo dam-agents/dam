@@ -21,6 +21,8 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
+import { StarterKitSetupView } from "./modules/starter-kits/views/starter-kit-setup-view.js";
+import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
@@ -127,6 +129,10 @@ function MainApp() {
                 <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
+              ) : view === "starter-kits" ? (
+                <StarterKitsView />
+              ) : view === "starter-kit-new" ? (
+                <StarterKitSetupView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

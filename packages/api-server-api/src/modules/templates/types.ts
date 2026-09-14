@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { ProviderPresetType } from "../connections/providers.js";
 import type { EnvVar } from "../shared.js";
 import type { harnessFamilySchema } from "./schemas.js";
 
@@ -32,6 +33,7 @@ export interface TemplateSpec {
   description?: string;
   category?: TemplateCategory;
   harness?: HarnessFamily;
+  providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;

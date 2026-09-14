@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-09
+Last verified: 2026-09-10
 
 ## Overview
 
@@ -111,7 +111,7 @@ A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique 
 
 A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct. No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today. Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
 
-**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
+**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. The same apply, fed `(gitUrl, name)` entries directly rather than saved sets, is what a [starter kit](starter-kits.md) uses to install its external skills, so both paths share one resolution and one set of verdicts. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
 
 Names reuse the Connection name rule from one shared definition. Renaming is absent: a typo means deleting the set and saving it again, from the same dialog that adds one. An apply is bounded by the union it resolves, so a selection larger than one batch is refused before any source is read rather than part-way through.
 
