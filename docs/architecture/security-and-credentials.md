@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-09
+Last verified: 2026-09-14
 
 ## Overview
 
@@ -409,24 +409,23 @@ must be treated as high-value. The statement audit is best-effort, not enforced
 The controller renders a per-Agent `Envoy bootstrap ConfigMap` and a
 cert-manager `Certificate` whose Secret holds the leaf TLS material the
 gateway pod uses to terminate the agent's egress TLS. The leaf is
-issued by a chart-managed `platform-mitm-ca-issuer` ClusterIssuer; the CA
-cert is mounted into the agent at `/etc/platform/ca/ca.crt` (single-key
-projection, `tls.key` stays in the gateway pod) so the agent's TLS
-clients trust Envoy's intercept cert.
+issued by a chart-managed MITM CA whose certificate is mounted into the
+agent — public half only, the key never leaves the gateway pod — so the
+agent's TLS clients trust Envoy's intercept cert.
 
 On the wire:
 
-1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`. The
-   per-Agent gateway Service routes the connection to the paired
-   gateway pod; every egress arrives there as HTTP CONNECT.
-2. Envoy's outer listener (bound on `0.0.0.0`, reach gated by
-   NetworkPolicy) terminates the CONNECT and routes the inner stream
-   into an internal listener that reads SNI.
+1. The agent's proxy environment names the per-Agent gateway Service,
+   which routes to the paired gateway pod; every egress arrives there
+   as HTTP CONNECT.
+2. Envoy's outer listener (reach gated by NetworkPolicy) terminates the
+   CONNECT and routes the inner stream into an internal listener that
+   reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the
    credential injector(s) to add the configured header(s) (or rewrite
    `?<param>=<value>` into the URL — see below), then forward to a
-   per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
-   SNI + SAN-bound TLS validation). The agent's inner `Host` header has
+   per-chain cluster pinned to the host (explicit upstream SNI,
+   SAN-bound TLS validation). The agent's inner `Host` header has
    no influence on the upstream destination — the route-confusion
    exfiltration path is structurally closed. Allow-only chains
    (path-rule promoted, no
@@ -465,6 +464,13 @@ transaction with the rule write, so a per-agent periodic reconcile
 re-derives it from the rules — converging a host whose patch failed, or
 whose api-server died between the rule commit and the patch, without
 operator action.
+
+A chain whose host is the telemetry collector's is dropped rather than
+rendered, logged as a warning: the collector's own chain claims that
+server name, and two claiming one is a fatal Envoy config. That host
+then keeps neither credential injection nor L7 gating — a rule on
+platform-owned collector infrastructure is already unenforced whenever
+the telemetry backend is on.
 
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against
