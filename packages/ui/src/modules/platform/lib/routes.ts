@@ -19,7 +19,6 @@ export const sandboxSectionSchema = z.enum([
   "schedules",
   "artifacts",
   "usage",
-  "timeline",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 

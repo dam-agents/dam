@@ -15,7 +15,6 @@ const SECTIONS: SectionEntry[] = [
   { section: "schedules", title: "Schedules" },
   { section: "artifacts", title: "Artifacts" },
   { section: "usage", title: "Usage" },
-  { section: "timeline", title: "Timeline" },
 ];
 
 interface Props {
@@ -23,7 +22,6 @@ interface Props {
   onNavigate: (section: SandboxSection) => void;
   summaries?: Partial<Record<SandboxSection, string>>;
   warnings?: Partial<Record<SandboxSection, string>>;
-  hidden?: readonly SandboxSection[];
 }
 
 export function SandboxSectionNav({
@@ -31,15 +29,13 @@ export function SandboxSectionNav({
   onNavigate,
   summaries,
   warnings,
-  hidden,
 }: Props) {
-  const entries = SECTIONS.filter((e) => !hidden?.includes(e.section));
   return (
     <nav
       aria-label="Agent sections"
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
-      {entries.map((entry) => (
+      {SECTIONS.map((entry) => (
         <SectionNavItem
           key={entry.section}
           title={entry.title}

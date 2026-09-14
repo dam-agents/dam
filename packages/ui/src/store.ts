@@ -44,6 +44,10 @@ import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
+import {
+  createTimelineSlice,
+  type TimelineSlice,
+} from "./modules/timeline/store.js";
 
 export type { DialogState } from "./modules/platform/store/dialog.js";
 export type {
@@ -63,6 +67,7 @@ export type PlatformStore = DialogSlice &
   FilesSlice &
   ArtifactsSlice &
   DismissalsSlice &
+  TimelineSlice &
   PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -76,6 +81,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createDismissalsSlice(...a),
+  ...createTimelineSlice(...a),
   ...createPermissionsSlice(...a),
 }));
 

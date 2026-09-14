@@ -79,6 +79,7 @@ import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowle
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { SessionTimelinePanel } from "../../timeline/components/session-timeline-panel.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -164,6 +165,7 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const timelineSessionId = useStore((s) => s.timelineSessionId);
   const openArtifact = useOpenArtifact();
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
@@ -766,7 +768,10 @@ export function ChatView() {
         </div>
 
         {}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
+        {(openFilePath ||
+          openArtifactId ||
+          dockedExperiment ||
+          timelineSessionId) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -797,7 +802,13 @@ export function ChatView() {
                 "md:border-l md:border-border",
               )}
             >
-              {openFilePath ? (
+              {timelineSessionId && selectedAgent ? (
+                <SessionTimelinePanel
+                  key={timelineSessionId}
+                  agentId={selectedAgent}
+                  sessionId={timelineSessionId}
+                />
+              ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel

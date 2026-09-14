@@ -16,18 +16,23 @@ function LogLine({
   log,
   offsetPct,
   indent,
+  labelCols,
 }: {
   log: TimelineLog;
   offsetPct: number;
   indent: number;
+  labelCols: string;
 }) {
   const cost = logCostUsd(log);
   const summary = logSummary(log);
   return (
-    <div className="grid grid-cols-[minmax(0,260px)_1fr] items-center gap-3 py-[2px]">
+    <div
+      className="grid items-center gap-3 py-[2px]"
+      style={{ gridTemplateColumns: `${labelCols} 1fr` }}
+    >
       <div
         className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
-        style={{ paddingLeft: `${indent * 14 + 14}px` }}
+        style={{ paddingLeft: `${indent * 12 + 12}px` }}
       >
         <span aria-hidden className="text-[9px] text-amber-600">
           ◆
@@ -65,12 +70,16 @@ export function TraceWaterfall({
   trace,
   selectedSpanId,
   onSelectSpan,
+  compact = false,
 }: {
   trace: TraceDetail;
   selectedSpanId: string | null;
   onSelectSpan: (spanId: string) => void;
+  compact?: boolean;
 }) {
   const wf = buildWaterfall(trace);
+  const labelCols = compact ? "minmax(0,130px)" : "minmax(0,260px)";
+  const indentPx = compact ? 9 : 14;
 
   if (wf.rows.length === 0 && wf.looseLogs.length === 0) {
     return (
@@ -82,7 +91,12 @@ export function TraceWaterfall({
 
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[620px] px-4 py-3">
+      <div
+        className={cn(
+          "py-3",
+          compact ? "min-w-[360px] px-3" : "min-w-[620px] px-4",
+        )}
+      >
         {wf.rows.map((row) => {
           const failed = row.span.statusCode.includes("ERROR");
           return (
@@ -91,13 +105,16 @@ export function TraceWaterfall({
                 type="button"
                 onClick={() => onSelectSpan(row.span.spanId)}
                 className={cn(
-                  "grid w-full grid-cols-[minmax(0,260px)_1fr_60px] items-center gap-3 rounded-sm py-[3px] text-left hover:bg-muted/60",
+                  "grid w-full items-center gap-3 rounded-sm py-[3px] text-left hover:bg-muted/60",
                   selectedSpanId === row.span.spanId && "bg-muted",
                 )}
+                style={{
+                  gridTemplateColumns: `${labelCols} 1fr ${compact ? "48px" : "60px"}`,
+                }}
               >
                 <span
                   className="min-w-0 truncate font-mono text-xs"
-                  style={{ paddingLeft: `${row.depth * 14}px` }}
+                  style={{ paddingLeft: `${row.depth * indentPx}px` }}
                   title={row.span.name}
                 >
                   {spanKindLabel(row.span.name)}
@@ -125,6 +142,7 @@ export function TraceWaterfall({
                   log={log}
                   offsetPct={logOffsetPct(log, wf.startMs, wf.totalMs)}
                   indent={row.depth}
+                  labelCols={labelCols}
                 />
               ))}
             </div>
@@ -142,6 +160,7 @@ export function TraceWaterfall({
                 log={log}
                 offsetPct={logOffsetPct(log, wf.startMs, wf.totalMs)}
                 indent={0}
+                labelCols={labelCols}
               />
             ))}
           </div>

@@ -146,11 +146,16 @@ the response when the cap binds.
 
 ## Progressive disclosure
 
-The in-product surface is a per-agent section revealed by an experimental feature
-([features](features.md)); the procedures themselves stay open to any authenticated owner.
-The flag is disclosure, not authorization — the raw view is deliberately structural and
-unpolished, and the designed diagnostic experience it feeds is separate work. The API and
-the export are therefore usable before the surface is revealed.
+The in-product surface is **scoped to a Session and lives beside the conversation**, in the
+chat view's docked panel, reached from the Session's own menu. That placement follows from
+what the surface answers: *what did this piece of work do*, asked while looking at the work.
+An agent-wide browser over every Session is a different question and is not built — the
+export covers the cross-Session case for now.
+
+The panel is revealed by an experimental feature ([features](features.md)); the procedures
+themselves stay open to any authenticated owner. The flag is disclosure, not authorization —
+the raw view is deliberately structural, and the designed diagnostic experience it feeds is
+separate work. The API and the export are therefore usable before the panel is revealed.
 
 ## Disabled backend
 

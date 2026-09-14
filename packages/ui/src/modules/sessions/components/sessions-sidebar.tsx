@@ -103,6 +103,8 @@ export function SessionsSidebar({
     selectedAgent,
     features?.["session-costs"] ?? false,
   );
+  const timelineEnabled = features?.["agent-timeline"] ?? false;
+  const setTimelineSession = useStore((s) => s.setTimelineSession);
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
@@ -163,6 +165,9 @@ export function SessionsSidebar({
           onResumeSession(s.sessionId, s.mode);
         }}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
+        {...(timelineEnabled
+          ? { onViewTimeline: () => setTimelineSession(s.sessionId) }
+          : {})}
       />
     );
   };

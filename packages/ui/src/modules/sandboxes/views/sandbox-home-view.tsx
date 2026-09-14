@@ -5,10 +5,8 @@ import { useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { SandboxTimelineSection } from "../../timeline/views/sandbox-timeline-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
@@ -32,7 +30,6 @@ export function SandboxHomeView() {
   const display = useResolvedAgentDisplay(f.agent);
 
   const { summaries, warnings } = useSectionSummaries(f.agent);
-  const timelineEnabled = useFeatures().data?.["agent-timeline"] ?? false;
 
   if (f.status !== "ready" || !f.agent || !display) {
     return (
@@ -76,7 +73,6 @@ export function SandboxHomeView() {
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
           warnings={warnings}
-          hidden={timelineEnabled ? [] : ["timeline"]}
         />
       }
     >
@@ -93,12 +89,6 @@ export function SandboxHomeView() {
         <SandboxArtifactsSection agentId={agent.id} />
       ) : section === "usage" ? (
         <SandboxUsageSection agentId={agent.id} />
-      ) : section === "timeline" ? (
-        timelineEnabled ? (
-          <SandboxTimelineSection agentId={agent.id} />
-        ) : (
-          <SandboxSetupSection f={f} />
-        )
       ) : (
         <ConnectionsSection
           agentId={agent.id}

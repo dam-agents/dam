@@ -1,4 +1,5 @@
 import {
+  ChartLine,
   Code,
   Edit,
   Hashtag,
@@ -48,6 +49,7 @@ interface Props {
   cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
+  onViewTimeline?: () => void;
 }
 
 export function SessionRow({
@@ -61,6 +63,7 @@ export function SessionRow({
   cost,
   onResume,
   onDelete,
+  onViewTimeline,
 }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
@@ -191,6 +194,14 @@ export function SessionRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {onViewTimeline && (
+            <DropdownMenuItem
+              data-testid="session-timeline-button"
+              onSelect={onViewTimeline}
+            >
+              <ChartLine size={13} /> View timeline
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             data-testid="session-delete-button"
             tone="danger"
