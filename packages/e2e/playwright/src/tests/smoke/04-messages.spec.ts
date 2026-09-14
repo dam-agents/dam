@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
 import {
+  AGENT_UP,
   agentCardStatus,
   chatInput,
   gotoAgentChat,
@@ -34,7 +35,7 @@ test("exchange messages with the agent", async ({ page }) => {
     await page.goto(`${baseUrl}/coding-agents`);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
 
-    await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
+    await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
 
     await gotoAgentChat(page, agentName, agentId);
 
@@ -70,7 +71,7 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
   await test.step("open the agent chat", async () => {
     await page.goto(`${baseUrl}/coding-agents`);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
-    await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
+    await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
     await gotoAgentChat(page, agentName, agentId);
     await expect(chatInput(page)).toBeVisible();
   });

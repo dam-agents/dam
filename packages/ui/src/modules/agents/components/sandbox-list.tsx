@@ -9,6 +9,7 @@ interface Props {
   agents: AgentView[];
   drawByDriver: TemporarySandboxSplit["drawByDriver"];
   rowProps: ReturnType<typeof useAgentRows>["rowProps"];
+  workingByAgent?: ReadonlyMap<string, boolean>;
   onStop: (agent: AgentView) => void;
   onDelete: (agent: AgentView) => void;
 }
@@ -17,6 +18,7 @@ export function SandboxList({
   agents,
   drawByDriver,
   rowProps,
+  workingByAgent,
   onStop,
   onDelete,
 }: Props) {
@@ -30,6 +32,7 @@ export function SandboxList({
         <AgentRow
           key={agent.id}
           {...rowProps(agent)}
+          working={workingByAgent?.get(agent.id)}
           temporaryDraw={drawByDriver.get(agent.id)}
           onSelect={() =>
             isKnowledgeBase(agent)

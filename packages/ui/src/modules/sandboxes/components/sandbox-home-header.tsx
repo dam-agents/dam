@@ -23,6 +23,7 @@ import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { useAgentWorking } from "../../home/api/queries.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 
@@ -32,6 +33,7 @@ interface Props {
 }
 
 export function SandboxHomeHeader({ agent, display }: Props) {
+  const working = useAgentWorking(agent.id, display.state === "running");
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
@@ -91,7 +93,13 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   return (
     <PageHeader
       title={agent.name}
-      adornment={<StatusBadge state={display.state} />}
+      adornment={
+        <StatusBadge
+          state={display.state}
+          working={working}
+          alwaysOn={agent.hibernationTimeoutMin === 0}
+        />
+      }
       actions={
         <>
           <UpdateAvailableAction

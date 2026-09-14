@@ -4,7 +4,7 @@ import type { AgentView } from "../../../types.js";
 import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
 import { formatCores, formatGi } from "./format.js";
 
-const BYTES_PER_MI = 1024 ** 2;
+export const BYTES_PER_MI = 1024 ** 2;
 
 export interface SlotUnit {
   cpuMilli: number;
@@ -104,6 +104,7 @@ export interface ComputeSegment {
   cpuMilli: number;
   memoryMi: number;
   slots: number;
+  alwaysOn: boolean;
 }
 
 export interface ComputeGroup {
@@ -151,6 +152,7 @@ export function computeView(
     cpuMilli: entry.cpuMilli,
     memoryMi: entry.memoryMi,
     slots: entry.slots,
+    alwaysOn: entry.agent.hibernationTimeoutMin === 0,
   }));
 
   const usedSlots = held.reduce((sum, h) => sum + h.slots, 0);
@@ -164,6 +166,7 @@ export function computeView(
       cpuMilli: 0,
       memoryMi: 0,
       slots: totalSlots - usedSlots,
+      alwaysOn: false,
     });
   }
 

@@ -49,7 +49,7 @@ export async function ensureAgentExists(
 export async function reloadUntilAgentVisible(page: Page): Promise<void> {
   await page.reload();
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await expect(page.getByText("Running")).toBeVisible();
+  await expect(page.getByText(AGENT_UP)).toBeVisible();
 }
 
 export function chatInput(page: Page): Locator {
@@ -207,10 +207,12 @@ export function agentNameHeading(page: Page, agentName: string): Locator {
   return page.getByRole("heading", { name: agentName, exact: true });
 }
 
+export const AGENT_UP = /^(Running|Working|Idle)$/;
+
 export function agentCardStatus(
   page: Page,
   agentName: string,
-  label: string,
+  label: string | RegExp,
 ): Locator {
   return page
     .getByTestId("agent-row")

@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { DELIVERY_TIMEOUT_MS } from "platform-ui/use-prompt-delivery";
 
 import {
+  AGENT_UP,
   agentCardStatus,
   chatInput,
   ensureAgentExists,
@@ -63,7 +64,7 @@ export async function reopenMockAgentChat(
   agentId: string,
 ): Promise<void> {
   await page.goto(`${baseUrl}/coding-agents`);
-  await expect(agentCardStatus(page, agentName, "Running")).toBeVisible({
+  await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible({
     timeout: 60_000,
   });
   await gotoAgentChat(page, agentName, agentId);
@@ -82,7 +83,7 @@ export async function openMockAgentChat(
   const agentId = await waitForAgentRunning(api, agentName);
   await loginViaUi(page);
   await page.goto(`${baseUrl}/coding-agents`);
-  await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
+  await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
   await gotoAgentChat(page, agentName, agentId);
   await expect(chatInput(page)).toBeVisible();
   return agentId;
