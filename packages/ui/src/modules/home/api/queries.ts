@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
@@ -19,6 +19,20 @@ export const homeKeys = {
   sessions: (agentId: string) =>
     [...acpSessionsKeys.agentLists(agentId), "home"] as const,
 };
+
+export function useAgentWorking(
+  agentId: string,
+  enabled: boolean,
+): boolean | undefined {
+  const { data } = useQuery({
+    queryKey: homeKeys.sessions(agentId),
+    queryFn: () => listAgentSessionsOverAcp(agentId),
+    enabled,
+    staleTime: SESSIONS_STALE_MS,
+    retry: false,
+  });
+  return data?.some((session) => session.running);
+}
 
 export interface ArtifactTouched {
   artifactId: string;

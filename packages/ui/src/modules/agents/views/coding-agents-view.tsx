@@ -72,6 +72,7 @@ export function CodingAgentsView() {
           agents={codingAgents}
           drawByDriver={drawByDriver}
           rowProps={rowProps}
+          workingAgentIds={workingAgentIds}
           onStop={(agent) => void stopSandbox(agent)}
           onDelete={(agent) => void deleteSandbox(agent)}
         />
