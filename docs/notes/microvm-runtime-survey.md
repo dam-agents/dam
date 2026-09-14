@@ -68,11 +68,11 @@ installed from the internet inside the guest):
 
 | | Cloud Hypervisor v53 (EDK2 firmware, Ubuntu 6.8 kernel) | Firecracker v1.17 (project CI kernel 6.1) | smolvm 1.16 (own libkrunfw 6.12) |
 |---|---|---|---|
-| guest boot to cloud-init | 73 s (full UEFI + systemd boot under nested KVM) | FIRECRACKER_BOOT | 10–20 s to the smolvm agent, same host |
-| k3s node Ready after install | 39 s | FIRECRACKER_K3S | ~15 s on bare metal (earlier measurement) |
-| pod scheduled and Running | yes | FIRECRACKER_POD | yes |
-| balloon driver in guest | yes | FIRECRACKER_BALLOON | yes |
-| host RSS: idle → 45 s after guest freed 1 GiB | 1.31 GiB → 1.70 GiB (nothing returned) | FIRECRACKER_RSS | 460 MiB → 460 MiB after ~50 s (returned) |
+| guest boot to cloud-init | 73 s (full UEFI + systemd boot under nested KVM) | systemd at 43 s, cloud-init network stage done at ~12 min with "soft lockup" warnings (run shared the host with two other guests) | 10–20 s to the smolvm agent, same host |
+| k3s node Ready after install | 39 s | not reached within the 15 min cap | ~15 s on bare metal (earlier measurement) |
+| pod scheduled and Running | yes | not reached | yes |
+| balloon driver in guest | yes | not measured (device accepted by the API) | yes |
+| host RSS: idle → 45 s after guest freed 1 GiB | 1.31 GiB → 1.70 GiB (nothing returned) | not measured | 460 MiB → 460 MiB after ~50 s (returned) |
 
 Cloud Hypervisor caveats seen: `free_page_reporting=on` with the stock Ubuntu
 kernel returned no memory in the 45 s window even though the guest driver was
@@ -84,7 +84,12 @@ Firecracker caveats seen: the 6.1 CI kernel cannot mount an ext4 made by
 Ubuntu 24.04 (`orphan_file` feature; stripped with `tune2fs -O ^orphan_file`),
 and marking a partitioned disk `is_root_device` makes Firecracker append its
 own `root=/dev/vda`, overriding the partition; there is no kernel with modules,
-so anything k3s needs must be built in.
+so anything k3s needs must be built in; the CI kernel also has no GPT
+support, so the root partition had to be carved into a partition-less image.
+Under this nested-KVM host the Firecracker guest ran an order of magnitude
+slower than the same image under Cloud Hypervisor, which matches the
+project's "nested is unsupported" stance; a bare-metal rerun is needed before
+its numbers mean anything.
 
 ## What replacing smolvm would cost
 

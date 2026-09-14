@@ -5,13 +5,13 @@
 # the Cloud Hypervisor run.
 set -euo pipefail
 PROTO=${PROTO:-/opt/proto}; cd "$PROTO"
-cp -f noble.raw fc.raw; rm -f fc.sock fc-console.log
+cp -f noble-root.raw fc.raw; rm -f fc.sock fc-console.log
 ./firecracker --api-sock fc.sock --log-path fc.log --level Error >fc-console.log 2>&1 &
 pid=$!; sleep 1
 api() { curl -s --unix-socket fc.sock -X PUT "http://localhost$1" -H 'Content-Type: application/json' -d "$2"; }
 api /machine-config '{"vcpu_count":2,"mem_size_mib":2048}'
-api /boot-source '{"kernel_image_path":"vmlinux-6.1","boot_args":"console=ttyS0 reboot=k panic=1 root=/dev/vda1 rw"}'
-api /drives/rootfs '{"drive_id":"rootfs","path_on_host":"fc.raw","is_root_device":false,"is_read_only":false}'
+api /boot-source '{"kernel_image_path":"vmlinux-6.1","boot_args":"console=ttyS0 reboot=k panic=1 rw"}'
+api /drives/rootfs '{"drive_id":"rootfs","path_on_host":"fc.raw","is_root_device":true,"is_read_only":false}'
 api /drives/seed '{"drive_id":"seed","path_on_host":"seed.img","is_root_device":false,"is_read_only":true}'
 api /network-interfaces/eth0 '{"iface_id":"eth0","guest_mac":"52:54:00:00:00:02","host_dev_name":"tap-proto"}'
 api /balloon '{"amount_mib":0,"deflate_on_oom":true,"stats_polling_interval_s":5,"free_page_reporting":true}' || api /balloon '{"amount_mib":0,"deflate_on_oom":true,"stats_polling_interval_s":5}'
