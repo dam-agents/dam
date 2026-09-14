@@ -79,7 +79,7 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-4">
           <h2 className="text-5xl font-normal tracking-tight text-foreground">
             {agent.name}
           </h2>
@@ -112,7 +112,7 @@ export function AgentUnavailableOverlay({
       ) : (
         <Spinner size={40} />
       )}
-      <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col items-center gap-4">
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
