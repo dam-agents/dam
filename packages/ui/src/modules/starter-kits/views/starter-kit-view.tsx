@@ -1,7 +1,13 @@
-import { ArrowLeft, Close, Launch } from "@carbon/icons-react";
+import { ArrowLeft, Launch } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 import { useMemo } from "react";
 
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -102,31 +108,42 @@ export function StarterKitDetailView() {
   const kit = useStarterKit(catalog, kitId);
   const setView = useStore((s) => s.setView);
 
-  if (kit.isPending) return <ListSkeleton rows={4} rowHeight={72} />;
+  if (kit.isPending)
+    return (
+      <Modal widthClass="w-[600px]" onClose={() => setView("starter-kits")}>
+        <DialogBody>
+          <ListSkeleton rows={4} rowHeight={72} />
+        </DialogBody>
+      </Modal>
+    );
   if (kit.isError || kit.data === undefined) {
     return (
-      <Callout tone="danger">
-        <p className="text-sm text-foreground">
-          Couldn&apos;t load this starter kit. It may have been removed from the
-          catalog, or the catalog is unreachable.
-        </p>
-        <div className="mt-2 flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void kit.refetch()}
-          >
-            Retry
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setView("starter-kits")}
-          >
-            All kits
-          </Button>
-        </div>
-      </Callout>
+      <Modal widthClass="w-[600px]" onClose={() => setView("starter-kits")}>
+        <DialogBody>
+          <Callout tone="danger">
+            <p className="text-sm text-foreground">
+              Couldn&apos;t load this starter kit. It may have been removed from
+              the catalog, or the catalog is unreachable.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void kit.refetch()}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setView("starter-kits")}
+              >
+                All kits
+              </Button>
+            </div>
+          </Callout>
+        </DialogBody>
+      </Modal>
     );
   }
   return <KitDetail kit={kit.data} />;
@@ -155,52 +172,38 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
 
-  return (
-    <div className="flex flex-col">
-      <header className="border-b border-border pb-4">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold text-foreground">
-                {kit.name}
-              </h1>
-              <Badge variant="template">{CATEGORY_LABEL[kit.category]}</Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {kit.description}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {kit.connections.flatMap((req) =>
-                acceptedTemplates(req.accepts, templates.data ?? [])
-                  .flatMap((t) => (t.family ? [t.family] : []))
-                  .filter(
-                    (f, i, all) => all.findIndex((x) => x.id === f.id) === i,
-                  )
-                  .map((family) => (
-                    <Badge key={family.id} variant="muted" size="sm">
-                      {family.title}
-                    </Badge>
-                  )),
-              )}
-              {skillCount > 0 && (
-                <Badge variant="muted" size="sm">
-                  {skillCount} {skillCount === 1 ? "skill" : "skills"}
-                </Badge>
-              )}
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Close"
-            onClick={() => setView("starter-kits")}
-          >
-            <Close size={16} />
-          </Button>
-        </div>
-      </header>
+  const close = () => setView("starter-kits");
 
-      <div className="py-6">
+  return (
+    <Modal widthClass="w-[600px]" onClose={close}>
+      <DialogHeader
+        title={kit.name}
+        titleAccessory={
+          <Badge variant="template">{CATEGORY_LABEL[kit.category]}</Badge>
+        }
+        subtitle={kit.description}
+        onClose={close}
+      >
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {kit.connections.flatMap((req) =>
+            acceptedTemplates(req.accepts, templates.data ?? [])
+              .flatMap((t) => (t.family ? [t.family] : []))
+              .filter((f, i, all) => all.findIndex((x) => x.id === f.id) === i)
+              .map((family) => (
+                <Badge key={family.id} variant="muted" size="sm">
+                  {family.title}
+                </Badge>
+              )),
+          )}
+          {skillCount > 0 && (
+            <Badge variant="muted" size="sm">
+              {skillCount} {skillCount === 1 ? "skill" : "skills"}
+            </Badge>
+          )}
+        </div>
+      </DialogHeader>
+
+      <DialogBody>
         <h2 className="mb-3 text-base font-semibold text-foreground">
           Included
         </h2>
@@ -370,10 +373,10 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
             ))}
           </Section>
         )}
-      </div>
+      </DialogBody>
 
-      <footer className="flex items-center justify-between border-t border-border pt-4">
-        <Button variant="ghost" onClick={() => setView("starter-kits")}>
+      <DialogFooter divided className="justify-between">
+        <Button variant="ghost" onClick={close}>
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="flex items-center gap-2">
@@ -386,7 +389,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
             Use this Starter Kit
           </Button>
         </div>
-      </footer>
-    </div>
+      </DialogFooter>
+    </Modal>
   );
 }

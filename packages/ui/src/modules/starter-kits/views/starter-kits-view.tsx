@@ -1,159 +1,206 @@
-import { Launch } from "@carbon/icons-react";
+import {
+  Book,
+  type CarbonIconType,
+  Catalog,
+  Chat,
+  Code,
+  Search,
+} from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tabs } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKits } from "../api/queries.js";
 import {
-  describeAccepts,
-  harnessesLine,
-  shortKitVersion,
-} from "../lib/setup.js";
+  categoriesPresent,
+  CATEGORY_LABEL,
+  kitBadges,
+  matchesSearch,
+} from "../lib/catalog-cards.js";
 
-const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
-  knowledge: "Knowledge",
-  software: "Software",
-  productivity: "Productivity",
-  research: "Research",
+const CATEGORY_ICON: Record<StarterKitView["category"], CarbonIconType> = {
+  knowledge: Book,
+  software: Code,
+  productivity: Chat,
+  research: Catalog,
 };
 
-function needsLines(
-  kit: StarterKitView,
-  templateById: ReadonlyMap<string, ConnectionTemplateView>,
-): string[] {
-  const lines: string[] = [];
-  for (const req of kit.connections) {
-    lines.push(
-      `${req.required ? "Requires" : "Suggests"} a ${describeAccepts(req.accepts, templateById)} connection`,
-    );
-  }
-  for (const ch of kit.channels) lines.push(`Suggests a ${ch.type} channel`);
-  const asks = kit.parameters.filter((p) => p.required).map((p) => p.name);
-  if (asks.length > 0) lines.push(`Asks you for: ${asks.join(", ")}`);
-  return lines;
+type Filter = StarterKitView["category"] | "all";
+
+function KitBadges({
+  kit,
+  templates,
+  templateById,
+}: {
+  kit: StarterKitView;
+  templates: readonly ConnectionTemplateView[];
+  templateById: ReadonlyMap<string, ConnectionTemplateView>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {kitBadges(kit, templates, templateById).map((badge) => (
+        <Badge key={badge.key} variant="muted" size="sm">
+          <span className="flex items-center gap-1.5">
+            {badge.iconSlug && (
+              <ConnectionIcon iconSlug={badge.iconSlug} alt="" size={14} />
+            )}
+            {badge.label}
+          </span>
+        </Badge>
+      ))}
+    </div>
+  );
 }
 
-function createsLines(kit: StarterKitView): string[] {
-  const lines: string[] = [];
-  lines.push(harnessesLine(kit));
-  if (kit.schedules.length > 0) {
-    const on = kit.schedules.filter((s) => s.enabled).length;
-    lines.push(
-      `${kit.schedules.length} schedule${kit.schedules.length === 1 ? "" : "s"} (${on} enabled)`,
-    );
-  }
-  if (kit.seed) lines.push("Its definition, cloned during onboarding");
-  return lines;
+function Illustration({
+  kit,
+  className,
+}: {
+  kit: StarterKitView;
+  className?: string;
+}) {
+  const Icon = CATEGORY_ICON[kit.category];
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center bg-accent/40 text-muted-foreground",
+        className,
+      )}
+      aria-hidden
+    >
+      <Icon size={32} />
+    </div>
+  );
 }
 
-function groupByCatalog(
-  kits: readonly StarterKitView[],
-): [string, StarterKitView[]][] {
-  const groups = new Map<string, StarterKitView[]>();
-  for (const kit of kits) {
-    const list = groups.get(kit.catalog) ?? [];
-    list.push(kit);
-    groups.set(kit.catalog, list);
-  }
-  return [...groups.entries()];
+function FeaturedCard({
+  kit,
+  templates,
+  templateById,
+  onOpen,
+}: {
+  kit: StarterKitView;
+  templates: readonly ConnectionTemplateView[];
+  templateById: ReadonlyMap<string, ConnectionTemplateView>;
+  onOpen: () => void;
+}) {
+  const Icon = CATEGORY_ICON[kit.category];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`starter-kit-card-${kit.id}`}
+      className="grid w-full overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+    >
+      <Illustration kit={kit} className="min-h-[180px]" />
+      <div className="flex flex-col justify-center gap-3 p-6">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 items-center justify-center rounded-lg border border-border">
+            <Icon size={16} />
+          </span>
+          <h2 className="text-xl font-semibold text-foreground">{kit.name}</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">{kit.description}</p>
+        <KitBadges
+          kit={kit}
+          templates={templates}
+          templateById={templateById}
+        />
+      </div>
+    </button>
+  );
 }
 
 function KitCard({
   kit,
+  templates,
   templateById,
+  onOpen,
 }: {
   kit: StarterKitView;
+  templates: readonly ConnectionTemplateView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
+  onOpen: () => void;
 }) {
-  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   return (
-    <Card className="flex flex-col" data-testid={`starter-kit-card-${kit.id}`}>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle>{kit.name}</CardTitle>
-          <Badge variant="template">{CATEGORY_LABEL[kit.category]}</Badge>
-        </div>
-        <CardDescription>{kit.description}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4 text-sm">
-        <div>
-          <div className="mb-1 font-medium">What it needs</div>
-          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-            {needsLines(kit, templateById).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <div className="mb-1 font-medium">What it creates</div>
-          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-            {createsLines(kit).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      </CardContent>
-      <CardFooter className="flex flex-wrap items-center justify-between gap-2">
-        <span
-          className="min-w-0 truncate font-mono text-xs text-muted-foreground"
-          title={`${kit.catalog}/${kit.id}@${kit.version}`}
-        >
-          {kit.catalog}/{kit.id}@{shortKitVersion(kit.version)}
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          {kit.docsUrl && (
-            <Button asChild variant="ghost" size="sm">
-              <a href={kit.docsUrl} target="_blank" rel="noreferrer">
-                Docs <Launch size={14} />
-              </a>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
-          >
-            Use this kit
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`starter-kit-card-${kit.id}`}
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
+    >
+      <Illustration kit={kit} className="h-[104px]" />
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <h3 className="text-base font-semibold text-foreground">{kit.name}</h3>
+        <p className="flex-1 text-sm text-muted-foreground">
+          {kit.description}
+        </p>
+        <KitBadges
+          kit={kit}
+          templates={templates}
+          templateById={templateById}
+        />
+      </div>
+    </button>
   );
 }
 
 export function StarterKitsView() {
   const kits = useStarterKits();
   const templates = useConnectionTemplates();
+  const setView = useStore((s) => s.setView);
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+
   const templateById = useMemo(
     () => new Map((templates.data ?? []).map((t) => [t.id, t])),
     [templates.data],
   );
-  const setView = useStore((s) => s.setView);
-  const catalogs = [...new Set((kits.data ?? []).map((k) => k.catalog))];
+
+  const all = useMemo(() => kits.data ?? [], [kits.data]);
+  const shown = useMemo(
+    () =>
+      all.filter(
+        (kit) =>
+          (filter === "all" || kit.category === filter) &&
+          matchesSearch(kit, query),
+      ),
+    [all, filter, query],
+  );
+  const [featured, ...rest] = shown;
+
+  const tabs = useMemo(
+    () => [
+      { value: "all" as Filter, label: "All" },
+      ...categoriesPresent(all).map((c) => ({
+        value: c as Filter,
+        label: CATEGORY_LABEL[c],
+      })),
+    ],
+    [all],
+  );
 
   return (
     <div>
       <PageHeader
-        title="Starter kits"
-        description="A starter kit is a proven way of working, applied to a new agent: the connections, schedules and setup a job needs, with onboarding that asks only for what you alone can supply."
+        title="Starter Kits"
+        description="Each starter kit bundles a harness, skills, schedules, and connections into a ready-made agent configuration."
         actions={
           <Button variant="outline" onClick={() => setView("coding-agent-new")}>
-            Start with a plain agent
+            Start from scratch
           </Button>
         }
       />
@@ -176,35 +223,76 @@ export function StarterKitsView() {
         </Callout>
       )}
 
-      {kits.data && kits.data.length === 0 && (
+      {kits.data && all.length === 0 && (
         <PageEmptyState
           title="No starter kits in this catalog"
-          message="This install has no starter kit catalog configured, or the catalog lists no kits. You can still start with a plain agent."
-          actionLabel="Start with a plain agent"
+          message="This install has no starter kit catalog configured, or the catalog lists no kits. You can still start from scratch."
+          actionLabel="Start from scratch"
           onAction={() => setView("coding-agent-new")}
         />
       )}
 
-      {kits.data &&
-        kits.data.length > 0 &&
-        groupByCatalog(kits.data).map(([catalog, group]) => (
-          <section key={catalog} className="mb-8">
-            {catalogs.length > 1 && (
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {catalog}
-              </h2>
-            )}
-            <div className="grid gap-4 md:grid-cols-2">
-              {group.map((kit) => (
-                <KitCard
-                  key={`${kit.catalog}/${kit.id}`}
-                  kit={kit}
+      {kits.data && all.length > 0 && (
+        <>
+          <div className="relative mb-4">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search starter kits…"
+              aria-label="Search starter kits"
+              className="pl-9"
+            />
+          </div>
+
+          {tabs.length > 2 && (
+            <Tabs
+              tabs={tabs}
+              value={filter}
+              onValueChange={setFilter}
+              variant="pill"
+              size="sm"
+              ariaLabel="Filter kits by category"
+              className="mb-5"
+            />
+          )}
+
+          {shown.length === 0 ? (
+            <p className="py-8 text-sm text-muted-foreground">
+              No kit matches that search.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {featured && (
+                <FeaturedCard
+                  kit={featured}
+                  templates={templates.data ?? []}
                   templateById={templateById}
+                  onOpen={() =>
+                    navigateToStarterKit(featured.catalog, featured.id)
+                  }
                 />
-              ))}
+              )}
+              {rest.length > 0 && (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {rest.map((kit) => (
+                    <KitCard
+                      key={`${kit.catalog}/${kit.id}`}
+                      kit={kit}
+                      templates={templates.data ?? []}
+                      templateById={templateById}
+                      onOpen={() => navigateToStarterKit(kit.catalog, kit.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          </section>
-        ))}
+          )}
+        </>
+      )}
     </div>
   );
 }

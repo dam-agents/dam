@@ -135,7 +135,10 @@ function MainApp() {
               ) : view === "starter-kits" && kitsEnabled ? (
                 <StarterKitsView />
               ) : view === "starter-kit" && kitsEnabled ? (
-                <StarterKitDetailView />
+                <>
+                  <StarterKitsView />
+                  <StarterKitDetailView />
+                </>
               ) : view === "starter-kit-new" && kitsEnabled ? (
                 <StarterKitSetupView />
               ) : view === "artifacts" ? (
