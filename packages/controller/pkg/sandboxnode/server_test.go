@@ -46,7 +46,7 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, os.MkdirAll(h.state, 0o755))
 	t.Setenv("FAKE_LOG", h.log)
 	t.Setenv("FAKE_STATE", h.state)
-	h.node = &Server{Token: "secret", StateDir: filepath.Join(dir, "machines"), Smolvm: bin, PortMin: 31000, PortMax: 31001}
+	h.node = &Server{Token: "secret", StateDir: filepath.Join(dir, "machines"), Runtime: &Smolvm{Bin: bin}, PortMin: 31000, PortMax: 31001}
 	require.NoError(t, h.node.Start())
 	t.Cleanup(h.node.Close)
 	h.srv = httptest.NewServer(h.node.Handler())
@@ -267,7 +267,7 @@ func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, f), nil, 0o644))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
-	require.NoError(t, h.node.start("m1"))
+	require.NoError(t, h.node.Runtime.Start("m1"))
 	for _, f := range []string{"agent.ready", "vm.lock", "overlay.qcow2"} {
 		assert.NoFileExists(t, filepath.Join(dir, f))
 	}

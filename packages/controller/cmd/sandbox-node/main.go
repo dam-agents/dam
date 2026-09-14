@@ -29,7 +29,7 @@ func main() {
 		os.Exit(1)
 	}
 	srv := &sandboxnode.Server{
-		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, Smolvm: *smolvm,
+		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, Runtime: &sandboxnode.Smolvm{Bin: *smolvm},
 		PortMin: *portMin, PortMax: *portMax,
 	}
 	for _, c := range strings.Split(*allowFrom, ",") {
