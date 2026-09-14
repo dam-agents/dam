@@ -188,11 +188,11 @@ describe("acp-runtime: headless runs", () => {
       {
         jsonrpc: "2.0",
         method: "platform/turnEnded",
-        params: {
+        params: expect.objectContaining({
           sessionId: SESSION,
           promptId: "prompt-abc",
           stopReason: "cancelled",
-        },
+        }),
       },
     ]);
   });

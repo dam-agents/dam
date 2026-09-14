@@ -32,6 +32,12 @@ export function buildPlatformTurnEndedNotification(
   });
 }
 
+export const platformFrameMetaSchema = z.object({
+  at: z.string().datetime({ offset: true }).optional(),
+  replayFor: z.string().min(1).optional(),
+});
+export type PlatformFrameMeta = z.infer<typeof platformFrameMetaSchema>;
+
 export const platformClippedReplayMetaSchema = z.object({
   older: z.string().min(1).optional(),
 });
