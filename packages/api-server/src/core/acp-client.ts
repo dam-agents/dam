@@ -16,6 +16,7 @@ const DEFAULT_STALL_PROBE_MS = 30 * 60 * 1000;
 const DEFAULT_RUNAWAY_CAP_MS = 6 * 60 * 60 * 1000;
 const RUNAWAY_CANCEL_GRACE_MS = 60_000;
 const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
+const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
 
 const STEER_METHOD = "_session/steering";
@@ -215,6 +216,8 @@ export type TriggerSessionOpts = {
   mcpServers?: unknown[];
 } & SessionAttach;
 
+export type AcpTurnStatus = "pending" | "ended" | "unknown";
+
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
   sendPrompt(
@@ -226,6 +229,7 @@ export interface AcpClient {
     prompt: string | ContentBlock[],
   ): Promise<SteerOutcome>;
   triggerSession(opts: TriggerSessionOpts): Promise<TriggerSessionResult>;
+  turnStatus(sessionId: string): Promise<AcpTurnStatus>;
 }
 
 async function withAcpConnection<T>(
@@ -610,6 +614,23 @@ function createAcpClientForUrl(
         getLogger().debug({ err, sessionId }, "acp steer failed");
         return "failed";
       }
+    },
+
+    async turnStatus(sessionId: string): Promise<AcpTurnStatus> {
+      return withAcpConnection(
+        url,
+        "platform-turn-status",
+        {},
+        { kind: "deadline", ms: TURN_STATUS_DEADLINE_MS },
+        async (connection) => {
+          const verdict = await probeTurnAlive(connection, sessionId);
+          return verdict === "alive"
+            ? "pending"
+            : verdict === "gone"
+              ? "ended"
+              : "unknown";
+        },
+      );
     },
 
     async triggerSession(

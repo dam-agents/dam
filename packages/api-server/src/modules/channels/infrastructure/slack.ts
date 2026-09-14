@@ -52,12 +52,14 @@ import {
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
+  type AcpTurnAbandonCause,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import {
   turnFailureReasonToken,
   turnFailureUserCopy,
 } from "./turn-failure-copy.js";
+import { createTurnRecovery } from "./turn-recovery.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -768,6 +770,27 @@ function mayLeaveHarnessRunning(
   );
 }
 
+function undeliveredNudge(
+  threadTs: string,
+  cause: AcpTurnAbandonCause,
+): string {
+  const whatHappened =
+    cause === "runaway"
+      ? "Your previous turn in this Slack thread was stopped at the platform's time limit before a reply was posted"
+      : "Your previous turn in this Slack thread ended without a reply being posted";
+  const ask =
+    cause === "runaway"
+      ? `Post what you have so far with the reply tool (threadTs="${threadTs}"), and say how you would continue — for example by taking the work in parts.`
+      : `Post your result now with the reply tool (threadTs="${threadTs}").`;
+  return [
+    "<turn-undelivered>",
+    `${whatHappened} — the person waiting in the thread never saw an answer.`,
+    ask,
+    "If silence was deliberate, call no_reply_needed instead.",
+    "</turn-undelivered>",
+  ].join("\n");
+}
+
 const USER_CACHE_TTL_MS = 10 * 60_000;
 
 const userLookupSemaphore = createSemaphore(5);
@@ -1190,6 +1213,11 @@ export function createSlackWorker(
 
   const sessionTurnLocks = new Map<string, Promise<void>>();
 
+  const turnRecovery = createTurnRecovery({
+    turnStatus: (agentId, sessionId) =>
+      makeAcpClient(agentId).turnStatus(sessionId),
+  });
+
   async function withSessionTurnLock<T>(
     instanceName: string,
     threadKey: string,
@@ -1485,6 +1513,45 @@ export function createSlackWorker(
       });
     } catch (err) {
       await postFailure(err);
+      const sessionId = turnRefs.find(
+        (ref) => ref.sessionId !== undefined,
+      )?.sessionId;
+      if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
+        const delivered = () =>
+          turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+        const cause = err.abandonCause;
+        turnRecovery.watch({
+          instanceName,
+          sessionId,
+          isDelivered: delivered,
+          recover: async () => {
+            await agents().ensureReady(instanceName);
+            await withSessionTurnLock(instanceName, threadKey, async () => {
+              if (delivered()) return;
+              const ref = turnRefs.at(-1)!;
+              beginTurn(instanceName, ref);
+              try {
+                await makeAcpClient(instanceName).sendPrompt(
+                  undeliveredNudge(ctx.threadTs, cause),
+                  { resumeSessionId: sessionId },
+                );
+              } finally {
+                endTurn(instanceName, ref);
+                if (!delivered()) {
+                  getLogger().info(
+                    {
+                      agentId: instanceName,
+                      sessionId,
+                      threadTs: ctx.threadTs,
+                    },
+                    "slack.turn.recovery_unanswered: the agent was nudged but still posted nothing",
+                  );
+                }
+              }
+            });
+          },
+        });
+      }
     } finally {
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
@@ -3027,6 +3094,7 @@ export function createSlackWorker(
 
     async stopAll() {
       serving = false;
+      turnRecovery.stop();
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;
       gatewayFailed = false;

@@ -63,6 +63,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
       return "the answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
 
   const AGENT_NAMES: Record<string, string> = {

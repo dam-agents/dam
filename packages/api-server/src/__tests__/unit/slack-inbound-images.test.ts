@@ -71,6 +71,7 @@ function harness() {
       return "the answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
   const agents = {
     ensureReady: async () => {},

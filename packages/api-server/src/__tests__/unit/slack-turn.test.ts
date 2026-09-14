@@ -54,6 +54,7 @@ function harness(opts: {
     listSessions: opts.listSessions ?? (async () => []),
     sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
