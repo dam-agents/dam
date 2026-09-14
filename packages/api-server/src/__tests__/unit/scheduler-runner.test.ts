@@ -310,7 +310,7 @@ describe("scheduler-runner fire", () => {
 });
 
 describe("scheduler-runner precheck", () => {
-  // TEST_SCENARIO: the pod decides the verdict, so a Precheck that finds nothing needs everything it will ask for in the fire's payload — the command, the occurrence it belongs to, and when a run last happened.
+  // TEST_SCENARIO: the pod decides the verdict, so the fire's payload must carry everything the Precheck will ask for.
   it("carries the precheck, the occurrence and the last run into the fire payload", async () => {
     const { runner, payloads } = makeDeps({
       precheck:
@@ -331,7 +331,7 @@ describe("scheduler-runner precheck", () => {
     });
   });
 
-  // TEST_SCENARIO: a Declined Fire already woke the Agent, so leaving the poke's activity stamp standing would hold a frequently-prechecked Agent awake forever and cost more compute than the turns it saved.
+  // TEST_SCENARIO: a Declined Fire already woke the Agent, so leaving the poke's stamp standing would hold a frequent Precheck's Agent awake forever.
   it("a declined report restores the activity stamp the poke wrote", async () => {
     const { runner, patches, restored } = makeDeps({
       precheck: "test -f /tmp/ready",
@@ -351,7 +351,7 @@ describe("scheduler-runner precheck", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the verdict lives in the pod, so a prechecked fire must not claim a run at send time — otherwise a schedule that declines every occurrence reads exactly like one that runs and succeeds.
+  // TEST_SCENARIO: claiming a run at send time would make a Schedule that declines every occurrence read like one that succeeds.
   it("a prechecked fire arms the next occurrence without claiming a run", async () => {
     const { runner, fires, enqueued } = makeDeps({ precheck: "true" });
 
@@ -364,7 +364,7 @@ describe("scheduler-runner precheck", () => {
     expect(enqueued).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: a Precheck that broke let the run through, so the run is recorded with the reason beside it — the runner's job is to hand the verdict to the transition, not to decide the columns itself.
+  // TEST_SCENARIO: the runner hands the verdict to the transition rather than deciding the columns itself.
   it("records a broken precheck's run through the status transition", async () => {
     const { runner, patches } = makeDeps({ precheck: "true" });
 

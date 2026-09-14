@@ -139,7 +139,7 @@ describe("trigger plugin precheck", () => {
     fireAt: "2026-06-12T10:30:00.000Z",
   };
 
-  // TEST_SCENARIO: the handler runs inside applyState, behind a per-agent lock, and the api-server abandons that call at 60s — so a two-minute Precheck must not be awaited there, or nothing else reaches the agent while it runs.
+  // TEST_SCENARIO: the handler runs behind the per-agent applyState lock, so awaiting a two-minute Precheck there stops everything else reaching the agent.
   it("returns before the precheck finishes, then reports and runs", async () => {
     const { driver, calls } = fakeDriver();
     const { reports, reporter } = recorder();
@@ -168,7 +168,7 @@ describe("trigger plugin precheck", () => {
     expect(calls[0]?.task).toBe("do it\n\n---\nPrecheck output:\nPR 7 landed");
   });
 
-  // TEST_SCENARIO: exit 1 is the Precheck saying nothing changed — no Session may open, and the platform has to hear about the Declined Fire because only the pod knows it happened.
+  // TEST_SCENARIO: exit 1 means nothing changed, so no Session opens and only the pod can tell the platform it declined.
   it("opens no session when the precheck declines the fire", async () => {
     const { driver, calls } = fakeDriver();
     const { reports, reporter } = recorder();
@@ -188,7 +188,7 @@ describe("trigger plugin precheck", () => {
     expect(calls).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: a Precheck that cannot run at all is the check breaking, not saying no — the run goes ahead so work never stops silently, and the error is reported so the break stays visible.
+  // TEST_SCENARIO: a Precheck that cannot run is the check breaking, not saying no, so the run goes ahead and the reason is reported.
   it("runs the task anyway when the precheck itself breaks", async () => {
     const { driver, calls } = fakeDriver();
     const { reports, reporter } = recorder();
