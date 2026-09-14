@@ -37,12 +37,15 @@ data:
       # Trusted agent attribution. The paired gateway Envoy stamps the
       # x-platform-agent-id header (overwriting anything the agent set) on the
       # telemetry it forwards here; promote it to the platform.agent.id resource
-      # attribute. delete-then-set so a forged value can never survive a missing
-      # header: unconditionally drop any client-supplied platform.agent.id, then
-      # set it ONLY from the trusted header. MUST run before `batch`, which emits
-      # a new context and drops per-request client metadata. Telemetry with no
-      # header (platform components) ends up with no platform.agent.id, which is
-      # how the read path tells agent telemetry apart.
+      # attribute. Nothing else reaching this collector can present these headers:
+      # the gateway strips both from every other request it forwards here, so this
+      # processor does not need to ask which route a request took.
+      # delete-then-set so a forged value can never survive a missing header:
+      # unconditionally drop any client-supplied platform.agent.id, then set it
+      # ONLY from the trusted header. MUST run before `batch`, which emits a new
+      # context and drops per-request client metadata. Telemetry with no header
+      # (platform components) ends up with no platform.agent.id, which is how the
+      # read path tells agent telemetry apart.
       #
       # platform.invocation.id gets the same delete-then-upsert treatment from
       # the x-platform-invocation-id header. The gateway stamps that header only

@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	sigsyaml "sigs.k8s.io/yaml"
@@ -10,6 +11,11 @@ import (
 )
 
 type ev = map[string]any
+
+const (
+	attributionAgentHeader      = "x-platform-agent-id"
+	attributionInvocationHeader = "x-platform-invocation-id"
+)
 
 type bootstrapParams struct {
 	ListenAddress          string
@@ -48,7 +54,10 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 	if cfg.ObjectStoreHost != "" {
 		objectStoreAuthority = fmt.Sprintf("%s:%d", cfg.ObjectStoreHost, cfg.ObjectStorePort)
 	}
-	telemetry := cfg.TelemetryEnabled() && !hostInChains(chains, cfg.TelemetryCollectorHost)
+	telemetry := cfg.TelemetryEnabled()
+	if telemetry {
+		chains = chainsWithoutHost(instanceID, chains, cfg.TelemetryCollectorHost)
+	}
 	anyUpgrades := false
 	for _, c := range chains {
 		if c.Upgrades {
@@ -87,6 +96,22 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		return "", fmt.Errorf("marshaling envoy bootstrap: %w", err)
 	}
 	return string(out), nil
+}
+
+func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) []envoyHostChain {
+	if host == "" {
+		return chains
+	}
+	out := make([]envoyHostChain, 0, len(chains))
+	for _, c := range chains {
+		if c.Host == host {
+			slog.Warn("egress chain targets the telemetry collector host; dropping it so the collector chain stamps trusted attribution",
+				"agent", instanceID, "host", host, "chain", c.ChainID)
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
@@ -145,7 +170,8 @@ func buildOuterListener(p bootstrapParams) ev {
 			routerHTTPFilter(),
 		},
 		"route_config": ev{
-			"name": "connect_routes",
+			"name":                      "connect_routes",
+			"request_headers_to_remove": []any{attributionAgentHeader, attributionInvocationHeader},
 			"virtual_hosts": []any{
 				ev{
 					"name":    "connect",
@@ -371,7 +397,7 @@ func buildCollectorChain(p bootstrapParams) ev {
 	}
 	headersToAdd := []any{
 		ev{
-			"header":        ev{"key": "x-platform-agent-id", "value": attributionID},
+			"header":        ev{"key": attributionAgentHeader, "value": attributionID},
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}
@@ -385,11 +411,11 @@ func buildCollectorChain(p bootstrapParams) ev {
 	}
 	if p.attributionOverridden() {
 		headersToAdd = append(headersToAdd, ev{
-			"header":        ev{"key": "x-platform-invocation-id", "value": p.InstanceID},
+			"header":        ev{"key": attributionInvocationHeader, "value": p.InstanceID},
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		})
 	} else {
-		route["request_headers_to_remove"] = []any{"x-platform-invocation-id"}
+		route["request_headers_to_remove"] = []any{attributionInvocationHeader}
 	}
 	route["request_headers_to_add"] = headersToAdd
 	hcm := ev{
