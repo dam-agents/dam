@@ -85,7 +85,7 @@ export function SlotBar({
             key={id}
             open={hover.hoveredId === id}
             onOpenChange={(next) => {
-              if (!next) hover.hide();
+              if (!next) hover.scheduleHide();
             }}
             disableHoverableContent
           >
@@ -94,13 +94,19 @@ export function SlotBar({
                 role={held && onActivate ? "button" : "img"}
                 aria-label={label(segment)}
                 tabIndex={held ? 0 : undefined}
+                onClick={() => {
+                  if (held) onActivate?.(segment);
+                }}
                 onKeyDown={(event) => {
                   if (!held || !onActivate) return;
                   if (event.key !== "Enter" && event.key !== " ") return;
                   event.preventDefault();
                   onActivate(segment);
                 }}
-                className="group grid gap-1.5 rounded-sm outline-none"
+                className={cn(
+                  "group grid gap-1.5 rounded-sm outline-none",
+                  held && onActivate && "cursor-pointer",
+                )}
                 style={{
                   gridColumn: `span ${segment.slots}`,
                   gridTemplateColumns: `repeat(${segment.slots}, minmax(0, 1fr))`,

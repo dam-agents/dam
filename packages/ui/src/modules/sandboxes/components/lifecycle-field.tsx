@@ -32,7 +32,7 @@ export function LifecycleField({
   );
 
   const pickHibernate = () => {
-    if (alwaysOn) onChange(lastMinutes);
+    onChange(alwaysOn ? lastMinutes : value);
   };
   const pickAlwaysOn = () => {
     if (!alwaysOn) {
