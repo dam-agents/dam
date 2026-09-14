@@ -49,9 +49,8 @@ function dayDividers(timed: readonly Timed[]): Map<number, Timed> {
 function runDividers(
   timed: readonly Timed[],
   runStarts: readonly string[],
-  end: number,
-): Map<number, string> {
-  const marks = new Map<number, string>();
+): Map<number, string[]> {
+  const marks = new Map<number, string[]>();
   const starts = [...new Set(runStarts)]
     .map((at) => ({ at, ms: Date.parse(at) }))
     .filter((start) => Number.isFinite(start.ms))
@@ -69,9 +68,11 @@ function runDividers(
       newest = byTime[cursor];
       cursor += 1;
     }
-    const index =
-      newest?.role === "user" ? newest.index : (byTime[cursor]?.index ?? end);
-    marks.set(index, start.at);
+    const anchor = newest?.role === "user" ? newest : byTime[cursor];
+    if (anchor === undefined) continue;
+    const at = marks.get(anchor.index);
+    if (at === undefined) marks.set(anchor.index, [start.at]);
+    else at.push(start.at);
   }
   return marks;
 }
@@ -82,13 +83,12 @@ export function threadItems(
 ): ThreadItem[] {
   const timed = timedOf(messages);
   const days = dayDividers(timed);
-  const runs = runDividers(timed, runStarts, messages.length);
+  const runs = runDividers(timed, runStarts);
   const items: ThreadItem[] = [];
 
   const pushRuns = (index: number): void => {
-    const at = runs.get(index);
-    if (at === undefined) return;
-    items.push({ kind: "divider", variant: "run", at, key: `run:${at}` });
+    for (const at of runs.get(index) ?? [])
+      items.push({ kind: "divider", variant: "run", at, key: `run:${at}` });
   };
 
   messages.forEach((message, index) => {
@@ -104,7 +104,6 @@ export function threadItems(
     }
     items.push({ kind: "message", message, index });
   });
-  pushRuns(messages.length);
   return items;
 }
 
