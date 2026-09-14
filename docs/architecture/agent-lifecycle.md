@@ -114,7 +114,7 @@ The harness child process runs for the pod's lifetime, not per-connection. Multi
 
 Each session is an append-only in-memory log (≤2 MB soft cap). Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them. Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
 
-The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the start time of every fire the session has served, so a thread shows where each run began whether the viewer was watching or has just reopened it; the marker is placed by time, never matched to a message.
+The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns. A thread draws each of those beside the message that opens its run, so a run boundary survives a reopen; a start with no timed message to sit beside draws nothing.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP. The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor). Cursors die with the log: a stale one is refused and the client reloads. Replay shares the connection with live fan-out, so replayed frames are tagged to their load for exact attribution.
 

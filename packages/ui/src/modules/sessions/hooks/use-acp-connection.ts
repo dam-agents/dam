@@ -402,8 +402,7 @@ export function useAcpConnection(
         useStore
           .getState()
           .setRunStarts([
-            ...useStore.getState().runStarts,
-            ...runStarts,
+            ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
