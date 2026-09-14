@@ -161,13 +161,12 @@ virtualization:
       tag: ""
       pullPolicy: IfNotPresent
     # KVM (and the tun device smolvm's per-machine network needs) arrive as
-    # device-plugin resources, so the pod needs no privilege for them. The
-    # defaults are KubeVirt's plugins, present on every node virt-handler
-    # runs on; a cluster without KubeVirt can use any plugin that exposes
-    # /dev/kvm and /dev/net/tun, or `privileged: true` (dev only).
-    devices:
-      devices.kubevirt.io/kvm: 1
-      devices.kubevirt.io/tun: 1
+    # device-plugin resources, so the pod needs no privilege for them. Empty
+    # = the chart's own plugin below when enabled, else KubeVirt's
+    # (`devices.kubevirt.io/kvm|tun`, present on every node virt-handler runs
+    # on). Any plugin exposing /dev/kvm and /dev/net/tun works; `privileged:
+    # true` is the last resort.
+    devices: {}
     privileged: false
     # OpenShift: name of a built-in SCC to bind to the node's ServiceAccount
     # (the pod runs as root with NET_ADMIN, so `privileged` is the one that
@@ -188,6 +187,24 @@ virtualization:
     # Sources allowed to dial machines' published ports; empty admits any
     # (the pod sits inside the cluster network like an agent pod would).
     ingressCidrs: []
+  # A device plugin of our own (squat's generic-device-plugin) advertising
+  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
+  # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
+  # privileged (kubelet socket dir + /dev from the host) and binds the same
+  # SCC as the node when `node.scc` is set. Point nodeSelector/tolerations
+  # at the KVM-capable pool and give the node pod the same.
+  devicePlugin:
+    enabled: false
+    image:
+      repository: ghcr.io/squat/generic-device-plugin
+      tag: 2cc50b0
+      pullPolicy: IfNotPresent
+    domain: squat.ai
+    # Grants each device can be handed out at once; one sandbox node pod
+    # needs one, more leaves room for a second consumer on the node.
+    count: 4
+    nodeSelector: {}
+    tolerations: []
 
 # -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents
