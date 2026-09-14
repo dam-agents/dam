@@ -128,6 +128,7 @@ export {
   scheduleFireReportInputSchema,
   precheckVerdictSchema,
   precheckSchema,
+  PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,

@@ -24,7 +24,9 @@ export const scheduleGetInputSchema = z.object({
   id: z.string().min(1),
 });
 
-export const precheckSchema = z.string().trim().min(1).max(8_000);
+export const PRECHECK_MAX_LENGTH = 8_000;
+
+export const precheckSchema = z.string().trim().min(1).max(PRECHECK_MAX_LENGTH);
 
 export const scheduleCreateCronInputSchema = z.object({
   name: z.string().min(1),
@@ -83,7 +85,7 @@ const scheduleSpecCronSchema = z
     type: z.literal("cron"),
     cron: z.string(),
     task: z.string().optional(),
-    precheck: z.string().optional(),
+    precheck: precheckSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -98,7 +100,7 @@ const scheduleSpecRRuleSchema = z
     timezone: z.string(),
     quietHours: z.array(quietWindowConfigMapSchema).optional(),
     task: z.string().optional(),
-    precheck: z.string().optional(),
+    precheck: precheckSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,

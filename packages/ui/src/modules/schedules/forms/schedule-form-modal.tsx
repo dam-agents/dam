@@ -329,6 +329,7 @@ export function ScheduleFormModal({
           >
             <Textarea
               className="min-h-[56px] resize-y font-mono text-xs"
+              variant={errors.precheck ? "invalid" : undefined}
               placeholder="git fetch -q && git log --oneline HEAD..origin/main | grep -q ."
               rows={2}
               {...register("precheck")}

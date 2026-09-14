@@ -13,6 +13,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  precheckSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -668,9 +669,7 @@ export function createMcpSession(
         .describe(
           "continuous = resume prior session each tick; fresh = new session per run (default)",
         ),
-      precheck: z
-        .string()
-        .min(1)
+      precheck: precheckSchema
         .optional()
         .describe(
           "Optional shell command run in this agent's workspace before each fire, deciding whether the run happens at all. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",

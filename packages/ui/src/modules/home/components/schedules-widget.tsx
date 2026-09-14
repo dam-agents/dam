@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Add, WarningAlt } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
@@ -40,9 +40,16 @@ function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
         className="min-w-0 flex-1 text-left"
       >
         <p className="truncate text-sm text-foreground">{schedule.name}</p>
-        <p className="truncate text-sm text-muted-foreground">
-          {agentName} · {scheduleCadenceText(schedule)}
-        </p>
+        {schedule.status?.lastPrecheckError ? (
+          <p className="flex items-center gap-1 truncate text-sm text-destructive">
+            <WarningAlt size={14} className="shrink-0" />
+            Precheck failed — running every time
+          </p>
+        ) : (
+          <p className="truncate text-sm text-muted-foreground">
+            {agentName} · {scheduleCadenceText(schedule)}
+          </p>
+        )}
       </button>
       <Switch
         checked={schedule.enabled}
@@ -68,7 +75,13 @@ export function SchedulesWidget() {
   if (isPending || agentsPending) return <WidgetSkeleton rows={3} />;
 
   const live = new Set(agents.map((a) => a.id));
-  const schedules = (data ?? []).filter((s) => live.has(s.agentId));
+  const schedules = (data ?? [])
+    .filter((s) => live.has(s.agentId))
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.status?.lastPrecheckError)) -
+        Number(Boolean(a.status?.lastPrecheckError)),
+    );
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;
 

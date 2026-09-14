@@ -5,6 +5,7 @@ import {
   detectTimezone,
   type FrequencyPreset,
   hasVisibleOccurrence,
+  PRECHECK_MAX_LENGTH,
   rruleToText,
 } from "api-server-api";
 import { z } from "zod";
@@ -15,7 +16,10 @@ export const scheduleFormSchema = z
   .object({
     name: z.string().trim().min(1, "Required"),
     task: z.string().trim().min(1, "Required"),
-    precheck: z.string().trim(),
+    precheck: z
+      .string()
+      .trim()
+      .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
     timezone: z.string().trim().min(1, "Required"),
     sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),

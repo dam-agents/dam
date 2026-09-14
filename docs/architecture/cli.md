@@ -71,7 +71,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md). Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state. An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only. Telegram binds in-chat (`/platform bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
-- **`schedule`** — time-triggered task recurrences on an agent, owned by [agent-lifecycle.md](agent-lifecycle.md).
+- **`schedule`** — time-triggered task recurrences on an agent, including the Precheck that decides each occurrence, owned by [schedules.md](schedules.md).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions

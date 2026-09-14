@@ -36,6 +36,7 @@ export function hintFor(
     case EventType.ScheduleCreated:
     case EventType.ScheduleUpdated:
     case EventType.ScheduleDeleted:
+    case EventType.SchedulePrecheckReported:
       return {
         ownerSub: event.ownerSub,
         hint: { topic: "schedules", agentId: event.agentId },

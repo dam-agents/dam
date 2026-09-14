@@ -52,3 +52,9 @@ export function declinedSummary(status?: {
     ? `Declined ${times}, last ${formatRunTime(status.lastDeclinedAt)}`
     : `Declined ${times}`;
 }
+
+const CLAMP_CHARS = 300;
+
+export function clampText(text: string, max: number = CLAMP_CHARS): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}

@@ -59,7 +59,7 @@ function makeDeps(opts?: {
   const expiries: Date[] = [];
   const payloads: Record<string, unknown>[] = [];
   const declines: Date[] = [];
-  const precheckErrors: (string | null)[] = [];
+  const runs: { at: Date; result: string; precheckError: string | null }[] = [];
   const restored: { previous: string | null; written: string }[] = [];
   const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
@@ -84,8 +84,13 @@ function makeDeps(opts?: {
     async recordDecline(_id: string, at: Date) {
       declines.push(at);
     },
-    async recordPrecheckError(_id: string, detail: string | null) {
-      precheckErrors.push(detail);
+    async recordRun(
+      _id: string,
+      at: Date,
+      result: string,
+      precheckError: string | null,
+    ) {
+      runs.push({ at, result, precheckError });
     },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
@@ -145,7 +150,7 @@ function makeDeps(opts?: {
     expiries,
     payloads,
     declines,
-    precheckErrors,
+    runs,
     restored,
   };
 }
@@ -352,6 +357,39 @@ describe("scheduler-runner precheck", () => {
     expect(declines).toHaveLength(1);
     expect(restored).toEqual([
       { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP },
+    ]);
+  });
+
+  // TEST_SCENARIO: the verdict lives in the pod, so a prechecked fire must not claim a run at send time — otherwise a schedule that declines every occurrence reads exactly like one that runs and succeeds.
+  it("a prechecked fire arms the next occurrence without claiming a run", async () => {
+    const { runner, fires, enqueued } = makeDeps({ precheck: "true" });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(fires).toHaveLength(0);
+    expect(enqueued).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: a Precheck that broke let the run through, so the run is recorded — with the reason beside it, which is the only thing that keeps a permanently broken check from looking healthy.
+  it("records the run when a broken precheck let it through", async () => {
+    const { runner, runs } = makeDeps({ precheck: "true" });
+
+    await runner.reportFire(AGENT_ID, {
+      scheduleId: SCHEDULE_ID,
+      fireAt: "2026-06-12T10:30:00.000Z",
+      verdict: "precheck-failed",
+      detail: "precheck exited 127",
+    });
+
+    expect(runs).toEqual([
+      {
+        at: new Date("2026-06-12T10:30:00Z"),
+        result: "success",
+        precheckError: "precheck exited 127",
+      },
     ]);
   });
 

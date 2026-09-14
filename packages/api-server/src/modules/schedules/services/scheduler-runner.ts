@@ -119,7 +119,8 @@ export function createSchedulerRunner(
     }
 
     const next = nextFireAt(sched.spec, now());
-    await deps.repo.recordFire(scheduleId, "success", next);
+    if (sched.spec.precheck) await deps.repo.setNextRun(scheduleId, next);
+    else await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     await emitFired("success");
   }
@@ -164,16 +165,32 @@ export function createSchedulerRunner(
     async reportFire(agentId, input): Promise<void> {
       const sched = await deps.repo.getById(input.scheduleId);
       if (!sched || sched.agentId !== agentId) return;
+      const emitPrecheckReported = async (): Promise<void> => {
+        try {
+          const ownerSub = await deps.repo.getOwnerById(input.scheduleId);
+          if (ownerSub)
+            emit({
+              type: EventType.SchedulePrecheckReported,
+              scheduleId: input.scheduleId,
+              agentId,
+              ownerSub,
+            });
+        } catch (err) {
+          log(`report: emit failed: ${(err as Error).message}`);
+        }
+      };
       switch (input.verdict) {
         case "allowed":
-          await deps.repo.recordPrecheckError(input.scheduleId, null);
-          return;
+          await deps.repo.recordRun(input.scheduleId, now(), "success", null);
+          break;
         case "precheck-failed":
-          await deps.repo.recordPrecheckError(
+          await deps.repo.recordRun(
             input.scheduleId,
+            now(),
+            "success",
             input.detail ?? "precheck failed",
           );
-          return;
+          break;
         case "declined": {
           await deps.repo.recordDecline(input.scheduleId, now());
           const key = stampKey(input.scheduleId, new Date(input.fireAt));
@@ -182,9 +199,10 @@ export function createSchedulerRunner(
             await deps.restoreActivity(agentId, stamp).catch((err: Error) => {
               log(`report: activity restore failed: ${err.message}`);
             });
-          return;
+          break;
         }
       }
+      await emitPrecheckReported();
     },
 
     async restoreAll(): Promise<void> {

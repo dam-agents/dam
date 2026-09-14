@@ -1,18 +1,9 @@
 import type { PrecheckVerdict } from "api-server-api";
 
-import { describeFailure, runOnce } from "../../../core/run-once.js";
-
-const PRECHECK_TIMEOUT_MS = 2 * 60 * 1000;
+import { describeFailure } from "../../../core/run-once.js";
+import type { RunOnceResult } from "../../../core/run-once.js";
 
 const CONTEXT_CAP_BYTES = 8 * 1024;
-
-export interface PrecheckInput {
-  command: string;
-  workDir: string;
-  scheduleId: string;
-  fireAt?: string;
-  lastRunAt?: string;
-}
 
 export interface PrecheckOutcome {
   verdict: PrecheckVerdict;
@@ -29,45 +20,26 @@ function capped(stdout: string): string | undefined {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Runs one Schedule's Precheck and turns the process
- * into a verdict, so the trigger handler never reads an exit code itself. The
- * split follows grep: `0` allows the run, `1` declines it, and every other way
- * the command can end — a higher exit code, the two-minute deadline, a command
- * that will not spawn — is the Precheck breaking rather than saying no, which
- * allows the run and carries the reason. Keeping the broken case apart from the
- * declining one is the whole point: a typo that exited 127 would otherwise
- * silence a Schedule forever and look exactly like "nothing changed". Stdout
- * becomes context appended to the task prompt (capped, so a runaway `git log`
- * cannot flood the turn it was meant to save); stderr belongs to the pod log
- * and never reaches the prompt.
+ * UNIT_BOUNDARY_DESCRIPTION: Turns the result of one Precheck process into a
+ * verdict, so no caller reads an exit code itself. The split follows grep: `0`
+ * allows the run, `1` declines it, and every other way the command can end — a
+ * higher exit code, the deadline, a command that will not spawn — is the
+ * Precheck breaking rather than saying no, which allows the run and carries the
+ * reason. Keeping the broken case apart from the declining one is the whole
+ * point: a typo that exited 127 would otherwise silence a Schedule forever and
+ * look exactly like "nothing changed". Stdout becomes context appended to the
+ * task prompt, capped so a runaway `git log` cannot flood the turn it was meant
+ * to save; stderr belongs to the pod log and never reaches the prompt.
  */
-export async function runPrecheck(
-  input: PrecheckInput,
-  log: (msg: string) => void,
-): Promise<PrecheckOutcome> {
-  const result = await runOnce({
-    command: ["bash", "-lc", input.command],
-    cwd: input.workDir,
-    timeoutMs: PRECHECK_TIMEOUT_MS,
-    env: {
-      ...process.env,
-      PLATFORM_SCHEDULE_ID: input.scheduleId,
-      ...(input.fireAt ? { PLATFORM_FIRE_AT: input.fireAt } : {}),
-      PLATFORM_LAST_RUN_AT: input.lastRunAt ?? "",
-    },
-  });
-
+export function verdictFor(result: RunOnceResult): PrecheckOutcome {
   if (result.ok) {
     const context = capped(result.value.stdout);
     return { verdict: "allowed", ...(context ? { context } : {}) };
   }
-
-  if (result.error.kind === "exited" && result.error.code === 1) {
-    log(`[precheck] ${input.scheduleId} declined this fire`);
+  if (result.error.kind === "exited" && result.error.code === 1)
     return { verdict: "declined" };
-  }
-
-  const detail = describeFailure("precheck", result.error);
-  log(`[precheck] ${input.scheduleId} ${detail}; running anyway`);
-  return { verdict: "precheck-failed", detail };
+  return {
+    verdict: "precheck-failed",
+    detail: describeFailure("precheck", result.error),
+  };
 }

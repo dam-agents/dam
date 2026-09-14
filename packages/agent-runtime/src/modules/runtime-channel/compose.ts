@@ -21,6 +21,7 @@ import { createStateStore } from "./state-store.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createExperimentExecutePlugin } from "./drivers/experiment-execute-plugin.js";
@@ -103,7 +104,7 @@ export async function composeRuntimeChannel(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      workDir: opts.workDir,
+      runPrecheck: createPrecheckRunner({ workDir: opts.workDir }),
       log,
       reporter: {
         report: (input) =>

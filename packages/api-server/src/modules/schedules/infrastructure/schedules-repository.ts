@@ -48,8 +48,13 @@ export interface SchedulesRepository {
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  recordRun(
+    id: string,
+    at: Date,
+    result: string,
+    precheckError: string | null,
+  ): Promise<void>;
   recordDecline(id: string, at: Date): Promise<void>;
-  recordPrecheckError(id: string, detail: string | null): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
@@ -253,6 +258,18 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(eq(schedulesTable.id, id));
     },
 
+    async recordRun(id, at, result, precheckError): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastFiredAt: at,
+          lastFiredResult: result,
+          lastPrecheckError: precheckError,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
     async recordDecline(id, at): Promise<void> {
       await db
         .update(schedulesTable)
@@ -262,13 +279,6 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastPrecheckError: null,
           updatedAt: new Date(),
         })
-        .where(eq(schedulesTable.id, id));
-    },
-
-    async recordPrecheckError(id, detail): Promise<void> {
-      await db
-        .update(schedulesTable)
-        .set({ lastPrecheckError: detail, updatedAt: new Date() })
         .where(eq(schedulesTable.id, id));
     },
 

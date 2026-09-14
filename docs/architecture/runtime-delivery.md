@@ -32,6 +32,8 @@ flowchart LR
   rt --> handlers
   rt -->|hello| api
   rt -->|reportArtifactTouch| api
+  rt -->|session-directory report| api
+  rt -->|schedule fire report| api
 ```
 
 The wire payload carries:

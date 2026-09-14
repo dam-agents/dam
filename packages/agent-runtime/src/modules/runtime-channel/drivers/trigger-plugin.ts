@@ -7,7 +7,7 @@ import type {
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 import type { TriggerSessionDriver } from "../../acp/index.js";
-import { runPrecheck } from "../domain/precheck.js";
+import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
 
 const IMPL_NAME = "trigger";
@@ -28,7 +28,7 @@ function withContext(task: string, context: string | undefined): string {
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
-  workDir: string;
+  runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter?: FireReporter;
 }): Plugin {
@@ -54,15 +54,14 @@ export function createTriggerPlugin(deps: {
     let task = payload.task;
 
     if (payload.precheck) {
-      const outcome = await runPrecheck(
-        {
-          command: payload.precheck,
-          workDir: deps.workDir,
-          scheduleId: payload.scheduleId,
-          ...(payload.fireAt ? { fireAt: payload.fireAt } : {}),
-          ...(payload.lastRunAt ? { lastRunAt: payload.lastRunAt } : {}),
-        },
-        deps.log,
+      const outcome = await deps.runPrecheck({
+        command: payload.precheck,
+        scheduleId: payload.scheduleId,
+        ...(payload.fireAt ? { fireAt: payload.fireAt } : {}),
+        ...(payload.lastRunAt ? { lastRunAt: payload.lastRunAt } : {}),
+      });
+      deps.log(
+        `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
       );
       await report(payload, outcome.verdict, outcome.detail);
       if (outcome.verdict === "declined") return;

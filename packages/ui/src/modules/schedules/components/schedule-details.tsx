@@ -6,6 +6,7 @@ import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
 import {
+  clampText,
   declinedSummary,
   formatRunTime,
   lastRunStatus,
@@ -49,12 +50,16 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           <p className="mt-1 mb-1 font-mono text-xs break-all whitespace-pre-wrap text-foreground">
             {precheck}
           </p>
-          <p className="mb-4 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {declined ?? "No runs declined yet."}
-            {status?.lastPrecheckError
-              ? ` · Precheck failed — ran anyway: ${status.lastPrecheckError}`
-              : ""}
           </p>
+          {status?.lastPrecheckError && (
+            <p className="mt-1 text-xs break-all whitespace-pre-wrap text-destructive">
+              Precheck failed — ran anyway:{" "}
+              {clampText(status.lastPrecheckError)}
+            </p>
+          )}
+          <div className="mb-4" />
         </>
       )}
       <div className="grid grid-cols-2 gap-3">
