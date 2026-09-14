@@ -114,7 +114,7 @@ an approval resolves rather than re-activating. Unread stays the rule it is toda
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Accept the notification-record ADR | Promote the draft to `089`, status accepted, staging and open questions written in | — |
+| 01 | ✅ Accept the notification-record ADR | Promote the draft to `089`, status accepted, staging and open questions written in | — |
 | 02 | The record and its read path | Two tables, migration, repository, owner-scoped read, agent-delete cleanup, 90-day trim | 01 |
 | 03 | The watcher that writes it | Lease-elected watcher, pull on notice, no-op-guarded upsert, domain event and hint | 02 |
 | 04 | Home reads one query | Home reads the record; hibernated agents appear; the owner-wide pod subscription is deleted | 03 |
