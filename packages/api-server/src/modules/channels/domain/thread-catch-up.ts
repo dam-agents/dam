@@ -8,6 +8,7 @@ export interface CatchUpSelection {
   readingAgentId: string;
   since: string;
   triggeringTs: string;
+  batchTs?: string[];
 }
 
 export function isAfterTs(candidate: string, floor: string): boolean {
@@ -90,10 +91,14 @@ export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,
 ): ThreadEntry<T>[] {
+  const carried = new Set([
+    selection.triggeringTs,
+    ...(selection.batchTs ?? []),
+  ]);
   return entries.filter(
     (entry) =>
       !!entry.ts &&
-      entry.ts !== selection.triggeringTs &&
+      !carried.has(entry.ts) &&
       entry.authorAgentId !== selection.readingAgentId &&
       isAfterTs(entry.ts, selection.since),
   );
