@@ -28,12 +28,12 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
-import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
 import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
@@ -229,7 +229,9 @@ export function ArtifactPreviewDialog({
             <Share size={16} />
             Share
           </Button>
-          <ArtifactSessionButton artifact={artifact} onOpened={dismiss} />
+          {!editor.editing && (
+            <ArtifactSessionButton artifact={artifact} onOpened={dismiss} />
+          )}
           <Button
             variant="outline"
             onClick={() => void downloadArtifact(artifact.id)}

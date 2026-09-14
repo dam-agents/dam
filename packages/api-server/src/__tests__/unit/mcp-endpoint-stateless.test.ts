@@ -32,6 +32,10 @@ function replica() {
     composeSkills: () => ({}),
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),
+    artifactRequestsServiceFor: () => ({}),
+    featuresServiceFor: () => ({
+      flags: async () => ({ "interactive-artifacts": false }),
+    }),
     invocationsServiceFor: () => ({}),
     experimentsServiceFor: () => ({}),
     carriesInspectorRole: async () => false,

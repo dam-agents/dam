@@ -857,14 +857,17 @@ describe("library service — an interactive artifact cannot be shared", () => {
     });
   }
 
-  it.each(["public", "restricted"] as const)("refuses the %s transition and leaves the artifact private", async (visibility) => {
-    const rows = [artifactRow({ interactive: true, visibility: "private" })];
-    const service = await serviceOver(rows);
-    await expect(
-      service.setSharing("a1", { visibility }),
-    ).rejects.toThrow(/cannot be shared/);
-    expect(rows[0]!.visibility).toBe("private");
-  });
+  it.each(["public", "restricted"] as const)(
+    "refuses the %s transition and leaves the artifact private",
+    async (visibility) => {
+      const rows = [artifactRow({ interactive: true, visibility: "private" })];
+      const service = await serviceOver(rows);
+      await expect(service.setSharing("a1", { visibility })).rejects.toThrow(
+        /cannot be shared/,
+      );
+      expect(rows[0]!.visibility).toBe("private");
+    },
+  );
 
   it("still lets the owner set a deletion date", async () => {
     const rows = [artifactRow({ interactive: true, visibility: "private" })];

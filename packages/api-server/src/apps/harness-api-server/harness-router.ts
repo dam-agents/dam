@@ -21,7 +21,10 @@ import type { ArtifactTouchService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
-import type { ArtifactLibraryServiceImpl, ArtifactRequestsServiceImpl } from "../../modules/artifact-library/index.js";
+import type {
+  ArtifactLibraryServiceImpl,
+  ArtifactRequestsServiceImpl,
+} from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import type {
   CaseStudyInspectionService,

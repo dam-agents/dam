@@ -35,10 +35,12 @@ export function createTriggerSessionDriver(deps: {
       function submitPrompt(sessionId: string): void {
         graceTimer = setTimeout(closeChannel, PROMPT_HANDOFF_GRACE_MS);
         graceTimer.unref?.();
-        void caller.request("session/prompt", {
-          sessionId,
-          prompt: [{ type: "text", text: task }],
-        }).then(closeChannel, closeChannel);
+        void caller
+          .request("session/prompt", {
+            sessionId,
+            prompt: [{ type: "text", text: task }],
+          })
+          .then(closeChannel, closeChannel);
       }
 
       try {

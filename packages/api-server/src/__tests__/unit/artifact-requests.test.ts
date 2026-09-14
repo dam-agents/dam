@@ -852,7 +852,6 @@ describe("what a settle reaches", () => {
         inserted.push(row);
         return Promise.resolve();
       },
-      upsertActorRole: () => Promise.resolve(),
     });
 
     emit({
@@ -897,7 +896,6 @@ describe("what a settle reaches", () => {
         inserted.push(row);
         return Promise.resolve();
       },
-      upsertActorRole: () => Promise.resolve(),
     });
 
     emit({

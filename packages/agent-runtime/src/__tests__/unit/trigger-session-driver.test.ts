@@ -132,6 +132,8 @@ describe("handing the prompt over", () => {
           );
         });
       },
+      isSessionRunning: () => false,
+      recycleForConfig: () => {},
       status: () => ({ idle: true, backgroundWork: [] }),
       resetSession: () => {},
       refreshEnv: () => {},

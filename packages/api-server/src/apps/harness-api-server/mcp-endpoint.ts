@@ -27,8 +27,14 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
-import { registerArtifactLibraryTools, registerArtifactRequestTools } from "../../modules/artifact-library/mcp-tools.js";
-import type { ArtifactLibraryServiceImpl, ArtifactRequestsServiceImpl } from "../../modules/artifact-library/index.js";
+import {
+  registerArtifactLibraryTools,
+  registerArtifactRequestTools,
+} from "../../modules/artifact-library/mcp-tools.js";
+import type {
+  ArtifactLibraryServiceImpl,
+  ArtifactRequestsServiceImpl,
+} from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
   type KbShareAgentOps,
@@ -909,13 +915,17 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactRequests = deps.artifactRequestsServiceFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector, flags] =
-      await Promise.all([
-        deps.channelManager.supportsUserLookup(),
-        deps.channelManager.supportsMessageReactions(),
-        deps.carriesInspectorRole(verified.owner),
-        deps.featuresServiceFor(verified.owner).flags(),
-      ]);
+    const [
+      supportsUserLookup,
+      supportsMessageReactions,
+      ownerIsInspector,
+      flags,
+    ] = await Promise.all([
+      deps.channelManager.supportsUserLookup(),
+      deps.channelManager.supportsMessageReactions(),
+      deps.carriesInspectorRole(verified.owner),
+      deps.featuresServiceFor(verified.owner).flags(),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,

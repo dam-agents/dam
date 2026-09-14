@@ -17,7 +17,10 @@ import {
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
-import { composeArtifactLibraryForOwner, composeArtifactRequestsForOwner } from "../../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  composeArtifactRequestsForOwner,
+} from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";

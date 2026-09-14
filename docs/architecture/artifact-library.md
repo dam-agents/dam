@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-09
+Last verified: 2026-09-14
 
 ## Overview
 
@@ -59,6 +59,24 @@ onto platform rails: content bytes live in the S3-compatible object store
 surface is the per-agent platform MCP server, and by-link serving happens on
 two dedicated hosts — a **share host** for the pages and a **content host** for
 the framed artifact itself.
+
+## Interactive pages
+
+An HTML artifact can be declared **interactive** at creation, a choice no
+revision can change. With the interactive-artifacts feature enabled, its
+in-app preview can ask its publishing Agent to act and receive an answer.
+The first request made from an open conversation binds the page to that
+Session; later requests always return there. A page without a binding cannot
+ask from the standalone library, and deleting its Session does not redirect
+requests into a new one. Requests live in Postgres and reach the Agent through
+[runtime delivery](runtime-delivery.md); the Agent answers through its platform
+tools. The preview reports pending requests, answers, and failures.
+
+Interactive pages remain **strictly private**, including refusing restricted
+sharing with named viewers. Their Agent works with the owner's connections,
+so neither kind of share link may expose that capability. The sharing check
+runs inside the same transaction as the visibility change. Retention stays
+available, and a separate plain artifact is the shareable alternative.
 
 ## Sharing model
 
@@ -151,7 +169,7 @@ navigation, source download); the inner document is the user content, loaded
 from the content host in an iframe. The browser's same-origin rule is the
 boundary: artifact code runs as the content origin, so it can neither read the
 share session cookie nor call the share host as the signed-in viewer. The
-sandbox blocks top-level navigation and forms, but permits scripts,
+sandbox blocks top-level navigation, but permits scripts, forms,
 same-origin access and unsandboxed popups: it does not provide an independent
 origin boundary. The content host agrees to be framed only by the share origin, and
 serves raw bytes under a sandbox directive so a document opened directly
