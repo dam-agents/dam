@@ -16,7 +16,7 @@ import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 export function CodingAgentsView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
     useAgentRows();
-  const { workingAgentIds } = useFeed();
+  const { workingAgentIds, workingByAgent } = useFeed();
   const { visible, drawByDriver } = splitTemporarySandboxes(
     agentsData?.list ?? [],
   );
@@ -73,7 +73,7 @@ export function CodingAgentsView() {
           agents={codingAgents}
           drawByDriver={drawByDriver}
           rowProps={rowProps}
-          workingAgentIds={workingAgentIds}
+          workingByAgent={workingByAgent}
           onStop={(agent) => void stopSandbox(agent)}
           onDelete={(agent) => void deleteSandbox(agent)}
         />
