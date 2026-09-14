@@ -69,7 +69,7 @@ pod may gain one sentence naming `_meta.platform.at`; do that in slice 01, not s
 |----|-------|-------|------------|
 | 01 | ✅ Runtime stamps live frames with their time | Contract field; `session-transcript` stamps `append`/`appendEcho`, never `appendReplay` | — |
 | 02 | ✅ The Claude Code history reader passes its times through | `harness-history-lib.mjs` copies each stored message's timestamp onto the frames it emits | 01 |
-| 03 | The chat shows each message's time, and the day divider | `Message.at` through the projection; relative label + hover; `threadItems` derive with day dividers | 01 |
+| 03 | ✅ The chat shows each message's time, and the day divider | `Message.at` through the projection; relative label + hover; `threadItems` derive with day dividers | 01 |
 | 04 | The run divider for scheduled runs | Runtime keeps run start times and surfaces them (load response + live notification); UI places run dividers | 03 |
 
 01 → 02 → 03 → 04 is a fine linear order. 02 is image-side and verifiable on its own; 03 is fully
@@ -87,7 +87,10 @@ visible once 01 is in (live turns) and richer once 02 is in (reopened threads).
 - **Run start** — the moment `sessionMetadata.startRun(sessionId)` fires: a non-viewer channel
   starting a turn on a machine session (`type === ScheduleCron || scheduleId`). Exactly one per
   scheduled fire; never a human reply.
-- **Message time rules (UI).** A user message's `at` is its first chunk's `at`. An assistant
+- **Message time rules (UI).** A user message's `at` is its first chunk's `at`. The client that
+  *sends* a message never receives its own echo (`appendEcho` skips the originator), so it stamps
+  its optimistic bubble with the local clock at send time; the runtime's own stamp replaces it on
+  the next reload. An assistant
   message's `at` is the latest `at` seen among its chunks and its `platform_turn_ended`, so once
   a turn ends the assistant time is when the answer finished and `assistant.at − user.at` reads as
   the turn's duration. Notices (`message.notice`) have no `at`.

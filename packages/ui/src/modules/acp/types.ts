@@ -14,8 +14,13 @@ export type AcpUpdate =
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
   | { sessionUpdate: "platform_clipped_replay"; older?: string };
 
+export interface FrameMeta {
+  replayFor?: string;
+  at?: string;
+}
+
 export type UpdateHandler = (
   update: AcpUpdate,
   sessionId: string,
-  replayFor?: string,
+  frame?: FrameMeta,
 ) => void;

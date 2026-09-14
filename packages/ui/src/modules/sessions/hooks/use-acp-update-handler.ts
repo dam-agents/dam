@@ -2,7 +2,7 @@ import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import { applyUpdate } from "../../acp/session-projection.js";
-import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
+import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export function useAcpUpdateHandler(
@@ -22,7 +22,7 @@ export function useAcpUpdateHandler(
   );
 
   return useCallback(() => {
-    return (update: AcpUpdate, sessionId: string) => {
+    return (update: AcpUpdate, sessionId: string, frame?: FrameMeta) => {
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
 
@@ -37,7 +37,7 @@ export function useAcpUpdateHandler(
       }
 
       delivery.handleUpdate(update);
-      setMessages((prev) => applyUpdate(prev, update));
+      setMessages((prev) => applyUpdate(prev, update, frame?.at));
     };
   }, [delivery, dismissStalePermission, setMessages]);
 }

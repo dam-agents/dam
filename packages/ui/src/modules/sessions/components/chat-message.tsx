@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
@@ -15,6 +16,8 @@ export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 interface Props {
   message: Message;
   isLast: boolean;
+  timeLabel?: string;
+  timeTitle?: string;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
@@ -77,6 +80,8 @@ function LoadOlderMarker({
 export const ChatMessage = memo(function ChatMessage({
   message,
   isLast,
+  timeLabel,
+  timeTitle,
   hasPendingPermission,
   onRetry,
   onFileClick,
@@ -115,9 +120,18 @@ export const ChatMessage = memo(function ChatMessage({
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-        {isAssistant ? "Agent" : "You"}
-      </span>
+      <div className="flex items-baseline gap-1.5 mb-0.5">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          {isAssistant ? "Agent" : "You"}
+        </span>
+        {timeLabel !== undefined && (
+          <Tooltip side="top" content={timeTitle}>
+            <span className="text-[11px] text-muted-foreground cursor-default">
+              {timeLabel}
+            </span>
+          </Tooltip>
+        )}
+      </div>
       {(!error || parts.length > 0 || undelivered) && (
         <div
           className={cn(

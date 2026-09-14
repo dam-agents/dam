@@ -22,6 +22,11 @@ import {
   settleReplay,
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
+
+interface CollectedUpdate {
+  update: AcpUpdate;
+  at?: string;
+}
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -188,8 +193,8 @@ export function useAcpConnection(
       const handler = makeUpdateHandler();
       const { connection, ws } = await openInitializedConnection(
         selectedAgent,
-        (update, updateSessionId, replayFor) => {
-          if (listening) handler(update, updateSessionId, replayFor);
+        (update, updateSessionId, frame) => {
+          if (listening) handler(update, updateSessionId, frame);
         },
       );
       ws.addEventListener("close", () => releaseStartSlot(holders));
@@ -257,7 +262,7 @@ export function useAcpConnection(
   const collectorRef = useRef<{
     sid: string;
     token: string;
-    updates: AcpUpdate[];
+    updates: CollectedUpdate[];
   } | null>(null);
 
   const openConnection = useCallback(async (): Promise<LiveConnection> => {
@@ -267,17 +272,17 @@ export function useAcpConnection(
     const handler = makeUpdateHandler();
     const { connection, ws } = await openInitializedConnection(
       selectedAgent,
-      (update, updateSessionId, replayFor) => {
+      (update, updateSessionId, frame) => {
         const collector = collectorRef.current;
         if (
           collector &&
           updateSessionId === collector.sid &&
-          replayFor === collector.token
+          frame?.replayFor === collector.token
         ) {
-          collector.updates.push(update);
+          collector.updates.push({ update, ...(frame.at && { at: frame.at }) });
           return;
         }
-        handler(update, updateSessionId);
+        handler(update, updateSessionId, frame);
       },
     );
     attachCloseHandler(ws);
@@ -293,7 +298,11 @@ export function useAcpConnection(
       const generation = generationRef.current;
       const live = await openConnection();
       const loadToken = crypto.randomUUID();
-      const collector = { sid, token: loadToken, updates: [] as AcpUpdate[] };
+      const collector = {
+        sid,
+        token: loadToken,
+        updates: [] as CollectedUpdate[],
+      };
       collectorRef.current = collector;
       let result: unknown;
       try {
@@ -335,14 +344,16 @@ export function useAcpConnection(
         clippedRaw === undefined
           ? null
           : platformClippedReplayMetaSchema.safeParse(clippedRaw);
-      const updates: AcpUpdate[] =
+      const updates: CollectedUpdate[] =
         clipped?.success === true
           ? [
               {
-                sessionUpdate: "platform_clipped_replay",
-                ...(clipped.data.older !== undefined
-                  ? { older: clipped.data.older }
-                  : {}),
+                update: {
+                  sessionUpdate: "platform_clipped_replay",
+                  ...(clipped.data.older !== undefined
+                    ? { older: clipped.data.older }
+                    : {}),
+                },
               },
               ...collector.updates,
             ]
@@ -350,7 +361,8 @@ export function useAcpConnection(
       const settled = dropSuperseded(
         settleReplay(
           updates.reduce<Message[]>(
-            (acc, update) => applyUpdate(acc, update),
+            (acc, collected) =>
+              applyUpdate(acc, collected.update, collected.at),
             [],
           ),
           { turnInFlight: turn.success && turn.data.inFlight },
