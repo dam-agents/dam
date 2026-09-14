@@ -88,6 +88,11 @@ import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
+import {
+  composeAttentionRetention,
+  createAttentionCleanupHook,
+  listAttentionAgentIds,
+} from "./modules/attention/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import {
@@ -936,6 +941,11 @@ export async function bootstrap() {
       cleanup: createApiKeysCleanupHook(db),
     },
     {
+      name: "attention",
+      listAgentIds: () => listAttentionAgentIds(db),
+      cleanup: createAttentionCleanupHook(db),
+    },
+    {
       name: "channels",
       listAgentIds: allChannelAgentIds(db),
       cleanup: deleteChannelsByAgent(db),
@@ -1131,6 +1141,12 @@ export async function bootstrap() {
     "session-directory-retention",
     7 * 24 * 60 * 60 * 1000,
     () => sessionDirectoryRetentionTick(),
+  );
+
+  const { retentionTick: attentionRetentionTick } =
+    composeAttentionRetention(db);
+  await periodicJobs.register("attention-retention", 24 * 60 * 60 * 1000, () =>
+    attentionRetentionTick(),
   );
 
   const apiServerDeps: ApiServerDeps = {

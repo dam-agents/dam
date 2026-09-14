@@ -39,6 +39,8 @@ export {
   invocations,
   kbShares,
   agentCaseStudies,
+  attentionRecords,
+  attentionState,
 } from "./schema.js";
 export {
   eq,

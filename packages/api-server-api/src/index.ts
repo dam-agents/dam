@@ -417,6 +417,13 @@ export {
   isAmbientThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
+export type {
+  AttentionItem,
+  AttentionItemKind,
+  AttentionList,
+  AttentionService,
+  DismissedEntry,
+} from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
