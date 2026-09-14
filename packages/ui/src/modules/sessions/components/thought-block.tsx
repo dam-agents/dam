@@ -16,7 +16,7 @@ export function ThoughtBlock({
   text: string;
   streaming: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(streaming);
   const userToggled = useRef(false);
   const { copy, copied, state: copyState } = useCopy();
 

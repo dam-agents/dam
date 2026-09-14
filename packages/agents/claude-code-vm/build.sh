@@ -29,9 +29,16 @@ AGENT_IMAGE="${AGENT_IMAGE:-platform-claude-code:latest}"
 OUT_TAG="${OUT_TAG:-platform-claude-code-vm:latest}"
 STORAGE_VOL="platform-ccvm-storage"
 # Digest-pinned: bib decides the disk layout, so a silently moved :latest would
-# change the output for an unchanged bootc image.
+# change the output for an unchanged bootc image. Safe to pin off :latest here
+# only because cosign leaves a `sha256-<digest>` tag on every published bib
+# manifest, so quay never sees one untagged and never expires it — unlike
+# skopeo below, whose old digests do vanish.
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
-SKOPEO_IMAGE="quay.io/skopeo/stable:latest@sha256:b9ca6a549aa71990d50ab390a8bddf606a6689379026aa24e7f4f70b5a43fbcd"
+# Pin to an -immutable version tag, not :latest: skopeo garbage-collects the
+# digests that :latest used to point at, and once the pinned digest is GC'd
+# every pull fails MANIFEST_UNKNOWN — which the preflight below swallows and
+# mis-reports as a loop-device failure. The -immutable tags are retained.
+SKOPEO_IMAGE="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
 
 # Preflight: osbuild assembles the disk on loop devices; containerized hosts
 # whose device cgroup blocks them (e.g. Locki sandboxes) can never build this
@@ -39,6 +46,13 @@ SKOPEO_IMAGE="quay.io/skopeo/stable:latest@sha256:b9ca6a549aa71990d50ab390a8bddf
 # Detach what the probe attaches: the loop device outlives the container, and
 # leaking one per build exhausts the kernel's 8-device default — after which
 # every later build fails this very check and blames the environment.
+# Pull first and separately: a failed pull (e.g. a GC'd digest) is not a
+# loop-device problem, and folding it into the probe below misdiagnoses it.
+if ! docker pull "$SKOPEO_IMAGE" >/dev/null 2>&1; then
+	echo "claude-code-vm: FATAL: cannot pull $SKOPEO_IMAGE" >&2
+	echo "(pull failed — check the pinned digest still exists in the registry)." >&2
+	exit 1
+fi
 if ! docker run --rm --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
 	'truncate -s 1M /tmp/probe && d=$(losetup -f --show /tmp/probe) && losetup -d "$d"' >/dev/null 2>&1; then
 	echo "claude-code-vm: FATAL: this environment cannot attach loop devices" >&2

@@ -19,11 +19,15 @@
 ARG AGENT_IMAGE=platform-claude-code:latest
 FROM ${AGENT_IMAGE} AS agent
 
-# Pinned by digest, and k3s by version below: the same commit must build the
-# same guest. dnf packages stay unpinned on purpose — Fedora mirrors drop
-# superseded NVRs within weeks, so pinning them breaks the build instead of
-# fixing it. Bump the pins deliberately, together with a full VM test.
-FROM quay.io/fedora/fedora-bootc:44@sha256:1bc549cb2909ebd1bb69e05088797dd602eee691f7deaa40f5b9914c3ce84b36
+# Tag, not digest: fedora-bootc publishes no immutable tag — :44 and its
+# per-arch variants all move — and quay expires a manifest as soon as no tag
+# points at it, so a digest pinned here 404s within weeks. That is what broke
+# main CI. dnf packages stay unpinned for the same reason: Fedora mirrors drop
+# superseded NVRs, so pinning them breaks the build instead of fixing it —
+# which also means a base digest bought little reproducibility here. k3s below
+# stays pinned by version, a tag upstream keeps forever. Bump :44 to the next
+# Fedora deliberately, together with a full VM test.
+FROM quay.io/fedora/fedora-bootc:44
 
 # runc explicitly: install_weak_deps=False drops it, and dockerd then dies on
 # startup — "failed to find runc binary" while initialising buildkit — so the
