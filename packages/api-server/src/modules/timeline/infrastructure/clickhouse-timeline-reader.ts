@@ -159,8 +159,41 @@ export function createClickhouseTimelineReader(
           errorCount: n(x.errorCount),
           services: list(x.services),
           sessionIds: list(x.sessionIds),
+          recordCount: 0,
         };
       }) satisfies TraceShape[];
+    },
+
+    async logTraceShapes(agentIds, window, limit) {
+      const r = await rows(
+        `SELECT
+           TraceId AS traceId,
+           min(Timestamp) AS startedAt,
+           max(Timestamp) AS endedAt,
+           count() AS spanCount,
+           argMin(Body, Timestamp) AS rootName,
+           arrayFilter(x -> x != '', groupUniqArray(10)(toString(ServiceName))) AS services,
+           arrayFilter(x -> x != '', groupUniqArray(10)(LogAttributes['session.id'])) AS sessionIds
+         FROM otel_logs
+         WHERE ${ownedLogs(window)}
+           AND TraceId != ''
+         GROUP BY TraceId
+         ORDER BY startedAt DESC
+         LIMIT {limit:UInt32}`,
+        { ...logParams(agentIds, window), limit },
+      );
+      return r.map((x) => ({
+        traceId: s(x.traceId),
+        startedAt: toIsoUtc(x.startedAt),
+        endedAt: toIsoUtc(x.endedAt),
+        durationMs: 0,
+        rootName: s(x.rootName),
+        spanCount: 0,
+        errorCount: 0,
+        services: list(x.services),
+        sessionIds: list(x.sessionIds),
+        recordCount: n(x.spanCount),
+      })) satisfies TraceShape[];
     },
 
     async spendByTrace(agentIds, window, traceIds) {

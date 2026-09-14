@@ -23,6 +23,7 @@ export interface TraceSummary {
   errorCount: number;
   services: string[];
   sessionIds: string[];
+  recordCount: number;
   calls: number;
   costUsd: number;
   inputTokens: number;

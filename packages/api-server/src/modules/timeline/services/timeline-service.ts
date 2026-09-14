@@ -47,6 +47,7 @@ export interface TraceShape {
   errorCount: number;
   services: string[];
   sessionIds: string[];
+  recordCount: number;
 }
 
 export interface TimelineLogFilter extends TimelineWindow {
@@ -57,6 +58,11 @@ export interface TimelineLogFilter extends TimelineWindow {
 
 export interface TimelineReader {
   traceShapes(
+    agentIds: readonly string[],
+    window: TimelineWindow,
+    limit: number,
+  ): Promise<TraceShape[]>;
+  logTraceShapes(
     agentIds: readonly string[],
     window: TimelineWindow,
     limit: number,
@@ -105,6 +111,48 @@ function detailWindow(query: TimelineTraceQuery): TimelineWindow {
   };
 }
 
+export function mergeShapes(
+  spanShapes: readonly TraceShape[],
+  logShapes: readonly TraceShape[],
+): TraceShape[] {
+  const merged = new Map<string, TraceShape>();
+  for (const shape of logShapes) merged.set(shape.traceId, shape);
+  for (const shape of spanShapes) {
+    const fromLogs = merged.get(shape.traceId);
+    merged.set(
+      shape.traceId,
+      fromLogs === undefined
+        ? shape
+        : {
+            ...shape,
+            startedAt:
+              fromLogs.startedAt !== "" && fromLogs.startedAt < shape.startedAt
+                ? fromLogs.startedAt
+                : shape.startedAt,
+            endedAt:
+              fromLogs.endedAt > shape.endedAt
+                ? fromLogs.endedAt
+                : shape.endedAt,
+            sessionIds: [
+              ...new Set([...shape.sessionIds, ...fromLogs.sessionIds]),
+            ],
+          },
+    );
+  }
+  return [...merged.values()]
+    .map((shape) => ({
+      ...shape,
+      durationMs: durationBetween(shape.startedAt, shape.endedAt),
+    }))
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+function durationBetween(startedAt: string, endedAt: string): number {
+  const from = Date.parse(startedAt);
+  const to = Date.parse(endedAt);
+  return Number.isNaN(from) || Number.isNaN(to) ? 0 : Math.max(0, to - from);
+}
+
 function boundsOf(
   spans: readonly TimelineSpan[],
   logs: readonly UnattachedLog[],
@@ -145,7 +193,11 @@ export function createTimelineService(deps: {
           ? {}
           : { sessionId: query.sessionId }),
       };
-      const shapes = await deps.reader.traceShapes(ids, window, query.limit);
+      const [spanShapes, logShapes] = await Promise.all([
+        deps.reader.traceShapes(ids, window, query.limit),
+        deps.reader.logTraceShapes(ids, window, query.limit),
+      ]);
+      const shapes = mergeShapes(spanShapes, logShapes).slice(0, query.limit);
       if (shapes.length === 0) {
         return { available: true, traces: [], truncated: false };
       }
@@ -171,7 +223,8 @@ export function createTimelineService(deps: {
       return {
         available: true,
         traces,
-        truncated: shapes.length >= query.limit,
+        truncated:
+          spanShapes.length >= query.limit || logShapes.length >= query.limit,
       };
     },
 

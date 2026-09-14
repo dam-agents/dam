@@ -20,6 +20,10 @@ function spyReader(over: Partial<TimelineReader> = {}) {
       seen.push({ ids });
       return [];
     },
+    logTraceShapes: async (ids) => {
+      seen.push({ ids });
+      return [];
+    },
     spendByTrace: async (ids) => {
       seen.push({ ids });
       return [];
@@ -161,6 +165,7 @@ describe("createTimelineService", () => {
           errorCount: 0,
           services: ["nous"],
           sessionIds: ["s1"],
+          recordCount: 0,
         },
       ],
     });
@@ -186,5 +191,110 @@ describe("createDisabledTimelineService", () => {
     const result = await service.traces({ sinceHours: 24, limit: 10 });
 
     expect(result.available).toBe(false);
+  });
+});
+
+describe("traces across both tables", () => {
+  const shape = (over: Record<string, unknown>) => ({
+    traceId: "t1",
+    startedAt: "2026-09-14T11:39:25.000Z",
+    endedAt: "2026-09-14T11:39:26.000Z",
+    durationMs: 0,
+    rootName: "claude_code.llm_request",
+    spanCount: 1,
+    errorCount: 0,
+    services: ["claude-code"],
+    sessionIds: ["s1"],
+    recordCount: 0,
+    ...over,
+  });
+
+  it("lists a trace that has log records but no spans", async () => {
+    /**
+     * TEST_SCENARIO: the harness emits a span for only some calls, so a trace
+     * known solely to the log table must still appear — the listing used to
+     * read the span table alone and dropped it.
+     */
+    const { reader } = spyReader({
+      traceShapes: async () => [],
+      logTraceShapes: async () => [
+        shape({
+          traceId: "logs-only",
+          rootName: "claude_code.api_request",
+          spanCount: 0,
+          recordCount: 2,
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.traces({ sinceHours: 24, limit: 100 });
+
+    expect(result.available).toBe(true);
+    if (result.available) {
+      expect(result.traces.map((t) => t.traceId)).toEqual(["logs-only"]);
+      expect(result.traces[0]?.spanCount).toBe(0);
+      expect(result.traces[0]?.recordCount).toBe(2);
+    }
+  });
+
+  it("shows a trace once when both tables know it, keeping the span shape", async () => {
+    const { reader } = spyReader({
+      traceShapes: async () => [shape({ traceId: "both", spanCount: 1 })],
+      logTraceShapes: async () => [
+        shape({
+          traceId: "both",
+          rootName: "claude_code.api_request",
+          spanCount: 0,
+          recordCount: 3,
+          startedAt: "2026-09-14T11:39:24.000Z",
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.traces({ sinceHours: 24, limit: 100 });
+
+    expect(result.available).toBe(true);
+    if (result.available) {
+      expect(result.traces).toHaveLength(1);
+      expect(result.traces[0]?.rootName).toBe("claude_code.llm_request");
+      expect(result.traces[0]?.spanCount).toBe(1);
+      expect(result.traces[0]?.startedAt).toBe("2026-09-14T11:39:24.000Z");
+    }
+  });
+
+  it("orders the merged listing newest first", async () => {
+    const { reader } = spyReader({
+      traceShapes: async () => [
+        shape({ traceId: "older", startedAt: "2026-09-14T11:00:00.000Z" }),
+      ],
+      logTraceShapes: async () => [
+        shape({
+          traceId: "newer",
+          startedAt: "2026-09-14T12:00:00.000Z",
+          endedAt: "2026-09-14T12:00:01.000Z",
+          spanCount: 0,
+          recordCount: 1,
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.traces({ sinceHours: 24, limit: 100 });
+
+    expect(result.available && result.traces.map((t) => t.traceId)).toEqual([
+      "newer",
+      "older",
+    ]);
   });
 });

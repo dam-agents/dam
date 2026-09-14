@@ -52,7 +52,11 @@ function TurnRow({
           {trace.errorCount > 0 && (
             <span className="text-destructive">{trace.errorCount} err</span>
           )}
-          <span>{trace.spanCount} spans</span>
+          <span>
+            {trace.spanCount > 0
+              ? `${trace.spanCount} spans`
+              : `${trace.recordCount} records`}
+          </span>
           {trace.costUsd > 0 && <span>{formatUsdCell(trace.costUsd)}</span>}
         </span>
       </span>
