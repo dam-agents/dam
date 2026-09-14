@@ -51,6 +51,20 @@ const KIND_BY_EXTENSION: ReadonlyArray<[ArtifactKind, ReadonlySet<string>]> = [
   ["text", TEXT_EXTENSIONS],
 ];
 
+const KIND_BY_MIME = new Map<string, ArtifactKind>([
+  ["text/html", "html"],
+  ["text/jsx", "jsx"],
+  ["text/markdown", "markdown"],
+  ["application/json", "code"],
+  ["application/xml", "code"],
+  ["text/csv", "text"],
+]);
+
+function kindFromContentType(contentType: string): ArtifactKind | null {
+  const mime = (contentType.split(";")[0] ?? "").trim().toLowerCase();
+  return KIND_BY_MIME.get(mime) ?? (mime.startsWith("text/") ? "text" : null);
+}
+
 export const DEFAULT_CONTENT_TYPE: Record<ArtifactKind, string> = {
   html: "text/html; charset=utf-8",
   jsx: "text/jsx; charset=utf-8",
@@ -98,16 +112,22 @@ export function looksLikeText(content: Buffer): boolean {
 export function detectKind(input: {
   explicit?: ArtifactKind;
   fileName?: string;
+  contentType?: string;
   content?: Buffer;
 }): ArtifactKind {
   if (input.explicit) return input.explicit;
-  if (input.fileName) {
-    const ext = extensionOf(input.fileName);
-    for (const [kind, exts] of KIND_BY_EXTENSION) {
-      if (exts.has(ext)) return kind;
-    }
-    if (ext !== "") return "binary";
+  const ext = input.fileName ? extensionOf(input.fileName) : "";
+  for (const [kind, exts] of KIND_BY_EXTENSION) {
+    if (exts.has(ext)) return kind;
   }
+  const fromMime = input.contentType
+    ? kindFromContentType(input.contentType)
+    : null;
+  if (fromMime === "text" && input.content && looksLikeText(input.content)) {
+    return detectTextKind(input.content.toString("utf8")) ?? "text";
+  }
+  if (fromMime) return fromMime;
+  if (ext !== "") return "binary";
   if (input.content && looksLikeText(input.content)) {
     const text = input.content.toString("utf8");
     return detectTextKind(text) ?? "text";

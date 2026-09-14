@@ -25,7 +25,9 @@ import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
+import { ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
+import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
@@ -153,14 +155,27 @@ export function DockedArtifactPanel() {
               </Button>
             )}
             {artifact && (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => setShareOpen(true)}
-              >
-                <Share size={14} />
-                Share
-              </Button>
+              <>
+                <ArtifactStatusBadge
+                  artifact={artifact}
+                  onShare={() => setShareOpen(true)}
+                />
+                {artifact.shareUrl && (
+                  <CopyLinkButton
+                    url={artifact.shareUrl}
+                    variant="outline"
+                    restricted={artifact.visibility === "restricted"}
+                  />
+                )}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setShareOpen(true)}
+                >
+                  <Share size={14} />
+                  Share
+                </Button>
+              </>
             )}
             {renderable && (
               <Button

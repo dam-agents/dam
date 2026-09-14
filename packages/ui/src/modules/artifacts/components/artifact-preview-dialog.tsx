@@ -118,7 +118,11 @@ export function ArtifactPreviewDialog({
               />
             )}
             {artifact.shareUrl && (
-              <CopyLinkButton url={artifact.shareUrl} variant="outline" />
+              <CopyLinkButton
+                url={artifact.shareUrl}
+                variant="outline"
+                restricted={artifact.visibility === "restricted"}
+              />
             )}
             {editor.editing ? (
               <>

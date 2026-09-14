@@ -8,8 +8,10 @@ The **Artifact Library** is where agents and users publish work products —
 HTML pages, React/JSX components, markdown, code, plain text, and binary
 files — organize them into **Folders**, and share them with people outside
 the platform. An **Artifact** is owner-scoped like every other resource, is
-attributed to the Agent that published it (or to the user, for manual
-uploads), and outlives both the sandbox and the agent that produced it.
+attributed to the Agent it came from — the Agent that published it, or the
+sandbox's Agent when a person promotes a workspace file (or to the user, for
+manual uploads) — and outlives both the sandbox and the agent that produced
+it.
 Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through. The history
 holds every version including the current one — creation writes the first row,
@@ -234,6 +236,17 @@ flowchart LR
   authenticated upload route on the app origin (avoiding browser↔store CORS),
   then the same create call. Downloads answer with a presigned direct link
   when the store has a browser-reachable endpoint, a relayed blob otherwise.
+- **Workspace files** promote into artifacts from the chat file panel: the
+  browser already holds the file's text, so publishing is the ordinary user
+  create/update call (with the upload route for content over the inline cap)
+  plus two extra facts — the create attributes the artifact to the sandbox's
+  agent (validated against the owner's agents), and both calls record the
+  file's workspace-relative path on the artifact as its source path. The path
+  is a plain label: the server never dereferences or validates it, and the UI
+  uses it only to decide between creating a new artifact and publishing a new
+  version of an existing one (among the agent's artifacts with a matching
+  path, the most recently updated wins). The same label is settable through
+  the MCP artifact tools.
 
 ## UI surfaces
 
@@ -256,8 +269,10 @@ flowchart LR
   state and the means to change it sit in one place; the library's artifact
   rows therefore show their share actions at rest, while every other row —
   folders here, and artifacts in the chat side panel — keeps its actions
-  behind a hover reveal. The in-app preview carries the same entry point, so
-  opening an artifact is a place to start sharing it rather than a dead end.
+  behind a hover reveal. The in-app preview and the chat panel's docked artifact
+  view carry the same entry point — badge, a copy-link control once a share
+  link exists, and an always-present Share button — so opening an artifact is
+  a place to start sharing it rather than a dead end.
   Folder membership is mutable and advisory: any artifact can be filed into
   any folder, moved to another, or taken out again from the library itself, so
   organising a library is not tied to the moment each artifact was published.
@@ -272,6 +287,9 @@ flowchart LR
 - The Home feed's session cards carry **artifact chips** — what the session
   touched since the card was last dismissed, opening the preview dialog in
   place.
+- The chat file panel's toolbar carries a **Create artifact / Sync to
+  artifact** action that publishes the open file as above and switches the
+  dock to the resulting artifact; binary and oversized files are excluded.
 - The chat view carries the same library twice over: an **Artifacts section**
   in the session sidebar, scoped to the sandbox's agent, grouped by folder and
   offering the same per-artifact actions plus drag-to-folder filing, and a
@@ -329,9 +347,13 @@ moment can produce both:
   they raise the same event. That rule is what keeps machine activity out of
   every number on this page.
 
-A publish carries the producing agent, and whether a person or an agent filed
-it is the question worth asking of this feature — so the two are distinguished
-rather than merged. Artifacts the platform writes for its own bookkeeping
+A publish carries the agent it is attributed to and the surface it came
+through, and the two answer different questions. Attribution says whose
+library section the artifact lands in — a person promoting a workspace file
+publishes with the sandbox's agent attached. The surface says who filed it:
+agent publishes arrive over the per-agent MCP server, person-driven ones over
+the browser's tRPC surface, so the person-or-agent question is asked of the
+surface, never of the attribution. Artifacts the platform writes for its own bookkeeping
 (an experiment's dashboard, script clone, or results snapshot) are marked
 internal by the caller and raise no publish at all: they are machinery, and
 counting them would report the platform's own writes as user activity.

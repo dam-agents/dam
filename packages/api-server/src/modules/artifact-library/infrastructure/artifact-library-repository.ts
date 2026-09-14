@@ -28,6 +28,7 @@ export interface ArtifactRow {
   folderId: string | null;
   title: string;
   slug: string;
+  sourcePath: string | null;
   kind: string;
   contentType: string;
   fileName: string;
@@ -97,6 +98,7 @@ export type ArtifactPatch = Partial<
     | "storageRef"
     | "sizeBytes"
     | "version"
+    | "sourcePath"
     | "visibility"
     | "expiresAt"
   >
@@ -191,6 +193,7 @@ export function createArtifactLibraryRepository(
     folderId: artifactsTable.folderId,
     title: artifactsTable.title,
     slug: artifactsTable.slug,
+    sourcePath: artifactsTable.sourcePath,
     kind: artifactsTable.kind,
     contentType: artifactsTable.contentType,
     fileName: artifactsTable.fileName,
