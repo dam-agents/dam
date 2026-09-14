@@ -39,6 +39,7 @@ export {
   invocations,
   kbShares,
   agentCaseStudies,
+  starterKitCatalogEntries,
 } from "./schema.js";
 export {
   eq,
