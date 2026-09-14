@@ -102,7 +102,11 @@ const configSchema = z.object({
   redisPassword: z.string().nullable().default(null),
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
-  acpTurnRunawayCapSeconds: z.coerce.number().int().nonnegative().default(21600),
+  acpTurnRunawayCapSeconds: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(21600),
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),

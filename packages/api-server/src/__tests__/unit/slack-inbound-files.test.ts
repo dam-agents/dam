@@ -4,7 +4,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
-import type { AcpClient } from "../../core/acp-client.js";
+import { AcpSessionLoadError, type AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
@@ -53,7 +53,7 @@ function harness(opts?: {
         : [],
     sendPrompt: async (prompt, sendOpts) => {
       if (opts?.failResume && "resumeSessionId" in sendOpts) {
-        throw new Error("resume failed");
+        throw new AcpSessionLoadError("resume failed");
       }
       if (opts?.gateFirstPrompt && prompts.length === 0) {
         prompts.push(prompt);

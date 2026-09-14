@@ -31,7 +31,10 @@ export interface TurnRecovery {
  * loop.
  */
 export function createTurnRecovery(deps: {
-  turnStatus: (instanceName: string, sessionId: string) => Promise<AcpTurnStatus>;
+  turnStatus: (
+    instanceName: string,
+    sessionId: string,
+  ) => Promise<AcpTurnStatus>;
 }): TurnRecovery {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 

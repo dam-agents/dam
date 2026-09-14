@@ -7,10 +7,11 @@ import {
   TURN_LINGER_MS,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
-import type {
-  AcpClient,
-  PromptUpdate,
-  SendPromptOpts,
+import {
+  AcpTurnAbandonedError,
+  type AcpClient,
+  type PromptUpdate,
+  type SendPromptOpts,
 } from "../../core/acp-client.js";
 import {
   EventType,
@@ -164,7 +165,12 @@ describe("slack turn presentation — owner turns", () => {
     const recs = h.records();
     const msgs = recs.filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: expect.stringContaining("Error:") });
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("Something went wrong"),
+    });
+    expect(msgs[0]).toMatchObject({
+      text: expect.not.stringContaining("boom"),
+    });
     expect(recs.filter((r) => r.kind === "status").at(-1)).toMatchObject({
       status: "",
     });
@@ -639,12 +645,15 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
-  it("a resume attempt that fails mid-turn keeps its turn resolvable after the fallback succeeds", async () => {
+  it("a resume that fails mid-turn keeps its turn resolvable while the harness may still run", async () => {
     const started = new Set<string>();
     const gates: Array<() => void> = [];
     const sendPrompt: SendPromptFn = async (_prompt, opts) => {
       if ("resumeSessionId" in opts) {
-        throw new Error("ACP connection lost (agent unreachable)");
+        throw new AcpTurnAbandonedError(
+          "connection-lost",
+          "ACP connection lost (agent unreachable)",
+        );
       }
       const meta = opts as { platformMeta?: { threadTs?: string } };
       const thread = meta.platformMeta?.threadTs ?? "unknown";
@@ -669,7 +678,8 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       teamId: "T-e2e",
     });
     await tick();
-    expect(h.turnEvents()[0]!.outcome).toBe("success");
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+    expect(h.turnEvents()[0]!.reason).toBe("relay-lost");
 
     void h.gw.fireMention({
       user: "U1",
