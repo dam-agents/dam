@@ -96,7 +96,7 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
-  markOnboardingComplete: (agentId: string) => Promise<void>;
+  markOnboardingComplete: ((agentId: string) => Promise<void>) | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
@@ -611,22 +611,25 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
-    "mark_onboarding_complete",
-    "Call this ONCE, and only when the starter kit's onboarding is genuinely finished: every value you needed from the user has been collected and written where the kit expects it, and the agent is ready to do its job unattended. Until you call this the agent counts as not fully configured, and the platform HOLDS every schedule on it — a held occurrence is skipped, not queued, so nothing fires against a half-configured agent. Calling it early is worse than calling it late: a schedule that starts running before the configuration is in place does the wrong work on a cadence. If the user abandons onboarding halfway, do not call it. Only meaningful on an agent created from a starter kit.",
-    {},
-    async () => {
-      await deps.markOnboardingComplete(agentId);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Onboarding marked complete. Schedules on this agent are now live.",
-          },
-        ],
-      };
-    },
-  );
+  if (deps.markOnboardingComplete) {
+    const markOnboardingComplete = deps.markOnboardingComplete;
+    server.tool(
+      "mark_onboarding_complete",
+      "Call this once your starter kit's onboarding is genuinely finished: every value the kit needs has been collected from the user and written where it expects it. Until you call it, the platform HOLDS every schedule on this agent — occurrences are skipped, not queued up — so calling it early is worse than calling it late. If the user abandons onboarding, leave it uncalled.",
+      {},
+      async () => {
+        await markOnboardingComplete(agentId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Onboarding marked complete. Schedules on this agent are now live.",
+            },
+          ],
+        };
+      },
+    );
+  }
 
   server.tool(
     "list_schedules",
@@ -926,8 +929,9 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       k8s: deps.k8s,
       skills,
       schedules,
-      markOnboardingComplete: (id) =>
-        deps.markOnboardingComplete(id, verified.owner),
+      markOnboardingComplete: verified.onboardingPending
+        ? (id) => deps.markOnboardingComplete(id, verified.owner)
+        : null,
       artifactLibrary,
       invocations,
       experiments,
