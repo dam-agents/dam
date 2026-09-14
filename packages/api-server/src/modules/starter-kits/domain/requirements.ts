@@ -1,18 +1,30 @@
-import {
-  expandConnectionClasses,
-  type StarterKit,
-  type StarterKitConnectionRequirement,
+import type {
+  StarterKit,
+  StarterKitConnectionRequirement,
 } from "api-server-api";
+
+export interface GrantedTemplate {
+  templateId: string;
+  familyId?: string;
+}
+
+export function satisfiesRequirement(
+  requirement: StarterKitConnectionRequirement,
+  granted: readonly GrantedTemplate[],
+): boolean {
+  return granted.some(
+    (g) =>
+      requirement.accepts.includes(g.templateId) ||
+      (g.familyId !== undefined && requirement.accepts.includes(g.familyId)),
+  );
+}
 
 export function unmetRequiredConnections(
   kit: StarterKit,
-  grantedTemplateIds: Iterable<string>,
+  granted: readonly GrantedTemplate[],
 ): StarterKitConnectionRequirement[] {
-  const granted = new Set(grantedTemplateIds);
   return kit.connections.filter(
-    (req) =>
-      req.required &&
-      ![...expandConnectionClasses(req.accepts)].some((t) => granted.has(t)),
+    (req) => req.required && !satisfiesRequirement(req, granted),
   );
 }
 

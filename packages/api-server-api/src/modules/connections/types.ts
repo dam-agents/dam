@@ -160,11 +160,18 @@ export const templateInput = z.object({
 });
 export type TemplateInput = z.infer<typeof templateInput>;
 
+export const connectionFamilyView = z.object({
+  id: z.string(),
+  title: z.string(),
+});
+export type ConnectionFamilyView = z.infer<typeof connectionFamilyView>;
+
 export const connectionTemplateView = z.object({
   id: z.string(),
   name: z.string(),
   category: connectionCategory,
   isCustom: z.boolean(),
+  family: connectionFamilyView.optional(),
   description: z.string().optional(),
   iconSlug: z.string().optional(),
   authKind: authKind,

@@ -15,6 +15,7 @@ import {
   describeAccepts,
 } from "../domain/onboarding-prompt.js";
 import {
+  type GrantedTemplate,
   kitRef,
   parseKitRef,
   unmetRequiredConnections,
@@ -32,7 +33,7 @@ export interface StarterKitsServiceDeps {
     SchedulesService,
     "createCron" | "createRRule" | "toggle" | "list"
   >;
-  connections: Pick<ConnectionsService, "listConnections">;
+  connections: Pick<ConnectionsService, "listConnections" | "listTemplates">;
   skills: Pick<SkillsService, "applyEntries">;
   wakeAgent: (agentId: string) => Promise<void>;
 }
@@ -54,12 +55,29 @@ export function createStarterKitsService(
     return loaded;
   }
 
-  async function grantedTemplateIds(
+  async function familyTitles(): Promise<ReadonlyMap<string, string>> {
+    const templates = await deps.connections.listTemplates();
+    return new Map(
+      templates.flatMap((t) =>
+        t.family ? [[t.family.id, t.family.title] as const] : [],
+      ),
+    );
+  }
+
+  async function grantedTemplates(
     connectionIds: string[],
-  ): Promise<string[]> {
+  ): Promise<GrantedTemplate[]> {
     if (connectionIds.length === 0) return [];
-    const owned = await deps.connections.listConnections();
+    const [owned, templates] = await Promise.all([
+      deps.connections.listConnections(),
+      deps.connections.listTemplates(),
+    ]);
     const byId = new Map(owned.map((c) => [c.id, c]));
+    const familyOf = new Map(
+      templates.flatMap((t) =>
+        t.family ? [[t.id, t.family.id] as const] : [],
+      ),
+    );
     return connectionIds.map((id) => {
       const conn = byId.get(id);
       if (!conn)
@@ -67,7 +85,8 @@ export function createStarterKitsService(
           code: "BAD_REQUEST",
           message: `unknown connection: ${id}`,
         });
-      return conn.templateId;
+      const familyId = familyOf.get(conn.templateId);
+      return { templateId: conn.templateId, ...(familyId ? { familyId } : {}) };
     });
   }
 
@@ -121,15 +140,17 @@ export function createStarterKitsService(
 
       const unmet = unmetRequiredConnections(
         kit,
-        await grantedTemplateIds(input.connectionIds),
+        await grantedTemplates(input.connectionIds),
       );
-      if (unmet.length > 0)
+      if (unmet.length > 0) {
+        const titles = await familyTitles();
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `missing required connection: ${unmet
-            .map((u) => describeAccepts(u.accepts))
+            .map((u) => describeAccepts(u.accepts, titles))
             .join("; ")}`,
         });
+      }
 
       const agent = await deps.agents.create({
         name: input.name,
@@ -205,6 +226,7 @@ export function createStarterKitsService(
           enabled: s.spec.enabled,
         })),
         boundChannels: agent.channels.map(() => "slack"),
+        familyTitles: await familyTitles(),
       });
     },
   };

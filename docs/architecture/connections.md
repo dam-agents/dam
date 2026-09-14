@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-09
+Last verified: 2026-09-14
 
 ## Overview
 
@@ -34,7 +34,7 @@ There are two rails. `egress-allow` and `egress-inject` Contributions sync into 
 
 A code-level catalog entry. Premade templates (GitHub, Anthropic, Spotify, Linear MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions. Custom templates (Custom MCP, Custom OAuth, Custom Header) ship the *shape* but leave the integration's identity for the user to fill in.
 
-Two display-axis attributes drive UI grouping:
+Three display-axis attributes drive UI grouping. `category` and `isCustom` place a template in a section; an optional **family** (`github`, `github-enterprise`, `kubernetes`, `modal`, `mcp-server`, `custom-header`) groups templates the catalog shows as one connect page with several methods, and is what a [starter kit](starter-kits.md) names when it accepts any method of a provider. Families are declared on the templates themselves and carried on the template view, so nothing else keeps a copy of the membership.
 
 | `category` | `isCustom` | Where the user encounters it |
 |---|---|---|

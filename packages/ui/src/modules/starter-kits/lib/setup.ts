@@ -1,8 +1,5 @@
 import {
-  connectionFamilyById,
-  connectionFamilyOf,
   type ConnectionTemplateView,
-  expandConnectionClasses,
   type HarnessFamily,
   PROVIDER_TEMPLATE_IDS,
   type ProviderPresetType,
@@ -31,6 +28,11 @@ export interface GrantedConnection {
   name?: string;
 }
 
+export type TemplateIndex = ReadonlyMap<
+  string,
+  Pick<ConnectionTemplateView, "id" | "name" | "family">
+>;
+
 export interface RequirementStatus {
   requirement: StarterKitConnectionRequirement;
   satisfied: boolean;
@@ -45,20 +47,38 @@ export function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
   ];
 }
 
+function acceptsTemplate(
+  requirement: StarterKitConnectionRequirement,
+  templateId: string,
+  templates: TemplateIndex,
+): boolean {
+  if (requirement.accepts.includes(templateId)) return true;
+  const family = templates.get(templateId)?.family;
+  return family !== undefined && requirement.accepts.includes(family.id);
+}
+
+export function ownedMatches(
+  requirement: StarterKitConnectionRequirement,
+  owned: readonly GrantedConnection[],
+  templates: TemplateIndex,
+): GrantedConnection[] {
+  return owned.filter((c) =>
+    acceptsTemplate(requirement, c.templateId, templates),
+  );
+}
+
 export function requirementStatuses(
   kit: Pick<StarterKitView, "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
+  templates: TemplateIndex,
 ): RequirementStatus[] {
   const granted = new Set(draftConnectionIds(draft));
-  const templates = new Set(
-    owned.filter((c) => granted.has(c.id)).map((c) => c.templateId),
-  );
+  const grantedConnections = owned.filter((c) => granted.has(c.id));
   return kit.connections.map((requirement) => ({
     requirement,
-    satisfied: [...expandConnectionClasses(requirement.accepts)].some((t) =>
-      templates.has(t),
-    ),
+    satisfied:
+      ownedMatches(requirement, grantedConnections, templates).length > 0,
   }));
 }
 
@@ -66,11 +86,12 @@ export function isStarterKitSetupComplete(
   kit: Pick<StarterKitView, "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
+  templates: TemplateIndex,
 ): boolean {
   if (draft.name.trim().length === 0) return false;
   if (!kit.image && draft.templateId === null) return false;
   if (draft.providerRef === null) return false;
-  return requirementStatuses(kit, draft, owned).every(
+  return requirementStatuses(kit, draft, owned, templates).every(
     (s) => s.satisfied || !s.requirement.required,
   );
 }
@@ -79,8 +100,9 @@ export function buildStarterKitApplyInput(
   kit: Pick<StarterKitView, "id" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
+  templates: TemplateIndex,
 ): StarterKitApplyInput {
-  if (!isStarterKitSetupComplete(kit, draft, owned)) {
+  if (!isStarterKitSetupComplete(kit, draft, owned, templates)) {
     throw new Error(
       "cannot build starter kit apply input from an incomplete draft",
     );
@@ -94,6 +116,24 @@ export function buildStarterKitApplyInput(
     ...(slackChannelId ? { slackChannelId } : {}),
     skipSchedules: draft.skippedSchedules,
   };
+}
+
+export function preselectedGrants(
+  kit: Pick<StarterKitView, "connections">,
+  owned: readonly GrantedConnection[],
+  granted: readonly string[],
+  templates: TemplateIndex,
+): string[] {
+  const grantedSet = new Set(granted);
+  const out: string[] = [];
+  for (const requirement of kit.connections) {
+    if (!requirement.required) continue;
+    const matches = ownedMatches(requirement, owned, templates);
+    if (matches.length !== 1) continue;
+    if (matches.some((c) => grantedSet.has(c.id))) continue;
+    out.push(matches[0].id);
+  }
+  return out;
 }
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -126,6 +166,15 @@ export function providerPolicyForKit(
   return { allow, recommended };
 }
 
+function familiesIn(
+  templates: TemplateIndex,
+): Map<string, { id: string; title: string }> {
+  const out = new Map<string, { id: string; title: string }>();
+  for (const t of templates.values())
+    if (t.family && !out.has(t.family.id)) out.set(t.family.id, t.family);
+  return out;
+}
+
 export interface ConnectTarget {
   key: string;
   label: string;
@@ -135,25 +184,26 @@ export interface ConnectTarget {
 
 export function connectTargets(
   requirement: StarterKitConnectionRequirement,
-  templateById: ReadonlyMap<string, ConnectionTemplateView>,
+  templates: TemplateIndex,
 ): ConnectTarget[] {
+  const families = familiesIn(templates);
   const out: ConnectTarget[] = [];
   const seen = new Set<string>();
   for (const id of requirement.accepts) {
-    const family = connectionFamilyById(id);
+    const family = families.get(id);
     if (family) {
       if (seen.has(family.id)) continue;
       seen.add(family.id);
       out.push({ key: family.id, label: family.title, providerId: family.id });
       continue;
     }
-    const template = templateById.get(id);
+    const template = templates.get(id);
     if (!template || seen.has(id)) continue;
     seen.add(id);
     out.push({
       key: id,
       label: template.name,
-      providerId: connectionFamilyOf(id)?.id ?? id,
+      providerId: template.family?.id ?? id,
       templateId: id,
     });
   }
@@ -162,13 +212,11 @@ export function connectTargets(
 
 export function describeAccepts(
   ids: readonly string[],
-  templateById: ReadonlyMap<string, Pick<ConnectionTemplateView, "name">>,
+  templates: TemplateIndex,
 ): string {
+  const families = familiesIn(templates);
   return ids
-    .map(
-      (id) =>
-        connectionFamilyById(id)?.title ?? templateById.get(id)?.name ?? id,
-    )
+    .map((id) => families.get(id)?.title ?? templates.get(id)?.name ?? id)
     .join(" or ");
 }
 
@@ -185,31 +233,6 @@ export function toggleSkipped(
   return skipped.includes(name)
     ? skipped.filter((n) => n !== name)
     : [...skipped, name];
-}
-
-export function ownedMatches(
-  requirement: StarterKitConnectionRequirement,
-  owned: readonly GrantedConnection[],
-): GrantedConnection[] {
-  const accepted = expandConnectionClasses(requirement.accepts);
-  return owned.filter((c) => accepted.has(c.templateId));
-}
-
-export function preselectedGrants(
-  kit: Pick<StarterKitView, "connections">,
-  owned: readonly GrantedConnection[],
-  granted: readonly string[],
-): string[] {
-  const grantedSet = new Set(granted);
-  const out: string[] = [];
-  for (const requirement of kit.connections) {
-    if (!requirement.required) continue;
-    const matches = ownedMatches(requirement, owned);
-    if (matches.length !== 1) continue;
-    if (matches.some((c) => grantedSet.has(c.id))) continue;
-    out.push(matches[0].id);
-  }
-  return out;
 }
 
 const HARNESS_LABEL: Record<HarnessFamily, string> = {

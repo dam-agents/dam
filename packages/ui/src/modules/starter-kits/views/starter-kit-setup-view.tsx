@@ -105,18 +105,31 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     skippedSchedules: form.skippedSchedules,
   };
   const owned = connections.data ?? [];
-  const statuses = requirementStatuses(kit, draft, owned);
+  const statuses = requirementStatuses(kit, draft, owned, templateById);
   const preselected = useRef(false);
   useEffect(() => {
-    if (preselected.current || connections.data === undefined) return;
+    if (preselected.current) return;
+    if (
+      connections.data === undefined ||
+      connectionTemplates.data === undefined
+    )
+      return;
     preselected.current = true;
     for (const id of preselectedGrants(
       kit,
       connections.data,
       form.connectionIds,
+      templateById,
     ))
       toggleConnection(id, true);
-  }, [kit, connections.data, form.connectionIds, toggleConnection]);
+  }, [
+    kit,
+    connections.data,
+    connectionTemplates.data,
+    templateById,
+    form.connectionIds,
+    toggleConnection,
+  ]);
   const providerSource = bringsImage
     ? kit.image
     : (templates.data?.find((t) => t.id === form.templateId) ?? null);
@@ -126,7 +139,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   );
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
   const canApply =
-    isStarterKitSetupComplete(kit, draft, owned) &&
+    isStarterKitSetupComplete(kit, draft, owned, templateById) &&
     !noCompatibleProvider &&
     !apply.isPending;
 
@@ -134,7 +147,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     if (!canApply) return;
     try {
       const result = await apply.mutateAsync(
-        buildStarterKitApplyInput(kit, draft, owned),
+        buildStarterKitApplyInput(kit, draft, owned, templateById),
       );
       reset();
       const skipped = result.skills?.skipped.length ?? 0;
@@ -237,17 +250,19 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                   )}
                   {!satisfied && !isProviderRequirement(requirement) && (
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {ownedMatches(requirement, owned).map((c) => (
-                        <Button
-                          key={`use-${c.id}`}
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => toggleConnection(c.id, true)}
-                          data-testid={`starter-kit-use-${c.id}`}
-                        >
-                          Use {c.name ?? c.id}
-                        </Button>
-                      ))}
+                      {ownedMatches(requirement, owned, templateById).map(
+                        (c) => (
+                          <Button
+                            key={`use-${c.id}`}
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => toggleConnection(c.id, true)}
+                            data-testid={`starter-kit-use-${c.id}`}
+                          >
+                            Use {c.name ?? c.id}
+                          </Button>
+                        ),
+                      )}
                       {connectTargets(requirement, templateById).map((t) => (
                         <Button
                           key={t.key}

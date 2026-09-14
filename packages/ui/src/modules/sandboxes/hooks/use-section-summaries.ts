@@ -18,7 +18,10 @@ import {
   sandboxSubtitleParts,
 } from "../../agents/utils/sandbox-subtitle.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import {
+  useAppConnections,
+  useConnectionTemplates,
+} from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
@@ -98,6 +101,11 @@ export function useSectionSummaries(agent: AgentView | null): {
     return staleModel.stale ? `${base} · not offered` : base;
   }, [agent, templates, apps, modelName, staleModel.stale]);
 
+  const connectionTemplates = useConnectionTemplates();
+  const templateById = useMemo(
+    () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
+    [connectionTemplates.data],
+  );
   const connections = useMemo(() => {
     if (!connectionsQuery.data) return undefined;
     const titles = connectionsQuery.data.connections
@@ -105,9 +113,11 @@ export function useSectionSummaries(agent: AgentView | null): {
       .filter((id) => !providerAppIds.has(id))
       .map((id) => apps.find((a) => a.id === id))
       .filter((a) => a !== undefined)
-      .map((a) => catalogProviderTitle(a.templateId) ?? a.name);
+      .map(
+        (a) => catalogProviderTitle(templateById.get(a.templateId)) ?? a.name,
+      );
     return formatNameList([...new Set(titles)]) ?? "No connections added";
-  }, [connectionsQuery.data, apps, providerAppIds]);
+  }, [connectionsQuery.data, apps, providerAppIds, templateById]);
 
   const skills = useMemo(() => {
     if (configPending) return undefined;

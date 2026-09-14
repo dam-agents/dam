@@ -1,27 +1,32 @@
-import { connectionFamilyById, type StarterKit } from "api-server-api";
+import type { StarterKit } from "api-server-api";
 
 export interface OnboardingFacts {
   kit: StarterKit;
   version: string;
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
+  familyTitles: ReadonlyMap<string, string>;
 }
 
-export function describeAccepts(ids: readonly string[]): string {
+export function describeAccepts(
+  ids: readonly string[],
+  familyTitles: ReadonlyMap<string, string>,
+): string {
   return ids
     .map((id) => {
-      const family = connectionFamilyById(id);
-      return family ? `${family.title} (any method)` : id;
+      const title = familyTitles.get(id);
+      return title ? `${title} (any method)` : id;
     })
     .join(" or ");
 }
 
-function connectionLines(kit: StarterKit): string[] {
+function connectionLines(facts: OnboardingFacts): string[] {
+  const { kit } = facts;
   if (kit.connections.length === 0) return ["- Connections: none declared."];
   return kit.connections.map((req) => {
     const level = req.required ? "required, granted at create" : "suggested";
     const note = req.note ? ` — ${req.note}` : "";
-    return `- Connection (${level}): ${describeAccepts(req.accepts)}${note}`;
+    return `- Connection (${level}): ${describeAccepts(req.accepts, facts.familyTitles)}${note}`;
   });
 }
 
@@ -61,7 +66,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     definitionLine(kit),
     "",
     "The platform already set up the following. Do not recreate any of it; verify with the tools available to you and ask only for what remains.",
-    ...connectionLines(kit),
+    ...connectionLines(facts),
     ...scheduleLines(facts),
     channelLine(facts),
     "",

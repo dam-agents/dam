@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   Agent,
   AgentCreateInput,
+  ConnectionTemplateView,
   ConnectionView,
   Schedule,
   StarterKit,
@@ -137,6 +138,9 @@ function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
           connection("c-slack", "slack"),
         ];
       },
+      async listTemplates() {
+        return TEMPLATES;
+      },
     },
     skills: {
       async applyEntries(input) {
@@ -158,6 +162,14 @@ function makeHarness(loaded: LoadedKit | null, agent: Agent | null = null) {
 }
 
 const LOADED: LoadedKit = { kit: kit(), version: "abc123", source: "/catalog" };
+
+const GITHUB = { id: "github", title: "GitHub" };
+const TEMPLATES = [
+  { id: "github-app", name: "GitHub App", family: GITHUB },
+  { id: "github-pat", name: "GitHub PAT", family: GITHUB },
+  { id: "slack", name: "Slack" },
+  { id: "ibm-litellm", name: "IBM LiteLLM" },
+] as ConnectionTemplateView[];
 
 describe("starter kits: apply", () => {
   it("creates the agent, seeds schedules with optional ones disabled, binds Slack and wakes", async () => {
@@ -292,6 +304,7 @@ describe("starter kits: apply", () => {
       },
       connections: {
         listConnections: async () => [connection("c-gh", "github-app")],
+        listTemplates: async () => TEMPLATES,
       },
       skills: {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
@@ -388,6 +401,7 @@ describe("starter kits: apply", () => {
       },
       connections: {
         listConnections: async () => [connection("c-gh", "github-app")],
+        listTemplates: async () => TEMPLATES,
       },
       skills: {
         applyEntries: async () => {
@@ -454,6 +468,7 @@ describe("starter kits: onboarding prompt", () => {
       version: "v1",
       schedules: [],
       boundChannels: ["slack"],
+      familyTitles: new Map(),
     });
     expect(prompt.endsWith("Run /setup.")).toBe(true);
     expect(prompt).not.toContain("ONBOARDING.md");
@@ -463,20 +478,30 @@ describe("starter kits: onboarding prompt", () => {
 
 describe("starter kits: domain helpers", () => {
   it("finds required connections no granted template satisfies", () => {
-    const unmet = unmetRequiredConnections(kit(), ["slack"]);
+    const unmet = unmetRequiredConnections(kit(), [{ templateId: "slack" }]);
     expect(unmet.map((u) => u.accepts)).toEqual([["github-app", "github-pat"]]);
-    expect(unmetRequiredConnections(kit(), ["github-pat"])).toEqual([]);
+    expect(
+      unmetRequiredConnections(kit(), [{ templateId: "github-pat" }]),
+    ).toEqual([]);
   });
 
-  it("expands a connection family to every template in it", () => {
+  it("accepts a granted template by its own id or by its family", () => {
     const familyKit = kit({
       connections: [{ accepts: ["github"], required: true }],
     });
-    expect(unmetRequiredConnections(familyKit, ["github-app"])).toEqual([]);
     expect(
-      unmetRequiredConnections(familyKit, ["github-enterprise-pat"]),
+      unmetRequiredConnections(familyKit, [
+        { templateId: "github-app", familyId: "github" },
+      ]),
+    ).toEqual([]);
+    expect(
+      unmetRequiredConnections(familyKit, [
+        { templateId: "github-enterprise-pat", familyId: "github-enterprise" },
+      ]),
     ).toHaveLength(1);
-    expect(unmetRequiredConnections(familyKit, ["slack"])).toHaveLength(1);
+    expect(
+      unmetRequiredConnections(familyKit, [{ templateId: "slack" }]),
+    ).toHaveLength(1);
   });
 
   it("parses kit refs", () => {

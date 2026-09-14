@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: the starter-kit setup form submits only when the name, a harness
-// TEST_OVERVIEW: (unless the kit pins one), a provider and every required connection
-// TEST_OVERVIEW: requirement are covered; the provider counts as a granted connection.
+// TEST_OVERVIEW: (unless the kit brings its own image), a provider and every required
+// TEST_OVERVIEW: connection requirement are covered; requirements accept a template by its
+// TEST_OVERVIEW: id or by the family its template declares, and the provider counts as granted.
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
@@ -18,8 +19,22 @@ import {
   requirementStatuses,
   shortKitVersion,
   type StarterKitSetupDraft,
+  type TemplateIndex,
   toggleSkipped,
 } from "../../modules/starter-kits/lib/setup.js";
+
+const GITHUB = { id: "github", title: "GitHub" };
+const GHE = { id: "github-enterprise", title: "GitHub Enterprise" };
+const templates: TemplateIndex = new Map([
+  ["github-pat", { id: "github-pat", name: "GitHub PAT", family: GITHUB }],
+  ["github-app", { id: "github-app", name: "GitHub App", family: GITHUB }],
+  [
+    "github-enterprise-pat",
+    { id: "github-enterprise-pat", name: "GHE PAT", family: GHE },
+  ],
+  ["slack", { id: "slack", name: "Slack" }],
+  ["ibm-litellm", { id: "ibm-litellm", name: "IBM LiteLLM" }],
+]);
 
 const kit: Pick<StarterKitView, "id" | "image" | "connections"> = {
   id: "code-reviewer",
@@ -31,9 +46,9 @@ const kit: Pick<StarterKitView, "id" | "image" | "connections"> = {
 };
 
 const owned = [
-  { id: "c-gh", templateId: "github-pat" },
-  { id: "c-slack", templateId: "slack" },
-  { id: "c-llm", templateId: "ibm-litellm" },
+  { id: "c-gh", templateId: "github-pat", name: "bot token" },
+  { id: "c-slack", templateId: "slack", name: "workspace" },
+  { id: "c-llm", templateId: "ibm-litellm", name: "proxy" },
 ];
 
 const complete: StarterKitSetupDraft = {
@@ -46,10 +61,27 @@ const complete: StarterKitSetupDraft = {
 };
 
 describe("requirementStatuses", () => {
-  test("marks a requirement satisfied when any granted connection matches one of its templates", () => {
+  test("marks a requirement satisfied when a granted connection's template is accepted", () => {
     expect(
-      requirementStatuses(kit, complete, owned).map((s) => s.satisfied),
+      requirementStatuses(kit, complete, owned, templates).map(
+        (s) => s.satisfied,
+      ),
     ).toEqual([true, false]);
+  });
+
+  test("accepts a template through the family it declares", () => {
+    const familyKit = {
+      connections: [{ accepts: ["github"], required: true }],
+    };
+    expect(
+      requirementStatuses(familyKit, complete, owned, templates)[0].satisfied,
+    ).toBe(true);
+    const gheOnly = {
+      connections: [{ accepts: ["github-enterprise"], required: true }],
+    };
+    expect(
+      requirementStatuses(gheOnly, complete, owned, templates)[0].satisfied,
+    ).toBe(false);
   });
 
   test("counts the provider connection as granted", () => {
@@ -61,6 +93,7 @@ describe("requirementStatuses", () => {
         providerKit,
         { ...complete, connectionIds: [] },
         owned,
+        templates,
       )[0].satisfied,
     ).toBe(true);
   });
@@ -68,7 +101,9 @@ describe("requirementStatuses", () => {
 
 describe("isStarterKitSetupComplete", () => {
   test("requires name, harness, provider and every required connection", () => {
-    expect(isStarterKitSetupComplete(kit, complete, owned)).toBe(true);
+    expect(isStarterKitSetupComplete(kit, complete, owned, templates)).toBe(
+      true,
+    );
     for (const patch of [
       { name: "  " },
       { templateId: null },
@@ -76,7 +111,12 @@ describe("isStarterKitSetupComplete", () => {
       { connectionIds: [] },
     ]) {
       expect(
-        isStarterKitSetupComplete(kit, { ...complete, ...patch }, owned),
+        isStarterKitSetupComplete(
+          kit,
+          { ...complete, ...patch },
+          owned,
+          templates,
+        ),
       ).toBe(false);
     }
   });
@@ -87,18 +127,20 @@ describe("isStarterKitSetupComplete", () => {
         { ...kit, image: { ref: "quay.io/acme/nous:1" } },
         { ...complete, templateId: null },
         owned,
+        templates,
       ),
     ).toBe(true);
   });
 });
 
 describe("buildStarterKitApplyInput", () => {
-  test("trims the name, merges the provider into the grants and passes the Slack channel", () => {
+  test("trims the name, merges the provider into the grants, passes Slack and skipped schedules", () => {
     expect(
       buildStarterKitApplyInput(
         kit,
         { ...complete, skippedSchedules: ["benchmark"] },
         owned,
+        templates,
       ),
     ).toEqual({
       kitId: "code-reviewer",
@@ -115,6 +157,7 @@ describe("buildStarterKitApplyInput", () => {
       { ...kit, image: { ref: "quay.io/acme/nous:1" } },
       { ...complete, templateId: null, slackChannelId: "" },
       owned,
+      templates,
     );
     expect(input).not.toHaveProperty("templateId");
     expect(input).not.toHaveProperty("slackChannelId");
@@ -122,7 +165,12 @@ describe("buildStarterKitApplyInput", () => {
 
   test("refuses an incomplete draft", () => {
     expect(() =>
-      buildStarterKitApplyInput(kit, { ...complete, providerRef: null }, owned),
+      buildStarterKitApplyInput(
+        kit,
+        { ...complete, providerRef: null },
+        owned,
+        templates,
+      ),
     ).toThrow();
   });
 });
@@ -140,14 +188,12 @@ describe("shortKitVersion", () => {
 describe("providerPolicyForKit", () => {
   const base = { recommended: "ibm-litellm" as const };
   test("narrows the provider picker to the kit's provider requirement", () => {
-    const policy = providerPolicyForKit(
-      { connections: [{ accepts: ["anthropic", "openai"], required: true }] },
-      base,
-    );
-    expect(policy).toEqual({
-      allow: ["anthropic", "openai"],
-      recommended: "anthropic",
-    });
+    expect(
+      providerPolicyForKit(
+        { connections: [{ accepts: ["anthropic", "openai"], required: true }] },
+        base,
+      ),
+    ).toEqual({ allow: ["anthropic", "openai"], recommended: "anthropic" });
   });
   test("keeps the base recommendation when the kit allows it", () => {
     expect(
@@ -167,51 +213,6 @@ describe("providerPolicyForKit", () => {
     expect(isProviderRequirement({ accepts: ["bob"], required: false })).toBe(
       true,
     );
-  });
-});
-
-describe("describeAccepts", () => {
-  test("names families, then templates the catalog knows, then falls back to the id", () => {
-    const byId = new Map([["github-app", { name: "GitHub App" }]]);
-    expect(describeAccepts(["github", "github-app", "github-pat"], byId)).toBe(
-      "GitHub or GitHub App or github-pat",
-    );
-  });
-});
-
-describe("connection families", () => {
-  test("a family requirement is satisfied by any of its templates", () => {
-    const familyKit = {
-      connections: [{ accepts: ["github"], required: true }],
-    };
-    const draft = { ...complete, connectionIds: ["c-gh"], providerRef: null };
-    expect(requirementStatuses(familyKit, draft, owned)[0].satisfied).toBe(
-      true,
-    );
-    expect(
-      requirementStatuses(familyKit, { ...draft, connectionIds: [] }, owned)[0]
-        .satisfied,
-    ).toBe(false);
-  });
-
-  test("connect targets open the family page once, and a bare template opens its family preselected", () => {
-    const byId = new Map<string, { id: string; name: string }>([
-      ["github-app", { id: "github-app", name: "GitHub App" }],
-      ["slack", { id: "slack", name: "Slack" }],
-    ]);
-    const targets = connectTargets(
-      {
-        accepts: ["github", "github-enterprise", "github-app", "slack"],
-        required: true,
-      },
-      byId as never,
-    );
-    expect(targets.map((t) => [t.label, t.providerId, t.templateId])).toEqual([
-      ["GitHub", "github", undefined],
-      ["GitHub Enterprise", "github-enterprise", undefined],
-      ["GitHub App", "github", "github-app"],
-      ["Slack", "slack", "slack"],
-    ]);
   });
 });
 
@@ -244,6 +245,63 @@ describe("narrowPolicyToTemplate", () => {
   });
 });
 
+describe("families on the template view", () => {
+  test("describeAccepts names a family, then a template, then falls back to the id", () => {
+    expect(describeAccepts(["github", "github-app", "nope"], templates)).toBe(
+      "GitHub or GitHub App or nope",
+    );
+  });
+
+  test("connect targets open a family page once, and a bare template opens its family preselected", () => {
+    const targets = connectTargets(
+      {
+        accepts: ["github", "github-enterprise", "github-app", "slack"],
+        required: true,
+      },
+      templates,
+    );
+    expect(targets.map((t) => [t.label, t.providerId, t.templateId])).toEqual([
+      ["GitHub", "github", undefined],
+      ["GitHub Enterprise", "github-enterprise", undefined],
+      ["GitHub App", "github", "github-app"],
+      ["Slack", "slack", "slack"],
+    ]);
+  });
+
+  test("ownedMatches lists the owned connections a requirement accepts", () => {
+    expect(
+      ownedMatches(
+        { accepts: ["github"], required: true },
+        owned,
+        templates,
+      ).map((c) => c.id),
+    ).toEqual(["c-gh"]);
+    expect(
+      ownedMatches(
+        { accepts: ["slack"], required: false },
+        owned,
+        templates,
+      ).map((c) => c.id),
+    ).toEqual(["c-slack"]);
+  });
+
+  test("preselects the single owned match of a required requirement, never a suggested or ambiguous one", () => {
+    const twoReqs = {
+      connections: [
+        { accepts: ["github"], required: true },
+        { accepts: ["slack"], required: false },
+      ],
+    };
+    expect(preselectedGrants(twoReqs, owned, [], templates)).toEqual(["c-gh"]);
+    expect(preselectedGrants(twoReqs, owned, ["c-gh"], templates)).toEqual([]);
+    const twoGithub = [
+      ...owned,
+      { id: "c-gh2", templateId: "github-app", name: "org app" },
+    ];
+    expect(preselectedGrants(twoReqs, twoGithub, [], templates)).toEqual([]);
+  });
+});
+
 describe("schedules", () => {
   test("toggles a schedule in and out of the skipped set", () => {
     expect(toggleSkipped([], "a")).toEqual(["a"]);
@@ -267,37 +325,5 @@ describe("schedules", () => {
         timezone: "Europe/Prague",
       }),
     ).toMatch(/\(Europe\/Prague\)$/);
-  });
-});
-
-describe("existing connections", () => {
-  const ownedWithNames = [
-    { id: "c-gh", templateId: "github-pat", name: "bot token" },
-    { id: "c-gh2", templateId: "github-app", name: "org app" },
-    { id: "c-slack", templateId: "slack", name: "workspace" },
-  ];
-  test("lists the owned connections a requirement accepts, expanding families", () => {
-    expect(
-      ownedMatches({ accepts: ["github"], required: true }, ownedWithNames).map(
-        (c) => c.id,
-      ),
-    ).toEqual(["c-gh", "c-gh2"]);
-    expect(
-      ownedMatches({ accepts: ["slack"], required: false }, ownedWithNames).map(
-        (c) => c.id,
-      ),
-    ).toEqual(["c-slack"]);
-  });
-  test("pre-selects the single owned match of a required requirement, never a suggested one or an ambiguous one", () => {
-    const twoGithub = {
-      connections: [
-        { accepts: ["github"], required: true },
-        { accepts: ["slack"], required: false },
-      ],
-    };
-    expect(preselectedGrants(twoGithub, ownedWithNames, [])).toEqual([]);
-    const oneGithub = ownedWithNames.filter((c) => c.id !== "c-gh2");
-    expect(preselectedGrants(twoGithub, oneGithub, [])).toEqual(["c-gh"]);
-    expect(preselectedGrants(twoGithub, oneGithub, ["c-gh"])).toEqual([]);
   });
 });
