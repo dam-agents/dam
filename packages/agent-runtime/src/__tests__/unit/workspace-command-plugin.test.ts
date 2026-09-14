@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { DispatchContext } from "agent-runtime-api";
+import type { EventContext } from "agent-runtime-api";
 import {
   createWorkspaceCommandPlugin,
   type RunCommandFn,
@@ -18,7 +18,8 @@ function setup(run: RunCommandFn) {
     log: () => {},
     run,
   }).bindEvent!("workspace-command", { impl: "workspace-command" });
-  const ctx: DispatchContext = {
+  const ctx: EventContext = {
+    eventId: "evt-1:1",
     agentHome: root,
     pluginStateDir,
     log: () => {},

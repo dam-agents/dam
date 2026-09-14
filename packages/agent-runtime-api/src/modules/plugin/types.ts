@@ -14,9 +14,13 @@ export type KindHandler = (
   ctx: DispatchContext,
 ) => Promise<void>;
 
+export interface EventContext extends DispatchContext {
+  readonly eventId: string;
+}
+
 export type EventHandler = (
   payload: unknown,
-  ctx: DispatchContext,
+  ctx: EventContext,
 ) => Promise<void>;
 
 export type DriverBinding = Readonly<{ impl: string }> &

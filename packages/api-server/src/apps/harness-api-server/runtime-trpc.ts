@@ -5,7 +5,6 @@ import type {
   HarnessContext,
   KbPublishGate,
   RuntimeDeliveryService,
-  ScheduleFireReporting,
   SessionDirectoryService,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
@@ -18,7 +17,6 @@ export interface RuntimeTrpcDeps {
   sessionDirectory: SessionDirectoryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
   kbPublish: KbPublishGate;
-  scheduleFireReporting: ScheduleFireReporting;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -53,7 +51,6 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         sessionDirectory: deps.sessionDirectory,
         artifactTouches: deps.artifactTouchesFor(verified.owner),
         kbPublish: deps.kbPublish,
-        scheduleFireReporting: deps.scheduleFireReporting,
       }),
     });
   });

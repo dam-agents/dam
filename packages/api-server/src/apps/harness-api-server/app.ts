@@ -185,10 +185,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     sessionDirectory,
     kbPublishGate,
-    scheduleFireReporting: {
-      reportFire: (agentId, input) =>
-        deps.schedulesBoot.runner.reportFire(agentId, input),
-    },
     composeSkills: (owner) =>
       composeSkillsModule({
         agentStateCache: deps.agentStateCache,

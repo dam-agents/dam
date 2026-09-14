@@ -1,4 +1,4 @@
-import type { ScheduleFireReportInput } from "api-server-api";
+import type { EventOutcome, PrecheckVerdict } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
@@ -20,7 +20,12 @@ export interface SchedulerRunner {
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
   restoreAll(): Promise<void>;
-  reportFire(agentId: string, input: ScheduleFireReportInput): Promise<void>;
+  reportFire(input: {
+    scheduleId: string;
+    eventId: string;
+    outcome: EventOutcome;
+    detail?: string;
+  }): Promise<void>;
 }
 
 export interface SchedulerRunnerDeps {
@@ -35,9 +40,11 @@ export interface SchedulerRunnerDeps {
   triggerTtlSeconds?: number;
 }
 
-function stampKey(scheduleId: string, fireAt: Date): string {
-  return `${scheduleId}:${fireAt.getTime()}`;
-}
+const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
+  ok: "allowed",
+  declined: "declined",
+  failed: "precheck-failed",
+};
 
 export function createSchedulerRunner(
   deps: SchedulerRunnerDeps,
@@ -104,9 +111,7 @@ export function createSchedulerRunner(
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       const stamp = await deps.wakeAgent(sched.agentId);
       if (stamp && sched.spec.precheck && deps.activityStamps)
-        await deps.activityStamps
-          .set(stampKey(scheduleId, fireAt), stamp)
-          .catch(() => {});
+        await deps.activityStamps.set(eventId, stamp).catch(() => {});
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
@@ -163,40 +168,35 @@ export function createSchedulerRunner(
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
     },
 
-    async reportFire(agentId, input): Promise<void> {
+    async reportFire(input): Promise<void> {
       const sched = await deps.repo.getById(input.scheduleId);
-      if (!sched || sched.agentId !== agentId) return;
-      const emitPrecheckReported = async (): Promise<void> => {
-        try {
-          const ownerSub = await deps.repo.getOwnerById(input.scheduleId);
-          if (ownerSub)
-            emit({
-              type: EventType.SchedulePrecheckReported,
-              scheduleId: input.scheduleId,
-              agentId,
-              ownerSub,
-            });
-        } catch (err) {
-          log(`report: emit failed: ${(err as Error).message}`);
-        }
-      };
+      if (!sched) return;
+      const verdict = VERDICT[input.outcome];
       await deps.repo.applyStatusPatch(
         input.scheduleId,
-        statusForVerdict(
-          input.verdict,
-          now(),
-          input.detail ?? "precheck failed",
-        ),
+        statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
       );
-      if (input.verdict === "declined") {
-        const key = stampKey(input.scheduleId, new Date(input.fireAt));
-        const stamp = await deps.activityStamps?.consume(key);
+      if (verdict === "declined") {
+        const stamp = await deps.activityStamps?.consume(input.eventId);
         if (stamp && deps.restoreActivity)
-          await deps.restoreActivity(agentId, stamp).catch((err: Error) => {
-            log(`report: activity restore failed: ${err.message}`);
-          });
+          await deps
+            .restoreActivity(sched.agentId, stamp)
+            .catch((err: Error) =>
+              log(`report: activity restore failed: ${err.message}`),
+            );
       }
-      await emitPrecheckReported();
+      try {
+        const ownerSub = await deps.repo.getOwnerById(input.scheduleId);
+        if (ownerSub)
+          emit({
+            type: EventType.SchedulePrecheckReported,
+            scheduleId: input.scheduleId,
+            agentId: sched.agentId,
+            ownerSub,
+          });
+      } catch (err) {
+        log(`report: emit failed: ${(err as Error).message}`);
+      }
     },
 
     async restoreAll(): Promise<void> {

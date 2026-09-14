@@ -4,7 +4,6 @@ import type {
   quietWindowSchema,
   scheduleCreateCronInputSchema,
   scheduleCreateRRuleInputSchema,
-  scheduleFireReportInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
 
@@ -50,10 +49,6 @@ export interface ScheduleStatus {
 
 export type PrecheckVerdict = z.infer<typeof precheckVerdictSchema>;
 
-export type ScheduleFireReportInput = z.infer<
-  typeof scheduleFireReportInputSchema
->;
-
 export interface Schedule {
   id: string;
   name: string;
@@ -88,11 +83,4 @@ export interface SchedulesService {
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
-}
-
-export interface ScheduleFireReporting {
-  reportFire: (
-    agentId: string,
-    input: ScheduleFireReportInput,
-  ) => Promise<void>;
 }

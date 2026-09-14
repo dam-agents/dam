@@ -850,6 +850,20 @@ export async function bootstrap() {
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
   });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const scheduleId = (event.payload as { scheduleId?: string }).scheduleId;
+      if (!scheduleId) return;
+      await schedulesBoot.runner.reportFire({
+        scheduleId,
+        eventId: input.eventId,
+        outcome: input.outcome,
+        ...(input.detail ? { detail: input.detail } : {}),
+      });
+    },
+  );
+
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
       db,

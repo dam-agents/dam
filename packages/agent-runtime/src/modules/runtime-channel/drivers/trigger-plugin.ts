@@ -1,25 +1,33 @@
 import type {
   DriverBinding,
+  EventContext,
   EventHandler,
+  EventOutcome,
   Plugin,
   ScheduleResetEventPayload,
   TriggerEventPayload,
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 import type { TriggerSessionDriver } from "../../acp/index.js";
+import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
 
 const IMPL_NAME = "trigger";
 
-export interface FireReporter {
+export interface EventReporter {
   report(input: {
-    scheduleId: string;
-    fireAt: string;
-    verdict: "allowed" | "declined" | "precheck-failed";
+    eventId: string;
+    outcome: EventOutcome;
     detail?: string;
   }): Promise<void>;
 }
+
+const WIRE_OUTCOME: Record<PrecheckOutcome["verdict"], EventOutcome> = {
+  allowed: "ok",
+  declined: "declined",
+  "precheck-failed": "failed",
+};
 
 function withContext(task: string, context: string | undefined): string {
   return context ? `${task}\n\n---\nPrecheck output:\n${context}` : task;
@@ -30,44 +38,12 @@ export function createTriggerPlugin(deps: {
   stateStore: TriggerStateStore;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
-  reporter?: FireReporter;
+  reporter?: EventReporter;
 }): Plugin {
-  const report = async (
+  const startSession = async (
     payload: TriggerEventPayload,
-    verdict: "allowed" | "declined" | "precheck-failed",
-    detail?: string,
+    task: string,
   ): Promise<void> => {
-    if (!deps.reporter || !payload.fireAt) return;
-    try {
-      await deps.reporter.report({
-        scheduleId: payload.scheduleId,
-        fireAt: payload.fireAt,
-        verdict,
-        ...(detail ? { detail } : {}),
-      });
-    } catch (err) {
-      deps.log(`[trigger] fire report failed: ${(err as Error).message}`);
-    }
-  };
-
-  const fire = async (payload: TriggerEventPayload): Promise<void> => {
-    let task = payload.task;
-
-    if (payload.precheck) {
-      const outcome = await deps.runPrecheck({
-        command: payload.precheck,
-        scheduleId: payload.scheduleId,
-        ...(payload.fireAt ? { fireAt: payload.fireAt } : {}),
-        ...(payload.lastRunAt ? { lastRunAt: payload.lastRunAt } : {}),
-      });
-      deps.log(
-        `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
-      );
-      await report(payload, outcome.verdict, outcome.detail);
-      if (outcome.verdict === "declined") return;
-      task = withContext(task, outcome.context);
-    }
-
     const platformMeta = {
       type: SessionType.ScheduleCron,
       mode: SessionMode.Chat,
@@ -98,11 +74,49 @@ export function createTriggerPlugin(deps: {
     });
   };
 
+  const decideAndRun = async (
+    payload: TriggerEventPayload,
+    precheck: string,
+    eventId: string,
+  ): Promise<void> => {
+    const outcome = await deps.runPrecheck({
+      command: precheck,
+      scheduleId: payload.scheduleId,
+      ...(payload.fireAt ? { fireAt: payload.fireAt } : {}),
+      ...(payload.lastRunAt ? { lastRunAt: payload.lastRunAt } : {}),
+    });
+    deps.log(
+      `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
+    );
+    try {
+      await deps.reporter?.report({
+        eventId,
+        outcome: WIRE_OUTCOME[outcome.verdict],
+        ...(outcome.detail ? { detail: outcome.detail } : {}),
+      });
+    } catch (err) {
+      deps.log(`[trigger] event report failed: ${(err as Error).message}`);
+    }
+    if (outcome.verdict === "declined") return;
+    await startSession(payload, withContext(payload.task, outcome.context));
+  };
+
+  const fire = async (
+    payload: TriggerEventPayload,
+    ctx: EventContext,
+  ): Promise<void> => {
+    if (!payload.precheck) return startSession(payload, payload.task);
+    void decideAndRun(payload, payload.precheck, ctx.eventId).catch((err) =>
+      deps.log(`[trigger] precheck run failed: ${(err as Error).message}`),
+    );
+  };
+
   return {
     name: IMPL_NAME,
     bindEvent(kind: string, _binding: DriverBinding): EventHandler {
       if (kind === "trigger") {
-        return async (payload) => fire(payload as TriggerEventPayload);
+        return async (payload, ctx) =>
+          fire(payload as TriggerEventPayload, ctx);
       }
       if (kind === "schedule-reset") {
         return async (payload) =>

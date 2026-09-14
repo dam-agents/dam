@@ -1,5 +1,5 @@
 {
-  "id": "44f97241-2fca-419c-9b16-22a6a20473f3",
+  "id": "47cdad55-0830-42e9-9589-093c7ec1479c",
   "prevId": "25c78722-c030-40bf-b56c-2c8f0bd6b222",
   "version": "7",
   "dialect": "postgresql",
@@ -2986,6 +2986,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "precheck_failed_count": {
+          "name": "precheck_failed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

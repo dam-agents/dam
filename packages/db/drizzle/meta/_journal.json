@@ -334,15 +334,8 @@
     {
       "idx": 47,
       "version": "7",
-      "when": 1789380799790,
-      "tag": "0047_blushing_thundra",
-      "breakpoints": true
-    },
-    {
-      "idx": 48,
-      "version": "7",
-      "when": 1789389906710,
-      "tag": "0048_clumsy_jimmy_woo",
+      "when": 1789409854818,
+      "tag": "0047_eager_warstar",
       "breakpoints": true
     }
   ]

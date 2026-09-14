@@ -127,10 +127,3 @@ export const precheckVerdictSchema = z.enum([
   "declined",
   "precheck-failed",
 ]);
-
-export const scheduleFireReportInputSchema = z.object({
-  scheduleId: z.string().min(1),
-  fireAt: z.string().datetime({ offset: true }),
-  verdict: precheckVerdictSchema,
-  detail: z.string().max(2_000).optional(),
-});

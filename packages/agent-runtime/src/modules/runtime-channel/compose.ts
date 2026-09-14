@@ -108,7 +108,7 @@ export async function composeRuntimeChannel(
       log,
       reporter: {
         report: (input) =>
-          harnessClient.schedules.v1.reportFire.mutate(input) as Promise<void>,
+          harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
       },
     }),
   );

@@ -7,7 +7,6 @@ import type {
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
-  ScheduleFireReporting,
   SessionDirectoryService,
   TemplatesService,
 } from "api-server-api";
@@ -52,7 +51,6 @@ export function createHarnessRouter(deps: {
   runtimeHello: RuntimeDeliveryService;
   sessionDirectory: SessionDirectoryService;
   kbPublishGate: KbPublishGate;
-  scheduleFireReporting: ScheduleFireReporting;
 }) {
   const app = new Hono();
 
@@ -93,7 +91,6 @@ export function createHarnessRouter(deps: {
       recordTouch: (input) => deps.artifactLibraryFor(owner).recordTouch(input),
     }),
     kbPublish: deps.kbPublishGate,
-    scheduleFireReporting: deps.scheduleFireReporting,
   });
 
   return app;

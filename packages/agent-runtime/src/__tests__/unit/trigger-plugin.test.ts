@@ -1,15 +1,16 @@
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
-import type { DispatchContext } from "agent-runtime-api";
+import type { EventContext } from "agent-runtime-api";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
 import {
   createTriggerPlugin,
-  type FireReporter,
+  type EventReporter,
 } from "../../modules/runtime-channel/drivers/trigger-plugin.js";
 import type { PrecheckRunner } from "../../modules/runtime-channel/infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../../modules/runtime-channel/infrastructure/trigger-state-store.js";
 
-const ctx: DispatchContext = {
+const ctx: EventContext = {
+  eventId: "evt-1:1",
   agentHome: "",
   pluginStateDir: "",
   log: () => {},
@@ -39,7 +40,7 @@ const handlerFor = (
     driver: TriggerSessionDriver;
     stateStore: TriggerStateStore;
     runPrecheck?: PrecheckRunner;
-    reporter?: FireReporter;
+    reporter?: EventReporter;
   },
   kind: string,
 ) =>
@@ -120,16 +121,52 @@ describe("trigger plugin precheck", () => {
   });
 
   const recorder = () => {
-    const reports: Parameters<FireReporter["report"]>[0][] = [];
+    const reports: Parameters<EventReporter["report"]>[0][] = [];
     return {
       reports,
       reporter: {
-        report: async (input: Parameters<FireReporter["report"]>[0]) => {
+        report: async (input: Parameters<EventReporter["report"]>[0]) => {
           reports.push(input);
         },
       },
     };
   };
+
+  const payload = {
+    scheduleId: "sch-1",
+    task: "do it",
+    precheck: "anything",
+    fireAt: "2026-06-12T10:30:00.000Z",
+  };
+
+  // TEST_SCENARIO: the handler runs inside applyState, behind a per-agent lock, and the api-server abandons that call at 60s — so a two-minute Precheck must not be awaited there, or nothing else reaches the agent while it runs.
+  it("returns before the precheck finishes, then reports and runs", async () => {
+    const { driver, calls } = fakeDriver();
+    const { reports, reporter } = recorder();
+    let release!: () => void;
+    const started = new Promise<void>((r) => (release = r));
+
+    await handlerFor(
+      {
+        driver,
+        stateStore: idleStore(),
+        reporter,
+        runPrecheck: async () => {
+          await started;
+          return { verdict: "allowed", context: "PR 7 landed" };
+        },
+      },
+      "trigger",
+    )(payload, ctx);
+
+    expect(calls).toHaveLength(0);
+    expect(reports).toHaveLength(0);
+
+    release();
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(reports[0]).toEqual({ eventId: ctx.eventId, outcome: "ok" });
+    expect(calls[0]?.task).toBe("do it\n\n---\nPrecheck output:\nPR 7 landed");
+  });
 
   // TEST_SCENARIO: exit 1 is the Precheck saying nothing changed — no Session may open, and the platform has to hear about the Declined Fire because only the pod knows it happened.
   it("opens no session when the precheck declines the fire", async () => {
@@ -144,18 +181,11 @@ describe("trigger plugin precheck", () => {
         runPrecheck: async () => ({ verdict: "declined" }),
       },
       "trigger",
-    )(
-      {
-        scheduleId: "sch-1",
-        task: "do it",
-        precheck: "anything",
-        fireAt: "2026-06-12T10:30:00.000Z",
-      },
-      ctx,
-    );
+    )(payload, ctx);
 
+    await vi.waitFor(() => expect(reports).toHaveLength(1));
+    expect(reports[0]).toEqual({ eventId: ctx.eventId, outcome: "declined" });
     expect(calls).toHaveLength(0);
-    expect(reports[0]).toMatchObject({ verdict: "declined" });
   });
 
   // TEST_SCENARIO: a Precheck that cannot run at all is the check breaking, not saying no — the run goes ahead so work never stops silently, and the error is reported so the break stays visible.
@@ -174,46 +204,13 @@ describe("trigger plugin precheck", () => {
         }),
       },
       "trigger",
-    )(
-      {
-        scheduleId: "sch-1",
-        task: "do it",
-        precheck: "anything",
-        fireAt: "2026-06-12T10:30:00.000Z",
-      },
-      ctx,
-    );
+    )(payload, ctx);
 
-    expect(calls).toHaveLength(1);
-    expect(reports[0]).toMatchObject({ verdict: "precheck-failed" });
-  });
-
-  // TEST_SCENARIO: the cheap check already found what the expensive turn would look for, so its stdout rides along with the task instead of being derived a second time.
-  it("appends the precheck output to the task it allows", async () => {
-    const { driver, calls } = fakeDriver();
-
-    await handlerFor(
-      {
-        driver,
-        stateStore: idleStore(),
-        runPrecheck: async () => ({
-          verdict: "allowed",
-          context: "PR 7 landed",
-        }),
-      },
-      "trigger",
-    )(
-      {
-        scheduleId: "sch-1",
-        task: "review it",
-        precheck: "anything",
-        fireAt: "2026-06-12T10:30:00.000Z",
-      },
-      ctx,
-    );
-
-    expect(calls[0]?.task).toBe(
-      "review it\n\n---\nPrecheck output:\nPR 7 landed",
-    );
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(reports[0]).toEqual({
+      eventId: ctx.eventId,
+      outcome: "failed",
+      detail: "precheck exited 127",
+    });
   });
 });

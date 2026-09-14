@@ -1,4 +1,5 @@
 import type {
+  EventReportInput,
   HelloInput,
   HelloResult,
   RuntimeDeliveryService,
@@ -6,12 +7,18 @@ import type {
 import type {
   AgentsRuntimeRepo,
   OutboxRepo,
+  PendingEventRow,
 } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import { emit, EventType } from "../../../events.js";
 import { advertisedKindsChanged } from "../domain/capability-filter.js";
 import type { UnitOfWork } from "../../../core/unit-of-work.js";
+
+export type EventOutcomeHandler = (
+  event: PendingEventRow,
+  input: EventReportInput,
+) => Promise<void>;
 
 export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
@@ -20,9 +27,26 @@ export function createHelloHandler(deps: {
   queue: StateQueue;
   uow: UnitOfWork;
   resolveOwner: (agentId: string) => Promise<string | null>;
+  eventOutcomeHandler?: (kind: string) => EventOutcomeHandler | undefined;
   log: (msg: string) => void;
 }): RuntimeDeliveryService {
   return {
+    async reportEvent(agentId, input): Promise<void> {
+      const event = await deps.outboxRepo.ownedEvent(input.eventId, agentId);
+      if (!event) {
+        deps.log(
+          `[runtime-report] ${agentId}: no event ${input.eventId} owned by this agent; dropping`,
+        );
+        return;
+      }
+      await deps.outboxRepo.recordEventOutcome(
+        input.eventId,
+        input.outcome === "ok" ? null : (input.detail ?? input.outcome),
+      );
+      const handler = deps.eventOutcomeHandler?.(event.kind);
+      if (handler) await handler(event, input);
+    },
+
     async hello(agentId: string, input: HelloInput): Promise<HelloResult> {
       const bumpedVersion = await deps.uow(async (tx) => {
         const { previousCapabilities } =

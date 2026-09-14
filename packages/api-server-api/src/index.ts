@@ -120,12 +120,12 @@ export type {
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
+export type { EventReportInput, EventOutcome } from "agent-runtime-api";
 
 export {
   scheduleSpecSchema,
   scheduleStatusSchema,
   scheduleResetSessionInputSchema,
-  scheduleFireReportInputSchema,
   precheckVerdictSchema,
   precheckSchema,
   PRECHECK_MAX_LENGTH,
@@ -142,8 +142,6 @@ export type {
   ScheduleCreateRRuleInput,
   ScheduleUpdateRRuleInput,
   SchedulesService,
-  ScheduleFireReporting,
-  ScheduleFireReportInput,
   PrecheckVerdict,
 } from "./modules/schedules/types.js";
 export type {

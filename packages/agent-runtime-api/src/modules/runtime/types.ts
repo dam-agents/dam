@@ -131,6 +131,16 @@ export const triggerEvent = z.object({
   payload: triggerEventPayload,
 });
 
+export const eventOutcome = z.enum(["ok", "declined", "failed"]);
+export type EventOutcome = z.infer<typeof eventOutcome>;
+
+export const eventReportInput = z.object({
+  eventId: z.string().min(1),
+  outcome: eventOutcome,
+  detail: z.string().max(2_000).optional(),
+});
+export type EventReportInput = z.infer<typeof eventReportInput>;
+
 export const scheduleResetEventPayload = z.object({
   scheduleId: z.string().min(1),
 });

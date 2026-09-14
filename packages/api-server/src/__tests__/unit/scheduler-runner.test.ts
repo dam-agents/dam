@@ -339,10 +339,10 @@ describe("scheduler-runner precheck", () => {
     const fireAt = new Date("2026-06-12T10:30:00Z");
 
     await runner.buildFireHandler()(SCHEDULE_ID, fireAt);
-    await runner.reportFire(AGENT_ID, {
+    await runner.reportFire({
       scheduleId: SCHEDULE_ID,
-      fireAt: fireAt.toISOString(),
-      verdict: "declined",
+      eventId: `${SCHEDULE_ID}:${fireAt.getTime()}`,
+      outcome: "declined",
     });
 
     expect(patches).toHaveLength(1);
@@ -368,10 +368,10 @@ describe("scheduler-runner precheck", () => {
   it("records a broken precheck's run through the status transition", async () => {
     const { runner, patches } = makeDeps({ precheck: "true" });
 
-    await runner.reportFire(AGENT_ID, {
+    await runner.reportFire({
       scheduleId: SCHEDULE_ID,
-      fireAt: "2026-06-12T10:30:00.000Z",
-      verdict: "precheck-failed",
+      eventId: `${SCHEDULE_ID}:0`,
+      outcome: "failed",
       detail: "precheck exited 127",
     });
 
@@ -380,19 +380,5 @@ describe("scheduler-runner precheck", () => {
       lastPrecheckError: "precheck exited 127",
       precheckFailedCount: { kind: "increment" },
     });
-  });
-
-  // TEST_SCENARIO: a report must only ever touch the reporting Agent's own Schedule — the harness surface is reached by any pod that knows a schedule id.
-  it("ignores a report for a schedule that belongs to another agent", async () => {
-    const { runner, patches, restored } = makeDeps({ precheck: "true" });
-
-    await runner.reportFire("agent-other", {
-      scheduleId: SCHEDULE_ID,
-      fireAt: "2026-06-12T10:30:00.000Z",
-      verdict: "declined",
-    });
-
-    expect(patches).toHaveLength(0);
-    expect(restored).toHaveLength(0);
   });
 });
