@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Select } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import { formatDurationMs, formatUsdCell } from "../../metrics/lib/format.js";
@@ -39,7 +40,7 @@ function TurnRow({
     >
       <span className="flex items-baseline justify-between gap-2">
         <span className="truncate font-mono text-xs">
-          {spanKindLabel(trace.rootName) || "turn"}
+          {spanKindLabel(trace.rootName) || "trace"}
         </span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
           {formatDurationMs(trace.durationMs)}
@@ -84,6 +85,10 @@ export function SessionTimelinePanel({
 
   const windowLabel =
     WINDOWS.find((w) => w.hours === sinceHours)?.label ?? "window";
+  const live =
+    openTraceId === null
+      ? traces.isFetching && rows.length > 0
+      : detail.isFetching && trace !== undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -92,7 +97,7 @@ export function SessionTimelinePanel({
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Back to turns"
+            aria-label="Back to traces"
             onClick={() => {
               setOpenTrace(null);
               setSpanId(null);
@@ -101,8 +106,16 @@ export function SessionTimelinePanel({
             <ArrowLeft size={16} />
           </Button>
         )}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {openTraceId === null ? "Timeline" : "Turn"}
+        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-medium">
+          {openTraceId === null ? "Timeline" : "Trace"}
+          {live && (
+            <span
+              className="shrink-0 opacity-60"
+              title="Checking for new records"
+            >
+              <Spinner />
+            </span>
+          )}
         </span>
         {openTraceId === null && (
           <div className="w-[72px] shrink-0">
@@ -164,7 +177,7 @@ export function SessionTimelinePanel({
                 Loading…
               </p>
             )}
-            {traces.isError && (
+            {traces.isError && rows.length === 0 && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
                 Couldn’t load this session’s timeline.
               </p>
@@ -192,12 +205,13 @@ export function SessionTimelinePanel({
           <>
             {detail.isPending && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
-                Loading turn…
+                Loading trace…
               </p>
             )}
             {detail.isError && (
               <p className="px-3 py-4 text-sm text-muted-foreground">
-                That turn is no longer in the store.
+                Couldn’t load this trace. It may have aged out of the store, or
+                the request was rejected — the browser console has the reason.
               </p>
             )}
             {trace && (
@@ -212,7 +226,7 @@ export function SessionTimelinePanel({
                 />
                 {(trace.spansTruncated || trace.logsTruncated) && (
                   <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
-                    This turn is larger than the display cap; some records are
+                    This trace is larger than the display cap; some records are
                     not shown.
                   </p>
                 )}

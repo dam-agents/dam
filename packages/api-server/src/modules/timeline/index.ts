@@ -21,4 +21,5 @@ export {
   createClickhouseTimelineReader,
   ownedLogs,
   ownedSpans,
+  toIsoUtc,
 } from "./infrastructure/clickhouse-timeline-reader.js";

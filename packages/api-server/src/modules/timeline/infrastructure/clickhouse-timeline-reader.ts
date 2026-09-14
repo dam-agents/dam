@@ -78,6 +78,16 @@ const COST_USD = `${TOK("cost_usd_micros")} / 1e6`;
 
 const n = (v: unknown): number => Number(v ?? 0);
 const s = (v: unknown): string => String(v ?? "");
+
+const CLICKHOUSE_NAIVE =
+  /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
+
+export const toIsoUtc = (v: unknown): string => {
+  const raw = s(v).trim();
+  if (raw === "") return raw;
+  const naive = CLICKHOUSE_NAIVE.exec(raw);
+  return naive ? `${naive[1]}T${naive[2]}Z` : raw;
+};
 const list = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(s).filter((x) => x !== "") : [];
 const attrs = (v: unknown): Record<string, string> =>
@@ -134,8 +144,8 @@ export function createClickhouseTimelineReader(
         { ...windowParams(agentIds, window), limit },
       );
       return r.map((x) => {
-        const startedAt = s(x.startedAt);
-        const endedAt = s(x.endedAt);
+        const startedAt = toIsoUtc(x.startedAt);
+        const endedAt = toIsoUtc(x.endedAt);
         const from = Date.parse(startedAt);
         const to = Date.parse(endedAt);
         return {
@@ -210,7 +220,7 @@ export function createClickhouseTimelineReader(
         name: s(x.name),
         kind: s(x.kind),
         service: s(x.service),
-        startedAt: s(x.startedAt),
+        startedAt: toIsoUtc(x.startedAt),
         durationMs: n(x.durationNs) / 1e6,
         statusCode: s(x.statusCode),
         statusMessage: s(x.statusMessage),
@@ -239,7 +249,7 @@ export function createClickhouseTimelineReader(
         { ...logParams(agentIds, filter), limit },
       );
       return r.map((x) => ({
-        at: s(x.at),
+        at: toIsoUtc(x.at),
         spanId: s(x.spanId),
         traceId: s(x.traceId),
         event: s(x.event),
