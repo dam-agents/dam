@@ -27,7 +27,7 @@ flowchart LR
   api -->|create + grants + kit stamp| agents
   api -->|create declared schedules| schedules
   api -->|bind Slack conversation| channels
-  ui -->|hidden first turn| pod
+  ui -->|onboarding first turn| pod
   pod -->|clones definition, follows ONBOARDING.md| kitrepo
 ```
 
@@ -58,7 +58,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 
 The catalog has two entry points, answering the placement question in #447 with *both*: a **Starter kits** destination in the rail with the full catalog and setup pages, and a **Home widget** — in the activity aside for users with agents and under the first-run entry points for users without — listing the first few kits with a Use button. Both sit behind the `starter-kits` [experimental feature](features.md), per user and off by default, so the UI is unchanged for anyone who has not opted in — the kit routes fall back to Home — while the chart side (the built-in catalog, `harnessTemplates`) is unconditional. The widget also renders nothing when the install has no catalog. An agent created from a kit keeps its badge and its onboarding first turn whatever the flag says: those belong to the agent, not to the catalog surface.
 
-**Kit Onboarding** is the hidden first turn the UI sends once the Agent runs and has no sessions — the same greeting mechanism knowledge bases and experiments use. The prompt is **platform-composed from the kit and the Agent's state**: the definition repository and ref to clone, the connection requirements and which were granted, the schedules and which are disabled, the bound channel, the declared parameters — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction. Every kit ships `ONBOARDING.md` beside `kit.yaml`. In V1 the agent clones its own definition; the platform does not seed it.
+**Kit Onboarding** is the first turn the UI sends once the Agent runs and has no sessions — the same greeting mechanism knowledge bases and experiments use, but **visible** where theirs is hidden. Those two send a bare slash command, a mechanical trigger with nothing to read; a kit sends a briefing the user needs, because the agent's first act is to ask them for the kit's parameters and the answers only make sense against what the platform already set up. Hiding it also never held: the flag suppresses the optimistic bubble in the live chat only, so the turn came back as an ordinary user message the moment the session was reloaded. The prompt is **platform-composed from the kit and the Agent's state**: the definition repository and ref to clone, the connection requirements and which were granted, the schedules and which are disabled, the bound channel, the declared parameters — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction. Every kit ships `ONBOARDING.md` beside `kit.yaml`. In V1 the agent clones its own definition; the platform does not seed it.
 
 ## Invariants
 

@@ -10,6 +10,7 @@ export function useStarterKitGreeting(
   const { data: prompt } = useStarterKitOnboarding(opts.agentId, opts.active);
   useAgentGreeting({
     ...opts,
+    hidden: false,
     active: opts.active && typeof prompt === "string",
     setupReady: typeof prompt === "string",
     command: prompt ?? "",

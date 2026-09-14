@@ -10,6 +10,7 @@ export interface AgentGreetingOptions {
   idle: boolean;
   command: string;
   setupReady?: boolean;
+  hidden?: boolean;
   sendPrompt: (
     text: string,
     attachments?: undefined,
@@ -18,7 +19,15 @@ export interface AgentGreetingOptions {
 }
 
 export function useAgentGreeting(opts: AgentGreetingOptions) {
-  const { agentId, active, idle, command, setupReady, sendPrompt } = opts;
+  const {
+    agentId,
+    active,
+    idle,
+    command,
+    setupReady,
+    hidden = true,
+    sendPrompt,
+  } = opts;
   const greetedForAgentRef = useRef<string | null>(null);
   const operable = useIsAgentOperable(agentId);
   const armed =
@@ -43,6 +52,6 @@ export function useAgentGreeting(opts: AgentGreetingOptions) {
     }
     if (setupReady === false) return;
     greetedForAgentRef.current = agentId;
-    void sendPrompt(command, undefined, { hidden: true, initiator: "system" });
-  }, [armed, agentId, sessions, setupReady, command, sendPrompt]);
+    void sendPrompt(command, undefined, { hidden, initiator: "system" });
+  }, [armed, agentId, sessions, setupReady, command, hidden, sendPrompt]);
 }
