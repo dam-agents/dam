@@ -7,7 +7,7 @@ Last verified: 2026-09-14
 The **agent timeline** is the user-facing read path over the raw signals an agent
 produced: the **Telemetry Traces** it emitted, the **Telemetry Spans** inside each one, and
 the **Telemetry Log Records** those spans carry. It answers *what did my agent actually do,
-and where did the time and money go inside one turn* — the structural counterpart to
+and where did the time and money go* — the structural counterpart to
 [metrics](metrics.md), which answers *how much have my agents spent*.
 
 Both read the columnar telemetry store that [observability](observability.md) fills, and
@@ -47,14 +47,19 @@ table and the log table. It is deliberately not "the spans of a trace": the harn
 export is a beta surface whose shape moves between releases, while its per-call log records
 have carried a trace identifier since the spend read path was built. Defining the unit
 across both tables means the surface degrades rather than disappears — with no spans, a
-trace is still a correlated, time-ordered set of records for one turn.
+trace is still a correlated, time-ordered set of records.
 
-For the Claude Code rail a trace corresponds to **one turn**: a root interaction span per
-prompt, with model-call and tool spans beneath it, and a subagent's work nesting under the
-tool span that spawned it. A Session is therefore *many* traces, correlated by the session
-attribute the spans carry — which is what the surface filters on when narrowing to a
-Session. Other rails differ, and the read path assumes none of this: it groups by trace
-identifier and names the root by whatever span has no parent.
+**How much structure a trace has is the harness's business, not this subsystem's.** The
+Claude Code CLI documents a per-prompt interaction span with model-call and tool spans
+beneath it, but what a given install actually emits depends on the harness version and on
+how it was launched: driven through the agent protocol rather than as an interactive CLI
+session, it emits each model call as its own parentless root, so a trace there is one call
+and the hierarchy is absent entirely. The read path assumes neither shape. It groups by
+trace identifier, names the root by whatever span has no parent, and renders whatever depth
+it finds — one bar or a nested tree.
+
+A Session is therefore *many* traces in either case, correlated by the session attribute the
+spans carry, which is what the surface filters on when narrowing to a Session.
 
 ## Correlating a log record to the call it describes
 
@@ -64,9 +69,11 @@ Two facts make that harder than it looks, and together they decide the design:
 - The **cost is only on the log record**. A model-call span carries token counts; the
   per-call currency figure exists on the record alone, so the two must be joined for a
   waterfall to show spend at all.
-- The record's own span identifier points at the **enclosing** span — the turn, or the tool
-  being run — not at the model call. The harness creates the call span but never makes it
-  the active one, so a record emitted during the call names its parent instead.
+- The record's own span identifier is **unreliable and often absent**. Where it is set it
+  names the *enclosing* span — the turn, or the tool being run — rather than the model call,
+  because the harness creates the call span without making it the active one. Where no
+  enclosing span exists it is empty. Observed on a live install: most per-call records carry
+  no span identifier at all, and none of them resolved to a span.
 
 The join therefore prefers a **request identifier** the harness stamps identically on the
 record and on the call span. Attachment resolves in three steps and every step renders:
