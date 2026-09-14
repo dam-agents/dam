@@ -324,7 +324,7 @@ describe("starter kits: apply", () => {
   });
 
   it("deletes the agent when seeding fails after create", async () => {
-    const { service, calls } = makeHarness(LOADED);
+    const { calls } = makeHarness(LOADED);
     const failing = createStarterKitsService({
       owner: "user-1",
       repo: { list: async () => [LOADED], get: async () => LOADED },
@@ -511,6 +511,20 @@ describe("starter kits: onboarding prompt", () => {
     expect(prompt).toContain('Schedule "benchmark": disabled');
     expect(prompt).toContain("repository to review (required)");
     expect(prompt).toContain("follow ONBOARDING.md");
+  });
+
+  it("does not tell a seedless kit to follow a cloned definition", () => {
+    const prompt = composeOnboardingPrompt({
+      kit: kit({ seed: undefined }),
+      catalog: "platform",
+      version: "v1",
+      schedules: [],
+      boundChannels: [],
+      familyTitles: new Map(),
+    });
+    expect(prompt).toContain("This kit ships no definition repository.");
+    expect(prompt).not.toContain("ONBOARDING.md");
+    expect(prompt).not.toContain("cloned definition");
   });
 
   it("uses the kit's prompt as the instruction when one is declared", () => {

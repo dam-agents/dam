@@ -57,11 +57,15 @@ function definitionLine(kit: StarterKit): string {
   return `Definition repository: ${kit.seed.url}${at}. Clone it into your work directory first.`;
 }
 
+function defaultInstruction(kit: StarterKit): string {
+  return kit.seed
+    ? "Then follow ONBOARDING.md at the root of the cloned definition."
+    : "Ask the user for the values above, then start the work they describe.";
+}
+
 export function composeOnboardingPrompt(facts: OnboardingFacts): string {
   const { kit } = facts;
-  const instruction =
-    kit.onboarding?.prompt ??
-    "Then follow ONBOARDING.md at the root of the cloned definition.";
+  const instruction = kit.onboarding?.prompt ?? defaultInstruction(kit);
   return [
     `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
     definitionLine(kit),

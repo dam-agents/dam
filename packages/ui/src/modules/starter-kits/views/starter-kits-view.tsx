@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   Card,
   CardContent,
@@ -159,7 +160,23 @@ export function StarterKitsView() {
         }
       />
 
-      {kits.isLoading && <ListSkeleton rows={2} rowHeight={220} />}
+      {kits.isPending && <ListSkeleton rows={2} rowHeight={220} />}
+
+      {kits.isError && (
+        <Callout tone="danger">
+          <p className="text-sm text-foreground">
+            Couldn&apos;t load the starter kit catalog.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => void kits.refetch()}
+          >
+            Retry
+          </Button>
+        </Callout>
+      )}
 
       {kits.data && kits.data.length === 0 && (
         <PageEmptyState

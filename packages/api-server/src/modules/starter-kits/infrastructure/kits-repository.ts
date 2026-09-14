@@ -32,6 +32,7 @@ const KIT_FILE = "kit.yaml";
 
 export function createStarterKitsRepository(opts: {
   catalogs: readonly NamedCatalog[];
+  appVersion: string;
   sourceForEntry?: (gitUrl: string, ref: string) => CatalogSource;
   ttlMs?: number;
   now?: () => number;
@@ -50,9 +51,11 @@ export function createStarterKitsRepository(opts: {
     entry: StarterKitCatalogEntry,
   ): Promise<LoadedKit | null> {
     const catalog = named.source;
-    const source = entry.gitUrl
-      ? sourceForEntry(entry.gitUrl, entry.ref ?? "HEAD")
-      : catalog;
+    const pinned =
+      entry.gitUrl !== undefined && entry.ref !== undefined
+        ? { gitUrl: entry.gitUrl, ref: entry.ref }
+        : null;
+    const source = pinned ? sourceForEntry(pinned.gitUrl, pinned.ref) : catalog;
     if (relPathEscapes(entry.path)) {
       getLogger().warn(
         { path: entry.path },
@@ -80,7 +83,7 @@ export function createStarterKitsRepository(opts: {
     return {
       kit: parsed.data,
       catalog: named.name,
-      version: entry.gitUrl ? (entry.ref ?? "HEAD") : catalogVersion(catalog),
+      version: pinned ? pinned.ref : catalogVersion(catalog, opts.appVersion),
       source: source.locator,
     };
   }
@@ -108,7 +111,15 @@ export function createStarterKitsRepository(opts: {
       return [];
     }
     const loaded = await Promise.all(
-      parsed.data.kits.map((entry) => loadEntry(named, entry)),
+      parsed.data.kits.map((entry) =>
+        loadEntry(named, entry).catch((err: unknown) => {
+          getLogger().warn(
+            { catalog: named.name, path: entry.path, err },
+            "starter kits: entry failed to load",
+          );
+          return null;
+        }),
+      ),
     );
     const byId = new Map<string, LoadedKit>();
     for (const item of loaded) {
@@ -126,7 +137,17 @@ export function createStarterKitsRepository(opts: {
   }
 
   async function loadAll(): Promise<LoadedKit[]> {
-    const perCatalog = await Promise.all(opts.catalogs.map(loadCatalog));
+    const perCatalog = await Promise.all(
+      opts.catalogs.map((named) =>
+        loadCatalog(named).catch((err: unknown) => {
+          getLogger().warn(
+            { catalog: named.name, source: named.source.locator, err },
+            "starter kits: catalog failed to load",
+          );
+          return [] as LoadedKit[];
+        }),
+      ),
+    );
     return perCatalog.flat();
   }
 
@@ -156,9 +177,9 @@ export function createStarterKitsRepository(opts: {
   };
 }
 
-function catalogVersion(catalog: CatalogSource): string {
+function catalogVersion(catalog: CatalogSource, appVersion: string): string {
   const hash = catalog.locator.indexOf("#");
-  if (hash === -1) return "local";
+  if (hash === -1) return appVersion;
   const tail = catalog.locator.slice(hash + 1);
   const colon = tail.indexOf(":");
   return colon === -1 ? tail : tail.slice(0, colon);

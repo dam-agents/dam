@@ -8,7 +8,12 @@ import {
   createLocalCatalogSource,
   parseGithubRepoUrl,
 } from "../../modules/starter-kits/infrastructure/catalog-source.js";
-import { createStarterKitsRepository } from "../../modules/starter-kits/infrastructure/kits-repository.js";
+import {
+  createStarterKitsRepository,
+  type NamedCatalog,
+} from "../../modules/starter-kits/infrastructure/kits-repository.js";
+
+const APP_VERSION = "1.4.2";
 
 const KIT = (id: string, extra = "") => `
 schemaVersion: v1
@@ -48,6 +53,7 @@ kits:
       "kit.yaml": KIT("pm-agent"),
     });
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [{ name: "platform", source: catalog }],
       sourceForEntry: (gitUrl, ref) => {
         expect(gitUrl).toBe("https://github.com/acme/pm-agent");
@@ -59,7 +65,7 @@ kits:
     const kits = await repo.list();
     expect(kits.map((k) => [k.catalog, k.kit.id, k.version, k.source])).toEqual(
       [
-        ["platform", "reviewer", "local", "/catalog"],
+        ["platform", "reviewer", APP_VERSION, "/catalog"],
         [
           "platform",
           "pm-agent",
@@ -72,6 +78,32 @@ kits:
     expect(await repo.get("platform", "nope")).toBeNull();
   });
 
+  it("keeps the listing when one entry throws, and when one catalog throws", async () => {
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml":
+        "kits:\n  - path: kits/ok\n  - gitUrl: https://example.com/not-github\n    ref: v1\n",
+      "kits/ok/kit.yaml": KIT("ok"),
+    });
+    const exploding: NamedCatalog = {
+      name: "broken",
+      source: {
+        locator: "/broken",
+        readText: () => {
+          throw new Error("network down");
+        },
+      },
+    };
+    const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
+      catalogs: [{ name: "platform", source: catalog }, exploding],
+      sourceForEntry: () => {
+        throw new Error("unsupported git host");
+      },
+    });
+
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["ok"]);
+  });
+
   it("drops a kit that fails validation and keeps the rest", async () => {
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: bad\n  - path: good\n",
@@ -79,6 +111,7 @@ kits:
       "good/kit.yaml": KIT("good"),
     });
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [{ name: "platform", source: catalog }],
     });
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["good"]);
@@ -89,6 +122,7 @@ kits:
       "catalog.yaml": "kits:\n  - path: ../secrets\n",
     });
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [{ name: "platform", source: catalog }],
     });
     expect(await repo.list()).toEqual([]);
@@ -102,6 +136,7 @@ kits:
     });
     let t = 0;
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [{ name: "platform", source: catalog }],
       ttlMs: 100,
       now: () => t,
@@ -124,6 +159,7 @@ kits:
       "k/kit.yaml": KIT("shared"),
     });
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [
         { name: "platform", source: a },
         { name: "acme", source: b },
@@ -139,7 +175,10 @@ kits:
   });
 
   it("returns nothing when no catalog is configured", async () => {
-    const repo = createStarterKitsRepository({ catalogs: [] });
+    const repo = createStarterKitsRepository({
+      catalogs: [],
+      appVersion: APP_VERSION,
+    });
     expect(await repo.list()).toEqual([]);
   });
 });
@@ -232,6 +271,7 @@ describe("the shipped proof-of-concept catalog", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const dir = path.resolve(here, "../../../../../helm/starter-kits");
     const repo = createStarterKitsRepository({
+      appVersion: APP_VERSION,
       catalogs: [{ name: "platform", source: createLocalCatalogSource(dir) }],
     });
     const kits = await repo.list();

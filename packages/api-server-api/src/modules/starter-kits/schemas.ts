@@ -112,11 +112,16 @@ export const starterKitSchema = z.object({
   parameters: z.array(starterKitParameterSchema).default([]),
 });
 
-export const starterKitCatalogEntrySchema = z.object({
-  path: z.string().min(1).default("."),
-  gitUrl: z.url().optional(),
-  ref: z.string().min(1).optional(),
-});
+export const starterKitCatalogEntrySchema = z
+  .object({
+    path: z.string().min(1).default("."),
+    gitUrl: z.url().optional(),
+    ref: z.string().min(1).optional(),
+  })
+  .refine((e) => e.gitUrl === undefined || e.ref !== undefined, {
+    message: "a kit in another repository must pin a ref",
+    path: ["ref"],
+  });
 
 export const starterKitCatalogSchema = z.object({
   kits: z.array(starterKitCatalogEntrySchema),

@@ -293,6 +293,7 @@ export async function bootstrap() {
       const source = createCatalogSourceFromLocator(c.locator);
       return source ? [{ name: c.name, source }] : [];
     }),
+    appVersion: config.appVersion,
   });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({

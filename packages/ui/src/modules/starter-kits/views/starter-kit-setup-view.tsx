@@ -58,8 +58,35 @@ export function StarterKitSetupView() {
   const catalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
   const kit = useStarterKit(catalog, kitId);
-  if (kit.data === undefined) {
+  const setView = useStore((s) => s.setView);
+  if (kit.isPending) {
     return <ListSkeleton rows={3} rowHeight={80} />;
+  }
+  if (kit.isError || kit.data === undefined) {
+    return (
+      <Callout tone="danger">
+        <p className="text-sm text-foreground">
+          Couldn&apos;t load this starter kit. It may have been removed from the
+          catalog, or the catalog is unreachable.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void kit.refetch()}
+          >
+            Retry
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setView("starter-kits")}
+          >
+            All kits
+          </Button>
+        </div>
+      </Callout>
+    );
   }
   return <StarterKitSetupForm kit={kit.data} />;
 }
@@ -74,6 +101,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     "starter-kit",
     { name: kit.id },
     returnPath,
+    `${kit.catalog}/${kit.id}`,
   );
   const apply = useApplyStarterKit();
   const selectAgent = useStore((s) => s.selectAgent);

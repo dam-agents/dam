@@ -1418,11 +1418,6 @@ harnessTemplates:
 e2e:
   enabled: false
 
-# -- Platform-wide skill sources (shared catalog visible to all users).
-# Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
-# `{name, gitUrl, path?}` shape works for per-template sources under
-# `<templateKey>.skillSources`. `path` is an optional repo-relative
-# subdirectory to scan; omit it to scan `skills/` then the repo root.
 # -- Starter kit catalogs. The api-server reads every catalog listed here, in
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
 # `builtin` is the platform's own catalog, shipped inside this chart
@@ -1452,6 +1447,11 @@ starterKits:
   #   - name: acme
   #     url: https://github.com/acme/starter-kits
 
+# -- Platform-wide skill sources (shared catalog visible to all users).
+# Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
+# `{name, gitUrl, path?}` shape works for per-template sources under
+# `<templateKey>.skillSources`. `path` is an optional repo-relative
+# subdirectory to scan; omit it to scan `skills/` then the repo root.
 skills:
   skillSources: []
   # Example:
