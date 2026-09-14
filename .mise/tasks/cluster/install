@@ -479,7 +479,9 @@ else
 
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
-  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}"
+  PLATFORM_IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest)
+  [ -n "$VIRT_ENABLED" ] && PLATFORM_IMAGES+=(platform-sandbox-node:latest)
+  docker save -o "$tar" "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}"
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$tar"
   else
@@ -535,6 +537,7 @@ if [ "$NO_RESTART" = true ]; then
 else
   echo "Restarting pods..."
   kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
+  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-sandbox-node
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found

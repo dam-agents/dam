@@ -77,6 +77,25 @@ device-plugin pod keeps the same node agent and image.
   the workspace lives on the machine's own disk. gVisor cannot run an inner
   k3s (no `/dev/kmsg`, cAdvisor rootfs); smolvm can (node Ready in ~15 s).
 
+## Verified locally as a pod (k3s in lima, nested KVM, 2026-09-14)
+
+- Device plugin advertises `squat.ai/kvm|tun`, the node pod schedules on it,
+  smolvm sees /dev/kvm; controller → node API over TLS works; the agent
+  Service's EndpointSlice carries the pod IP + machine port; a node pod
+  restart keeps the machine disks and the loaded image archive (PVC).
+- **AppArmor:** containerd's default profile (`cri-containerd.apparmor.d`)
+  makes every libkrun guest exit before its kernel prints a line. The node
+  container is `appArmorProfile: Unconfined`; its capability set is the gate.
+- **smolvm's 30 s agent-ready ceiling is hard** in 1.16 (no flag or env on
+  `machine start`; `--ready-timeout` exists only for branching). Under lima's
+  nested KVM a guest reaches the agent in 10–20 s on a quiet host and misses
+  the ceiling on a busy one, so first boots are flaky locally; on bare metal
+  the guest is up in ~2 s. When smolvm gives up it leaves the guest process
+  running (100 % CPU, still booting) — sandbox-node now kills that orphan
+  after a failed start, and catatonit reaps the zombies (sandbox-node was
+  PID 1). Each retry is a fresh boot; the controller's 3 s requeue drives it.
+- First boot of the 760 MB vm image flattens it inside the guest (minutes).
+
 ## Known gaps (also in ADR 091)
 
 - A template image change does not reach an existing machine (image is fixed
