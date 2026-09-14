@@ -3,6 +3,8 @@ package sandboxnode
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,8 +18,16 @@ type Client struct {
 	HTTP  *http.Client
 }
 
-func NewClient(url, token string) *Client {
-	return &Client{URL: url, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
+func NewClient(url, token, caPEM string) (*Client, error) {
+	c := &Client{URL: url, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
+	if caPEM != "" {
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM([]byte(caPEM)) {
+			return nil, fmt.Errorf("sandbox node CA: no certificate in PEM")
+		}
+		c.HTTP.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+	}
+	return c, nil
 }
 
 func (c *Client) Ensure(ctx context.Context, id string, spec MachineSpec) (MachineStatus, error) {

@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Cross-compile the sandbox-node agent (the vm backend's machine API) for the sandbox node. Env: GOARCH (default arm64)."
-set -euo pipefail
-CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH:-arm64}" go build -o dist/sandbox-node ./cmd/sandbox-node "$@"

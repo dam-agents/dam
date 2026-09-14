@@ -243,6 +243,7 @@ func LoadFromEnv() (*Config, error) {
 		}
 	}
 	cfg.VM.NodeToken = os.Getenv("SANDBOX_NODE_TOKEN")
+	cfg.VM.NodeCA = os.Getenv("SANDBOX_NODE_CA")
 	if cfg.VM.Enabled && (cfg.VM.NodeURL == "" || cfg.VM.NodeAddress == "" || cfg.VM.NodeToken == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs nodeUrl and nodeAddress, plus SANDBOX_NODE_TOKEN")
 	}

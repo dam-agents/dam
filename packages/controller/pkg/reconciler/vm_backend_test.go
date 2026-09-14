@@ -74,7 +74,7 @@ func vmAgentCR() *apiv1.Agent {
 	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	agent.Spec.Image = "quay.io/example/claude-code-vm:1"
 	agent.Spec.Resources.Limits = map[string]string{"cpu": "1500m", "memory": "3Gi"}
-	agent.Annotations = map[string]string{annLastActivity: time.Now().UTC().Format(time.RFC3339)}
+	agent.Annotations = map[string]string{annLastActivity: time.Now().UTC().Format(time.RFC3339), annRollRev: "7"}
 	return agent
 }
 
@@ -91,13 +91,14 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r, _ := setupReconciler(t, agent, leafSecret())
 	r.config.VM = config.VMConfig{Enabled: true, NodeURL: srv.URL, NodeAddress: "192.168.104.5", NodeToken: "node-token"}
 	r.config.AgentTemplateDefaults.Mounts = []config.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}, {Path: "/scratch"}}
-	r.WithSandboxNode(sandboxnode.NewClient(srv.URL, "node-token"))
+	nodeClient, _ := sandboxnode.NewClient(srv.URL, "node-token", "")
+	r.WithSandboxNode(nodeClient)
 	var requeued []string
 	r.WithRequeue(func(name string, _ time.Duration) { requeued = append(requeued, name) })
 	return r, node, &requeued
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone; the cluster gets a selector-less agent Service backed by the node's published port and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets a selector-less agent Service backed by the node's published port and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -115,6 +116,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "http://10.96.42.42:10000", spec.Env["HTTPS_PROXY"])
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
 	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
+	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
 	assert.Contains(t, spec.Env["NO_PROXY"], vmInnerClusterNoProxy)
 
@@ -191,7 +193,8 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	node, srv := newFakeNode(t)
 	r, _ := setupReconciler(t, agent)
 	r.config.VM = config.VMConfig{Enabled: true, NodeURL: srv.URL, NodeAddress: "192.168.104.5", NodeToken: "node-token"}
-	r.WithSandboxNode(sandboxnode.NewClient(srv.URL, "node-token"))
+	nodeClient2, _ := sandboxnode.NewClient(srv.URL, "node-token", "")
+	r.WithSandboxNode(nodeClient2)
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")

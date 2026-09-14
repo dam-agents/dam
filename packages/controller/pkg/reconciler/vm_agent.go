@@ -80,6 +80,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
+		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
 	}
 	st, err := r.vmNode.Ensure(ctx, name, machine)

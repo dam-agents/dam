@@ -1,0 +1,78 @@
+{{- if .Values.virtualization.enabled }}
+{{- /*
+Provisions the sandbox node on every install and upgrade: the controller image's
+`provision-node` mode SSHes into virtualization.node.host, installs the pinned
+smolvm release and the sandbox-node agent for the node's architecture, writes
+the token and TLS pair from the sandbox-node Secret, routes the cluster Service
+CIDR through a Kubernetes node, and restarts the units. Idempotent; re-run on
+upgrade so a new controller image also refreshes the node agent.
+*/}}
+{{- $node := .Values.virtualization.node }}
+{{- $secret := printf "%s-sandbox-node" (include "platform.fullname" .) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "platform.fullname" . }}-provision-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: provision-node
+  {{- $hooks := dict
+        "helm.sh/hook" "post-install,post-upgrade"
+        "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded"
+        "helm.sh/hook-weight" "5" }}
+  {{- include "platform.annotations" (dict "root" $ "internal" $hooks) | nindent 2 }}
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: provision-node
+      {{- include "platform.podAnnotations" (dict "root" $) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "platform.controller.serviceAccountName" . }}
+      restartPolicy: OnFailure
+      containers:
+        - name: provision-node
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
+          args: ["provision-node"]
+          env:
+            - name: NODE_HOST
+              value: {{ $node.host | quote }}
+            - name: NODE_SSH_PORT
+              value: {{ $node.sshPort | quote }}
+            - name: NODE_SSH_USER
+              value: {{ $node.sshUser | quote }}
+            - name: NODE_SSH_HOST_KEY
+              value: {{ $node.sshHostKey | quote }}
+            - name: NODE_INGRESS_CIDRS
+              value: {{ join "," $node.ingressCidrs | quote }}
+            - name: SERVICE_CIDR
+              value: {{ $node.serviceCidr | quote }}
+            - name: SMOLVM_VERSION
+              value: {{ .Values.virtualization.smolvmVersion | quote }}
+            - name: NODE_SSH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: ssh-key
+            - name: NODE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: token
+            - name: NODE_TLS_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: tls.crt
+            - name: NODE_TLS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: tls.key
+{{- end }}

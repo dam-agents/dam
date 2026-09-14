@@ -73,6 +73,7 @@ type VMConfig struct {
 	NodeURL     string `json:"nodeUrl,omitempty"`
 	NodeAddress string `json:"nodeAddress,omitempty"`
 	NodeToken   string `json:"-"`
+	NodeCA      string `json:"-"`
 }
 
 type AgentProbes struct {
