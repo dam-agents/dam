@@ -9,7 +9,7 @@ import { FormError } from "../../../components/form-error.js";
 import { formatCores } from "../../budgets/lib/format.js";
 import type { SizeMi } from "../../budgets/lib/slots.js";
 
-const DEFAULT_HIBERNATE_MIN = 60;
+export const DEFAULT_HIBERNATE_MIN = 60;
 
 interface Props {
   value: number;
@@ -79,7 +79,7 @@ export function LifecycleField({
             onChange={(event) => {
               const next = event.target.valueAsNumber;
               if (next === 0) {
-                setLastMinutes(DEFAULT_HIBERNATE_MIN);
+                if (value > 0) setLastMinutes(value);
                 onChange(0);
                 return;
               }

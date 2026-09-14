@@ -154,6 +154,13 @@ describe("buildCodingAgentSetupInput", () => {
     ).not.toHaveProperty("registryCredential");
   });
 
+  // TEST_SCENARIO: an untouched lifecycle choice must inherit the template's or the cluster's window, never the UI's own default.
+  it("omits the idle window when the user made no lifecycle choice", () => {
+    expect(
+      buildCodingAgentSetupInput({ ...setup, hibernationTimeoutMin: null }),
+    ).not.toHaveProperty("hibernationTimeoutMin");
+  });
+
   it("throws on an incomplete draft", () => {
     expect(() =>
       buildCodingAgentSetupInput({ ...setup, providerRef: null }),

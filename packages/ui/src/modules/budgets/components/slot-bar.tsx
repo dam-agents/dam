@@ -84,6 +84,9 @@ export function SlotBar({
           <TooltipPrimitive.Root
             key={id}
             open={hover.hoveredId === id}
+            onOpenChange={(next) => {
+              if (!next) hover.hide();
+            }}
             disableHoverableContent
           >
             <TooltipPrimitive.Trigger asChild>

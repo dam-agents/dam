@@ -42,7 +42,7 @@ export interface CodingAgentSetupDraft {
   providerRef: ProviderRef | null;
   connectionIds: string[];
   registryCredential: RegistryCredential;
-  hibernationTimeoutMin: number;
+  hibernationTimeoutMin: number | null;
 }
 
 export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
@@ -64,8 +64,9 @@ export function isCodingAgentSetupComplete(
     draft.name.trim().length > 0 &&
     draft.providerRef !== null &&
     (draft.templateId !== null || setupUsesCustomImage(draft)) &&
-    Number.isInteger(draft.hibernationTimeoutMin) &&
-    draft.hibernationTimeoutMin >= 0 &&
+    (draft.hibernationTimeoutMin === null ||
+      (Number.isInteger(draft.hibernationTimeoutMin) &&
+        draft.hibernationTimeoutMin >= 0)) &&
     !hasPartialRegistryCredential(draft)
   );
 }
@@ -81,7 +82,9 @@ export function buildCodingAgentSetupInput(
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
-    hibernationTimeoutMin: draft.hibernationTimeoutMin,
+    ...(draft.hibernationTimeoutMin === null
+      ? {}
+      : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),
     ...(image ? { image } : { templateId: draft.templateId! }),
     appConnectionIds: [
       ...new Set([...draft.connectionIds, draft.providerRef!.id]),

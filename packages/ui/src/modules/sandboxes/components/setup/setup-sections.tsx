@@ -14,7 +14,7 @@ import { ProviderSelect } from "../../../providers/components/provider-select.js
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
-import { LifecycleField } from "../lifecycle-field.js";
+import { DEFAULT_HIBERNATE_MIN, LifecycleField } from "../lifecycle-field.js";
 
 export function NameSection({
   value,
@@ -109,7 +109,7 @@ export function LifecycleSetupSection({
   onChange,
   sizeMi,
 }: {
-  value: number;
+  value: number | null;
   onChange: (next: number) => void;
   sizeMi?: SizeMi;
 }) {
@@ -117,7 +117,11 @@ export function LifecycleSetupSection({
     <section className="mb-8">
       <SectionLabel spaced>Lifecycle</SectionLabel>
       <Inset>
-        <LifecycleField value={value} onChange={onChange} sizeMi={sizeMi} />
+        <LifecycleField
+          value={value ?? DEFAULT_HIBERNATE_MIN}
+          onChange={onChange}
+          sizeMi={sizeMi}
+        />
       </Inset>
     </section>
   );

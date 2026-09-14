@@ -15,7 +15,13 @@ export const setupFormSchema = z.object({
   templateId: z.string().nullable().default(null),
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
-  hibernationTimeoutMin: z.number().int().nonnegative().default(60).catch(60),
+  hibernationTimeoutMin: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .default(null)
+    .catch(null),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 
