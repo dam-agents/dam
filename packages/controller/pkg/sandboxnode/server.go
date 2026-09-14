@@ -213,6 +213,12 @@ func (s *Server) create(id string, spec MachineSpec) error {
 }
 
 func (s *Server) start(id string) error {
+	if dir := s.vmDir(id); dir != "" {
+		_ = s.smolvm("machine", "stop", "-n", id)
+		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid", "overlay.qcow2", "overlay.formatted"} {
+			_ = os.Remove(filepath.Join(dir, f))
+		}
+	}
 	err := s.smolvm("machine", "start", "-n", id)
 	if err != nil {
 		for _, pid := range orphanPIDs("/proc", s.vmDir(id)) {

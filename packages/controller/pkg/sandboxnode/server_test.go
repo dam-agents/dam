@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start that smolvm gives up on leaves no guest process behind (smolvm's ready timeout abandons a still-booting VM); delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — comes back dirty and makes the next boot exit at once) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package sandboxnode
 
 import (
@@ -254,6 +254,26 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
 	assert.Contains(t, h.calls(), "-I "+archive)
+}
+
+// TEST_SCENARIO: a machine directory holds the sockets, lock and root overlay of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk, before smolvm boots it.
+func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms", "vm1")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "name"), []byte("m1\n"), 0o644))
+	for _, f := range []string{"agent.ready", "vm.lock", "overlay.qcow2", "storage.raw"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), nil, 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+	require.NoError(t, h.node.start("m1"))
+	for _, f := range []string{"agent.ready", "vm.lock", "overlay.qcow2"} {
+		assert.NoFileExists(t, filepath.Join(dir, f))
+	}
+	assert.FileExists(t, filepath.Join(dir, "storage.raw"))
+	log, _ := os.ReadFile(h.log)
+	assert.Contains(t, string(log), "machine stop -n m1\nmachine start -n m1")
 }
 
 // TEST_SCENARIO: smolvm abandoned a machine's boot: of three processes only the one whose command line names that machine's vm dir is an orphan to kill.

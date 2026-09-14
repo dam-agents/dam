@@ -94,7 +94,15 @@ device-plugin pod keeps the same node agent and image.
   running (100 % CPU, still booting) — sandbox-node now kills that orphan
   after a failed start, and catatonit reaps the zombies (sandbox-node was
   PID 1). Each retry is a fresh boot; the controller's 3 s requeue drives it.
-- First boot of the 760 MB vm image flattens it inside the guest (minutes).
+- **Unclean stops** (a node pod restart kills every guest): smolvm then reports
+  the machine `unreachable` until a `machine stop` recovers it, and the root
+  overlay (`overlay.qcow2`, the throwaway root layer — the flattened image
+  and the workspace live on `storage.raw`) comes back dirty, which makes the
+  next boot exit with code 1 before the kernel prints anything. sandbox-node
+  now stops, clears the stale sockets/lock/pid and the overlay before every
+  start; with that, a machine killed with its pod comes back in ~40 s.
+- First boot of the 760 MB vm image flattens it inside the guest (~20 min
+  under nested virt); later boots find it on the storage disk.
 
 ## Known gaps (also in ADR 091)
 
