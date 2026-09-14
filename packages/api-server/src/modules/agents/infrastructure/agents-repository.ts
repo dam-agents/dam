@@ -36,6 +36,7 @@ import { getLogger } from "../../../core/logger.js";
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
+  peekCached(id: string): InfraAgent | null;
   create(
     spec: Record<string, unknown>,
     owner: string,
@@ -94,6 +95,11 @@ export function createAgentsRepository(
       if (!obj) return null;
       if (owner && !agentIsOwnedBy(obj, owner)) return null;
       return parseInfraAgent(obj);
+    },
+
+    peekCached(id) {
+      const obj = cache.peekCached(id);
+      return obj ? parseInfraAgent(obj) : null;
     },
 
     async create(spec, owner, name, templateId?, annotations?) {
