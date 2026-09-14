@@ -36,9 +36,10 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [retentionTarget, setRetentionTarget] =
     useState<LibraryArtifact | null>(null);
-  const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
-    null,
-  );
+  const [previewTarget, setPreviewTarget] = useState<{
+    artifact: LibraryArtifact;
+    edit?: boolean;
+  } | null>(null);
 
   return (
     <section className="mb-8">
@@ -87,7 +88,10 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 nested
                 defaultCollapsed={group.artifacts.length === 0}
                 showAgent={false}
-                onPreview={setPreviewTarget}
+                onPreview={(artifact) => setPreviewTarget({ artifact })}
+                onEdit={(artifact) =>
+                  setPreviewTarget({ artifact, edit: true })
+                }
                 onRename={setRenameTarget}
                 onMove={setMoveTarget}
                 onShare={setShareTarget}
@@ -124,8 +128,9 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
       )}
       {previewTarget && (
         <ArtifactPreviewDialog
-          artifact={previewTarget}
+          artifact={previewTarget.artifact}
           onClose={() => setPreviewTarget(null)}
+          initialEdit={previewTarget.edit}
         />
       )}
     </section>

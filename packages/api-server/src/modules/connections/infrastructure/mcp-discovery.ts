@@ -18,28 +18,34 @@ interface ProtectedResourceMetadata {
   authorization_servers?: string[];
 }
 
+function protectedResourceCandidates(mcpUrl: URL): string[] {
+  const originWellKnown = `${mcpUrl.protocol}//${mcpUrl.host}/.well-known/oauth-protected-resource`;
+  const resourcePath = mcpUrl.pathname.replace(/\/$/, "");
+  return resourcePath
+    ? [`${originWellKnown}${resourcePath}`, originWellKnown]
+    : [originWellKnown];
+}
+
 export async function discoverMcpAuth(
   mcpUrl: URL,
   fetchImpl: typeof fetch = fetch,
 ): Promise<DiscoveredMcpAuth | null> {
   const base = `${mcpUrl.protocol}//${mcpUrl.host}`;
 
-  try {
-    const res = await fetchImpl(
-      `${base}/.well-known/oauth-protected-resource`,
-      {
+  for (const candidate of protectedResourceCandidates(mcpUrl)) {
+    try {
+      const res = await fetchImpl(candidate, {
         signal: AbortSignal.timeout(5000),
-      },
-    );
-    if (res.ok) {
+      });
+      if (!res.ok) continue;
       const data = (await res.json()) as ProtectedResourceMetadata;
       const asUrl = data.authorization_servers?.[0];
       if (asUrl) {
         const meta = await fetchAuthServerMetadata(asUrl, fetchImpl);
         if (meta) return meta;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   return fetchAuthServerMetadata(base, fetchImpl);
 }

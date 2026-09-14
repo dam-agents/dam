@@ -37,6 +37,7 @@ function harness(opts: {
   termsAccepted?: (sub: string) => boolean;
   respond?: (prompt: string | ContentBlock[]) => Promise<string> | string;
   ensureReady?: AgentsService["ensureReady"];
+  wakePatienceMs?: number;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -98,6 +99,8 @@ function harness(opts: {
     stubTurnAttendance(),
     stubWorkspaceFiles(),
     (e) => events.push(e),
+    0,
+    { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },
   );
 
   const start = () => worker.connect();

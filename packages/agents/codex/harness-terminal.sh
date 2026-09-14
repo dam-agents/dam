@@ -7,12 +7,10 @@ if [ -n "$OPENAI_MODEL" ]; then
   set -- "$@" -c "model=\"$OPENAI_MODEL\""
 fi
 
-SESSION_MARKER="$HOME/.codex/.session-started"
-mkdir -p "$HOME/.codex" >/dev/null 2>&1
-
-if [ -f "$SESSION_MARKER" ]; then
-  exec codex resume --last "$@"
+# pinned by the SessionStart hook in /etc/codex/requirements.toml
+THREAD_FILE="$HOME/.codex/platform-sessions/$HARNESS_SESSION_ID"
+if [ -s "$THREAD_FILE" ]; then
+  exec codex resume "$(cat "$THREAD_FILE")" "$@"
 else
-  touch "$SESSION_MARKER"
   exec codex "$@"
 fi

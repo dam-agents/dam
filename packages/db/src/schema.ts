@@ -400,6 +400,9 @@ export const runtimeStateOutbox = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     applyAttempts: integer("apply_attempts").notNull().default(0),
+    droppedContributionKinds: jsonb("dropped_contribution_kinds")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   (table) => [
     index("runtime_state_outbox_retry_idx")
@@ -643,6 +646,7 @@ export const libraryArtifactVersions = pgTable(
       .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     sessionId: text("session_id"),
+    author: text("author"),
     storageRef: text("storage_ref").notNull(),
     contentType: text("content_type").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),

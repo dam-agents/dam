@@ -1280,9 +1280,11 @@ controller:
 # agents created from this template.
 # The rendered image ref (`repository:tag`, tag defaulting to the chart
 # appVersion) is the template's version identity: existing agents are offered
-# an upgrade when it differs from what they captured at create. Pinning `tag`
-# across releases therefore opts that template out of upgrade detection, and
-# non-image drift (mounts/env/resources) is never detected.
+# an upgrade when it differs from what they captured at create. The published
+# chart pins each CI-built image to its source sha (@ci-pin), so an upgrade is
+# offered exactly when the image changed. Pinning `tag` to a fixed value in an
+# override opts that template out of upgrade detection, and non-image drift
+# (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 # `category` sorts the entry: "harness" (base coding harnesses; the default when
@@ -1336,13 +1338,15 @@ agentTemplates:
     tags: ["Anthropic"]
     image:
       repository: quay.io/dam-agents/claude-code
-      tag: ""
+      tag: "" # @ci-pin claude-code-image-tag
     storageSize: "5Gi"
 
   # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
   # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
   # inside the sandbox. Rendered only when `virtualization.enabled`; the image
   # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
+  # Pinned by source sha like the workloads (@ci-pin): the disk is rebuilt
+  # only when its source moved, so a deploy never rolls VMs for nothing.
   claude-code-vm:
     enabled: true
     displayName: "Claude Code VM"
@@ -1355,7 +1359,7 @@ agentTemplates:
       type: vm
     image:
       repository: quay.io/dam-agents/claude-code-vm
-      tag: ""
+      tag: "" # @ci-pin claude-code-vm-image-tag
     storageSize: "5Gi"
 
   codex:
@@ -1367,7 +1371,7 @@ agentTemplates:
     tags: ["OpenAI"]
     image:
       repository: quay.io/dam-agents/codex
-      tag: ""
+      tag: "" # @ci-pin codex-image-tag
     storageSize: "5Gi"
 
   pi-agent:
@@ -1378,7 +1382,7 @@ agentTemplates:
     tags: ["Any provider"]
     image:
       repository: quay.io/dam-agents/pi-agent
-      tag: ""
+      tag: "" # @ci-pin pi-agent-image-tag
     storageSize: "5Gi"
 
   bob:
@@ -1393,7 +1397,7 @@ agentTemplates:
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob
-      tag: ""
+      tag: "" # @ci-pin bob-image-tag
     # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
@@ -1413,7 +1417,7 @@ agentTemplates:
     description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
     image:
       repository: quay.io/dam-agents/k-search
-      tag: ""
+      tag: "" # @ci-pin k-search-image-tag
     storageSize: "5Gi"
     resources:
       requests:
@@ -1434,7 +1438,7 @@ agentTemplates:
     description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
     image:
       repository: quay.io/dam-agents/k-search
-      tag: ""
+      tag: "" # @ci-pin k-search-image-tag
     storageSize: "10Gi"
     # GPU Kata runtime class (cluster-specific; e.g. "kata-nvidia-gpu" on
     # OpenShift). Adds a podFixed overhead (~1 CPU / 4Gi).

@@ -14,6 +14,7 @@ import {
 import {
   SHARED_KB_TEMPLATE_ID,
   type Contribution,
+  type ContributionKind,
   type RuntimeEvent as Event,
   type RuntimeEventKind,
 } from "api-server-api";
@@ -32,8 +33,8 @@ export interface StatePayload {
   contributions: Contribution[];
   hash: string;
   events: Event[];
-  droppedContributionKinds: string[];
-  droppedEventKinds: string[];
+  droppedContributionKinds: ContributionKind[];
+  droppedEventKinds: RuntimeEventKind[];
 }
 
 export interface StateBuilder {

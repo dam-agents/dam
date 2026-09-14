@@ -83,6 +83,7 @@ export interface AcpRuntime {
   isSessionRunning(sessionId: string): boolean;
   resetSession(sessionId: string): void;
   refreshEnv(opts: { force: boolean }): void;
+  recycleForConfig(): void;
   shutdown(): void;
 }
 
@@ -95,6 +96,7 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
+  beforeFirstSpawn?: () => Promise<void>;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -400,6 +402,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     { code: number; message: string }
   > = {
     "agent-exited": { code: 1011, message: "agent exited" },
+    "config-recycle": {
+      code: 1011,
+      message: "agent recycled for config change",
+    },
     "env-recycle": { code: 1011, message: "agent recycled for env change" },
     "harness-unresponsive": {
       code: 1011,
@@ -462,6 +468,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
     envForceRecycleMs,
+    ...(deps.beforeFirstSpawn
+      ? { beforeFirstSpawn: deps.beforeFirstSpawn }
+      : {}),
     log(msg) {
       deps.log?.(msg);
     },
@@ -1046,6 +1055,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     refreshEnv(opts) {
       lease.refreshEnv(opts);
+    },
+
+    recycleForConfig() {
+      lease.recycleForConfig();
     },
 
     shutdown() {

@@ -2,18 +2,18 @@ import { useCallback } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
 
+import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { fetchFileContent } from "../api/queries.js";
 
 export function useFileTree(selectedAgent: string | null) {
   const openFilePath = useStore((s) => s.openFilePath);
-  const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const showConfirm = useStore((s) => s.showConfirm);
+  const confirmDiscard = useDockDraftGuard();
 
   const revealFiles = useCallback(() => {
     setFilesSectionOpen(true);
@@ -28,13 +28,7 @@ export function useFileTree(selectedAgent: string | null) {
         revealFiles();
         return;
       }
-      if (openFileDirty) {
-        const ok = await showConfirm(
-          "Discard unsaved changes?",
-          "Unsaved changes",
-        );
-        if (!ok) return;
-      }
+      if (!(await confirmDiscard())) return;
       try {
         await fetchFileContent(selectedAgent, path);
         setOpenFilePath(path, opts);
@@ -49,11 +43,10 @@ export function useFileTree(selectedAgent: string | null) {
     [
       selectedAgent,
       openFilePath,
-      openFileDirty,
+      confirmDiscard,
       setOpenFilePath,
       setOpenFileEdit,
       revealFiles,
-      showConfirm,
     ],
   );
 

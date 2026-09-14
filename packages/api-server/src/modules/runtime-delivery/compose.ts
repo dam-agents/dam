@@ -1,8 +1,13 @@
 import type { ConnectionOptions } from "bullmq";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
-import type { DriverFailure, RuntimeDeliveryService } from "api-server-api";
+import type {
+  ContributionKind,
+  DriverFailure,
+  RuntimeDeliveryService,
+} from "api-server-api";
 import { getLogger } from "../../core/logger.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createOutboxRepo,
   createAgentsRuntimeRepo,
@@ -65,6 +70,7 @@ export interface ContributionsStatus {
   failures: DriverFailure[];
   preparingWorkspace: boolean;
   features: RuntimeFeatures;
+  unsupportedKinds: ContributionKind[];
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -125,6 +131,7 @@ export function composeRuntimeDelivery(
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
     queue,
+    uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
     log,
   });
@@ -157,6 +164,7 @@ export function composeRuntimeDelivery(
         failures,
         preparingWorkspace: preparing.has(agentId),
         features: features.get(agentId) ?? runtimeFeaturesOf(null),
+        unsupportedKinds: row?.droppedContributionKinds ?? [],
       };
     },
 
@@ -183,12 +191,14 @@ export function composeRuntimeDelivery(
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const { settled, failures } = progressOf(byId.get(id) ?? null);
+        const row = byId.get(id) ?? null;
+        const { settled, failures } = progressOf(row);
         result.set(id, {
           settled,
           failures,
           preparingWorkspace: preparing.has(id),
           features: features.get(id) ?? runtimeFeaturesOf(null),
+          unsupportedKinds: row?.droppedContributionKinds ?? [],
         });
       }
       return result;

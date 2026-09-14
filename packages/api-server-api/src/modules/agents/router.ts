@@ -50,6 +50,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     },
     podTerminationReason: agent.podTerminationReason,
     contributionFailures: agent.contributionFailures,
+    unsupportedContributionKinds: agent.unsupportedContributionKinds,
     channels: agent.channels,
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,

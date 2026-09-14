@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { Skill } from "api-server-api";
 import { createScanCache } from "../../modules/skills/infrastructure/scan-cache.js";
 
-const TTL_MS = 5 * 60 * 1000;
+const FRESH_MS = 5 * 60 * 1000;
+const STALE_MS = 30 * 60 * 1000;
 const URL = "https://github.com/acme/skills";
 const SHARED = { kind: "shared" } as const;
 const ALICE = { kind: "agent", owner: "alice", agentId: "agent-a1" } as const;
@@ -43,25 +44,99 @@ describe("skills scan cache", () => {
     vi.setSystemTime(1_000_000);
     await cache.scan(SHARED, URL, undefined, scanner);
 
-    vi.setSystemTime(1_000_000 + TTL_MS - 1);
+    vi.setSystemTime(1_000_000 + FRESH_MS - 1);
     const hit = await cache.scan(SHARED, URL, undefined, scanner);
 
     expect(hit.scannedAt).toBe(1_000_000);
     expect(scanner).toHaveBeenCalledTimes(1);
   });
 
-  it("re-reads and re-stamps once the entry expires", async () => {
+  it("re-reads and re-stamps once the entry is past the stale window", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
     await cache.scan(SHARED, URL, undefined, async () => [skill("a")]);
 
-    vi.setSystemTime(1_000_000 + TTL_MS);
+    vi.setSystemTime(1_000_000 + STALE_MS);
     const fresh = await cache.scan(SHARED, URL, undefined, async () => [
       skill("b"),
     ]);
 
     expect(fresh.skills.map((s) => s.name)).toEqual(["b"]);
-    expect(fresh.scannedAt).toBe(1_000_000 + TTL_MS);
+    expect(fresh.scannedAt).toBe(1_000_000 + STALE_MS);
+  });
+
+  // TEST_SCENARIO: A visit after the fresh window must not wait on a repository read again — the entry answers at once and the rescan runs behind it, so the next visit sees what upstream now holds.
+  it("answers a stale entry at once and rescans behind it", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("a")]);
+
+    vi.setSystemTime(1_000_000 + FRESH_MS);
+    const rescan = vi.fn(async () => [skill("b")]);
+    const stale = await cache.scan(SHARED, URL, undefined, rescan);
+
+    expect(stale.skills.map((s) => s.name)).toEqual(["a"]);
+    expect(stale.scannedAt).toBe(1_000_000);
+    expect(rescan).toHaveBeenCalledTimes(1);
+
+    await rescan.mock.results[0]?.value;
+    const refreshed = await cache.scan(SHARED, URL, undefined, rescan);
+
+    expect(refreshed.skills.map((s) => s.name)).toEqual(["b"]);
+    expect(refreshed.scannedAt).toBe(1_000_000 + FRESH_MS);
+    expect(rescan).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: Two readers of one source must not each pay for a repository read — one upstream read answers everyone waiting on that key.
+  it("reads a key once for every caller waiting on it", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    let release = (): void => {};
+    const scanner = vi.fn(
+      () =>
+        new Promise<Skill[]>((resolve) => {
+          release = () => resolve([skill("a")]);
+        }),
+    );
+
+    const first = cache.scan(SHARED, URL, undefined, scanner);
+    const second = cache.scan(SHARED, URL, undefined, scanner);
+    await vi.advanceTimersByTimeAsync(0);
+    release();
+
+    expect((await first).skills.map((s) => s.name)).toEqual(["a"]);
+    expect((await second).skills.map((s) => s.name)).toEqual(["a"]);
+    expect(scanner).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: Re-scan invalidates while a read is already in flight — that read saw the repository before the move, so it must neither answer the re-scan nor be left behind as the cached list.
+  it("never answers a re-scan from a read that started before it", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    let release = (): void => {};
+    const stale = vi.fn(
+      () =>
+        new Promise<Skill[]>((resolve) => {
+          release = () => resolve([skill("before")]);
+        }),
+    );
+
+    const inFlight = cache.scan(SHARED, URL, undefined, stale);
+    cache.invalidate(URL, undefined);
+    const afterRefresh = cache.scan(SHARED, URL, undefined, async () => [
+      skill("after"),
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    release();
+
+    await inFlight;
+    expect((await afterRefresh).skills.map((s) => s.name)).toEqual(["after"]);
+
+    const next = vi.fn(async () => [skill("unused")]);
+    const hit = await cache.scan(SHARED, URL, undefined, next);
+
+    expect(hit.skills.map((s) => s.name)).toEqual(["after"]);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("caches nothing when the scanner throws, leaving no stamp to serve", async () => {

@@ -32,6 +32,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
     }),
     resetSession: () => {},
     refreshEnv: () => {},
+    recycleForConfig: () => {},
     shutdown: () => {},
   };
   return { runtime, sent };

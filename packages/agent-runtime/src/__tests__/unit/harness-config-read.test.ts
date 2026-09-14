@@ -52,6 +52,7 @@ describe("createReadHarnessConfig", () => {
     const out = await read(async () => ({
       status: "observed",
       models: [{ value: "opus", name: "opus" }],
+      via: "TEST_URL",
     }))();
     expect(out).toEqual({
       model: "opus",
@@ -65,6 +66,7 @@ describe("createReadHarnessConfig", () => {
     const out = await read(async () => ({
       status: "observed",
       models: [{ value: "x", name: "x" }],
+      via: "TEST_URL",
     }))();
     expect(out).toEqual({
       model: null,

@@ -260,13 +260,17 @@ export function registerArtifactLibraryTools(
     },
     ({ id, title, content, upload_ref, file_name, folder_id }) =>
       run(async () => {
-        const artifact = await lib.update(id, {
-          title,
-          content,
-          uploadRef: upload_ref,
-          fileName: file_name,
-          folderId: folder_id === "" ? null : folder_id,
-        });
+        const artifact = await lib.update(
+          id,
+          {
+            title,
+            content,
+            uploadRef: upload_ref,
+            fileName: file_name,
+            folderId: folder_id === "" ? null : folder_id,
+          },
+          { agentId: deps.agentId },
+        );
         const publishedVersion =
           content !== undefined || upload_ref !== undefined;
         return json(

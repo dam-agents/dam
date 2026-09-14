@@ -6,16 +6,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { useArtifactDeletion } from "../hooks/use-artifact-deletion.js";
+import { isEditableArtifact } from "../lib/editable.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
 export function ArtifactRowMenuItems({
   artifact,
+  onEdit,
   onRename,
   onMove,
   onShare,
   onSetRetention,
 }: {
   artifact: LibraryArtifact;
+  onEdit: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
@@ -25,6 +28,11 @@ export function ArtifactRowMenuItems({
 
   return (
     <>
+      {isEditableArtifact(artifact) && (
+        <DropdownMenuItem onSelect={() => onEdit(artifact)}>
+          Edit
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem onSelect={() => onRename(artifact)}>
         Rename
       </DropdownMenuItem>

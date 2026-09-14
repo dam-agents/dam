@@ -7,6 +7,7 @@ import {
   type EnvVar,
   type TemplateSpec,
   type ChannelConfig,
+  type ContributionKind,
   type DriverFailure,
   type BindTelegramChatResult,
   type BindSlackChannelResult,
@@ -59,6 +60,7 @@ export interface ContributionsStatus {
   failures: DriverFailure[];
   preparingWorkspace: boolean;
   features: RuntimeFeatures;
+  unsupportedKinds: ContributionKind[];
 }
 
 export interface ContributionsProgress {
@@ -492,6 +494,7 @@ export function createAgentsService(deps: {
         failures: [],
         preparingWorkspace: false,
         features: runtimeFeaturesOf(null),
+        unsupportedKinds: [],
       };
     }
   }
@@ -522,6 +525,7 @@ export function createAgentsService(deps: {
       status.preparingWorkspace,
       templateUpdate,
       status.features,
+      status.unsupportedKinds,
     );
   }
 
@@ -606,6 +610,7 @@ export function createAgentsService(deps: {
         status.preparingWorkspace,
         await templateUpdateFor(infra),
         status.features,
+        status.unsupportedKinds,
       ),
     );
   };
@@ -665,6 +670,7 @@ export function createAgentsService(deps: {
             ? templateImageUpdate(infra.spec.image, templateImage)
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
+          status?.unsupportedKinds ?? [],
         );
       });
     },
@@ -834,6 +840,7 @@ export function createAgentsService(deps: {
         false,
         undefined,
         runtimeFeaturesOf(null),
+        [],
       );
       securityLog("info", "agent.create", {
         category: "resource",

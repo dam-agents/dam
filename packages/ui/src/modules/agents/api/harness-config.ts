@@ -1,5 +1,7 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
+import type { HarnessConfigChange } from "api-server-api";
+import { useRef } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
@@ -67,13 +69,21 @@ export function useResolvedHarnessConfig(
   const pending = snapshotPending;
 
   if (operable) {
-    const values = live ?? recorded?.snapshot ?? null;
+    const recent = recorded?.snapshot;
+    const read = live ?? recent ?? null;
+    const backFilled =
+      read !== null &&
+      read.availableModels === undefined &&
+      !!recent?.availableModels;
+    const values = backFilled
+      ? { ...read, availableModels: recent.availableModels }
+      : read;
     return {
       values,
       origin: values ? "live" : "none",
       capturedAt: null,
       hasRun,
-      modelsPaired: true,
+      modelsPaired: !backFilled,
       pending,
     };
   }
@@ -112,14 +122,61 @@ export function useStaleModel(agentId: string | null): {
   return { stale: unavailableModel(snapshot) !== null, model };
 }
 
+function withDeclared(
+  prev: HarnessConfigCurrent,
+  change: HarnessConfigChange,
+): HarnessConfigCurrent {
+  const unset = new Set(change.unset ?? []);
+  const configOptions = { ...prev.configOptions };
+  for (const [id, value] of Object.entries(change.configOptions ?? {})) {
+    configOptions[id] = value;
+  }
+  for (const id of unset) delete configOptions[id];
+  return {
+    ...prev,
+    model: unset.has("model") ? null : (change.model ?? prev.model),
+    mode: unset.has("mode") ? null : (change.mode ?? prev.mode),
+    configOptions,
+  };
+}
+
+interface HarnessConfigRollback {
+  key: ReturnType<typeof harnessConfigCurrentKey>;
+  previous: HarnessConfigCurrent;
+}
+
 export function useApplyHarnessConfig() {
+  const rollback = useRef<HarnessConfigRollback | null>(null);
+
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),
-    meta: { errorToast: "Failed to apply model settings" },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: harnessConfigCurrentKey(variables.agentId),
-      });
+    meta: {
+      errorToast: "Failed to apply model settings",
+      invalidates: [trpc.harnessConfig.snapshot.queryKey()],
+    },
+    onMutate: async (change) => {
+      const key = harnessConfigCurrentKey(change.agentId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<HarnessConfigCurrent>(key);
+      rollback.current = previous ? { key, previous } : null;
+      if (previous) {
+        queryClient.setQueryData(key, withDeclared(previous, change));
+      }
+      return undefined;
+    },
+    onSettled: (_data, error) => {
+      const pending = rollback.current;
+      rollback.current = null;
+      if (error && pending) {
+        queryClient.setQueryData(pending.key, pending.previous);
+        return;
+      }
+      if (pending) {
+        void queryClient.invalidateQueries({
+          queryKey: pending.key,
+          refetchType: "none",
+        });
+      }
     },
   });
 }

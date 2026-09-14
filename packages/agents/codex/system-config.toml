@@ -3,6 +3,8 @@ sandbox_mode = "danger-full-access"
 cli_auth_credentials_store = "file"
 developer_instructions = "/etc/AGENTS.md"
 forced_login_method = "api"
+# CLI rides the image pin; the startup upgrade nag would only hit the egress chain
+check_for_update_on_startup = false
 
 # WSS disabled: the Envoy MITM proxy can't relay upgrades, Codex would hang then fall back
 [model_providers.openai-platform]

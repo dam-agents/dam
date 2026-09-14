@@ -4,5 +4,5 @@
 # Format contract: [tools] entries only, one `"key" = "version"` per line —
 # agent-entrypoint parses this file to strip legacy workspace-seeded pins.
 [tools]
-"npm:@openai/codex" = "0.133.0"
-"npm:@zed-industries/codex-acp" = "0.14.0"
+"npm:@openai/codex" = "0.153.4"
+"npm:@zed-industries/codex-acp" = "0.16.0"

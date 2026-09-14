@@ -9,20 +9,11 @@ import type {
   OutboxRepo,
   OutboxRow,
 } from "../../modules/runtime-delivery/infrastructure/outbox-repo.js";
+import { outboxRow } from "../helpers/outbox-row.js";
 import type { StateQueue } from "../../modules/runtime-delivery/infrastructure/state-queue.js";
 
 function row(agentId: string): OutboxRow {
-  return {
-    agentId,
-    version: 3,
-    lastEnqueuedAt: new Date(0),
-    lastSettledVersion: 2,
-    lastAppliedVersion: 2,
-    lastAppliedHash: null,
-    lastAppliedAt: null,
-    applyFailures: [],
-    applyAttempts: 0,
-  };
+  return outboxRow({ agentId, version: 3, lastSettledVersion: 2 });
 }
 
 function harness(opts: {

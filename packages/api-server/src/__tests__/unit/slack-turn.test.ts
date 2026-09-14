@@ -45,6 +45,7 @@ function harness(opts: {
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
   agentName?: string;
+  wakePatienceMs?: number;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -91,6 +92,8 @@ function harness(opts: {
     opts.attendance ?? stubTurnAttendance(),
     stubWorkspaceFiles(),
     (e) => events.push(e),
+    0,
+    { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },
   );
 
   return {
@@ -1093,6 +1096,7 @@ describe("slack turn — network-access framing and attendance", () => {
     const rec = recordingAttendance();
     const h = harness({
       attendance: rec.attendance,
+      wakePatienceMs: 0,
       ensureReady: async () => {
         throw new AgentWakeTimeoutError({
           agentId: "agent-1",

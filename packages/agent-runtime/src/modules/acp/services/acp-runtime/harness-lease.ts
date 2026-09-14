@@ -2,6 +2,7 @@ import type { AgentProcess } from "../../infrastructure/agent-process.js";
 
 export type HarnessTeardownReason =
   | "agent-exited"
+  | "config-recycle"
   | "env-recycle"
   | "harness-unresponsive"
   | "shutdown";
@@ -11,6 +12,7 @@ export interface HarnessLease {
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
+  recycleForConfig(): void;
   requestRecycle(): void;
   maybeRecycle(): void;
   shutdown(): void;
@@ -24,6 +26,7 @@ export interface HarnessLeaseDeps {
   describeBusy: () => string;
   envReadyAtBoot: boolean;
   warmStartTimeoutMs: number;
+  beforeFirstSpawn?: () => Promise<void>;
   envForceRecycleMs: number;
   log: (msg: string) => void;
 }
@@ -31,22 +34,76 @@ export interface HarnessLeaseDeps {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
  * it when the first client needs it, holds early callers back until the env
- * is ready at boot (bounded by a timeout), and takes the process back when
- * the env changes or when a caller reports the process unresponsive: right
- * away when idle, after work drains when busy, or after a grace period when
- * forced. Every way the process goes down runs the same cleanup and reports
- * one reason — agent-exited, env-recycle, harness-unresponsive, or shutdown —
- * so the cleanup steps cannot drift apart between the paths. A crash is final
- * for the pod; a recycle respawns on the next attach.
+ * is ready at boot (bounded by a timeout, and covering the boot work that has
+ * to precede the first spawn), and takes the process back when the env or the
+ * harness's own config changes, or when a caller reports the process
+ * unresponsive: right away when idle, after work drains when busy, or after a
+ * grace period when forced. Every way the process goes down runs the same
+ * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
+ * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
+ * between the paths. A crash is final for the pod; a recycle respawns on the
+ * next attach.
  */
+const RECYCLE_LOG: Partial<Record<HarnessTeardownReason, string>> = {
+  "config-recycle": "recycling harness to apply a config change",
+  "env-recycle": "recycling harness to apply env change",
+};
+
 export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let agent: AgentProcess | null = null;
   let terminal = false;
   let envReady = deps.envReadyAtBoot;
   const readyWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingRecycle: "env-recycle" | "harness-unresponsive" | null = null;
+  let bootWorkStarted = false;
+  let bootWorkDone = deps.beforeFirstSpawn === undefined;
+  let gateOpen = envReady && bootWorkDone;
+  let bootTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingRecycle:
+    | "config-recycle"
+    | "env-recycle"
+    | "harness-unresponsive"
+    | null = null;
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function releaseWaiters(): void {
+    if (warmTimer) {
+      clearTimeout(warmTimer);
+      warmTimer = null;
+    }
+    if (bootTimer) {
+      clearTimeout(bootTimer);
+      bootTimer = null;
+    }
+    for (const release of [...readyWaiters]) release();
+    readyWaiters.clear();
+  }
+
+  function openGate(): void {
+    gateOpen = true;
+    releaseWaiters();
+  }
+
+  function releaseIfReady(): void {
+    if (envReady && bootWorkDone) openGate();
+  }
+
+  function finishBootWork(): void {
+    bootWorkDone = true;
+    releaseIfReady();
+  }
+
+  function startBootWork(): void {
+    if (bootWorkStarted || bootWorkDone || !envReady) return;
+    bootWorkStarted = true;
+    const hold = deps.beforeFirstSpawn?.();
+    if (!hold) {
+      finishBootWork();
+      return;
+    }
+    bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
+    void hold.catch(() => {}).then(finishBootWork);
+  }
 
   function markEnvReady(): void {
     if (envReady) return;
@@ -55,11 +112,16 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       clearTimeout(warmTimer);
       warmTimer = null;
     }
-    for (const release of [...readyWaiters]) release();
-    readyWaiters.clear();
+    startBootWork();
+    releaseIfReady();
   }
 
-  if (!envReady) warmTimer = setTimeout(markEnvReady, deps.warmStartTimeoutMs);
+  if (!envReady) {
+    warmTimer = setTimeout(() => {
+      envReady = true;
+      openGate();
+    }, deps.warmStartTimeoutMs);
+  }
 
   function resetPendingRecycle(): void {
     pendingRecycle = null;
@@ -73,6 +135,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     if (warmTimer) {
       clearTimeout(warmTimer);
       warmTimer = null;
+    }
+    if (bootTimer) {
+      clearTimeout(bootTimer);
+      bootTimer = null;
     }
     readyWaiters.clear();
   }
@@ -88,11 +154,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     resetPendingRecycle();
     const old = agent;
     if (!old) return;
-    deps.log(
-      reason === "env-recycle"
-        ? "recycling harness to apply env change"
-        : "recycling unresponsive harness",
-    );
+    deps.log(RECYCLE_LOG[reason] ?? "recycling unresponsive harness");
     agent = null;
     teardown(reason);
     old.kill();
@@ -121,7 +183,8 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     },
 
     whenReady(cb) {
-      if (envReady) {
+      startBootWork();
+      if (gateOpen) {
         cb();
         return () => {};
       }
@@ -146,6 +209,20 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       );
       if (opts.force && !forceTimer)
         forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+    },
+
+    recycleForConfig() {
+      if (!agent) return;
+      pendingRecycle ??= "config-recycle";
+      if (!deps.busy()) {
+        recycle();
+        return;
+      }
+      deps.log(
+        `config recycle deferred: ${deps.describeBusy()} — forcing in ` +
+          `${deps.envForceRecycleMs}ms`,
+      );
+      if (!forceTimer) forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
     },
 
     requestRecycle() {

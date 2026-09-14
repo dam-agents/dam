@@ -50,11 +50,16 @@ export interface LibraryArtifact {
   updatedAt: string;
 }
 
+export type ArtifactVersionAuthor = "user" | "agent";
+
+export type ArtifactWriteAttribution = { agentId: string } | { user: true };
+
 export interface ArtifactVersionInfo {
   version: number;
   contentType: string;
   sizeBytes: number;
   createdAt: string;
+  author: ArtifactVersionAuthor | null;
 }
 
 export interface ArtifactContent {
@@ -91,6 +96,7 @@ export interface ArtifactUpdateInput {
   uploadRef?: string;
   fileName?: string;
   contentType?: string;
+  expectedVersion?: number;
 }
 
 export interface ArtifactSharingInput {
@@ -125,7 +131,11 @@ export interface ArtifactLibraryService {
     input: ArtifactCreateInput,
     attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
-  update(id: string, input: ArtifactUpdateInput): Promise<LibraryArtifact>;
+  update(
+    id: string,
+    input: ArtifactUpdateInput,
+    attribution?: ArtifactWriteAttribution,
+  ): Promise<LibraryArtifact>;
   setSharing(id: string, input: ArtifactSharingInput): Promise<LibraryArtifact>;
   delete(id: string): Promise<void>;
   createUploadUrl(fileName: string): Promise<ArtifactUploadTicket>;

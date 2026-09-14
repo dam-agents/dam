@@ -9,3 +9,7 @@ const RENDERED_KINDS: ReadonlySet<ArtifactKind> = new Set([
 export function isRenderedKind(kind: ArtifactKind): boolean {
   return RENDERED_KINDS.has(kind);
 }
+
+export function isTextKind(kind: ArtifactKind): boolean {
+  return kind !== "binary";
+}

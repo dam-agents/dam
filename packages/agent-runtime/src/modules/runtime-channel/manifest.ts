@@ -20,6 +20,15 @@ const extensionImpl = z.object({
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
+export const modelDiscoverySpec = z.object({
+  urlEnv: z.array(z.string().min(1)).nonempty(),
+  redirectEnv: z.array(z.string().min(1)).optional(),
+  pinEnv: z.array(z.string().min(1)).optional(),
+  path: z.string().startsWith("/").optional(),
+  shape: z.enum(["openai-models", "litellm-model-info"]).optional(),
+});
+export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
+
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
   format: z.enum(["json", "toml"]).default("json"),
@@ -40,11 +49,7 @@ export const harnessConfigBinding = z.object({
       },
     ),
   catalog: harnessConfigCatalog.optional(),
-  modelDiscovery: z
-    .object({
-      urlEnv: z.array(z.string().min(1)).nonempty(),
-    })
-    .optional(),
+  modelDiscovery: modelDiscoverySpec.optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 

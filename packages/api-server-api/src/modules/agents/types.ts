@@ -59,6 +59,7 @@ export interface Agent {
   overBudgetMessage?: string;
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
+  unsupportedContributionKinds: string[];
   channels: ChannelConfig[];
   kind?: AgentKind;
   kbTemplateId?: string;

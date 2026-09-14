@@ -33,6 +33,7 @@ import { CopyLinkButton } from "./copy-link-button.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
+  onEdit: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
@@ -50,6 +51,7 @@ export function ArtifactRow({
   showAgent = true,
   drag,
   onPreview,
+  onEdit,
   onRename,
   onMove,
   onShare,
@@ -134,6 +136,7 @@ export function ArtifactRow({
           <DropdownMenuContent align="end">
             <ArtifactRowMenuItems
               artifact={artifact}
+              onEdit={onEdit}
               onRename={onRename}
               onMove={onMove}
               onShare={onShare}

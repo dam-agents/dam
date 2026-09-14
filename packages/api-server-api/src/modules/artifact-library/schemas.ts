@@ -25,6 +25,8 @@ export const viewerEmailSchema = z
   .toLowerCase()
   .pipe(z.email().max(254));
 
+export const artifactVersionAuthorSchema = z.enum(["user", "agent"]);
+
 export const ARTIFACT_TITLE_MAX_LENGTH = 300;
 
 const titleSchema = z
@@ -83,6 +85,7 @@ export const artifactUpdateInputSchema = z
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
     contentType: z.string().trim().min(1).max(200).optional(),
+    expectedVersion: z.number().int().positive().optional(),
   })
   .refine((v) => !(v.content != null && v.uploadRef != null), {
     message: "provide at most one of content or uploadRef",

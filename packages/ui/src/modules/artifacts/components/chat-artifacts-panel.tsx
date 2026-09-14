@@ -4,7 +4,13 @@ import {
   OverflowMenuVertical,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type Ref,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +31,7 @@ import {
   useArtifactRowDrag,
 } from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
+import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
@@ -41,12 +48,14 @@ export function ChatArtifactsPanel({
   onToggle,
   className,
   style,
+  ref,
 }: {
   agentId: string | null;
   open: boolean;
   onToggle: () => void;
   className?: string;
   style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
 }) {
   const enabled = open && !!agentId;
   const { data: artifacts = [], isPending } = useArtifacts(
@@ -56,7 +65,12 @@ export function ChatArtifactsPanel({
     useArtifactFolders(enabled);
   const loading = enabled && (isPending || foldersPending);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifact = useOpenArtifact();
+
+  const openRow = useCallback(
+    (id: string) => openArtifact(id === openArtifactId ? null : id),
+    [openArtifact, openArtifactId],
+  );
   const folderCollapse = useStore((s) =>
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );
@@ -87,6 +101,7 @@ export function ChatArtifactsPanel({
       className={className}
       headerClassName="border-t border-border"
       style={style}
+      ref={ref}
     >
       {loading || artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
@@ -121,12 +136,9 @@ export function ChatArtifactsPanel({
                     key={artifact.id}
                     artifact={artifact}
                     active={artifact.id === openArtifactId}
-                    onClick={() =>
-                      setOpenArtifactId(
-                        artifact.id === openArtifactId ? null : artifact.id,
-                      )
-                    }
+                    onClick={() => void openRow(artifact.id)}
                     drag={dropCallbacks}
+                    onEdit={(a) => void openArtifact(a.id, { edit: true })}
                     onRename={setRenameTarget}
                     onMove={setMoveTarget}
                     onShare={setShareTarget}
@@ -171,6 +183,7 @@ function ArtifactListRow({
   active,
   onClick,
   drag,
+  onEdit,
   onRename,
   onMove,
   onShare,
@@ -180,6 +193,7 @@ function ArtifactListRow({
   active: boolean;
   onClick: () => void;
   drag?: ArtifactDragCallbacks;
+  onEdit: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
@@ -269,6 +283,7 @@ function ArtifactListRow({
           <DropdownMenuContent align="end">
             <ArtifactRowMenuItems
               artifact={artifact}
+              onEdit={onEdit}
               onRename={onRename}
               onMove={onMove}
               onShare={onShare}

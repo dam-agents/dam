@@ -19,6 +19,14 @@
 ARG AGENT_IMAGE=platform-claude-code:latest
 FROM ${AGENT_IMAGE} AS agent
 
+# Tag, not digest: fedora-bootc publishes no immutable tag — :44 and its
+# per-arch variants all move — and quay expires a manifest as soon as no tag
+# points at it, so a digest pinned here 404s within weeks. That is what broke
+# main CI. dnf packages stay unpinned for the same reason: Fedora mirrors drop
+# superseded NVRs, so pinning them breaks the build instead of fixing it —
+# which also means a base digest bought little reproducibility here. k3s below
+# stays pinned by version, a tag upstream keeps forever. Bump :44 to the next
+# Fedora deliberately, together with a full VM test.
 FROM quay.io/fedora/fedora-bootc:44
 
 # runc explicitly: install_weak_deps=False drops it, and dockerd then dies on
@@ -32,11 +40,12 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       chromium && \
     dnf clean all
 
-# k3s: binary in /usr (immutable bootc area), unit written by the installer;
-# stable channel resolved at build time. Airgap images seed
+# k3s: binary in /usr (immutable bootc area), unit written by the installer.
+# Airgap images seed
 # /var/lib/rancher/k3s/agent/images so the cluster comes up without any egress
 # approvals (pause/coredns/traefik would otherwise hang on gated pulls).
 RUN curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_VERSION=v1.36.4+k3s1 \
       INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_ENABLE=true \
       INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_BIN_DIR=/usr/bin sh - && \
     ver=$(/usr/bin/k3s --version | awk 'NR==1{print $3}') && \

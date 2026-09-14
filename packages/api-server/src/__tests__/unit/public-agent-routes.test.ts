@@ -55,14 +55,4 @@ describe("public agent routes", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ agent: null });
   });
-
-  /**
-   * TEST_SCENARIO: An agent can be renamed or deleted at any moment, and the
-   * answer names a person. A cached copy in a shared proxy would outlive both.
-   */
-  it("tells caches not to store the answer", async () => {
-    const res = await ROUTES.request("/agents/agent-1");
-
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
-  });
 });

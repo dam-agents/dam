@@ -55,6 +55,7 @@ export interface ComposeAcpOptions {
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
+  beforeFirstSpawn?: () => Promise<void>;
   log?: (msg: string) => void;
 }
 
@@ -121,6 +122,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
+    ...(opts.beforeFirstSpawn
+      ? { beforeFirstSpawn: opts.beforeFirstSpawn }
+      : {}),
     idleReapDelayMs: 3_000,
     ...(config.QUEUE_PARK_MS !== undefined
       ? { queueParkMs: config.QUEUE_PARK_MS }

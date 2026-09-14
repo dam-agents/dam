@@ -49,13 +49,29 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       # mise's task artifact cache: a check/test whose declared inputs match a
-      # previous run is replayed instead of re-run. Keyed per commit so every
-      # run saves; restore-keys pull the newest prior entry set.
+      # previous run is replayed instead of re-run. Keyed per job and commit so
+      # every job saves — two jobs sharing a key race for the reservation and
+      # the slower one's results are silently dropped every run.
+      # restore-keys pull this job's newest prior entry set, then any job's.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
-          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
-          restore-keys: mise-task-artifacts-${{ runner.os }}-
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
+            mise-task-artifacts-${{ runner.os }}-
+      # Go build/module caches: without them build, vet, staticcheck and test
+      # each compile the controller from scratch (~4 min, the job's tail).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
+            go-${{ runner.os }}-${{ github.job }}-
       - run: mise run check
 
   test:
@@ -71,13 +87,29 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
       # mise's task artifact cache: a check/test whose declared inputs match a
-      # previous run is replayed instead of re-run. Keyed per commit so every
-      # run saves; restore-keys pull the newest prior entry set.
+      # previous run is replayed instead of re-run. Keyed per job and commit so
+      # every job saves — two jobs sharing a key race for the reservation and
+      # the slower one's results are silently dropped every run.
+      # restore-keys pull this job's newest prior entry set, then any job's.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
-          key: mise-task-artifacts-${{ runner.os }}-${{ github.sha }}
-          restore-keys: mise-task-artifacts-${{ runner.os }}-
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
+            mise-task-artifacts-${{ runner.os }}-
+      # Go build/module caches: without them build, vet, staticcheck and test
+      # each compile the controller from scratch (~4 min, the job's tail).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
+            go-${{ runner.os }}-${{ github.job }}-
       - run: mise run test
 
   appversion:
@@ -117,6 +149,7 @@ jobs:
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
       workloads: ${{ steps.d.outputs.workloads }}
+      claude_code_vm: ${{ steps.d.outputs.claude_code_vm }}
       claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
       source_shas: ${{ steps.d.outputs.source_shas }}
     steps:
@@ -132,18 +165,19 @@ jobs:
       - id: d
         env:
           # PR: reuse from the registry what the merge-base already built, and
-          # never build workloads. main push: rebuild & republish everything
-          # EXCEPT workloads, which rebuild only when their effective source
-          # moved — publish pins their source-sha tags into the chart, so an
-          # unchanged workload keeps last deploy's tag. tag/schedule/dispatch
-          # rebuild & republish all (releases get semver tags, the nightly
-          # keeps workloads on the freshly rebuilt base).
+          # never build workloads. main push: rebuild & republish platform-base
+          # and keycloak; agents, workloads and the VM rebuild only when their
+          # effective source moved — publish pins their source-sha tags into the
+          # chart, so an unchanged image keeps last deploy's tag (k-search + the
+          # VM disk alone are ~25 min otherwise). tag/schedule/dispatch rebuild
+          # & republish all (releases get semver tags, the nightly keeps agents
+          # on the freshly rebuilt base).
           EVENT: ${{ github.event_name }}
           MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
-          [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_WORKLOADS=1
+          [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_AGENTS=1
           # By path: this job has no mise; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
@@ -152,8 +186,9 @@ jobs:
   build-images:
     # Deliberately not gated on `check`: builds run in parallel with it and
     # push by digest only (no tags), so broken code never becomes referencable
-    # — merge-images, which creates the tags, requires `check`. PRs build
-    # amd64 only (changes.archs): PR sha tags feed nothing but the amd64 e2e.
+    # — merge-images, which creates the tags, requires `check`; e2e pulls these
+    # digests directly. PRs build amd64 only (changes.archs): the amd64 e2e is
+    # all a PR's images feed.
     needs: [changes]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
@@ -499,9 +534,14 @@ jobs:
   # amd64 only: the feature is behind a hidden flag and its consumers are x86_64
   # clusters. Add the arch matrix here when it graduates — the build is ~15 min
   # per arch, so paying for arm64 now buys nothing.
+  #
+  # Gated like the workloads (changes.claude_code_vm): built only when its
+  # effective source moved, since the qcow2 is never byte-reproducible and a
+  # rebuild always means a new digest. The published chart pins the source-sha
+  # tag (@ci-pin), so an unchanged VM keeps the image it already has.
   build-claude-code-vm:
     needs: [merge-agents, appversion, changes]
-    if: ${{ contains(needs.changes.outputs.agents, 'claude-code') && !cancelled() && !failure() }}
+    if: ${{ needs.changes.outputs.claude_code_vm == 'true' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -523,6 +563,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['claude-code-vm'] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Build containerDisk and push
         env:
           AGENT_IMAGE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
@@ -590,7 +631,11 @@ jobs:
 
   build-mock:
     name: build mock (e2e fixture)
-    needs: [merge-platform-base, changes]
+    # Needs build-platform-base, not merge-platform-base: the merge waits for
+    # `check`, which would gate e2e on lint through this fixture. When the base
+    # was built in this run the fixture takes its amd64 digest; otherwise the
+    # reuse tag the resolver picked.
+    needs: [build-platform-base, changes]
     if: ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -598,6 +643,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: needs.changes.outputs.platform_base == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: digests-platform-base-amd64
+          path: /tmp/digests
+      - id: base
+        env:
+          BUILT: ${{ needs.changes.outputs.platform_base }}
+          TAG: ${{ needs.changes.outputs.platform_base_tag }}
+        run: |
+          set -euo pipefail
+          if [ "$BUILT" = true ]; then ref="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/digests)"; else ref="$IMAGE_PREFIX/platform-base:$TAG"; fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -612,7 +670,7 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
+            BASE_IMAGE=${{ steps.base.outputs.ref }}
           cache-from: |
             type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
             type=gha,scope=mock
@@ -620,16 +678,18 @@ jobs:
 
   e2e:
     name: mise e2e
-    needs: [merge-images, build-mock]
-    # Without a status-check function the implicit success() applies, and it is
-    # false whenever any transitive dependency was skipped — merge-platform-base
-    # skips on PRs that don't touch platform-base, which silently skipped e2e on
-    # most PRs. Require the direct needs explicitly instead: e2e pulls exactly
-    # the images those two jobs push.
+    # Not gated on `check` (via merge-images): e2e is a check itself, and the
+    # amd64 images it needs exist by digest as soon as build-images pushed them
+    # — waiting for lint + tags cost every PR ~6 min. Without a status-check
+    # function the implicit success() applies, and it is false whenever any
+    # transitive dependency was skipped — merge-platform-base skips on PRs that
+    # don't touch platform-base, which silently skipped e2e on most PRs.
+    # Require the direct needs explicitly instead.
+    needs: [build-images, build-mock]
     if: >-
       ${{ !startsWith(github.ref, 'refs/tags/v') &&
           !cancelled() &&
-          needs.merge-images.result == 'success' &&
+          needs.build-images.result == 'success' &&
           needs.build-mock.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -639,27 +699,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
+      # No runner disk cleanup: the 145G root disk has ~87G free and the whole
+      # e2e run uses ~15G (measured 2026-09-10); the customary rm of the SDKs
+      # cost 40–90 s for nothing.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digests-*-amd64
+          path: /tmp/digests
       - name: Pull built images from registry
         env:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for c in controller api-server ui keycloak mock; do
-            docker pull "$IMAGE_PREFIX/$c:$SHA"
-            docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
+          # Platform images by the digest build-images pushed (untagged until
+          # merge-images; Quay keeps untagged manifests for hours, this gap is
+          # minutes). mock is pushed with its sha tag directly.
+          for c in controller api-server ui keycloak; do
+            d="$(ls "/tmp/digests/digests-$c-amd64")"
+            docker pull "$IMAGE_PREFIX/$c@sha256:$d"
+            docker tag "$IMAGE_PREFIX/$c@sha256:$d" "platform-$c:latest"
           done
+          docker pull "$IMAGE_PREFIX/mock:$SHA"
+          docker tag "$IMAGE_PREFIX/mock:$SHA" "platform-mock:latest"
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+      # Playwright's Chromium (~30s download per run); the lockfile pins the
+      # Playwright version that decides the browser build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
@@ -677,12 +752,12 @@ jobs:
 
   # Releases wait for every image the chart names. A v* chart pins content tags
   # and is immutable once pushed, so it must never reference a tag that was
-  # never built. merge-workloads is spelled out rather than left to the implicit
-  # success() (see e2e); on a tag it always runs, so the skipped branch is only
-  # defensive.
+  # never built. merge-workloads and build-claude-code-vm are spelled out rather
+  # than left to the implicit success() (see e2e); on a tag they always run, so
+  # the skipped branches are only defensive.
   publish:
     name: publish release
-    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
+    needs: [changes, merge-images, merge-agents, merge-workloads, build-claude-code-vm, appversion]
     if: >-
       ${{ github.event_name == 'push' &&
           startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
@@ -690,7 +765,8 @@ jobs:
           needs.appversion.result == 'success' &&
           needs.merge-images.result == 'success' &&
           needs.merge-agents.result == 'success' &&
-          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
+          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') &&
+          (needs.build-claude-code-vm.result == 'success' || needs.build-claude-code-vm.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -700,6 +776,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # cache: false — publish runs with registry credentials and must never
+      # execute a tool binary restored from the Actions cache, which any run on
+      # the repo can write (poisoning). `mise install --locked` verifies fresh
+      # downloads against mise.lock; a cache restore bypasses that check.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -771,6 +851,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # cache: false — publish runs with registry credentials and must never
+      # execute a tool binary restored from the Actions cache, which any run on
+      # the repo can write (poisoning). `mise install --locked` verifies fresh
+      # downloads against mise.lock; a cache restore bypasses that check.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -957,9 +1041,14 @@ jobs:
         merge-platform-base,
         merge-agents,
         merge-workloads,
+        build-claude-code-vm,
       ]
-    # !failure()/!cancelled(): merge-workloads skips on main pushes where every
-    # workload was reused — the implicit success() would skip all scans with it.
+    # Every list-components image has its producing job here, so a missing
+    # <sha> tag below can only mean "reused unchanged", never a race with a
+    # still-running build.
+    # !failure()/!cancelled(): merge-workloads and build-claude-code-vm skip on
+    # main pushes where everything they cover was reused — the implicit
+    # success() would skip all scans with them.
     if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:

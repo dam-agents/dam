@@ -37,6 +37,7 @@ export function SkillSourcesSection({
     sourcesLoaded,
     skillsBySource,
     loadingBySource,
+    revalidatingBySource,
     errorBySource,
     scannedAtBySource,
     visibilityBySource,
@@ -90,6 +91,7 @@ export function SkillSourcesSection({
               skills={skillsBySource[src.id]}
               filteredNames={filteredBySource?.get(src.id) ?? null}
               loading={!!loadingBySource[src.id]}
+              revalidating={!!revalidatingBySource[src.id]}
               error={errorBySource[src.id] ?? null}
               scannedAt={scannedAtBySource[src.id]}
               visibility={visibilityBySource[src.id]}

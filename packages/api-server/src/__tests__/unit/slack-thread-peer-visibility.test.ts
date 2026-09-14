@@ -205,7 +205,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     expect(second.text).toContain(PEER_WORDS);
     expect(second.text).toContain("Ops (another agent)");
     expect(second.text).toContain("what do you think");
-    expect(second.text).toContain("after your last turn");
+    expect(second.text).toContain("arrived while you were not reading them");
     expect(second.text).toContain("so are we clear");
   });
 
