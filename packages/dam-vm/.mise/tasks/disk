@@ -11,6 +11,12 @@
 # docker daemon and refuses to pull, so a containerized skopeo copies the image
 # into a named volume it can mount. A named volume and not a bind mount:
 # overlayfs does not run on a macOS-shared path.
+#
+# The tools run on the builder's own architecture whatever the node image is
+# for: skopeo re-execs itself to unpack layers, which an emulator garbles, and
+# the builder takes the target architecture as an argument instead. Only the
+# containerDisk wrapper is built for the node's architecture, since that is
+# what the cluster pulls it as.
 set -euo pipefail
 
 PKG=packages/dam-vm
@@ -22,6 +28,7 @@ STORAGE_VOL=platform-node-storage
 # change the output for an unchanged image.
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
 SKOPEO_IMAGE="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
+HOST="linux/$(docker version -f '{{.Server.Arch}}')"
 
 # The disk is assembled on loop devices. A host whose docker cannot attach one
 # can never build this, so say so now rather than fifteen minutes in. Detach
@@ -32,7 +39,7 @@ SKOPEO_IMAGE="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d
 # nobody anything. Both images this needs live on one registry, so a host that
 # cannot reach it cannot build the disk — which is worth saying immediately.
 bounded_pull() {
-  docker pull "$1" >/dev/null 2>&1 &
+  docker pull --platform "$HOST" "$1" >/dev/null 2>&1 &
   local pid=$! i
   for i in $(seq 1 120); do
     kill -0 "$pid" 2>/dev/null || { wait "$pid"; return $?; }
@@ -47,7 +54,7 @@ if ! bounded_pull "$SKOPEO_IMAGE"; then
   echo "registry — try 'docker pull' on it directly to tell the two apart." >&2
   exit 1
 fi
-if ! docker run --rm --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
+if ! docker run --rm --platform "$HOST" --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
   'truncate -s 1M /tmp/probe && d=$(losetup -f --show /tmp/probe) && losetup -d "$d"' >/dev/null 2>&1; then
   echo "dam-vm:disk: this docker cannot attach loop devices, which the disk build needs." >&2
   exit 1
@@ -58,6 +65,7 @@ fi
 # expensive step would never be reused.
 hash=$(docker image inspect -f '{{.RootFS.Layers}}' "$BOOTC_TAG" \
   | openssl dgst -sha256 -r | cut -c1-16)
+arch=$(docker image inspect -f '{{.Architecture}}' "$BOOTC_TAG")
 disk_dir="$CACHE/disk-$hash"
 
 if [ ! -f "$disk_dir/disk.qcow2" ]; then
@@ -65,7 +73,7 @@ if [ ! -f "$disk_dir/disk.qcow2" ]; then
   mkdir -p "$disk_dir"
   docker volume rm -f "$STORAGE_VOL" >/dev/null 2>&1 || true
   trap 'docker volume rm -f "$STORAGE_VOL" >/dev/null 2>&1 || true' EXIT
-  docker run --rm --privileged \
+  docker run --rm --platform "$HOST" --privileged \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$STORAGE_VOL:/var/lib/containers/storage" \
     "$SKOPEO_IMAGE" copy \
@@ -73,10 +81,10 @@ if [ ! -f "$disk_dir/disk.qcow2" ]; then
   # ext4, not xfs: the builder mounts the fresh root through the build host's
   # kernel, and a newer mkfs.xfs sets incompat bits an older one refuses.
   # --chown because the builder runs privileged and would leave root's files.
-  docker run --rm --privileged --security-opt label=disable \
+  docker run --rm --platform "$HOST" --privileged --security-opt label=disable \
     -v "$STORAGE_VOL:/var/lib/containers/storage" \
     -v "$PWD/$disk_dir:/output" \
-    "$BIB_IMAGE" build --type qcow2 --rootfs ext4 \
+    "$BIB_IMAGE" build --type qcow2 --rootfs ext4 --target-arch "$arch" \
     --chown "$(id -u):$(id -g)" \
     "localhost/dam-node:$hash"
   mv "$disk_dir/qcow2/disk.qcow2" "$disk_dir/disk.qcow2"
@@ -87,7 +95,7 @@ else
 fi
 
 # 107:107 = qemu, the uid KubeVirt reads a containerDisk as.
-docker build -t "$OUT_TAG" -f - "$disk_dir" <<'DOCKERFILE'
+docker build --platform "linux/$arch" -t "$OUT_TAG" -f - "$disk_dir" <<'DOCKERFILE'
 FROM scratch
 COPY --chown=107:107 disk.qcow2 /disk/disk.qcow2
 DOCKERFILE

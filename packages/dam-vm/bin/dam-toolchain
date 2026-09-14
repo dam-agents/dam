@@ -6,12 +6,17 @@
 # downloads nothing. The architecture is the build's when given (buildx sets
 # TARGETARCH) and the machine's otherwise; each download names it differently,
 # and an unknown one stops here rather than producing binaries that cannot exec.
+# A second argument installs under another prefix, which is how the image
+# build fetches another architecture's binaries on the builder's own and copies
+# them across: a check on a binary this machine cannot run reads as absent.
 set -euo pipefail
 NODE_VERSION=24.9.0
 ENVOY_VERSION=1.36.1
 GVISOR_BASE=https://storage.googleapis.com/gvisor/releases/release/latest
 
 arch="${1:-$(uname -m)}"
+prefix="${2:-/usr/local}"
+install -d "$prefix/bin"
 case "$arch" in
   amd64|x86_64) nodearch=x64; envoyarch=x86_64; gvarch=x86_64 ;;
   arm64|aarch64) nodearch=arm64; envoyarch=aarch_64; gvarch=aarch64 ;;
@@ -20,15 +25,15 @@ esac
 
 fetch() { curl -fsSL -o "$2.tmp" "$1" && install -m 0755 "$2.tmp" "$2" && rm -f "$2.tmp"; }
 
-if [ "$(/usr/local/bin/node --version 2>/dev/null || true)" != "v${NODE_VERSION}" ]; then
+if [ "$("$prefix/bin/node" --version 2>/dev/null || true)" != "v${NODE_VERSION}" ]; then
   curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${nodearch}.tar.xz" \
-    | tar -xJ -C /usr/local --strip-components=1
+    | tar -xJ -C "$prefix" --strip-components=1
 fi
-if ! /usr/local/bin/envoy --version 2>/dev/null | grep -q "/${ENVOY_VERSION}/"; then
-  fetch "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${envoyarch}" /usr/local/bin/envoy
+if ! "$prefix/bin/envoy" --version 2>/dev/null | grep -q "/${ENVOY_VERSION}/"; then
+  fetch "https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/envoy-${ENVOY_VERSION}-linux-${envoyarch}" "$prefix/bin/envoy"
 fi
 # gVisor publishes no pinned version under its release channel; it is fetched
 # when absent and kept.
-if [ ! -x /usr/local/bin/runsc ]; then
-  fetch "${GVISOR_BASE}/${gvarch}/runsc" /usr/local/bin/runsc
+if [ ! -x "$prefix/bin/runsc" ]; then
+  fetch "${GVISOR_BASE}/${gvarch}/runsc" "$prefix/bin/runsc"
 fi

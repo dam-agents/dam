@@ -10,12 +10,17 @@
 #
 # The agent images themselves are unchanged OCI images pulled at runtime;
 # this image carries no harness content.
-FROM quay.io/fedora/fedora-bootc:44
-
-# TARGETARCH is what the builder says it is building for; a builder that does
-# not set it is building for the machine it is on, which is what the toolchain
-# script falls back to.
+# Node, Envoy and runsc for the target, fetched and unpacked on the builder's
+# own architecture: the same script the dev node runs, so the two cannot drift
+# apart on a version, and no emulator between tar and the files it writes. The
+# fallback when the builder does not say what it builds for is the machine it
+# is on, which is what the script assumes without an argument.
+FROM --platform=$BUILDPLATFORM quay.io/fedora/fedora-bootc:44 AS toolchain
 ARG TARGETARCH
+COPY bin/dam-toolchain /opt/dam/bin/dam-toolchain
+RUN /opt/dam/bin/dam-toolchain "${TARGETARCH:-$(uname -m)}" /toolchain
+
+FROM quay.io/fedora/fedora-bootc:44
 
 # gVisor is the sandbox boundary, so runsc is not optional here the way a
 # RuntimeClass was in the cluster. cloud-init is how a cluster-provisioned node
@@ -26,10 +31,8 @@ RUN dnf install -y --setopt=install_weak_deps=False \
       jq tar gzip zstd && \
     dnf clean all
 
-# Node, Envoy and runsc from their own releases — the same script the dev node
-# runs, so the two cannot drift apart on a version.
+COPY --from=toolchain /toolchain/ /usr/local/
 COPY bin/ /opt/dam/bin/
-RUN /opt/dam/bin/dam-toolchain "${TARGETARCH:-}"
 
 # The gateway uid, baked in so the units can name it from the first boot;
 # provisioning creates it too where the image did not.
@@ -44,8 +47,6 @@ COPY templates/ /etc/dam/templates/
 
 COPY --from=platform-ui:latest /usr/share/nginx/html /usr/share/dam-ui
 
-# cloud-init's units are enabled by name rather than left to the distribution
-# preset: a cluster-provisioned node that skips them boots with no configuration
-# and no way to say so.
-RUN systemctl enable cloud-init-local cloud-init cloud-config cloud-final \
-      dam-data-disk dam-first-boot dam-api-server
+# cloud-init's own units are enabled by the distribution preset when the
+# package lands above; only the node's are enabled here.
+RUN systemctl enable dam-data-disk dam-first-boot dam-api-server
