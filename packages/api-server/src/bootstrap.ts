@@ -595,9 +595,6 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
-    namespace: config.namespace,
-    agentsRepo,
-    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
     onAgentChanged: () => sessionWatcher.agentsChanged(),
   });
   liveEventsModule.start();
@@ -1204,7 +1201,6 @@ export async function bootstrap() {
     e2e: e2eService,
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
-    podSessions: liveEventsModule.podSessions,
     k8sClient,
     agentsRepo,
     connectionsBoot,

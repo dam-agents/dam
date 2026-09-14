@@ -87,7 +87,7 @@ export function emptyStateFor(
   options: {
     allSourcesExcluded: boolean;
     noRunningAgents: boolean;
-    unreadableAgents?: number;
+    feedUnreadable?: boolean;
     approvalsUnreadable?: boolean;
   },
 ): FeedEmpty {
@@ -105,13 +105,10 @@ export function emptyStateFor(
       tone: "filtered",
     };
   }
-  if (options.unreadableAgents && status !== "attention") {
-    const one = options.unreadableAgents === 1;
+  if (options.feedUnreadable && status !== "attention") {
     return {
-      title: one ? "One agent did not answer" : "Some agents did not answer",
-      message: one
-        ? "An agent could not be read, so its sessions are missing here."
-        : `${options.unreadableAgents} agents could not be read, so their sessions are missing here.`,
+      title: "Activity could not be read",
+      message: "Sessions are missing here until this recovers.",
       tone: "filtered",
     };
   }
