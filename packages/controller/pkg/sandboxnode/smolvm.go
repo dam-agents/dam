@@ -62,15 +62,22 @@ func (r *Smolvm) Stop(id string) error   { return r.run("machine", "stop", "-n",
 func (r *Smolvm) Delete(id string) error { return r.run("machine", "delete", "-n", id, "-f") }
 
 func (r *Smolvm) Start(id string) error {
-	if dir := r.vmDir(id); dir != "" {
+	dir := r.vmDir(id)
+	if dir != "" {
 		_ = r.run("machine", "stop", "-n", id)
-		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid", "overlay.qcow2", "overlay.formatted"} {
+		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
 	}
 	err := r.run("machine", "start", "-n", id)
+	if err != nil && dir != "" && strings.Contains(err.Error(), "boot process exited") {
+		for _, f := range []string{"overlay.qcow2", "overlay.formatted"} {
+			_ = os.Remove(filepath.Join(dir, f))
+		}
+		err = r.run("machine", "start", "-n", id)
+	}
 	if err != nil {
-		for _, pid := range orphanPIDs("/proc", r.vmDir(id)) {
+		for _, pid := range orphanPIDs("/proc", dir) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
