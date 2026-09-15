@@ -156,21 +156,17 @@ const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 
 const validatedConfigSchema = configSchema
-  .refine((c) => c.acpTurnStallProbeSeconds >= c.approvalHoldSeconds, {
-    message:
-      "acpTurnStallProbeSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval is never probed for staleness before the hold resolves",
-    path: ["acpTurnStallProbeSeconds"],
+  .transform((c) => {
+    const stall = Math.max(c.acpTurnStallProbeSeconds, c.approvalHoldSeconds);
+    return {
+      ...c,
+      acpTurnStallProbeSeconds: stall,
+      acpTurnRunawayCapSeconds:
+        c.acpTurnRunawayCapSeconds === 0
+          ? 0
+          : Math.max(c.acpTurnRunawayCapSeconds, stall),
+    };
   })
-  .refine(
-    (c) =>
-      c.acpTurnRunawayCapSeconds === 0 ||
-      c.acpTurnRunawayCapSeconds >= c.acpTurnStallProbeSeconds,
-    {
-      message:
-        "acpTurnRunawayCapSeconds must be 0 (disabled) or >= acpTurnStallProbeSeconds",
-      path: ["acpTurnRunawayCapSeconds"],
-    },
-  )
   .refine(
     (c) =>
       (c.objectStorageAccessKeyId == null) ===

@@ -38,28 +38,19 @@ describe("loadConfig — turn watch invariants", () => {
     }
   });
 
-  it("rejects a stall probe below the approval hold", () => {
-    process.env.APPROVAL_HOLD_SECONDS = "1800";
-    process.env.ACP_TURN_STALL_PROBE_SECONDS = "60";
-    expect(() => loadConfig()).toThrow(
-      /acpTurnStallProbeSeconds must be >= approvalHoldSeconds/,
-    );
-  });
-
-  it("accepts a stall probe equal to the approval hold", () => {
-    process.env.APPROVAL_HOLD_SECONDS = "1800";
+  it("raises a stall probe below the approval hold to the hold", () => {
+    process.env.APPROVAL_HOLD_SECONDS = "3600";
     process.env.ACP_TURN_STALL_PROBE_SECONDS = "1800";
-    expect(loadConfig().acpTurnStallProbeSeconds).toBe(1800);
+    expect(loadConfig().acpTurnStallProbeSeconds).toBe(3600);
   });
 
-  it("rejects a nonzero runaway cap below the stall probe", () => {
+  it("raises a nonzero runaway cap below the stall probe to the probe", () => {
     process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "60";
-    expect(() => loadConfig()).toThrow(
-      /acpTurnRunawayCapSeconds must be 0 \(disabled\) or >=/,
-    );
+    expect(loadConfig().acpTurnRunawayCapSeconds).toBe(1800);
   });
 
-  it("accepts a zero runaway cap as disabled", () => {
+  it("keeps a zero runaway cap as disabled, even under a large hold", () => {
+    process.env.APPROVAL_HOLD_SECONDS = "30000";
     process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "0";
     expect(loadConfig().acpTurnRunawayCapSeconds).toBe(0);
   });

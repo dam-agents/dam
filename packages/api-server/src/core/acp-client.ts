@@ -489,8 +489,7 @@ function createAcpClientForUrl(
     ): Promise<string> {
       const responseChunks: string[] = [];
       let live = false;
-      let watchSessionId: string | null =
-        "resumeSessionId" in sendOpts ? sendOpts.resumeSessionId : null;
+      let watchSessionId: string | null = null;
 
       await withAcpConnection(
         url,
@@ -541,6 +540,7 @@ function createAcpClientForUrl(
             }
             responseChunks.length = 0;
             sessionId = sendOpts.resumeSessionId;
+            watchSessionId = sessionId;
           } else {
             const s = await connection.newSession({
               cwd: ".",
@@ -636,8 +636,7 @@ function createAcpClientForUrl(
     async triggerSession(
       triggerOpts: TriggerSessionOpts,
     ): Promise<TriggerSessionResult> {
-      let watchSessionId: string | null =
-        "resumeSessionId" in triggerOpts ? triggerOpts.resumeSessionId : null;
+      let watchSessionId: string | null = null;
       return withAcpConnection(
         url,
         "platform-trigger",
@@ -666,6 +665,7 @@ function createAcpClientForUrl(
               );
             }
             sessionId = triggerOpts.resumeSessionId;
+            watchSessionId = sessionId;
           } else {
             const s = await connection.newSession({ cwd: ".", mcpServers });
             sessionId = s.sessionId;

@@ -976,6 +976,15 @@ export function createSlackWorker(
     }
   }
 
+  function refreshLinger(instanceName: string, refs: TurnRef[]) {
+    let lingering = lingeringTurns.get(instanceName);
+    if (!lingering) {
+      lingering = new Map();
+      lingeringTurns.set(instanceName, lingering);
+    }
+    for (const ref of refs) lingering.set(ref, Date.now() + TURN_LINGER_MS);
+  }
+
   function lingeringFor(instanceName: string): TurnRef[] {
     const lingering = lingeringTurns.get(instanceName);
     if (!lingering) return [];
@@ -1465,7 +1474,6 @@ export function createSlackWorker(
           ghostTurn = true;
         },
       });
-      outcome = "success";
     };
 
     const postFailure = async (err: unknown) => {
@@ -1484,6 +1492,8 @@ export function createSlackWorker(
         },
         "slack.turn.failed",
       );
+      if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
+        return;
       const text = isAgentStoppedError(err)
         ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
@@ -1511,6 +1521,7 @@ export function createSlackWorker(
               "minutes. It'll answer as soon as it's up.",
           }),
       });
+      outcome = "success";
     } catch (err) {
       await postFailure(err);
       const sessionId = turnRefs.find(
@@ -1524,10 +1535,13 @@ export function createSlackWorker(
           instanceName,
           sessionId,
           isDelivered: delivered,
+          onStillRunning: () => refreshLinger(instanceName, turnRefs),
           recover: async () => {
             await agents().ensureReady(instanceName);
+            let nudged = false;
             await withSessionTurnLock(instanceName, threadKey, async () => {
               if (delivered()) return;
+              nudged = true;
               const ref = turnRefs.at(-1)!;
               beginTurn(instanceName, ref);
               try {
@@ -1549,6 +1563,16 @@ export function createSlackWorker(
                 }
               }
             });
+            if (nudged) {
+              emit({
+                type: EventType.ChannelTurnRelayed,
+                channel: "slack",
+                agentId: instanceName,
+                actorSub: null,
+                outcome: delivered() ? "success" : "failure",
+                reason: "recovery-nudge",
+              });
+            }
           },
         });
       }
@@ -1557,6 +1581,12 @@ export function createSlackWorker(
         endTurn(instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
+      }
+      const settledSessionId = turnRefs.find(
+        (ref) => ref.sessionId !== undefined,
+      )?.sessionId;
+      if (outcome === "success" && settledSessionId !== undefined) {
+        turnRecovery.dismiss(instanceName, settledSessionId);
       }
       if (
         failureReason === undefined &&
@@ -2836,6 +2866,12 @@ export function createSlackWorker(
         endTurn(args.instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
+      }
+      const settledSessionId = turnRefs.find(
+        (ref) => ref.sessionId !== undefined,
+      )?.sessionId;
+      if (outcome === "success" && settledSessionId !== undefined) {
+        turnRecovery.dismiss(args.instanceName, settledSessionId);
       }
       emit({
         type: EventType.ChannelTurnRelayed,

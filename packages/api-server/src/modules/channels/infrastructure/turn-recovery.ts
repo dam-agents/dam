@@ -10,12 +10,21 @@ export interface WatchedTurn {
   instanceName: string;
   sessionId: string;
   isDelivered: () => boolean;
+  onStillRunning: () => void;
   recover: () => Promise<void>;
 }
 
 export interface TurnRecovery {
   watch(turn: WatchedTurn): void;
+  dismiss(instanceName: string, sessionId: string): void;
   stop(): void;
+}
+
+interface WatchState {
+  gen: number;
+  timer?: ReturnType<typeof setTimeout>;
+  deadline: number;
+  connectFailures: number;
 }
 
 /**
@@ -24,11 +33,16 @@ export interface TurnRecovery {
  * recovery action exactly once — when the runtime reports the turn over (or
  * the pod is gone, which for a running turn means the same: the idle checker
  * never hibernates under one) and nothing was delivered to the thread. A
- * turn whose reply arrives on its own is dropped without recovery; a turn
- * still running is left alone however long it takes, bounded only by the
- * recovery window. State is in-process and per-turn single-shot, so a
- * recovery that itself fails is logged and given up, never retried into a
- * loop.
+ * turn whose reply arrives on its own is dropped without recovery, and a
+ * later turn answering on the same session dismisses the watch, so a person
+ * who re-asked never triggers a second answer. A turn still running is left
+ * alone however long it takes — each alive report pushes the give-up
+ * deadline out and lets the watcher keep its channel bookkeeping fresh; the
+ * window bounds only how long an unanswerable session is polled. Watches are
+ * generation-tagged so a re-registered session invalidates the old watch's
+ * in-flight poll instead of racing it. State is in-process and per-turn
+ * single-shot, so a recovery that itself fails is logged and given up, never
+ * retried into a loop.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -36,31 +50,34 @@ export function createTurnRecovery(deps: {
     sessionId: string,
   ) => Promise<AcpTurnStatus>;
 }): TurnRecovery {
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const watches = new Map<string, WatchState>();
+  let nextGen = 1;
 
-  function drop(key: string): void {
-    const timer = timers.get(key);
-    if (timer !== undefined) clearTimeout(timer);
-    timers.delete(key);
+  function keyOf(instanceName: string, sessionId: string): string {
+    return `${instanceName} ${sessionId}`;
   }
 
-  function schedule(
-    key: string,
-    turn: WatchedTurn,
-    state: { deadline: number; connectFailures: number },
-  ): void {
-    timers.set(
-      key,
-      setTimeout(() => void tick(key, turn, state), POLL_INTERVAL_MS),
+  function drop(key: string): void {
+    const state = watches.get(key);
+    if (state === undefined) return;
+    if (state.timer !== undefined) clearTimeout(state.timer);
+    watches.delete(key);
+  }
+
+  function schedule(key: string, turn: WatchedTurn, state: WatchState): void {
+    state.timer = setTimeout(
+      () => void tick(key, turn, state.gen),
+      POLL_INTERVAL_MS,
     );
   }
 
   async function tick(
     key: string,
     turn: WatchedTurn,
-    state: { deadline: number; connectFailures: number },
+    gen: number,
   ): Promise<void> {
-    if (!timers.has(key)) return;
+    const state = watches.get(key);
+    if (state === undefined || state.gen !== gen) return;
     if (turn.isDelivered()) {
       drop(key);
       return;
@@ -78,12 +95,16 @@ export function createTurnRecovery(deps: {
     try {
       const status = await deps.turnStatus(turn.instanceName, turn.sessionId);
       state.connectFailures = 0;
+      if (status === "pending") {
+        state.deadline = Date.now() + RECOVERY_WINDOW_MS;
+        turn.onStillRunning();
+      }
       ended = status === "ended";
     } catch {
       state.connectFailures += 1;
       ended = state.connectFailures >= ENDED_AFTER_CONNECT_FAILURES;
     }
-    if (!timers.has(key)) return;
+    if (watches.get(key)?.gen !== gen) return;
 
     if (!ended) {
       schedule(key, turn, state);
@@ -108,17 +129,23 @@ export function createTurnRecovery(deps: {
 
   return {
     watch(turn) {
-      const key = `${turn.instanceName} ${turn.sessionId}`;
+      const key = keyOf(turn.instanceName, turn.sessionId);
       drop(key);
-      schedule(key, turn, {
+      const state: WatchState = {
+        gen: nextGen++,
         deadline: Date.now() + RECOVERY_WINDOW_MS,
         connectFailures: 0,
-      });
+      };
+      watches.set(key, state);
+      schedule(key, turn, state);
+    },
+
+    dismiss(instanceName, sessionId) {
+      drop(keyOf(instanceName, sessionId));
     },
 
     stop() {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      for (const key of [...watches.keys()]) drop(key);
     },
   };
 }
