@@ -302,3 +302,32 @@ func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
 	assert.Contains(t, err.Error(), "/home/agent")
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
 }
+
+// TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
+func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default")
+
+	var instances []string
+	for _, rule := range np.Spec.Ingress {
+		for _, from := range rule.From {
+			instances = append(instances, from.PodSelector.MatchLabels["app.kubernetes.io/instance"])
+		}
+	}
+	require.Len(t, instances, 2, "the api-server and the controller, and nothing else")
+	for _, got := range instances {
+		assert.Equal(t, "dam", got, "peers are selected by the release name the chart puts on its pods")
+	}
+	assert.Equal(t, "dam-platform-vm-runner-"+runnerSuffix(testOwner)+"-ingress", np.Name)
+}
+
+// TEST_SCENARIO: nothing answers the owner's machine API — the case every owner's first vm agent starts in, before its runner exists. The resize gate guards a machine that is already running, so with no such machine it must allow; refusing wedges the very reconcile that would build the runner.
+func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
+
+	verdict, changed, err := r.resizeAllows(context.Background(), agent, testOwner)
+	require.NoError(t, err, "an unreachable runner must not fail the reconcile")
+	assert.True(t, verdict.allowed)
+	assert.False(t, changed)
+}
