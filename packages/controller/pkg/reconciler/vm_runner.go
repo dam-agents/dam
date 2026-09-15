@@ -41,9 +41,10 @@ type runnerConn struct {
 	token  string
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: this suffix is the whole of a runner's identity — it names the Secret, the disk and the Service — so two owners colliding here would silently share one runner's credentials and machines. 128 bits keeps that beyond reach; the name budget has room.
 func runnerSuffix(owner string) string {
 	sum := sha256.Sum256([]byte(owner))
-	return hex.EncodeToString(sum[:4])
+	return hex.EncodeToString(sum[:16])
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
@@ -115,7 +116,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.Namespace, r.config.VM.Runner.EgressCIDRs)
 	np.OwnerReferences = r.runnerOwnerRef(ctx)
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
@@ -294,7 +295,7 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string, egress []string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	first := intstr.FromInt(31000)
@@ -313,7 +314,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns string) *network
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			PolicyTypes: policyTypes(egress),
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				From: []networkingv1.NetworkPolicyPeer{peer("apiserver"), peer("controller")},
 				Ports: []networkingv1.NetworkPolicyPort{
@@ -321,8 +322,39 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns string) *network
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}},
+			Egress: runnerEgress(agentNS, egress),
 		},
 	}
+}
+
+func policyTypes(egress []string) []networkingv1.PolicyType {
+	if len(egress) == 0 {
+		return []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	}
+	return []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+func runnerEgress(agentNS string, cidrs []string) []networkingv1.NetworkPolicyEgressRule {
+	if len(cidrs) == 0 {
+		return nil
+	}
+	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
+	dns := intstr.FromInt(53)
+	rules := []networkingv1.NetworkPolicyEgressRule{{
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
+	}, {
+		To: []networkingv1.NetworkPolicyPeer{{
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway}},
+		}},
+	}}
+	for _, cidr := range cidrs {
+		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr}}},
+		})
+	}
+	return rules
 }
 
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {

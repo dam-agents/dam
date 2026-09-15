@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -325,7 +326,7 @@ func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default")
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default", "test-agents", nil)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -515,4 +516,32 @@ func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 
 	_, err = vmrunner.NewClient("https://x:4600", "token", "not-a-cert")
 	require.Error(t, err, "and refuses to dial with something that is not a certificate")
+}
+
+// TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
+func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
+	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", nil)
+	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
+		"with nowhere named, the runner still pulls images and the policy only admits callers")
+	assert.Empty(t, open.Spec.Egress)
+
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", []string{"203.0.113.0/24"})
+	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+	require.Len(t, confined.Spec.Egress, 3, "DNS, the paired gateways, and what the install named")
+
+	var sawGateway, sawCIDR bool
+	for _, rule := range confined.Spec.Egress {
+		for _, to := range rule.To {
+			if to.PodSelector != nil && to.PodSelector.MatchLabels[LabelRole] == RoleGateway {
+				sawGateway = true
+				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
+					"gateways are reached in the agent namespace, not the release namespace")
+			}
+			if to.IPBlock != nil && to.IPBlock.CIDR == "203.0.113.0/24" {
+				sawCIDR = true
+			}
+		}
+	}
+	assert.True(t, sawGateway, "a guest can still reach its own gateway")
+	assert.True(t, sawCIDR, "and the runner can still reach the registry it was told about")
 }

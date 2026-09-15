@@ -80,7 +80,7 @@ spec:
                   "serviceAccountName" (printf "%s-vm-runner" (include "platform.fullname" .))
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
-                  "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs
+                  "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources }}
