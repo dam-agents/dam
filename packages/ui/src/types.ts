@@ -144,6 +144,7 @@ export interface AgentView {
   )[];
   kbTemplateId: string | null;
   starterKit: string | null;
+  starterKitOnboarded: string | null;
   spawnedBy: string | null;
   kind?: AgentKind;
 }

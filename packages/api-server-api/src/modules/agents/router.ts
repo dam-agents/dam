@@ -54,6 +54,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,
     starterKit: agent.starterKit ?? null,
+    starterKitOnboarded: agent.starterKitOnboarded ?? null,
   };
 }
 
