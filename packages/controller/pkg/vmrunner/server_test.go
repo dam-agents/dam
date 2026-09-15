@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +50,34 @@ func freePort(t *testing.T) int {
 	port := ln.Addr().(*net.TCPAddr).Port
 	require.NoError(t, ln.Close())
 	return port
+}
+
+// TEST_OVERVIEW: stands in for a guest listening on its loopback port, so a test can tell "the runner refused this source" apart from "nothing was listening" — the two look identical from the client end.
+func fakeGuest(t *testing.T, port int) func() int {
+	t.Helper()
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	var mu sync.Mutex
+	served := 0
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			served++
+			mu.Unlock()
+			c.Write([]byte("hello"))
+			c.Close()
+		}
+	}()
+	return func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return served
+	}
 }
 
 func newHarness(t *testing.T) *harness {
@@ -257,13 +286,18 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	h.settle(t, "agent-a")
+
+	guest := fakeGuest(t, h.node.PortMin+loopbackOffset)
+
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", h.node.PortMin))
 	require.NoError(t, err)
 	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, err = conn.Read(make([]byte, 1))
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "timeout", "connection from a disallowed source is closed, not left hanging")
+	require.Error(t, err, "a disallowed source reaches no guest")
+	assert.NotContains(t, err.Error(), "timeout", "and is closed rather than left hanging")
+	assert.Zero(t, guest(), "nothing was forwarded")
+
 
 	archive := filepath.Join(h.node.StateDir, "images", "platform-claude-code-vm_latest.tar")
 	require.NoError(t, os.MkdirAll(filepath.Dir(archive), 0o755))
@@ -277,6 +311,25 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 }
 
 // TEST_SCENARIO: a machine directory holds the sockets and lock of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk and the root overlay, before smolvm boots it; when that boot dies at once the overlay is discarded and the start retried.
+// TEST_SCENARIO: an allowed caller reaches the guest — the published port carries real bytes from the machine's own loopback listener, which is what the api-server dialing a vm agent depends on.
+func TestAnAllowedSourceIsForwardedToTheGuest(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	guest := fakeGuest(t, h.node.PortMin+loopbackOffset)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", h.node.PortMin))
+	require.NoError(t, err)
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 5)
+	n, err := conn.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(buf[:n]), "the bytes come from the guest, through the published port")
+	assert.Equal(t, 1, guest(), "exactly one connection was forwarded")
+}
+
 func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("HOME", t.TempDir())
