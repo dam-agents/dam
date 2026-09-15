@@ -89,8 +89,11 @@ device-plugin pod keeps the same node agent and image.
 - **smolvm's 30 s agent-ready ceiling is hard** in 1.16 (no flag or env on
   `machine start`; `--ready-timeout` exists only for branching). Under lima's
   nested KVM a guest reaches the agent in 10–20 s on a quiet host and misses
-  the ceiling on a busy one, and a 4 GiB machine misses it every time (local
-  vm agents must stay at 2 GiB), so first boots are flaky locally; on bare metal
+  the ceiling on a busy one, and boot time grows with guest RAM (measured
+  late on 2026-09-14: 2.6 s to the agent at 512 MiB, 20 s at 1.5 GiB, 25 s at
+  2 GiB — guest pages the Mac has not backed yet fault in slowly under nested
+  KVM), so first boots are flaky locally and a 4 GiB machine never makes it;
+  on bare metal
   the guest is up in ~2 s. When smolvm gives up it leaves the guest process
   running (100 % CPU, still booting) — sandbox-node now kills that orphan
   after a failed start, and catatonit reaps the zombies (sandbox-node was
