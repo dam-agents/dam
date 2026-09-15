@@ -327,8 +327,7 @@ func TestADeadGuestIsActuallyRestarted(t *testing.T) {
 	before := strings.Count(h.calls(), "machine start -n m1")
 
 	h.node.mu.Lock()
-	h.node.wasHealthy["m1"] = true
-	h.node.unhealthySince["m1"] = time.Now().Add(-unhealthyRestart - time.Minute)
+	h.node.health["m1"] = health{everReady: true, quietSince: time.Now().Add(-unhealthyRestart - time.Minute)}
 	h.node.mu.Unlock()
 
 	st, err := h.client().Ensure(t.Context(), "m1", spec(true))
@@ -343,10 +342,10 @@ func TestADeadGuestIsActuallyRestarted(t *testing.T) {
 // TEST_SCENARIO: a machine that never answered yet (a first boot flattening its image) and one that is mid-wake are both left alone; only a machine that answered before and then went quiet past the window is restarted.
 func TestOnlyAPreviouslyHealthyMachineIsRestartedWhenItGoesQuiet(t *testing.T) {
 	h := newHarness(t)
-	h.node.unhealthySince["m1"] = time.Now().Add(-time.Hour)
+	h.node.health["m1"] = health{quietSince: time.Now().Add(-time.Hour)}
 	assert.False(t, h.node.deadForLong("m1"), "a machine that never answered is still booting, not dead")
 
-	h.node.wasHealthy["m1"] = true
+	h.node.health["m1"] = health{everReady: true, quietSince: time.Now().Add(-time.Hour)}
 	assert.True(t, h.node.deadForLong("m1"))
 
 	h.node.spawn("m1", StateStarting, func() error { return nil })
@@ -381,8 +380,7 @@ func TestARestartedGuestIsCounted(t *testing.T) {
 	assert.Zero(t, h.settle(t, "m1").Restarts)
 
 	h.node.mu.Lock()
-	h.node.wasHealthy["m1"] = true
-	h.node.unhealthySince["m1"] = time.Now().Add(-unhealthyRestart - time.Minute)
+	h.node.health["m1"] = health{everReady: true, quietSince: time.Now().Add(-unhealthyRestart - time.Minute)}
 	h.node.mu.Unlock()
 	_, err = h.client().Ensure(t.Context(), "m1", spec(true))
 	require.NoError(t, err)
