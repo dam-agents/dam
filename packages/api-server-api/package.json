@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "dev-config": "workspace:*",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
 }

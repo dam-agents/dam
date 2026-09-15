@@ -326,7 +326,6 @@ describe("the shipped proof-of-concept catalog", () => {
     const kits = await repo.list();
     expect(kits.map((k) => k.kit.id).sort()).toEqual([
       "adaevolve",
-      "code-reviewer",
       "evox",
       "gepa",
       "k-search",
@@ -335,9 +334,7 @@ describe("the shipped proof-of-concept catalog", () => {
       "shinkaevolve",
     ]);
     expect(new Set(kits.map((k) => k.catalog))).toEqual(new Set(["platform"]));
-    const reviewer = kits.find((k) => k.kit.id === "code-reviewer")!.kit;
-    expect(reviewer.connections[0]).toMatchObject({ required: true });
-    expect(reviewer.schedules.filter((s) => s.enabled)).toHaveLength(1);
+    expect(kits.every((k) => k.kit.image !== undefined)).toBe(true);
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
       /^quay\.io\/dam-agents\/nous(:|$)/,
     );

@@ -3,7 +3,6 @@
 # Workload kits pin their image by the same publish step that pins every
 # other image (`# @ci-pin <component>-image-tag`).
 kits:
-  - path: kits/code-reviewer
   - path: kits/nous
   - path: kits/openevolve
   - path: kits/shinkaevolve

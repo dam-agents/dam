@@ -1433,7 +1433,6 @@ starterKits:
     # image this install does not build or cannot pull is left out of the
     # rendered catalog and never reaches the UI. Missing entry = enabled.
     kits:
-      code-reviewer: { enabled: true }
       nous: { enabled: true }
       openevolve: { enabled: true }
       shinkaevolve: { enabled: true }
@@ -1441,11 +1440,15 @@ starterKits:
       adaevolve: { enabled: true }
       evox: { enabled: false }
       k-search: { enabled: true }
-  catalogs: []
-  # Example:
-  # catalogs:
-  #   - name: acme
-  #     url: https://github.com/acme/starter-kits
+  # External catalogs, read in order after the built-in one. Each names a
+  # public git repository holding catalog.yaml (optionally `/tree/<ref>/<dir>`
+  # to name a directory, or `#<ref>` to pin). A catalog that pins nothing
+  # **moves**: the refresh job re-reads it periodically, so a kit added there
+  # reaches this install without a redeploy, and every kit is still resolved
+  # to an exact commit as it is read.
+  catalogs:
+    - name: curated
+      url: https://github.com/dam-agents/dam-starter-kits
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
