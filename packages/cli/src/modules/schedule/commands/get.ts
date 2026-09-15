@@ -44,7 +44,7 @@ function renderSchedule(view: ScheduleView): string {
   if (view.status?.lastResult) {
     lines.push(`Last result: ${view.status.lastResult}`);
   }
-  if (view.status?.declinedCount) {
+  if (view.precheck && view.status?.declinedCount) {
     const when = view.status.lastDeclinedAt
       ? `, last ${view.status.lastDeclinedAt}`
       : "";
@@ -52,7 +52,7 @@ function renderSchedule(view: ScheduleView): string {
       `Declined:    ${view.status.declinedCount} since the last run${when}`,
     );
   }
-  if (view.status?.lastPrecheckError) {
+  if (view.precheck && view.status?.lastPrecheckError) {
     const inARow =
       (view.status.precheckFailedCount ?? 0) > 1
         ? ` (${view.status.precheckFailedCount} times in a row)`

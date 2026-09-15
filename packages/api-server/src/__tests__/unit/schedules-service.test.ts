@@ -9,7 +9,10 @@ const SCHEDULE_ID = "sched-1";
 const RRULE = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 const TIMEZONE = "Europe/Prague";
 
-function makeCurrent(sessionMode?: "continuous" | "fresh"): Schedule {
+function makeCurrent(
+  sessionMode?: "continuous" | "fresh",
+  precheck?: string,
+): Schedule {
   const spec: ScheduleSpec = {
     version: "1",
     type: "rrule",
@@ -19,12 +22,14 @@ function makeCurrent(sessionMode?: "continuous" | "fresh"): Schedule {
     enabled: true,
     createdBy: "user",
     ...(sessionMode ? { sessionMode } : {}),
+    ...(precheck ? { precheck } : {}),
   };
   return { id: SCHEDULE_ID, agentId: "agent-1", name: "daily", spec };
 }
 
 function makeDeps(current: Schedule) {
   let savedSpec: ScheduleSpec | undefined;
+  let cleared = 0;
   const repo = {
     async get(id: string) {
       return id === current.id ? current : null;
@@ -36,6 +41,9 @@ function makeDeps(current: Schedule) {
       savedSpec = spec;
       return { ...current, spec };
     },
+    async clearPrecheckStatus() {
+      cleared += 1;
+    },
   } as unknown as SchedulesRepository;
   const runner = { async sync() {} } as unknown as SchedulerRunner;
   const service = createSchedulesService({
@@ -44,7 +52,7 @@ function makeDeps(current: Schedule) {
     owner: OWNER,
     agentBinding: "*",
   });
-  return { service, getSavedSpec: () => savedSpec };
+  return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
 }
 
 const baseUpdate = {
@@ -183,5 +191,25 @@ describe("listForOwner", () => {
       { owner: OWNER, opts: { limit: 5, agentIds: ["agent-1"] } },
     ]);
     expect(unbound.seen).toEqual([{ owner: OWNER, opts: { limit: 5 } }]);
+  });
+});
+
+describe("updateRRule precheck status", () => {
+  // TEST_SCENARIO: an error recorded against one command says nothing about another, so editing the precheck must drop what the old one produced.
+  it("clears the recorded status when the precheck changes", async () => {
+    const { service, getCleared } = makeDeps(makeCurrent(undefined, "old.sh"));
+
+    await service.updateRRule({ ...baseUpdate, precheck: "new.sh" });
+
+    expect(getCleared()).toBe(1);
+  });
+
+  // TEST_SCENARIO: an unchanged precheck keeps its history, or every unrelated edit would wipe the count the owner reads.
+  it("keeps the status when the precheck is untouched", async () => {
+    const { service, getCleared } = makeDeps(makeCurrent(undefined, "same.sh"));
+
+    await service.updateRRule({ ...baseUpdate, precheck: "same.sh" });
+
+    expect(getCleared()).toBe(0);
   });
 });

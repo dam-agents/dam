@@ -32,7 +32,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const nextRun =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
-  const declined = declinedSummary(status ?? undefined);
+  const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
   return (
     <div className="border-t border-border p-4">
