@@ -85,7 +85,7 @@ func leafSecret() *corev1.Secret {
 	}
 }
 
-func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *[]string) {
+func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *[]time.Duration) {
 	t.Helper()
 	node, srv := newFakeNode(t)
 	r, _ := setupReconciler(t, agent, leafSecret())
@@ -93,8 +93,8 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r.config.AgentTemplateDefaults.Mounts = []config.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}, {Path: "/scratch"}}
 	nodeClient, _ := vmrunner.NewClient(srv.URL, "node-token", "")
 	r.WithVMRunner(nodeClient)
-	var requeued []string
-	r.WithRequeue(func(name string, _ time.Duration) { requeued = append(requeued, name) })
+	var requeued []time.Duration
+	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
 }
 
@@ -137,13 +137,13 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, []string{"my-agent"}, *requeued)
+	assert.Equal(t, []time.Duration{vmReadinessPoll}, *requeued)
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	assert.Len(t, *requeued, 1, "a ready machine needs no poll")
+	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
 }
 
 func markGatewayReady(t *testing.T, r *AgentReconciler) {
