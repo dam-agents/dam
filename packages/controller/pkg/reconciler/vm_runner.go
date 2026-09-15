@@ -65,6 +65,19 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 	return []metav1.OwnerReference{*r.runnerOwner}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the Secret, PVC and Service are created once and never re-applied, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
+func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.ObjectMeta, update func(context.Context, *metav1.ObjectMeta) error) error {
+	if len(meta.OwnerReferences) > 0 {
+		return nil
+	}
+	refs := r.runnerOwnerRef(ctx)
+	if len(refs) == 0 {
+		return nil
+	}
+	meta.OwnerReferences = refs
+	return update(ctx, meta)
+}
+
 func (r *AgentReconciler) runnerName(owner string) string {
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
@@ -156,6 +169,12 @@ func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) 
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
+		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+			_, err := r.client.CoreV1().Secrets(ns).Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		}); err != nil {
+			slog.Warn("vm runner: adopting the existing Secret", "owner", owner, "error", err)
+		}
 		return string(existing.Data["token"]), string(existing.Data["tls.crt"]), nil
 	}
 	if !k8serrors.IsNotFound(err) {
@@ -222,8 +241,11 @@ func selfSignedCert(names ...string) (string, string, error) {
 
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
-	if _, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		return nil
+	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
+		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+			_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		})
 	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
@@ -258,7 +280,17 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 			Ports:     []corev1.ServicePort{{Name: "machine-api", Port: vmRunnerPort, TargetPort: intstr.FromInt(vmRunnerPort)}},
 		},
 	}
-	return r.applyService(ctx, svc)
+	if err := r.applyService(ctx, svc); err != nil {
+		return err
+	}
+	existing, err := r.client.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+		_, err := r.client.CoreV1().Services(ns).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.

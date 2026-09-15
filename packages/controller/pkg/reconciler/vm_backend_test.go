@@ -400,3 +400,26 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 		Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
+
+// TEST_SCENARIO: a runner built before the controller owned its objects; the Secret, PVC and Service are created once and never re-applied, so an upgrade would leave exactly the objects holding that owner's disk and credentials with no owner, and uninstall would strand them.
+func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-controller", Namespace: "default", UID: "controller-uid"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	name := r.runnerName(testOwner)
+	sec, err := r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Empty(t, sec.OwnerReferences, "the harness seeds it the way an older controller left it")
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	sec, err = r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, sec.OwnerReferences, 1, "the existing Secret is adopted")
+	assert.Equal(t, types.UID("controller-uid"), sec.OwnerReferences[0].UID)
+}
