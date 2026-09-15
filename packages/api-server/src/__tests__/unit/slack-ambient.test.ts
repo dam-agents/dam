@@ -42,6 +42,7 @@ function harness(opts: {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
+  const nudges: Array<string | ContentBlock[]> = [];
   const sendOpts: SendPromptOpts[] = [];
   const ambientCalls: Array<{
     agentId: string;
@@ -63,6 +64,11 @@ function harness(opts: {
     steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt, o) => {
+      o.onSession?.("sess-ambient");
+      if (String(prompt).includes("<turn-undelivered>")) {
+        nudges.push(prompt);
+        return "nudged";
+      }
       prompts.push(prompt);
       sendOpts.push(o);
       return opts.respond ? await opts.respond(prompt) : "the answer";
@@ -110,6 +116,7 @@ function harness(opts: {
     gw,
     events,
     prompts,
+    nudges,
     sendOpts,
     ambientCalls,
     worker,
@@ -151,7 +158,15 @@ function harness(opts: {
     texts: () => gw.readOutbound().map((r) => ("text" in r ? r.text : "")),
     turnEvents: () =>
       events.filter(
-        (e): e is ChannelTurnRelayed => e.type === EventType.ChannelTurnRelayed,
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason !== "recovery-nudge",
+      ),
+    nudgeEvents: () =>
+      events.filter(
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason === "recovery-nudge",
       ),
     securityRecords: () =>
       logLines.map((l) => JSON.parse(l) as Record<string, unknown>),
@@ -302,6 +317,22 @@ describe("slack ambient inbound", () => {
 
     expect(h.gw.readOutbound()).toHaveLength(0);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
+  });
+
+  /**
+   * TEST_SCENARIO: the delivery nudge belongs to addressed turns. Nobody
+   * summoned a read-along agent, so its silence is the designed outcome, not
+   * a lost answer — nudging it would resume the session and push the agent
+   * to post into a channel that never asked it anything.
+   */
+  it("ambient on: a silent turn is never nudged to deliver", async () => {
+    const h = harness({ binding: ambient, respond: () => "" });
+    await h.message(STRANGER, "lunch anyone?");
+    await h.settled(() => h.turnEvents().length === 1);
+
+    expect(h.prompts).toHaveLength(1);
+    expect(h.nudges).toHaveLength(0);
+    expect(h.nudgeEvents()).toHaveLength(0);
   });
 
   it("ambient on: attributes the turn by Slack id, never a platform sub", async () => {

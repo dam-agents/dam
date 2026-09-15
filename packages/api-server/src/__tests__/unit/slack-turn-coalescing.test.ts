@@ -24,7 +24,10 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
  * that turn together. A message arriving while a turn runs is steered into it,
  * so the agent reads it before it calls its reply tool and answers once. Where
  * the harness does not support steering the message waits and becomes the next
- * turn, which is the old behaviour minus the extra turns.
+ * turn, which is the old behaviour minus the extra turns. These agents never
+ * call the reply tool, so every turn here also draws a delivery nudge; the
+ * harness keeps those apart from turn prompts so the counts below stay about
+ * coalescing alone.
  */
 
 type Gate = { release: () => void };
@@ -33,6 +36,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
+  const nudges: Array<string | ContentBlock[]> = [];
   const steered: string[] = [];
   const gates: Gate[] = [];
   let holdTurns = false;
@@ -46,6 +50,10 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       return opts.steer ? opts.steer() : "unsupported";
     },
     sendPrompt: async (prompt, sendOpts) => {
+      if (String(prompt).includes("<turn-undelivered>")) {
+        nudges.push(prompt);
+        return "nudged";
+      }
       prompts.push(prompt);
       sendOpts.onSession?.(SESSION);
       if (holdTurns) {
@@ -91,6 +99,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
   return {
     gw,
     prompts,
+    nudges,
     steered,
     worker,
     async start() {

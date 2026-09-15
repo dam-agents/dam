@@ -773,6 +773,9 @@ function undeliveredNudge(threadTs: string): string {
     "<turn-undelivered>",
     "Your previous turn in this Slack thread ended without a reply being posted — the person waiting in the thread never saw an answer.",
     `Post your result now with the reply tool (threadTs="${threadTs}").`,
+    "Write it as the answer they are waiting for, not as a correction: do " +
+      "not mention this notice and do not apologise for the delay — the only " +
+      "thing they ever see is what you post.",
     "If silence was deliberate, call no_reply_needed instead.",
     "</turn-undelivered>",
   ].join("\n");
@@ -1255,6 +1258,61 @@ export function createSlackWorker(
     return run;
   }
 
+  async function runUndeliveredNudge(args: {
+    instanceName: string;
+    sessionId: string;
+    threadKey: string;
+    threadTs: string;
+    turnRefs: TurnRef[];
+    isDelivered: () => boolean;
+  }): Promise<void> {
+    const { instanceName, sessionId, threadKey, threadTs, turnRefs } = args;
+    await agents().ensureReady(instanceName);
+    const disposition = () =>
+      turnRefs
+        .map((ref) =>
+          [
+            ref.posted === true,
+            ref.declined === true,
+            ref.handedOff === true,
+            ref.replyText?.length ?? 0,
+          ].join(":"),
+        )
+        .join(" ");
+    let answered: boolean | undefined;
+    await withSessionTurnLock(instanceName, threadKey, async () => {
+      if (args.isDelivered()) return;
+      const before = disposition();
+      const ref = turnRefs.at(-1)!;
+      beginTurn(instanceName, ref);
+      try {
+        await makeAcpClient(instanceName).sendPrompt(
+          undeliveredNudge(threadTs),
+          { resumeSessionId: sessionId },
+        );
+      } finally {
+        endTurn(instanceName, ref);
+        answered = disposition() !== before;
+        if (!answered) {
+          getLogger().info(
+            { agentId: instanceName, sessionId, threadTs },
+            "slack.turn.recovery_unanswered: the agent was nudged but still posted nothing",
+          );
+        }
+      }
+    });
+    if (answered !== undefined) {
+      emit({
+        type: EventType.ChannelTurnRelayed,
+        channel: "slack",
+        agentId: instanceName,
+        actorSub: null,
+        outcome: answered ? "success" : "failure",
+        reason: "recovery-nudge",
+      });
+    }
+  }
+
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
@@ -1551,56 +1609,15 @@ export function createSlackWorker(
           sessionId,
           isDelivered: delivered,
           onDone: () => releaseWatchedRefs(instanceName, turnRefs),
-          recover: async (end) => {
-            await agents().ensureReady(instanceName);
-            const disposition = () =>
-              turnRefs
-                .map((ref) =>
-                  [
-                    ref.posted === true,
-                    ref.declined === true,
-                    ref.handedOff === true,
-                    ref.replyText?.length ?? 0,
-                  ].join(":"),
-                )
-                .join(" ");
-            let answered: boolean | undefined;
-            await withSessionTurnLock(instanceName, threadKey, async () => {
-              if (delivered(end)) return;
-              const before = disposition();
-              const ref = turnRefs.at(-1)!;
-              beginTurn(instanceName, ref);
-              try {
-                await makeAcpClient(instanceName).sendPrompt(
-                  undeliveredNudge(ctx.threadTs),
-                  { resumeSessionId: sessionId },
-                );
-              } finally {
-                endTurn(instanceName, ref);
-                answered = disposition() !== before;
-                if (!answered) {
-                  getLogger().info(
-                    {
-                      agentId: instanceName,
-                      sessionId,
-                      threadTs: ctx.threadTs,
-                    },
-                    "slack.turn.recovery_unanswered: the agent was nudged but still posted nothing",
-                  );
-                }
-              }
-            });
-            if (answered !== undefined) {
-              emit({
-                type: EventType.ChannelTurnRelayed,
-                channel: "slack",
-                agentId: instanceName,
-                actorSub: null,
-                outcome: answered ? "success" : "failure",
-                reason: "recovery-nudge",
-              });
-            }
-          },
+          recover: (end) =>
+            runUndeliveredNudge({
+              instanceName,
+              sessionId,
+              threadKey,
+              threadTs: ctx.threadTs,
+              turnRefs,
+              isDelivered: () => delivered(end),
+            }),
         });
       }
     } finally {
@@ -1613,6 +1630,9 @@ export function createSlackWorker(
         for (const sid of seenSessionIds)
           turnRecovery.dismiss(instanceName, sid);
       }
+      const nudgeSessionId = turnRefs.find(
+        (ref) => ref.sessionId !== undefined,
+      )?.sessionId;
       if (
         failureReason === undefined &&
         !ghostTurn &&
@@ -1628,6 +1648,33 @@ export function createSlackWorker(
           "slack.turn.unanswered: the agent finished an addressed turn without " +
             "posting a reply or a reaction",
         );
+        if (nudgeSessionId !== undefined) {
+          holdWatchedRefs(instanceName, turnRefs);
+          try {
+            await runUndeliveredNudge({
+              instanceName,
+              sessionId: nudgeSessionId,
+              threadKey,
+              threadTs: ctx.threadTs,
+              turnRefs,
+              isDelivered: () =>
+                turnRefs.some(
+                  (ref) => ref.posted || ref.declined || ref.handedOff,
+                ),
+            });
+          } catch (err) {
+            getLogger().info(
+              {
+                agentId: instanceName,
+                sessionId: nudgeSessionId,
+                error: formatError(err),
+              },
+              "slack.turn.recovery_failed: the delivery nudge could not run",
+            );
+          } finally {
+            releaseWatchedRefs(instanceName, turnRefs);
+          }
+        }
       }
       await presenter.clearStatus();
       emit({
