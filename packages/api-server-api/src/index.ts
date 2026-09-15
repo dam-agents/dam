@@ -197,6 +197,7 @@ export type {
 export {
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
+  starterKitScheduleOverrideSchema,
   starterKitCategorySchema,
   starterKitSchema,
 } from "./modules/starter-kits/schemas.js";

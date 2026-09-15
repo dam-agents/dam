@@ -1,12 +1,4 @@
-import {
-  CheckmarkFilled,
-  CircleDash,
-  Close,
-  Gift,
-  Information,
-  Time,
-  Undo,
-} from "@carbon/icons-react";
+import { CheckmarkFilled, CircleDash, Close, Gift } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -22,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
+import { useBudgetReserved } from "../../budgets/api/queries.js";
+import { sizeInMi, slotsFor, slotUnitOf } from "../../budgets/lib/slots.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -49,6 +43,7 @@ import {
 import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
+import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
 import {
   allowedHarnesses,
@@ -60,7 +55,6 @@ import {
   isProviderRequirement,
   isStarterKitSetupComplete,
   kitResourcesLine,
-  kitScheduleCadence,
   ownAgentLine,
   ownedMatches,
   preselectedGrants,
@@ -68,6 +62,7 @@ import {
   requirementStatuses,
   type StarterKitSetupDraft,
   toggleSkipped,
+  withOverride,
 } from "../../starter-kits/lib/setup.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
@@ -132,6 +127,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   const apply = useApplyStarterKit();
   const createAgent = useCreateAgent();
   const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
+  const budget = useBudgetReserved();
   const [browsingKits, setBrowsingKits] = useState(false);
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -169,6 +165,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
   const bringsImage = kit?.image !== undefined;
   const resourcesLine = kit ? kitResourcesLine(kit) : undefined;
+  const kitSlots = useMemo(() => {
+    if (!kit?.resources || !budget.data) return null;
+    const mi = sizeInMi(kit.resources);
+    if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
+    return slotsFor(mi, slotUnitOf(budget.data));
+  }, [kit?.resources, budget.data]);
   const harnesses = kit
     ? allowedHarnesses(kit, catalogue.harnesses)
     : catalogue.harnesses;
@@ -188,6 +190,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     connectionIds: form.connectionIds,
     slackChannelId: form.slackChannelId,
     skippedSchedules: form.skippedSchedules,
+    scheduleOverrides: form.scheduleOverrides,
   };
   const owned = connections.data ?? [];
   const statuses = kit
@@ -354,7 +357,18 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                     {b.label}
                   </Badge>
                 ))}
+                {resourcesLine && (
+                  <Badge variant="kit" size="sm">
+                    {resourcesLine}
+                  </Badge>
+                )}
               </div>
+              {kitSlots !== null && kitSlots > 1 && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Uses {kitSlots} of your compute slots while it runs. CPU and
+                  memory stay editable on the agent; disk is fixed at create.
+                </p>
+              )}
             </div>
             <Button
               variant="outline"
@@ -430,25 +444,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </section>
       )}
 
-      {kit && resourcesLine && (
-        <section className="mb-8">
-          <SectionLabel spaced>Size</SectionLabel>
-          <Callout tone="default" inset>
-            <div>{resourcesLine}</div>
-            {kit.resources?.note && (
-              <div className="mt-1 text-muted-foreground">
-                {kit.resources.note}
-              </div>
-            )}
-            <div className="mt-1 text-muted-foreground">
-              The kit sizes the agent instead of the install default. CPU and
-              memory count against your compute ceiling and can be changed on
-              the agent later; disk is fixed at create.
-            </div>
-          </Callout>
-        </section>
-      )}
-
       {noCompatibleProvider ? (
         <section className="mb-8">
           <SectionLabel spaced>Provider</SectionLabel>
@@ -467,7 +462,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {kit && statuses.length > 0 && (
         <section className="mb-8">
-          <SectionLabel spaced>Connections</SectionLabel>
+          <SectionLabel spaced>
+            {kit?.connections.some((c) => c.required)
+              ? "Connections"
+              : "Connections (optional)"}
+          </SectionLabel>
           <ul className="space-y-2 text-sm">
             {statuses.map(({ requirement, satisfied }) => (
               <li
@@ -620,114 +619,36 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
           <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
-            {kit.schedules.map((s) => {
-              const skipped = form.skippedSchedules.includes(s.name);
-              return (
-                <li
-                  key={s.name}
-                  data-testid={`starter-kit-schedule-${s.name}`}
-                  className={`overflow-hidden rounded-xl border ${
-                    skipped
-                      ? "border-border bg-muted/30 opacity-70"
-                      : "border-kit-line bg-kit-surface"
-                  }`}
-                >
-                  <div className="flex items-center gap-4 px-4 py-3">
-                    <span
-                      className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
-                        skipped
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-kit-tint text-kit"
-                      }`}
-                    >
-                      <Time size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`text-[15px] font-semibold leading-6 ${skipped ? "text-muted-foreground line-through" : "text-foreground"}`}
-                        >
-                          {s.name}
-                        </span>
-                        <Badge variant="kit" size="sm">
-                          Starter Kit
-                        </Badge>
-                        {skipped && (
-                          <Badge variant="muted" size="sm">
-                            skipped
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {kitScheduleCadence(s)}
-                      </p>
-                    </div>
-                    <Badge variant={s.enabled ? "success" : "muted"} size="sm">
-                      {s.enabled ? "on" : "off"}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={
-                        skipped ? `Add back ${s.name}` : `Skip ${s.name}`
-                      }
-                      title={skipped ? "Add back" : "Skip this schedule"}
-                      onClick={() =>
-                        update({
-                          skippedSchedules: toggleSkipped(
-                            form.skippedSchedules,
-                            s.name,
-                          ),
-                        })
-                      }
-                    >
-                      {skipped ? <Undo size={16} /> : <Close size={16} />}
-                    </Button>
-                  </div>
-
-                  {!skipped && (
-                    <>
-                      <div className="border-t border-kit-rule px-4 py-3">
-                        <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
-                          <Information
-                            size={16}
-                            className="mt-0.5 shrink-0 text-kit"
-                          />
-                          <p className="text-sm text-foreground/80">{s.task}</p>
-                        </div>
-                      </div>
-                      <dl className="border-t border-kit-rule text-sm">
-                        <div className="flex items-center justify-between border-b border-kit-rule px-4 py-3">
-                          <dt className="text-foreground">Repeat</dt>
-                          <dd className="font-mono text-muted-foreground">
-                            {"cron" in s ? s.cron : s.rrule}
-                          </dd>
-                        </div>
-                        {"timezone" in s && (
-                          <div className="flex items-center justify-between border-b border-kit-rule px-4 py-3">
-                            <dt className="text-foreground">Timezone</dt>
-                            <dd className="text-muted-foreground">
-                              {s.timezone}
-                            </dd>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between px-4 py-3">
-                          <dt className="text-foreground">Session type</dt>
-                          <dd className="text-muted-foreground">
-                            {s.sessionMode ?? "fresh"}
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  )}
-                </li>
-              );
-            })}
+            {kit.schedules.map((s) => (
+              <KitScheduleCard
+                key={s.name}
+                schedule={s}
+                override={form.scheduleOverrides.find((o) => o.name === s.name)}
+                skipped={form.skippedSchedules.includes(s.name)}
+                onChange={(patch) =>
+                  update({
+                    scheduleOverrides: withOverride(
+                      form.scheduleOverrides,
+                      s.name,
+                      patch,
+                    ),
+                  })
+                }
+                onToggleSkipped={() =>
+                  update({
+                    skippedSchedules: toggleSkipped(
+                      form.skippedSchedules,
+                      s.name,
+                    ),
+                  })
+                }
+              />
+            ))}
           </ul>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Created with the kit author's defaults and held until onboarding
-            finishes. Skip any you do not want; one created off is a toggle away
-            under Schedules.
+          <p className={cn(FIELD_INSET, "mt-3 text-sm text-muted-foreground")}>
+            Created with the kit author&apos;s defaults and held until
+            onboarding finishes. Adjust any of them, or skip what you do not
+            want.
           </p>
         </section>
       )}

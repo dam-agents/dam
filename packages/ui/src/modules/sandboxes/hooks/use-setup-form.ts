@@ -1,4 +1,7 @@
-import { knowledgeBaseTemplateIdSchema } from "api-server-api";
+import {
+  knowledgeBaseTemplateIdSchema,
+  starterKitScheduleOverrideSchema,
+} from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -17,6 +20,7 @@ export const setupFormSchema = z.object({
   customImage: z.string().default(""),
   slackChannelId: z.string().default(""),
   skippedSchedules: z.array(z.string()).default([]),
+  scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 

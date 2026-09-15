@@ -7,6 +7,7 @@ import {
   type StarterKitApplyInput,
   type StarterKitConnectionRequirement,
   type StarterKitSchedule,
+  type StarterKitScheduleOverride,
   type StarterKitView,
 } from "api-server-api";
 
@@ -20,6 +21,7 @@ export interface StarterKitSetupDraft {
   connectionIds: string[];
   slackChannelId: string;
   skippedSchedules: string[];
+  scheduleOverrides: StarterKitScheduleOverride[];
 }
 
 export interface GrantedConnection {
@@ -116,6 +118,9 @@ export function buildStarterKitApplyInput(
     ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
     skipSchedules: draft.skippedSchedules,
+    scheduleOverrides: draft.scheduleOverrides.filter(
+      (o) => !draft.skippedSchedules.includes(o.name),
+    ),
   };
 }
 
@@ -225,6 +230,36 @@ export function kitScheduleCadence(schedule: StarterKitSchedule): string {
   if ("rrule" in schedule)
     return `${rruleToText(schedule.rrule)} (${schedule.timezone})`;
   return schedule.cron;
+}
+
+export function effectiveTiming(
+  schedule: StarterKitSchedule,
+  override: StarterKitScheduleOverride | undefined,
+): { cron: string } | { rrule: string; timezone: string } {
+  if (override?.timing) return override.timing;
+  return "cron" in schedule
+    ? { cron: schedule.cron }
+    : { rrule: schedule.rrule, timezone: schedule.timezone };
+}
+
+export function describeTiming(
+  timing: { cron: string } | { rrule: string; timezone: string },
+): string {
+  return "cron" in timing
+    ? timing.cron
+    : `${rruleToText(timing.rrule)} (${timing.timezone})`;
+}
+
+export function withOverride(
+  overrides: readonly StarterKitScheduleOverride[],
+  name: string,
+  patch: Omit<StarterKitScheduleOverride, "name">,
+): StarterKitScheduleOverride[] {
+  const existing = overrides.find((o) => o.name === name);
+  const next = { ...existing, name, ...patch };
+  return existing
+    ? overrides.map((o) => (o.name === name ? next : o))
+    : [...overrides, next];
 }
 
 export function toggleSkipped(

@@ -62,6 +62,7 @@ const complete: StarterKitSetupDraft = {
   connectionIds: ["c-gh"],
   slackChannelId: " C123 ",
   skippedSchedules: [],
+  scheduleOverrides: [],
 };
 
 describe("requirementStatuses", () => {
@@ -154,6 +155,7 @@ describe("buildStarterKitApplyInput", () => {
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
       skipSchedules: ["benchmark"],
+      scheduleOverrides: [],
     });
   });
 
