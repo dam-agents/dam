@@ -45,21 +45,23 @@ export function KitBadges({
 
 export function KitIllustration({
   kit,
+  size = 32,
   className,
 }: {
   kit: StarterKitView;
+  size?: number;
   className?: string;
 }) {
   const Icon = kitIcon(kit);
   return (
     <div
       className={cn(
-        "flex items-center justify-center bg-accent/40 text-muted-foreground",
+        "flex items-center justify-center bg-gradient-to-br from-kit-tint to-kit-surface text-kit",
         className,
       )}
       aria-hidden
     >
-      <Icon size={32} />
+      <Icon size={size} />
     </div>
   );
 }
@@ -82,7 +84,10 @@ export function KitCard({
       data-testid={`starter-kit-card-${kit.id}`}
       className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
     >
-      <KitIllustration kit={kit} className="h-[104px]" />
+      <KitIllustration
+        kit={kit}
+        className="h-[160px] border-b border-kit-line"
+      />
       <div className="flex flex-1 flex-col gap-2 p-4">
         <h3 className="text-base font-semibold text-foreground">{kit.name}</h3>
         <p className="flex-1 text-sm text-muted-foreground">

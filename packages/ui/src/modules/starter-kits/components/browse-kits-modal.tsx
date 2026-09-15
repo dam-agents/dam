@@ -69,7 +69,7 @@ export function BrowseKitsModal({
             />
             {shown.length === 0 ? (
               <p className="py-8 text-sm text-muted-foreground">
-                No presets match &quot;{query}&quot;
+                No starter kits match &quot;{query}&quot;
               </p>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

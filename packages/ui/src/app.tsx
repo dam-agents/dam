@@ -117,7 +117,11 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "home" ||
+                  view === "starter-kits" ||
+                  view === "starter-kit"
+                  ? "max-w-[1200px]"
+                  : "max-w-[960px]",
               )}
             >
               {view === "home" ? (

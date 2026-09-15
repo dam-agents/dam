@@ -38,13 +38,17 @@ function FeaturedCard({
       data-testid={`starter-kit-card-${kit.id}`}
       className="grid w-full overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
     >
-      <KitIllustration kit={kit} className="min-h-[180px]" />
-      <div className="flex flex-col justify-center gap-3 p-6">
+      <KitIllustration
+        kit={kit}
+        size={48}
+        className="min-h-[280px] border-kit-line md:border-r"
+      />
+      <div className="flex flex-col justify-center gap-3 p-8">
         <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-lg border border-border">
-            <Icon size={16} />
+          <span className="flex size-10 items-center justify-center rounded-lg border border-border">
+            <Icon size={18} />
           </span>
-          <h2 className="text-xl font-semibold text-foreground">{kit.name}</h2>
+          <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
         </div>
         <p className="text-sm text-muted-foreground">{kit.description}</p>
         <KitBadges
@@ -122,7 +126,7 @@ export function StarterKitsView() {
 
           {shown.length === 0 ? (
             <p className="py-8 text-sm text-muted-foreground">
-              No presets match &quot;{query}&quot;
+              No starter kits match &quot;{query}&quot;
             </p>
           ) : (
             <div className="flex flex-col gap-4">
