@@ -370,7 +370,7 @@ export function createTelegramChat(deps: {
     const channel = event.channel;
     const thread: ThreadLike = {
       id: channel.id,
-      isDM: channel.isDM,
+      isDM: event.adapter.isDM?.(channel.id) ?? channel.isDM,
       post: (message) => channel.post(message),
       subscribe: () => deps.state.subscribe(channel.id),
     };

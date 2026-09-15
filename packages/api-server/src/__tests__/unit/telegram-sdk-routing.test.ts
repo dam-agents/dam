@@ -369,3 +369,59 @@ describe("telegram /start probe", () => {
     release();
   });
 });
+
+describe("telegram slash command routing", () => {
+  async function sendCommand(
+    h: Awaited<ReturnType<typeof harness>>,
+    threadId: string,
+    command: string,
+    text = "",
+  ) {
+    h.chat.processSlashCommand(
+      {
+        adapter: h.adapter as never,
+        channelId: threadId,
+        command,
+        text,
+        user: {
+          userId: "tg-7",
+          userName: "jane",
+          fullName: "Jane Doe",
+          isBot: false,
+          isMe: false,
+        },
+        raw: {},
+      } as never,
+      undefined,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  it("treats a slash command in a DM as a DM, not a group", async () => {
+    const h = await harness({
+      boundTo: null,
+      isAdmin: false,
+      relay: async () => {},
+    });
+    await sendCommand(h, DM_THREAD, "/bind");
+    const posted = h.posts.join("\n");
+    expect(posted).not.toContain("Only group admins");
+    expect(posted).toContain("Connect an agent");
+  });
+
+  it("still applies the admin gate to a slash command in a group", async () => {
+    const h = await harness({
+      boundTo: null,
+      isAdmin: false,
+      relay: async () => {},
+    });
+    await sendCommand(h, GROUP_THREAD, "/bind");
+    expect(h.posts.join("\n")).toContain("Only group admins");
+  });
+
+  it("unbinds from a slash command", async () => {
+    const h = await harness({ boundTo: "agent-1", relay: async () => {} });
+    await sendCommand(h, DM_THREAD, "/unbind");
+    expect(h.posts.join("\n")).toContain("Chat disconnected");
+  });
+});
