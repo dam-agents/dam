@@ -163,16 +163,12 @@ virtualization:
       tag: ""
       pullPolicy: IfNotPresent
     # KVM (and the tun device smolvm's per-machine network needs) arrive as
-    # device-plugin resources, so the pod needs no privilege for them. Empty
-    # = the chart's own plugin below when enabled, else KubeVirt's
-    # (`devices.kubevirt.io/kvm|tun`, present on every node virt-handler runs
-    # on). Any plugin exposing /dev/kvm and /dev/net/tun works; `privileged:
-    # true` is the last resort.
+    # device-plugin resources, which is the only way the runner gets them —
+    # it is never a privileged pod. Empty = the chart's own plugin below when
+    # enabled, else KubeVirt's (`devices.kubevirt.io/kvm|tun`, present on
+    # every node virt-handler runs on). Any plugin exposing /dev/kvm and
+    # /dev/net/tun works; a cluster with none cannot host vm agents.
     devices: {}
-    # Last resort where no device plugin exists. The runner then also
-    # chmods the host's /dev/kvm and /dev/net/tun world-writable for its
-    # machine uids, and that outlives the pod.
-    privileged: false
     # OpenShift: name of a built-in SCC to bind to the node's ServiceAccount
     # (the pod runs as root with NET_ADMIN, so `privileged` is the one that
     # admits it; the pod still requests only what it needs). Empty = no

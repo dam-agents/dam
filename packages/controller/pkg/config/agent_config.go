@@ -80,7 +80,6 @@ type VMRunnerSpec struct {
 	ServiceAccountName   string                        `json:"serviceAccountName,omitempty"`
 	Storage              string                        `json:"storage,omitempty"`
 	StorageClass         string                        `json:"storageClass,omitempty"`
-	Privileged           bool                          `json:"privileged,omitempty"`
 	Devices              map[string]string             `json:"devices,omitempty"`
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
 	IngressCIDRs         []string                      `json:"ingressCidrs,omitempty"`
