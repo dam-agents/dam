@@ -631,9 +631,9 @@ on opposite sides of the credential boundary, so the threat models
 differ:
 
 - **`platform-migration` ServiceAccount** in the agent namespace — the
-  identity of the one-time storage-migration copy Job, and the only
-  workload on the platform that runs as **uid 0**. The Job needs root
-  solely for the target side of the copy (owning a freshly provisioned
+  identity of the one-time storage-migration copy Job, one of two
+  that run as **uid 0** (the VM runner is the other). It needs root
+  only for the target side of the copy (owning a freshly provisioned
   volume root, restoring exact file ownership); every read of the agent's
   data drops to the agent's own uid, so a root-squashing source share
   never sees uid 0. The SA carries no role bindings and its token is

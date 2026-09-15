@@ -128,7 +128,8 @@ export interface AgentSpecCR {
   name?: string;
   /**
    * NodeSelector overrides the chart-wide node selector; empty = inherit.
-   * Container backend only — a vm agent has no pod to place.
+   * Container backend only — rejected on the vm backend, whose machine is
+   * placed with its owner's VM runner.
    */
   nodeSelector?: {
     [k: string]: string;
