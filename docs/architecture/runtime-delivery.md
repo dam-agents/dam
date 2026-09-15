@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-14
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -147,7 +147,7 @@ sequenceDiagram
 
 Each event kind has a built-in handler inside the agent-runtime's event loop. The kind selects the handler; the payload shape and the side effect are kind-specific. The common contract:
 
-- The handler receives the event's `payload`; the loop owns `id`-based dedupe before the handler is ever invoked — a per-key last-run timestamp in the agent's local state store, and nothing else. An id the loop cannot read a timestamp out of settles without running: a malformed id is unrunnable, and failing closed beats re-firing it on every poll.
+- The handler receives the event's `payload` and its `id` — the id so a handler whose work outlives the call can name the event it is reporting on, below. The loop owns `id`-based dedupe before the handler is ever invoked — a per-key last-run timestamp in the agent's local state store, and nothing else. An id the loop cannot read a timestamp out of settles without running: a malformed id is unrunnable, and failing closed beats re-firing it on every poll.
 - It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
 - An event settles when its handler **accepts** it, not when the work it started finishes. That distinction is what keeps a slow handler off the channel: `applyState` is serialized per agent, so anything awaited inside a handler stops every other contribution and event for that agent, and the api-server abandons the call after its own timeout. A handler with work that can outlive the call — a schedule's Precheck is the one today — settles immediately and reports its outcome afterwards over the **event report** below. The cost is deliberate: work detached this way is lost if the pod dies before it finishes, because the event is already settled.
 
