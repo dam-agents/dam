@@ -3,6 +3,7 @@ package vmrunner
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -444,4 +445,21 @@ func TestAStopIssuedWhileBootingIsHonoured(t *testing.T) {
 
 	h.settle(t, "m1")
 	assert.Contains(t, h.calls(), "machine stop -n m1", "the machine is actually stopped once its boot finishes")
+}
+
+// TEST_SCENARIO: what the platform tells a user about a machine that would not start comes from matching smolvm's own error text, so the mapping is pinned here — a guest that never booted must not be reported as a missing image, and anything unrecognised has to land on the boot failure rather than invent a cause.
+func TestFailureReasonsMatchWhatTheUserIsTold(t *testing.T) {
+	for _, tc := range []struct {
+		err  string
+		want string
+	}{
+		{"cannot read archive /var/lib/vm-runner/images/x.tar", ReasonImageUnavailable},
+		{"unknown flag --image", ReasonImageUnavailable},
+		{"failed to pull quay.io/x/y:1", ReasonImageUnavailable},
+		{"no free machine port", ReasonOutOfCapacity},
+		{"boot process exited with code 1", ReasonBootFailed},
+		{"something smolvm has never said before", ReasonBootFailed},
+	} {
+		assert.Equal(t, tc.want, failureReason(errors.New(tc.err)), "error %q", tc.err)
+	}
 }
