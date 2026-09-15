@@ -1,4 +1,4 @@
-import { ArrowLeft, Launch } from "@carbon/icons-react";
+import { ArrowLeft, Launch, PlayFilledAlt } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 import { useMemo } from "react";
 
@@ -150,6 +150,29 @@ export function StarterKitDetailView() {
   return <KitDetail kit={kit.data} />;
 }
 
+function KitVideoPanel({ video }: { video: string | undefined }) {
+  return (
+    <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
+      <PlayFilledAlt size={56} className="mb-3 text-kit/40" aria-hidden />
+      <p className="text-base font-semibold text-foreground">
+        See it in action
+      </p>
+      {video ? (
+        <a
+          href={video}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 text-sm text-foreground underline underline-offset-2"
+        >
+          Watch the walkthrough <Launch size={14} />
+        </a>
+      ) : (
+        <p className="text-sm text-muted-foreground">Video coming soon</p>
+      )}
+    </aside>
+  );
+}
+
 function KitDetail({ kit }: { kit: StarterKitView }) {
   const KitIcon = kitIcon(kit);
   const setView = useStore((s) => s.setView);
@@ -177,251 +200,250 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
   const close = () => setView("starter-kits");
 
   return (
-    <Modal widthClass="w-[600px]" onClose={close}>
-      <DialogHeader
-        title={kit.name}
-        titleAccessory={
-          <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
-        }
-        subtitle={kit.description}
-        onClose={close}
-      >
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground">
-            <KitIcon size={14} />
-          </span>
-          {kit.connections.flatMap((req) =>
-            acceptedTemplates(req.accepts, templates.data ?? [])
-              .flatMap((t) => (t.family ? [t.family] : []))
-              .filter((f, i, all) => all.findIndex((x) => x.id === f.id) === i)
-              .map((family) => (
-                <Badge key={family.id} variant="muted" size="sm">
-                  {family.title}
-                </Badge>
-              )),
-          )}
-          {skillCount > 0 && (
-            <Badge variant="muted" size="sm">
-              {skillCount} {skillCount === 1 ? "skill" : "skills"}
-            </Badge>
-          )}
-        </div>
-      </DialogHeader>
-
-      <DialogBody>
-        <h2 className="mb-3 text-base font-semibold text-foreground">
-          Included
-        </h2>
-
-        {skillCount > 0 && (
-          <Section label="Skills">
-            {kit.skillsInKit.map((skill) => (
-              <Row
-                key={`in-kit:${skill.name}`}
-                title={skill.name}
-                detail={skill.description}
-                trailing={
-                  <Badge variant="muted" size="sm">
-                    in the kit
-                  </Badge>
-                }
-              />
-            ))}
-            {kit.skills.map((skill) => (
-              <Row
-                key={`external:${skill.source}`}
-                title={skill.name}
-                detail={skill.source}
-                trailing={
-                  <Badge variant="muted" size="sm">
-                    installed at create
-                  </Badge>
-                }
-              />
-            ))}
-          </Section>
-        )}
-
-        {kit.image && (
-          <Section label="Framework">
-            <Row
-              title={kit.name}
-              detail={kit.image.ref}
-              trailing={
-                <Badge variant="muted" size="sm">
-                  brings its own agent
-                </Badge>
-              }
-            />
-          </Section>
-        )}
-
-        {kit.schedules.length > 0 && (
-          <Section label="Schedules">
-            {kit.schedules.map((schedule) => (
-              <Row
-                key={schedule.name}
-                title={schedule.name}
-                detail={kitScheduleCadence(schedule)}
-                trailing={
-                  <Badge variant="muted" size="sm">
-                    {schedule.enabled ? "on" : "off"}
-                  </Badge>
-                }
-              />
-            ))}
-            <li className="text-sm text-muted-foreground">
-              Created on the new agent. They stay held until onboarding is
-              finished, so nothing runs against a half-configured agent.
-            </li>
-          </Section>
-        )}
-
-        {kit.seed && (
-          <Section label="Definition">
-            <Row
-              title={kit.seed.url.replace("https://github.com/", "")}
-              detail={`Cloned by the agent during onboarding${kit.seed.ref ? ` at ${kit.seed.ref}` : ""}`}
-              trailing={
-                <a
-                  href={kit.seed.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="Open the definition repository"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Launch size={16} />
-                </a>
-              }
-            />
-          </Section>
-        )}
-
-        {size && size.slots > 1 && (
-          <Section label="Compute resources">
-            <Row
-              title={size.label}
-              detail={
-                kit.resources?.storage
-                  ? `${kit.resources.storage} disk. ${kit.resources.note ?? ""}`.trim()
-                  : kit.resources?.note
-              }
-              trailing={
-                <Badge variant="muted" size="sm">
-                  {size.slots} slots
-                </Badge>
-              }
-            />
-            <li className="text-sm text-muted-foreground">
-              This kit asks for more than one slot of your compute ceiling. CPU
-              and memory stay editable on the agent; disk is fixed at create.
-            </li>
-          </Section>
-        )}
-
-        <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
-          You&apos;ll set up
-        </h2>
-
-        {kit.connections.length > 0 && (
-          <Section label="Connections">
-            {kit.connections.map((req) => (
-              <Row
-                key={req.accepts.join("|")}
-                icons={acceptedTemplates(req.accepts, templates.data ?? [])
-                  .map((t) => t.iconSlug)
-                  .filter((slug): slug is string => slug !== undefined)
-                  .filter((slug, i, all) => all.indexOf(slug) === i)}
-                title={describeAccepts(req.accepts, templateById)}
-                detail={req.note}
-                trailing={
-                  <Badge
-                    variant={req.required ? "template" : "muted"}
-                    size="sm"
-                  >
-                    {req.required ? "required" : "optional"}
-                  </Badge>
-                }
-              />
-            ))}
-          </Section>
-        )}
-
-        {kit.channels.length > 0 && (
-          <Section label="Channels">
-            {kit.channels.map((channel) => (
-              <Row
-                key={channel.type}
-                icons={[channel.type]}
-                title={channel.type === "slack" ? "Slack" : "Telegram"}
-                detail={channel.note}
-                trailing={
-                  <Badge variant="muted" size="sm">
-                    optional
-                  </Badge>
-                }
-              />
-            ))}
-          </Section>
-        )}
-
-        {!kit.image && (
-          <Section label="Harness">
-            <Row
-              title={harnessesLine(kit)}
-              detail="Chosen on the next step, from the harnesses installed here."
-            />
-          </Section>
-        )}
-
-        {kit.parameters.length > 0 && (
-          <Section label="Onboarding will ask you for">
-            {kit.parameters.map((p) => (
-              <Row
-                key={p.name}
-                title={p.name}
-                detail={p.note}
-                trailing={
-                  <Badge variant={p.required ? "template" : "muted"} size="sm">
-                    {p.required ? "required" : "optional"}
-                  </Badge>
-                }
-              />
-            ))}
-          </Section>
-        )}
-        <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
-          See it in action
-        </h2>
-        {kit.video ? (
-          <a
-            href={kit.video}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2 text-sm text-foreground underline underline-offset-2"
+    <Modal widthClass="w-[600px] max-w-full md:w-[980px]" onClose={close}>
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <DialogHeader
+            title={kit.name}
+            titleAccessory={
+              <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
+            }
+            subtitle={kit.description}
+            onClose={close}
           >
-            Watch the walkthrough <Launch size={16} />
-          </a>
-        ) : (
-          <p className="text-sm text-muted-foreground">Video coming soon.</p>
-        )}
-      </DialogBody>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground">
+                <KitIcon size={14} />
+              </span>
+              {kit.connections.flatMap((req) =>
+                acceptedTemplates(req.accepts, templates.data ?? [])
+                  .flatMap((t) => (t.family ? [t.family] : []))
+                  .filter(
+                    (f, i, all) => all.findIndex((x) => x.id === f.id) === i,
+                  )
+                  .map((family) => (
+                    <Badge key={family.id} variant="muted" size="sm">
+                      {family.title}
+                    </Badge>
+                  )),
+              )}
+              {skillCount > 0 && (
+                <Badge variant="muted" size="sm">
+                  {skillCount} {skillCount === 1 ? "skill" : "skills"}
+                </Badge>
+              )}
+            </div>
+          </DialogHeader>
 
-      <DialogFooter divided className="justify-between">
-        <Button variant="ghost" onClick={close}>
-          <ArrowLeft size={16} /> Back
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setView("coding-agent-new")}>
-            Start from scratch instead
-          </Button>
-          <Button
-            onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
-          >
-            Use this Starter Kit
-          </Button>
+          <DialogBody>
+            <h2 className="mb-3 text-base font-semibold text-foreground">
+              Included
+            </h2>
+
+            {skillCount > 0 && (
+              <Section label="Skills">
+                {kit.skillsInKit.map((skill) => (
+                  <Row
+                    key={`in-kit:${skill.name}`}
+                    title={skill.name}
+                    detail={skill.description}
+                    trailing={
+                      <Badge variant="muted" size="sm">
+                        in the kit
+                      </Badge>
+                    }
+                  />
+                ))}
+                {kit.skills.map((skill) => (
+                  <Row
+                    key={`external:${skill.source}`}
+                    title={skill.name}
+                    detail={skill.source}
+                    trailing={
+                      <Badge variant="muted" size="sm">
+                        installed at create
+                      </Badge>
+                    }
+                  />
+                ))}
+              </Section>
+            )}
+
+            {kit.image && (
+              <Section label="Framework">
+                <Row
+                  title={kit.name}
+                  detail={kit.image.ref}
+                  trailing={
+                    <Badge variant="muted" size="sm">
+                      brings its own agent
+                    </Badge>
+                  }
+                />
+              </Section>
+            )}
+
+            {kit.schedules.length > 0 && (
+              <Section label="Schedules">
+                {kit.schedules.map((schedule) => (
+                  <Row
+                    key={schedule.name}
+                    title={schedule.name}
+                    detail={kitScheduleCadence(schedule)}
+                    trailing={
+                      <Badge variant="muted" size="sm">
+                        {schedule.enabled ? "on" : "off"}
+                      </Badge>
+                    }
+                  />
+                ))}
+                <li className="text-sm text-muted-foreground">
+                  Created on the new agent. They stay held until onboarding is
+                  finished, so nothing runs against a half-configured agent.
+                </li>
+              </Section>
+            )}
+
+            {kit.seed && (
+              <Section label="Definition">
+                <Row
+                  title={kit.seed.url.replace("https://github.com/", "")}
+                  detail={`Cloned by the agent during onboarding${kit.seed.ref ? ` at ${kit.seed.ref}` : ""}`}
+                  trailing={
+                    <a
+                      href={kit.seed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open the definition repository"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  }
+                />
+              </Section>
+            )}
+
+            {size && size.slots > 1 && (
+              <Section label="Compute resources">
+                <Row
+                  title={size.label}
+                  detail={
+                    kit.resources?.storage
+                      ? `${kit.resources.storage} disk. ${kit.resources.note ?? ""}`.trim()
+                      : kit.resources?.note
+                  }
+                  trailing={
+                    <Badge variant="muted" size="sm">
+                      {size.slots} slots
+                    </Badge>
+                  }
+                />
+                <li className="text-sm text-muted-foreground">
+                  This kit asks for more than one slot of your compute ceiling.
+                  CPU and memory stay editable on the agent; disk is fixed at
+                  create.
+                </li>
+              </Section>
+            )}
+
+            <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
+              You&apos;ll set up
+            </h2>
+
+            {kit.connections.length > 0 && (
+              <Section label="Connections">
+                {kit.connections.map((req) => (
+                  <Row
+                    key={req.accepts.join("|")}
+                    icons={acceptedTemplates(req.accepts, templates.data ?? [])
+                      .map((t) => t.iconSlug)
+                      .filter((slug): slug is string => slug !== undefined)
+                      .filter((slug, i, all) => all.indexOf(slug) === i)}
+                    title={describeAccepts(req.accepts, templateById)}
+                    detail={req.note}
+                    trailing={
+                      <Badge
+                        variant={req.required ? "template" : "muted"}
+                        size="sm"
+                      >
+                        {req.required ? "required" : "optional"}
+                      </Badge>
+                    }
+                  />
+                ))}
+              </Section>
+            )}
+
+            {kit.channels.length > 0 && (
+              <Section label="Channels">
+                {kit.channels.map((channel) => (
+                  <Row
+                    key={channel.type}
+                    icons={[channel.type]}
+                    title={channel.type === "slack" ? "Slack" : "Telegram"}
+                    detail={channel.note}
+                    trailing={
+                      <Badge variant="muted" size="sm">
+                        optional
+                      </Badge>
+                    }
+                  />
+                ))}
+              </Section>
+            )}
+
+            {!kit.image && (
+              <Section label="Harness">
+                <Row
+                  title={harnessesLine(kit)}
+                  detail="Chosen on the next step, from the harnesses installed here."
+                />
+              </Section>
+            )}
+
+            {kit.parameters.length > 0 && (
+              <Section label="Onboarding will ask you for">
+                {kit.parameters.map((p) => (
+                  <Row
+                    key={p.name}
+                    title={p.name}
+                    detail={p.note}
+                    trailing={
+                      <Badge
+                        variant={p.required ? "template" : "muted"}
+                        size="sm"
+                      >
+                        {p.required ? "required" : "optional"}
+                      </Badge>
+                    }
+                  />
+                ))}
+              </Section>
+            )}
+          </DialogBody>
+
+          <DialogFooter divided className="justify-between">
+            <Button variant="ghost" onClick={close}>
+              <ArrowLeft size={16} /> Back
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setView("coding-agent-new")}
+              >
+                Start from scratch instead
+              </Button>
+              <Button
+                onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
+              >
+                Use this Starter Kit
+              </Button>
+            </div>
+          </DialogFooter>
         </div>
-      </DialogFooter>
+        <KitVideoPanel video={kit.video} />
+      </div>
     </Modal>
   );
 }
