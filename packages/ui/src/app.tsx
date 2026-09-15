@@ -1,4 +1,4 @@
-import { Notification } from "@carbon/icons-react";
+import { Activity, ChevronLeft, ChevronRight } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,10 +16,12 @@ import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useNotifications } from "./modules/notifications/api/queries.js";
 import { NotificationsPanel } from "./modules/notifications/components/notifications-panel.js";
+import { useApprovalToasts } from "./modules/notifications/hooks/use-approval-toasts.js";
 import { isNeedsYou } from "./modules/notifications/lib/notification-types.js";
 import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import type { ChatHeaderVariant } from "./modules/platform/store/sidebar.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SchedulesView } from "./modules/schedules/views/schedules-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -58,6 +60,14 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
+const VARIANT_LABELS: Record<ChatHeaderVariant, string> = {
+  1: "Default header",
+  2: "Tinted header",
+  3: "Compact + padded",
+  4: "Breadcrumb trail",
+  5: "Agent chip",
+};
+
 function NotificationBell() {
   const toggleNotifications = useStore((s) => s.toggleNotifications);
   const { items } = useNotifications();
@@ -74,7 +84,7 @@ function NotificationBell() {
       }
       className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <Notification size={16} />
+      <Activity size={16} />
       {needsYouCount > 0 && (
         <Badge
           variant="default"
@@ -87,6 +97,33 @@ function NotificationBell() {
   );
 }
 
+function ChatHeaderSwitcher() {
+  const variant = useStore((s) => s.chatHeaderVariant);
+  const cycle = useStore((s) => s.cycleChatHeader);
+
+  return (
+    <div className="fixed bottom-4 left-1/2 z-[9999] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
+      <button
+        type="button"
+        onClick={() => cycle(-1)}
+        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <span className="min-w-[200px] text-center text-sm font-medium text-foreground">
+        Header {variant}/5 — {VARIANT_LABELS[variant]}
+      </span>
+      <button
+        type="button"
+        onClick={() => cycle(1)}
+        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
 function MainApp() {
   const view = useStore((s) => s.view);
   const notificationsOpen = useStore((s) => s.notificationsOpen);
@@ -94,6 +131,7 @@ function MainApp() {
 
   useLiveEvents();
   useAgentCrashToasts();
+  useApprovalToasts();
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -131,6 +169,7 @@ function MainApp() {
             <ChatView />
           </div>
         </div>
+        <ChatHeaderSwitcher />
         <NotificationsPanel
           open={notificationsOpen}
           onClose={() => setNotificationsOpen(false)}

@@ -86,7 +86,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const now = useNow(60_000);
   const { items: allItems, agents, loading } = useNotifications();
 
-  const [showApprovals, setShowApprovals] = useState(false);
+  const initialTab = useStore((s) => s.notificationsInitialTab);
+  const [showApprovals, setShowApprovals] = useState(
+    initialTab === "approvals",
+  );
   const [previewArtifact, setPreviewArtifact] =
     useState<LibraryArtifact | null>(null);
 

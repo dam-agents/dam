@@ -535,29 +535,210 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {}
+  const chatHeaderVariant = useStore((s) => s.chatHeaderVariant);
+
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="inline"
+      aria-label="Back"
+      onClick={handleBack}
+      className={cn(
+        "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
+        isDemo
+          ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
+          : "text-muted-foreground",
+      )}
+    >
+      <ArrowLeft size={14} />
+    </Button>
+  );
+
+  const agentDropdown = !isDemo ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={surfaceCopy.actionsAria}
+        >
+          <OverflowMenuVertical size={16} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onSelect={handleConfigureSandbox}>
+          {surfaceCopy.configure}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleRestartSandbox}>
+          Restart
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={handleDeleteSandbox}
+        >
+          {surfaceCopy.delete}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
+  const headerStatus =
+    isDemo && demoActions ? (
+      <DemoHeaderActions actions={demoActions} />
+    ) : (
+      <ChatHeaderStatus
+        selectedAgent={selectedAgent}
+        agents={agents}
+        busy={busy}
+        connectionState={connectionState}
+        sessionId={sessionId}
+      />
+    );
+
+  const renderHeader = () => {
+    if (chatHeaderVariant === 2) {
+      return (
+        <header
+          className={cn(
+            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content bg-muted/30`,
+            isDemo && DEMO_HEADER_CLASS,
+          )}
+        >
+          {backButton}
+          <div className="flex items-center gap-3 min-w-0">
+            {!isDemo && (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1
+              className={cn(
+                "text-sm font-bold truncate",
+                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+              )}
+            >
+              {selectedAgentName}
+            </h1>
+            {isDemo && <DemoHeaderTag />}
+            {agentDropdown}
+          </div>
+          <div className="ml-auto flex items-center gap-2 pr-10">
+            {headerStatus}
+          </div>
+        </header>
+      );
+    }
+
+    if (chatHeaderVariant === 3) {
+      return (
+        <header
+          className={cn(
+            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[52px] border-b border-border shrink-0 relative z-content`,
+            isDemo && DEMO_HEADER_CLASS,
+          )}
+        >
+          {backButton}
+          <div className="flex items-center gap-3 min-w-0">
+            {!isDemo && (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1
+              className={cn(
+                "text-sm font-bold truncate",
+                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+              )}
+            >
+              {selectedAgentName}
+            </h1>
+            {isDemo && <DemoHeaderTag />}
+            {agentDropdown}
+          </div>
+          <div className="ml-auto flex items-center gap-2 pr-12">
+            {headerStatus}
+          </div>
+        </header>
+      );
+    }
+
+    if (chatHeaderVariant === 4) {
+      return (
+        <header
+          className={cn(
+            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} flex-col justify-center px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
+            isDemo && DEMO_HEADER_CLASS,
+          )}
+        >
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setView("home")}
+              className="transition-colors hover:text-foreground"
+            >
+              Agents
+            </button>
+            <span className="text-muted-foreground/40">/</span>
+            <span className="text-foreground">{selectedAgentName}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-3">
+            {!isDemo && (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <div className="flex items-center gap-2">
+              {agentDropdown}
+              {headerStatus}
+            </div>
+          </div>
+        </header>
+      );
+    }
+
+    if (chatHeaderVariant === 5) {
+      return (
+        <header
+          className={cn(
+            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
+            isDemo && DEMO_HEADER_CLASS,
+          )}
+        >
+          {backButton}
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted/40 py-1.5 pl-3 pr-2 min-w-0">
+            {!isDemo && (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1
+              className={cn(
+                "text-sm font-bold truncate",
+                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+              )}
+            >
+              {selectedAgentName}
+            </h1>
+            {isDemo && <DemoHeaderTag />}
+            {agentDropdown}
+          </div>
+          <div className="ml-auto flex items-center gap-2">{headerStatus}</div>
+        </header>
+      );
+    }
+
+    return (
       <header
         className={cn(
           `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
           isDemo && DEMO_HEADER_CLASS,
         )}
       >
-        <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className={cn(
-            "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
-            isDemo
-              ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
-              : "text-muted-foreground",
-          )}
-        >
-          <ArrowLeft size={14} />
-        </Button>
+        {backButton}
         <div className="flex items-center gap-3 min-w-0">
           {!isDemo && (
             <span
@@ -574,48 +755,17 @@ export function ChatView() {
             {selectedAgentName}
           </h1>
           {isDemo && <DemoHeaderTag />}
-          {!isDemo && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={surfaceCopy.actionsAria}
-                >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                  {surfaceCopy.configure}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleRestartSandbox}>
-                  Restart
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={handleDeleteSandbox}
-                >
-                  {surfaceCopy.delete}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {agentDropdown}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {isDemo && demoActions ? (
-            <DemoHeaderActions actions={demoActions} />
-          ) : (
-            <ChatHeaderStatus
-              selectedAgent={selectedAgent}
-              agents={agents}
-              busy={busy}
-              connectionState={connectionState}
-              sessionId={sessionId}
-            />
-          )}
-        </div>
+        <div className="ml-auto flex items-center gap-2">{headerStatus}</div>
       </header>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      {}
+      {renderHeader()}
 
       {}
       <div className="flex flex-1 min-h-0">

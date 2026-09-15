@@ -2,10 +2,31 @@ import { EdgeDevice, Time } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
+import { emitToast } from "../../lib/toast.js";
+import { AgentRow } from "../../modules/agents/components/agent-row.js";
+import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { ArtifactPreviewDialog } from "../../modules/artifacts/components/artifact-preview-dialog.js";
+import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import { NotificationRow } from "../../modules/home/components/notification-row.js";
+import { useStore } from "../../store.js";
+import type { AgentView } from "../../types.js";
+import {
+  bareAgent,
+  demoPackAgent,
+  errorAgent,
+  experimentAgent,
+  fixtureSchedules,
+  fullAgent,
+  hibernatedUnknownSkills,
+  knowledgeBaseAgent,
+  neverHibernatesButHibernated,
+  neverHibernatesOverBudget,
+  packSkippedAgent,
+  singularAgent,
+} from "./agent-card-fixtures.js";
 import { agents } from "./agents.js";
 
 const running = agents.find((a) => a.state === "running")!;
@@ -404,6 +425,79 @@ function NotificationRowSection() {
   );
 }
 
+interface CardDemoProps {
+  title: string;
+  note: string;
+  agent: AgentView;
+  temporaryDraw?: { count: number; cpuMilli: number; memoryMi: number };
+}
+
+function CardDemo({ title, note, agent, temporaryDraw }: CardDemoProps) {
+  const display = resolveAgentDisplay(agent, new Set(), new Set());
+  const scheduleCount = fixtureSchedules.filter(
+    (s) => s.agentId === agent.id && s.enabled,
+  ).length;
+
+  return (
+    <div>
+      <div className="mb-2">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{note}</p>
+      </div>
+      <AgentRow
+        agent={agent}
+        display={display}
+        temporaryDraw={temporaryDraw}
+        deletePending={false}
+        onSelect={noop}
+        onConfigure={noop}
+        configureLabel="Configure agent"
+        onWake={noop}
+        onRestart={noop}
+        onPause={noop}
+        onStop={noop}
+        onDelete={noop}
+        scheduleCount={scheduleCount || undefined}
+      />
+    </div>
+  );
+}
+
+function ToastDemo() {
+  const openApprovals = useStore((s) => s.openApprovals);
+  const agentNames = [
+    "CI Pipeline Agent",
+    "Code Review Agent",
+    "Security Scanner",
+    "Build Agent",
+    "Docs Sync Agent",
+  ];
+
+  const fireToast = () => {
+    const name = agentNames[Math.floor(Math.random() * agentNames.length)]!;
+    emitToast({
+      kind: "warning",
+      message: `${name} needs your approval`,
+      ttl: 6000,
+      action: {
+        label: "Review",
+        onClick: openApprovals,
+      },
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <Button variant="outline" size="sm" onClick={fireToast}>
+        Fire approval toast
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        Click to preview the toast notification
+      </span>
+    </div>
+  );
+}
+
 export function AgentCardGallery() {
   document.title = "Notifications";
   return (
@@ -413,7 +507,122 @@ export function AgentCardGallery() {
         description="Every card state from prod rendered side by side. Review each one to decide what stays or changes."
       />
 
-      <NotificationRowSection />
+      <div className="mb-6">
+        <ToastDemo />
+      </div>
+
+      <div className="flex flex-col gap-8">
+        <NotificationRowSection />
+
+        {/* ── Agent Cards (from remote) ──────────────────────────── */}
+        <SectionHeader title="Agent Cards" />
+
+        <CardDemo
+          title="1. Full card"
+          note="Slack channels, schedules, always-on, running."
+          agent={fullAgent}
+        />
+
+        <CardDemo
+          title="2. Bare card"
+          note="Nothing attached. The metadata row should be absent."
+          agent={bareAgent}
+        />
+
+        <CardDemo
+          title="3. One-of-each"
+          note="Singular forms: 1 channel, 1 schedule."
+          agent={singularAgent}
+        />
+
+        <CardDemo
+          title="4. Hibernated"
+          note="Common real case: agent is hibernated."
+          agent={hibernatedUnknownSkills}
+        />
+
+        <CardDemo
+          title="5a. Always-on but currently hibernated"
+          note="Never-hibernates but stopped — shows Idle (Always-on) badge."
+          agent={neverHibernatesButHibernated}
+        />
+
+        <CardDemo
+          title="5b. Always-on but over budget"
+          note="Always-on badge only shows when running — this shows Over budget badge."
+          agent={neverHibernatesOverBudget}
+        />
+
+        <CardDemo
+          title="6. Knowledge base"
+          note="Just an agent now — no special kind badge."
+          agent={knowledgeBaseAgent}
+        />
+
+        <CardDemo
+          title="7. Experiment"
+          note="Just an agent now — no special kind badge."
+          agent={experimentAgent}
+        />
+
+        <CardDemo
+          title="8. Pack-created agent"
+          note="No pack badge shown — pack is just a starting template."
+          agent={packSkippedAgent}
+        />
+
+        <CardDemo
+          title="9. Error state with contribution failures"
+          note="Error badge, contribution failures badge, error status."
+          agent={errorAgent}
+        />
+
+        <CardDemo
+          title="10. Demo agent"
+          note="Running agent created from a pack."
+          agent={demoPackAgent}
+        />
+
+        {/* Overflow menu — static render for screenshot */}
+        <div>
+          <div className="mb-2">
+            <p className="text-sm font-semibold text-foreground">
+              11. Overflow menu
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Static render of the agent card dropdown menu.
+            </p>
+          </div>
+          <div className="inline-flex min-w-[200px] flex-col rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Configure agent
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              <ConnectionIcon iconSlug="slack" alt="" size={16} />
+              Add to Slack channel
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+              Add to Telegram chat
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Restart
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Pause — wakes on next use
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Stop — until started again
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm text-danger hover:bg-danger-light">
+              Delete agent
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

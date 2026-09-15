@@ -4,12 +4,18 @@ import type { PlatformStore } from "../../../store.js";
 
 export const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 
+export type ChatHeaderVariant = 1 | 2 | 3 | 4 | 5;
+
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   notificationsOpen: boolean;
+  notificationsInitialTab: "activity" | "approvals";
   toggleNotifications: () => void;
   setNotificationsOpen: (open: boolean) => void;
+  openApprovals: () => void;
+  chatHeaderVariant: ChatHeaderVariant;
+  cycleChatHeader: (direction: 1 | -1) => void;
 }
 
 export function readStoredSidebarExpanded(): boolean {
@@ -34,7 +40,27 @@ export const createSidebarSlice: StateCreator<
     set({ sidebarExpanded: expanded });
   },
   notificationsOpen: false,
+  notificationsInitialTab: "activity",
   toggleNotifications: () =>
-    set((s) => ({ notificationsOpen: !s.notificationsOpen })),
-  setNotificationsOpen: (open) => set({ notificationsOpen: open }),
+    set((s) => ({
+      notificationsOpen: !s.notificationsOpen,
+      notificationsInitialTab: "activity",
+    })),
+  setNotificationsOpen: (open) =>
+    set({ notificationsOpen: open, notificationsInitialTab: "activity" }),
+  openApprovals: () =>
+    set({ notificationsOpen: true, notificationsInitialTab: "approvals" }),
+  chatHeaderVariant: 1,
+  cycleChatHeader: (direction) =>
+    set((s) => {
+      const next = s.chatHeaderVariant + direction;
+      return {
+        chatHeaderVariant: (next < 1 ? 5 : next > 5 ? 1 : next) as
+          | 1
+          | 2
+          | 3
+          | 4
+          | 5,
+      };
+    }),
 });

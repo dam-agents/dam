@@ -1,5 +1,12 @@
 import type { CarbonIconType } from "@carbon/icons-react";
-import { Chat, Code, Document, Time } from "@carbon/icons-react";
+import {
+  Chat,
+  ChevronRight,
+  Code,
+  Document,
+  Time,
+  Warning,
+} from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +22,8 @@ import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
+import { useNotifications } from "../../notifications/api/queries.js";
+import { isNeedsYou } from "../../notifications/lib/notification-types.js";
 import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import { PackDetailSheet } from "../../packs/components/pack-detail-sheet.js";
 import type { Pack } from "../../packs/data/packs.js";
@@ -98,6 +107,8 @@ export function HomeView() {
 
         <OutdatedTemplatesBanner agents={visible} />
 
+        <ApprovalBanner />
+
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
           <ComputeWidget
             runningAgents={runningAgents}
@@ -139,6 +150,37 @@ export function HomeView() {
         />
       </div>
     </div>
+  );
+}
+
+function ApprovalBanner() {
+  const openApprovals = useStore((s) => s.openApprovals);
+  const { items } = useNotifications();
+  const count = useMemo(() => items.filter(isNeedsYou).length, [items]);
+
+  if (count === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={openApprovals}
+      className="mb-6 flex w-full items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
+    >
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 dark:bg-warning/20">
+        <Warning size={16} className="text-warning" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-foreground">
+          {count} {count === 1 ? "approval" : "approvals"} waiting
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {count === 1
+            ? "An agent needs your decision"
+            : `${count} agents need your decision`}
+        </p>
+      </div>
+      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+    </button>
   );
 }
 
