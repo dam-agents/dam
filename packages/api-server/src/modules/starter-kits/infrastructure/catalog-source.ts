@@ -83,17 +83,24 @@ export function createGithubCatalogSource(
   };
 }
 
+export interface LocatedCatalog {
+  source: CatalogSource;
+  gitUrl?: string;
+  ref?: string;
+}
+
 export function createCatalogSourceFromLocator(
   locator: string,
-): CatalogSource | null {
+): LocatedCatalog | null {
   if (!locator) return null;
   const gh = parseGithubRepoUrl(locator);
-  if (gh)
-    return createGithubCatalogSource(
-      `https://github.com/${gh.owner}/${gh.repo}`,
-      gh.ref,
-      fetch,
-      gh.dir,
-    );
-  return createLocalCatalogSource(locator);
+  if (gh) {
+    const gitUrl = `https://github.com/${gh.owner}/${gh.repo}`;
+    return {
+      source: createGithubCatalogSource(gitUrl, gh.ref, fetch, gh.dir),
+      gitUrl,
+      ...(gh.ref ? { ref: gh.ref } : {}),
+    };
+  }
+  return { source: createLocalCatalogSource(locator) };
 }

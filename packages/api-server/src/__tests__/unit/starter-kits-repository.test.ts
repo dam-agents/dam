@@ -272,16 +272,19 @@ describe("catalog sources", () => {
 
   it("resolves a locator into the right source kind", () => {
     expect(
-      createCatalogSourceFromLocator("https://github.com/acme/kits#v2")
-        ?.locator,
+      createCatalogSourceFromLocator("https://github.com/acme/kits#v2")?.source
+        .locator,
     ).toBe("https://github.com/acme/kits#v2");
     expect(
       createCatalogSourceFromLocator(
         "https://github.com/acme/dam/tree/main/starter-kits",
-      )?.locator,
+      )?.source.locator,
     ).toBe("https://github.com/acme/dam#main:starter-kits");
     expect(createCatalogSourceFromLocator("")).toBeNull();
-    expect(createCatalogSourceFromLocator("/tmp/kits")?.locator).toBe(
+    expect(
+      createCatalogSourceFromLocator("https://github.com/acme/kits#v2")?.gitUrl,
+    ).toBe("https://github.com/acme/kits");
+    expect(createCatalogSourceFromLocator("/tmp/kits")?.source.locator).toBe(
       "/tmp/kits",
     );
   });

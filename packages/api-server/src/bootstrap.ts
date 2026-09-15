@@ -300,8 +300,8 @@ export async function bootstrap() {
   });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
-      const source = createCatalogSourceFromLocator(c.locator);
-      return source ? [{ name: c.name, source }] : [];
+      const located = createCatalogSourceFromLocator(c.locator);
+      return located ? [{ name: c.name, ...located }] : [];
     }),
     repo: resolvedCatalog,
     refs: createGitRefResolver(),
