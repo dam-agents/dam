@@ -129,7 +129,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			continue
 		}
 		cpu, mem := r.limitsOf(&peer.Spec)
-		out = append(out, reclaimCandidate{name: peer.Name, owner: peer.Labels[labelOwner], idleSince: idleSince, cpu: cpu, mem: mem})
+		out = append(out, reclaimCandidate{name: peer.Name, owner: peer.Labels[envoyOwnerLabel], idleSince: idleSince, cpu: cpu, mem: mem})
 	}
 	return out, nil
 }

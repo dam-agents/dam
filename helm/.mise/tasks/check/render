@@ -14,4 +14,6 @@ helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBEC
 # credentials, the device plugin) that the default values never reach.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
-  --set virtualization.node.scc=privileged | "${KUBECONFORM[@]}" "$@"
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  | "${KUBECONFORM[@]}" "$@"

@@ -20,7 +20,6 @@ type MachineStatus struct {
 	Ready      bool   `json:"ready"`
 	CPUs       int    `json:"cpus,omitempty"`
 	MemoryMiB  int    `json:"memoryMiB,omitempty"`
-	StorageGiB int    `json:"storageGiB,omitempty"`
 	Message    string `json:"message,omitempty"`
 }
 

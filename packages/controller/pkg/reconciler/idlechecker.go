@@ -256,5 +256,5 @@ type MachineHalt func(ctx context.Context, owner, name string) error
 
 func ownerOf(agent *unstructured.Unstructured) string {
 	labels := agent.GetLabels()
-	return labels[labelOwner]
+	return labels[envoyOwnerLabel]
 }

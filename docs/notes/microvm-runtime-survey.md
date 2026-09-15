@@ -1,4 +1,4 @@
-# MicroVM runtimes for the VM runner — survey and prototypes
+# MicroVM runtimes for the VM runner — survey
 
 Status: research note, 2026-09-14. Compares the runtimes that could replace
 smolvm inside the VM runner pod ([platform-topology](../architecture/platform-topology.md#vm-runner)).
