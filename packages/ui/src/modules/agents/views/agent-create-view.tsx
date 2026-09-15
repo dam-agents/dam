@@ -53,6 +53,7 @@ import {
   harnessesLine,
   isStarterKitSetupComplete,
   kitConnectionIds,
+  kitKnowledgeBaseNote,
   kitResourcesLine,
   ownAgentLine,
   preselectedGrants,
@@ -162,6 +163,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
   const bringsImage = kit?.image !== undefined;
   const resourcesLine = kit ? kitResourcesLine(kit) : undefined;
+  const knowledgeBaseNote = kit ? kitKnowledgeBaseNote(kit) : undefined;
   const kitSlots = useMemo(() => {
     if (!kit?.resources || !budget.data) return null;
     const mi = sizeInMi(kit.resources);
@@ -379,6 +381,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   Uses {kitSlots} of your compute slots while it runs. CPU and
                   memory stay editable on the agent; disk is fixed at create.
+                </p>
+              )}
+              {knowledgeBaseNote && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {knowledgeBaseNote}
                 </p>
               )}
             </div>

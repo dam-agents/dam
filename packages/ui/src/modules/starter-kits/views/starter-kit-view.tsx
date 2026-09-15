@@ -30,6 +30,7 @@ import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
   harnessesLine,
+  kitKnowledgeBaseNote,
   kitScheduleCadence,
 } from "../lib/setup.js";
 
@@ -200,6 +201,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
   }, [kit.resources, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
+  const knowledgeBaseNote = kitKnowledgeBaseNote(kit);
 
   const close = () => setView("starter-kits");
 
@@ -240,6 +242,11 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
           </DialogHeader>
 
           <DialogBody>
+            {knowledgeBaseNote && (
+              <Callout tone="default" className="mb-5">
+                {knowledgeBaseNote}
+              </Callout>
+            )}
             <h2 className="mb-3 text-base font-semibold text-foreground">
               Included
             </h2>
