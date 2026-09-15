@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +44,7 @@ type Server struct {
 	mu             sync.Mutex
 	locks          map[string]*sync.Mutex
 	pending        map[string]string
+	committing     map[string]int
 	lastErr        map[string]string
 	listeners      map[string]net.Listener
 	gens           map[string]uint64
@@ -56,7 +58,7 @@ type Server struct {
 func (s *Server) Start() error {
 	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
 	s.gens, s.drift, s.wasHealthy, s.unhealthySince = map[string]uint64{}, map[string]string{}, map[string]bool{}, map[string]time.Time{}
-	s.reasons, s.restarts = map[string]string{}, map[string]int32{}
+	s.reasons, s.restarts, s.committing = map[string]string{}, map[string]int32{}, map[string]int{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -151,7 +153,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	st := s.status(id)
 	if op := s.plan(id, spec, st); op != "" {
-		if op == StateCreating || op == StateStarting {
+		if op != StateStopping {
 			if err := s.roomFor(id, spec); err != nil {
 				s.mu.Lock()
 				s.lastErr[id], s.reasons[id] = err.Error(), ReasonOutOfCapacity
@@ -160,6 +162,9 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, st)
 				return
 			}
+			s.mu.Lock()
+			s.committing[id] = spec.MemoryMiB
+			s.mu.Unlock()
 		}
 		force := op == StateRestarting
 		s.spawn(id, op, func() error { return s.ensure(id, spec, force) })
@@ -400,6 +405,7 @@ func (s *Server) spawn(id, op string, fn func() error) {
 		}
 		s.mu.Lock()
 		delete(s.pending, id)
+		delete(s.committing, id)
 		if err != nil {
 			s.lastErr[id], s.reasons[id] = err.Error(), failureReason(err)
 			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
@@ -633,9 +639,19 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	committing := make(map[string]int, len(s.committing))
+	for k, v := range s.committing {
+		committing[k] = v
+	}
+	s.mu.Unlock()
 	used := 0
 	for _, other := range ids {
 		if other == id {
+			continue
+		}
+		if mib, inFlight := committing[other]; inFlight {
+			used += mib
 			continue
 		}
 		if state, err := s.Runtime.State(other); err != nil || state != StateRunning {
@@ -643,6 +659,11 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 		}
 		if applied := s.readSpec(other); applied != nil {
 			used += applied.MemoryMiB
+		}
+	}
+	for other, mib := range committing {
+		if other != id && !slices.Contains(ids, other) {
+			used += mib
 		}
 	}
 	if used+spec.MemoryMiB+s.ReserveMiB > limit {

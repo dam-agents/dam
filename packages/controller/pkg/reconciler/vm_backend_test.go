@@ -281,3 +281,13 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	_, err = r.client.AppsV1().Deployments("default").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err, "and the other owner's runner is untouched")
 }
+
+// TEST_SCENARIO: an install has virtualization on but the agent hibernating is container-backed; halting must not reach a runner, because that agent has no machine and an error here would strand its credentials.
+func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Backend = nil
+	r, node, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.HaltMachine(context.Background(), testOwner, "my-agent"))
+	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
+}

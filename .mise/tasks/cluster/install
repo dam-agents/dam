@@ -540,7 +540,8 @@ if [ "$NO_RESTART" = true ]; then
 else
   echo "Restarting pods..."
   kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
-  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-vm-runner
+  # Runners are created per owner with a hashed name, so restart them by label.
+  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment -l app.kubernetes.io/component=vm-runner
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
