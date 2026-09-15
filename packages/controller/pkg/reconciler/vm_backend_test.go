@@ -423,3 +423,31 @@ func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
 	require.Len(t, sec.OwnerReferences, 1, "the existing Secret is adopted")
 	assert.Equal(t, types.UID("controller-uid"), sec.OwnerReferences[0].UID)
 }
+
+// TEST_SCENARIO: a machine the runner refused needs a person to free room, so the controller stops re-asking every few seconds — with one reconcile worker, a refused agent otherwise spends the loop that other agents need.
+func TestARefusedMachineIsPolledLikeAHealthyOne(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	require.NotEmpty(t, *requeued)
+	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a refusal is not re-asked every few seconds")
+}
+
+// TEST_SCENARIO: a machine that is merely still booting is watched closely, so an agent becomes usable as soon as its guest answers rather than up to a minute later.
+func TestABootingMachineIsPolledClosely(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	require.NotEmpty(t, *requeued)
+	assert.Equal(t, vmReadinessPoll, (*requeued)[len(*requeued)-1])
+}
