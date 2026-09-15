@@ -11,7 +11,6 @@ import {
   type StarterKitView,
 } from "api-server-api";
 
-import { kbTemplateName } from "../../knowledge-bases/lib/kb-templates.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 
@@ -358,13 +357,6 @@ export function ownAgentLine(
   if (!kit.image) return undefined;
   const on = harnessFamilyLabel(kit.image.harness);
   return on ? `Its own agent, built on ${on}` : "Its own agent";
-}
-
-export function kitKnowledgeBaseNote(
-  kit: Pick<StarterKitView, "knowledgeBase">,
-): string | undefined {
-  if (!kit.knowledgeBase) return undefined;
-  return `Creates a knowledge base, not a plain agent. Its wiki tooling is installed at create by the platform's ${kbTemplateName(kit.knowledgeBase.template)} template rather than by the kit, so it is not listed under Skills.`;
 }
 
 export function kitResourcesLine(

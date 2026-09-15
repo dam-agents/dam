@@ -41,6 +41,7 @@ import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
 import { KitChannelsSection } from "../../starter-kits/components/kit-channels-section.js";
+import { KitKnowledgeBaseNote } from "../../starter-kits/components/kit-knowledge-base-note.js";
 import { KitRequirementsCard } from "../../starter-kits/components/kit-requirements-card.js";
 import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
 import { KitSkillsSection } from "../../starter-kits/components/kit-skills-section.js";
@@ -53,7 +54,6 @@ import {
   harnessesLine,
   isStarterKitSetupComplete,
   kitConnectionIds,
-  kitKnowledgeBaseNote,
   kitResourcesLine,
   ownAgentLine,
   preselectedGrants,
@@ -163,7 +163,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
   const bringsImage = kit?.image !== undefined;
   const resourcesLine = kit ? kitResourcesLine(kit) : undefined;
-  const knowledgeBaseNote = kit ? kitKnowledgeBaseNote(kit) : undefined;
   const kitSlots = useMemo(() => {
     if (!kit?.resources || !budget.data) return null;
     const mi = sizeInMi(kit.resources);
@@ -383,10 +382,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                   memory stay editable on the agent; disk is fixed at create.
                 </p>
               )}
-              {knowledgeBaseNote && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {knowledgeBaseNote}
-                </p>
+              {kit && (
+                <KitKnowledgeBaseNote kit={kit} className="mt-1.5 text-xs" />
               )}
             </div>
             <Button

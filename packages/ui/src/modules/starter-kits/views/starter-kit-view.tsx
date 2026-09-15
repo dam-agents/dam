@@ -26,11 +26,11 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
+import { KitKnowledgeBaseNote } from "../components/kit-knowledge-base-note.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
   harnessesLine,
-  kitKnowledgeBaseNote,
   kitScheduleCadence,
   shortKitVersion,
 } from "../lib/setup.js";
@@ -202,7 +202,6 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
   }, [kit.resources, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
-  const knowledgeBaseNote = kitKnowledgeBaseNote(kit);
 
   const close = () => setView("starter-kits");
 
@@ -243,11 +242,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
           </DialogHeader>
 
           <DialogBody>
-            {knowledgeBaseNote && (
-              <Callout tone="default" className="mb-5">
-                {knowledgeBaseNote}
-              </Callout>
-            )}
+            <KitKnowledgeBaseNote kit={kit} className="mb-4 text-sm" />
             <h2 className="mb-3 text-base font-semibold text-foreground">
               Included
             </h2>
