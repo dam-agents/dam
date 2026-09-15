@@ -293,6 +293,15 @@ export function createRunService(deps: RunServiceDeps): RunService {
     return parsed.success ? parsed.data : null;
   }
 
+  function interruptedRun(sessionId: string) {
+    return err({
+      kind: "run-failed" as const,
+      reason:
+        "the run was interrupted and will not finish — the agent went down mid-run; run it again",
+      sessionId,
+    });
+  }
+
   async function reconnectAndFinish(opts: {
     ctx: BootstrapContext;
     sessionId: string;
@@ -348,12 +357,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
           )
             return finish(record.result);
           if (record?.status === "interrupted")
-            return err({
-              kind: "run-failed" as const,
-              reason:
-                "the run was interrupted while the agent restarted and could not be resumed — run it again",
-              sessionId,
-            });
+            return interruptedRun(sessionId);
 
           const event = await waiter.next(deadlineAt, conn.closed);
           if (event === "timed-out")
@@ -568,13 +572,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
             });
           if (record.status === "done")
             return ok({ kind: "done" as const, result: record.result });
-          if (record.status === "interrupted")
-            return err({
-              kind: "run-failed" as const,
-              reason:
-                "the run was interrupted while the agent restarted and could not be resumed — run it again",
-              sessionId,
-            });
+          if (record.status === "interrupted") return interruptedRun(sessionId);
           if (record.status === "none" && !input.wait)
             return ok({ kind: "none" as const, sessionId });
           if (!input.wait) return ok({ kind: "pending" as const, sessionId });
