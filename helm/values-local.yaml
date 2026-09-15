@@ -23,19 +23,6 @@ controller:
     templateDefaults:
       imagePullPolicy: IfNotPresent
 
-# The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
-# nested virtualization, handed to the pod by the chart's own device plugin
-# exactly as on a cluster without KubeVirt. Rendered only with
-# virtualization.enabled.
-virtualization:
-  node:
-    image:
-      repository: platform-vm-runner
-      tag: latest
-      pullPolicy: Never
-    storage: 40Gi
-  devicePlugin:
-    enabled: true
   # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
   # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
@@ -64,6 +51,20 @@ virtualization:
 # ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
 # it so the e2e cluster proves the no-shared-filesystem path. Drops together
 # with the chart's nfsProvisioner block once dev clusters are drained.
+# The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
+# nested virtualization, handed to the pod by the chart's own device plugin
+# exactly as on a cluster without KubeVirt. Rendered only with
+# virtualization.enabled.
+virtualization:
+  node:
+    image:
+      repository: platform-vm-runner
+      tag: latest
+      pullPolicy: Never
+    storage: 40Gi
+  devicePlugin:
+    enabled: true
+
 nfsProvisioner:
   enabled: true
 

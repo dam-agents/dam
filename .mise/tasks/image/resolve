@@ -62,6 +62,7 @@ own_paths() {
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
+    vm-runner) echo "packages/controller" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
@@ -76,7 +77,7 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    platform-base|keycloak) echo "" ;;
+    platform-base|keycloak|vm-runner) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac

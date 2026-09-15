@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /vm-runner ./cmd/vm-runner
 
-FROM quay.io/fedora/fedora:41 AS runner
+FROM quay.io/fedora/fedora:42 AS runner
 
 # tar unpacks image archives, e2fsprogs makes and grows machine disks; the
 # smolvm release itself comes from GitHub, pinned. Its multi-GiB ext4

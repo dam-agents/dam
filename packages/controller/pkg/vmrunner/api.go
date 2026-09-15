@@ -24,6 +24,7 @@ type MachineStatus struct {
 
 const (
 	StateAbsent     = "absent"
+	StateUnknown    = "unknown"
 	StateCreating   = "creating"
 	StateStarting   = "starting"
 	StateRestarting = "restarting"

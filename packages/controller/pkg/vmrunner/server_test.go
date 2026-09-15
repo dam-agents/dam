@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; the image and egress allow-list are fixed for a machine's life and a change is reported, not silently ignored; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package vmrunner
 
 import (
@@ -297,4 +297,19 @@ func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
 	}
 	assert.Equal(t, []int{100}, orphanPIDs(proc, "/home/smolvm/.cache/smolvm/vms/abc123"))
 	assert.Empty(t, orphanPIDs(proc, ""))
+}
+
+// TEST_SCENARIO: the controller re-sends a running machine's spec with a different image: the node reports the mismatch in the machine's message instead of restarting onto the old image as if nothing changed.
+func TestImageChangeIsReportedNotIgnored(t *testing.T) {
+	h := newHarness(t)
+	desired := spec(true)
+	_, err := h.client().Ensure(t.Context(), "m1", desired)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	desired.Image = "quay.io/x/vm:2"
+	_, err = h.client().Ensure(t.Context(), "m1", desired)
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+	assert.Contains(t, st.Message, "fixed for the machine's life")
+	assert.Contains(t, st.Message, "quay.io/x/vm:2")
 }

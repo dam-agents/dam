@@ -25,6 +25,9 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: vm-runner
+  annotations:
+    # Every vm agent's workspace lives here; an uninstall must not take them.
+    helm.sh/resource-policy: keep
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -79,7 +82,8 @@ spec:
         # smolvm NATs each machine out of a nested netns; ztunnel's redirect
         # breaks that, so this pod stays off the ambient mesh.
         istio.io/dataplane-mode: none
-      {{- include "platform.podAnnotations" (dict "root" $ "component" $node) | nindent 6 }}
+      {{- $checksums := dict "checksum/credentials" (include (print $.Template.BasePath "/controller/vm-runner-secret.yaml") . | sha256sum) }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" $node "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
@@ -146,6 +150,45 @@ spec:
         - name: credentials
           secret:
             secretName: {{ $name }}
+            defaultMode: 0400
+---
+{{- /*
+The vm counterpart of agent-ingress-platform-only: a guest's published port
+and the machine API accept only the api-server (ACP/tRPC relay) and the
+controller (machine API, busy-probe). agent-runtime in the guest serves
+unauthenticated on the same assumption its pod form does.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-runner
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+              app.kubernetes.io/instance: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 4600
+        - protocol: TCP
+          port: 31000
+          endPort: 31099
 {{- with $node.scc }}
 ---
 {{- /* OpenShift: `use` on a built-in SCC comes as an auto-generated ClusterRole. */}}

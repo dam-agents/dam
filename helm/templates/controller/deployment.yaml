@@ -21,7 +21,11 @@ spec:
       labels:
         {{- include "platform.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: controller
-      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.controller) | nindent 6 }}
+      {{- $checksums := dict }}
+      {{- if .Values.virtualization.enabled }}
+      {{- $_ := set $checksums "checksum/vm-runner-credentials" (include (print $.Template.BasePath "/controller/vm-runner-secret.yaml") . | sha256sum) }}
+      {{- end }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.controller "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.controller.serviceAccountName" . }}
