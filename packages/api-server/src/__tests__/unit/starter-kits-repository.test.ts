@@ -332,12 +332,26 @@ describe("the shipped proof-of-concept catalog", () => {
       "evox",
       "gepa",
       "k-search",
+      "llm-wiki",
       "nous",
       "openevolve",
+      "plain-wiki",
       "shinkaevolve",
     ]);
     expect(new Set(kits.map((k) => k.catalog))).toEqual(new Set(["platform"]));
-    expect(kits.every((k) => k.kit.image !== undefined)).toBe(true);
+    expect(
+      kits
+        .filter((k) => k.kit.knowledgeBase === undefined)
+        .every((k) => k.kit.image !== undefined),
+    ).toBe(true);
+    expect(
+      kits
+        .filter((k) => k.kit.knowledgeBase !== undefined)
+        .map((k) => [k.kit.id, k.kit.knowledgeBase?.template]),
+    ).toEqual([
+      ["llm-wiki", "llm-wiki"],
+      ["plain-wiki", "plain-wiki"],
+    ]);
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
       /^quay\.io\/dam-agents\/nous(:|$)/,
     );

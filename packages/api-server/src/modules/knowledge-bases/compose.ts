@@ -1,7 +1,11 @@
 import type { AgentsService, KnowledgeBasesService } from "api-server-api";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
-import { createKnowledgeBasesService } from "./services/knowledge-bases-service.js";
+import {
+  type CreateKnowledgeBaseAgent,
+  createKnowledgeBaseAgentFactory,
+  createKnowledgeBasesService,
+} from "./services/knowledge-bases-service.js";
 
 export function composeKnowledgeBasesForOwner(opts: {
   owner: string;
@@ -10,15 +14,12 @@ export function composeKnowledgeBasesForOwner(opts: {
   readTemplateSpec: ReadTemplateSpec;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
-}): { knowledgeBases: KnowledgeBasesService } {
+}): {
+  knowledgeBases: KnowledgeBasesService;
+  createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
+} {
   return {
-    knowledgeBases: createKnowledgeBasesService({
-      owner: opts.owner,
-      surface: opts.surface,
-      agents: opts.agents,
-      readTemplateSpec: opts.readTemplateSpec,
-      runtimeMutator: opts.runtimeMutator,
-      wakeAgent: opts.wakeAgent,
-    }),
+    knowledgeBases: createKnowledgeBasesService(opts),
+    createKnowledgeBaseAgent: createKnowledgeBaseAgentFactory(opts),
   };
 }

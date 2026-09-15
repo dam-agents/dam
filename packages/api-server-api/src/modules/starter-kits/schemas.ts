@@ -4,6 +4,7 @@ import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
+import { knowledgeBaseTemplateIdSchema } from "../knowledge-bases/schemas.js";
 import { quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
@@ -93,6 +94,10 @@ export const starterKitImageSchema = z.object({
     .optional(),
 });
 
+export const starterKitKnowledgeBaseSchema = z.object({
+  template: knowledgeBaseTemplateIdSchema,
+});
+
 export const starterKitResourcesSchema = agentSizeSchema.extend({
   storage: storageQuantitySchema.optional(),
   note: z.string().min(1).optional(),
@@ -109,6 +114,7 @@ export const starterKitSchema = z.object({
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
   resources: starterKitResourcesSchema.optional(),
+  knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })

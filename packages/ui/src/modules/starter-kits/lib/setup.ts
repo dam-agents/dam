@@ -374,8 +374,14 @@ export function allowedHarnesses<T extends { harness?: HarnessFamily }>(
 }
 
 export function harnessesLine(
-  kit: Pick<StarterKitView, "image" | "harnesses">,
+  kit: Pick<StarterKitView, "image" | "harnesses" | "knowledgeBase">,
 ): string {
+  if (kit.knowledgeBase)
+    return `A knowledge base agent on ${
+      kit.harnesses
+        ? kit.harnesses.map((h) => harnessFamilyLabel(h) ?? h).join(" or ")
+        : "the harness you pick"
+    }`;
   const own = ownAgentLine(kit);
   if (own) return own;
   if (!kit.harnesses) return "An agent on the harness you pick";

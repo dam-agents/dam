@@ -1433,6 +1433,8 @@ starterKits:
     # image this install does not build or cannot pull is left out of the
     # rendered catalog and never reaches the UI. Missing entry = enabled.
     kits:
+      llm-wiki: { enabled: true }
+      plain-wiki: { enabled: true }
       nous: { enabled: true }
       openevolve: { enabled: true }
       shinkaevolve: { enabled: true }

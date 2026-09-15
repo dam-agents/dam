@@ -27,6 +27,7 @@ import type {
   LoadedKit,
   StarterKitsRepository,
 } from "../infrastructure/kits-repository.js";
+import type { CreateKnowledgeBaseAgent } from "../../knowledge-bases/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 
 export interface StarterKitsServiceDeps {
@@ -42,6 +43,7 @@ export interface StarterKitsServiceDeps {
     "listConnections" | "listTemplates" | "getAgentConnections"
   >;
   skills: Pick<SkillsService, "applyEntries">;
+  createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   now?: () => Date;
@@ -199,7 +201,7 @@ export function createStarterKitsService(
         });
       }
 
-      const agent = await deps.agents.create({
+      const createInput: AgentCreateInput = {
         name: input.name,
         ...(kit.image
           ? { image: kit.image.ref }
@@ -211,7 +213,13 @@ export function createStarterKitsService(
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
           : {}),
         starterKit: kitRef(loaded.catalog, kit.id, version),
-      });
+      };
+      const agent = kit.knowledgeBase
+        ? await deps.createKnowledgeBaseAgent(
+            createInput,
+            kit.knowledgeBase.template,
+          )
+        : await deps.agents.create(createInput);
 
       try {
         await seedSchedules(

@@ -3,6 +3,8 @@
 # Workload kits pin their image by the same publish step that pins every
 # other image (`# @ci-pin <component>-image-tag`).
 kits:
+  - path: kits/llm-wiki
+  - path: kits/plain-wiki
   - path: kits/nous
   - path: kits/openevolve
   - path: kits/shinkaevolve

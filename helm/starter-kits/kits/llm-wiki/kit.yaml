@@ -1,0 +1,20 @@
+schemaVersion: v1
+id: llm-wiki
+name: LLM Wiki
+description: >-
+  A knowledge base agent that builds a structured wiki with a knowledge graph,
+  from the llm-wiki toolkit. Point it at repos and documents, then ask it
+  questions.
+category: knowledge
+icon: chart
+knowledgeBase:
+  template: llm-wiki
+connections:
+  - accepts: [ibm-litellm, anthropic, openai]
+    required: true
+    note: The model the agent reasons and writes the wiki with.
+parameters:
+  - name: what the knowledge base should cover
+    required: true
+  - name: repositories or documents to read from
+    required: false

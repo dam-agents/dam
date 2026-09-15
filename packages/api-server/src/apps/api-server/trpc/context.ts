@@ -172,16 +172,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
     });
-    const { knowledgeBases } = composeKnowledgeBasesForOwner({
-      owner: user.sub,
-      surface,
-      agents,
-      readTemplateSpec,
-      runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
-    });
+    const { knowledgeBases, createKnowledgeBaseAgent } =
+      composeKnowledgeBasesForOwner({
+        owner: user.sub,
+        surface,
+        agents,
+        readTemplateSpec,
+        runtimeMutator,
+        wakeAgent: async (agentId) => {
+          await agentsRepo.wakeIfHibernated(agentId);
+        },
+      });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,
       db,
@@ -249,6 +250,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       schedules,
       connections,
       skills,
+      createKnowledgeBaseAgent,
       wakeAgent: async (agentId) => {
         await agentsRepo.wakeIfHibernated(agentId);
       },

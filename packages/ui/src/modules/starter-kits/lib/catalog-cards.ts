@@ -18,12 +18,14 @@ export interface KitBadge {
 export function kitBadges(
   kit: Pick<
     StarterKitView,
-    "schedules" | "connections" | "skills" | "skillsInKit"
+    "schedules" | "connections" | "skills" | "skillsInKit" | "knowledgeBase"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
 ): KitBadge[] {
   const badges: KitBadge[] = [];
+
+  if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
   if (kit.schedules.length > 0) {
     badges.push({

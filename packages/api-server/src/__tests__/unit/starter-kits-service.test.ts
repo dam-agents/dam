@@ -89,6 +89,7 @@ function makeHarness(
     toggled: [] as string[],
     slack: [] as { agentId: string; channel: string; ambient?: boolean }[],
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
+    kbCreated: [] as { input: AgentCreateInput; kbTemplateId: string }[],
   };
   let nextScheduleId = 0;
   const service = createStarterKitsService({
@@ -102,6 +103,10 @@ function makeHarness(
           ? loaded
           : null;
       },
+    },
+    async createKnowledgeBaseAgent(input, kbTemplateId) {
+      calls.kbCreated.push({ input, kbTemplateId });
+      return fakeAgent("agent-1", { starterKit: input.starterKit });
     },
     agents: {
       async create(input) {
@@ -238,6 +243,30 @@ describe("starter kits: apply", () => {
     ]);
     expect(calls.woken).toEqual(["agent-1"]);
     expect(calls.deleted).toEqual([]);
+  });
+
+  it("creates a kit that declares a knowledge base through the kb rail", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({ knowledgeBase: { template: "plain-wiki" } }),
+    });
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "team wiki",
+      templateId: "claude-code",
+      connectionIds: ["c-gh"],
+      skipSchedules: ["review", "benchmark"],
+      scheduleOverrides: [],
+    });
+    expect(calls.created).toEqual([]);
+    expect(calls.kbCreated).toHaveLength(1);
+    expect(calls.kbCreated[0].kbTemplateId).toBe("plain-wiki");
+    expect(calls.kbCreated[0].input).toMatchObject({
+      name: "team wiki",
+      templateId: "claude-code",
+      starterKit: "platform/code-reviewer@abc123",
+    });
   });
 
   it("leaves out the schedules the user chose to skip", async () => {
@@ -390,6 +419,8 @@ describe("starter kits: apply", () => {
     const failing = createStarterKitsService({
       owner: "user-1",
       repo: { list: async () => [LOADED], get: async () => LOADED },
+      createKnowledgeBaseAgent: async (input) =>
+        fakeAgent("agent-2", { starterKit: input.starterKit }),
       agents: {
         create: async (input) =>
           fakeAgent("agent-2", { starterKit: input.starterKit }),
@@ -491,6 +522,8 @@ describe("starter kits: apply", () => {
     const deleted: string[] = [];
     const service = createStarterKitsService({
       owner: "user-1",
+      createKnowledgeBaseAgent: async (input) =>
+        fakeAgent("agent-1", { starterKit: input.starterKit }),
       repo: {
         list: async () => [],
         get: async () => ({

@@ -88,6 +88,21 @@
         }
       }
     },
+    "knowledgeBase": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string",
+          "enum": [
+            "llm-wiki",
+            "plain-wiki"
+          ]
+        }
+      },
+      "required": [
+        "template"
+      ]
+    },
     "harnesses": {
       "minItems": 1,
       "type": "array",
