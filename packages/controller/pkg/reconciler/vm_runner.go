@@ -480,6 +480,11 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 		if owner == "" {
 			continue
 		}
+		if name := list.Items[i].Name; name != r.runnerName(owner) {
+			slog.Info("vm runner: retiring a runner from an older naming", "owner", owner, "deployment", name)
+			r.deleteRunnerNamed(ctx, name)
+			continue
+		}
 		client, err := r.runnerFor(ctx, owner)
 		if err != nil {
 			continue
@@ -490,6 +495,28 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner outlives the agents that made it, so it is torn down only once the sweep finds it holding no machine at all — at which point its disk holds nothing either.
+// UNIT_BOUNDARY_DESCRIPTION: a runner's name encodes its owner, so changing how that name is built strands the old one — still holding a guest, a disk and a device grant — with nothing that would ever collect it. Its agents have already moved to the new name, so the old disk holds nothing they can reach.
+func (r *AgentReconciler) deleteRunnerNamed(ctx context.Context, name string) {
+	ns := r.config.ReleaseNamespace
+	opts := metav1.DeleteOptions{}
+	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
+		slog.Warn("retiring a stale VM runner: deployment", "deployment", name, "error", err)
+		return
+	}
+	for _, del := range []func() error{
+		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },
+		func() error { return r.client.CoreV1().Services(ns).Delete(ctx, name, opts) },
+		func() error {
+			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)
+		},
+		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
+	} {
+		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
+			slog.Warn("retiring a stale VM runner", "deployment", name, "error", err)
+		}
+	}
+}
+
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	opts := metav1.DeleteOptions{}

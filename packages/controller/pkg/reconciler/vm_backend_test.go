@@ -545,3 +545,42 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 	assert.True(t, sawGateway, "a guest can still reach its own gateway")
 	assert.True(t, sawCIDR, "and the runner can still reach the registry it was told about")
 }
+
+// TEST_SCENARIO: a runner built under an older naming scheme survives an upgrade; its agents have already moved to the new name, so it sits there holding a guest, a disk and a device grant with nothing that would ever collect it.
+func TestTheSweepRetiresARunnerFromAnOlderNaming(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	stale := "platform-vm-runner-deadbeef"
+	for _, create := range []func() error{
+		func() error {
+			_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: stale, Namespace: "default",
+					Labels: map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
+				},
+				Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+			}, metav1.CreateOptions{})
+			return err
+		},
+		func() error {
+			_, err := r.client.CoreV1().PersistentVolumeClaims("default").Create(ctx, &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: stale, Namespace: "default"},
+			}, metav1.CreateOptions{})
+			return err
+		},
+	} {
+		require.NoError(t, create())
+	}
+
+	r.ReconcileOrphanMachines(ctx)
+
+	_, err := r.client.AppsV1().Deployments("default").Get(ctx, stale, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the old runner is retired")
+	_, err = r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, stale, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "and its disk goes with it")
+	_, err = r.client.AppsV1().Deployments("default").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err, "while the current one is untouched")
+}
