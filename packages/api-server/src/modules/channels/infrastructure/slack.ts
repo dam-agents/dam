@@ -903,6 +903,7 @@ export function createSlackWorker(
     sessionId?: string;
     releaseAttendance?: () => void;
     posted?: boolean;
+    postedAt?: number;
     messaged?: boolean;
     declined?: boolean;
     forwarded?: boolean;
@@ -1031,6 +1032,7 @@ export function createSlackWorker(
     const engaged = findTurnRef(instanceName, match);
     if (!engaged) return;
     engaged.posted = true;
+    engaged.postedAt = Date.now();
     if (opts.messaged) engaged.messaged = true;
     if (opts.replyText) {
       engaged.replyText = engaged.replyText
@@ -1212,6 +1214,16 @@ export function createSlackWorker(
   const turnRecovery = createTurnRecovery({
     turnStatus: (agentId, sessionId) =>
       makeAcpClient(agentId).turnStatus(sessionId),
+    podGone: async (agentId) => {
+      const agent = await agents().get(agentId);
+      return (
+        agent === null ||
+        agent.state === "hibernated" ||
+        agent.state === "hibernating" ||
+        agent.state === "over_budget" ||
+        agent.state === "error"
+      );
+    },
   });
 
   async function withSessionTurnLock<T>(
@@ -1515,18 +1527,23 @@ export function createSlackWorker(
         (ref) => ref.sessionId !== undefined,
       )?.sessionId;
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
-        const delivered = () =>
-          turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+        const deliveredSince = (sinceMs: number) =>
+          turnRefs.some(
+            (ref) =>
+              ref.declined ||
+              ref.handedOff ||
+              (ref.postedAt !== undefined && ref.postedAt > sinceMs),
+          );
         turnRecovery.watch({
           instanceName,
           sessionId,
-          isDelivered: delivered,
+          deliveredSince,
           onStillRunning: () => refreshLinger(instanceName, turnRefs),
-          recover: async () => {
+          recover: async (sinceMs) => {
             await agents().ensureReady(instanceName);
             let nudged = false;
             await withSessionTurnLock(instanceName, threadKey, async () => {
-              if (delivered()) return;
+              if (deliveredSince(sinceMs)) return;
               nudged = true;
               const ref = turnRefs.at(-1)!;
               beginTurn(instanceName, ref);
@@ -1537,7 +1554,7 @@ export function createSlackWorker(
                 );
               } finally {
                 endTurn(instanceName, ref);
-                if (!delivered()) {
+                if (!deliveredSince(sinceMs)) {
                   getLogger().info(
                     {
                       agentId: instanceName,
@@ -1555,7 +1572,7 @@ export function createSlackWorker(
                 channel: "slack",
                 agentId: instanceName,
                 actorSub: null,
-                outcome: delivered() ? "success" : "failure",
+                outcome: deliveredSince(sinceMs) ? "success" : "failure",
                 reason: "recovery-nudge",
               });
             }

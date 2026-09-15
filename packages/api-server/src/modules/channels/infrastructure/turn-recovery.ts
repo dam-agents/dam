@@ -4,14 +4,13 @@ import { getLogger } from "../../../core/logger.js";
 
 const POLL_INTERVAL_MS = 2 * 60_000;
 const RECOVERY_WINDOW_MS = 2 * 60 * 60_000;
-const ENDED_AFTER_CONNECT_FAILURES = 2;
 
 export interface WatchedTurn {
   instanceName: string;
   sessionId: string;
-  isDelivered: () => boolean;
+  deliveredSince: (sinceMs: number) => boolean;
   onStillRunning: () => void;
-  recover: () => Promise<void>;
+  recover: (sinceMs: number) => Promise<void>;
 }
 
 export interface TurnRecovery {
@@ -24,31 +23,38 @@ interface WatchState {
   gen: number;
   timer?: ReturnType<typeof setTimeout>;
   deadline: number;
-  connectFailures: number;
+  lastAliveAt: number;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds every channel turn whose relay watch
  * failed while the agent may still be working, and fires each turn's
- * recovery action exactly once — when the runtime reports the turn over (or
- * the pod is gone, which for a running turn means the same: the idle checker
- * never hibernates under one) and nothing was delivered to the thread. A
- * turn whose reply arrives on its own is dropped without recovery, and a
- * later turn answering on the same session dismisses the watch, so a person
- * who re-asked never triggers a second answer. A turn still running is left
- * alone however long it takes — each alive report pushes the give-up
- * deadline out and lets the watcher keep its channel bookkeeping fresh; the
- * window bounds only how long an unanswerable session is polled. Watches are
- * generation-tagged so a re-registered session invalidates the old watch's
- * in-flight poll instead of racing it. State is in-process and per-turn
- * single-shot, so a recovery that itself fails is logged and given up, never
- * retried into a loop.
+ * recovery action exactly once — when the runtime reports the work over and
+ * no reply arrived after the agent was last seen working. That temporal rule
+ * is the whole delivery verdict: a reply counts as the answer only if the
+ * agent stopped working after it, so an early acknowledgement never masks a
+ * lost result, and the agent's own late answer never triggers a second one.
+ * The work is over only on a positive signal — the runtime says the turn
+ * ended (or was abandoned by boot recovery), or the platform reports the pod
+ * gone, which for a running turn means the same because the idle checker
+ * never hibernates under one. A failed or unreadable status poll is treated
+ * as unknown and polled again, never as an ending. A turn the runtime
+ * reports alive is followed for as long as it runs — each alive report
+ * pushes the give-up deadline out and lets the watcher keep its channel
+ * bookkeeping fresh; the rolling window bounds only how long a session that
+ * never shows life is polled, and in-process state means no watch outlives
+ * the api-server anyway. Watches are generation-tagged so a re-registered
+ * session invalidates the old watch's in-flight poll instead of racing it,
+ * and a later answering turn dismisses the watch, so a person who re-asked
+ * never triggers a second answer. Per-turn single-shot: a recovery that
+ * itself fails is logged and given up, never retried into a loop.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
     instanceName: string,
     sessionId: string,
   ) => Promise<AcpTurnStatus>;
+  podGone: (instanceName: string) => Promise<boolean>;
 }): TurnRecovery {
   const watches = new Map<string, WatchState>();
   let nextGen = 1;
@@ -78,10 +84,6 @@ export function createTurnRecovery(deps: {
   ): Promise<void> {
     const state = watches.get(key);
     if (state === undefined || state.gen !== gen) return;
-    if (turn.isDelivered()) {
-      drop(key);
-      return;
-    }
     if (Date.now() > state.deadline) {
       drop(key);
       getLogger().info(
@@ -91,30 +93,32 @@ export function createTurnRecovery(deps: {
       return;
     }
 
-    let ended = false;
+    let verdict: "alive" | "over" | "unknown";
     try {
       const status = await deps.turnStatus(turn.instanceName, turn.sessionId);
-      state.connectFailures = 0;
-      if (status === "pending") {
-        state.deadline = Date.now() + RECOVERY_WINDOW_MS;
-        turn.onStillRunning();
-      }
-      ended = status === "ended";
+      verdict =
+        status === "pending" ? "alive" : status === "ended" ? "over" : "unknown";
     } catch {
-      state.connectFailures += 1;
-      ended = state.connectFailures >= ENDED_AFTER_CONNECT_FAILURES;
+      verdict = (await deps.podGone(turn.instanceName).catch(() => false))
+        ? "over"
+        : "unknown";
     }
     if (watches.get(key)?.gen !== gen) return;
 
-    if (!ended) {
+    if (verdict === "alive") {
+      state.lastAliveAt = Date.now();
+      state.deadline = Date.now() + RECOVERY_WINDOW_MS;
+      turn.onStillRunning();
+    }
+    if (verdict !== "over") {
       schedule(key, turn, state);
       return;
     }
 
     drop(key);
-    if (turn.isDelivered()) return;
+    if (turn.deliveredSince(state.lastAliveAt)) return;
     try {
-      await turn.recover();
+      await turn.recover(state.lastAliveAt);
     } catch (err) {
       getLogger().info(
         {
@@ -134,7 +138,7 @@ export function createTurnRecovery(deps: {
       const state: WatchState = {
         gen: nextGen++,
         deadline: Date.now() + RECOVERY_WINDOW_MS,
-        connectFailures: 0,
+        lastAliveAt: Date.now(),
       };
       watches.set(key, state);
       schedule(key, turn, state);

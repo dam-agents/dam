@@ -9,16 +9,19 @@ import {
 /**
  * TEST_OVERVIEW: The turn-recovery watcher. After a failed relay watch it
  * polls the runtime's turn status and fires the recovery nudge exactly once,
- * when the turn has ended with nothing delivered — never for a turn still
- * running (which only keeps the watch alive), never for a delivered answer,
- * and never after the watch was dismissed. A pod that cannot be reached
- * twice in a row counts as ended, because the idle checker never hibernates
- * a pod under a running turn.
+ * when the work is over and no reply landed after the agent was last seen
+ * working — never for a turn still running (which only keeps the watch
+ * alive), never when the agent's last act was delivering, and never after
+ * the watch was dismissed. The work counts as over only on a positive
+ * signal: the runtime says so, or the platform reports the pod gone (the
+ * idle checker never hibernates a pod under a running turn); an unreachable
+ * but running pod is unknown and just keeps being polled.
  */
 
 configureLogger({ level: "error", write: () => {} });
 
 const POLL_MS = 2 * 60_000;
+const WINDOW_MS = 2 * 60 * 60_000;
 
 function scripted(seq: AcpTurnStatus[]) {
   let i = 0;
@@ -30,7 +33,7 @@ function makeTurn(over?: Partial<WatchedTurn>) {
   const turn: WatchedTurn = {
     instanceName: "agent-1",
     sessionId: "s-1",
-    isDelivered: () => false,
+    deliveredSince: () => false,
     onStillRunning: () => {
       calls.stillRunning += 1;
     },
@@ -58,6 +61,7 @@ describe("turn recovery", () => {
   it("keeps polling a running turn without recovering", async () => {
     const recovery = createTurnRecovery({
       turnStatus: scripted(["pending", "pending"]),
+      podGone: async () => false,
     });
     const { turn, calls } = makeTurn();
     recovery.watch(turn);
@@ -68,14 +72,19 @@ describe("turn recovery", () => {
   });
 
   /**
-   * TEST_SCENARIO: The turn ends with nothing delivered. Recovery must fire —
-   * and only once, however long the clock keeps running afterwards.
+   * TEST_SCENARIO: The work ends and the only reply predates the last alive
+   * report — an acknowledgement the agent worked on past, not the answer.
+   * Recovery must fire, and only once, however long the clock runs on.
    */
-  it("recovers exactly once when the turn ends undelivered", async () => {
+  it("recovers exactly once when the turn ends with no reply after last-alive", async () => {
+    const postAt = Date.now() + POLL_MS - 60_000;
     const recovery = createTurnRecovery({
       turnStatus: scripted(["pending", "ended"]),
+      podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, calls } = makeTurn({
+      deliveredSince: (sinceMs) => postAt > sinceMs,
+    });
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(5 * POLL_MS);
     expect(calls.recover).toBe(1);
@@ -83,33 +92,81 @@ describe("turn recovery", () => {
   });
 
   /**
-   * TEST_SCENARIO: The answer arrived on its own — a late reply, or a later
-   * turn on the same session. A nudge now would produce a duplicate post.
+   * TEST_SCENARIO: A reply landed after the agent was last seen working —
+   * its last act was delivering, so that reply is the answer and a nudge
+   * would produce a duplicate post.
    */
-  it("never recovers a delivered turn", async () => {
-    const recovery = createTurnRecovery({ turnStatus: scripted(["ended"]) });
-    const { turn, calls } = makeTurn({ isDelivered: () => true });
+  it("never recovers when the agent stopped working after its reply", async () => {
+    const postAt = Date.now() + POLL_MS + 60_000;
+    const recovery = createTurnRecovery({
+      turnStatus: scripted(["pending", "ended"]),
+      podGone: async () => false,
+    });
+    const { turn, calls } = makeTurn({
+      deliveredSince: (sinceMs) => postAt > sinceMs,
+    });
     recovery.watch(turn);
-    await vi.advanceTimersByTimeAsync(2 * POLL_MS);
+    await vi.advanceTimersByTimeAsync(5 * POLL_MS);
     expect(calls.recover).toBe(0);
     recovery.stop();
   });
 
   /**
-   * TEST_SCENARIO: The pod is gone — hibernated after the turn ended, since
-   * the idle checker never hibernates under a running turn. One failed poll
-   * could be a blip; the second confirms the turn is over.
+   * TEST_SCENARIO: The pod cannot be reached and the platform reports it
+   * gone — hibernated after the turn ended, since the idle checker never
+   * hibernates under a running turn. That is a positive ending.
    */
-  it("treats a twice-unreachable pod as an ended turn", async () => {
+  it("treats an unreachable pod the platform reports gone as an ended turn", async () => {
     const recovery = createTurnRecovery({
       turnStatus: () => Promise.reject(new Error("no pod")),
+      podGone: async () => true,
     });
     const { turn, calls } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(POLL_MS);
-    expect(calls.recover).toBe(0);
-    await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(calls.recover).toBe(1);
+    recovery.stop();
+  });
+
+  /**
+   * TEST_SCENARIO: The pod cannot be reached but the platform says it is
+   * running — a saturated or briefly unreachable pod mid-work. A failed read
+   * is unknown, never an ending: nudging here would queue a duplicate answer
+   * behind the running turn.
+   */
+  it("keeps polling an unreachable pod that is still running", async () => {
+    const recovery = createTurnRecovery({
+      turnStatus: () => Promise.reject(new Error("timeout")),
+      podGone: async () => false,
+    });
+    const { turn, calls } = makeTurn();
+    recovery.watch(turn);
+    await vi.advanceTimersByTimeAsync(5 * POLL_MS);
+    expect(calls.recover).toBe(0);
+    recovery.stop();
+  });
+
+  /**
+   * TEST_SCENARIO: A session that never shows life runs out the rolling
+   * window — the watch gives up without recovering, and no further polls
+   * fire. This is the only way a watch ends on time alone.
+   */
+  it("expires a never-alive session at the window without recovering", async () => {
+    let polls = 0;
+    const recovery = createTurnRecovery({
+      turnStatus: async () => {
+        polls += 1;
+        return "unknown";
+      },
+      podGone: async () => false,
+    });
+    const { turn, calls } = makeTurn();
+    recovery.watch(turn);
+    await vi.advanceTimersByTimeAsync(WINDOW_MS + 10 * POLL_MS);
+    const pollsAtExpiry = polls;
+    await vi.advanceTimersByTimeAsync(10 * POLL_MS);
+    expect(calls.recover).toBe(0);
+    expect(polls).toBe(pollsAtExpiry);
     recovery.stop();
   });
 
@@ -118,7 +175,10 @@ describe("turn recovery", () => {
    * dismissed the watch. The old turn's nudge must never fire after that.
    */
   it("never recovers after a dismissal", async () => {
-    const recovery = createTurnRecovery({ turnStatus: scripted(["ended"]) });
+    const recovery = createTurnRecovery({
+      turnStatus: scripted(["ended"]),
+      podGone: async () => false,
+    });
     const { turn, calls } = makeTurn();
     recovery.watch(turn);
     recovery.dismiss("agent-1", "s-1");
