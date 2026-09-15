@@ -71,9 +71,12 @@ describe("credit payload decoding", () => {
 });
 
 describe("Bob latency unit", () => {
-  it("takes latency from the span duration, not the seconds-declared attribute", () => {
+  it("takes latency from the span duration as integer milliseconds, the type the log-record branch already has", () => {
     const sql = callsCte({ hours: 24 });
-    expect(sql).toContain("Duration / 1e6 AS durMs");
+    expect(sql).toContain("toInt64(intDiv(Duration, 1000000)) AS durMs");
+    expect(sql).toContain(
+      "toInt64OrZero(LogAttributes['duration_ms']) AS durMs",
+    );
     expect(sql).not.toContain("gen_ai.client.operation.duration");
   });
 });

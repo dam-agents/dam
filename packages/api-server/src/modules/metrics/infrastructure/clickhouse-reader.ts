@@ -83,7 +83,7 @@ const bobCalls = (w: MetricsWindow): string => `
        ${spanAttr("gen_ai.usage.output_tokens")} AS tokOut,
        ${spanAttr("gen_ai.usage.cache_read.input_tokens")} AS tokCacheR,
        ${spanAttr("gen_ai.usage.cache_creation.input_tokens")} AS tokCacheC,
-       Duration / 1e6 AS durMs,
+       toInt64(intDiv(Duration, 1000000)) AS durMs,
        toFloat64(0) AS usd,
        'bobcoin' AS creditUnit,
        toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS creditAmount
