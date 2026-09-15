@@ -8,6 +8,7 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { StarterKitSetupView } from "./modules/agents/views/agent-create-view.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
@@ -22,7 +23,6 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
-import { StarterKitSetupView } from "./modules/starter-kits/views/starter-kit-setup-view.js";
 import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
 import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";

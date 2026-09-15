@@ -18,8 +18,12 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
+import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -32,11 +36,11 @@ import {
   narrowPolicyToTemplate,
   setupProviderPolicy,
 } from "../../sandboxes/lib/setup-policy.js";
-import { useTemplates } from "../../templates/api/queries.js";
-import { useApplyStarterKit } from "../api/mutations.js";
-import { useStarterKit } from "../api/queries.js";
-import { kitBadges } from "../lib/catalog-cards.js";
-import { kitIcon } from "../lib/kit-icon.js";
+import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
+import { useStarterKit } from "../../starter-kits/api/queries.js";
+import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
+import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
+import { kitIcon } from "../../starter-kits/lib/kit-icon.js";
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
@@ -55,7 +59,15 @@ import {
   requirementStatuses,
   type StarterKitSetupDraft,
   toggleSkipped,
-} from "../lib/setup.js";
+} from "../../starter-kits/lib/setup.js";
+import { useTemplates } from "../../templates/api/queries.js";
+import { useCreateAgent } from "../api/mutations.js";
+import {
+  buildCodingAgentSetupInput,
+  type CodingAgentSetupDraft,
+  hasPartialRegistryCredential,
+  isCodingAgentSetupComplete,
+} from "../lib/create-agent-input.js";
 
 export function StarterKitSetupView() {
   const catalog = useStore((s) => s.starterKitCatalog);
@@ -91,22 +103,33 @@ export function StarterKitSetupView() {
       </Callout>
     );
   }
-  return <StarterKitSetupForm kit={kit.data} />;
+  return <AgentCreateView kit={kit.data} />;
 }
 
-function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
-  const returnPath = routeToPath({
-    view: "starter-kit-new",
-    catalog: kit.catalog,
-    kit: kit.id,
-  });
+export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
+  const returnPath = kit
+    ? routeToPath({
+        view: "starter-kit-new",
+        catalog: kit.catalog,
+        kit: kit.id,
+      })
+    : routeToPath({ view: "coding-agent-new" });
   const { form, update, toggleConnection, reset } = useSetupForm(
-    "starter-kit",
-    { name: kit.id },
+    kit ? "starter-kit" : "coding-agent",
+    kit ? { name: kit.id } : {},
     returnPath,
-    `${kit.catalog}/${kit.id}`,
+    kit ? `${kit.catalog}/${kit.id}` : undefined,
   );
   const apply = useApplyStarterKit();
+  const createAgent = useCreateAgent();
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
+  const [browsingKits, setBrowsingKits] = useState(false);
+  const [registryCredential, setRegistryCredential] = useState(
+    EMPTY_REGISTRY_CREDENTIAL,
+  );
+  const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
+    boolean | null
+  >(null);
   const selectAgent = useStore((s) => s.selectAgent);
   const setView = useStore((s) => s.setView);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
@@ -131,14 +154,17 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   );
   const catalogue = useHarnessCatalogue({
     templateId: form.templateId,
-    allowNone: false,
+    allowNone: kit ? false : form.customImage.trim().length > 0,
     onTemplateIdChange,
   });
 
-  const bringsImage = kit.image !== undefined;
-  const resourcesLine = kitResourcesLine(kit);
-  const harnesses = allowedHarnesses(kit, catalogue.harnesses);
+  const bringsImage = kit?.image !== undefined;
+  const resourcesLine = kit ? kitResourcesLine(kit) : undefined;
+  const harnesses = kit
+    ? allowedHarnesses(kit, catalogue.harnesses)
+    : catalogue.harnesses;
   const noHarnessInstalled =
+    kit !== null &&
     !bringsImage &&
     kit.harnesses !== undefined &&
     !catalogue.isLoading &&
@@ -155,9 +181,12 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     skippedSchedules: form.skippedSchedules,
   };
   const owned = connections.data ?? [];
-  const statuses = requirementStatuses(kit, draft, owned, templateById);
+  const statuses = kit
+    ? requirementStatuses(kit, draft, owned, templateById)
+    : [];
   const preselected = useRef(false);
   useEffect(() => {
+    if (!kit) return;
     if (preselected.current) return;
     if (
       connections.data === undefined ||
@@ -180,22 +209,49 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     form.connectionIds,
     toggleConnection,
   ]);
-  const providerSource = bringsImage
-    ? kit.image
-    : (templates.data?.find((t) => t.id === form.templateId) ?? null);
-  const providerPolicy = narrowPolicyToTemplate(
-    providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
-    providerSource,
-  );
+  const providerSource =
+    kit && bringsImage
+      ? kit.image
+      : (templates.data?.find((t) => t.id === form.templateId) ?? null);
+  const providerPolicy = kit
+    ? narrowPolicyToTemplate(
+        providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
+        providerSource,
+      )
+    : setupProviderPolicy("coding-agent");
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
-  const canApply =
-    isStarterKitSetupComplete(kit, draft, owned, templateById) &&
-    harnessAllowed &&
-    !noCompatibleProvider &&
-    !apply.isPending;
+
+  const plainDraft: CodingAgentSetupDraft = {
+    name: form.name,
+    templateId: form.templateId,
+    customImage: form.customImage,
+    providerRef: form.providerRef,
+    connectionIds: form.connectionIds,
+    registryCredential,
+  };
+  const registryPartial = hasPartialRegistryCredential(plainDraft);
+  const pending = kit ? apply.isPending : createAgent.isPending;
+  const canApply = kit
+    ? isStarterKitSetupComplete(kit, draft, owned, templateById) &&
+      harnessAllowed &&
+      !noCompatibleProvider &&
+      !pending
+    : isCodingAgentSetupComplete(plainDraft) && !pending;
 
   const create = async () => {
     if (!canApply) return;
+    if (!kit) {
+      try {
+        const agent = await createAgent.mutateAsync(
+          buildCodingAgentSetupInput(plainDraft),
+        );
+        reset();
+        setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
+        setRegistryDisclosureOverride(null);
+        selectAgent(agent.id);
+      } catch {}
+      return;
+    }
     try {
       const result = await apply.mutateAsync(
         buildStarterKitApplyInput(kit, draft, owned, templateById),
@@ -217,82 +273,155 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     } catch {}
   };
 
-  const KitIcon = kitIcon(kit);
+  const KitIcon = kit ? kitIcon(kit) : null;
 
   return (
     <SetupPageShell
       title="Create an agent"
       subtitle="Configure your agent with a name, harness, and connections."
       footer={
-        <Button onClick={() => void create()} disabled={!canApply}>
-          {apply.isPending ? "Creating…" : "Create agent from this kit"}
-        </Button>
+        <>
+          {registryPartial && (
+            <p className="text-sm text-destructive">
+              Finish or clear the private-registry credentials.
+            </p>
+          )}
+          <Button onClick={() => void create()} disabled={!canApply}>
+            {pending
+              ? "Creating…"
+              : kit
+                ? "Create agent from this kit"
+                : "Create coding agent"}
+          </Button>
+        </>
       }
     >
-      <section className="mb-8">
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-accent/30 px-4 py-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
-            <KitIcon size={16} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">{kit.name}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {kitBadges(kit, connectionTemplates.data ?? [], templateById).map(
-                (b) => (
+      {!kit && kitsEnabled && (
+        <section className="mb-8">
+          <Callout tone="default">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm text-foreground">
+                Want a head start? Pick a starter kit to pre-fill your agent
+                setup.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBrowsingKits(true)}
+              >
+                Browse starter kits
+              </Button>
+            </div>
+          </Callout>
+        </section>
+      )}
+
+      {browsingKits && (
+        <BrowseKitsModal
+          onPick={(catalog, kitId) => {
+            setBrowsingKits(false);
+            navigateToStarterKit(catalog, kitId);
+          }}
+          onClose={() => setBrowsingKits(false)}
+          onStartFromScratch={() => setBrowsingKits(false)}
+        />
+      )}
+
+      {kit && KitIcon && (
+        <section className="mb-8">
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-accent/30 px-4 py-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+              <KitIcon size={16} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">{kit.name}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {kitBadges(
+                  kit,
+                  connectionTemplates.data ?? [],
+                  templateById,
+                ).map((b) => (
                   <Badge key={b.key} variant="muted" size="sm">
                     {b.label}
                   </Badge>
-                ),
-              )}
+                ))}
+              </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
+            >
+              Change
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Create a plain agent instead"
+              onClick={() => setView("coding-agent-new")}
+            >
+              <Close size={16} />
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
-          >
-            Change
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Create a plain agent instead"
-            onClick={() => setView("coding-agent-new")}
-          >
-            <Close size={16} />
-          </Button>
-        </div>
-      </section>
+        </section>
+      )}
 
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
-      <section className="mb-8">
-        <SectionLabel spaced>Harness</SectionLabel>
-        {bringsImage ? (
-          <Callout tone="default">
-            <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
-            <div className="mt-1 font-mono text-xs text-muted-foreground">
-              {kit.image?.ref}
-            </div>
-          </Callout>
-        ) : noHarnessInstalled ? (
-          <Callout tone="warning">
-            This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")},
-            and none of those is installed here.
-          </Callout>
-        ) : (
-          <HarnessGrid
-            harnesses={harnesses}
-            loading={catalogue.isLoading}
-            error={catalogue.isError}
-            onRetry={catalogue.refetch}
-            templateId={form.templateId}
-            onPick={(templateId) => update({ templateId })}
-          />
-        )}
-      </section>
+      {!kit && (
+        <ImageSection
+          harnesses={catalogue.harnesses}
+          loading={catalogue.isLoading}
+          error={catalogue.isError}
+          onRetry={catalogue.refetch}
+          templateId={form.templateId}
+          customImage={form.customImage}
+          registry={{
+            value: registryCredential,
+            onChange: setRegistryCredential,
+            partial: registryPartial,
+            disclosureOverride: registryDisclosureOverride,
+            onDisclosureOverride: setRegistryDisclosureOverride,
+          }}
+          onPickTemplate={(templateId) =>
+            update({ templateId, customImage: "" })
+          }
+          onCustomImageChange={(customImage) =>
+            update({ customImage, templateId: null })
+          }
+          onSubmit={() => void create()}
+        />
+      )}
 
-      {resourcesLine && (
+      {kit && (
+        <section className="mb-8">
+          <SectionLabel spaced>Harness</SectionLabel>
+          {bringsImage ? (
+            <Callout tone="default">
+              <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
+              <div className="mt-1 font-mono text-xs text-muted-foreground">
+                {kit.image?.ref}
+              </div>
+            </Callout>
+          ) : noHarnessInstalled ? (
+            <Callout tone="warning">
+              This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")}
+              , and none of those is installed here.
+            </Callout>
+          ) : (
+            <HarnessGrid
+              harnesses={harnesses}
+              loading={catalogue.isLoading}
+              error={catalogue.isError}
+              onRetry={catalogue.refetch}
+              templateId={form.templateId}
+              onPick={(templateId) => update({ templateId })}
+            />
+          )}
+        </section>
+      )}
+
+      {kit && resourcesLine && (
         <section className="mb-8">
           <SectionLabel spaced>Size</SectionLabel>
           <Callout tone="default">
@@ -327,7 +456,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         />
       )}
 
-      {statuses.length > 0 && (
+      {kit && statuses.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Connections</SectionLabel>
           <ul className="space-y-2 text-sm">
@@ -411,7 +540,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         />
       )}
 
-      {kit.channels.length > 0 && (
+      {kit && kit.channels.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Channels (optional)</SectionLabel>
           <ul className="flex flex-col gap-2">
@@ -475,7 +604,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         </section>
       )}
 
-      {kit.schedules.length > 0 && (
+      {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
           <p className="mb-3 text-sm text-muted-foreground">
@@ -544,7 +673,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         </section>
       )}
 
-      {(kit.skillsInKit.length > 0 || kit.skills.length > 0) && (
+      {kit && (kit.skillsInKit.length > 0 || kit.skills.length > 0) && (
         <section className="mb-8">
           <SectionLabel spaced>Skills</SectionLabel>
           <ul className="space-y-2 text-sm">
@@ -580,7 +709,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         </section>
       )}
 
-      {kit.parameters.length > 0 && (
+      {kit && kit.parameters.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Onboarding will ask you for</SectionLabel>
           <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -596,6 +725,12 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
             ))}
           </ul>
         </section>
+      )}
+      {!kit && (
+        <ConnectedKnowledgeBasesSetup
+          connectionIds={form.connectionIds}
+          onToggle={toggleConnection}
+        />
       )}
     </SetupPageShell>
   );
