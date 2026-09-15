@@ -20,9 +20,9 @@ features:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
-  # The Agents & AI Apps feature. Enabling it is what grants assistant:write,
-  # which the working status on a turn (assistant.threads.setStatus) needs —
-  # that scope cannot be requested on its own under oauth_config below.
+  # The Agents & AI Apps feature. The working status on a turn
+  # (assistant.threads.setStatus) needs this feature and the assistant:write
+  # scope requested below — declaring one without the other leaves it dark.
   assistant_view:
     assistant_description: >
       Chat with your agents, start runs, and follow their progress without
