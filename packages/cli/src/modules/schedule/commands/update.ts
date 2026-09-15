@@ -32,6 +32,8 @@ interface UpdateOpts {
   weekdays?: string;
   timezone?: string;
   quietWindow: string[];
+  precheck?: string;
+  precheckNone?: boolean;
   sessionMode?: "fresh" | "continuous";
   server?: string;
   json?: boolean;
@@ -69,6 +71,11 @@ export function buildUpdateCommand(deps: {
       ),
     )
     .option(
+      "--precheck <command>",
+      "shell command run in the workspace before each fire; exit 0 runs, exit 1 skips this occurrence, any other exit means the check broke and the task runs anyway",
+    )
+    .option("--precheck-none", "remove the schedule's precheck")
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -92,11 +99,13 @@ export function buildUpdateCommand(deps: {
         opts.timezone !== undefined ||
         opts.sessionMode !== undefined ||
         opts.weekdays !== undefined ||
+        opts.precheck !== undefined ||
+        opts.precheckNone === true ||
         recurrenceGiven ||
         quietGiven;
       if (!anyFlag) {
         process.stderr.write(
-          "error: nothing to update — pass at least one of --name, --task, --daily/--every/--rrule, --weekdays, --timezone, --quiet-window, --session-mode\n",
+          "error: nothing to update — pass at least one of --name, --task, --daily/--every/--rrule, --weekdays, --timezone, --quiet-window, --session-mode, --precheck, --precheck-none\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }
@@ -184,6 +193,7 @@ export function buildUpdateCommand(deps: {
         quietHours,
         task: opts.task ?? view.task ?? "",
         ...(sessionMode ? { sessionMode } : {}),
+        precheck: opts.precheckNone ? null : (opts.precheck ?? view.precheck),
       });
       if (!result.ok) {
         if (result.error.kind === "schedule-not-found") {

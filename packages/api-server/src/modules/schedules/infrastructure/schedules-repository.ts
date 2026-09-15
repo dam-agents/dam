@@ -4,14 +4,28 @@ import {
   asc,
   eq,
   inArray,
+  sql,
   type Db,
   schedules as schedulesTable,
 } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
+import type {
+  CounterWrite,
+  ScheduleStatusPatch,
+} from "../domain/status-transitions.js";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
+
+function counter(
+  column:
+    | typeof schedulesTable.declinedCount
+    | typeof schedulesTable.precheckFailedCount,
+  write: CounterWrite,
+) {
+  return write.kind === "increment" ? sql`${column} + 1` : write.value;
+}
 
 function clampLimit(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_LIMIT;
@@ -47,6 +61,8 @@ export interface SchedulesRepository {
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
+  clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
@@ -60,6 +76,10 @@ interface InternalRow {
   nextRun: Date | null;
   lastFiredAt: Date | null;
   lastFiredResult: string | null;
+  lastDeclinedAt: Date | null;
+  declinedCount: number;
+  lastPrecheckError: string | null;
+  precheckFailedCount: number;
 }
 
 function rowToSchedule(row: InternalRow): Schedule {
@@ -69,6 +89,16 @@ function rowToSchedule(row: InternalRow): Schedule {
     ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
     ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
     ...(row.lastFiredResult ? { lastResult: row.lastFiredResult } : {}),
+    ...(row.lastDeclinedAt
+      ? { lastDeclinedAt: row.lastDeclinedAt.toISOString() }
+      : {}),
+    ...(row.declinedCount > 0 ? { declinedCount: row.declinedCount } : {}),
+    ...(row.lastPrecheckError
+      ? { lastPrecheckError: row.lastPrecheckError }
+      : {}),
+    ...(row.precheckFailedCount > 0
+      ? { precheckFailedCount: row.precheckFailedCount }
+      : {}),
   };
   return {
     id: row.id,
@@ -235,6 +265,42 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastFiredAt: new Date(),
           lastFiredResult: result,
           nextRun,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async applyStatusPatch(id, patch): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          ...(patch.lastFiredAt ? { lastFiredAt: patch.lastFiredAt } : {}),
+          ...(patch.lastFiredResult
+            ? { lastFiredResult: patch.lastFiredResult }
+            : {}),
+          lastDeclinedAt: patch.lastDeclinedAt,
+          declinedCount: counter(
+            schedulesTable.declinedCount,
+            patch.declinedCount,
+          ),
+          lastPrecheckError: patch.lastPrecheckError,
+          precheckFailedCount: counter(
+            schedulesTable.precheckFailedCount,
+            patch.precheckFailedCount,
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async clearPrecheckStatus(id): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastDeclinedAt: null,
+          declinedCount: 0,
+          lastPrecheckError: null,
+          precheckFailedCount: 0,
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));

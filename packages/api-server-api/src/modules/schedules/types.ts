@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  precheckVerdictSchema,
   quietWindowSchema,
   scheduleCreateCronInputSchema,
   scheduleCreateRRuleInputSchema,
@@ -15,6 +16,7 @@ export interface ScheduleSpecCron {
   type: "cron";
   cron: string;
   task?: string;
+  precheck?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
@@ -27,6 +29,7 @@ export interface ScheduleSpecRRule {
   timezone: string;
   quietHours?: QuietWindow[];
   task?: string;
+  precheck?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
@@ -38,7 +41,13 @@ export interface ScheduleStatus {
   lastRun?: string;
   nextRun?: string;
   lastResult?: string;
+  lastDeclinedAt?: string;
+  declinedCount?: number;
+  lastPrecheckError?: string;
+  precheckFailedCount?: number;
 }
+
+export type PrecheckVerdict = z.infer<typeof precheckVerdictSchema>;
 
 export interface Schedule {
   id: string;

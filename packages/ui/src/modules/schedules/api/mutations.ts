@@ -15,6 +15,7 @@ export interface CreateScheduleInput {
   quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
+  precheck?: string;
 }
 
 export function useCreateSchedule() {
@@ -41,6 +42,7 @@ export interface UpdateScheduleInput {
   quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
+  precheck: string | null;
 }
 
 export function useUpdateSchedule() {

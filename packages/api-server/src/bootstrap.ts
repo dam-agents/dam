@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
+import type { TriggerEventPayload } from "agent-runtime-api";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
@@ -845,10 +846,27 @@ export async function bootstrap() {
     db,
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    wakeAgent: async (agentId) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    },
+    wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    restoreActivity: (agentId, stamp) =>
+      agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
+    redis: sharedRedis,
   });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const { scheduleId, precheck } =
+        event.payload as Partial<TriggerEventPayload>;
+      if (!scheduleId || !precheck) return;
+      await schedulesBoot.runner.reportFire({
+        scheduleId,
+        eventId: input.eventId,
+        ranPrecheck: precheck,
+        outcome: input.outcome,
+        ...(input.detail ? { detail: input.detail } : {}),
+      });
+    },
+  );
+
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
       db,

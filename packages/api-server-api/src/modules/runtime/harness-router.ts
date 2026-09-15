@@ -1,11 +1,16 @@
 import { harnessT } from "../../harness-trpc.js";
-import { helloInput } from "./types.js";
+import { eventReportInput, helloInput } from "./types.js";
 
 const v1Router = harnessT.router({
   hello: harnessT.procedure
     .input(helloInput)
     .mutation(({ ctx, input }) =>
       ctx.runtimeDelivery.hello(ctx.agentId, input),
+    ),
+  reportEvent: harnessT.procedure
+    .input(eventReportInput)
+    .mutation(({ ctx, input }) =>
+      ctx.runtimeDelivery.reportEvent(ctx.agentId, input),
     ),
 });
 

@@ -35,6 +35,7 @@ function renderSchedule(view: ScheduleView): string {
   } else {
     lines.push(`Cron:        ${view.cron ?? ""}`);
   }
+  if (view.precheck) lines.push(`Precheck:    ${view.precheck}`);
   lines.push(`Session:     ${view.sessionMode ?? "fresh"}`);
   lines.push(`Enabled:     ${view.enabled}`);
   lines.push(`Created by:  ${view.createdBy}`);
@@ -42,6 +43,23 @@ function renderSchedule(view: ScheduleView): string {
   if (view.status?.nextRun) lines.push(`Next run:    ${view.status.nextRun}`);
   if (view.status?.lastResult) {
     lines.push(`Last result: ${view.status.lastResult}`);
+  }
+  if (view.precheck && view.status?.declinedCount) {
+    const when = view.status.lastDeclinedAt
+      ? `, last ${view.status.lastDeclinedAt}`
+      : "";
+    lines.push(
+      `Declined:    ${view.status.declinedCount} since the last run${when}`,
+    );
+  }
+  if (view.precheck && view.status?.lastPrecheckError) {
+    const inARow =
+      (view.status.precheckFailedCount ?? 0) > 1
+        ? ` (${view.status.precheckFailedCount} times in a row)`
+        : "";
+    lines.push(
+      `Precheck:    failed${inARow} — ${view.status.lastPrecheckError}`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }

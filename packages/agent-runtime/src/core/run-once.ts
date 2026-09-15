@@ -28,9 +28,14 @@ export type ProcessFailure =
   | { kind: "not-spawnable"; message: string }
   | { kind: "timed-out"; timeoutMs: number }
   | { kind: "output-capped"; maxOutputBytes: number }
-  | { kind: "exited"; code: number | null; stderr: string };
+  | { kind: "exited"; code: number | null; stderr: string; stdout: string };
 
 export type RunOnceResult = Result<ProcessOutput, ProcessFailure>;
+
+function tailOf(stderr: string): string {
+  if (stderr.length <= MAX_DESCRIBED_STDERR) return stderr;
+  return `…${stderr.slice(-MAX_DESCRIBED_STDERR)}`;
+}
 
 export function describeFailure(
   subject: string,
@@ -44,7 +49,7 @@ export function describeFailure(
     case "output-capped":
       return `${subject} produced more than ${failure.maxOutputBytes} bytes of output`;
     case "exited": {
-      const trimmed = failure.stderr.trim().slice(0, MAX_DESCRIBED_STDERR);
+      const trimmed = tailOf(failure.stderr.trim());
       return (
         `${subject} exited ${failure.code}` + (trimmed ? `: ${trimmed}` : "")
       );
@@ -165,7 +170,7 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
       flushStdout();
       flushStderr();
       if (code !== 0) {
-        settle(err({ kind: "exited", code, stderr }));
+        settle(err({ kind: "exited", code, stderr, stdout }));
         return;
       }
       settle(ok({ stdout, stderr }));

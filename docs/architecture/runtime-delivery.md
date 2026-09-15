@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-10
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -10,12 +10,12 @@ Eight subsystems push through this machinery — agents, connections, experiment
 
 The subsystem cuts across two bounded contexts:
 
-- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents. The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory).
+- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents. The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), and the event report below is generic to the channel.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
-The runtime channel is four routes between api-server and agent-runtime —
-`applyState` inward, `hello`, the artifact-touch report and the
-session-directory report outward:
+The runtime channel is five routes between api-server and agent-runtime —
+`applyState` inward, `hello`, the artifact-touch report, the session-directory
+report and the event report outward:
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,8 @@ flowchart LR
   rt --> handlers
   rt -->|hello| api
   rt -->|reportArtifactTouch| api
+  rt -->|session-directory report| api
+  rt -->|event report| api
 ```
 
 The wire payload carries:
@@ -46,7 +48,7 @@ State changes write to the outbox, the worker reads and dispatches a fresh paylo
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), **workspace-command** (run a one-shot shell command in the workspace, e.g. a kinded agent's install bootstrap), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), **workspace-command** (run a one-shot shell command in the workspace, e.g. a kinded agent's install bootstrap), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat — including the hidden greeting turn — waits for the mutation to settle instead of racing it. Because the settle is a Postgres stamp with no Agent-resource change behind it, the worker announces it as an agent change, so watching UIs re-read the agent promptly rather than on their next incidental refresh.
 
@@ -104,6 +106,12 @@ The reply is a discriminated outcome, not a bare ack:
 
 Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
+### Event report — agent → api-server
+
+One route for every event kind: the agent names the event by the same `id` the payload carried it under, and says how it went — **ok**, **declined**, or **failed** with a reason. The api-server looks the row up by that id *and* the calling agent, which is the ownership check, and routes on the row's own `kind` to whichever subsystem produced it; the reason lands in the event row's error column, the slot that already existed for it.
+
+The vocabulary is deliberately not the reporting subsystem's own: a schedule's Precheck says allow, decline and broke, and that translation happens on the schedules side so the next kind to use this route does not inherit "precheck" in its outcome names. What the route is *not* is a second delivery channel — it carries facts about work already accepted, so nothing is durable about it: a report that fails to send is logged and the outcome is simply never recorded. It is idempotent instead: recording the reason also claims the row, so a report that arrives twice is a no-op rather than a second increment on whatever the first one counted.
+
 ### Session-directory report — agent → api-server
 
 A second agent-initiated call rides the same gateway and the same harness API server. Whenever an agent's own record of its Sessions changes, it reports the **kind of each Session it holds** — a snapshot, not a delta, so a report that never arrives costs latency rather than leaving a permanent hole. It is deliberately narrow: the agent keeps owning Session state, and what leaves is the single dimension the spend read path cannot reconstruct once the agent hibernates or is deleted. [metrics](metrics.md#session-directory) owns what the report means and why it exists; this page owns only the fact that the channel carries it.
@@ -139,9 +147,11 @@ sequenceDiagram
 
 Each event kind has a built-in handler inside the agent-runtime's event loop. The kind selects the handler; the payload shape and the side effect are kind-specific. The common contract:
 
-- The handler receives the event's `payload`; the loop owns `id`-based dedupe before the handler is ever invoked — a per-key last-run timestamp in the agent's local state store, and nothing else. An id the loop cannot read a timestamp out of settles without running: a malformed id is unrunnable, and failing closed beats re-firing it on every poll.
+- The handler receives the event's `payload` and its `id` — the id so a handler whose work outlives the call can name the event it is reporting on, below. The loop owns `id`-based dedupe before the handler is ever invoked — a per-key last-run timestamp in the agent's local state store, and nothing else. An id the loop cannot read a timestamp out of settles without running: a malformed id is unrunnable, and failing closed beats re-firing it on every poll.
 - It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
-- A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires. For workspace-mutating kinds the redelivery is bounded: the worker counts each answered-but-unsettled delivery on the event row, and past the attempt budget it stamps the event dispatched-with-error instead of redelivering.
+- An event settles when its handler **accepts** it, not when the work it started finishes. That distinction is what keeps a slow handler off the channel: `applyState` is serialized per agent, so anything awaited inside a handler stops every other contribution and event for that agent, and the api-server abandons the call after its own timeout. A handler with work that can outlive the call — a schedule's Precheck is the one today — settles immediately and reports its outcome afterwards over the **event report** below. The cost is deliberate: work detached this way is lost if the pod dies before it finishes, because the event is already settled.
+
+A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires. For workspace-mutating kinds the redelivery is bounded: the worker counts each answered-but-unsettled delivery on the event row, and past the attempt budget it stamps the event dispatched-with-error instead of redelivering.
 
 The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds an agent-side handler and doesn't have to know about the outbox at all.
 
@@ -181,7 +191,7 @@ Owned by the worker, set in the apply-ack transaction using the cursor. The per-
 
 ### Expiry
 
-Each event row carries `expires_at`, chosen by the producer — a schedule fire, for instance, expires at the schedule's next occurrence so a backlog of fires never forms ([agent-lifecycle](agent-lifecycle.md#trigger-fire)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
+Each event row carries `expires_at`, chosen by the producer — a schedule fire, for instance, expires at the schedule's next occurrence so a backlog of fires never forms ([schedules](schedules.md#fire)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
 
 ## Outbox + events
 
@@ -190,7 +200,7 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 | Table | Shape | Why |
 |---|---|---|
 | `runtime_state_outbox` | One row per agent | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries the desired version and two cursors: the version the agent last **answered** for, and the one it last **applied cleanly**. Removed with the Agent, so a later Agent under the same name starts from version zero. |
-| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, a dispatched marker, and — for the bounded workspace-mutating kinds — an attempt counter plus the error recorded when delivery gives up. The state-builder reads the live ones into `events[]`. Removed with the Agent. |
+| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, a dispatched marker, and an error slot — filled by the agent's own event report when that report carries a reason, and for the bounded workspace-mutating kinds by the worker when delivery gives up past the attempt counter the same row carries. The state-builder reads the live ones into `events[]`. Removed with the Agent. |
 
 ### Mutation transaction
 
@@ -335,7 +345,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 |---|---|---|
 | Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
 | Postgres `runtime_state_outbox` | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads. |
-| Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id. |
+| Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives. |
 | Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
@@ -351,5 +361,5 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 - **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them. Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report, and the session-directory report below — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, and the event report. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
 - **Capabilities are honored end-to-end, and never silently.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds still succeeds and the unsupported parts simply don't appear in the agent's payload — but the Agent carries an owner-visible warning naming what its runtime refused, and keeps it until the runtime advertises those kinds. A flow-gating capability (the knowledge-base publish level) fails visibly instead: the gated feature records an update-the-agent failure rather than dropping work silently.

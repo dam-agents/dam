@@ -9,6 +9,7 @@ export type {
 export {
   createAgentsRepository,
   type AgentsRepository,
+  type AgentActivityStamp,
 } from "./infrastructure/agents-repository.js";
 export {
   createAgentEnvRepository,

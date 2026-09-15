@@ -32,6 +32,7 @@ export enum EventType {
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
+  SchedulePrecheckReported = "SchedulePrecheckReported",
   HarnessConfigChanged = "HarnessConfigChanged",
   ArtifactCreated = "ArtifactCreated",
   ArtifactUpdated = "ArtifactUpdated",
@@ -207,6 +208,13 @@ export type ScheduleCreated = {
 
 export type ScheduleUpdated = {
   type: EventType.ScheduleUpdated;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type SchedulePrecheckReported = {
+  type: EventType.SchedulePrecheckReported;
   scheduleId: string;
   agentId: string;
   ownerSub: string;
@@ -401,6 +409,7 @@ export type DomainEvent =
   | SlackDisconnected
   | ChannelTurnRelayed
   | ScheduleFired
+  | SchedulePrecheckReported
   | ConnectionCreated
   | ConnectionRemoved
   | FilesImported

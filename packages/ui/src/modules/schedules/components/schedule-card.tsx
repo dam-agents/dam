@@ -4,6 +4,7 @@ import {
   Launch,
   OverflowMenuVertical,
   Time,
+  WarningAlt,
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
@@ -26,7 +28,7 @@ import {
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
-import { scheduleCadenceText } from "../lib/schedule-format.js";
+import { precheckAlert, scheduleCadenceText } from "../lib/schedule-format.js";
 import { ScheduleDetails } from "./schedule-details.js";
 
 interface Props {
@@ -53,6 +55,7 @@ export function ScheduleCard({
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
+  const alert = precheckAlert(schedule);
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
 
@@ -84,10 +87,31 @@ export function ScheduleCard({
     <Card>
       <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-foreground">
-            {name}
+          <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+            <span className="truncate">{name}</span>
+            {alert && (
+              <WarningAlt
+                size={16}
+                className={cn(
+                  "shrink-0",
+                  alert.urgent ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                <title>{`${alert.text}: ${alert.reason}`}</title>
+              </WarningAlt>
+            )}
           </p>
           <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+            {alert && (
+              <>
+                <span
+                  className={cn("truncate", alert.urgent && "text-destructive")}
+                >
+                  {alert.text}
+                </span>
+                <span aria-hidden>·</span>
+              </>
+            )}
             {cadence && <span className="truncate">{cadence}</span>}
             {nextRunHint && (
               <>

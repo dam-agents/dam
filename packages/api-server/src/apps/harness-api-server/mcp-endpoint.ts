@@ -13,6 +13,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  precheckSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -668,8 +669,22 @@ export function createMcpSession(
         .describe(
           "continuous = resume prior session each tick; fresh = new session per run (default)",
         ),
+      precheck: precheckSchema
+        .optional()
+        .describe(
+          "Optional shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+        ),
     },
-    async ({ name, cron, rrule, timezone, quietHours, task, sessionMode }) => {
+    async ({
+      name,
+      cron,
+      rrule,
+      timezone,
+      quietHours,
+      task,
+      sessionMode,
+      precheck,
+    }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
           "pass exactly one of `cron` (legacy, UTC) or `rrule` (with `timezone`).",
@@ -695,11 +710,12 @@ export function createMcpSession(
                   quietHours,
                   task,
                   sessionMode,
+                  precheck,
                 },
                 "agent",
               )
             : await schedules.createCron(
-                { name, agentId, cron: cron!, task, sessionMode },
+                { name, agentId, cron: cron!, task, sessionMode, precheck },
                 "agent",
               );
         return {

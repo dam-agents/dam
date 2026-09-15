@@ -25,6 +25,7 @@ function toView(sched: Schedule) {
     agentId: sched.agentId,
     type: sched.spec.type,
     task: sched.spec.task ?? null,
+    precheck: sched.spec.precheck ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
     createdBy: sched.spec.createdBy,

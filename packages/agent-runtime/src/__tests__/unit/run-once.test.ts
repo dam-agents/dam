@@ -46,7 +46,12 @@ describe("runOnce", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toEqual({ kind: "exited", code: 3, stderr: "boom" });
+    expect(result.error).toEqual({
+      kind: "exited",
+      code: 3,
+      stderr: "boom",
+      stdout: "",
+    });
     expect(describeFailure("git clone", result.error)).toBe(
       "git clone exited 3: boom",
     );
@@ -187,5 +192,20 @@ describe("runOnce", () => {
       3 * 1024 * 1024,
     );
     expect(lines.join("").length).toBe(3 * 1024 * 1024);
+  });
+
+  // TEST_SCENARIO: a script that fails puts the reason on its last line, so a capped reason has to keep the end rather than the warnings it started with.
+  it("keeps the end of a long stderr, not its beginning", () => {
+    const stderr = `${"noise\n".repeat(400)}the actual error`;
+
+    const described = describeFailure("precheck", {
+      kind: "exited",
+      code: 2,
+      stderr,
+      stdout: "",
+    });
+
+    expect(described).toContain("the actual error");
+    expect(described.length).toBeLessThan(stderr.length);
   });
 });
