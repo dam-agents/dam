@@ -1,4 +1,12 @@
-import { CheckmarkFilled, CircleDash, Close, Undo } from "@carbon/icons-react";
+import {
+  CheckmarkFilled,
+  CircleDash,
+  Close,
+  Gift,
+  Information,
+  Time,
+  Undo,
+} from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -40,7 +48,6 @@ import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
-import { kitIcon } from "../../starter-kits/lib/kit-icon.js";
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
@@ -273,8 +280,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     } catch {}
   };
 
-  const KitIcon = kit ? kitIcon(kit) : null;
-
   return (
     <SetupPageShell
       title="Create an agent"
@@ -327,21 +332,23 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      {kit && KitIcon && (
+      {kit && (
         <section className="mb-8">
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-accent/30 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
-              <KitIcon size={16} />
+          <div className="flex items-center gap-4 rounded-xl border border-template/20 bg-template-light px-4 py-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-template/15 text-template">
+              <Gift size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">{kit.name}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="text-[15px] font-semibold leading-6 text-foreground">
+                {kit.name}
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {kitBadges(
                   kit,
                   connectionTemplates.data ?? [],
                   templateById,
                 ).map((b) => (
-                  <Badge key={b.key} variant="muted" size="sm">
+                  <Badge key={b.key} variant="template" size="sm">
                     {b.label}
                   </Badge>
                 ))}
@@ -350,7 +357,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
+              onClick={() => setView("starter-kits")}
             >
               Change
             </Button>
@@ -607,69 +614,116 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
-          <p className="mb-3 text-sm text-muted-foreground">
-            Created with the author's defaults. Skip any you do not want; a
-            disabled one is created switched off and is one toggle away under
-            Schedules.
-          </p>
-          <ul className="divide-y divide-border rounded-md border">
+          <ul className="flex flex-col gap-3">
             {kit.schedules.map((s) => {
               const skipped = form.skippedSchedules.includes(s.name);
               return (
                 <li
                   key={s.name}
-                  className="flex items-start gap-3 px-3 py-2.5 text-sm"
                   data-testid={`starter-kit-schedule-${s.name}`}
+                  className={`overflow-hidden rounded-xl border ${
+                    skipped
+                      ? "border-border bg-muted/30 opacity-70"
+                      : "border-template/20 bg-template-light"
+                  }`}
                 >
-                  <div
-                    className={`min-w-0 flex-1 ${skipped ? "text-muted-foreground line-through" : ""}`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{s.name}</span>
-                      <Badge variant="template" size="sm">
-                        Starter Kit
-                      </Badge>
-                      {!skipped && (
-                        <Badge
-                          variant={s.enabled ? "success" : "muted"}
-                          size="sm"
+                  <div className="flex items-center gap-4 px-4 py-3">
+                    <span
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
+                        skipped
+                          ? "bg-muted text-muted-foreground"
+                          : "bg-template/15 text-template"
+                      }`}
+                    >
+                      <Time size={16} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`text-[15px] font-semibold leading-6 ${skipped ? "text-muted-foreground line-through" : "text-foreground"}`}
                         >
-                          {s.enabled ? "enabled" : "created disabled"}
+                          {s.name}
+                        </span>
+                        <Badge variant="template" size="sm">
+                          Starter Kit
                         </Badge>
-                      )}
-                      {skipped && (
-                        <Badge variant="muted" size="sm">
-                          skipped
-                        </Badge>
-                      )}
+                        {skipped && (
+                          <Badge variant="muted" size="sm">
+                            skipped
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {kitScheduleCadence(s)}
+                      </p>
                     </div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {kitScheduleCadence(s)}
-                    </div>
-                    <div className="text-muted-foreground">{s.task}</div>
+                    <Badge variant={s.enabled ? "success" : "muted"} size="sm">
+                      {s.enabled ? "on" : "off"}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={
+                        skipped ? `Add back ${s.name}` : `Skip ${s.name}`
+                      }
+                      title={skipped ? "Add back" : "Skip this schedule"}
+                      onClick={() =>
+                        update({
+                          skippedSchedules: toggleSkipped(
+                            form.skippedSchedules,
+                            s.name,
+                          ),
+                        })
+                      }
+                    >
+                      {skipped ? <Undo size={16} /> : <Close size={16} />}
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={
-                      skipped ? `Add back ${s.name}` : `Skip ${s.name}`
-                    }
-                    title={skipped ? "Add back" : "Skip this schedule"}
-                    onClick={() =>
-                      update({
-                        skippedSchedules: toggleSkipped(
-                          form.skippedSchedules,
-                          s.name,
-                        ),
-                      })
-                    }
-                  >
-                    {skipped ? <Undo size={16} /> : <Close size={16} />}
-                  </Button>
+
+                  {!skipped && (
+                    <>
+                      <div className="border-t border-template/20 px-4 py-3">
+                        <div className="flex items-start gap-2.5 rounded-lg bg-template/10 px-3 py-2.5">
+                          <Information
+                            size={16}
+                            className="mt-0.5 shrink-0 text-template"
+                          />
+                          <p className="text-sm text-foreground/80">{s.task}</p>
+                        </div>
+                      </div>
+                      <dl className="border-t border-template/20 text-sm">
+                        <div className="flex items-center justify-between border-b border-template/10 px-4 py-3">
+                          <dt className="text-foreground">Repeat</dt>
+                          <dd className="font-mono text-muted-foreground">
+                            {"cron" in s ? s.cron : s.rrule}
+                          </dd>
+                        </div>
+                        {"timezone" in s && (
+                          <div className="flex items-center justify-between border-b border-template/10 px-4 py-3">
+                            <dt className="text-foreground">Timezone</dt>
+                            <dd className="text-muted-foreground">
+                              {s.timezone}
+                            </dd>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <dt className="text-foreground">Session type</dt>
+                          <dd className="text-muted-foreground">
+                            {s.sessionMode ?? "fresh"}
+                          </dd>
+                        </div>
+                      </dl>
+                    </>
+                  )}
                 </li>
               );
             })}
           </ul>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Created with the kit author's defaults and held until onboarding
+            finishes. Skip any you do not want; one created off is a toggle away
+            under Schedules.
+          </p>
         </section>
       )}
 
