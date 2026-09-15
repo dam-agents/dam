@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
@@ -37,9 +38,17 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		id := r.URL.Path[len("/machines/"):]
 		n.mu.Lock()
 		defer n.mu.Unlock()
+		if r.URL.Path == "/machines" {
+			ids := []string{}
+			for id := range n.specs {
+				ids = append(ids, id)
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(ids))
+			return
+		}
+		id := r.URL.Path[len("/machines/"):]
 		switch r.Method {
 		case http.MethodPut:
 			var spec vmrunner.MachineSpec
@@ -55,6 +64,7 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			require.NoError(t, json.NewEncoder(w).Encode(n.statuses[id]))
 		case http.MethodDelete:
 			n.deleted = append(n.deleted, id)
+			delete(n.specs, id)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -368,4 +378,25 @@ func TestRunnerObjectsAreOwnedByTheController(t *testing.T) {
 		require.Len(t, refs, 1, "%s carries no owner, so it would outlive the release", kind)
 		assert.Equal(t, types.UID("controller-uid"), refs[0].UID, "%s is owned by the controller", kind)
 	}
+}
+
+// TEST_SCENARIO: the owner's Agents no longer look like vm agents, yet a machine is still running on their runner. Deleting the runner takes that owner's whole disk with it, so it is re-read first and kept while it still holds anything.
+func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NotEmpty(t, node.specs, "the machine exists on the runner")
+
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	unstructured.RemoveNestedField(stored.Object, "spec", "backend")
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	r.ReconcileOrphanMachines(ctx)
+
+	_, err = r.client.CoreV1().PersistentVolumeClaims("default").
+		Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
