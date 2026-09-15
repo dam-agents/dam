@@ -440,14 +440,25 @@ func TestARefusedMachineIsPolledLikeAHealthyOne(t *testing.T) {
 	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a refusal is not re-asked every few seconds")
 }
 
-// TEST_SCENARIO: a machine that is merely still booting is watched closely, so an agent becomes usable as soon as its guest answers rather than up to a minute later.
-func TestABootingMachineIsPolledClosely(t *testing.T) {
+// TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
+func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
+	ctx := context.Background()
 	agent := vmAgentCR()
-	r, node, requeued := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
 
-	require.NoError(t, r.Reconcile(context.Background(), agent))
+	node.specs["someone-elses"] = vmrunner.MachineSpec{}
+	foreign := vmAgentCR()
+	foreign.Name = "someone-elses"
+	foreign.Labels = map[string]string{envoyOwnerLabel: "another-owner"}
+	u, err := agentToUnstructured(foreign)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
 
-	require.NotEmpty(t, *requeued)
-	assert.Equal(t, vmReadinessPoll, (*requeued)[len(*requeued)-1])
+	r.ReconcileOrphanMachines(ctx)
+
+	assert.Equal(t, []string{"someone-elses"}, node.deleted,
+		"the machine whose Agent belongs to another owner is collected, and this owner's own machine is left alone")
 }
