@@ -40,6 +40,25 @@ function stripSubagentTextAndThinking(content) {
   );
 }
 
+function stampOf(message) {
+  const timestamp = message.timestamp;
+  if (typeof timestamp !== "string") return null;
+  return Number.isFinite(Date.parse(timestamp)) ? timestamp : null;
+}
+
+function objectOr(value) {
+  return typeof value === "object" && value !== null ? value : {};
+}
+
+function withStamp(notification, at) {
+  if (at === null) return notification;
+  const meta = objectOr(notification._meta);
+  return {
+    ...notification,
+    _meta: { ...meta, platform: { ...objectOr(meta.platform), at } },
+  };
+}
+
 const noop = () => {};
 const noopLogger = {
   log: noop,
@@ -70,6 +89,7 @@ export async function loadHistory(sessionId) {
     ) {
       continue;
     }
+    const at = stampOf(message);
     let content = message.message.content;
     const parentToolUseId = parentToolUseIdOf(message);
     if (message.type === "assistant" && parentToolUseId) {
@@ -98,7 +118,7 @@ export async function loadHistory(sessionId) {
         JSON.stringify({
           jsonrpc: "2.0",
           method: "session/update",
-          params: notification,
+          params: withStamp(notification, at),
         }),
       );
     }

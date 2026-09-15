@@ -12,7 +12,7 @@ import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
 import { withCloseRace } from "./close-race.js";
-import { replayForOf, routeExtNotification } from "./ext-notifications.js";
+import { frameMetaOf, routeExtNotification } from "./ext-notifications.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -127,7 +127,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update, params.sessionId, replayForOf(params._meta));
+        onUpdate(params.update, params.sessionId, frameMetaOf(params._meta));
       },
       async writeTextFile() {
         return {};
@@ -137,7 +137,7 @@ export async function openConnection(
       },
       async extNotification(method: string, params: Record<string, unknown>) {
         const routed = routeExtNotification(method, params);
-        if (routed) onUpdate(routed.update, routed.sessionId, routed.replayFor);
+        if (routed) onUpdate(routed.update, routed.sessionId, routed.frame);
       },
     }),
     stream,

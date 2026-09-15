@@ -82,8 +82,11 @@ function decodePageCursor(
   return { generation: text.slice(0, at), seq };
 }
 
-function stampReplayFor(line: string, token: string | undefined): string {
-  if (token === undefined) return line;
+function withPlatformMeta(
+  line: string,
+  patch: Record<string, string | undefined>,
+): string {
+  if (Object.values(patch).every((value) => value === undefined)) return line;
   let frame: unknown;
   try {
     frame = JSON.parse(line);
@@ -108,7 +111,7 @@ function stampReplayFor(line: string, token: string | undefined): string {
     ...f,
     params: {
       ...params,
-      _meta: { ...meta, platform: { ...platform, replayFor: token } },
+      _meta: { ...meta, platform: { ...platform, ...patch } },
     },
   });
 }
@@ -128,7 +131,9 @@ function stampReplayFor(line: string, token: string | undefined): string {
  * silently paging from a renumbered position. When a replay carries a
  * replayFor token, every replayed frame is stamped with it, letting the
  * requesting client tell its replay apart from live fan-out on the same
- * connection.
+ * connection. Every live entry is stamped with the wall-clock time it was
+ * appended; a replayed entry keeps whatever time its source supplied and is
+ * never given one here.
  */
 export function createSessionTranscript(
   deps: SessionTranscriptDeps,
@@ -201,11 +206,19 @@ export function createSessionTranscript(
 
   return {
     append(sessionId, line) {
-      fanOut(sessionId, line, () => true);
+      fanOut(
+        sessionId,
+        withPlatformMeta(line, { at: new Date().toISOString() }),
+        () => true,
+      );
     },
 
     appendEcho(sessionId, line, originator) {
-      fanOut(sessionId, line, (channel) => channel !== originator);
+      fanOut(
+        sessionId,
+        withPlatformMeta(line, { at: new Date().toISOString() }),
+        (channel) => channel !== originator,
+      );
     },
 
     appendReplay(sessionId, line) {
@@ -226,7 +239,9 @@ export function createSessionTranscript(
       for (const entry of pending) {
         if (!channel.isOpen()) break;
         channel.send(
-          stampReplayFor(rewriteAuthError(entry.line), opts?.replayFor),
+          withPlatformMeta(rewriteAuthError(entry.line), {
+            replayFor: opts?.replayFor,
+          }),
         );
         lastSeq = entry.seq;
       }
@@ -255,7 +270,9 @@ export function createSessionTranscript(
       for (const entry of page) {
         if (!channel.isOpen()) break;
         channel.send(
-          stampReplayFor(rewriteAuthError(entry.line), opts?.replayFor),
+          withPlatformMeta(rewriteAuthError(entry.line), {
+            replayFor: opts?.replayFor,
+          }),
         );
       }
       if (older.length > page.length) {

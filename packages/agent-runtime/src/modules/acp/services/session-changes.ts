@@ -58,6 +58,7 @@ export function notifyingSessionMetadataStore(
     get: (sessionId) => store.get(sessionId),
     all: () => store.all(),
     isTombstoned: (sessionId) => store.isTombstoned(sessionId),
+    runStartsOf: (sessionId) => store.runStartsOf(sessionId),
 
     set(sessionId, meta) {
       store.set(sessionId, meta);
@@ -72,8 +73,9 @@ export function notifyingSessionMetadataStore(
       changes.notify();
     },
     startRun(sessionId) {
-      store.startRun(sessionId);
+      const stamp = store.startRun(sessionId);
       changes.notify();
+      return stamp;
     },
     finishRun(sessionId) {
       store.finishRun(sessionId);

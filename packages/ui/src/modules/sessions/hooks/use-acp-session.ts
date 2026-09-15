@@ -129,6 +129,7 @@ export function useAcpSession(
         ? []
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
+    useStore.getState().setRunStarts([]);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -139,6 +140,7 @@ export function useAcpSession(
       resetConnection();
       setLoadingSession(true);
       setMessages([]);
+      useStore.getState().setRunStarts([]);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 

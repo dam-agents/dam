@@ -78,6 +78,7 @@ export interface Message {
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;
+  at?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
