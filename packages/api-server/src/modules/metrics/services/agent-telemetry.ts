@@ -48,11 +48,11 @@ export type AgentMetricsResult =
   | Unavailable;
 
 export type AgentLogsResult =
-  | (Measured & { logs: TelemetryEvent[] })
+  | (Measured & { logs: TelemetryEvent[]; truncated: boolean })
   | Unavailable;
 
 export type AgentSpansResult =
-  | (Measured & { spans: TraceSpan[] })
+  | (Measured & { spans: TraceSpan[]; truncated: boolean })
   | (Measured & { spans: never[]; sessionUnresolved: true; reason: string })
   | Unavailable;
 
@@ -76,6 +76,10 @@ function windowFor(query: AgentTelemetryQuery): MetricsWindow {
     hours: query.days * 24,
     ...(query.sessionId === undefined ? {} : { sessionId: query.sessionId }),
   };
+}
+
+function page<T>(rows: T[], limit: number): { rows: T[]; truncated: boolean } {
+  return { rows: rows.slice(0, limit), truncated: rows.length > limit };
 }
 
 function measured(query: AgentTelemetryQuery): Measured {
@@ -106,42 +110,39 @@ export function createAgentTelemetry(deps: {
         totalsCover: TOTALS_COVER,
       };
       if (query.granularity === "session") {
-        const sessions = allSessions.slice(0, query.limit);
-        return {
-          ...base,
-          sessions,
-          truncated: allSessions.length > sessions.length,
-        };
+        const { rows, truncated } = page(allSessions, query.limit);
+        return { ...base, sessions: rows, truncated };
       }
       if (query.granularity === "call") {
-        const calls = await deps.reader.contextPerCall(
-          [agentId],
-          window,
+        const { rows, truncated } = page(
+          await deps.reader.contextPerCall([agentId], window, query.limit + 1),
           query.limit,
         );
-        return { ...base, calls, truncated: calls.length === query.limit };
+        return { ...base, calls: rows, truncated };
       }
       return base;
     },
 
     async logs(agentId, query) {
-      return {
-        ...measured(query),
-        logs: await deps.reader.telemetryEvents(
+      const { rows, truncated } = page(
+        await deps.reader.telemetryEvents(
           [agentId],
           windowFor(query),
-          query.limit,
+          query.limit + 1,
         ),
-      };
+        query.limit,
+      );
+      return { ...measured(query), logs: rows, truncated };
     },
 
     async spans(agentId, query) {
       const window = windowFor(query);
       if (query.sessionId === undefined) {
-        return {
-          ...measured(query),
-          spans: await deps.reader.traceSpans([agentId], window, query.limit),
-        };
+        const { rows, truncated } = page(
+          await deps.reader.traceSpans([agentId], window, query.limit + 1),
+          query.limit,
+        );
+        return { ...measured(query), spans: rows, truncated };
       }
       const traceIds = await deps.reader.sessionTraceIds([agentId], window);
       if (traceIds.length === 0) {
@@ -152,15 +153,16 @@ export function createAgentTelemetry(deps: {
           reason: UNRESOLVED_SESSION,
         };
       }
-      return {
-        ...measured(query),
-        spans: await deps.reader.traceSpans(
+      const { rows, truncated } = page(
+        await deps.reader.traceSpans(
           [agentId],
           window,
-          query.limit,
+          query.limit + 1,
           traceIds,
         ),
-      };
+        query.limit,
+      );
+      return { ...measured(query), spans: rows, truncated };
     },
   };
 }

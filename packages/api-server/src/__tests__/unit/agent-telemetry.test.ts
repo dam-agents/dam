@@ -179,8 +179,8 @@ describe("agent telemetry", () => {
     expect(seen[0]?.window).toEqual({ hours: AGENT_TELEMETRY_MAX_DAYS * 24 });
   });
 
-  // TEST_SCENARIO: A row cap keeps one tool call from dragging back the whole retained window; the service must pass the caller's limit rather than a limit of its own.
-  it("passes the row limit to the record reads", async () => {
+  // TEST_SCENARIO: A row cap keeps one tool call from dragging back the whole retained window. The reader is asked for one row past the page on purpose — that extra row is what tells truncation apart from a page that merely came out full — so the bound the store sees is still the caller's, plus exactly one.
+  it("asks the reader for one row past the caller's page", async () => {
     const { r, seen } = reader();
     const svc = createAgentTelemetry({ reader: r });
     await svc.metrics("agent-a", { days: 7, limit: 3, granularity: "call" });
@@ -188,7 +188,7 @@ describe("agent telemetry", () => {
     await svc.spans("agent-a", { days: 7, limit: 3 });
     expect(
       seen.filter((s) => s.limit !== undefined).map((s) => s.limit),
-    ).toEqual([3, 3, 3]);
+    ).toEqual([4, 4, 4]);
   });
 
   /**
@@ -274,6 +274,79 @@ describe("agent telemetry", () => {
     );
   });
 
+  /**
+   * TEST_SCENARIO: The truncation flag is the only thing telling an agent
+   * whether its rows are the whole answer, so it must never be inferred from the
+   * page being full — a window holding exactly the page size has dropped
+   * nothing. Each read therefore asks for one row past the page and reports on
+   * what came back. Every branch that sets the flag is covered here, at exactly
+   * the boundary where inferring it would be wrong.
+   */
+  it("does not claim truncation when the rows exactly fill the page", async () => {
+    const rowsFor = (n: number) => Array.from({ length: n }, () => ({}));
+    const svc = createAgentTelemetry({
+      reader: {
+        tokenSpendByModel: async () => [],
+        runtimeBySession: async () => rowsFor(2) as never,
+        contextPerCall: async (_i, _w, limit) => rowsFor(limit - 1) as never,
+        telemetryEvents: async (_i, _w, limit) => rowsFor(limit - 1) as never,
+        traceSpans: async (_i, _w, limit) => rowsFor(limit - 1) as never,
+        sessionTraceIds: async () => ["t-1"],
+        spendByAgent: async () => [],
+        spendByDay: async () => [],
+        spendBySession: async () => [],
+        close: async () => {},
+      },
+    });
+    const q = { days: 7, limit: 2 };
+    expect(
+      await svc.metrics("agent-a", { ...q, granularity: "call" }),
+    ).toMatchObject({ truncated: false });
+    expect(
+      await svc.metrics("agent-a", { ...q, granularity: "session" }),
+    ).toMatchObject({ truncated: false });
+    expect(await svc.logs("agent-a", q)).toMatchObject({ truncated: false });
+    expect(await svc.spans("agent-a", q)).toMatchObject({ truncated: false });
+    expect(
+      await svc.spans("agent-a", { ...q, sessionId: "s-1" }),
+    ).toMatchObject({ truncated: false });
+  });
+
+  // TEST_SCENARIO: The mirror of the boundary above — one row beyond the page must flag truncation on every read, and the reported rows must still be cut to the page the caller asked for.
+  it("flags truncation and trims to the page when more rows exist", async () => {
+    const rowsFor = (n: number) => Array.from({ length: n }, () => ({}));
+    const svc = createAgentTelemetry({
+      reader: {
+        tokenSpendByModel: async () => [],
+        runtimeBySession: async () => rowsFor(3) as never,
+        contextPerCall: async (_i, _w, limit) => rowsFor(limit) as never,
+        telemetryEvents: async (_i, _w, limit) => rowsFor(limit) as never,
+        traceSpans: async (_i, _w, limit) => rowsFor(limit) as never,
+        sessionTraceIds: async () => ["t-1"],
+        spendByAgent: async () => [],
+        spendByDay: async () => [],
+        spendBySession: async () => [],
+        close: async () => {},
+      },
+    });
+    const q = { days: 7, limit: 2 };
+    const call = await svc.metrics("agent-a", { ...q, granularity: "call" });
+    expect(call).toMatchObject({ truncated: true });
+    expect(call.available && call.calls).toHaveLength(2);
+    const bySession = await svc.metrics("agent-a", {
+      ...q,
+      granularity: "session",
+    });
+    expect(bySession).toMatchObject({ truncated: true });
+    expect(bySession.available && bySession.sessions).toHaveLength(2);
+    const logs = await svc.logs("agent-a", q);
+    expect(logs).toMatchObject({ truncated: true });
+    expect(logs.available && logs.logs).toHaveLength(2);
+    const spans = await svc.spans("agent-a", q);
+    expect(spans).toMatchObject({ truncated: true });
+    expect(spans.available && spans.spans).toHaveLength(2);
+  });
+
   // TEST_SCENARIO: An untruncated rollup must not claim truncation, or the flag stops carrying information.
   it("does not flag truncation when every session fits", async () => {
     const { r } = reader([spend("m1", 1, 100)], [session("s1", 100)]);
@@ -317,7 +390,7 @@ describe("agent telemetry", () => {
     const result = await svc.spans("agent-a", { days: 7, limit: 10 });
     expect(result).not.toHaveProperty("sessionUnresolved");
     expect(seen).toHaveLength(1);
-    expect(seen[0]?.limit).toBe(10);
+    expect(seen[0]?.limit).toBe(11);
   });
 
   // TEST_SCENARIO: With no telemetry backend every read must answer available=false as a result, not throw — an error reads to a skill as a transient failure and invites retries or estimation.

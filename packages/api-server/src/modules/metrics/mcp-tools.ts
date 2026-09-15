@@ -21,7 +21,7 @@ export function registerAgentTelemetryTools(
 ): void {
   server.tool(
     "get_metrics",
-    `What this agent's runs cost and how long they took, from the platform's own attributed accounting — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals and a per-model token/cost split, and with granularity adds a row per session or a row per LLM call. ${SELF} Totals and sessionCount always cover the whole window; a row list is capped at limit and flags truncated. ${UNMEASURED}`,
+    `What this agent's runs cost and how long they took, from the platform's own attributed accounting — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals and a per-model token/cost split, and with granularity adds a row per session or a row per LLM call. ${SELF} Totals and sessionCount always cover the whole window; any row list is capped at limit and flags truncated. ${UNMEASURED}`,
     agentMetricsInputSchema.shape,
     (query) =>
       run(async () =>
@@ -31,7 +31,7 @@ export function registerAgentTelemetryTools(
 
   server.tool(
     "get_logs",
-    `The telemetry records this agent emitted, newest first: record name, severity, timestamp, session, trace and the structural attributes attached to it — errors and tool decisions included. Content bodies are never exported, so this carries no prompt or tool-argument text. ${SELF} ${UNMEASURED}`,
+    `The telemetry records this agent emitted, newest first: record name, severity, timestamp, session, trace and the structural attributes attached to it — errors and tool decisions included. Content bodies are never exported, so this carries no prompt or tool-argument text. Capped at limit, and truncated says whether more exist. ${SELF} ${UNMEASURED}`,
     agentTelemetryInputSchema.shape,
     (query) =>
       run(async () =>
@@ -41,7 +41,7 @@ export function registerAgentTelemetryTools(
 
   server.tool(
     "get_spans",
-    `This agent's trace spans, newest first: span and parent ids, name, kind, service, start, duration and status — the shape of a run, showing what ran under what and which step was slow or failed. A sessionId is resolved through that session's LLM-call records; naming a session with none returns sessionUnresolved rather than an empty list. ${SELF} ${UNMEASURED}`,
+    `This agent's trace spans, newest first: span and parent ids, name, kind, service, start, duration and status — the shape of a run, showing what ran under what and which step was slow or failed. A sessionId is resolved through that session's LLM-call records; naming a session with none returns sessionUnresolved rather than an empty list. Capped at limit, and truncated says whether more exist. ${SELF} ${UNMEASURED}`,
     agentTelemetryInputSchema.shape,
     (query) =>
       run(async () =>
