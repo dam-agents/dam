@@ -183,13 +183,15 @@ virtualization:
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
-    # taints). Machines are processes of this pod: the memory limit set here
-    # is also what the runner admits machines against (it refuses one that
-    # does not fit, keeping `reserveMiB` for itself), and without a limit the
-    # pod is unbounded and BestEffort — first evicted under node pressure,
-    # taking every machine with it.
+    # taints).
     nodeSelector: {}
     tolerations: []
+    # REQUIRED when virtualization.enabled — the install fails without
+    # limits.memory. Machines are processes of this pod, so that limit is also
+    # what the runner admits them against (it refuses one that does not fit,
+    # keeping `reserveMiB` for itself). Leave requests below limits and an
+    # idle owner's headroom stays the node's to lend. Leave the CPU limit
+    # unset: it would throttle every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
@@ -221,7 +223,7 @@ virtualization:
     # needs one, more leaves room for a second consumer on the node.
     count: 4
     # Where the plugin runs, i.e. which nodes may host machines. Empty falls
-    # back to `node.nodeSelector` / `node.tolerations`; with both empty it
+    # back to `runner.nodeSelector` / `runner.tolerations`; with both empty it
     # runs on every schedulable node and advertises zero devices where there
     # is no /dev/kvm.
     nodeSelector: {}

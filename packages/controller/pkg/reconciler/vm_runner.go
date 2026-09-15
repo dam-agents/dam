@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"log/slog"
 	"math/big"
 	"net"
@@ -28,8 +29,6 @@ import (
 
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
-
-const labelOwner = "agent-platform.ai/owner"
 
 const (
 	vmRunnerComponent = "vm-runner"
@@ -60,20 +59,19 @@ func vmRunnerLabels(owner, release string) map[string]string {
 		"app.kubernetes.io/name":      "platform",
 		"app.kubernetes.io/instance":  release,
 		"app.kubernetes.io/component": vmRunnerComponent,
-		labelOwner:                    owner,
+		envoyOwnerLabel:                    owner,
 	}
 }
 
 func vmRunnerSelector(owner string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/component": vmRunnerComponent,
-		labelOwner:                    owner,
+		envoyOwnerLabel:                    owner,
 	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their credentials, renders their objects, and hands the caller a client once the pod reports ready.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmrunner.Client, bool, error) {
-	spec := r.config.VM.Runner
 	name := r.runnerName(owner)
 	ns := r.config.ReleaseNamespace
 
@@ -93,8 +91,6 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	_ = spec
-
 	client, err := r.runnerClient(owner, token, caPEM)
 	if err != nil {
 		return nil, false, err
@@ -331,7 +327,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-							fmt.Sprintf("--allow-from=%s", joinCIDRs(spec.IngressCIDRs)),
+							fmt.Sprintf("--allow-from=%s", strings.Join(spec.IngressCIDRs, ",")),
 						},
 						Env: []corev1.EnvVar{{
 							Name: "RUNNER_MEMORY_MIB",
@@ -373,17 +369,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	return err
 }
 
-func joinCIDRs(cidrs []string) string {
-	out := ""
-	for i, c := range cidrs {
-		if i > 0 {
-			out += ","
-		}
-		out += c
-	}
-	return out
-}
-
 type runnerRef struct {
 	owner  string
 	client *vmrunner.Client
@@ -398,7 +383,7 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 	}
 	var out []runnerRef
 	for i := range list.Items {
-		owner := list.Items[i].Labels[labelOwner]
+		owner := list.Items[i].Labels[envoyOwnerLabel]
 		if owner == "" {
 			continue
 		}

@@ -29,7 +29,7 @@ var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, error) {
 	name := agent.Name
-	owner := agent.Labels[labelOwner]
+	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
 		return vmrunner.MachineStatus{}, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
@@ -148,7 +148,7 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 			slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
 		}
 		agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: labelOwner + "=" + runner.owner,
+			LabelSelector: envoyOwnerLabel + "=" + runner.owner,
 		})
 		if err != nil {
 			slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", runner.owner, "error", err)

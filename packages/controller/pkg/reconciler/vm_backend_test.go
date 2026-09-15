@@ -97,7 +97,7 @@ func readyRunnerDeployment() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "platform-vm-runner-" + runnerSuffix(testOwner),
 			Namespace: "default",
-			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, labelOwner: testOwner},
+			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
 		},
 		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
 	}
@@ -116,7 +116,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	if agent.Labels == nil {
 		agent.Labels = map[string]string{}
 	}
-	agent.Labels[labelOwner] = testOwner
+	agent.Labels[envoyOwnerLabel] = testOwner
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
@@ -221,7 +221,7 @@ func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)
-	agent.Labels = map[string]string{labelOwner: testOwner}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }

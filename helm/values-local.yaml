@@ -63,6 +63,13 @@ virtualization:
       tag: latest
       pullPolicy: Never
     storage: 40Gi
+    # The lima VM has 20 GiB; leave the rest for k3s and the platform pods.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 12Gi
     # No registry in the lima cluster: cluster:install drops the agent image
     # archives here and every runner mounts them read-only.
     imageArchiveHostPath: /var/lib/platform-vm-images

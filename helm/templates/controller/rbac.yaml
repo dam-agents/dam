@@ -82,22 +82,29 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.virtualization.enabled }}
   # vm agents: the controller runs one VM runner per owner, so it creates and
   # removes those Deployments itself (see `virtualization` in values.yaml).
+  # Gated, because on a split-namespace install this is a ClusterRole and
+  # Deployment write includes the platform's own Deployments.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "create", "update", "delete"]
+{{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.virtualization.enabled }}
   # vm agents have no pod: the controller publishes each machine's published port on the runner pod as
   # the agent Service's endpoint itself (see `virtualization` in values.yaml).
+  # The slice is owner-refed to the Agent, so K8s garbage-collects it.
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "create", "update"]
+{{- end }}
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
   # claim one for a new agent (relabel), so create/update/patch are required

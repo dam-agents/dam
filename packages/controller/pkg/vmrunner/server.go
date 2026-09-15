@@ -34,7 +34,7 @@ var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 type Server struct {
 	Token      string
 	StateDir   string
-	Runtime    Runtime
+	Runtime    *Smolvm
 	PortMin    int
 	PortMax    int
 	MemoryMiB  int
@@ -226,12 +226,6 @@ func createOnlyDrift(applied, desired MachineSpec) string {
 func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) error {
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
-	}
-	if spec.Image != "" && !imageRef.MatchString(spec.Image) {
-		return fmt.Errorf("invalid image reference %q", spec.Image)
-	}
-	if strings.Contains(spec.Image, "..") {
-		return fmt.Errorf("invalid image reference %q", spec.Image)
 	}
 	state, err := s.Runtime.State(id)
 	if err != nil {
@@ -433,7 +427,7 @@ func (s *Server) status(id string) MachineStatus {
 	}
 	st := MachineStatus{State: StateAbsent, Reason: reason, Restarts: restarts, Port: s.port(id), Message: lastErr}
 	if spec := s.readSpec(id); spec != nil {
-		st.CPUs, st.MemoryMiB, st.StorageGiB = spec.CPUs, spec.MemoryMiB, spec.StorageGiB
+		st.CPUs, st.MemoryMiB = spec.CPUs, spec.MemoryMiB
 	}
 	if pending != "" {
 		st.State = pending
