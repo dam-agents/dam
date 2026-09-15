@@ -5,20 +5,21 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../store.js";
+import { useArtifact } from "../modules/artifacts/api/queries.js";
+import { ArtifactPreviewDialog } from "../modules/artifacts/components/artifact-preview-dialog.js";
+import { useFeed } from "../modules/home/api/queries.js";
+import { FeedCardSkeleton } from "../modules/home/components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../modules/home/components/feed-empty-state.js";
 import {
   FeedFilterBar,
   type FeedTab,
 } from "../modules/home/components/feed-filter-bar.js";
 import { FeedList } from "../modules/home/components/feed-list.js";
-import { FeedCardSkeleton } from "../modules/home/components/feed-card-skeleton.js";
-import { useFeed } from "../modules/home/api/queries.js";
 import { useDismissals } from "../modules/home/hooks/use-dismissals.js";
 import { useStickyResolved } from "../modules/home/hooks/use-sticky-resolved.js";
 import { filterFeedByTab } from "../modules/home/lib/feed-filter.js";
 import type { FeedItem } from "../modules/home/lib/feed-item.js";
-
+import { useStore } from "../store.js";
 import { useBodyScrollLock, useFocusTrap } from "./modal.js";
 
 interface Props {
@@ -43,6 +44,10 @@ function DrawerContent({ onClose }: { onClose: () => void }) {
 
   const [tab, setTab] = useState<FeedTab>("all");
   const [showApprovals, setShowApprovals] = useState(false);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
+    null,
+  );
+  const artifactQuery = useArtifact(previewArtifactId);
 
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
@@ -57,10 +62,11 @@ function DrawerContent({ onClose }: { onClose: () => void }) {
   );
 
   const sessionItems = useMemo(
-    () => filterFeedByTab(
-      allVisible.filter((i) => i.kind !== "approval"),
-      tab,
-    ),
+    () =>
+      filterFeedByTab(
+        allVisible.filter((i) => i.kind !== "approval"),
+        tab,
+      ),
     [allVisible, tab],
   );
 
@@ -162,6 +168,7 @@ function DrawerContent({ onClose }: { onClose: () => void }) {
                 onDismiss={handleDismiss}
                 onResolved={handleResolved}
                 resolvedLabelFor={resolvedLabelFor}
+                onArtifactClick={setPreviewArtifactId}
               />
             ) : (
               <FeedEmptyState
@@ -220,6 +227,7 @@ function DrawerContent({ onClose }: { onClose: () => void }) {
                       onDismiss={handleDismiss}
                       onResolved={handleResolved}
                       resolvedLabelFor={resolvedLabelFor}
+                      onArtifactClick={setPreviewArtifactId}
                     />
                   ) : approvals.length === 0 ? (
                     <FeedEmptyState
@@ -234,6 +242,12 @@ function DrawerContent({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
+      {artifactQuery.data && previewArtifactId && (
+        <ArtifactPreviewDialog
+          artifact={artifactQuery.data}
+          onClose={() => setPreviewArtifactId(null)}
+        />
+      )}
     </div>,
     document.body,
   );

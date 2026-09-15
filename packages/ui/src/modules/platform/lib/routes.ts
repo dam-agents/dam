@@ -33,7 +33,6 @@ export type Route =
   | { view: "agents" }
   | { view: "agent-new" }
   | { view: "artifacts" }
-  | { view: "setup-workbench" }
   | { view: "presets" }
   | { view: "schedules" }
   | { view: "card-gallery" };
@@ -104,7 +103,6 @@ export function parseRoute(path: string): Route {
   if (path === "/packs") return { view: "presets" };
   if (path === "/presets") return { view: "presets" };
   if (path === "/schedules") return { view: "schedules" };
-  if (path === "/setup-workbench") return { view: "setup-workbench" };
   if (path === "/card-gallery") return { view: "card-gallery" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -156,8 +154,6 @@ export function routeToPath(route: Route): string {
       return "/schedules";
     case "artifacts":
       return "/artifacts";
-    case "setup-workbench":
-      return "/setup-workbench";
     case "card-gallery":
       return "/card-gallery";
     default: {

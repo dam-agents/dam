@@ -177,10 +177,17 @@ for (const agent of agents) {
 }
 for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
   queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, "notifications"],
+    sessions,
+  );
 }
 (window as any).__mockListAgentSessions = (agentId: string) =>
   Promise.resolve(sessionsByAgent[agentId] ?? []);
-console.warn("[MOCK] Registered __mockListAgentSessions for", Object.keys(sessionsByAgent));
+console.warn(
+  "[MOCK] Registered __mockListAgentSessions for",
+  Object.keys(sessionsByAgent),
+);
 
 // Egress rules
 queryClient.setQueryData(trpcKey("egressRules.list"), [

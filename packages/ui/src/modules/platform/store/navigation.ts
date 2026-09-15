@@ -17,7 +17,6 @@ type ParameterlessView =
   | "artifacts"
   | "agents"
   | "agent-new"
-  | "setup-workbench"
   | "presets"
   | "schedules"
   | "card-gallery";

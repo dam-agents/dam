@@ -1,4 +1,8 @@
-import { OverflowMenuVertical, Settings } from "@carbon/icons-react";
+import {
+  OverflowMenuVertical,
+  Settings,
+  ShieldAlert,
+} from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
@@ -24,7 +28,7 @@ interface Props {
   onResolved?: (label: string) => void;
 }
 
-export function FeedApprovalCard({
+export function NotificationApprovalRow({
   approval,
   agentName,
   meta,
@@ -48,45 +52,37 @@ export function FeedApprovalCard({
 
   return (
     <div
-      data-testid="feed-approval-card"
-      className="group w-full rounded-2xl border border-border bg-card/80 p-5 text-left"
+      data-testid="notification-approval-row"
+      className="group flex w-full gap-3 rounded-xl px-3 py-3 text-left"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-            {!resolved && (
-              <span className="size-2 shrink-0 rounded-full bg-warning" />
-            )}
-            <span className="truncate">{agentName}</span>
-          </div>
-          <p className="text-[15px] leading-snug font-semibold text-foreground">
-            {approvalHeadline(approval)}
-          </p>
+      <div className="relative shrink-0 pt-0.5">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
+          <ShieldAlert size={16} />
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          title="Hides this from Home. The request stays pending — resolve it in the session."
-          className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
-        >
-          Dismiss
-        </button>
+        {!resolved && (
+          <span className="absolute -left-0.5 top-0 size-2.5 rounded-full border-2 border-background bg-warning" />
+        )}
       </div>
 
-      <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
-        <span className="min-w-0 truncate font-mono text-sm text-muted-foreground">
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] leading-snug">
+          <span className="font-semibold text-foreground">{agentName}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            {approvalHeadline(approval).toLowerCase()}
+          </span>
+        </p>
+
+        <p className="mt-0.5 truncate font-mono text-sm text-muted-foreground/70">
           {approvalDetail(approval)}
-        </span>
-      </div>
+        </p>
 
-      {expiredNote && (
-        <p className="mt-2 text-sm text-muted-foreground">{expiredNote}</p>
-      )}
+        {expiredNote && (
+          <p className="mt-1 text-sm text-muted-foreground">{expiredNote}</p>
+        )}
 
-      <div className="-mx-5 -mb-5 mt-3 flex items-center justify-between border-t border-border px-5 py-2.5">
-        <span className="text-sm text-muted-foreground">{meta}</span>
         {resolved ? (
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             <span
               className={cn(
                 "inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium",
@@ -109,7 +105,7 @@ export function FeedApprovalCard({
                     <OverflowMenuVertical size={16} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="start">
                   <DropdownMenuItem onSelect={openSettings}>
                     <Settings size={16} />
                     Network settings
@@ -119,7 +115,7 @@ export function FeedApprovalCard({
             )}
           </div>
         ) : expiredNote ? (
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             {hostLabel !== null && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -132,7 +128,7 @@ export function FeedApprovalCard({
                     <OverflowMenuVertical size={16} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="start">
                   <DropdownMenuItem onSelect={openSettings}>
                     <Settings size={16} />
                     Network settings
@@ -142,13 +138,16 @@ export function FeedApprovalCard({
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             {allowOnce && (
               <Button
                 size="sm"
                 disabled={allowOnce.disabled}
                 tooltip={allowOnce.tooltip}
-                onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void act(allowOnce.run, allowOnce.resolvedLabel);
+                }}
               >
                 Allow
               </Button>
@@ -165,7 +164,7 @@ export function FeedApprovalCard({
                   <OverflowMenuVertical size={16} />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="start">
                 {rest.map((action) => (
                   <DropdownMenuItem
                     key={action.id}
@@ -190,6 +189,18 @@ export function FeedApprovalCard({
             </DropdownMenu>
           </div>
         )}
+      </div>
+
+      <div className="flex shrink-0 items-start pt-0.5">
+        <span className="text-sm text-muted-foreground">{meta}</span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          title="Hides this from notifications. The request stays pending."
+          className="ml-3 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+        >
+          Dismiss
+        </button>
       </div>
     </div>
   );

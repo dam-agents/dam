@@ -6,7 +6,6 @@ import {
   Gift,
   Home,
   Settings,
-  Time,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -52,14 +51,6 @@ export function IconRail({
     navigate: () => setView("presets"),
     iconClassName: "text-purple-600 dark:text-purple-400",
   };
-  const schedules: Destination = {
-    label: "Schedules",
-    icon: Time,
-    active: view === "schedules",
-    badge: 0,
-    navigate: () => setView("schedules"),
-  };
-
   const artifacts: Destination = {
     label: "Artifacts",
     icon: Folders,
@@ -134,7 +125,6 @@ export function IconRail({
         </div>
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...schedules} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...starterKits} expanded={expandedNav} />
         </div>
@@ -146,7 +136,7 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, schedules, artifacts, starterKits].map((destination) => (
+          {[sandboxes, artifacts, starterKits].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>

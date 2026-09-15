@@ -18,12 +18,12 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.codexResearch,
     spawnedBy: null,
-    name: "brand-asset-generator",
+    name: "ci-pipeline",
     templateId: "codex",
     templateUpdate: null,
     image: "ghcr.io/openai/codex:latest",
     description:
-      "Generates brand assets, social media graphics, and marketing collateral",
+      "Runs integration tests, builds Docker images, and deploys to staging",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
@@ -45,16 +45,17 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.claudeCodeMain,
     spawnedBy: null,
-    name: "packaging-layouts",
+    name: "code-review-bot",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Creates packaging mockups and print-ready layout files",
+    description:
+      "Automated PR reviews with inline suggestions and security checks",
 
     hibernationTimeoutMin: 60,
     grantedSecretIds: ["sec-github-pat"],
     grantedConnectionIds: ["conn-github"],
-    state: "hibernated",
+    state: "running",
     error: undefined,
     stopRequested: false,
     overBudget: false,
@@ -63,8 +64,8 @@ export const agents: AgentView[] = [
     podTerminationReason: undefined,
     contributionFailures: [],
     channels: [
-      { type: "slack", slackChannelId: "#design-reviews" },
-      { type: "slack", slackChannelId: "#packaging" },
+      { type: "slack", slackChannelId: "#engineering" },
+      { type: "slack", slackChannelId: "#code-review" },
     ],
 
     kind: undefined,
@@ -74,12 +75,12 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.geminiPipeline,
     spawnedBy: null,
-    name: "photo-retouching",
+    name: "bug-triage",
     templateId: "gemini-cli",
     templateUpdate: null,
     image: "ghcr.io/google/gemini-cli:latest",
     description:
-      "Batch photo retouching, background removal, and color grading",
+      "Classifies incoming bugs, assigns severity, and routes to teams",
     env: [{ name: "PIPELINE_ENV", value: "staging" }],
     hibernationTimeoutMin: 15,
     grantedSecretIds: [],
@@ -92,7 +93,7 @@ export const agents: AgentView[] = [
     size: { cpu: "1000m", memory: "1Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [{ type: "slack", slackChannelId: "#photo-ops" }],
+    channels: [{ type: "slack", slackChannelId: "#bugs" }],
 
     kind: undefined,
     kbTemplateId: null,
@@ -101,12 +102,12 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase,
     spawnedBy: null,
-    name: "brand-guidelines",
+    name: "api-docs",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
     description:
-      "Living brand guidelines — colors, typography, logo usage, tone of voice",
+      "Syncs API reference docs from source code, publishes to docs site",
 
     hibernationTimeoutMin: 0,
     grantedSecretIds: [],
@@ -120,9 +121,8 @@ export const agents: AgentView[] = [
     podTerminationReason: undefined,
     contributionFailures: [],
     channels: [
-      { type: "slack", slackChannelId: "#brand" },
-      { type: "slack", slackChannelId: "#design-system" },
-      { type: "slack", slackChannelId: "#creative-ops" },
+      { type: "slack", slackChannelId: "#docs" },
+      { type: "slack", slackChannelId: "#api-changes" },
     ],
 
     kind: undefined,
@@ -132,11 +132,11 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment1,
     spawnedBy: null,
-    name: "color-palette-testing",
+    name: "pm-standup",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Testing color palette variations for the spring campaign",
+    description: "Collects standup updates from PRs and posts daily summaries",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
@@ -149,7 +149,7 @@ export const agents: AgentView[] = [
     size: { cpu: "1000m", memory: "1Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [{ type: "slack", slackChannelId: "#dam-dev" }],
+    channels: [{ type: "slack", slackChannelId: "#standup" }],
 
     kind: undefined,
     kbTemplateId: null,
@@ -158,11 +158,11 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment2,
     spawnedBy: null,
-    name: "font-pairing-eval",
+    name: "design-token-sync",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Evaluating font pairings for the website redesign",
+    description: "Syncs design tokens from Figma to code variables",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
@@ -184,11 +184,11 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase2,
     spawnedBy: null,
-    name: "competitor-mood-boards",
+    name: "dependency-audit",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Competitor visual identity and mood board references",
+    description: "Scans dependencies for vulnerabilities and license issues",
 
     hibernationTimeoutMin: 0,
     grantedSecretIds: [],
@@ -210,18 +210,18 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase3,
     spawnedBy: null,
-    name: "photography-style-guide",
+    name: "metrics-collector",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
     description:
-      "Photography style guide — shot types, lighting, art direction",
+      "Collects build metrics, test coverage, and deployment frequency",
 
     hibernationTimeoutMin: 0,
     grantedSecretIds: [],
     grantedConnectionIds: ["conn-anthropic"],
     state: "error",
-    error: "Source folder unavailable: Dropbox connection timed out",
+    error: "Source folder unavailable: GitHub connection timed out",
     stopRequested: false,
     overBudget: false,
     overBudgetMessage: undefined,
@@ -230,7 +230,7 @@ export const agents: AgentView[] = [
     contributionFailures: [
       {
         kind: "git-clone",
-        message: "Failed to sync: Dropbox OAuth token expired",
+        message: "Failed to sync: GitHub OAuth token expired",
       },
     ],
     channels: [],
@@ -242,17 +242,17 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment3,
     spawnedBy: null,
-    name: "hero-image-variants",
+    name: "release-manager",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
-    description: "Testing hero image styles for the landing page",
+    description: "Manages release branches, changelogs, and version bumps",
 
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
     grantedConnectionIds: ["conn-anthropic"],
     state: "error",
-    error: "Render pipeline crashed: unsupported image format",
+    error: "Release pipeline crashed: merge conflict in CHANGELOG.md",
     stopRequested: false,
     overBudget: false,
     overBudgetMessage: undefined,

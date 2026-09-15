@@ -1,10 +1,6 @@
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 
-export type FeedTab =
-  | "all"
-  | "in-progress"
-  | "channels"
-  | "schedules";
+export type FeedTab = "all" | "in-progress" | "channels" | "schedules";
 
 export const FEED_TABS: readonly TabDef<FeedTab>[] = [
   { value: "all", label: "All" },

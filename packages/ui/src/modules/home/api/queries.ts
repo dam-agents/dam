@@ -44,9 +44,7 @@ export function useFeed(): Feed {
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
       queryFn: () =>
-        mockFn
-          ? mockFn(agent.id)
-          : listAgentSessionsOverAcp(agent.id),
+        mockFn ? mockFn(agent.id) : listAgentSessionsOverAcp(agent.id),
       staleTime: mockFn ? Infinity : SESSIONS_STALE_MS,
       retry: false,
       refetchInterval: mockFn

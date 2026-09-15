@@ -40,6 +40,7 @@ export function buildNotificationItems(
 
   for (const { agentId, sessions } of sources.byAgent) {
     for (const session of sessions) {
+      const artifactName = (session as any).artifactName ?? null;
       if (session.running) {
         items.push({
           type: "running",
@@ -47,6 +48,7 @@ export function buildNotificationItems(
           agentId,
           at: sessionAt(session),
           session,
+          artifactName,
         });
         continue;
       }
@@ -57,6 +59,16 @@ export function buildNotificationItems(
           agentId,
           at: sessionAt(session),
           session,
+          artifactName,
+        });
+      } else {
+        items.push({
+          type: "read",
+          id: `read:${agentId}:${session.sessionId}`,
+          agentId,
+          at: sessionAt(session),
+          session,
+          artifactName,
         });
       }
     }

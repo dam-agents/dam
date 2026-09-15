@@ -11,7 +11,6 @@ import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
-import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -174,8 +173,6 @@ function MainApp() {
                 <AgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "setup-workbench" ? (
-                <SetupWorkbenchView />
               ) : view === "card-gallery" ? (
                 <AgentCardGallery />
               ) : (

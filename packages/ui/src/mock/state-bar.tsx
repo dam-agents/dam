@@ -1,4 +1,4 @@
-import { ColorPalette, ListChecked } from "@carbon/icons-react";
+import { ListChecked } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
 import { setMockEmpty, setMockFirstRun } from "./handlers.js";
-import { IconInventory } from "./icon-inventory.js";
 
 interface ReviewScreen {
   label: string;
@@ -28,21 +27,6 @@ function useReviewScreens(): ReviewScreen[] {
       go: () => setView("presets"),
     },
     {
-      label: "Schedules",
-      note: "All schedules across agents.",
-      go: () => setView("schedules"),
-    },
-    {
-      label: "Agent setup",
-      note: "Create agent form: name, harness, provider, schedule, connections.",
-      go: () => setView("agent-new"),
-    },
-    {
-      label: "Setup workbench",
-      note: "Iterate on setup section interactions — normal vs preset.",
-      go: () => setView("setup-workbench"),
-    },
-    {
       label: "Card gallery",
       note: "Agent card design — every state side by side.",
       go: () => setView("card-gallery"),
@@ -55,7 +39,6 @@ export function MockStateBar() {
     "populated",
   );
   const [indexOpen, setIndexOpen] = useState(false);
-  const [iconInventoryOpen, setIconInventoryOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
 
@@ -68,10 +51,7 @@ export function MockStateBar() {
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
-        <span className="text-sm font-medium text-muted-foreground">
-          Preview:
-        </span>
+      <div className="fixed bottom-4 left-4 z-[9999] flex items-center gap-1 rounded-full border border-border bg-card/95 px-1 py-1 shadow-lg backdrop-blur-sm">
         {(["populated", "empty", "first-run"] as const).map((m) => (
           <button
             key={m}
@@ -95,18 +75,9 @@ export function MockStateBar() {
 
       <button
         type="button"
-        onClick={() => setIconInventoryOpen(true)}
-        className="fixed bottom-4 right-16 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted"
-        aria-label="Open icon inventory"
-      >
-        <ColorPalette size={16} className="text-foreground" />
-      </button>
-
-      <button
-        type="button"
         onClick={() => setIndexOpen((v) => !v)}
         className={cn(
-          "fixed bottom-4 right-4 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          "fixed bottom-4 left-[280px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
           indexOpen && "bg-muted",
         )}
         aria-label="Toggle review index"
@@ -115,7 +86,7 @@ export function MockStateBar() {
       </button>
 
       {indexOpen && (
-        <div className="fixed bottom-16 right-4 z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
+        <div className="fixed bottom-16 left-[280px] z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">
               Review index
@@ -129,9 +100,6 @@ export function MockStateBar() {
               const active =
                 (s.label === "Home" && view === "home") ||
                 (s.label === "Starter Kits" && view === "presets") ||
-                (s.label === "Schedules" && view === "schedules") ||
-                (s.label === "Agent setup" && view === "agent-new") ||
-                (s.label === "Setup workbench" && view === "setup-workbench") ||
                 (s.label === "Card gallery" && view === "card-gallery");
               return (
                 <button
@@ -162,10 +130,6 @@ export function MockStateBar() {
             })}
           </div>
         </div>
-      )}
-
-      {iconInventoryOpen && (
-        <IconInventory onClose={() => setIconInventoryOpen(false)} />
       )}
     </>
   );

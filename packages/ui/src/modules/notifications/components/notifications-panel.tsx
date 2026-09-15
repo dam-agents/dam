@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight, Close } from "@carbon/icons-react";
-import type { SessionView } from "api-server-api";
+import type { LibraryArtifact, SessionView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -11,25 +11,57 @@ import { cn } from "@/lib/utils";
 import { useBodyScrollLock, useFocusTrap } from "../../../components/modal.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
+import {
+  routeToNavigationState,
+  routeToPath,
+} from "../../platform/lib/routes.js";
 import { acpSessionsKeys, setSessionSeen } from "../../sessions/api/queries.js";
 import { useNotifications } from "../api/queries.js";
 import {
   applyFilters,
-  countByAgent,
-  countByType,
+  type ChannelType,
   defaultFilters,
-  hiddenCount,
   isFiltered as checkIsFiltered,
   type NotificationFilters,
+  type StateFilter,
 } from "../lib/filters.js";
 import {
   isNeedsYou,
   type NotificationItem,
-  type NotificationType,
 } from "../lib/notification-types.js";
 import { groupByTimeSection } from "../lib/time-sections.js";
 import { NotificationRow } from "./notification-row.js";
 import { ShowFilter } from "./show-filter.js";
+
+function mockArtifactFor(name: string, agentId: string): LibraryArtifact {
+  const ext = name.split(".").pop() ?? "";
+  const kind = ext === "html" ? "html" : ext === "md" ? "markdown" : "binary";
+  const contentType =
+    kind === "html"
+      ? "text/html"
+      : kind === "markdown"
+        ? "text/markdown"
+        : "application/octet-stream";
+  return {
+    id: `mock-${name}`,
+    title: name.replace(/[-_]/g, " ").replace(/\.\w+$/, ""),
+    slug: name.replace(/\.\w+$/, ""),
+    kind,
+    contentType,
+    fileName: name,
+    sizeBytes: 24_000,
+    version: 1,
+    folderId: null,
+    agentId,
+    visibility: "private",
+    expiresAt: null,
+    viewCount: 0,
+    shareUrl: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 interface Props {
   open: boolean;
@@ -53,39 +85,25 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   const now = useNow(60_000);
   const { items: allItems, agents, loading } = useNotifications();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   const [showApprovals, setShowApprovals] = useState(false);
+  const [previewArtifact, setPreviewArtifact] =
+    useState<LibraryArtifact | null>(null);
 
-  const allAgentIds = useMemo(() => agents.map((a) => a.id), [agents]);
-  const [filters, setFilters] = useState<NotificationFilters>(() =>
-    defaultFilters(allAgentIds),
-  );
-
-  useEffect(() => {
-    setFilters((prev) => {
-      const next = new Set(prev.agents);
-      let changed = false;
-      for (const id of allAgentIds) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? { ...prev, agents: next } : prev;
-    });
-  }, [allAgentIds]);
+  const [filters, setFilters] = useState<NotificationFilters>(defaultFilters);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
 
   const approvalItems = useMemo(() => allItems.filter(isNeedsYou), [allItems]);
 
   const sessionItems = useMemo(
-    () => allItems.filter((i) => !isNeedsYou(i)),
-    [allItems],
+    () => allItems.filter((i) => !isNeedsYou(i) && !dismissedIds.has(i.id)),
+    [allItems, dismissedIds],
   );
 
   const filteredSessionItems = useMemo(
-    () => applyFilters(sessionItems, filters),
-    [sessionItems, filters],
+    () => applyFilters(sessionItems, filters, agents),
+    [sessionItems, filters, agents],
   );
 
   const sections = useMemo(
@@ -93,10 +111,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     [filteredSessionItems, now],
   );
 
-  const typeCounts = useMemo(() => countByType(sessionItems), [sessionItems]);
-  const agentCounts = useMemo(() => countByAgent(sessionItems), [sessionItems]);
-  const filtered = checkIsFiltered(filters, allAgentIds);
-  const hidden = hiddenCount(sessionItems, filteredSessionItems);
+  const filtered = checkIsFiltered(filters);
 
   const agentNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -104,27 +119,22 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     return map;
   }, [agents]);
 
-  const handleToggleType = useCallback((type: NotificationType) => {
+  const handleToggleChannelType = useCallback((type: ChannelType) => {
     setFilters((prev) => {
-      const next = new Set(prev.types);
+      const next = new Set(prev.channelTypes);
       if (next.has(type)) next.delete(type);
       else next.add(type);
-      return { ...prev, types: next };
+      return { ...prev, channelTypes: next };
     });
   }, []);
 
-  const handleToggleAgent = useCallback((agentId: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev.agents);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      return { ...prev, agents: next };
-    });
+  const handleChangeState = useCallback((state: StateFilter) => {
+    setFilters((prev) => ({ ...prev, state }));
   }, []);
 
   const handleReset = useCallback(() => {
-    setFilters(defaultFilters(allAgentIds));
-  }, [allAgentIds]);
+    setFilters(defaultFilters());
+  }, []);
 
   const handleMarkAllRead = useCallback(() => {
     const unread = allItems.filter(
@@ -168,14 +178,39 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   const handleOpenSession = useCallback(
     (item: NotificationItem) => {
-      if (item.type === "running" || item.type === "unread") {
-        navigateToSandboxHome(item.agentId);
+      if (
+        item.type === "running" ||
+        item.type === "unread" ||
+        item.type === "read"
+      ) {
+        const route = {
+          view: "chat" as const,
+          agent: item.agentId,
+          session: item.session.sessionId,
+        };
+        history.pushState(null, "", routeToPath(route));
+        useStore.setState(routeToNavigationState(route));
         setVisible(false);
         setTimeout(onClose, 200);
       }
     },
-    [navigateToSandboxHome, onClose],
+    [onClose],
   );
+
+  const handleDismiss = useCallback((item: NotificationItem) => {
+    if (item.type === "unread") {
+      setSessionSeen(item.agentId, item.session.sessionId);
+    }
+    setDismissingIds((prev) => new Set(prev).add(item.id));
+    setTimeout(() => {
+      setDismissingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      setDismissedIds((prev) => new Set(prev).add(item.id));
+    }, 300);
+  }, []);
 
   const handleBackdropClick = useCallback(() => {
     setVisible(false);
@@ -198,7 +233,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   const hasUnread = allItems.some((item) => item.type === "unread");
 
-  return createPortal(
+  const portal = createPortal(
     <div className="fixed inset-0 z-overlay flex">
       <div
         className={cn(
@@ -272,6 +307,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                     key={item.id}
                     item={item}
                     agentName={agentNameMap.get(item.agentId) ?? "Agent"}
+                    agents={agents}
                   />
                 ))}
               </div>
@@ -290,14 +326,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             <div className="border-b border-border px-6 py-2">
               <ShowFilter
                 filters={filters}
-                onToggleType={handleToggleType}
-                onToggleAgent={handleToggleAgent}
+                onToggleChannelType={handleToggleChannelType}
+                onChangeState={handleChangeState}
                 onReset={handleReset}
-                typeCounts={typeCounts}
-                agentCounts={agentCounts}
-                agents={agents}
                 isFiltered={filtered}
-                hiddenCount={hidden}
               />
             </div>
 
@@ -313,22 +345,28 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {/* Approvals summary card */}
+                  {/* Approvals */}
                   {approvalItems.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowApprovals(true)}
-                      className="flex w-full items-center justify-between rounded-2xl border border-warning/30 bg-warning/5 p-4 text-left transition-colors hover:bg-warning/10"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-warning/15 text-warning">
-                          <span className="text-sm font-semibold">
+                    <div className="flex flex-col gap-2">
+                      <p className="px-1 pt-1 text-sm font-semibold text-foreground">
+                        {approvalItems.length} needs you
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowApprovals(true)}
+                        className="flex w-full items-center gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
+                      >
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-warning/15 dark:bg-warning/20">
+                          <span className="text-[15px] font-semibold text-warning">
                             {approvalItems.length}
                           </span>
-                        </span>
-                        <div>
+                        </div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-foreground">
-                            Pending approvals
+                            Pending{" "}
+                            {approvalItems.length === 1
+                              ? "approval"
+                              : "approvals"}
                           </p>
                           <p className="text-sm text-muted-foreground">
                             {approvalItems.length === 1
@@ -336,46 +374,78 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                               : `${approvalItems.length} requests need your decision`}
                           </p>
                         </div>
-                      </div>
-                      <ChevronRight
-                        size={16}
-                        className="shrink-0 text-muted-foreground"
-                      />
-                    </button>
+                        <ChevronRight
+                          size={16}
+                          className="shrink-0 text-muted-foreground"
+                        />
+                      </button>
+                    </div>
                   )}
 
-                  {/* Session items by time section */}
+                  {/* Activity */}
                   {sections.length > 0 ? (
-                    sections.map(({ section, items }) => (
-                      <div key={section}>
-                        <div className="px-1 pb-1 pt-2 text-sm font-medium text-muted-foreground">
-                          {section}
+                    <>
+                      {approvalItems.length > 0 && (
+                        <p className="px-1 pt-2 text-sm font-semibold text-foreground">
+                          Activity
+                        </p>
+                      )}
+                      {sections.map(({ section, items }) => (
+                        <div key={section}>
+                          <div className="px-1 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[1.65px] text-muted-foreground">
+                            {section}
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="overflow-hidden transition-all duration-300 ease-out"
+                                style={
+                                  dismissingIds.has(item.id)
+                                    ? {
+                                        opacity: 0,
+                                        maxHeight: 0,
+                                        marginBottom: 0,
+                                      }
+                                    : { opacity: 1, maxHeight: 200 }
+                                }
+                              >
+                                <NotificationRow
+                                  item={item}
+                                  agentName={
+                                    agentNameMap.get(item.agentId) ?? "Agent"
+                                  }
+                                  agents={agents}
+                                  onOpen={
+                                    item.type === "running" ||
+                                    item.type === "unread" ||
+                                    item.type === "read"
+                                      ? () => handleOpenSession(item)
+                                      : undefined
+                                  }
+                                  onArtifactClick={
+                                    item.type !== "approval-tool" &&
+                                    item.type !== "approval-network" &&
+                                    item.artifactName
+                                      ? () =>
+                                          setPreviewArtifact(
+                                            mockArtifactFor(
+                                              item.artifactName!,
+                                              item.agentId,
+                                            ),
+                                          )
+                                      : undefined
+                                  }
+                                  onDismiss={() => handleDismiss(item)}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          {items.map((item) => (
-                            <NotificationRow
-                              key={item.id}
-                              item={item}
-                              agentName={
-                                agentNameMap.get(item.agentId) ?? "Agent"
-                              }
-                              onOpen={
-                                item.type === "running" ||
-                                item.type === "unread"
-                                  ? () => handleOpenSession(item)
-                                  : undefined
-                              }
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))
+                      ))}
+                    </>
                   ) : approvalItems.length === 0 ? (
-                    <EmptyState
-                      isFiltered={filtered}
-                      hiddenCount={hidden}
-                      onReset={handleReset}
-                    />
+                    <EmptyState isFiltered={filtered} onReset={handleReset} />
                   ) : null}
                 </div>
               )}
@@ -386,30 +456,39 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     </div>,
     document.body,
   );
+
+  return (
+    <>
+      {portal}
+      {previewArtifact && (
+        <ArtifactPreviewDialog
+          artifact={previewArtifact}
+          onClose={() => setPreviewArtifact(null)}
+        />
+      )}
+    </>
+  );
 }
 
 function EmptyState({
   isFiltered,
-  hiddenCount: hidden,
   onReset,
 }: {
   isFiltered: boolean;
-  hiddenCount: number;
   onReset: () => void;
 }) {
   if (isFiltered) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <p className="text-sm text-muted-foreground">Nothing matches.</p>
         <p className="text-sm text-muted-foreground">
-          {hidden} hidden by filters.
+          Nothing matches your filters.
         </p>
         <button
           type="button"
           onClick={onReset}
           className="mt-1 text-sm text-accent transition-colors hover:text-accent/80"
         >
-          Reset
+          Reset to default
         </button>
       </div>
     );
