@@ -23,6 +23,7 @@ export interface SchedulerRunner {
   reportFire(input: {
     scheduleId: string;
     eventId: string;
+    ranPrecheck: string;
     outcome: EventOutcome;
     detail?: string;
   }): Promise<void>;
@@ -172,12 +173,17 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(input.scheduleId);
       if (!sched) return;
       const verdict = VERDICT[input.outcome];
-      if (sched.spec.precheck)
+      const describesCurrentPrecheck =
+        sched.spec.precheck === input.ranPrecheck;
+      if (describesCurrentPrecheck)
         await deps.repo.applyStatusPatch(
           input.scheduleId,
           statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
         );
-      else await deps.repo.clearPrecheckStatus(input.scheduleId);
+      else
+        log(
+          `report: schedule ${input.scheduleId} changed its precheck while this one ran; verdict dropped`,
+        );
       if (verdict === "declined") {
         const stamp = await deps.activityStamps?.consume(input.eventId);
         if (stamp && deps.restoreActivity)

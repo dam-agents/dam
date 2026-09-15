@@ -853,11 +853,15 @@ export async function bootstrap() {
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
-      const scheduleId = (event.payload as { scheduleId?: string }).scheduleId;
-      if (!scheduleId) return;
+      const { scheduleId, precheck } = event.payload as {
+        scheduleId?: string;
+        precheck?: string;
+      };
+      if (!scheduleId || !precheck) return;
       await schedulesBoot.runner.reportFire({
         scheduleId,
         eventId: input.eventId,
+        ranPrecheck: precheck,
         outcome: input.outcome,
         ...(input.detail ? { detail: input.detail } : {}),
       });

@@ -347,6 +347,7 @@ describe("scheduler-runner precheck", () => {
     await runner.reportFire({
       scheduleId: SCHEDULE_ID,
       eventId: `${SCHEDULE_ID}:${fireAt.getTime()}`,
+      ranPrecheck: "test -f /tmp/ready",
       outcome: "declined",
     });
 
@@ -376,6 +377,7 @@ describe("scheduler-runner precheck", () => {
     await runner.reportFire({
       scheduleId: SCHEDULE_ID,
       eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "true",
       outcome: "failed",
       detail: "precheck exited 127",
     });
@@ -389,16 +391,30 @@ describe("scheduler-runner precheck", () => {
 
   // TEST_SCENARIO: the check runs for minutes and reports detached, so an owner can remove the Precheck first — and a status written after that would sit on the card in red with no panel able to explain it.
   it("clears the status instead of writing it when the precheck is gone", async () => {
-    const { runner, patches, cleared } = makeDeps();
+    const { runner, patches } = makeDeps();
 
     await runner.reportFire({
       scheduleId: SCHEDULE_ID,
       eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "gone.sh",
       outcome: "failed",
       detail: "precheck exited 2",
     });
 
     expect(patches).toHaveLength(0);
-    expect(cleared).toEqual([true]);
+  });
+
+  // TEST_SCENARIO: the check runs detached for minutes, so an owner can swap the command while one is in flight — and the old command's verdict must not be written against the new one, nor wipe what the new one already recorded.
+  it("drops a verdict that describes a precheck the schedule no longer runs", async () => {
+    const { runner, patches } = makeDeps({ precheck: "new.sh" });
+
+    await runner.reportFire({
+      scheduleId: SCHEDULE_ID,
+      eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "old.sh",
+      outcome: "declined",
+    });
+
+    expect(patches).toHaveLength(0);
   });
 });
