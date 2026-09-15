@@ -105,6 +105,21 @@ device-plugin pod keeps the same node agent and image.
 - First boot of the 760 MB vm image flattens it inside the guest (~20 min
   under nested virt); later boots find it on the storage disk.
 
+## End-to-end through the UI (2026-09-15 night)
+
+- Container path: login dev/dev, add the IBM LiteLLM provider key in
+  Settings → Providers, create a Claude Code agent, send "ping" → "pong" in
+  40 s. Works.
+- VM path: a Claude Code VM agent created the same way reaches Ready and the
+  api-server reaches it, but the "ping" turn is marked "Not delivered" — the
+  UI gives up after `DELIVERY_TIMEOUT_MS` (60 s) without an ACP update, and a
+  1-vCPU nested guest takes minutes for Claude Code's first turn (the model
+  call did go out through the gateway). Not reproduced on bare metal. Later in
+  the night the Mac was swapping (5 GiB) and no 760 MB vm image booted inside
+  smolvm's 30 s window any more, while a 5 MB alpine guest still did in 6 s —
+  so the second and third VM agents never came up. The `vm-sandboxes` feature
+  flag is revealed by tapping the version label five times in Settings.
+
 ## Known gaps (also in ADR 091)
 
 - A template image change does not reach an existing machine (image is fixed
