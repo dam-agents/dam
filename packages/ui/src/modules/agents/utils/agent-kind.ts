@@ -40,5 +40,5 @@ export function starterKitBadge(
   const at = agent.starterKit.lastIndexOf("@");
   const path = at > 0 ? agent.starterKit.slice(0, at) : agent.starterKit;
   const kit = path.slice(path.indexOf("/") + 1);
-  return { label: `Kit: ${kit}`, variant: "muted", title: agent.starterKit };
+  return { label: kit, variant: "muted", title: agent.starterKit };
 }

@@ -1,4 +1,4 @@
-import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
+import { Chemistry, Gift, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,8 +89,12 @@ export function AgentRow({
               variant={kitBadge.variant}
               className="shrink-0"
               title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
             >
-              {kitBadge.label}
+              <span className="flex items-center gap-1.5">
+                <Gift size={12} aria-hidden />
+                {kitBadge.label}
+              </span>
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />
