@@ -17,6 +17,7 @@ import {
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
@@ -216,8 +217,6 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
     } catch {}
   };
 
-  const slackChannel = kit.channels.find((c) => c.type === "slack") ?? null;
-
   const KitIcon = kitIcon(kit);
 
   return (
@@ -412,25 +411,67 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
         />
       )}
 
-      {slackChannel && (
+      {kit.channels.length > 0 && (
         <section className="mb-8">
-          <FormField
-            label="Slack channel (optional)"
-            disableInset
-            hint={
-              slackChannel.note
-                ? `${slackChannel.note} The ID is in the channel's details in Slack and starts with C; the bot must be a member.`
-                : "From the channel's details in Slack — starts with C. The bot must be a member of the channel."
-            }
-          >
-            <Input
-              className="h-10"
-              value={form.slackChannelId}
-              onChange={(e) => update({ slackChannelId: e.target.value })}
-              placeholder="C0…"
-              data-testid="starter-kit-slack-channel-id"
-            />
-          </FormField>
+          <SectionLabel spaced>Channels (optional)</SectionLabel>
+          <ul className="flex flex-col gap-2">
+            {kit.channels.map((channel) => (
+              <li
+                key={channel.type}
+                className="rounded-lg border border-border px-4 py-3"
+              >
+                <div className="flex items-start gap-3">
+                  <ConnectionIcon
+                    iconSlug={channel.type}
+                    alt=""
+                    size={16}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {channel.type === "slack"
+                          ? "In a Slack channel"
+                          : "In a Telegram chat"}
+                      </span>
+                      <Badge variant="template" size="sm">
+                        Starter Kit
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {channel.note ??
+                        "Your team can interact with the agent in a channel or their DMs."}
+                    </p>
+                  </div>
+                </div>
+                {channel.type === "slack" && (
+                  <div className="mt-3 pl-7">
+                    <FormField
+                      label="Slack channel ID"
+                      disableInset
+                      hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
+                    >
+                      <Input
+                        className="h-10"
+                        value={form.slackChannelId}
+                        onChange={(e) =>
+                          update({ slackChannelId: e.target.value })
+                        }
+                        placeholder="C0…"
+                        data-testid="starter-kit-slack-channel-id"
+                      />
+                    </FormField>
+                  </div>
+                )}
+                {channel.type === "telegram" && (
+                  <p className="mt-2 pl-7 text-xs text-muted-foreground">
+                    Bound in chat with /platform bind after the agent is running
+                    — no form can do it.
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
