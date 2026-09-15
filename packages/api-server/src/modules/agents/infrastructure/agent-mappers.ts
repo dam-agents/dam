@@ -77,6 +77,7 @@ export interface InfraAgent {
 const TERMINAL_MACHINE_REASONS = new Set([
   "MachineBootFailed",
   "MachineImageUnavailable",
+  "MachineEgressChanged",
 ]);
 
 export function computeAgentState(

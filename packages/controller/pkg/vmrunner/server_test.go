@@ -580,3 +580,23 @@ func TestWorkQueuedBeforeADeleteIsDropped(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 }
+
+// TEST_SCENARIO: a machine's egress allowlist is its gateway's ClusterIP, and Kubernetes reuses those. If the gateway is recreated on a different address, the running machine is still pinned to the old one — which the cluster may since have given to another owner's gateway — so it is stopped rather than left reachable there.
+func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	moved := spec(true)
+	moved.AllowCIDRs = []string{"10.0.0.2/32"}
+	_, err = c.Ensure(t.Context(), "m1", moved)
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+
+	assert.Equal(t, ReasonEgressChanged, st.Reason)
+	assert.Contains(t, st.Message, "recreate the agent")
+	assert.Contains(t, h.calls(), "machine stop -n m1", "it is stopped, not left running on the old address")
+	assert.NotContains(t, h.calls(), "--allow-cidr 10.0.0.2/32", "and never re-created with the new one behind the user's back")
+}

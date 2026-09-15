@@ -39,4 +39,5 @@ const (
 	ReasonOutOfCapacity    = "MachineOutOfCapacity"
 	ReasonImageUnavailable = "MachineImageUnavailable"
 	ReasonBootFailed       = "MachineBootFailed"
+	ReasonEgressChanged    = "MachineEgressChanged"
 )

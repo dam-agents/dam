@@ -194,7 +194,11 @@ func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bo
 	case StateStopped:
 		return StateStarting, false
 	case StateRunning:
-		if applied := s.readSpec(id); applied == nil || needsRestart(*applied, spec) {
+		applied := s.readSpec(id)
+		if applied != nil && egressChanged(*applied, spec) {
+			return StateStopping, false
+		}
+		if applied == nil || needsRestart(*applied, spec) {
 			return StateRestarting, false
 		}
 		if !st.Ready && s.deadForLong(id) {
@@ -217,17 +221,15 @@ func needsRestart(applied, desired MachineSpec) bool {
 }
 
 func createOnlyDrift(applied, desired MachineSpec) string {
-	var out []string
-	if applied.Image != desired.Image {
-		out = append(out, fmt.Sprintf("image is %s, wanted %s", applied.Image, desired.Image))
-	}
-	if !reflect.DeepEqual(applied.AllowCIDRs, desired.AllowCIDRs) {
-		out = append(out, fmt.Sprintf("egress allowlist is %v, wanted %v", applied.AllowCIDRs, desired.AllowCIDRs))
-	}
-	if out == nil {
+	if applied.Image == desired.Image {
 		return ""
 	}
-	return "fixed at create, so this machine keeps what it has (recreate the agent to change it): " + strings.Join(out, "; ")
+	return fmt.Sprintf("the image is fixed at create, so this machine keeps what it has (recreate the agent to change it): image is %s, wanted %s", applied.Image, desired.Image)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those — a machine still holding an address its gateway no longer owns may be pointing at another owner's gateway, so it is stopped rather than run on.
+func egressChanged(applied, desired MachineSpec) bool {
+	return !reflect.DeepEqual(applied.AllowCIDRs, desired.AllowCIDRs)
 }
 
 func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) error {
@@ -254,6 +256,15 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		return s.writeSpec(id, spec)
 	}
 	applied := s.readSpec(id)
+	if applied != nil && egressChanged(*applied, spec) {
+		if state == StateRunning {
+			if err := s.Runtime.Stop(id); err != nil {
+				return err
+			}
+		}
+		return fmt.Errorf("%w: this machine may only reach %v, but its gateway is now %v — recreate the agent",
+			errEgressChanged, applied.AllowCIDRs, spec.AllowCIDRs)
+	}
 	if applied != nil {
 		drift := createOnlyDrift(*applied, spec)
 		s.mu.Lock()
@@ -265,7 +276,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		s.mu.Unlock()
 		if drift != "" {
 			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", strings.NewReplacer("\n", " ", "\r", " ").Replace(drift))
-			spec.Image, spec.AllowCIDRs = applied.Image, applied.AllowCIDRs
+			spec.Image = applied.Image
 		}
 	}
 	if p := s.port(id); p != 0 {
@@ -622,7 +633,12 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
+var errEgressChanged = errors.New("egress allowlist changed")
+
 func failureReason(err error) string {
+	if errors.Is(err, errEgressChanged) {
+		return ReasonEgressChanged
+	}
 	m := err.Error()
 	switch {
 	case strings.Contains(m, "cannot read archive"), strings.Contains(m, "--image"), strings.Contains(m, "pull"):

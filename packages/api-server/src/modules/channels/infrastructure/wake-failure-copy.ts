@@ -39,6 +39,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "another VM agent, or ask an admin for more capacity, then " +
             "start it again."
           );
+        case "MachineEgressChanged":
+          return (
+            "This agent can't start: its sandbox is pinned to a network " +
+            "address its gateway no longer has, so it was stopped rather " +
+            "than left pointing somewhere else. Recreate the agent."
+          );
         case "MachineBootFailed":
           return (
             "This agent failed to start: its sandbox VM didn't boot. " +
