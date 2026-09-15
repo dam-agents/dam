@@ -252,7 +252,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	if r.requeue != nil {
 		poll := vmHealthPoll
-		if !st.Ready {
+		if !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
 			poll = vmReadinessPoll
 		}
 		r.requeue(agent.Name, poll)
