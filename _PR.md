@@ -124,6 +124,14 @@ device-plugin pod keeps the same node agent and image.
   so the second and third VM agents never came up. The `vm-sandboxes` feature
   flag is revealed by tapping the version label five times in Settings.
 
+## VM ping → pong through the UI (2026-09-15)
+
+With the unified image: create "Claude Code VM" in the UI (LiteLLM provider
+selected), size 1 vCPU / 1 GiB, Ready in 351 s (the 367 MB archive flattens
+in-guest), "ping" answered "pong" in 86 s, zero vm-runner errors. So the
+"Not delivered" turns seen the night before were the old vm image (built on a
+registry claude-code base) plus the 2 GiB boot ceiling, not the relay.
+
 ## One image family (2026-09-15)
 
 The separate `claude-code-vm` image is gone. The vm template boots the plain
