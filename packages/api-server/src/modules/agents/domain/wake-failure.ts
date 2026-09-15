@@ -27,6 +27,9 @@ const POD_FAILURE_REASONS = new Set([
   "ImagePullFailure",
   "InvalidImageName",
   "ContainerTerminated",
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+  "MachineOutOfCapacity",
 ]);
 
 const GATEWAY_FAILURE_REASONS = new Set([
@@ -115,6 +118,12 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image cannot be pulled";
         case "InvalidImageName":
           return "the agent image reference is invalid";
+        case "MachineImageUnavailable":
+          return "the agent image is not available to the VM runner";
+        case "MachineOutOfCapacity":
+          return "the VM runner has no room for this agent";
+        case "MachineBootFailed":
+          return "the agent's microVM did not boot";
         default:
           return "the agent crashed while starting";
       }

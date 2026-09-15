@@ -183,13 +183,16 @@ virtualization:
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
-    # taints). Machines are processes of this pod: without limits here the
-    # pod is unbounded and BestEffort (first evicted under node pressure,
-    # taking every machine with it), so set limits for the sum of the
-    # machines expected at once.
+    # taints). Machines are processes of this pod: the memory limit set here
+    # is also what the runner admits machines against (it refuses one that
+    # does not fit, keeping `reserveMiB` for itself), and without a limit the
+    # pod is unbounded and BestEffort — first evicted under node pressure,
+    # taking every machine with it.
     nodeSelector: {}
     tolerations: []
     resources: {}
+    # Memory the runner keeps for itself rather than committing to machines.
+    reserveMiB: 512
     # Extra sources the runner itself admits on machines' published ports,
     # on top of the NetworkPolicy that limits them to the api-server and the
     # controller; empty means the policy is the only gate.

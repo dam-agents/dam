@@ -14,6 +14,8 @@ type MachineSpec struct {
 
 type MachineStatus struct {
 	State      string `json:"state"`
+	Reason     string `json:"reason,omitempty"`
+	Restarts   int32  `json:"restarts,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	Ready      bool   `json:"ready"`
 	CPUs       int    `json:"cpus,omitempty"`
@@ -31,4 +33,11 @@ const (
 	StateRunning    = "running"
 	StateStopping   = "stopping"
 	StateStopped    = "stopped"
+)
+
+const (
+	ReasonNotReady         = "MachineNotReady"
+	ReasonOutOfCapacity    = "MachineOutOfCapacity"
+	ReasonImageUnavailable = "MachineImageUnavailable"
+	ReasonBootFailed       = "MachineBootFailed"
 )

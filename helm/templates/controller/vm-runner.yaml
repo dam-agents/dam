@@ -101,9 +101,18 @@ spec:
           image: "{{ $node.image.repository }}:{{ $node.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ $node.image.pullPolicy | default "IfNotPresent" }}
           args:
+            - --memory-mib=$(RUNNER_MEMORY_MIB)
+            - --reserve-mib={{ $node.reserveMiB }}
             - --tls-cert=/etc/vm-runner/tls.crt
             - --tls-key=/etc/vm-runner/tls.key
             - --allow-from={{ join "," $node.ingressCidrs }}
+          env:
+            - name: RUNNER_MEMORY_MIB
+              valueFrom:
+                resourceFieldRef:
+                  containerName: vm-runner
+                  resource: limits.memory
+                  divisor: 1Mi
           ports:
             - name: machine-api
               containerPort: 4600
