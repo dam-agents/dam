@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"strings"
 	"time"
 
@@ -29,6 +28,17 @@ var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, error) {
 	name := agent.Name
+	owner := agent.Labels[labelOwner]
+	if owner == "" {
+		return vmrunner.MachineStatus{}, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
+	}
+	runner, ready, err := r.ensureRunner(ctx, owner)
+	if err != nil {
+		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
+	}
+	if !ready {
+		return vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonNotReady, Message: "the owner's VM runner is still starting"}, nil
+	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
 
@@ -83,7 +93,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
 	}
-	st, err := r.vmRunner.Ensure(ctx, name, machine)
+	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
 		return st, err
 	}
@@ -95,14 +105,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, fmt.Errorf("applying agent service: %w", err)
 	}
 	if st.Port > 0 {
-		addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", r.config.VM.RunnerAddress)
+		ip, err := r.runnerPodIP(ctx, owner)
 		if err != nil {
-			return st, fmt.Errorf("resolving VM runner %s: %w", r.config.VM.RunnerAddress, err)
+			return st, err
 		}
-		if len(addrs) == 0 {
-			return st, fmt.Errorf("resolving VM runner %s: no address", r.config.VM.RunnerAddress)
-		}
-		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, addrs[0].String(), int32(st.Port), st.Ready, ownerRef)); err != nil {
+		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, ip, int32(st.Port), st.Ready, ownerRef)); err != nil {
 			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
 		}
 	}
@@ -110,29 +117,78 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 }
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
-	if r.vmRunner == nil {
+	if !r.config.VM.Enabled {
 		return
 	}
-	ids, err := r.vmRunner.List(ctx)
+	runners, err := r.knownRunners(ctx)
 	if err != nil {
-		slog.Warn("orphan machine GC: listing machines failed", "error", err)
+		slog.Warn("orphan machine GC: listing VM runners failed", "error", err)
 		return
 	}
-	for _, id := range ids {
-		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
-		if err == nil {
+	for _, runner := range runners {
+		ids, err := runner.client.List(ctx)
+		if err != nil {
+			slog.Warn("orphan machine GC: listing machines failed", "owner", runner.owner, "error", err)
 			continue
 		}
-		if !k8serrors.IsNotFound(err) {
-			slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
-			continue
+		live := 0
+		for _, id := range ids {
+			_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
+			if err == nil {
+				live++
+				continue
+			}
+			if !k8serrors.IsNotFound(err) {
+				slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
+				live++
+				continue
+			}
+			if err := runner.client.Delete(ctx, id); err != nil {
+				slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+				live++
+				continue
+			}
+			slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
 		}
-		if err := r.vmRunner.Delete(ctx, id); err != nil {
-			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
-			continue
+		if live == 0 {
+			r.deleteRunner(ctx, runner.owner)
 		}
-		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, and a delete arrives with only the agent's name — so it is offered to every runner, each of which ignores a machine it does not have.
+func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
+	if !r.config.VM.Enabled {
+		return
+	}
+	runners, err := r.knownRunners(ctx)
+	if err != nil {
+		slog.Warn("deleting machine: listing VM runners failed", "agent", name, "error", err)
+		return
+	}
+	for _, runner := range runners {
+		if err := runner.client.Delete(ctx, name); err != nil {
+			slog.Warn("deleting machine", "agent", name, "owner", runner.owner, "error", err)
+		}
+	}
+}
+
+func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) error {
+	if !r.config.VM.Enabled || owner == "" {
+		return nil
+	}
+	token, ca, err := r.ensureRunnerSecret(ctx, owner)
+	if err != nil {
+		return err
+	}
+	client, err := r.runnerClient(owner, token, ca)
+	if err != nil {
+		return err
+	}
+	if _, err := client.Ensure(ctx, name, vmrunner.MachineSpec{Running: false}); err != nil {
+		return fmt.Errorf("stopping machine for %s: %w", name, err)
+	}
+	return nil
 }
 
 func buildVMEndpointSlice(name, namespace, address string, port int32, ready bool, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
@@ -190,4 +246,16 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		restartReason = "GuestStoppedAnswering"
 	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, st.Restarts, restartReason)
+}
+
+func (r *AgentReconciler) machineStatus(ctx context.Context, owner, name string) (vmrunner.MachineStatus, error) {
+	token, ca, err := r.ensureRunnerSecret(ctx, owner)
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
+	}
+	client, err := r.runnerClient(owner, token, ca)
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
+	}
+	return client.Status(ctx, name)
 }

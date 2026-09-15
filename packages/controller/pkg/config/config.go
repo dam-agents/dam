@@ -242,10 +242,8 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
 		}
 	}
-	cfg.VM.RunnerToken = os.Getenv("VM_RUNNER_TOKEN")
-	cfg.VM.RunnerCA = os.Getenv("VM_RUNNER_CA")
-	if cfg.VM.Enabled && (cfg.VM.RunnerURL == "" || cfg.VM.RunnerAddress == "" || cfg.VM.RunnerToken == "") {
-		return nil, fmt.Errorf("AGENT_VM: enabled needs runnerUrl and runnerAddress, plus VM_RUNNER_TOKEN")
+	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
+		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
 	}
 	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
 		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))

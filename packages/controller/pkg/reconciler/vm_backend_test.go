@@ -12,7 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
@@ -48,6 +50,8 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 				n.statuses[id] = st
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
+		case http.MethodGet:
+			require.NoError(t, json.NewEncoder(w).Encode(n.statuses[id]))
 		case http.MethodDelete:
 			n.deleted = append(n.deleted, id)
 			w.WriteHeader(http.StatusNoContent)
@@ -78,6 +82,27 @@ func vmAgentCR() *apiv1.Agent {
 	return agent
 }
 
+const testOwner = "owner-1"
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller creates an owner's runner itself, so the tests hand it one already reporting a ready pod — the creating path is the same code with an empty cluster.
+func runnerSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner), Namespace: "default"},
+		Data:       map[string][]byte{"token": []byte("node-token")},
+	}
+}
+
+func readyRunnerDeployment() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "platform-vm-runner-" + runnerSuffix(testOwner),
+			Namespace: "default",
+			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, labelOwner: testOwner},
+		},
+		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}
+}
+
 func leafSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: EnvoyLeafSecretName("my-agent"), Namespace: "test-agents"},
@@ -88,11 +113,17 @@ func leafSecret() *corev1.Secret {
 func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *[]time.Duration) {
 	t.Helper()
 	node, srv := newFakeNode(t)
-	r, _ := setupReconciler(t, agent, leafSecret())
-	r.config.VM = config.VMConfig{Enabled: true, RunnerURL: srv.URL, RunnerAddress: "192.168.104.5", RunnerToken: "node-token"}
+	if agent.Labels == nil {
+		agent.Labels = map[string]string{}
+	}
+	agent.Labels[labelOwner] = testOwner
+	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+	}}
 	r.config.AgentTemplateDefaults.Mounts = []config.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}, {Path: "/scratch"}}
-	nodeClient, _ := vmrunner.NewClient(srv.URL, "node-token", "")
-	r.WithVMRunner(nodeClient)
+	r.runnerEndpoint = func(string) string { return srv.URL }
+	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	var requeued []time.Duration
 	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
@@ -130,7 +161,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 	eps, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"192.168.104.5"}, eps.Endpoints[0].Addresses)
+	assert.Equal(t, []string{"10.42.0.9"}, eps.Endpoints[0].Addresses)
 	assert.Equal(t, int32(31000), *eps.Ports[0].Port)
 	assert.Equal(t, "my-agent", eps.Labels["kubernetes.io/service-name"])
 
@@ -190,10 +221,11 @@ func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)
-	r, _ := setupReconciler(t, agent)
-	r.config.VM = config.VMConfig{Enabled: true, RunnerURL: srv.URL, RunnerAddress: "192.168.104.5", RunnerToken: "node-token"}
-	nodeClient2, _ := vmrunner.NewClient(srv.URL, "node-token", "")
-	r.WithVMRunner(nodeClient2)
+	agent.Labels = map[string]string{labelOwner: testOwner}
+	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
+	r.runnerEndpoint = func(string) string { return srv.URL }
+	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")
@@ -207,4 +239,45 @@ func TestVMBackendDisabledFailsReconcile(t *testing.T) {
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "virtualization is disabled")
+}
+
+// TEST_SCENARIO: two owners' vm agents: each owner's machines land on a runner of their own — a separate Deployment, disk and credentials — so one owner's guest cannot reach another's, and the runner's ingress policy admits only the platform.
+func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	_, _, err := r.ensureRunner(ctx, "owner-a")
+	require.NoError(t, err)
+	_, _, err = r.ensureRunner(ctx, "owner-b")
+	require.NoError(t, err)
+
+	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
+	assert.NotEqual(t, a, b, "one runner per owner")
+	for _, name := range []string{a, b} {
+		dep, err := r.client.AppsV1().Deployments("default").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, int32(1), *dep.Spec.Replicas)
+		pvc, err := r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "100Gi", pvc.Spec.Resources.Requests.Storage().String())
+		_, err = r.client.CoreV1().Services("default").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err)
+		np, err := r.client.NetworkingV1().NetworkPolicies("default").Get(ctx, name+"-ingress", metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Len(t, np.Spec.Ingress[0].From, 2, "only the api-server and the controller may dial a runner")
+	}
+
+	secretA, err := r.client.CoreV1().Secrets("default").Get(ctx, a, metav1.GetOptions{})
+	require.NoError(t, err)
+	secretB, err := r.client.CoreV1().Secrets("default").Get(ctx, b, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, secretA.Data["token"], secretB.Data["token"], "a runner's token is its own")
+	assert.NotEmpty(t, secretA.Data["tls.crt"])
+
+	r.deleteRunner(ctx, "owner-a")
+	_, err = r.client.AppsV1().Deployments("default").Get(ctx, a, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
+	_, err = r.client.AppsV1().Deployments("default").Get(ctx, b, metav1.GetOptions{})
+	require.NoError(t, err, "and the other owner's runner is untouched")
 }

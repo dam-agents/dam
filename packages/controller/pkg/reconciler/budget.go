@@ -70,10 +70,10 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 	}
 	newCPU, newMem := r.limitsOf(&agent.Spec)
 	if agent.Spec.IsVM() {
-		if r.vmRunner == nil {
+		if !r.config.VM.Enabled {
 			return allowedVerdict, false, nil
 		}
-		st, err := r.vmRunner.Status(ctx, agent.Name)
+		st, err := r.machineStatus(ctx, owner, agent.Name)
 		if err != nil {
 			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
 		}

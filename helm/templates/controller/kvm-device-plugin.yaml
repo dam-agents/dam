@@ -41,11 +41,11 @@ spec:
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
       priorityClassName: system-node-critical
-      {{- with ($dp.nodeSelector | default .Values.virtualization.node.nodeSelector) }}
+      {{- with ($dp.nodeSelector | default .Values.virtualization.runner.nodeSelector) }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with ($dp.tolerations | default .Values.virtualization.node.tolerations) }}
+      {{- with ($dp.tolerations | default .Values.virtualization.runner.tolerations) }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
