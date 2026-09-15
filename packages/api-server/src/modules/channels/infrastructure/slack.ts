@@ -1358,6 +1358,7 @@ export function createSlackWorker(
         ? ctx.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
         : lastMessage.text) + droppedNote;
 
+    const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
       threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
@@ -1476,6 +1477,7 @@ export function createSlackWorker(
         onImagesDropped,
         onUpdate: presenter.onUpdate,
         onSession: (sessionId) => {
+          seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
           ctx.onSession?.(sessionId);
         },
@@ -1551,10 +1553,21 @@ export function createSlackWorker(
           onDone: () => releaseWatchedRefs(instanceName, turnRefs),
           recover: async (end) => {
             await agents().ensureReady(instanceName);
-            let nudged = false;
+            const disposition = () =>
+              turnRefs
+                .map((ref) =>
+                  [
+                    ref.posted === true,
+                    ref.declined === true,
+                    ref.handedOff === true,
+                    ref.replyText?.length ?? 0,
+                  ].join(":"),
+                )
+                .join(" ");
+            let answered: boolean | undefined;
             await withSessionTurnLock(instanceName, threadKey, async () => {
               if (delivered(end)) return;
-              nudged = true;
+              const before = disposition();
               const ref = turnRefs.at(-1)!;
               beginTurn(instanceName, ref);
               try {
@@ -1564,7 +1577,8 @@ export function createSlackWorker(
                 );
               } finally {
                 endTurn(instanceName, ref);
-                if (!delivered("clean")) {
+                answered = disposition() !== before;
+                if (!answered) {
                   getLogger().info(
                     {
                       agentId: instanceName,
@@ -1576,13 +1590,13 @@ export function createSlackWorker(
                 }
               }
             });
-            if (nudged) {
+            if (answered !== undefined) {
               emit({
                 type: EventType.ChannelTurnRelayed,
                 channel: "slack",
                 agentId: instanceName,
                 actorSub: null,
-                outcome: delivered("clean") ? "success" : "failure",
+                outcome: answered ? "success" : "failure",
                 reason: "recovery-nudge",
               });
             }
@@ -1595,11 +1609,9 @@ export function createSlackWorker(
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
       }
-      const settledSessionId = turnRefs.find(
-        (ref) => ref.sessionId !== undefined,
-      )?.sessionId;
-      if (outcome === "success" && settledSessionId !== undefined) {
-        turnRecovery.dismiss(instanceName, settledSessionId);
+      if (outcome === "success") {
+        for (const sid of seenSessionIds)
+          turnRecovery.dismiss(instanceName, sid);
       }
       if (
         failureReason === undefined &&
@@ -2738,6 +2750,7 @@ export function createSlackWorker(
     const gw = gateway;
 
     const multi = args.messages.length > 1;
+    const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
       channel: args.channel,
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
@@ -2845,6 +2858,7 @@ export function createSlackWorker(
             { guidance, deliver: deliverFiles },
           ),
         onSession: (sessionId) => {
+          seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
         },
         onGhostTurn: () => {
@@ -2880,11 +2894,9 @@ export function createSlackWorker(
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
       }
-      const settledSessionId = turnRefs.find(
-        (ref) => ref.sessionId !== undefined,
-      )?.sessionId;
-      if (outcome === "success" && settledSessionId !== undefined) {
-        turnRecovery.dismiss(args.instanceName, settledSessionId);
+      if (outcome === "success") {
+        for (const sid of seenSessionIds)
+          turnRecovery.dismiss(args.instanceName, sid);
       }
       emit({
         type: EventType.ChannelTurnRelayed,

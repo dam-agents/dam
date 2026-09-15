@@ -16,7 +16,9 @@ import {
  * is over only on a positive signal — one of those statuses, or the platform
  * reporting the pod gone (the idle checker never hibernates a pod under a
  * running turn); a failed read is unknown and just keeps being polled. Every
- * way a watch ends fires onDone, so caller bookkeeping cannot outlive it.
+ * way a watch ends fires onDone — after the recovery where one runs, so a
+ * reply landing mid-recovery stays markable — and caller bookkeeping cannot
+ * outlive the watch.
  */
 
 configureLogger({ level: "error", write: () => {} });
@@ -30,20 +32,20 @@ function scripted(seq: AcpTurnStatus[]) {
 }
 
 function makeTurn(over?: Partial<WatchedTurn>) {
-  const calls = { recover: [] as string[], done: 0 };
+  const events: string[] = [];
   const turn: WatchedTurn = {
     instanceName: "agent-1",
     sessionId: "s-1",
     isDelivered: () => false,
     recover: async (end) => {
-      calls.recover.push(end);
+      events.push(`recover:${end}`);
     },
     onDone: () => {
-      calls.done += 1;
+      events.push("done");
     },
     ...over,
   };
-  return { turn, calls };
+  return { turn, events };
 }
 
 describe("turn recovery", () => {
@@ -63,11 +65,10 @@ describe("turn recovery", () => {
       turnStatus: scripted(["pending", "pending"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(2 * POLL_MS);
-    expect(calls.recover).toEqual([]);
-    expect(calls.done).toBe(0);
+    expect(events).toEqual([]);
     recovery.stop();
   });
 
@@ -81,11 +82,10 @@ describe("turn recovery", () => {
       turnStatus: scripted(["pending", "ended"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(5 * POLL_MS);
-    expect(calls.recover).toEqual(["clean"]);
-    expect(calls.done).toBe(1);
+    expect(events).toEqual(["recover:clean", "done"]);
     recovery.stop();
   });
 
@@ -99,12 +99,12 @@ describe("turn recovery", () => {
       turnStatus: scripted(["pending", "ended"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn({
+    const { turn, events } = makeTurn({
       isDelivered: (end) => end === "clean",
     });
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(5 * POLL_MS);
-    expect(calls.recover).toEqual([]);
+    expect(events).toEqual(["done"]);
     recovery.stop();
   });
 
@@ -118,12 +118,12 @@ describe("turn recovery", () => {
       turnStatus: scripted(["pending", "interrupted"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn({
+    const { turn, events } = makeTurn({
       isDelivered: (end) => end === "clean",
     });
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(3 * POLL_MS);
-    expect(calls.recover).toEqual(["interrupted"]);
+    expect(events).toEqual(["recover:interrupted", "done"]);
     recovery.stop();
   });
 
@@ -136,10 +136,10 @@ describe("turn recovery", () => {
       turnStatus: scripted(["interrupted"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn({ isDelivered: () => true });
+    const { turn, events } = makeTurn({ isDelivered: () => true });
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(2 * POLL_MS);
-    expect(calls.recover).toEqual([]);
+    expect(events).toEqual(["done"]);
     recovery.stop();
   });
 
@@ -153,10 +153,10 @@ describe("turn recovery", () => {
       turnStatus: () => Promise.reject(new Error("no pod")),
       podGone: async () => true,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(POLL_MS);
-    expect(calls.recover).toEqual(["clean"]);
+    expect(events).toEqual(["recover:clean", "done"]);
     recovery.stop();
   });
 
@@ -171,10 +171,10 @@ describe("turn recovery", () => {
       turnStatus: () => Promise.reject(new Error("timeout")),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(5 * POLL_MS);
-    expect(calls.recover).toEqual([]);
+    expect(events).toEqual([]);
     recovery.stop();
   });
 
@@ -192,13 +192,12 @@ describe("turn recovery", () => {
       },
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(WINDOW_MS + 10 * POLL_MS);
     const pollsAtExpiry = polls;
     await vi.advanceTimersByTimeAsync(10 * POLL_MS);
-    expect(calls.recover).toEqual([]);
-    expect(calls.done).toBe(1);
+    expect(events).toEqual(["done"]);
     expect(polls).toBe(pollsAtExpiry);
     recovery.stop();
   });
@@ -213,12 +212,11 @@ describe("turn recovery", () => {
       turnStatus: scripted(["ended"]),
       podGone: async () => false,
     });
-    const { turn, calls } = makeTurn();
+    const { turn, events } = makeTurn();
     recovery.watch(turn);
     recovery.dismiss("agent-1", "s-1");
     await vi.advanceTimersByTimeAsync(2 * POLL_MS);
-    expect(calls.recover).toEqual([]);
-    expect(calls.done).toBe(1);
+    expect(events).toEqual(["done"]);
     recovery.stop();
   });
 });

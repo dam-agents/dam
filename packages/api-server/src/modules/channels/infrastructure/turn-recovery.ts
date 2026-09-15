@@ -49,9 +49,11 @@ interface WatchState {
  * re-registered session invalidates the old watch's in-flight poll instead
  * of racing it; a later answering turn dismisses the watch, so a person who
  * re-asked never triggers a second answer; and every way a watch ends fires
- * its onDone hook, so the caller's bookkeeping cannot outlive it. Per-turn
- * single-shot: a recovery that itself fails is logged and given up, never
- * retried into a loop.
+ * its onDone hook — after the recovery action, where one runs — so the
+ * caller's bookkeeping neither outlives the watch nor dies before the work
+ * it guards (a reply landing while the recovery wakes the pod must still be
+ * markable). Per-turn single-shot: a recovery that itself fails is logged
+ * and given up, never retried into a loop.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -67,12 +69,16 @@ export function createTurnRecovery(deps: {
     return `${instanceName} ${sessionId}`;
   }
 
-  function drop(key: string): void {
+  function remove(key: string): WatchState | undefined {
     const state = watches.get(key);
-    if (state === undefined) return;
+    if (state === undefined) return undefined;
     if (state.timer !== undefined) clearTimeout(state.timer);
     watches.delete(key);
-    state.turn.onDone?.();
+    return state;
+  }
+
+  function drop(key: string): void {
+    remove(key)?.turn.onDone?.();
   }
 
   function schedule(key: string, turn: WatchedTurn, state: WatchState): void {
@@ -118,10 +124,9 @@ export function createTurnRecovery(deps: {
 
     const end: WatchedTurnEnd =
       verdict === "interrupted" ? "interrupted" : "clean";
-    drop(key);
-    if (turn.isDelivered(end)) return;
+    remove(key);
     try {
-      await turn.recover(end);
+      if (!turn.isDelivered(end)) await turn.recover(end);
     } catch (err) {
       getLogger().info(
         {
@@ -131,6 +136,8 @@ export function createTurnRecovery(deps: {
         },
         "slack.turn.recovery_failed: the delivery nudge could not run",
       );
+    } finally {
+      turn.onDone?.();
     }
   }
 
