@@ -281,7 +281,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	}
 	replicas := int32(1)
 	root := int64(0)
-	resources := corev1.ResourceRequirements{Limits: corev1.ResourceList{}, Requests: corev1.ResourceList{}}
+	var resources corev1.ResourceRequirements
 	if spec.Resources != nil {
 		resources = *spec.Resources.DeepCopy()
 	}

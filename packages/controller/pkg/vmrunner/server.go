@@ -31,6 +31,12 @@ var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type failure struct{ message, reason string }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine is restarted only once it has answered at least once and then gone quiet for longer than any legitimate boot, so both halves are read together and neither means anything alone.
+type health struct {
+	everReady  bool
+	quietSince time.Time
+}
+
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
 type Server struct {
@@ -43,22 +49,21 @@ type Server struct {
 	ReserveMiB int
 	AllowFrom  []*net.IPNet
 
-	mu             sync.Mutex
-	locks          map[string]*sync.Mutex
-	pending        map[string]string
-	committing     map[string]int
-	failures       map[string]failure
-	listeners      map[string]net.Listener
-	gens           map[string]uint64
-	drift          map[string]string
-	restarts       map[string]int32
-	wasHealthy     map[string]bool
-	unhealthySince map[string]time.Time
+	mu         sync.Mutex
+	locks      map[string]*sync.Mutex
+	pending    map[string]string
+	committing map[string]int
+	failures   map[string]failure
+	listeners  map[string]net.Listener
+	gens       map[string]uint64
+	drift      map[string]string
+	restarts   map[string]int32
+	health     map[string]health
 }
 
 func (s *Server) Start() error {
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
-	s.gens, s.drift, s.wasHealthy, s.unhealthySince = map[string]uint64{}, map[string]string{}, map[string]bool{}, map[string]time.Time{}
+	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing = map[string]int32{}, map[string]int{}
 	ids, err := s.machineIDs()
 	if err != nil {
@@ -201,8 +206,8 @@ func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bo
 func (s *Server) deadForLong(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	since, ok := s.unhealthySince[id]
-	return s.wasHealthy[id] && ok && time.Since(since) > unhealthyRestart
+	h := s.health[id]
+	return h.everReady && !h.quietSince.IsZero() && time.Since(h.quietSince) > unhealthyRestart
 }
 
 func needsRestart(applied, desired MachineSpec) bool {
@@ -365,8 +370,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	delete(s.failures, id)
 	delete(s.drift, id)
 	delete(s.restarts, id)
-	delete(s.wasHealthy, id)
-	delete(s.unhealthySince, id)
+	delete(s.health, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -389,7 +393,7 @@ func (s *Server) lock(id string) *sync.Mutex {
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
 	s.pending[id] = op
-	delete(s.unhealthySince, id)
+	s.health[id] = health{everReady: s.health[id].everReady}
 	gen := s.gens[id]
 	s.mu.Unlock()
 	go func() {
@@ -445,12 +449,13 @@ func (s *Server) status(id string) MachineStatus {
 	if st.State == StateRunning {
 		st.Ready = s.healthy(st.Port)
 		s.mu.Lock()
+		h := s.health[id]
 		if st.Ready {
-			s.wasHealthy[id] = true
-			delete(s.unhealthySince, id)
-		} else if _, seen := s.unhealthySince[id]; !seen {
-			s.unhealthySince[id] = time.Now()
+			h = health{everReady: true}
+		} else if h.quietSince.IsZero() {
+			h.quietSince = time.Now()
 		}
+		s.health[id] = h
 		s.mu.Unlock()
 	}
 	return st
