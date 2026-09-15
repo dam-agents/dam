@@ -9,11 +9,18 @@ export {
   type MetricsReader,
   type MetricsWindow,
   type OwnedAgent,
+  type TelemetryEvent,
+  type TraceSpan,
 } from "./services/metrics-service.js";
 export {
-  createAgentUsageSummary,
-  createUnavailableAgentUsageSummary,
-  type AgentUsageSummaryService,
+  createAgentTelemetry,
+  createUnavailableAgentTelemetry,
+  type AgentTelemetryService,
+  type AgentTelemetryQuery,
+  type AgentTelemetryRecordsQuery,
   type AgentUsageSummaryResult,
-} from "./services/agent-usage-summary.js";
-export { registerUsageSummaryTool } from "./mcp-tools.js";
+  type AgentLlmCallsResult,
+  type AgentTelemetryEventsResult,
+  type AgentTraceSpansResult,
+} from "./services/agent-telemetry.js";
+export { registerAgentTelemetryTools } from "./mcp-tools.js";

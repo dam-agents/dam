@@ -23,6 +23,29 @@ export interface SessionSpend {
   costUsd: number;
 }
 
+export interface TelemetryEvent {
+  at: string;
+  body: string;
+  severity: string;
+  sessionId: string;
+  traceId: string;
+  attributes: Record<string, string>;
+}
+
+export interface TraceSpan {
+  at: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId: string;
+  name: string;
+  kind: string;
+  serviceName: string;
+  durationMs: number;
+  statusCode: string;
+  statusMessage: string;
+  attributes: Record<string, string>;
+}
+
 export interface MetricsReader {
   tokenSpendByModel(
     agentIds: readonly string[],
@@ -50,6 +73,16 @@ export interface MetricsReader {
     window: MetricsWindow,
     limit: number,
   ): Promise<CallContext[]>;
+  telemetryEvents(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+    limit: number,
+  ): Promise<TelemetryEvent[]>;
+  traceSpans(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+    limit: number,
+  ): Promise<TraceSpan[]>;
   close(): Promise<void>;
 }
 

@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-09-14
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -38,7 +38,16 @@ The Overview session filter is **trace-aware**, not a literal session-id match: 
 
 ## Agent-facing read
 
-A third read serves an agent rather than a signed-in user: the `get_usage_summary` MCP tool, over the same reader, **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own spend. It answers the one question an unattended agent needs (what did I cost over the last N days: total, per-model split, session count). Its window is bounded *and* defaulted in the contract package next to the tRPC input bounds — 7 days by default, 30 at most — so a tool call cannot widen into a whole-retention scan, and an agent that omits the argument gets the cheap window rather than the widest one. It exists for owner-directed questions an agent answers about its own spend; the case-study edition deliberately carries no cost, so nothing consent-gated depends on it ([case-studies](case-studies.md)).
+A second surface serves an agent rather than a signed-in user: four MCP tools over the same reader, each **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own runs. That pinning is the whole isolation model. It rests on the same gateway-stamped attribution every other read scopes by ([observability — trusted attribution](observability.md#trusted-attribution)), which an agent cannot forge and which platform telemetry never carries, so no widening of the body shapes below can reach another agent's records or the platform's own.
+
+- **`get_usage_summary`** — what a window cost: total spend and model time, the per-model split, and a **per-session rollup** carrying each session's call count, model time, tokens, cost and first/last activity. The rollup is what turns *this got slower* into a comparison between runs.
+- **`get_llm_calls`** — the per-call rows behind that: model, request latency, tokens in and out, context size, cost.
+- **`get_telemetry_events`** — every record the agent emitted, not only the LLM-call shape the spend reads narrow to, so errors and tool decisions are reachable. Content bodies are never exported ([observability — agent export](observability.md#agent-export)), so this is structural throughout; the read needs no redaction because there is nothing to redact.
+- **`get_trace_spans`** — the span structure of a run, read from the **trace** store rather than the log records. It is therefore the one agent-facing read not tied to one harness's log shape, and the only one that answers anything for a harness exporting traces alone.
+
+Both bounds live in the contract package next to the tRPC input bounds: the **window** is 7 days by default and 30 at most, and the record reads take a **page size** — 50 by default, 200 at most — so no single tool call widens into a whole-retention scan, and an agent that omits either argument gets the cheap one rather than the widest. Every read also takes an optional **session**, narrowed through the same trace-aware fold the Overview uses, so *this run* means the same thing here as it does there; spans, which carry no session id of their own, resolve it through the trace family that session's calls belong to.
+
+The surface exists for the questions an agent has about itself — what a piece of work cost, where a run's time went, what failed — and for the owner-directed ones it answers on request. The case-study edition deliberately carries no cost, so nothing consent-gated depends on any of it ([case-studies](case-studies.md)).
 
 ## Session directory
 

@@ -10,6 +10,8 @@ import type {
   MetricsReader,
   MetricsWindow,
   SessionSpend,
+  TelemetryEvent,
+  TraceSpan,
 } from "../services/metrics-service.js";
 
 export function createClickhouseClient(cfg: {
@@ -26,33 +28,57 @@ export function createClickhouseClient(cfg: {
   });
 }
 
-export const ownedApiRequests = (w: MetricsWindow): string => {
-  const base = [
-    "Body = 'claude_code.api_request'",
-    "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
-    ...(w.hours === undefined
-      ? []
-      : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
-    ...(w.fromIso === undefined
-      ? []
-      : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
-    ...(w.toIso === undefined
-      ? []
-      : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
-  ];
+const AGENT_GATE =
+  "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
+
+const API_REQUEST = "Body = 'claude_code.api_request'";
+
+const timeBounds = (w: MetricsWindow): string[] => [
+  ...(w.hours === undefined
+    ? []
+    : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
+  ...(w.fromIso === undefined
+    ? []
+    : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
+  ...(w.toIso === undefined
+    ? []
+    : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
+];
+
+const ownedCallRows = (w: MetricsWindow): string =>
+  [API_REQUEST, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+
+const sessionTraceIds = (w: MetricsWindow): string =>
+  `SELECT DISTINCT TraceId FROM otel_logs
+       WHERE ${ownedCallRows(w)}
+         AND LogAttributes['session.id'] = {sessionId:String}
+         AND TraceId != ''`;
+
+const ownedLogRows = (w: MetricsWindow, body: string[]): string => {
+  const base = [...body, AGENT_GATE, ...timeBounds(w)];
   if (w.sessionId === undefined) return base.join("\n  AND ");
-  const owned = base.join(" AND ");
+  const owned = ownedCallRows(w);
   return [
     ...base,
     `(LogAttributes['session.id'] = {sessionId:String}
    OR LogAttributes['session.id'] IN (
      SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
      WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
-       SELECT DISTINCT TraceId FROM otel_logs
-       WHERE ${owned}
-         AND LogAttributes['session.id'] = {sessionId:String}
-         AND TraceId != '')))`,
+       ${sessionTraceIds(w)})))`,
   ].join("\n  AND ");
+};
+
+export const ownedApiRequests = (w: MetricsWindow): string =>
+  ownedLogRows(w, [API_REQUEST]);
+
+export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
+
+export const ownedAgentSpans = (w: MetricsWindow): string => {
+  const base = [AGENT_GATE, ...timeBounds(w)];
+  if (w.sessionId === undefined) return base.join("\n  AND ");
+  return [...base, `TraceId IN (\n       ${sessionTraceIds(w)})`].join(
+    "\n  AND ",
+  );
 };
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
@@ -70,6 +96,16 @@ const TOK_CACHE_C = IN("'cache_creation_tokens'");
 const COST_USD = `${IN("'cost_usd_micros'")} / 1e6`;
 
 const n = (v: unknown): number => Number(v ?? 0);
+
+const attrs = (v: unknown): Record<string, string> =>
+  v === null || typeof v !== "object"
+    ? {}
+    : Object.fromEntries(
+        Object.entries(v as Record<string, unknown>).map(([k, value]) => [
+          k,
+          String(value ?? ""),
+        ]),
+      );
 
 export function createClickhouseReader(
   client: ClickHouseClient,
@@ -297,6 +333,66 @@ export function createClickhouseReader(
         costUsd: n(x.costUsd),
         durationMs: n(x.durationMs),
       })) satisfies CallContext[];
+    },
+
+    async telemetryEvents(agentIds, window, limit) {
+      const r = await rows(
+        `SELECT
+           Timestamp AS at,
+           Body AS body,
+           SeverityText AS severity,
+           LogAttributes['session.id'] AS sessionId,
+           TraceId AS traceId,
+           LogAttributes AS attributes
+         FROM otel_logs
+         WHERE ${ownedAgentLogs(window)}
+         ORDER BY Timestamp DESC
+         LIMIT {limit:UInt32}`,
+        { ...windowParams(agentIds, window), limit },
+      );
+      return r.map((x) => ({
+        at: String(x.at ?? ""),
+        body: String(x.body ?? ""),
+        severity: String(x.severity ?? ""),
+        sessionId: String(x.sessionId ?? ""),
+        traceId: String(x.traceId ?? ""),
+        attributes: attrs(x.attributes),
+      })) satisfies TelemetryEvent[];
+    },
+
+    async traceSpans(agentIds, window, limit) {
+      const r = await rows(
+        `SELECT
+           Timestamp AS at,
+           TraceId AS traceId,
+           SpanId AS spanId,
+           ParentSpanId AS parentSpanId,
+           SpanName AS name,
+           SpanKind AS kind,
+           ServiceName AS serviceName,
+           Duration / 1e6 AS durationMs,
+           StatusCode AS statusCode,
+           StatusMessage AS statusMessage,
+           SpanAttributes AS attributes
+         FROM otel_traces
+         WHERE ${ownedAgentSpans(window)}
+         ORDER BY Timestamp DESC
+         LIMIT {limit:UInt32}`,
+        { ...windowParams(agentIds, window), limit },
+      );
+      return r.map((x) => ({
+        at: String(x.at ?? ""),
+        traceId: String(x.traceId ?? ""),
+        spanId: String(x.spanId ?? ""),
+        parentSpanId: String(x.parentSpanId ?? ""),
+        name: String(x.name ?? ""),
+        kind: String(x.kind ?? ""),
+        serviceName: String(x.serviceName ?? ""),
+        durationMs: n(x.durationMs),
+        statusCode: String(x.statusCode ?? ""),
+        statusMessage: String(x.statusMessage ?? ""),
+        attributes: attrs(x.attributes),
+      })) satisfies TraceSpan[];
     },
 
     async close() {
