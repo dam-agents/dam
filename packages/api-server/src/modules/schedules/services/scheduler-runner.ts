@@ -172,10 +172,12 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(input.scheduleId);
       if (!sched) return;
       const verdict = VERDICT[input.outcome];
-      await deps.repo.applyStatusPatch(
-        input.scheduleId,
-        statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
-      );
+      if (sched.spec.precheck)
+        await deps.repo.applyStatusPatch(
+          input.scheduleId,
+          statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
+        );
+      else await deps.repo.clearPrecheckStatus(input.scheduleId);
       if (verdict === "declined") {
         const stamp = await deps.activityStamps?.consume(input.eventId);
         if (stamp && deps.restoreActivity)
