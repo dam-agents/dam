@@ -1,5 +1,7 @@
+import { Help } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -42,7 +44,36 @@ export function SpendWidget() {
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
       <div className="mb-1 flex min-h-[32px] items-center justify-between">
-        <p className="text-sm text-muted-foreground">Spend</p>
+        <span className="flex items-center gap-1.5">
+          <p className="text-sm text-muted-foreground">Spend</p>
+          <Tooltip
+            content={
+              <span>
+                Total model cost across your agents.{" "}
+                {spenders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const topAgent = spenders[0];
+                      if (topAgent)
+                        navigateToSandboxHome(topAgent.agentId, "usage");
+                    }}
+                    className="underline"
+                  >
+                    View detailed breakdown
+                  </button>
+                )}
+              </span>
+            }
+            side="bottom"
+          >
+            <Help
+              size={16}
+              className="cursor-help text-muted-foreground/50"
+              data-review="spend-tooltip"
+            />
+          </Tooltip>
+        </span>
         <div className="flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">
           {SPEND_PERIODS.map((option) => (
             <button
@@ -70,14 +101,9 @@ export function SpendWidget() {
       {spenders.length > 0 ? (
         <div className="space-y-3">
           {spenders.map((spender) => (
-            <button
-              key={spender.agentId}
-              type="button"
-              onClick={() => navigateToSandboxHome(spender.agentId, "usage")}
-              className="group -mx-2 w-[calc(100%+16px)] rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
-            >
+            <div key={spender.agentId}>
               <div className="mb-1 flex items-center justify-between">
-                <span className="truncate text-sm text-muted-foreground group-hover:text-foreground">
+                <span className="truncate text-sm text-muted-foreground">
                   {spender.agentName}
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -90,7 +116,7 @@ export function SpendWidget() {
                   width: top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
                 }}
               />
-            </button>
+            </div>
           ))}
         </div>
       ) : (

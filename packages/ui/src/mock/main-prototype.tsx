@@ -13,7 +13,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { applyBrand } from "../brand.js";
+import { PACKS } from "../modules/packs/data/packs.js";
 import { queryClient } from "../query-client.js";
+import { useStore } from "../store.js";
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
 import { artifactFolders, artifacts } from "./data/artifacts.js";
@@ -230,6 +232,20 @@ queryClient.setQueryData(trpcKey("files.list"), [
   { path: "src/index.ts", type: "file" },
   { path: "package.json", type: "file" },
 ]);
+
+// ─── Seed onboarding state for one agent ────────────────────────────────────
+{
+  const pack = PACKS.find((p) => p.id === "docs-maintainer");
+  if (pack) {
+    const agentId = agents[0]?.id;
+    if (agentId) {
+      useStore.getState().initOnboarding(agentId, pack);
+      useStore
+        .getState()
+        .completeOnboardingStep(agentId, `connect-${pack.required[0]?.label}`);
+    }
+  }
+}
 
 // ─── Stub fetch: returns proper tRPC responses for refetches ─────────────────
 

@@ -25,6 +25,44 @@ interface ReviewScreen {
   go: () => void;
 }
 
+function flashElement(selector: string, delay = 100) {
+  setTimeout(() => {
+    const el = document.querySelector(selector);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const ring = document.createElement("div");
+    Object.assign(ring.style, {
+      position: "absolute",
+      inset: "-6px",
+      borderRadius: "12px",
+      border: "2px solid #6366f1",
+      boxShadow: "0 0 0 4px rgba(99,102,241,0.2)",
+      pointerEvents: "none",
+      zIndex: "9998",
+      animation: "review-flash 2s ease-out forwards",
+    });
+    const parent = el as HTMLElement;
+    const prev = parent.style.position;
+    if (!prev || prev === "static") parent.style.position = "relative";
+    parent.appendChild(ring);
+    setTimeout(() => {
+      ring.remove();
+      if (!prev || prev === "static") parent.style.position = prev;
+    }, 2000);
+  }, delay);
+}
+
+if (!document.getElementById("review-flash-style")) {
+  const style = document.createElement("style");
+  style.id = "review-flash-style";
+  style.textContent = `@keyframes review-flash {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+  }`;
+  document.head.appendChild(style);
+}
+
 function useReviewScreens(): ReviewScreen[] {
   const setView = useStore((s) => s.setView);
   return [
@@ -57,6 +95,14 @@ function useReviewScreens(): ReviewScreen[] {
       label: "Schedule (Configure)",
       note: "Schedule panel in agent configure tab.",
       go: () => setView("home"),
+    },
+    {
+      label: "Spend detail link",
+      note: "Hover the ? next to Spend — tooltip has a link to the usage page.",
+      go: () => {
+        setView("home");
+        flashElement("[data-review='spend-tooltip']");
+      },
     },
     {
       label: "Card gallery",
@@ -178,6 +224,7 @@ export function MockStateBar() {
                 (s.label === "Setup workbench" && view === "setup-workbench") ||
                 (s.label === "Schedule (Setup)" && view === "agent-new") ||
                 (s.label === "Schedule (Configure)" && view === "home") ||
+                (s.label === "Spend detail link" && view === "home") ||
                 (s.label === "Card gallery" && view === "card-gallery");
               return (
                 <button

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { DemoHeaderTag } from "../../packs/components/demo-treatments.js";
+import { OnboardingTag } from "../../packs/components/onboarding-tag.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -69,20 +70,10 @@ function computeSubtitle(size: { cpu?: string; memory?: string }): string {
 
 function AgentStateBadge({ state }: { state: AgentDisplayState }) {
   if (state === "running" || state === "running_always_on") {
-    return (
-      <Badge variant="success" className="gap-1">
-        {state === "running_always_on" && <Power size={16} />}
-        Working
-      </Badge>
-    );
+    return <Badge variant="success">Working</Badge>;
   }
   if (state === "hibernated" || state === "idle_always_on") {
-    return (
-      <Badge className={cn(BLUE_BADGE, "gap-1")}>
-        {state === "idle_always_on" && <Power size={16} />}
-        Idle
-      </Badge>
-    );
+    return <Badge className={BLUE_BADGE}>Idle</Badge>;
   }
   if (state === "hibernating") {
     return <Badge variant="muted">Hibernating</Badge>;
@@ -124,9 +115,11 @@ export function AgentRow({
   const visibleSlack = slackChannels.slice(0, maxVisibleSlack);
   const slackOverflow = slackChannels.length - visibleSlack.length;
 
+  const isAlwaysOn =
+    display.state === "running_always_on" || display.state === "idle_always_on";
   const hasSchedules = (scheduleCount ?? 0) > 0;
   const hasSlack = slackChannels.length > 0;
-  const hasMeta = hasSchedules || hasSlack;
+  const hasMeta = hasSchedules || hasSlack || isAlwaysOn;
 
   return (
     <div
@@ -144,6 +137,7 @@ export function AgentRow({
               {agent.name}
             </h2>
             {isDemo && <DemoHeaderTag />}
+            <OnboardingTag agentId={agent.id} />
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
 
@@ -163,6 +157,13 @@ export function AgentRow({
                   <ConnectionIcon iconSlug="slack" alt="" size={16} />
                   {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
                   {slackOverflow > 0 && `, +${slackOverflow}`}
+                </Badge>
+              )}
+
+              {isAlwaysOn && (
+                <Badge variant="muted" className="gap-1.5">
+                  <Power size={16} />
+                  Always on
                 </Badge>
               )}
 

@@ -10,6 +10,8 @@ import { ComputeWidget } from "../../modules/home/components/compute-widget.js";
 import { FeedApprovalCard } from "../../modules/home/components/feed-approval-card.js";
 import { FeedCard } from "../../modules/home/components/feed-card.js";
 import { SpendWidget } from "../../modules/home/components/spend-widget.js";
+import { PACKS } from "../../modules/packs/data/packs.js";
+import { useStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import { agents } from "./agents.js";
 import { schedules } from "./schedules.js";
@@ -83,6 +85,19 @@ const bare = agents.find(
 const withSlack = agents.find((a) =>
   a.channels.some((c) => c.type === "slack"),
 );
+
+const onboardingAgent = bare ?? running;
+const onboardingPack = PACKS.find((p) => p.id === "docs-maintainer")!;
+if (onboardingPack && onboardingAgent) {
+  const store = useStore.getState();
+  if (!store.onboardingByAgent.has(onboardingAgent.id)) {
+    store.initOnboarding(onboardingAgent.id, onboardingPack);
+    store.completeOnboardingStep(
+      onboardingAgent.id,
+      `connect-${onboardingPack.required[0]?.label}`,
+    );
+  }
+}
 
 function SectionHeader({
   title,
@@ -438,7 +453,7 @@ export function AgentCardGallery() {
         {alwaysOn && (
           <CardDemo
             title="5a. Always-on (working)"
-            note="Power icon signals always-on — Working badge."
+            note="'Always on' tag in metadata row — Working badge."
             agent={alwaysOn}
           />
         )}
@@ -446,7 +461,7 @@ export function AgentCardGallery() {
         {alwaysOnIdle && (
           <CardDemo
             title="5b. Always-on (idle)"
-            note="Power icon signals always-on — Idle badge."
+            note="'Always on' tag in metadata row — Idle badge."
             agent={alwaysOnIdle}
           />
         )}
@@ -480,6 +495,14 @@ export function AgentCardGallery() {
           agent={running}
           temporaryDraw={{ count: 3, cpuMilli: 6000, memoryMi: 6144 }}
         />
+
+        {onboardingAgent && (
+          <CardDemo
+            title="10. Onboarding (from starter kit)"
+            note="'Setup' tag next to name — hover to see onboarding checklist."
+            agent={onboardingAgent}
+          />
+        )}
       </div>
     </div>
   );
