@@ -25,19 +25,21 @@ export function createTriggerStateStore(stateDir: string): TriggerStateStore {
       return store.read().scheduleSessions[scheduleId];
     },
     setSessionForSchedule(scheduleId, sessionId) {
+      const state = store.read();
       store.write({
+        ...state,
         scheduleSessions: {
-          ...store.read().scheduleSessions,
+          ...state.scheduleSessions,
           [scheduleId]: sessionId,
         },
       });
     },
     clearSessionForSchedule(scheduleId) {
-      const { scheduleSessions } = store.read();
-      if (!(scheduleId in scheduleSessions)) return;
-      const next = { ...scheduleSessions };
+      const state = store.read();
+      if (!(scheduleId in state.scheduleSessions)) return;
+      const next = { ...state.scheduleSessions };
       delete next[scheduleId];
-      store.write({ scheduleSessions: next });
+      store.write({ ...state, scheduleSessions: next });
     },
   };
 }

@@ -21,11 +21,15 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useOpenConversation } from "../hooks/use-open-conversation.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
+import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
+import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -91,6 +95,15 @@ export function DockedArtifactPanel() {
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
+  const openConversation = useOpenConversation(artifact?.agentId ?? null);
+  const {
+    bridge,
+    status: requestStatus,
+    dismissFailure,
+  } = useArtifactBridge(
+    shownVersion === latest ? artifact : null,
+    openConversation,
+  );
 
   const frame =
     artifact && preview.data ? (
@@ -101,6 +114,7 @@ export function DockedArtifactPanel() {
         className="h-full w-full bg-white"
         deferMs={0}
         postData={feedPostForShown}
+        bridge={bridge}
       />
     ) : null;
   const frameFallback = (
@@ -156,6 +170,7 @@ export function DockedArtifactPanel() {
             )}
             {artifact && (
               <>
+                <ArtifactSessionButton artifact={artifact} />
                 <ArtifactStatusBadge
                   artifact={artifact}
                   onShare={() => setShareOpen(true)}
@@ -220,6 +235,12 @@ export function DockedArtifactPanel() {
           <Close size={16} />
         </Button>
       </div>
+
+      <ArtifactRequestStatusBar
+        status={requestStatus}
+        onDismissFailure={dismissFailure}
+        className="border-b border-border"
+      />
 
       <div className="min-h-0 flex-1">
         {artifactError ? (

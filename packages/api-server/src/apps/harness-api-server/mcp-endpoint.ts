@@ -14,6 +14,7 @@ import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
   quietWindowSchema,
+  type FeaturesService,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -26,8 +27,14 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
-import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
-import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
+import {
+  registerArtifactLibraryTools,
+  registerArtifactRequestTools,
+} from "../../modules/artifact-library/mcp-tools.js";
+import type {
+  ArtifactLibraryServiceImpl,
+  ArtifactRequestsServiceImpl,
+} from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
   type KbShareAgentOps,
@@ -96,6 +103,8 @@ export interface McpSessionDeps {
   skills: SkillsService;
   schedules: SchedulesService;
   artifactLibrary: ArtifactLibraryServiceImpl;
+  artifactRequests: ArtifactRequestsServiceImpl;
+  interactiveArtifacts: boolean;
   invocations: InvocationsService;
   experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
@@ -801,6 +810,7 @@ export function createMcpSession(
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
+    interactiveArtifacts: deps.interactiveArtifacts,
     attachToExperiment: (artifactId, experimentId) =>
       deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
@@ -825,6 +835,13 @@ export function createMcpSession(
     agentId,
     usageSummary: deps.usageSummary,
   });
+
+  if (deps.interactiveArtifacts) {
+    registerArtifactRequestTools(server, {
+      artifactRequests: deps.artifactRequests,
+      agentId,
+    });
+  }
 
   server.tool(
     "report_result",
@@ -862,6 +879,8 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactRequestsServiceFor: (owner: string) => ArtifactRequestsServiceImpl;
+  featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
@@ -893,20 +912,28 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
+    const artifactRequests = deps.artifactRequestsServiceFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
-      await Promise.all([
-        deps.channelManager.supportsUserLookup(),
-        deps.channelManager.supportsMessageReactions(),
-        deps.carriesInspectorRole(verified.owner),
-      ]);
+    const [
+      supportsUserLookup,
+      supportsMessageReactions,
+      ownerIsInspector,
+      flags,
+    ] = await Promise.all([
+      deps.channelManager.supportsUserLookup(),
+      deps.channelManager.supportsMessageReactions(),
+      deps.carriesInspectorRole(verified.owner),
+      deps.featuresServiceFor(verified.owner).flags(),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
       schedules,
       artifactLibrary,
+      artifactRequests,
+      interactiveArtifacts: flags["interactive-artifacts"],
       invocations,
       experiments,
       kbShares:

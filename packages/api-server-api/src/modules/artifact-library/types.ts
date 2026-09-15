@@ -43,6 +43,8 @@ export interface LibraryArtifact {
   agentId: string | null;
   sourcePath: string | null;
   visibility: ArtifactVisibility;
+  interactive: boolean;
+  sessionId: string | null;
   expiresAt: string | null;
   viewCount: number;
   shareUrl: string | null;
@@ -87,6 +89,7 @@ export interface ArtifactCreateInput {
   contentType?: string;
   folderId?: string;
   visibility?: ArtifactCreateVisibility;
+  interactive?: boolean;
   expiresInHours?: number | null;
   sourcePath?: string;
   agentId?: string;
@@ -171,3 +174,72 @@ export interface ArtifactTouchService {
     version: number;
   }): Promise<boolean>;
 }
+
+export type ArtifactRequestState =
+  | "pending"
+  | "delivered"
+  | "answered"
+  | "failed";
+
+export type ArtifactRequestFailureReason =
+  | "agent_deleted"
+  | "session_deleted"
+  | "not_bound"
+  | "wake_failed"
+  | "over_budget"
+  | "rate_limited"
+  | "busy"
+  | "cancelled"
+  | "expired";
+
+export interface ArtifactRequest {
+  id: string;
+  artifactId: string;
+  agentId: string;
+  seq: number;
+  action: string;
+  payload: Record<string, unknown>;
+  state: ArtifactRequestState;
+  result: unknown;
+  failureReason: ArtifactRequestFailureReason | null;
+  createdAt: string;
+  settledAt: string | null;
+}
+
+export interface ArtifactRequestReceipt {
+  requestId: string;
+  seq: number;
+  state: ArtifactRequestState;
+}
+
+export interface ArtifactRequestCreateInput {
+  artifactId: string;
+  action: string;
+  payload?: Record<string, unknown>;
+  sessionId?: string;
+}
+
+export interface ArtifactRequestsService {
+  create(input: ArtifactRequestCreateInput): Promise<ArtifactRequestReceipt>;
+  get(requestId: string): Promise<ArtifactRequest | null>;
+  cancel(requestId: string): Promise<ArtifactRequest>;
+}
+
+export type ArtifactRequestProgress = "sent" | "waking" | "queued" | "running";
+
+export interface PageArtifactRequest {
+  type: "artifact.request";
+  ref: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+
+export type ArtifactBridgeReply =
+  | { type: "artifact.state"; ref: string; state: ArtifactRequestProgress }
+  | { type: "artifact.answer"; ref: string; result: unknown }
+  | {
+      type: "artifact.failed";
+      ref: string;
+      reason: ArtifactRequestFailureReason;
+      message: string;
+    };

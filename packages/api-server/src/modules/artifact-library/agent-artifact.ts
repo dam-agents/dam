@@ -13,6 +13,8 @@ export function toAgentArtifact(artifact: LibraryArtifact) {
     folderId: artifact.folderId,
     agentId: artifact.agentId,
     visibility: artifact.visibility,
+    interactive: artifact.interactive,
+    sessionId: artifact.sessionId,
     expiresAt: artifact.expiresAt,
     viewCount: artifact.viewCount,
     shareUrl: artifact.shareUrl,

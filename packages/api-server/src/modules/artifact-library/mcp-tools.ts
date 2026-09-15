@@ -10,6 +10,7 @@ import { toAgentArtifact } from "./agent-artifact.js";
 import { securityLog } from "../../core/security-log.js";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
+import type { ArtifactRequestsServiceImpl } from "./services/artifact-requests-service.js";
 
 function touched(
   artifact: ReturnType<typeof toAgentArtifact>,
@@ -38,6 +39,7 @@ export function registerArtifactLibraryTools(
   deps: {
     artifactLibrary: ArtifactLibraryServiceImpl;
     agentId: string;
+    interactiveArtifacts: boolean;
     attachToExperiment?: (
       artifactId: string,
       experimentId?: string,
@@ -64,7 +66,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact",
-    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
+    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); set `expires_in_hours` only if the platform should permanently delete the artifact after that time. If the page's job is to hand something BACK to you — a form to submit, choices to record, a Refresh button, an answer to work on — set `interactive: true`; a page without it cannot reach you at all, and its only way to return anything is to ask the person to copy text into the chat by hand. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
     {
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
       content: z
@@ -81,6 +83,12 @@ export function registerArtifactLibraryTools(
         .describe("Auto-detected from file name / content when omitted."),
       folder_id: z.string().optional(),
       visibility: z.enum(["private", "public"]).optional(),
+      interactive: z
+        .boolean()
+        .optional()
+        .describe(
+          "HTML only. Set it whenever the page has to hand something back to you — a form to submit, choices to record, a Refresh button — because a page without it can never reach you. Settled now and permanent, and the page can never be shared; load the `platform-artifacts` skill before writing an interactive page.",
+        ),
       expires_in_hours: z
         .number()
         .int()
@@ -113,11 +121,17 @@ export function registerArtifactLibraryTools(
       type,
       folder_id,
       visibility,
+      interactive,
       expires_in_hours,
       source_path,
       experiment_id,
     }) =>
       run(async () => {
+        if (interactive && !deps.interactiveArtifacts) {
+          return errorResult(
+            "interactive: true refused — the `interactive-artifacts` feature flag is off for this owner, so nothing could ever answer the page's asks. Publish a static page instead.",
+          );
+        }
         const artifact = await lib.create(
           {
             title,
@@ -127,6 +141,7 @@ export function registerArtifactLibraryTools(
             kind: type,
             folderId: folder_id,
             visibility,
+            interactive,
             expiresInHours: expires_in_hours ?? null,
             sourcePath: source_path,
           },
@@ -255,7 +270,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE and whether it is INTERACTIVE are settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH).optional(),
@@ -304,7 +319,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "set_artifact_sharing",
-    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted.",
+    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted. An interactive artifact stays private and cannot be shared, but its deletion date is still settable.",
     {
       id: z.string().min(1),
       visibility: z.enum(["private", "public"]).optional(),
@@ -374,6 +389,39 @@ export function registerArtifactLibraryTools(
       run(async () => {
         await lib.deleteFolder(id);
         return json({ deleted: id });
+      }),
+  );
+}
+
+export function registerArtifactRequestTools(
+  server: McpServer,
+  deps: {
+    artifactRequests: ArtifactRequestsServiceImpl;
+    agentId: string;
+  },
+): void {
+  server.tool(
+    "answer_artifact_request",
+    "Answer one request that came from an interactive page you published. The request id is in the prompt that asked you. `result` is a JSON value the page reads with its own code, so shape it for the page. The page waits until this call lands — finishing your turn answers nothing — and a request takes exactly one answer, so a second call for the same request is refused. You can only answer requests for your own pages.",
+    {
+      request_id: z.string().min(1),
+      result: z
+        .unknown()
+        .describe("The answer — a JSON value the page's own code reads."),
+    },
+    ({ request_id, result }) =>
+      run(async () => {
+        const outcome = await deps.artifactRequests.answer({
+          requestId: request_id,
+          agentId: deps.agentId,
+          result,
+        });
+        if (!outcome.ok) return errorResult(outcome.error);
+        return json({
+          answered: outcome.request.id,
+          artifact_id: outcome.request.artifactId,
+          seq: outcome.request.seq,
+        });
       }),
   );
 }

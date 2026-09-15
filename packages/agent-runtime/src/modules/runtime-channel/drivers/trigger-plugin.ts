@@ -1,4 +1,5 @@
 import type {
+  ArtifactRequestEventPayload,
   DriverBinding,
   EventHandler,
   Plugin,
@@ -46,11 +47,24 @@ export function createTriggerPlugin(deps: {
     });
   };
 
+  const serveArtifactRequest = async (
+    payload: ArtifactRequestEventPayload,
+  ): Promise<void> => {
+    await deps.driver.start({
+      task: payload.task,
+      resumeSessionId: payload.sessionId,
+    });
+  };
+
   return {
     name: IMPL_NAME,
     bindEvent(kind: string, _binding: DriverBinding): EventHandler {
       if (kind === "trigger") {
         return async (payload) => fire(payload as TriggerEventPayload);
+      }
+      if (kind === "artifact-request") {
+        return async (payload) =>
+          serveArtifactRequest(payload as ArtifactRequestEventPayload);
       }
       if (kind === "schedule-reset") {
         return async (payload) =>

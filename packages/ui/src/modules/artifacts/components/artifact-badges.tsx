@@ -1,4 +1,4 @@
-import { Calendar } from "@carbon/icons-react";
+import { Calendar, Flash } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -109,5 +109,18 @@ export function ArtifactDeletionChip({
       <Calendar size={12} />
       {deletion.label}
     </HintTooltip>
+  );
+}
+
+export function ArtifactInteractiveBadge() {
+  return (
+    <Tooltip content="This page can ask its agent to do something, so it stays private — it can never be shared.">
+      <span className="inline-flex">
+        <Badge variant="accent" className="gap-1">
+          <Flash size={12} />
+          Interactive
+        </Badge>
+      </span>
+    </Tooltip>
   );
 }

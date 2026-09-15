@@ -17,7 +17,10 @@ import {
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
-import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  composeArtifactRequestsForOwner,
+} from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
@@ -72,6 +75,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     apiKeysModule,
     liveEvents,
     podSessions,
+    makeAcpClient,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -202,6 +206,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+    });
+    const { artifactRequests } = composeArtifactRequestsForOwner({
+      db,
+      runtimeMutator,
+      ensureAgentReady: (agentId) => agentsRepo.ensureReady(agentId),
+      listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),
+      owner: user.sub,
+      surface,
     });
     const { experiments } = composeExperimentsForOwner({
       db,
@@ -340,6 +352,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kbShares,
       artifactLibrary,
       caseStudies,
+      artifactRequests,
       features,
       files,
       harnessConfig,
