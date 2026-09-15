@@ -78,6 +78,7 @@ import {
   DemoHeaderActions,
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
+import { OnboardingBanner } from "../../packs/components/onboarding-banner.js";
 import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
@@ -717,6 +718,9 @@ export function ChatView() {
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
+                    {selectedAgent && (
+                      <OnboardingBanner agentId={selectedAgent} />
+                    )}
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
