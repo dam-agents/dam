@@ -31,11 +31,6 @@ function presetFor(
     : { kind: "daily", hour: 9, minute: 0, days: [...ALL_DAYS] };
 }
 
-/**
- * A kit schedule read into the platform's own schedule form model, so the
- * create form edits it with the same Repeat/Time/Days/Timezone/Quiet hours
- * vocabulary the schedules panel uses rather than a second one.
- */
 export function kitScheduleFormValues(
   schedule: StarterKitSchedule,
   override: StarterKitScheduleOverride | undefined,
@@ -71,7 +66,6 @@ export function kitScheduleFormValues(
   };
 }
 
-/** The override a form state implies, or null when it is not yet valid. */
 export function overrideFromForm(
   values: ScheduleFormValues,
   enabled: boolean,

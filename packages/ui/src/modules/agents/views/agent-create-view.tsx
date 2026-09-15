@@ -56,7 +56,6 @@ import {
   ownAgentLine,
   preselectedGrants,
   providerPolicyForKit,
-  requirementStatuses,
   type StarterKitSetupDraft,
   toggleSkipped,
   withOverride,
@@ -205,9 +204,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     () => owned.filter((c) => kitOwnedConnectionIds.has(c.id)),
     [owned, kitOwnedConnectionIds],
   );
-  const statuses = kit
-    ? requirementStatuses(kit, draft, owned, templateById)
-    : [];
   const preselected = useRef(false);
   useEffect(() => {
     if (!kit) return;
@@ -479,10 +475,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         title="Connections"
         excludeIds={kitOwnedConnectionIds}
         leading={
-          kit && statuses.length > 0 ? (
+          kit && kit.connections.length > 0 ? (
             <KitRequirementsCard
               kit={kit}
-              statuses={statuses}
               owned={owned}
               granted={grantedKitConnections}
               templateById={templateById}

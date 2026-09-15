@@ -25,11 +25,6 @@ import {
 const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
-/**
- * `stacked` puts the label above a full-width control (the modal); `rows` puts
- * it left of a fixed value column (the starter kit card). Callers supplying
- * `rows` own the dividers between fields.
- */
 export type ScheduleFieldLayout = "stacked" | "rows";
 
 interface FieldsProps {
@@ -114,7 +109,6 @@ function Chip({
   );
 }
 
-/** Repeat / Time / Every / Days / RRULE / Timezone, on `ScheduleFormValues`. */
 export function ScheduleRecurrenceFields({
   layout,
   control,

@@ -274,6 +274,40 @@ export function accepts(
   );
 }
 
+export type RequirementChoiceMode = "connect" | "use" | "pick" | "chosen";
+
+export interface RequirementChoice<G> {
+  mode: RequirementChoiceMode;
+  chosen: G[];
+  candidates: GrantedConnection[];
+  switchTo: GrantedConnection[];
+}
+
+export function requirementChoice<G extends { id: string; templateId: string }>(
+  requirement: StarterKitConnectionRequirement,
+  owned: readonly GrantedConnection[],
+  granted: readonly G[],
+  templates: TemplateIndex,
+): RequirementChoice<G> {
+  const chosen = granted.filter((c) => accepts(requirement, c, templates));
+  const candidates = ownedMatches(requirement, owned, templates);
+  const unchosen = candidates.filter((c) => !chosen.some((g) => g.id === c.id));
+  const mode: RequirementChoiceMode =
+    chosen.length > 0
+      ? "chosen"
+      : candidates.length === 0
+        ? "connect"
+        : candidates.length === 1
+          ? "use"
+          : "pick";
+  return {
+    mode,
+    chosen,
+    candidates,
+    switchTo: chosen.length === 1 ? unchosen : [],
+  };
+}
+
 export function kitConnectionIds(
   kit: Pick<StarterKitView, "connections">,
   granted: readonly { id: string; templateId: string }[],
