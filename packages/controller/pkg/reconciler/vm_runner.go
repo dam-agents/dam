@@ -11,10 +11,10 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"strings"
 	"log/slog"
 	"math/big"
 	"net"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -54,20 +54,19 @@ func (r *AgentReconciler) runnerHost(owner string) string {
 	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.ReleaseNamespace)
 }
 
-func vmRunnerLabels(owner, release string) map[string]string {
-	return map[string]string{
-		"app.kubernetes.io/name":      "platform",
-		"app.kubernetes.io/instance":  release,
-		"app.kubernetes.io/component": vmRunnerComponent,
-		envoyOwnerLabel:                    owner,
-	}
-}
-
 func vmRunnerSelector(owner string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/component": vmRunnerComponent,
-		envoyOwnerLabel:                    owner,
+		envoyOwnerLabel:               owner,
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Deployment selects its own pods with these, so the selector has to stay a subset of the labels — it is built from it rather than repeated.
+func vmRunnerLabels(owner, release string) map[string]string {
+	labels := vmRunnerSelector(owner)
+	labels["app.kubernetes.io/name"] = "platform"
+	labels["app.kubernetes.io/instance"] = release
+	return labels
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their credentials, renders their objects, and hands the caller a client once the pod reports ready.
