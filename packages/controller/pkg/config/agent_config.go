@@ -69,10 +69,24 @@ type AgentNPGateInit struct {
 }
 
 type VMConfig struct {
-	Enabled      bool                `json:"enabled,omitempty"`
-	ScratchSize  string              `json:"scratchSize,omitempty"`
-	NodeSelector map[string]string   `json:"nodeSelector,omitempty"`
-	Tolerations  []corev1.Toleration `json:"tolerations,omitempty"`
+	Enabled bool         `json:"enabled,omitempty"`
+	Runner  VMRunnerSpec `json:"runner,omitempty"`
+}
+
+type VMRunnerSpec struct {
+	Image                string                        `json:"image,omitempty"`
+	ImagePullPolicy      string                        `json:"imagePullPolicy,omitempty"`
+	ImagePullSecrets     []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	ServiceAccountName   string                        `json:"serviceAccountName,omitempty"`
+	Storage              string                        `json:"storage,omitempty"`
+	StorageClass         string                        `json:"storageClass,omitempty"`
+	Devices              map[string]string             `json:"devices,omitempty"`
+	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
+	IngressCIDRs         []string                      `json:"ingressCidrs,omitempty"`
+	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
+	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
+	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
+	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 }
 
 type AgentProbes struct {

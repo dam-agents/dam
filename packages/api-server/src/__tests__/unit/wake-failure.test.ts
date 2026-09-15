@@ -72,6 +72,27 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
+      name: "MachineBootFailed → agent-pod-failed (a vm agent's guest never came up)",
+      snapshot: { ...base, agentPodNotReadyReason: "MachineBootFailed" },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineBootFailed",
+      },
+    },
+    {
+      name: "MachineOutOfCapacity → agent-pod-failed (the runner had no room)",
+      snapshot: { ...base, agentPodNotReadyReason: "MachineOutOfCapacity" },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineOutOfCapacity",
+      },
+    },
+    {
+      name: "MachineNotReady → progressing (a machine that is still booting)",
+      snapshot: { ...base, agentPodNotReadyReason: "MachineNotReady" },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
       name: "plain PodNotReady → progressing (slow pull, attach, probes)",
       snapshot: { ...base, agentPodNotReadyReason: "PodNotReady" },
       expected: { kind: "agent-pod-not-ready" },

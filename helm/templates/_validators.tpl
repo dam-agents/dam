@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- end -}}
@@ -50,5 +51,20 @@ A missing text or version would lock out every account at first request.
 {{- end -}}
 {{- if not (.Values.terms.version | default "" | trim) -}}
 {{- fail "terms.version is required. Bump on material text changes to re-prompt every user." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The runner admits machines against its own memory limit, read through the
+downward API. With no limit that reads as the node's allocatable, so the
+runner promises machines the whole node while itself being BestEffort and
+first evicted — taking every machine with it.
+*/}}
+{{- define "platform.validate.vmRunnerNeedsAMemoryLimit" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $r := .Values.virtualization.runner.resources | default dict -}}
+{{- if not (dig "limits" "memory" "" $r) -}}
+{{- fail "virtualization.enabled=true requires virtualization.runner.resources.limits.memory. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

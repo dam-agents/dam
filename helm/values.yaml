@@ -144,22 +144,96 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
-# agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
-# StatefulSet. Requires KubeVirt in the cluster (dev k3s: cluster:install
-# sets it up when this flag is on; prod: OpenShift Virtualization).
-# Off = vm-backend templates are not rendered and vm agents fail reconcile.
+# -- The vm backend (`backend.type: vm` on a template): the agent runs as a
+# persistent microVM (smolvm) instead of as a pod, hosted by the **VM
+# runner** — one pod per owner, created by the controller, that holds /dev/kvm
+# and runs the platform's
+# vm-runner agent plus smolvm. The controller drives its machine API (TLS,
+# bearer token; both minted by the controller); the agent Service resolves to the
+# machine's port on that pod; the paired gateway pod is unchanged and the
+# machine may reach nothing but it. Off = vm-backend templates are not
+# rendered and vm agents fail reconcile. One runner per owner; per-user fair-use
+# limits for machines are the upgrade path.
 virtualization:
   enabled: false
-  # emptyDisk scratch capacity attached to every VM (serial "scratch") for the
-  # guest's docker/k3s image stores. Global knob by design; contents die with
-  # hibernation like the rest of the guest rootfs.
-  scratchGi: 30
-  # virt-launcher pod placement — KVM-capable nodes (e.g.
-  # node-role.kubernetes.io/virtualization on OpenShift). Applied instead of
-  # controller.agent.base scheduling; a template's nodeSelector merges on top.
-  nodeSelector: {}
-  tolerations: []
+  # The shape of every runner pod the controller creates (one per owner).
+  runner:
+    image:
+      repository: quay.io/dam-agents/vm-runner
+      tag: ""
+      pullPolicy: IfNotPresent
+    # KVM (and the tun device smolvm's per-machine network needs) arrive as
+    # device-plugin resources, which is the only way the runner gets them —
+    # it is never a privileged pod. Empty = the chart's own plugin below when
+    # enabled, else KubeVirt's (`devices.kubevirt.io/kvm|tun`, present on
+    # every node virt-handler runs on). Any plugin exposing /dev/kvm and
+    # /dev/net/tun works; a cluster with none cannot host vm agents.
+    devices: {}
+    # OpenShift: name of a *built-in* SCC to bind to the runner's
+    # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
+    # is on, the chart binds its own SCC, which grants exactly the uid 0 and
+    # NET_ADMIN the runner needs and nothing else. Set this only where that
+    # SCC is off, or where the runner needs a shape it refuses (a hostPath for
+    # `imageArchiveHostPath`). Empty = no extra binding rendered.
+    scc: ""
+    # Machine disks — every vm agent's workspace — and smolvm's image cache
+    # live here. The claim outlives a pod restart and a chart upgrade, but not
+    # its owner: the sweep removes a runner once that owner has no vm agents
+    # left, and takes the claim with it, so the next one re-fetches the image.
+    # Set once: a later change only grows the claim, and only on a class
+    # that allows expansion.
+    storage: 100Gi
+    storageClass: ""
+    # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
+    # taints).
+    nodeSelector: {}
+    tolerations: []
+    # REQUIRED when virtualization.enabled — the install fails without
+    # limits.memory. Machines are processes of this pod, so that limit is also
+    # what the runner admits them against (it refuses one that does not fit,
+    # keeping `reserveMiB` for itself). Leave requests below limits and an
+    # idle owner's headroom stays the node's to lend. Leave the CPU limit
+    # unset: it would throttle every guest at once.
+    resources: {}
+    # Memory the runner keeps for itself rather than committing to machines.
+    reserveMiB: 512
+    # A directory on the node holding `docker save` archives named after the
+    # image reference, mounted read-only into every runner. It is how a
+    # cluster with no registry (local dev) gives runners their agent image;
+    # empty means runners pull from the registry as usual.
+    imageArchiveHostPath: ""
+    # Extra sources the runner itself admits on machines' published ports,
+    # on top of the NetworkPolicy that limits them to the api-server and the
+    # controller; empty means the policy is the only gate.
+    ingressCidrs: []
+  # A device plugin of our own (squat's generic-device-plugin) advertising
+  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
+  # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
+  # privileged (kubelet socket dir + /dev from the host), so keep it on the
+  # KVM-capable pool via nodeSelector/tolerations.
+  devicePlugin:
+    enabled: false
+    image:
+      repository: ghcr.io/squat/generic-device-plugin
+      # Pinned by digest: this DaemonSet is privileged with the host's /dev.
+      digest: sha256:dc192e164c69b03f156765793a1be62ca437709ae477b27ca7d8f3dcf5021576
+      pullPolicy: IfNotPresent
+    # OpenShift: the plugin needs the privileged SCC; empty renders no binding.
+    scc: ""
+    domain: squat.ai
+    # How many grants of each device the plugin advertises, which is the cap
+    # on VM runners per node — and runners are per owner, so it is really a
+    # cap on owners per node. Neither /dev/kvm nor /dev/net/tun is consumed by
+    # opening it, so this is an accounting number the device-plugin API
+    # requires rather than a real resource; raise it rather than let a runner
+    # pend for want of a grant.
+    count: 16
+    # Where the plugin runs, i.e. which nodes may host machines. Empty falls
+    # back to `runner.nodeSelector` / `runner.tolerations`; with both empty it
+    # runs on every schedulable node and advertises zero devices where there
+    # is no /dev/kvm.
+    nodeSelector: {}
+    tolerations: []
 
 # -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents
@@ -1342,16 +1416,13 @@ agentTemplates:
       tag: "" # @ci-pin claude-code-image-tag
     storageSize: "5Gi"
 
-  # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
-  # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
-  # inside the sandbox. Rendered only when `virtualization.enabled`; the image
-  # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
-  # Pinned by source sha like the workloads (@ci-pin): the disk is rebuilt
-  # only when its source moved, so a deploy never rolls VMs for nothing.
+  # Claude Code as a persistent microVM on the VM runner instead of a
+  # container: the same claude-code image, booted as a VM with its own kernel.
+  # Rendered only when `virtualization.enabled`.
   claude-code-vm:
     enabled: true
     displayName: "Claude Code VM"
-    description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    description: "Claude Code in its own microVM instead of a container"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     experimental: true
     harness: claude-code
@@ -1359,8 +1430,8 @@ agentTemplates:
     backend:
       type: vm
     image:
-      repository: quay.io/dam-agents/claude-code-vm
-      tag: "" # @ci-pin claude-code-vm-image-tag
+      repository: quay.io/dam-agents/claude-code
+      tag: "" # @ci-pin claude-code-image-tag
     storageSize: "5Gi"
 
   codex:

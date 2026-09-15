@@ -1,0 +1,67 @@
+{{- if .Values.virtualization.enabled }}
+{{- /*
+The VM runners themselves are not rendered here: the controller creates one
+per owner, so that a guest escape reaches only that owner's machines, and it
+mints each runner's credentials itself. What the chart owns is the identity
+every runner runs as, and the SCC that identity needs on OpenShift; the pod
+shape those runners get is `virtualization.runner` in values.yaml, handed to
+the controller as AGENT_VM.
+*/}}
+{{- $name := printf "%s-vm-runner" (include "platform.fullname" .) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+{{- with .Values.virtualization.runner.scc }}
+---
+{{- /* OpenShift: `use` on a built-in SCC comes as an auto-generated ClusterRole. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-scc
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:{{ . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+---
+{{- /*
+The runner needs exactly what the chart's own SCC already grants agents:
+run as uid 0 and add NET_ADMIN, with no privileged container and no host
+volumes. Custom SCCs get no auto-generated ClusterRole, so this binds the
+one agent-scc.yaml renders. An install that sets `runner.scc` as well gets
+both — admission picks the one that admits the pod, preferring the
+narrower. The one shape this SCC refuses is `imageArchiveHostPath`, whose
+hostPath volume needs an SCC that admits one.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-anyuid-cap-net
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

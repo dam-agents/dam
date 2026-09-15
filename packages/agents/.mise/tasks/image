@@ -22,9 +22,6 @@ build_arg_var() {
 
 build() {
   local a="$1" var args=()
-  case "$a" in
-    claude-code-vm) exec packages/agents/claude-code-vm/build.sh ;;
-  esac
   var="$(build_arg_var "$a")"
   [ -n "$var" ] && [ -n "${!var:-}" ] && args+=(--build-arg "$var=${!var}")
   # ${args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
@@ -35,7 +32,6 @@ build() {
 stage1=(); stage2=()
 for a in "${agents[@]}"; do
   case "$workloads" in *" $a "*) needs_cc=true ;; *) needs_cc=false ;; esac
-  [ "$a" = claude-code-vm ] && needs_cc=true
   if [ "$a" = claude-code ]; then stage1=(claude-code)
   else stage2+=("$a"); [ "$needs_cc" = true ] && stage1=(claude-code); fi
 done

@@ -363,3 +363,22 @@ func TestOTelExporter_GatewayOverrideWins(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, exp.GRPC)
 }
+
+// TEST_SCENARIO: virtualization is enabled with no memory limit on the runner; the controller refuses to start, because the runner would admit machines against the node's whole allocatable while being first evicted.
+func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi"}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "limits.memory")
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "8Gi", cfg.VM.Runner.Resources.Limits.Memory().String())
+}
