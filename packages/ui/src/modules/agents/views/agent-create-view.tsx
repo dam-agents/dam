@@ -341,7 +341,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             navigateToStarterKit(catalog, kitId);
           }}
           onClose={() => setBrowsingKits(false)}
-          onStartFromScratch={() => setBrowsingKits(false)}
+          onStartFromScratch={() => {
+            setBrowsingKits(false);
+            if (kit) setView("coding-agent-new");
+          }}
         />
       )}
 
@@ -381,7 +384,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setView("starter-kits")}
+              onClick={() => setBrowsingKits(true)}
             >
               Change
             </Button>
