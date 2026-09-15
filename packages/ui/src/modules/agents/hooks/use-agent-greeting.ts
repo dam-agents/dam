@@ -3,17 +3,12 @@ import { useEffect, useRef } from "react";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import type { SendPromptOptions } from "../../sessions/hooks/use-acp-prompt.js";
 import { useIsAgentOperable } from "../api/queries.js";
-import {
-  clearGreeted,
-  hasGreeted,
-  markGreeted,
-} from "../lib/greeted-agents.js";
 
 export interface AgentGreetingOptions {
   agentId: string | null;
   active: boolean;
   idle: boolean;
-  command: string;
+  command: string | ((agentId: string) => Promise<string | null>);
   setupReady?: boolean;
   hidden?: boolean;
   sendPrompt: (
@@ -51,16 +46,17 @@ export function useAgentGreeting(opts: AgentGreetingOptions) {
   useEffect(() => {
     if (!armed || !agentId || sessions === undefined) return;
     if (greetedForAgentRef.current === agentId) return;
-    if (sessions.length > 0 || hasGreeted(agentId)) {
+    if (sessions.length > 0) {
       greetedForAgentRef.current = agentId;
       return;
     }
     if (setupReady === false) return;
     greetedForAgentRef.current = agentId;
-    markGreeted(agentId);
-    void sendPrompt(command, undefined, {
-      hidden,
-      initiator: "system",
-    }).catch(() => clearGreeted(agentId));
+    void (async () => {
+      const text =
+        typeof command === "function" ? await command(agentId) : command;
+      if (!text) return;
+      await sendPrompt(text, undefined, { hidden, initiator: "system" });
+    })();
   }, [armed, agentId, sessions, setupReady, command, hidden, sendPrompt]);
 }

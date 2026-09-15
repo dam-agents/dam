@@ -84,6 +84,7 @@ function makeHarness(
     deleted: [] as string[],
     woken: [] as string[],
     onboarded: [] as { id: string; at: string }[],
+    greeted: [] as { id: string; at: string }[],
     cron: [] as { name: string; agentId: string; cron: string }[],
     rrule: [] as { name: string; rrule: string; timezone: string }[],
     toggled: [] as string[],
@@ -175,6 +176,9 @@ function makeHarness(
     },
     markAgentOnboarded: async (id, at) => {
       calls.onboarded.push({ id, at });
+    },
+    markAgentGreeted: async (id, at) => {
+      calls.greeted.push({ id, at });
     },
   });
   return { service, calls };
@@ -455,6 +459,7 @@ describe("starter kits: apply", () => {
       },
       wakeAgent: async () => {},
       markAgentOnboarded: async () => {},
+      markAgentGreeted: async () => {},
     });
     await expect(
       failing.apply({
@@ -565,6 +570,7 @@ describe("starter kits: apply", () => {
       },
       wakeAgent: async () => {},
       markAgentOnboarded: async () => {},
+      markAgentGreeted: async () => {},
     });
     const result = await service.apply({
       catalog: "platform",
@@ -600,6 +606,31 @@ describe("starter kits: onboarding prompt", () => {
   it("is null for an agent not created from a kit", async () => {
     const { service } = makeHarness(LOADED, fakeAgent("agent-9"));
     expect(await service.onboardingPrompt("agent-9")).toBeNull();
+  });
+
+  it("is handed out once — a second caller gets nothing", async () => {
+    const agent = fakeAgent("agent-1", {
+      starterKit: "platform/code-reviewer@abc123",
+    });
+    const { service, calls } = makeHarness(LOADED, agent);
+    expect(await service.onboardingPrompt("agent-1")).toContain(
+      "code-reviewer",
+    );
+    expect(calls.greeted.map((g) => g.id)).toEqual(["agent-1"]);
+    agent.starterKitGreeted = calls.greeted[0].at;
+    expect(await service.onboardingPrompt("agent-1")).toBeNull();
+    expect(calls.greeted).toHaveLength(1);
+  });
+
+  it("is null once the agent has finished onboarding", async () => {
+    const { service } = makeHarness(
+      LOADED,
+      fakeAgent("agent-1", {
+        starterKit: "platform/code-reviewer@abc123",
+        starterKitOnboarded: "2026-09-15T00:00:00Z",
+      }),
+    );
+    expect(await service.onboardingPrompt("agent-1")).toBeNull();
   });
 
   it("states what the platform set up and points at ONBOARDING.md", async () => {

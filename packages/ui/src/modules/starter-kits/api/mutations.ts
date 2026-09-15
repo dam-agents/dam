@@ -20,3 +20,10 @@ export function useApplyStarterKit() {
     },
   });
 }
+
+export function useClaimStarterKitOnboarding() {
+  return useMutation({
+    mutationFn: (agentId: string) =>
+      api.starterKits.onboarding.mutate({ agentId }),
+  });
+}

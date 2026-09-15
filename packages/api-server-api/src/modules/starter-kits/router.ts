@@ -22,9 +22,11 @@ export const starterKitsRouter = t.router({
       return kit;
     }),
 
-  onboarding: readAgentProcedure
+  onboarding: manageAgentsProcedure
     .input(starterKitOnboardingInputSchema)
-    .query(({ ctx, input }) => ctx.starterKits.onboardingPrompt(input.agentId)),
+    .mutation(({ ctx, input }) =>
+      ctx.starterKits.onboardingPrompt(input.agentId),
+    ),
 
   create: manageAgentsProcedure
     .input(starterKitApplyInputSchema)

@@ -26,6 +26,7 @@ import {
   STOP_REQUESTED_KEY,
   VERSION,
   ANN_STARTER_KIT,
+  ANN_STARTER_KIT_GREETED,
   ANN_STARTER_KIT_ONBOARDED,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
@@ -175,6 +176,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       : {}),
     ...(annotations[ANN_STARTER_KIT_ONBOARDED]
       ? { starterKitOnboarded: annotations[ANN_STARTER_KIT_ONBOARDED] }
+      : {}),
+    ...(annotations[ANN_STARTER_KIT_GREETED]
+      ? { starterKitGreeted: annotations[ANN_STARTER_KIT_GREETED] }
       : {}),
     ...(annotations[ANN_STARTER_KIT]
       ? { starterKit: annotations[ANN_STARTER_KIT] }

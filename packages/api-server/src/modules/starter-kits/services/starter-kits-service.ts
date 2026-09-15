@@ -46,6 +46,7 @@ export interface StarterKitsServiceDeps {
   createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
+  markAgentGreeted: (agentId: string, at: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -275,6 +276,7 @@ export function createStarterKitsService(
     async onboardingPrompt(agentId) {
       const agent = await deps.agents.get(agentId);
       if (!agent?.starterKit) return null;
+      if (agent.starterKitGreeted || agent.starterKitOnboarded) return null;
       const ref = parseKitRef(agent.starterKit);
       if (!ref) return null;
       const loaded = await deps.repo.get(ref.catalog, ref.kitId);
@@ -283,7 +285,7 @@ export function createStarterKitsService(
         deps.schedules.list(agentId),
         deps.connections.getAgentConnections(agentId),
       ]);
-      return composeOnboardingPrompt({
+      const prompt = composeOnboardingPrompt({
         kit: loaded.kit,
         catalog: ref.catalog,
         version: ref.version,
@@ -298,6 +300,11 @@ export function createStarterKitsService(
         boundChannels: agent.channels.map(() => "slack"),
         familyTitles: await familyTitles(),
       });
+      await deps.markAgentGreeted(
+        agentId,
+        (deps.now ?? (() => new Date()))().toISOString(),
+      );
+      return prompt;
     },
   };
 }

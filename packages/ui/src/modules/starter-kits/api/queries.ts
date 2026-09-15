@@ -20,14 +20,3 @@ export function useStarterKit(catalog: string | null, id: string | null) {
     meta: { errorToast: "Couldn't load the starter kit" },
   });
 }
-
-export function useStarterKitOnboarding(
-  agentId: string | null,
-  enabled: boolean,
-) {
-  return useQuery({
-    ...trpc.starterKits.onboarding.queryOptions({ agentId: agentId ?? "" }),
-    enabled: enabled && agentId !== null,
-    staleTime: Infinity,
-  });
-}

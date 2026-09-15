@@ -2,17 +2,15 @@ import {
   type AgentGreetingOptions,
   useAgentGreeting,
 } from "../../agents/hooks/use-agent-greeting.js";
-import { useStarterKitOnboarding } from "../api/queries.js";
+import { useClaimStarterKitOnboarding } from "../api/mutations.js";
 
 export function useStarterKitGreeting(
   opts: Omit<AgentGreetingOptions, "command" | "setupReady">,
 ) {
-  const { data: prompt } = useStarterKitOnboarding(opts.agentId, opts.active);
+  const claim = useClaimStarterKitOnboarding();
   useAgentGreeting({
     ...opts,
     hidden: false,
-    active: opts.active && typeof prompt === "string",
-    setupReady: typeof prompt === "string",
-    command: prompt ?? "",
+    command: (agentId) => claim.mutateAsync(agentId),
   });
 }
