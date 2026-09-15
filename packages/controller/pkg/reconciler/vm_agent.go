@@ -13,6 +13,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
@@ -131,26 +132,29 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 			slog.Warn("orphan machine GC: listing machines failed", "owner", runner.owner, "error", err)
 			continue
 		}
-		live := 0
 		for _, id := range ids {
 			_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
 			if err == nil {
-				live++
 				continue
 			}
 			if !k8serrors.IsNotFound(err) {
 				slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
-				live++
 				continue
 			}
 			if err := runner.client.Delete(ctx, id); err != nil {
 				slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
-				live++
 				continue
 			}
 			slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
 		}
-		if live == 0 {
+		agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labelOwner + "=" + runner.owner,
+		})
+		if err != nil {
+			slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", runner.owner, "error", err)
+			continue
+		}
+		if !anyVMAgent(agents.Items) {
 			r.deleteRunner(ctx, runner.owner)
 		}
 	}
@@ -258,4 +262,14 @@ func (r *AgentReconciler) machineStatus(ctx context.Context, owner, name string)
 		return vmrunner.MachineStatus{}, err
 	}
 	return client.Status(ctx, name)
+}
+
+func anyVMAgent(items []unstructured.Unstructured) bool {
+	for i := range items {
+		backend, _, _ := unstructured.NestedString(items[i].Object, "spec", "backend", "type")
+		if backend == "vm" {
+			return true
+		}
+	}
+	return false
 }
