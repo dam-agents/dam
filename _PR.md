@@ -168,6 +168,18 @@ the agent went Ready and answered ping → pong in the UI; from an unrelated pod
 both the machine API and a guest's published port are refused, while the
 api-server still connects.
 
+Re-verified after the second round (2026-09-15): fresh images, one deploy, one
+new VM agent created in the UI — Ready in 823 s (the first boot flattens the
+image in-guest), zero runner errors, and in the guest `/workspace` is the
+storage disk with the persisted paths bind-mounted from it, which is the
+rewritten prelude guard working on a real boot. The chat turn could not be
+re-checked in that window: the IBM LiteLLM endpoint became unreachable from
+both the cluster and the host (a container agent created at the same moment
+answers "API Error: 503 … connection timeout", and `GET /v1/models` times out
+from the api-server pod and from the Mac). The ping → pong recorded above was
+on the pre-review build, and the model calls the VM agent did make went out
+through its gateway exactly as the container's did.
+
 Documented, not fixed: one runner pod hosts every user's machine (cross-tenant
 blast radius, per-tenant runner is the upgrade path); secrets travel on the
 smolvm argv inside the runner pod; the runner has no resource limits unless
