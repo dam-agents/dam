@@ -6,6 +6,7 @@ import {
   CardText,
   Chat,
   LinkButton,
+  type Adapter,
   type CardElement,
   type Thread,
   type StateAdapter,
@@ -83,16 +84,20 @@ async function isTelegramChatAdmin(
   userId: string,
 ): Promise<boolean> {
   const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`;
-  const res = await fetch(url);
-  if (!res.ok) return false;
-  const data = (await res.json()) as {
-    ok: boolean;
-    result?: { status: string };
-  };
-  if (!data.ok || !data.result) return false;
-  return (
-    data.result.status === "creator" || data.result.status === "administrator"
-  );
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      ok: boolean;
+      result?: { status: string };
+    };
+    if (!data.ok || !data.result) return false;
+    return (
+      data.result.status === "creator" || data.result.status === "administrator"
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function fetchTelegramChatTitle(
@@ -163,6 +168,11 @@ function isCommand(text: string, command: string): boolean {
     text.startsWith(`${command} `) ||
     text.startsWith(`${command}@`)
   );
+}
+
+export function commandPattern(brandShort: string): RegExp {
+  const escaped = brandShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^/(?:${escaped}|start)(?:@\\S+)?(?:\\s|$)`);
 }
 
 export function createTelegramMessageHandler(deps: {
@@ -335,6 +345,50 @@ export function createTelegramMessageHandler(deps: {
     if (subscribe) await thread.subscribe();
     await deps.relay(binding.agentId, thread, message.text, message.author);
   };
+}
+
+export function createTelegramChat(deps: {
+  adapter: Adapter;
+  state: StateAdapter;
+  brandShort: string;
+  handleMessage: (
+    thread: ThreadLike,
+    message: TelegramInboundMessage,
+    subscribe: boolean,
+  ) => Promise<void>;
+}): Chat {
+  const chat = new Chat({
+    userName: "platform",
+    adapters: { telegram: deps.adapter },
+    state: deps.state,
+    concurrency: "concurrent",
+  });
+
+  const dispatch = async (
+    thread: ThreadLike,
+    message: TelegramInboundMessage,
+    subscribe: boolean,
+  ) => {
+    try {
+      await deps.handleMessage(thread, message, subscribe);
+    } catch (err) {
+      getLogger().warn(
+        { threadId: thread.id, error: String(err) },
+        "telegram.inbound.failed",
+      );
+    }
+  };
+
+  chat.onDirectMessage((thread, message) => dispatch(thread, message, true));
+  chat.onNewMention((thread, message) => dispatch(thread, message, true));
+  chat.onSubscribedMessage((thread, message) =>
+    dispatch(thread, message, false),
+  );
+  chat.onNewMessage(commandPattern(deps.brandShort), (thread, message) =>
+    dispatch(thread, message, true),
+  );
+
+  return chat;
 }
 
 export function createTelegramWorker(deps: {
@@ -554,12 +608,6 @@ export function createTelegramWorker(deps: {
       try {
         const polling = createTelegramAdapter({ botToken, mode: "polling" });
         adapter = polling;
-        const chat = new Chat({
-          userName: "platform",
-          adapters: { telegram: polling },
-          state: deps.state,
-        });
-
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
           isChatAdmin:
@@ -575,15 +623,12 @@ export function createTelegramWorker(deps: {
           relay: enqueueTelegramTurn,
         });
 
-        chat.onDirectMessage((thread, message) =>
-          handleMessage(thread, message, true),
-        );
-        chat.onNewMention((thread, message) =>
-          handleMessage(thread, message, true),
-        );
-        chat.onSubscribedMessage((thread, message) =>
-          handleMessage(thread, message, false),
-        );
+        const chat = createTelegramChat({
+          adapter: polling,
+          state: deps.state,
+          brandShort: deps.brandShort,
+          handleMessage,
+        });
 
         await chat.initialize();
         await polling.startPolling();
