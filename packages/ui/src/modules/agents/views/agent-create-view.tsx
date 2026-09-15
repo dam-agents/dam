@@ -1,12 +1,10 @@
-import { CheckmarkFilled, CircleDash, Close, Gift } from "@carbon/icons-react";
+import { Close, Gift } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { Input } from "@/components/ui/input";
 import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -21,7 +19,6 @@ import {
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -43,20 +40,19 @@ import {
 import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
+import { KitChannelsSection } from "../../starter-kits/components/kit-channels-section.js";
+import { KitConnectionsCard } from "../../starter-kits/components/kit-connections-card.js";
 import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
+import { KitSkillsSection } from "../../starter-kits/components/kit-skills-section.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
   type ConnectTarget,
-  connectTargets,
-  describeAccepts,
   harnessesLine,
-  isProviderRequirement,
   isStarterKitSetupComplete,
   kitResourcesLine,
   ownAgentLine,
-  ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
   requirementStatuses,
@@ -461,76 +457,15 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       )}
 
       {kit && statuses.length > 0 && (
-        <section className="mb-8">
-          <SectionLabel spaced>
-            {kit?.connections.some((c) => c.required)
-              ? "Connections"
-              : "Connections (optional)"}
-          </SectionLabel>
-          <ul className="space-y-2 text-sm">
-            {statuses.map(({ requirement, satisfied }) => (
-              <li
-                key={requirement.accepts.join("|")}
-                className="flex items-start gap-2"
-              >
-                {satisfied ? (
-                  <CheckmarkFilled className="mt-0.5 shrink-0 text-success" />
-                ) : (
-                  <CircleDash className="mt-0.5 shrink-0 text-muted-foreground" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div>
-                    {describeAccepts(requirement.accepts, templateById)}{" "}
-                    <Badge variant="kit" size="sm">
-                      Starter Kit
-                    </Badge>{" "}
-                    <span className="text-muted-foreground">
-                      ({requirement.required ? "required" : "suggested"})
-                    </span>
-                  </div>
-                  {requirement.note && (
-                    <div className="text-muted-foreground">
-                      {requirement.note}
-                    </div>
-                  )}
-                  {!satisfied && isProviderRequirement(requirement) && (
-                    <div className="mt-1 text-muted-foreground">
-                      Pick one under Provider above.
-                    </div>
-                  )}
-                  {!satisfied && !isProviderRequirement(requirement) && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {ownedMatches(requirement, owned, templateById).map(
-                        (c) => (
-                          <Button
-                            key={`use-${c.id}`}
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => toggleConnection(c.id, true)}
-                            data-testid={`starter-kit-use-${c.id}`}
-                          >
-                            Use {c.name ?? c.id}
-                          </Button>
-                        ),
-                      )}
-                      {connectTargets(requirement, templateById).map((t) => (
-                        <Button
-                          key={t.key}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setConnectTarget(t)}
-                          data-testid={`starter-kit-connect-${t.key}`}
-                        >
-                          Connect {t.label}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <KitConnectionsCard
+          kit={kit}
+          statuses={statuses}
+          owned={owned}
+          templateById={templateById}
+          templates={connectionTemplates.data ?? []}
+          onUse={(id) => toggleConnection(id, true)}
+          onConnect={setConnectTarget}
+        />
       )}
 
       <ConnectionsSetupSection
@@ -549,70 +484,13 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       )}
 
       {kit && kit.channels.length > 0 && (
-        <section className="mb-8">
-          <SectionLabel spaced>Channels (optional)</SectionLabel>
-          <ul className="flex flex-col gap-2">
-            {kit.channels.map((channel) => (
-              <li
-                key={channel.type}
-                className={cn(
-                  FIELD_INSET,
-                  "rounded-lg border border-border px-4 py-3",
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <ConnectionIcon
-                    iconSlug={channel.type}
-                    alt=""
-                    size={16}
-                    className="mt-0.5 shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {channel.type === "slack"
-                          ? "In a Slack channel"
-                          : "In a Telegram chat"}
-                      </span>
-                      <Badge variant="kit" size="sm">
-                        Starter Kit
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {channel.note ??
-                        "Your team can interact with the agent in a channel or their DMs."}
-                    </p>
-                  </div>
-                </div>
-                {channel.type === "slack" && (
-                  <div className="mt-3 pl-7">
-                    <FormField
-                      label="Slack channel ID"
-                      disableInset
-                      hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
-                    >
-                      <Input
-                        className="h-10"
-                        value={form.slackChannelId}
-                        onChange={(e) =>
-                          update({ slackChannelId: e.target.value })
-                        }
-                        placeholder="C0…"
-                        data-testid="starter-kit-slack-channel-id"
-                      />
-                    </FormField>
-                  </div>
-                )}
-                {channel.type === "telegram" && (
-                  <p className="mt-2 pl-7 text-xs text-muted-foreground">
-                    Bound in chat with /platform bind after the agent is running
-                    — no form can do it.
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <KitChannelsSection
+          kit={kit}
+          slackChannelId={form.slackChannelId}
+          onSlackChannelIdChange={(slackChannelId) =>
+            update({ slackChannelId })
+          }
+        />
       )}
 
       {kit && kit.schedules.length > 0 && (
@@ -653,41 +531,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </section>
       )}
 
-      {kit && (kit.skillsInKit.length > 0 || kit.skills.length > 0) && (
-        <section className="mb-8">
-          <SectionLabel spaced>Skills</SectionLabel>
-          <ul className="space-y-2 text-sm">
-            {kit.skillsInKit.map((skill) => (
-              <li key={`bundled:${skill.name}`}>
-                {skill.name}{" "}
-                <Badge variant="kit" size="sm">
-                  Starter Kit
-                </Badge>
-                {skill.description ? (
-                  <span className="text-muted-foreground">
-                    {" "}
-                    — {skill.description}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-            {kit.skills.map((skill) => (
-              <li key={`external:${skill.source}`}>
-                {skill.name}{" "}
-                <Badge variant="muted" size="sm">
-                  installed at create
-                </Badge>
-                <span className="text-muted-foreground"> — {skill.source}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Skills marked <em>in the kit</em> arrive with the definition the
-            agent clones and are discovered as files — the platform installs
-            nothing for them.
-          </p>
-        </section>
-      )}
+      {kit && <KitSkillsSection kit={kit} />}
 
       {kit && kit.parameters.length > 0 && (
         <section className="mb-8">
