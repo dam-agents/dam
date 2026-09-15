@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { getBrand } from "../../../../brand.js";
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
 import {
   useTelegramBot,
@@ -10,7 +9,6 @@ import {
 import { ChannelCard } from "./channel-card.js";
 
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
-  const brandShort = getBrand().short;
   const bot = useTelegramBot();
   const handle = bot.data?.username;
 
@@ -31,9 +29,9 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
           ) : (
             "this installation's Telegram bot"
           )}{" "}
-          to a chat (or message it directly) and send{" "}
-          <code>/{brandShort} bind</code> to pick the agent in the browser. Send{" "}
-          <code>/{brandShort} unbind</code> in the chat to disconnect.
+          to a chat (or message it directly) and send <code>/bind</code> to pick
+          the agent in the browser. Send <code>/unbind</code> in the chat to
+          disconnect.
         </p>
       </div>
     </ChannelCard>
