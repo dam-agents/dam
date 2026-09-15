@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
@@ -18,15 +19,18 @@ type Client struct {
 	HTTP  *http.Client
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — it forks the smolvm CLI per call — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
+	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext}
 	if caPEM != "" {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(caPEM)) {
 			return nil, fmt.Errorf("VM runner CA: no certificate in PEM")
 		}
-		c.HTTP.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
+	c.HTTP.Transport = transport
 	return c, nil
 }
 

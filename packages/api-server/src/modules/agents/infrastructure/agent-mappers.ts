@@ -74,6 +74,11 @@ export interface InfraAgent {
   gatewayPodNotReadyReason?: string;
 }
 
+const TERMINAL_MACHINE_REASONS = new Set([
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+]);
+
 export function computeAgentState(
   infra: InfraAgent,
   preparingWorkspace = false,
@@ -85,6 +90,11 @@ export function computeAgentState(
   if (infra.overBudget) return "over_budget";
   if (infra.agentPodReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
+  if (
+    infra.agentPodNotReadyReason &&
+    TERMINAL_MACHINE_REASONS.has(infra.agentPodNotReadyReason)
+  )
+    return "error";
   return "starting";
 }
 

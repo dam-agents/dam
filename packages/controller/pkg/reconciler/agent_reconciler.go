@@ -233,6 +233,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, fmt.Sprintf("reconciling vm machine: %v", err))
 		}
 		timer.mark("vmMachine")
+		if machine.Reason == vmrunner.ReasonOutOfCapacity {
+			running, parked, overBudget = false, true, machine.Message
+			r.recordParkedRetry(name)
+		}
 	} else {
 		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)

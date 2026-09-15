@@ -433,20 +433,25 @@ func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
 	assert.Equal(t, types.UID("controller-uid"), sec.OwnerReferences[0].UID)
 }
 
-// TEST_SCENARIO: a machine the runner refused needs a person to free room, so the controller stops re-asking every few seconds — with one reconcile worker, a refused agent otherwise spends the loop that other agents need.
-func TestARefusedMachineIsPolledLikeAHealthyOne(t *testing.T) {
+// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status carries the runner's own explanation of what to free.
+func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
+	ctx := context.Background()
 	agent := vmAgentCR()
-	r, node, requeued := setupVMReconciler(t, agent)
+	r, node, _ := setupVMReconciler(t, agent)
 	node.statuses["my-agent"] = vmrunner.MachineStatus{
 		State:   vmrunner.StateCreating,
 		Reason:  vmrunner.ReasonOutOfCapacity,
-		Message: "does not fit",
+		Message: "this machine's 1024 MiB does not fit",
 	}
 
-	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
 
-	require.NotEmpty(t, *requeued)
-	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a refusal is not re-asked every few seconds")
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")),
+		"the gateway is scaled down, so the owner is not charged for a machine that was refused")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Contains(t, cond.Message, "does not fit", "the runner's own explanation reaches the user")
 }
 
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
