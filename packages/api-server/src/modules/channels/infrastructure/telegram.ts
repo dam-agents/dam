@@ -376,7 +376,7 @@ export function createTelegramChat(deps: {
     userName: "platform",
     adapters: { telegram: deps.adapter },
     state: deps.state,
-    concurrency: "concurrent",
+    concurrency: "queue",
     ...(deps.logLevel ? { logger: deps.logLevel } : {}),
   });
 

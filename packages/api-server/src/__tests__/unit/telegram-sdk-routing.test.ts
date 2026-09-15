@@ -223,12 +223,11 @@ describe("telegram Chat SDK routing", () => {
       DM_THREAD,
       makeMessage(DM_THREAD, "/unbind", "m-2"),
     );
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseTurn();
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(seen).toEqual(["howdy", "/unbind"]);
     expect(posts.join("\n")).toContain("Chat disconnected");
-
-    releaseTurn();
   });
 
   it("delivers a bare command in a DM when no turn is in flight", async () => {
@@ -364,10 +363,11 @@ describe("telegram /start probe", () => {
     );
     await started;
     await send(h, DM_THREAD, "/start", "s-b");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(h.seen).toEqual(["howdy", "/start"]);
     expect(h.posts.join("\n")).toContain("already connected");
-    release();
   });
 });
 
