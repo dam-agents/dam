@@ -298,7 +298,6 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	assert.NotContains(t, err.Error(), "timeout", "and is closed rather than left hanging")
 	assert.Zero(t, guest(), "nothing was forwarded")
 
-
 	archive := filepath.Join(h.node.StateDir, "images", "platform-claude-code-vm_latest.tar")
 	require.NoError(t, os.MkdirAll(filepath.Dir(archive), 0o755))
 	require.NoError(t, os.WriteFile(archive, []byte("tar"), 0o644))
