@@ -191,11 +191,7 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if !anyVMAgent([]unstructured.Unstructured{*agent}) {
 		return nil
 	}
-	token, ca, err := r.ensureRunnerSecret(ctx, owner)
-	if err != nil {
-		return err
-	}
-	client, err := r.runnerClient(owner, token, ca)
+	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
 		return err
 	}
@@ -260,18 +256,6 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		restartReason = "GuestStoppedAnswering"
 	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, st.Restarts, restartReason)
-}
-
-func (r *AgentReconciler) machineStatus(ctx context.Context, owner, name string) (vmrunner.MachineStatus, error) {
-	token, ca, err := r.ensureRunnerSecret(ctx, owner)
-	if err != nil {
-		return vmrunner.MachineStatus{}, err
-	}
-	client, err := r.runnerClient(owner, token, ca)
-	if err != nil {
-		return vmrunner.MachineStatus{}, err
-	}
-	return client.Status(ctx, name)
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {

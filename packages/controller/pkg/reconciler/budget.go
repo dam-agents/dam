@@ -73,7 +73,11 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		if !r.config.VM.Enabled {
 			return allowedVerdict, false, nil
 		}
-		st, err := r.machineStatus(ctx, owner, agent.Name)
+		client, err := r.runnerFor(ctx, owner)
+		if err != nil {
+			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
+		}
+		st, err := client.Status(ctx, agent.Name)
 		if err != nil {
 			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
 		}
