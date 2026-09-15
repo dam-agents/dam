@@ -88,7 +88,7 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # vm agents have no pod: the controller publishes each machine's node port as
+  # vm agents have no pod: the controller publishes each machine's published port on the runner pod as
   # the agent Service's endpoint itself (see `virtualization` in values.yaml).
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
