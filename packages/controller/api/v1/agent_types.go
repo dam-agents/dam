@@ -13,6 +13,7 @@ import (
 // is chart-only (config.AgentBase); scheduling is chart-wide except
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -65,7 +66,8 @@ type AgentSpec struct {
 	// +optional
 	RuntimeClassName string `json:"runtimeClassName,omitempty"`
 	// NodeSelector overrides the chart-wide node selector; empty = inherit.
-	// Container backend only — a vm agent has no pod to place.
+	// Container backend only — rejected on the vm backend, whose machine is
+	// placed with its owner's VM runner.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
@@ -260,7 +262,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=10
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=11
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1
