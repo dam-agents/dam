@@ -161,6 +161,13 @@ the runner's placement by default; values-local had put `userBudgets` under
 image away from the vm load step (fixed); the persistence prelude refuses to
 boot when `/workspace` is not a mount; runner image on Fedora 42.
 
+Re-verified after the fixes: the VM runner pod was recreated with every agent's
+machine on the kept PVC, the controller brought that machine back by itself
+(smolvm reports the machine unreachable, the runner recovers and starts it),
+the agent went Ready and answered ping → pong in the UI; from an unrelated pod
+both the machine API and a guest's published port are refused, while the
+api-server still connects.
+
 Documented, not fixed: one runner pod hosts every user's machine (cross-tenant
 blast radius, per-tenant runner is the upgrade path); secrets travel on the
 smolvm argv inside the runner pod; the runner has no resource limits unless
