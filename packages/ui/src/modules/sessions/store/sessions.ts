@@ -38,10 +38,14 @@ export interface SessionsSlice {
   busy: boolean;
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
+  pendingResumeSessionMode: SessionMode | null;
   sessionsSectionOpen: boolean;
 
   setSessionId: (id: string | null) => void;
-  setPendingResumeSessionId: (id: string | null) => void;
+  setPendingResumeSessionId: (
+    id: string | null,
+    mode?: SessionMode | null,
+  ) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setSessionsSectionOpen: (open: boolean) => void;
@@ -115,13 +119,15 @@ export const createSessionsSlice: StateCreator<
     busy: false,
     terminalPaused: false,
     pendingResumeSessionId: null,
+    pendingResumeSessionMode: null,
     sessionsSectionOpen: readPersistedFlag(
       SESSIONS_SECTION_OPEN_STORAGE_KEY,
       true,
     ),
 
     setSessionId: (id) => set({ sessionId: id }),
-    setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
+    setPendingResumeSessionId: (id, mode = null) =>
+      set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
     setSessionsSectionOpen: (open) => {

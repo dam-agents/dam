@@ -20,7 +20,6 @@ export function isUnreadSession(
 }
 
 export function isUnreadAttention(item: AttentionItem): boolean {
-  if (item.mode === SessionMode.Terminal) return false;
   return laterThanSeen(item.activityAt, item.seenAt);
 }
 
@@ -30,7 +29,6 @@ export function isFeedableAttention(
   item: AttentionItem,
   now: number = Date.now(),
 ): boolean {
-  if (item.mode === SessionMode.Terminal) return false;
   const at = item.activityAt ?? item.createdAt;
   return now - Date.parse(at) <= FEED_WINDOW_MS;
 }
