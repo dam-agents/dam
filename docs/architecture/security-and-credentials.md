@@ -603,7 +603,7 @@ Binding a conversation surface — a Slack channel/DM or a Telegram
 chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod ([channel-turns](channel-turns.md)) and runs under the Agent's own
-credential set, gated by the owner's egress rules exactly like any
+credential set, gated by the owner's egress rules like any
 other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
 Agent's workspace: an attachment sent in the conversation is written
 there for the agent to open, so a speaker with no platform
