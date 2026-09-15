@@ -28,6 +28,8 @@ const (
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
+
 type Server struct {
 	Token      string
 	StateDir   string
@@ -141,6 +143,10 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	if spec.Running && (spec.Image == "" || spec.CPUs < 1 || spec.MemoryMiB < 1 || spec.StorageGiB < 1) {
 		http.Error(w, "image, cpus, memoryMiB and storageGiB are required", http.StatusBadRequest)
+		return
+	}
+	if spec.Image != "" && (!imageRef.MatchString(spec.Image) || strings.Contains(spec.Image, "..")) {
+		http.Error(w, "invalid image reference", http.StatusBadRequest)
 		return
 	}
 	st := s.status(id)

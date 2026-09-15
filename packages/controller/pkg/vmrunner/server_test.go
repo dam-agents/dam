@@ -401,3 +401,18 @@ func TestAMachineIDCannotEscapeTheStateDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(h.node.StateDir, "machines", "agent-1"), dir)
 }
+
+// TEST_SCENARIO: a caller puts an image reference carrying a dot segment or a newline; it is refused, so it can neither name an archive outside the runner's image directory nor forge a line in the runner's log.
+func TestAnImageReferenceIsRefusedWhenItCouldEscapeAPathOrALogLine(t *testing.T) {
+	h := newHarness(t)
+	for _, image := range []string{"../../etc/passwd", "repo/img:tag\nfake log line", "repo/img:tag with spaces"} {
+		body := `{"running":true,"image":"` + strings.ReplaceAll(image, "\n", `\n`) + `","cpus":1,"memoryMiB":512,"storageGiB":5}`
+		req, _ := http.NewRequest(http.MethodPut, h.srv.URL+"/machines/agent-1", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer secret")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "image %q must be refused", image)
+		resp.Body.Close()
+	}
+	assert.NoFileExists(t, filepath.Join(h.node.StateDir, "images", "..", "..", "etc", "passwd.tar"))
+}
