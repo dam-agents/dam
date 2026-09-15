@@ -20,6 +20,13 @@ features:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
+  # The Agents & AI Apps feature. Enabling it is what grants assistant:write,
+  # which the working status on a turn (assistant.threads.setStatus) needs —
+  # that scope cannot be requested on its own under oauth_config below.
+  assistant_view:
+    assistant_description: >
+      Chat with your agents, start runs, and follow their progress without
+      leaving Slack.
   bot_user:
     display_name: DAM
     always_online: true
@@ -33,9 +40,8 @@ oauth_config:
   scopes:
     bot:
       - commands
-      # Posting replies, plus the working status shown on mention turns
-      # (assistant.threads.setStatus) — both covered by chat:write. The status
-      # degrades to nothing where the workspace can't show it.
+      # Posting replies (chat.postMessage) and the one-person notices a turn
+      # can need (chat.postEphemeral).
       - chat:write
       # The agent-driven `react` tool (reactions.add) — the agent's own emoji
       # reactions, including the contextual ack it opens ambient turns with.
@@ -58,8 +64,6 @@ oauth_config:
       - users:read
       - users:read.email
       - app_mentions:read
-      # The mention ack is an emoji reaction.
-      - reactions:write
       # Attachments: url_private downloads inbound, files.uploadV2 outbound.
       - files:read
       - files:write
@@ -68,11 +72,11 @@ oauth_config:
       - channels:history
       - groups:history
       # Direct messages and group DMs: read inbound messages (im:history backs
-      # the message.im subscription below), inject history into fresh sessions,
-      # and resolve group-DM membership for outbound posts.
+      # the message.im subscription below) and inject history into fresh
+      # sessions. A group DM needs mpim:history for that injection — without it
+      # the prompt build throws and the turn posts an error instead of a reply.
       - im:history
       - mpim:history
-      - mpim:read
 
 settings:
   event_subscriptions:
