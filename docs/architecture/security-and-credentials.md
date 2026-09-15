@@ -79,7 +79,6 @@ other than its paired gateway. Enforcement is layered:
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
-- **vm Backend.** Its gates live with the VM runner ([platform-topology](platform-topology.md#vm-runner)).
 - **Agent ingress NetworkPolicy** (chart-rendered,
   `agent-ingress-platform-only`) admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
