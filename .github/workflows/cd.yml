@@ -387,7 +387,16 @@ jobs:
     needs: [merge-platform-base, changes]
     if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    # 45, not 30: every agent sits on platform-base, so a change anywhere in its
+    # source (agent-runtime included) gives each agent a new parent layer and
+    # invalidates everything above it — no cache backend can help, the layer
+    # chain itself is new. Most agents rebuild in a minute; k-search clones two
+    # repos and installs the KernelBench GPU dependency set, which took 30m18s
+    # and was killed mid cache-export, taking the manifest merge down with it
+    # (missing digest artifact). The cap was turning a slow build into a red
+    # pipeline. Decoupling that layer from the base is the real fix and is not
+    # this change.
+    timeout-minutes: 45
     strategy:
       matrix:
         component: ${{ fromJSON(needs.changes.outputs.agents) }}

@@ -11,7 +11,12 @@ ENV KSEARCH_ROOT=/opt/k-search \
     VIRTUAL_ENV=/opt/ksearch-venv \
     PATH=/opt/ksearch-venv/bin:$PATH
 
-RUN git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search.git "${KSEARCH_ROOT}" && \
+# uv's download cache survives a rebuild of this layer, which a platform-base
+# change forces every time. Ephemeral CI runners do not carry cache mounts
+# between runs, so this buys nothing there — it is for the warm builders:
+# `mise run cluster:build-agent` locally, and any self-hosted runner.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search.git "${KSEARCH_ROOT}" && \
     git clone --depth 1 -b "${KERNELBENCH_REF}" https://github.com/ScalingIntelligence/KernelBench.git /opt/kernelbench && \
     cp -R /opt/kernelbench/src "${KSEARCH_ROOT}/k_search/tasks/src" && \
     cp -R /opt/kernelbench/scripts "${KSEARCH_ROOT}/k_search/tasks/scripts" && \
