@@ -18,13 +18,20 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
+	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 type IdleChecker struct {
 	client    kubernetes.Interface
 	dynamic   dynamic.Interface
 	config    *config.Config
+	vmRunner  *vmrunner.Client
 	busyProbe func(ctx context.Context, agentName string) bool
+}
+
+func (c *IdleChecker) WithVMRunner(node *vmrunner.Client) *IdleChecker {
+	c.vmRunner = node
+	return c
 }
 
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
@@ -196,11 +203,11 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name)
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.vmRunner, c.config.Namespace, name)
 }
 
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string) error {
-	if err := scaleAgentPairToZero(ctx, kube, namespace, name); err != nil {
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, node *vmrunner.Client, namespace, name string) error {
+	if err := scaleAgentPairToZero(ctx, kube, node, namespace, name); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
@@ -212,7 +219,10 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, namespace, name string) error {
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, node *vmrunner.Client, namespace, name string) error {
+	if err := haltMachine(ctx, node, name); err != nil {
+		return err
+	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,
 	})
@@ -237,6 +247,16 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, namesp
 		}); err != nil {
 			return fmt.Errorf("scaling down statefulset %s: %w", ssName, err)
 		}
+	}
+	return nil
+}
+
+func haltMachine(ctx context.Context, node *vmrunner.Client, name string) error {
+	if node == nil {
+		return nil
+	}
+	if _, err := node.Ensure(ctx, name, vmrunner.MachineSpec{Running: false}); err != nil {
+		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
 	return nil
 }

@@ -462,7 +462,8 @@ else
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      AGENT_IMAGES+=("$image")
+      # A vm-only image never runs as a k3s container, so it is not imported there.
+      [ "$backend" = vm ] || AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
       # are not covered by //packages/agents:image — build straight from their Dockerfile, root

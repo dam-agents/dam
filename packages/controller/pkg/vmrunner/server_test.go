@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is restarted, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed for a machine's life and a change is reported, not silently ignored; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is stopped and started again, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed at create, so a change to either is reported and the rest of the spec still applies; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package vmrunner
 
 import (
@@ -299,19 +299,45 @@ func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
 	assert.Empty(t, orphanPIDs(proc, ""))
 }
 
-// TEST_SCENARIO: the controller re-sends a running machine's spec with a different image: the node reports the mismatch in the machine's message instead of restarting onto the old image as if nothing changed.
-func TestImageChangeIsReportedNotIgnored(t *testing.T) {
+// TEST_SCENARIO: the controller re-sends a running machine's spec with a different image: the machine keeps the image it booted with, says so in its message, and the rest of the spec still applies.
+func TestCreateOnlyDriftIsReportedAndDoesNotBlockTheRest(t *testing.T) {
 	h := newHarness(t)
 	desired := spec(true)
 	_, err := h.client().Ensure(t.Context(), "m1", desired)
 	require.NoError(t, err)
 	h.settle(t, "m1")
+
 	desired.Image = "quay.io/x/vm:2"
+	desired.MemoryMiB = 4096
 	_, err = h.client().Ensure(t.Context(), "m1", desired)
 	require.NoError(t, err)
 	st := h.settle(t, "m1")
-	assert.Contains(t, st.Message, "fixed for the machine's life")
+	assert.Contains(t, st.Message, "fixed at create")
 	assert.Contains(t, st.Message, "quay.io/x/vm:2")
+	assert.Contains(t, h.calls(), "--mem 4096", "the mutable part of the spec is still applied")
+	assert.Equal(t, 4096, st.MemoryMiB)
+}
+
+// TEST_SCENARIO: a machine smolvm still calls running has stopped answering long after it was last healthy: the runner stops and starts it rather than reporting the same dead machine forever.
+func TestADeadGuestIsActuallyRestarted(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	before := strings.Count(h.calls(), "machine start -n m1")
+
+	h.node.mu.Lock()
+	h.node.wasHealthy["m1"] = true
+	h.node.unhealthySince["m1"] = time.Now().Add(-unhealthyRestart - time.Minute)
+	h.node.mu.Unlock()
+
+	st, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	assert.Equal(t, StateRestarting, st.State)
+	assert.False(t, st.Ready, "a machine on its way down is not a ready endpoint")
+	h.settle(t, "m1")
+	assert.Greater(t, strings.Count(h.calls(), "machine start -n m1"), before, "the machine was restarted")
+	assert.Contains(t, h.calls(), "machine stop -n m1")
 }
 
 // TEST_SCENARIO: a machine that never answered yet (a first boot flattening its image) and one that is mid-wake are both left alone; only a machine that answered before and then went quiet past the window is restarted.

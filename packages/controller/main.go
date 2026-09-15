@@ -139,16 +139,21 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
+	var node *vmrunner.Client
 	if cfg.VM.Enabled {
-		node, err := vmrunner.NewClient(cfg.VM.RunnerURL, cfg.VM.RunnerToken, cfg.VM.RunnerCA)
+		n, err := vmrunner.NewClient(cfg.VM.RunnerURL, cfg.VM.RunnerToken, cfg.VM.RunnerCA)
 		if err != nil {
 			slog.Error("configuring VM runner client", "error", err)
 			return
 		}
+		node = n
 		agentReconciler.WithVMRunner(node)
 	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
+	if node != nil {
+		idleChecker.WithVMRunner(node)
+	}
 	go idleChecker.RunLoop(ctx)
 
 	warmPool := reconciler.NewWarmPoolManager(client, cfg)

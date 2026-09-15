@@ -18,19 +18,21 @@ set -eu
 # from there, seeded from the image on its first boot. The guest runs as root,
 # which is what lets a plain agent image do this; a container never sets the
 # variable and skips it.
-if [ -n "${PLATFORM_VM_PERSIST_PATHS:-}" ] && ! grep -qs ' /workspace ' /proc/mounts; then
-	echo "agent-entrypoint: /workspace is not a mounted storage disk; refusing to boot without persistence" >&2
-	exit 1
-fi
-for path in $(printf '%s' "${PLATFORM_VM_PERSIST_PATHS:-}" | tr ',' ' '); do
-	store="/workspace$path"
-	if [ ! -d "$store" ]; then
-		mkdir -p "$store"
-		[ -d "$path" ] && cp -a "$path/." "$store/"
+if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
+	if [ "$(stat -c %d /workspace 2>/dev/null)" = "$(stat -c %d / 2>/dev/null)" ]; then
+		echo "agent-entrypoint: /workspace is not the machine's storage disk; refusing to boot without persistence" >&2
+		exit 1
 	fi
-	mkdir -p "$path"
-	mount --bind "$store" "$path"
-done
+	for path in $(printf '%s' "$PLATFORM_VM_PERSIST_PATHS" | tr ',' ' '); do
+		store="/workspace$path"
+		if [ ! -d "$store" ]; then
+			mkdir -p "$store"
+			[ -d "$path" ] && [ ! "$path" -ef "$store" ] && cp -a "$path/." "$store/"
+		fi
+		mkdir -p "$path"
+		[ "$path" -ef "$store" ] || mount --bind "$store" "$path"
+	done
+fi
 
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt

@@ -7,4 +7,11 @@
 # MongoDBCommunity) that kubeconform has no schema for — skip them alongside the existing
 # CRD/Istio kinds. Not network-sandboxed: kubeconform fetches its schemas.
 set -euo pipefail
-helm template platform . --include-crds --set terms.version=test --set terms.text='Test Terms' --set clickstack.enabled=true | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity "$@"
+KUBECONFORM=(kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity)
+COMMON=(--include-crds --set terms.version=test --set terms.text='Test Terms')
+helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBECONFORM[@]}" "$@"
+# The vm backend renders a whole second set of objects (runner, its policy and
+# credentials, the device plugin) that the default values never reach.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
+  --set virtualization.node.scc=privileged | "${KUBECONFORM[@]}" "$@"

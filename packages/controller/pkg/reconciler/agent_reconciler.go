@@ -182,7 +182,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}
-			if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+			if err := scaleAgentPairToZero(ctx, r.client, r.vmRunner, r.config.Namespace, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
@@ -253,7 +253,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 
 	if hardStop {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.vmRunner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -271,7 +271,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return err
 	}
 	if parked {
-		if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+		if err := scaleAgentPairToZero(ctx, r.client, r.vmRunner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
