@@ -46,6 +46,25 @@ func runnerSuffix(owner string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
+func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerReference {
+	r.runnerOwnerOnce.Do(func() {
+		name := r.config.ReleaseName + "-controller"
+		dep, err := r.client.AppsV1().Deployments(r.config.ReleaseNamespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			slog.Warn("vm runner: no owner reference, runners will outlive the release", "deployment", name, "error", err)
+			return
+		}
+		r.runnerOwner = &metav1.OwnerReference{
+			APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID,
+		}
+	})
+	if r.runnerOwner == nil {
+		return nil
+	}
+	return []metav1.OwnerReference{*r.runnerOwner}
+}
+
 func (r *AgentReconciler) runnerName(owner string) string {
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
@@ -83,7 +102,9 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	if err := applyNetworkPolicy(ctx, r.client, buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns)); err != nil {
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns)
+	np.OwnerReferences = r.runnerOwnerRef(ctx)
+	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
@@ -146,7 +167,7 @@ func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) 
 	}
 	token := utilrand.String(48)
 	sec := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName)},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
 		Data: map[string][]byte{
 			"token":   []byte(token),
 			"tls.crt": []byte(certPEM),
@@ -211,7 +232,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 		return fmt.Errorf("vm runner storage: %w", err)
 	}
 	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName)},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}},
@@ -230,7 +251,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName)},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  vmRunnerSelector(owner),
@@ -313,7 +334,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		}})
 	}
 	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: r.runnerOwnerRef(ctx)},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},

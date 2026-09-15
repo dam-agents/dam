@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -330,4 +331,41 @@ func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
 	require.NoError(t, err, "an unreachable runner must not fail the reconcile")
 	assert.True(t, verdict.allowed)
 	assert.False(t, changed)
+}
+
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the controller's own Deployment, so the cluster collects them all; a single object missing the reference strands a running VM and its disk.
+func TestRunnerObjectsAreOwnedByTheController(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-controller", Namespace: "default", UID: "controller-uid"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	name := r.runnerName(testOwner)
+	require.NoError(t, r.client.CoreV1().Secrets("default").Delete(ctx, name, metav1.DeleteOptions{}))
+
+	require.ErrorContains(t, r.Reconcile(ctx, agent), "VM runner", "the fresh token is rejected by the fake runner, which happens after every object below exists")
+
+	owners := map[string][]metav1.OwnerReference{}
+	sec, err := r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["secret"] = sec.OwnerReferences
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["pvc"] = pvc.OwnerReferences
+	svc, err := r.client.CoreV1().Services("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["service"] = svc.OwnerReferences
+	np, err := r.client.NetworkingV1().NetworkPolicies("default").Get(ctx, name+"-ingress", metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["networkpolicy"] = np.OwnerReferences
+	dep, err := r.client.AppsV1().Deployments("default").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["deployment"] = dep.OwnerReferences
+
+	for kind, refs := range owners {
+		require.Len(t, refs, 1, "%s carries no owner, so it would outlive the release", kind)
+		assert.Equal(t, types.UID("controller-uid"), refs[0].UID, "%s is owned by the controller", kind)
+	}
 }
