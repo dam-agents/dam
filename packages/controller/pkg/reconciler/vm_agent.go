@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -94,18 +95,47 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	}
 	if st.Port > 0 {
 		addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", r.config.VM.RunnerAddress)
-		if err != nil || len(addrs) == 0 {
+		if err != nil {
 			return st, fmt.Errorf("resolving VM runner %s: %w", r.config.VM.RunnerAddress, err)
 		}
-		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, addrs[0].String(), int32(st.Port), ownerRef)); err != nil {
+		if len(addrs) == 0 {
+			return st, fmt.Errorf("resolving VM runner %s: no address", r.config.VM.RunnerAddress)
+		}
+		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, addrs[0].String(), int32(st.Port), st.Ready, ownerRef)); err != nil {
 			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
 		}
 	}
 	return st, nil
 }
 
-func buildVMEndpointSlice(name, namespace, address string, port int32, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
-	portName, tcp, ready := "acp", corev1.ProtocolTCP, true
+func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
+	if r.vmRunner == nil {
+		return
+	}
+	ids, err := r.vmRunner.List(ctx)
+	if err != nil {
+		slog.Warn("orphan machine GC: listing machines failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
+		if err == nil {
+			continue
+		}
+		if !k8serrors.IsNotFound(err) {
+			slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
+			continue
+		}
+		if err := r.vmRunner.Delete(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+			continue
+		}
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+	}
+}
+
+func buildVMEndpointSlice(name, namespace, address string, port int32, ready bool, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
+	portName, tcp := "acp", corev1.ProtocolTCP
 	return &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

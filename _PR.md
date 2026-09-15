@@ -142,6 +142,30 @@ dropped for now (DAM-in-DAM is a follow-up — likely a shared read-only tools
 volume on the runner rather than 300 MB in every image). Any template can now
 be run as a VM by setting `backend.type: vm`.
 
+## Review round (2026-09-15, three Opus reviewers)
+
+Fixed: guest ports and the machine API were reachable from any pod (proved on
+the local cluster) — a NetworkPolicy now admits only the api-server and the
+controller; a running-but-dead machine (guest gone, smolvm still says running)
+is restarted after 2 min unhealthy once it had been healthy; a DELETE racing an
+in-flight create no longer resurrects the machine; image/egress-list changes
+are reported as an error instead of being silently ignored; `smolvm machine
+status` failures no longer read as "absent" (which re-ran create); machines
+whose Agent is gone are swept with the PVC/Secret orphan sweep (`GET
+/machines`); EndpointSlice readiness follows the machine; the runner
+credentials get checksum annotations on both pods and `resource-policy: keep`
+(so a lookup-less render cannot desync them silently), the PVC is kept on
+uninstall, the device plugin is pinned by digest and gets its own SCC value and
+the runner's placement by default; values-local had put `userBudgets` under
+`virtualization` (fixed); `cluster:install` deduped the shared claude-code
+image away from the vm load step (fixed); the persistence prelude refuses to
+boot when `/workspace` is not a mount; runner image on Fedora 42.
+
+Documented, not fixed: one runner pod hosts every user's machine (cross-tenant
+blast radius, per-tenant runner is the upgrade path); secrets travel on the
+smolvm argv inside the runner pod; the runner has no resource limits unless
+set; smolvm is installed by its remote installer at image build.
+
 ## Known gaps (also in ADR 091)
 
 - A template image change does not reach an existing machine (image is fixed

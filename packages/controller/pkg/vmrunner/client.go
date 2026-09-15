@@ -38,6 +38,25 @@ func (c *Client) Status(ctx context.Context, id string) (MachineStatus, error) {
 	return c.do(ctx, http.MethodGet, id, nil)
 }
 
+func (c *Client) List(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+"/machines", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vm runner: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("vm runner: list: %s: %s", resp.Status, bytes.TrimSpace(raw))
+	}
+	var ids []string
+	return ids, json.Unmarshal(raw, &ids)
+}
+
 func (c *Client) Delete(ctx context.Context, id string) error {
 	_, err := c.do(ctx, http.MethodDelete, id, nil)
 	return err

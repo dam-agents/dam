@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	guestAgentPort = 8080
-	loopbackOffset = 1000
-	opTimeout      = 30 * time.Minute
+	guestAgentPort   = 8080
+	loopbackOffset   = 1000
+	opTimeout        = 30 * time.Minute
+	unhealthyRestart = 2 * time.Minute
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -35,23 +36,27 @@ type Server struct {
 	PortMax   int
 	AllowFrom []*net.IPNet
 
-	mu        sync.Mutex
-	locks     map[string]*sync.Mutex
-	pending   map[string]string
-	lastErr   map[string]string
-	listeners map[string]net.Listener
+	mu             sync.Mutex
+	locks          map[string]*sync.Mutex
+	pending        map[string]string
+	lastErr        map[string]string
+	listeners      map[string]net.Listener
+	deleted        map[string]bool
+	wasHealthy     map[string]bool
+	unhealthySince map[string]time.Time
 }
 
 func (s *Server) Start() error {
 	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
-	entries, err := os.ReadDir(filepath.Join(s.StateDir, "machines"))
-	if err != nil && !os.IsNotExist(err) {
+	s.deleted, s.wasHealthy, s.unhealthySince = map[string]bool{}, map[string]bool{}, map[string]time.Time{}
+	ids, err := s.machineIDs()
+	if err != nil {
 		return err
 	}
-	for _, e := range entries {
-		if p := s.port(e.Name()); p != 0 {
-			if err := s.forward(e.Name(), p); err != nil {
-				return err
+	for _, id := range ids {
+		if p := s.port(id); p != 0 {
+			if err := s.forward(id, p); err != nil {
+				slog.Warn("republishing machine port", "machine", id, "error", err)
 			}
 		}
 	}
@@ -70,25 +75,53 @@ func (s *Server) Close() {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /machines", s.auth(s.list))
 	mux.HandleFunc("PUT /machines/{id}", s.guard(s.put))
 	mux.HandleFunc("GET /machines/{id}", s.guard(s.get))
 	mux.HandleFunc("DELETE /machines/{id}", s.guard(s.delete))
 	return mux
 }
 
-func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
+func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.Token)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		next(w, r)
+	}
+}
+
+func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
+	return s.auth(func(w http.ResponseWriter, r *http.Request) {
 		if !machineID.MatchString(r.PathValue("id")) {
 			http.Error(w, "invalid machine id", http.StatusBadRequest)
 			return
 		}
 		next(w, r)
+	})
+}
+
+func (s *Server) list(w http.ResponseWriter, _ *http.Request) {
+	ids, err := s.machineIDs()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	writeJSON(w, ids)
+}
+
+func (s *Server) machineIDs() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	ids := []string{}
+	for _, e := range entries {
+		ids = append(ids, e.Name())
+	}
+	return ids, nil
 }
 
 func (s *Server) put(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +135,9 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "image, cpus, memoryMiB and storageGiB are required", http.StatusBadRequest)
 		return
 	}
+	s.mu.Lock()
+	delete(s.deleted, id)
+	s.mu.Unlock()
 	st := s.status(id)
 	if op := s.plan(id, spec, st); op != "" {
 		s.spawn(id, op, func() error { return s.ensure(id, spec) })
@@ -127,17 +163,31 @@ func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) string {
 		if applied := s.readSpec(id); applied == nil || needsRestart(*applied, spec) {
 			return StateRestarting
 		}
+		if !st.Ready && s.deadForLong(id) {
+			return StateRestarting
+		}
 	}
 	return ""
 }
 
+func (s *Server) deadForLong(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	since, ok := s.unhealthySince[id]
+	return s.wasHealthy[id] && ok && time.Since(since) > unhealthyRestart
+}
+
 func needsRestart(applied, desired MachineSpec) bool {
 	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
-		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env)
+		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env) ||
+		applied.Image != desired.Image || !reflect.DeepEqual(applied.AllowCIDRs, desired.AllowCIDRs)
 }
 
 func (s *Server) ensure(id string, spec MachineSpec) error {
-	state := s.Runtime.State(id)
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		return err
+	}
 	if !spec.Running {
 		if state == StateRunning {
 			return s.Runtime.Stop(id)
@@ -154,6 +204,9 @@ func (s *Server) ensure(id string, spec MachineSpec) error {
 		return s.writeSpec(id, spec)
 	}
 	applied := s.readSpec(id)
+	if applied != nil && (applied.Image != spec.Image || !reflect.DeepEqual(applied.AllowCIDRs, spec.AllowCIDRs)) {
+		return fmt.Errorf("machine %s: image and egress allowlist are fixed for the machine's life (have %s %v, want %s %v); recreate the agent", id, applied.Image, applied.AllowCIDRs, spec.Image, spec.AllowCIDRs)
+	}
 	if state == StateRunning && (applied == nil || needsRestart(*applied, spec)) {
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
@@ -206,7 +259,15 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	lock := s.lock(id)
 	lock.Lock()
 	defer lock.Unlock()
-	if s.Runtime.State(id) != StateAbsent {
+	s.mu.Lock()
+	s.deleted[id] = true
+	s.mu.Unlock()
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if state != StateAbsent {
 		if err := s.Runtime.Delete(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -218,6 +279,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	delete(s.lastErr, id)
+	delete(s.wasHealthy, id)
+	delete(s.unhealthySince, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -245,7 +308,13 @@ func (s *Server) spawn(id, op string, fn func() error) {
 		lock := s.lock(id)
 		lock.Lock()
 		defer lock.Unlock()
-		err := fn()
+		s.mu.Lock()
+		gone := s.deleted[id]
+		s.mu.Unlock()
+		var err error
+		if !gone {
+			err = fn()
+		}
 		s.mu.Lock()
 		delete(s.pending, id)
 		if err != nil {
@@ -270,9 +339,22 @@ func (s *Server) status(id string) MachineStatus {
 		st.State = pending
 		return st
 	}
-	st.State = s.Runtime.State(id)
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		st.State, st.Message = StateUnknown, err.Error()
+		return st
+	}
+	st.State = state
 	if st.State == StateRunning {
 		st.Ready = s.healthy(st.Port)
+		s.mu.Lock()
+		if st.Ready {
+			s.wasHealthy[id] = true
+			delete(s.unhealthySince, id)
+		} else if _, seen := s.unhealthySince[id]; !seen {
+			s.unhealthySince[id] = time.Now()
+		}
+		s.mu.Unlock()
 	}
 	return st
 }

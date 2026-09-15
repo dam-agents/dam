@@ -167,6 +167,9 @@ virtualization:
     # on). Any plugin exposing /dev/kvm and /dev/net/tun works; `privileged:
     # true` is the last resort.
     devices: {}
+    # Last resort where no device plugin exists. The runner then also
+    # chmods the host's /dev/kvm and /dev/net/tun world-writable for its
+    # machine uids, and that outlives the pod.
     privileged: false
     # OpenShift: name of a built-in SCC to bind to the node's ServiceAccount
     # (the pod runs as root with NET_ADMIN, so `privileged` is the one that
@@ -174,35 +177,45 @@ virtualization:
     # binding rendered.
     scc: ""
     # Machine disks — every vm agent's workspace — and smolvm's image cache
-    # live here and survive pod restarts. Node-local by nature: not shared,
-    # not migrated.
+    # live here and survive pod restarts and uninstalls (the claim is kept).
+    # Set once: a later change only grows the claim, and only on a class
+    # that allows expansion.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
-    # taints). Machines take their CPUs and RAM from this pod's limits, so
-    # size them for the sum of the machines expected at once.
+    # taints). Machines are processes of this pod: without limits here the
+    # pod is unbounded and BestEffort (first evicted under node pressure,
+    # taking every machine with it), so set limits for the sum of the
+    # machines expected at once.
     nodeSelector: {}
     tolerations: []
     resources: {}
-    # Sources allowed to dial machines' published ports; empty admits any
-    # (the pod sits inside the cluster network like an agent pod would).
+    # Extra sources the runner itself admits on machines' published ports,
+    # on top of the NetworkPolicy that limits them to the api-server and the
+    # controller; empty means the policy is the only gate.
     ingressCidrs: []
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
-  # privileged (kubelet socket dir + /dev from the host) and binds the same
-  # SCC as the node when `node.scc` is set. Point nodeSelector/tolerations
-  # at the KVM-capable pool and give the node pod the same.
+  # privileged (kubelet socket dir + /dev from the host), so keep it on the
+  # KVM-capable pool via nodeSelector/tolerations.
   devicePlugin:
     enabled: false
     image:
       repository: ghcr.io/squat/generic-device-plugin
-      tag: 2cc50b0
+      # Pinned by digest: this DaemonSet is privileged with the host's /dev.
+      digest: sha256:dc192e164c69b03f156765793a1be62ca437709ae477b27ca7d8f3dcf5021576
       pullPolicy: IfNotPresent
+    # OpenShift: the plugin needs the privileged SCC; empty renders no binding.
+    scc: ""
     domain: squat.ai
     # Grants each device can be handed out at once; one VM runner pod
     # needs one, more leaves room for a second consumer on the node.
     count: 4
+    # Where the plugin runs, i.e. which nodes may host machines. Empty falls
+    # back to `node.nodeSelector` / `node.tolerations`; with both empty it
+    # runs on every schedulable node and advertises zero devices where there
+    # is no /dev/kvm.
     nodeSelector: {}
     tolerations: []
 

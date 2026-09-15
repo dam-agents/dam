@@ -54,8 +54,9 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
     --set=virtualization.enabled=false) VIRT_ENABLED="" ;;
   esac
 done
-if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && [ ! -e /dev/kvm ]; then
-  echo "FATAL: virtualization.enabled=true needs /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
+# Probe by opening: the node can exist while the device cgroup still denies it.
+if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; then
+  echo "FATAL: virtualization.enabled=true needs a usable /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
   exit 1
 fi
 
@@ -454,13 +455,14 @@ else
     # ("platform-<component>" locally), not the template key — and dedup so
     # a shared image builds and loads once.
     comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+    # vm-backend templates share the container images; their image is also
+    # loaded onto the VM runner pod after the install, once per image.
+    if [ "$backend" = vm ]; then case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac; fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      # vm-backend images run inside the VM runner pod's machines, never
-      # as k3s containers; they are loaded onto that pod after the install.
-      if [ "$backend" = vm ]; then VM_IMAGES+=("$image"); else AGENT_IMAGES+=("$image"); fi
+      AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
       # are not covered by //packages/agents:image — build straight from their Dockerfile, root

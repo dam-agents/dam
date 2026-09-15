@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,24 +13,34 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type Smolvm struct {
 	Bin string
 }
 
-func (r *Smolvm) State(id string) string {
-	out, err := exec.Command(r.Bin, "machine", "status", "-n", id, "--json").Output()
+func (r *Smolvm) State(id string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, r.Bin, "machine", "status", "-n", id, "--json").Output()
 	if err != nil {
-		return StateAbsent
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && bytes.Contains(exit.Stderr, []byte("not found")) {
+			return StateAbsent, nil
+		}
+		return StateUnknown, fmt.Errorf("smolvm machine status %s: %w", id, err)
 	}
 	var st struct {
 		State string `json:"state"`
 	}
-	if err := json.Unmarshal(out, &st); err != nil || st.State != "running" {
-		return StateStopped
+	if err := json.Unmarshal(out, &st); err != nil {
+		return StateUnknown, fmt.Errorf("smolvm machine status %s: %w", id, err)
 	}
-	return StateRunning
+	if st.State != "running" {
+		return StateStopped, nil
+	}
+	return StateRunning, nil
 }
 
 func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int, caDir string) error {

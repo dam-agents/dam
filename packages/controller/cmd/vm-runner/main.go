@@ -48,8 +48,12 @@ func main() {
 		}
 	}
 	for _, dir := range []string{os.Getenv("HOME"), *stateDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil || os.Chmod(dir, 0o755) != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			slog.Error("creating state dir", "path", dir, "error", err)
+			os.Exit(1)
+		}
+		if err := os.Chmod(dir, 0o755); err != nil {
+			slog.Error("opening state dir to machine uids", "path", dir, "error", err)
 			os.Exit(1)
 		}
 	}

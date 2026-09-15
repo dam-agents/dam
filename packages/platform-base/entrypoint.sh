@@ -18,6 +18,10 @@ set -eu
 # from there, seeded from the image on its first boot. The guest runs as root,
 # which is what lets a plain agent image do this; a container never sets the
 # variable and skips it.
+if [ -n "${PLATFORM_VM_PERSIST_PATHS:-}" ] && ! grep -qs ' /workspace ' /proc/mounts; then
+	echo "agent-entrypoint: /workspace is not a mounted storage disk; refusing to boot without persistence" >&2
+	exit 1
+fi
 for path in $(printf '%s' "${PLATFORM_VM_PERSIST_PATHS:-}" | tr ',' ' '); do
 	store="/workspace$path"
 	if [ ! -d "$store" ]; then
