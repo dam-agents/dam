@@ -41,7 +41,7 @@ import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
 import { KitChannelsSection } from "../../starter-kits/components/kit-channels-section.js";
-import { KitConnectionsCard } from "../../starter-kits/components/kit-connections-card.js";
+import { KitRequirementsCard } from "../../starter-kits/components/kit-requirements-card.js";
 import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
 import { KitSkillsSection } from "../../starter-kits/components/kit-skills-section.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
@@ -456,22 +456,24 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      {kit && statuses.length > 0 && (
-        <KitConnectionsCard
-          kit={kit}
-          statuses={statuses}
-          owned={owned}
-          templateById={templateById}
-          templates={connectionTemplates.data ?? []}
-          onUse={(id) => toggleConnection(id, true)}
-          onConnect={setConnectTarget}
-        />
-      )}
-
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
         oauthReturnView={returnPath}
+        title="Connections"
+        leading={
+          kit && statuses.length > 0 ? (
+            <KitRequirementsCard
+              kit={kit}
+              statuses={statuses}
+              owned={owned}
+              templateById={templateById}
+              templates={connectionTemplates.data ?? []}
+              onUse={(id: string) => toggleConnection(id, true)}
+              onConnect={setConnectTarget}
+            />
+          ) : undefined
+        }
       />
       {connectTarget && (
         <ConnectionCatalogModal
