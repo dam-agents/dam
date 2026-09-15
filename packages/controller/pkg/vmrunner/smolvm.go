@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -123,6 +124,13 @@ func orphanPIDs(procRoot, vmDir string) []int {
 	return pids
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches a guest as `-e KEY=VALUE` on this command line, and a failure carries the command's own output into the Agent's status and the platform's logs — so a tool that echoes its invocation would publish those values.
+var envValue = regexp.MustCompile(`(-e\s+[A-Za-z_][A-Za-z0-9_]*=)\S+`)
+
+func redactEnv(out string) string {
+	return envValue.ReplaceAllString(out, "${1}***")
+}
+
 func envArgs(env map[string]string) []string {
 	keys := make([]string, 0, len(env))
 	for k := range env {
@@ -141,7 +149,7 @@ func (r *Smolvm) run(args ...string) error {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, r.Bin, args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, redactEnv(strings.TrimSpace(string(out))))
 	}
 	return nil
 }

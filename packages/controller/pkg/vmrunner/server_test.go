@@ -600,3 +600,15 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.Contains(t, h.calls(), "machine stop -n m1", "it is stopped, not left running on the old address")
 	assert.NotContains(t, h.calls(), "--allow-cidr 10.0.0.2/32", "and never re-created with the new one behind the user's back")
 }
+
+// TEST_SCENARIO: an operator's Secret reaches the guest as `-e KEY=VALUE` on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs — so a tool that echoes its own invocation would publish those values to anyone who can read either.
+func TestSecretValuesAreRedactedFromCommandOutput(t *testing.T) {
+	echoed := "failed to start machine\n" +
+		"  invocation: machine create -n m1 -e ANTHROPIC_API_KEY=sk-live-abc123 -e HOME=/home/agent\n"
+
+	got := redactEnv(echoed)
+
+	assert.NotContains(t, got, "sk-live-abc123", "the value never reaches a log or a status")
+	assert.Contains(t, got, "-e ANTHROPIC_API_KEY=***", "the name stays, so the failure is still diagnosable")
+	assert.Contains(t, got, "failed to start machine", "and the rest of the output is untouched")
+}
