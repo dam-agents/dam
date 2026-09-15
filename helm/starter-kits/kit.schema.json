@@ -88,6 +88,19 @@
         }
       }
     },
+    "providers": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "ibm-litellm",
+          "openai",
+          "bob"
+        ]
+      }
+    },
     "knowledgeBase": {
       "type": "object",
       "properties": {

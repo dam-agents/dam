@@ -8,10 +8,7 @@ category: knowledge
 icon: document
 knowledgeBase:
   template: plain-wiki
-connections:
-  - accepts: [ibm-litellm, anthropic, openai]
-    required: true
-    note: The model the agent reasons and writes the wiki with.
+providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover
     required: true

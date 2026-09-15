@@ -24,7 +24,6 @@ import {
   connectTargets,
   describeAccepts,
   type GrantedConnection,
-  isProviderRequirement,
   requirementChoice,
 } from "../lib/setup.js";
 
@@ -111,8 +110,7 @@ export function KitRequirementRow({
     templateById,
   );
   const targets = connectTargets(requirement, templateById);
-  const provider = isProviderRequirement(requirement);
-  const showMenu = !provider && mode !== "connect";
+  const showMenu = mode !== "connect";
 
   return (
     <li
@@ -148,118 +146,111 @@ export function KitRequirementRow({
               {requirement.note}
             </p>
           )}
-          {provider && (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Pick one under Provider above.
-            </p>
-          )}
         </div>
 
-        {!provider && (
-          <div className="flex shrink-0 items-center gap-2">
-            {chosen.map((c) => (
-              <ChosenConnection
-                key={c.id}
-                connection={c}
-                templateById={templateById}
-                showTemplate={targets.length > 1}
-              />
+        <div className="flex shrink-0 items-center gap-2">
+          {chosen.map((c) => (
+            <ChosenConnection
+              key={c.id}
+              connection={c}
+              templateById={templateById}
+              showTemplate={targets.length > 1}
+            />
+          ))}
+
+          {mode === "use" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onUse(candidates[0].id)}
+              data-testid={`starter-kit-use-${candidates[0].id}`}
+            >
+              Use {nameOf(candidates[0])}
+            </Button>
+          )}
+
+          {mode === "pick" && (
+            <div className="w-[220px]">
+              <Select
+                size="sm"
+                value=""
+                aria-label={`Connection for ${title}`}
+                data-testid={`starter-kit-pick-${requirement.accepts.join("-")}`}
+                onChange={(e) => e.target.value && onUse(e.target.value)}
+              >
+                <option value="">Choose a connection…</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {nameOf(c)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          {mode === "connect" &&
+            targets.map((t) => (
+              <Button
+                key={t.key}
+                size="sm"
+                variant="outline"
+                onClick={() => onConnect(t)}
+                data-testid={`starter-kit-connect-${t.key}`}
+              >
+                Connect {t.label}
+              </Button>
             ))}
 
-            {mode === "use" && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onUse(candidates[0].id)}
-                data-testid={`starter-kit-use-${candidates[0].id}`}
-              >
-                Use {nameOf(candidates[0])}
-              </Button>
-            )}
-
-            {mode === "pick" && (
-              <div className="w-[220px]">
-                <Select
-                  size="sm"
-                  value=""
-                  aria-label={`Connection for ${title}`}
-                  data-testid={`starter-kit-pick-${requirement.accepts.join("-")}`}
-                  onChange={(e) => e.target.value && onUse(e.target.value)}
-                >
-                  <option value="">Choose a connection…</option>
-                  {candidates.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {nameOf(c)}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
-
-            {mode === "connect" &&
-              targets.map((t) => (
+          {showMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
-                  key={t.key}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onConnect(t)}
-                  data-testid={`starter-kit-connect-${t.key}`}
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`More options for ${title}`}
+                  data-testid={`starter-kit-more-${requirement.accepts.join("-")}`}
                 >
-                  Connect {t.label}
+                  <OverflowMenuVertical size={16} />
                 </Button>
-              ))}
-
-            {showMenu && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`More options for ${title}`}
-                    data-testid={`starter-kit-more-${requirement.accepts.join("-")}`}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {switchTo.map((c) => (
+                  <DropdownMenuItem
+                    key={`use-${c.id}`}
+                    onSelect={() => {
+                      onRevoke(chosen[0].id);
+                      onUse(c.id);
+                    }}
                   >
-                    <OverflowMenuVertical size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {switchTo.map((c) => (
-                    <DropdownMenuItem
-                      key={`use-${c.id}`}
-                      onSelect={() => {
-                        onRevoke(chosen[0].id);
-                        onUse(c.id);
-                      }}
-                    >
-                      Use {nameOf(c)} instead
-                    </DropdownMenuItem>
-                  ))}
-                  {targets.map((t) => (
-                    <DropdownMenuItem
-                      key={`connect-${t.key}`}
-                      onSelect={() => onConnect(t)}
-                    >
-                      Connect another {t.label}
-                    </DropdownMenuItem>
-                  ))}
-                  {chosen.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator className="-mx-1" />
-                      {chosen.map((c) => (
-                        <DropdownMenuItem
-                          key={`remove-${c.id}`}
-                          className="text-destructive"
-                          onSelect={() => onRevoke(c.id)}
-                        >
-                          Remove {nameOf(c)}
-                        </DropdownMenuItem>
-                      ))}
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
+                    Use {nameOf(c)} instead
+                  </DropdownMenuItem>
+                ))}
+                {targets.map((t) => (
+                  <DropdownMenuItem
+                    key={`connect-${t.key}`}
+                    onSelect={() => onConnect(t)}
+                  >
+                    Connect another {t.label}
+                  </DropdownMenuItem>
+                ))}
+                {chosen.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator className="-mx-1" />
+                    {chosen.map((c) => (
+                      <DropdownMenuItem
+                        key={`remove-${c.id}`}
+                        className="text-destructive"
+                        onSelect={() => onRevoke(c.id)}
+                      >
+                        Remove {nameOf(c)}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {chosen.map((c) => (

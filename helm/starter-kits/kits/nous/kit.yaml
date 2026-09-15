@@ -21,9 +21,6 @@ resources:
     per arm and its own Python environment — more CPU, memory and disk than a
     chat agent.
 connections:
-  - accepts: [ibm-litellm, anthropic]
-    required: true
-    note: Nous drives Claude through the Claude Agent SDK; an API-key style credential is needed.
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
 hibernationTimeoutMin: 0

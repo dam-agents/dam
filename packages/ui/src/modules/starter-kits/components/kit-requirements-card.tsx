@@ -5,7 +5,11 @@ import type {
   StarterKitView,
 } from "api-server-api";
 
-import type { ConnectTarget, GrantedConnection } from "../lib/setup.js";
+import {
+  connectionRequirements,
+  type ConnectTarget,
+  type GrantedConnection,
+} from "../lib/setup.js";
 import { KitRequirementRow } from "./kit-requirement-row.js";
 
 interface Props {
@@ -45,7 +49,7 @@ export function KitRequirementsCard({
       )}
 
       <ul>
-        {kit.connections.map((requirement) => (
+        {connectionRequirements(kit).map((requirement) => (
           <KitRequirementRow
             key={requirement.accepts.join("|")}
             requirement={requirement}

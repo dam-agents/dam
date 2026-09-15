@@ -159,17 +159,26 @@ export function isProviderRequirement(
 }
 
 export function providerPolicyForKit(
-  kit: Pick<StarterKitView, "connections">,
+  kit: Pick<StarterKitView, "connections" | "providers">,
   base: SetupProviderPolicy,
 ): SetupProviderPolicy {
-  const providerReq = kit.connections.find(isProviderRequirement);
-  if (!providerReq) return base;
-  const allow = providerReq.accepts.filter(isProviderTemplate);
+  const declared =
+    kit.providers ??
+    kit.connections
+      .find(isProviderRequirement)
+      ?.accepts.filter(isProviderTemplate);
+  if (!declared || declared.length === 0) return base;
   const recommended =
-    base.recommended && allow.includes(base.recommended)
+    base.recommended && declared.includes(base.recommended)
       ? base.recommended
-      : allow[0];
-  return { allow, recommended };
+      : declared[0];
+  return { allow: declared, recommended };
+}
+
+export function connectionRequirements(
+  kit: Pick<StarterKitView, "connections">,
+): StarterKitConnectionRequirement[] {
+  return kit.connections.filter((r) => !isProviderRequirement(r));
 }
 
 function familiesIn(

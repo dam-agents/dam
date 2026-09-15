@@ -1,6 +1,6 @@
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 
-import { describeAccepts } from "./setup.js";
+import { connectionRequirements, describeAccepts } from "./setup.js";
 
 export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   knowledge: "Knowledge",
@@ -34,7 +34,7 @@ export function kitBadges(
     });
   }
 
-  for (const req of kit.connections) {
+  for (const req of connectionRequirements(kit)) {
     const match = templates.find(
       (t) =>
         req.accepts.includes(t.id) ||

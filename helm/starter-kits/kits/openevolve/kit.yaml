@@ -13,10 +13,6 @@ image:
 resources:
   storage: 5Gi
 connections:
-  - accepts: [ibm-litellm, openai]
-    required: true
-    note: >-
-      OPENAI-compatible model provider; the IBM LiteLLM proxy is the recommended choice.
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
 parameters:

@@ -48,6 +48,7 @@ import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
+  connectionRequirements,
   type ConnectTarget,
   harnessesLine,
   isStarterKitSetupComplete,
@@ -478,7 +479,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         title="Connections"
         excludeIds={kitOwnedConnectionIds}
         leading={
-          kit && kit.connections.length > 0 ? (
+          kit && connectionRequirements(kit).length > 0 ? (
             <KitRequirementsCard
               kit={kit}
               owned={owned}

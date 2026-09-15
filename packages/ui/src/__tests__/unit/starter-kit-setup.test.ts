@@ -9,6 +9,7 @@ import { narrowPolicyToTemplate } from "../../modules/sandboxes/lib/setup-policy
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
+  connectionRequirements,
   connectTargets,
   describeAccepts,
   harnessesLine,
@@ -215,6 +216,29 @@ describe("providerPolicyForKit", () => {
       ).recommended,
     ).toBe("ibm-litellm");
   });
+  test("prefers the kit's own provider list over anything under connections", () => {
+    expect(
+      providerPolicyForKit(
+        {
+          providers: ["openai"],
+          connections: [{ accepts: ["anthropic"], required: true }],
+        },
+        base,
+      ),
+    ).toEqual({ allow: ["openai"], recommended: "openai" });
+  });
+
+  test("a provider requirement never reaches the connections section", () => {
+    expect(
+      connectionRequirements({
+        connections: [
+          { accepts: ["anthropic", "openai"], required: true },
+          { accepts: ["github"], required: true },
+        ],
+      }).map((r) => r.accepts),
+    ).toEqual([["github"]]);
+  });
+
   test("falls back to the base policy when no requirement names a provider", () => {
     expect(providerPolicyForKit(kit, base)).toBe(base);
     expect(isProviderRequirement(kit.connections[0])).toBe(false);

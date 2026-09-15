@@ -15,9 +15,6 @@ resources:
   memory: 4Gi
   storage: 5Gi
 connections:
-  - accepts: [ibm-litellm, openai]
-    required: true
-    note: OPENAI-compatible model provider for the search loop.
   - accepts: [modal]
     required: true
     note: Kernel evaluation runs on Modal cloud GPUs.

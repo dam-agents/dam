@@ -81,17 +81,17 @@ export const starterKitEnvVarSchema = z.object({
   value: z.string(),
 });
 
+const providerListSchema = z.array(
+  z.custom<ProviderPresetType>(
+    (v) => typeof v === "string" && isProviderPresetType(v),
+    "unknown provider type",
+  ),
+);
+
 export const starterKitImageSchema = z.object({
   ref: z.string().min(1),
   harness: harnessFamilySchema.optional(),
-  providers: z
-    .array(
-      z.custom<ProviderPresetType>(
-        (v) => typeof v === "string" && isProviderPresetType(v),
-        "unknown provider type",
-      ),
-    )
-    .optional(),
+  providers: providerListSchema.optional(),
 });
 
 export const starterKitKnowledgeBaseSchema = z.object({
@@ -116,6 +116,7 @@ export const starterKitSchema = z.object({
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
+  providers: providerListSchema.min(1).optional(),
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })
     .optional(),

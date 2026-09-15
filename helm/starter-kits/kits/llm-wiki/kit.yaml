@@ -9,10 +9,7 @@ category: knowledge
 icon: chart
 knowledgeBase:
   template: llm-wiki
-connections:
-  - accepts: [ibm-litellm, anthropic, openai]
-    required: true
-    note: The model the agent reasons and writes the wiki with.
+providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover
     required: true

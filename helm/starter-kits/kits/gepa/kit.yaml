@@ -13,10 +13,6 @@ image:
 resources:
   storage: 5Gi
 connections:
-  - accepts: [ibm-litellm, anthropic]
-    required: true
-    note: >-
-      GEPA's optimization loop needs an API-key style credential — the IBM LiteLLM proxy is the recommended choice; an Anthropic API key works too. An Anthropic OAuth token only covers the chat and cannot drive the loop.
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
 parameters:
