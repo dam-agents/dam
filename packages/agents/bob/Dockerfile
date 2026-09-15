@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/root/.npm \
     chown -R 65532:0 /app
 
 COPY bob-settings.mjs /app/bob-settings.mjs
+COPY bob-proxy-agent.cjs /app/bob-proxy-agent.cjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 # 2.0's RuleLoader reads <workspace>/.bob/rules/ (every file appended to the
