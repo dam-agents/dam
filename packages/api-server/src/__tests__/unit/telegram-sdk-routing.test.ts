@@ -172,14 +172,12 @@ async function harness(opts: {
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => opts.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
-    brandShort: "dam",
     relay: opts.relay as never,
   });
 
   const chat = createTelegramChat({
     adapter: adapter as never,
     state,
-    brandShort: "dam",
     handleMessage: async (thread, message, subscribe) => {
       seen.push(message.text);
       await handleMessage(thread, message, subscribe);
@@ -222,11 +220,11 @@ describe("telegram Chat SDK routing", () => {
     await chat.processMessage(
       adapter as never,
       DM_THREAD,
-      makeMessage(DM_THREAD, "/dam unbind", "m-2"),
+      makeMessage(DM_THREAD, "/unbind", "m-2"),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(seen).toEqual(["howdy", "/dam unbind"]);
+    expect(seen).toEqual(["howdy", "/unbind"]);
     expect(posts.join("\n")).toContain("Chat disconnected");
 
     releaseTurn();
@@ -241,11 +239,11 @@ describe("telegram Chat SDK routing", () => {
     await chat.processMessage(
       adapter as never,
       DM_THREAD,
-      makeMessage(DM_THREAD, "/dam unbind", "m-1"),
+      makeMessage(DM_THREAD, "/unbind", "m-1"),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(seen).toEqual(["/dam unbind"]);
+    expect(seen).toEqual(["/unbind"]);
   });
 
   it("delivers a bare command in an unbound group", async () => {
@@ -257,11 +255,11 @@ describe("telegram Chat SDK routing", () => {
     await chat.processMessage(
       adapter as never,
       GROUP_THREAD,
-      makeMessage(GROUP_THREAD, "/dam bind", "m-1"),
+      makeMessage(GROUP_THREAD, "/bind", "m-1"),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(seen).toEqual(["/dam bind"]);
+    expect(seen).toEqual(["/bind"]);
     expect(posts.join("\n")).toContain("Connect an agent");
   });
 

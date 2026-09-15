@@ -7,6 +7,7 @@ import {
   Chat,
   LinkButton,
   type Adapter,
+  type LogLevel,
   type CardElement,
   type Thread,
   type StateAdapter,
@@ -170,10 +171,7 @@ function isCommand(text: string, command: string): boolean {
   );
 }
 
-export function commandPattern(brandShort: string): RegExp {
-  const escaped = brandShort.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^/(?:${escaped}|start)(?:@\\S+)?(?:\\s|$)`);
-}
+export const COMMAND_PATTERN = /^\/(?:bind|unbind|start)(?:@\S+)?(?:\s|$)/;
 
 export function createTelegramMessageHandler(deps: {
   conversations: TelegramConversationsPort;
@@ -184,7 +182,6 @@ export function createTelegramMessageHandler(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  brandShort: string;
   relay: (
     agentId: string,
     thread: ThreadLike,
@@ -192,8 +189,6 @@ export function createTelegramMessageHandler(deps: {
     author: TelegramInboundMessage["author"],
   ) => Promise<void>;
 }) {
-  const brandCmd = `/${deps.brandShort}`;
-
   async function denyNonAdmin(
     thread: ThreadLike,
     telegramUserId: string,
@@ -214,7 +209,7 @@ export function createTelegramMessageHandler(deps: {
       reason: "not-group-admin",
       detail: { telegramUserId, threadId: thread.id, command: action },
     });
-    await thread.post(`Only group admins can \`${brandCmd} ${action}\`.`);
+    await thread.post(`Only group admins can \`/${action}\`.`);
     return true;
   }
 
@@ -224,7 +219,7 @@ export function createTelegramMessageHandler(deps: {
     const binding = await deps.conversations.findAgentByConversation(thread.id);
     if (binding) {
       await thread.post(
-        `This chat is already connected to an agent. Send \`${brandCmd} unbind\` first to reconnect.`,
+        "This chat is already connected to an agent. Send `/unbind` first to reconnect.",
       );
       return;
     }
@@ -273,9 +268,7 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: thread.id, byTelegramUserId: telegramUserId },
     });
-    await thread.post(
-      `Chat disconnected. Send \`${brandCmd} bind\` to connect it again.`,
-    );
+    await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
 
   return async function handleMessage(
@@ -286,28 +279,13 @@ export function createTelegramMessageHandler(deps: {
     if (message.author.isMe) return;
     const text = message.text.trim();
 
-    if (isCommand(text, brandCmd)) {
-      const sub =
-        text
-          .slice(brandCmd.length)
-          .replace(/^@\S+/, "")
-          .trim()
-          .toLowerCase()
-          .split(/\s+/)[0] ?? "";
-      if (sub === "bind") {
-        await handleBind(thread, message.author.userId);
-      } else if (sub === "unbind") {
-        await handleUnbind(thread, message.author.userId);
-      } else {
-        await thread.post(
-          `Send \`${brandCmd} bind\` to connect an agent, or \`${brandCmd} unbind\` to disconnect.`,
-        );
-      }
+    if (isCommand(text, "/bind") || isCommand(text, "/start")) {
+      await handleBind(thread, message.author.userId);
       return;
     }
 
-    if (isCommand(text, "/start")) {
-      await handleBind(thread, message.author.userId);
+    if (isCommand(text, "/unbind")) {
+      await handleUnbind(thread, message.author.userId);
       return;
     }
 
@@ -328,7 +306,7 @@ export function createTelegramMessageHandler(deps: {
       });
       if (thread.isDM) {
         await thread.post(
-          `This chat isn't connected to an agent. An admin needs to send \`${brandCmd} bind\`.`,
+          "This chat isn't connected to an agent. An admin needs to send `/bind`.",
         );
       }
       return;
@@ -350,7 +328,7 @@ export function createTelegramMessageHandler(deps: {
 export function createTelegramChat(deps: {
   adapter: Adapter;
   state: StateAdapter;
-  brandShort: string;
+  logLevel?: LogLevel;
   handleMessage: (
     thread: ThreadLike,
     message: TelegramInboundMessage,
@@ -362,6 +340,7 @@ export function createTelegramChat(deps: {
     adapters: { telegram: deps.adapter },
     state: deps.state,
     concurrency: "concurrent",
+    ...(deps.logLevel ? { logger: deps.logLevel } : {}),
   });
 
   const dispatch = async (
@@ -384,9 +363,31 @@ export function createTelegramChat(deps: {
   chat.onSubscribedMessage((thread, message) =>
     dispatch(thread, message, false),
   );
-  chat.onNewMessage(commandPattern(deps.brandShort), (thread, message) =>
+  chat.onNewMessage(COMMAND_PATTERN, (thread, message) =>
     dispatch(thread, message, true),
   );
+  chat.onSlashCommand(async (event) => {
+    const channel = event.channel;
+    const thread: ThreadLike = {
+      id: channel.id,
+      isDM: channel.isDM,
+      post: (message) => channel.post(message),
+      subscribe: () => deps.state.subscribe(channel.id),
+    };
+    await dispatch(
+      thread,
+      {
+        text: [event.command, event.text].filter(Boolean).join(" ").trim(),
+        author: {
+          userId: event.user.userId,
+          userName: event.user.userName,
+          fullName: event.user.fullName,
+          isMe: event.user.isMe ?? false,
+        },
+      },
+      true,
+    );
+  });
 
   return chat;
 }
@@ -402,8 +403,8 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  brandShort: string;
   brandName: string;
+  logLevel?: LogLevel;
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
@@ -619,14 +620,13 @@ export function createTelegramWorker(deps: {
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
           uiBaseUrl: deps.uiBaseUrl,
-          brandShort: deps.brandShort,
           relay: enqueueTelegramTurn,
         });
 
         const chat = createTelegramChat({
           adapter: polling,
           state: deps.state,
-          brandShort: deps.brandShort,
+          ...(deps.logLevel ? { logLevel: deps.logLevel } : {}),
           handleMessage,
         });
 

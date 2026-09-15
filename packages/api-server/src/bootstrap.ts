@@ -741,8 +741,8 @@ export async function bootstrap() {
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
           uiBaseUrl: config.uiBaseUrl,
-          brandShort: config.brand.short,
           brandName: config.brand.name,
+          logLevel: config.logLevel,
           attendance: turnAttendance,
           settleMs: DEFAULT_SETTLE_MS,
         })
