@@ -263,7 +263,7 @@ func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
 		}
 		s.mu.Unlock()
 		if drift != "" {
-			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", drift)
+			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", oneLine(drift))
 			spec.Image, spec.AllowCIDRs = applied.Image, applied.AllowCIDRs
 		}
 	}
@@ -300,6 +300,12 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return err
 	}
 	image := spec.Image
+	if !imageRef.MatchString(image) {
+		return fmt.Errorf("invalid image reference %q", image)
+	}
+	if strings.Contains(image, "..") {
+		return fmt.Errorf("invalid image reference %q", image)
+	}
 	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar"); fileExists(archive) {
 		image = archive
 	}
@@ -601,6 +607,10 @@ func (s *Server) machineDir(id string) (string, error) {
 		return "", fmt.Errorf("invalid machine id %q", id)
 	}
 	return filepath.Join(s.StateDir, "machines", id), nil
+}
+
+func oneLine(s string) string {
+	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
 }
 
 func fileExists(p string) bool {
