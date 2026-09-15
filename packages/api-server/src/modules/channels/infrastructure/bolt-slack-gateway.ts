@@ -104,6 +104,7 @@ export function createBoltSlackGateway(
           ts: string;
           thread_ts?: string;
           text?: string;
+          team?: string;
           files?: SlackImageFile[];
         };
         if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
@@ -115,6 +116,7 @@ export function createBoltSlackGateway(
           threadTs: msg.thread_ts,
           text: msg.text ?? "",
           files: msg.files,
+          teamId: msg.team ?? context.teamId,
           channelType: msg.channel_type,
         };
         if (msg.channel_type === "im") {
@@ -133,6 +135,7 @@ export function createBoltSlackGateway(
             text: command.text,
             userId: command.user_id,
             channelId: command.channel_id,
+            teamId: command.team_id,
           },
           (response) =>
             ack({ response_type: "ephemeral", text: response.text }),

@@ -28,6 +28,7 @@ export interface SlackSlashCommand {
   text: string;
   userId: string;
   channelId: string;
+  teamId?: string;
 }
 
 export type SlackChannelMessageEvent = SlackMentionEvent;
