@@ -67,6 +67,7 @@ function harness(opts?: {
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
+    botUsername: () => "krodo_bot",
     relay,
   });
 
@@ -192,7 +193,7 @@ describe("telegram message handler", () => {
 
   it("treats /start (bare or deep-linked) as bind intent", async () => {
     const h = harness();
-    for (const text of ["/start", "/start login", "/start@dam_bot login"]) {
+    for (const text of ["/start", "/start login", "/start@krodo_bot login"]) {
       const dm = makeThread({ isDM: true });
       await h.handle(dm, { text, author: author() }, true);
       expect(dm.posts.join("\n")).toContain(
@@ -222,5 +223,18 @@ describe("telegram message handler", () => {
       expect(h.relay).not.toHaveBeenCalled();
       expect(thread.posts.length).toBeGreaterThan(0);
     }
+  });
+
+  it("ignores a command addressed to a different bot", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    const thread = makeThread({ isDM: true });
+    await h.handle(
+      thread,
+      { text: "/unbind@some_other_bot", author: author() },
+      true,
+    );
+    expect(h.unbind).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+    expect(h.relay).toHaveBeenCalled();
   });
 });

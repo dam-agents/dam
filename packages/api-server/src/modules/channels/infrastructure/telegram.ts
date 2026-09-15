@@ -200,13 +200,22 @@ export interface TelegramInboundMessage {
   };
 }
 
-function isCommand(text: string, command: string): boolean {
+function isCommand(
+  text: string,
+  command: string,
+  botUsername: string | null,
+): boolean {
+  if (text === command || text.startsWith(`${command} `)) return true;
+  if (!text.startsWith(`${command}@`)) return false;
+  const addressed = text.slice(command.length + 1).split(/\s+/)[0] ?? "";
   return (
-    text === command ||
-    text.startsWith(`${command} `) ||
-    text.startsWith(`${command}@`)
+    botUsername === null ||
+    addressed.toLowerCase() === botUsername.toLowerCase()
   );
 }
+
+const QUEUED_MESSAGE_TTL_MS = 60 * 60_000;
+const MAX_QUEUED_MESSAGES = 50;
 
 export const COMMAND_PATTERN = /^\/(?:bind|unbind|start)(?:@\S+)?(?:\s|$)/;
 
@@ -219,6 +228,7 @@ export function createTelegramMessageHandler(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
+  botUsername: () => string | null;
   relay: (
     agentId: string,
     thread: ThreadLike,
@@ -316,12 +326,13 @@ export function createTelegramMessageHandler(deps: {
     if (message.author.isMe) return;
     const text = message.text.trim();
 
-    if (isCommand(text, "/bind") || isCommand(text, "/start")) {
+    const self = deps.botUsername();
+    if (isCommand(text, "/bind", self) || isCommand(text, "/start", self)) {
       await handleBind(thread, message.author.userId);
       return;
     }
 
-    if (isCommand(text, "/unbind")) {
+    if (isCommand(text, "/unbind", self)) {
       await handleUnbind(thread, message.author.userId);
       return;
     }
@@ -376,7 +387,11 @@ export function createTelegramChat(deps: {
     userName: "platform",
     adapters: { telegram: deps.adapter },
     state: deps.state,
-    concurrency: "queue",
+    concurrency: {
+      strategy: "queue",
+      maxQueueSize: MAX_QUEUED_MESSAGES,
+      queueEntryTtlMs: QUEUED_MESSAGE_TTL_MS,
+    },
     ...(deps.logLevel ? { logger: deps.logLevel } : {}),
   });
 
@@ -662,6 +677,7 @@ export function createTelegramWorker(deps: {
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
           uiBaseUrl: deps.uiBaseUrl,
+          botUsername: () => username,
           relay: enqueueTelegramTurn,
         });
 

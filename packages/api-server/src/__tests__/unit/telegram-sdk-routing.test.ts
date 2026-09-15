@@ -173,6 +173,7 @@ async function harness(opts: {
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => opts.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
+    botUsername: () => "krodo_bot",
     relay: opts.relay as never,
   });
 
@@ -318,7 +319,7 @@ describe("telegram /start probe", () => {
 
   it("answers /start@botname", async () => {
     const h = await harness({ boundTo: null, relay: async () => {} });
-    await send(h, DM_THREAD, "/start@dam_dev_bot");
+    await send(h, DM_THREAD, "/start@krodo_bot");
     expect(h.posts.join("\n")).toContain("Connect an agent");
   });
 
