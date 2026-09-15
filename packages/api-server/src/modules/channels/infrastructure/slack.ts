@@ -81,9 +81,10 @@ import {
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
-import { FileTooLargeError } from "./slack-gateway.js";
+import { FileTooLargeError, ORIGINAL_WORKSPACE } from "./slack-gateway.js";
 import type {
   SlackAck,
+  SlackWorkspace,
   SlackChannelInfo,
   SlackChannelMessageEvent,
   SlackGateway,
@@ -261,6 +262,7 @@ const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
 async function withheldCopy(
   gw: SlackGateway,
+  teamId: SlackWorkspace,
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
   noun: "image" | "file",
 ): Promise<string> {
@@ -269,7 +271,7 @@ async function withheldCopy(
       ? `it is ${attachment.description}, so the upload arrived incomplete. Try resending.`
       : `it is ${attachment.description}. The agent reads PNG, JPEG, GIF and WebP images.`;
   }
-  const scopes = await grantedScopes(gw);
+  const scopes = await grantedScopes(gw, teamId);
   return scopes && !scopes.has("files:read")
     ? "Slack returned a web page instead of the file — this install lacks the " +
         "`files:read` permission, so it cannot download attachments. Reinstall " +
@@ -300,6 +302,7 @@ async function fetchSlackAttachments(
   files: SlackImageFile[] | undefined,
   uploader: string,
   budget: AttachmentBudget,
+  teamId: SlackWorkspace,
 ): Promise<FetchAttachmentsResult> {
   const attachments = files ?? [];
   const pictures = attachments.filter((f) =>
@@ -344,7 +347,7 @@ async function fetchSlackAttachments(
       }
       try {
         const bytes = Buffer.from(
-          await gateway.downloadFile(f.url_private, remaining),
+          await gateway.downloadFile(f.url_private, remaining, teamId),
         );
         pictureBytesTaken += bytes.length;
         const attachment = classifyInboundAttachment(bytes);
@@ -362,7 +365,7 @@ async function fetchSlackAttachments(
           failures.push({
             name: attachmentName(f),
             kind: "image",
-            reason: await withheldCopy(gateway, attachment, "image"),
+            reason: await withheldCopy(gateway, teamId, attachment, "image"),
           });
           continue;
         }
@@ -418,7 +421,7 @@ async function fetchSlackAttachments(
       }
       try {
         const bytes = Buffer.from(
-          await gateway.downloadFile(f.url_private, MAX_FILE_BYTES),
+          await gateway.downloadFile(f.url_private, MAX_FILE_BYTES, teamId),
         );
         const tooBig = overCap(bytes.length);
         if (tooBig) {
@@ -430,7 +433,7 @@ async function fetchSlackAttachments(
         const refused =
           looksLikeSignInPage(head) ||
           (classifyInboundAttachment(bytes).kind === "web_page" &&
-            !(await canReadFiles(gateway)));
+            !(await canReadFiles(gateway, teamId)));
         if (bytes.length === 0 || refused) {
           getLogger().warn(
             {
@@ -448,7 +451,12 @@ async function fetchSlackAttachments(
             reason:
               bytes.length === 0
                 ? "it arrived empty, so the upload didn't complete. Try resending."
-                : await withheldCopy(gateway, { kind: "web_page" }, "file"),
+                : await withheldCopy(
+                    gateway,
+                    teamId,
+                    { kind: "web_page" },
+                    "file",
+                  ),
           });
           continue;
         }
@@ -537,18 +545,21 @@ async function readConversation(
   channel: string,
   threadTs: string | undefined,
   since: string | undefined,
+  teamId: SlackWorkspace,
 ): Promise<SlackThreadRead> {
   if (threadTs !== undefined) {
     return gateway.getThreadReplies({
       channel,
       threadTs,
       limit: THREAD_LOOKBACK,
+      teamId,
       ...(since ? { oldest: since } : {}),
     });
   }
   const read = await gateway.getChannelHistory({
     channel,
     limit: since === undefined ? CHANNEL_LOOKBACK : CHANNEL_CATCH_UP_CAP,
+    teamId,
     ...(since ? { oldest: since } : {}),
   });
   return { messages: read.messages.slice().reverse(), hasMore: read.hasMore };
@@ -582,6 +593,7 @@ async function getContextMessages(
   bot: { userId: string | null; label: string },
   resolveAgentName: (agentId: string) => Promise<string>,
   catchUp: CatchUpSelection | null,
+  teamId: SlackWorkspace,
 ): Promise<{
   lines: string[];
   hasAgentAuthored: boolean;
@@ -594,6 +606,7 @@ async function getContextMessages(
     channel,
     threadTs,
     catchUp?.since,
+    teamId,
   );
   const raw = read.messages;
 
@@ -641,16 +654,24 @@ async function getContextMessages(
   };
 }
 
+export interface SlackBoundConversation {
+  id: string;
+  teamId: SlackWorkspace;
+}
+
 export interface SlackBindingInfo {
   instanceName: string;
   owner: string;
+  teamId: SlackWorkspace;
   ambient: boolean;
   isDefault: boolean;
 }
 
 export interface ChannelRegistry {
   resolveSlackBindings(slackChannelId: string): Promise<SlackBindingInfo[]>;
-  resolveSlackChannelsByInstance(agentId: string): Promise<string[]>;
+  resolveSlackChannelsByInstance(
+    agentId: string,
+  ): Promise<SlackBoundConversation[]>;
 }
 
 export interface SlackWorker {
@@ -703,23 +724,40 @@ export interface SlackOAuthPending {
 
 async function resolveOutboundTarget(
   gateway: SlackGateway,
-  boundChannelIds: string[],
+  bound: SlackBoundConversation[],
   conversationId: string | undefined,
-): Promise<{ id: string } | { error: string }> {
+): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
-    if (boundChannelIds.length === 1) return { id: boundChannelIds[0]! };
+    if (bound.length === 1)
+      return { id: bound[0]!.id, teamId: bound[0]!.teamId };
     return {
       error:
-        `this agent is connected to ${boundChannelIds.length} Slack conversations ` +
-        `(${boundChannelIds.join(", ")}) — pass chatId to say which one`,
+        `this agent is connected to ${bound.length} Slack conversations ` +
+        `(${bound.map((c) => c.id).join(", ")}) — pass chatId to say which one`,
     };
   }
-  if (boundChannelIds.includes(conversationId)) {
-    return { id: conversationId };
+  const boundTarget = bound.find((c) => c.id === conversationId);
+  if (boundTarget) {
+    return { id: boundTarget.id, teamId: boundTarget.teamId };
   }
+
+  const workspaces = [...new Set(bound.map((c) => c.teamId))];
+  if (workspaces.length !== 1) {
+    return {
+      error:
+        `${conversationId} is not one of this agent's conversations, and the ` +
+        `agent is connected to more than one Slack workspace — reach it from a ` +
+        `conversation in the workspace it belongs to`,
+    };
+  }
+  const teamId = workspaces[0]!;
+
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
     try {
-      return { id: await gateway.openDirectMessage(conversationId) };
+      return {
+        id: await gateway.openDirectMessage(conversationId, teamId),
+        teamId,
+      };
     } catch (err) {
       return {
         error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
@@ -727,11 +765,11 @@ async function resolveOutboundTarget(
     }
   }
   if (conversationId.startsWith("D")) {
-    return { id: conversationId };
+    return { id: conversationId, teamId };
   }
   let info: { isMember: boolean } | null;
   try {
-    info = await gateway.getConversationInfo(conversationId);
+    info = await gateway.getConversationInfo(conversationId, teamId);
   } catch (err) {
     return {
       error: `could not resolve conversation ${conversationId}: ${formatError(err)}`,
@@ -747,7 +785,7 @@ async function resolveOutboundTarget(
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
   }
-  return { id: conversationId };
+  return { id: conversationId, teamId };
 }
 
 export const TURN_LINGER_MS = 60 * 60_000;
@@ -799,28 +837,45 @@ function normalizeSlackUserId(input: string): string | null {
   return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
 }
 
-async function grantedScopes(gw: SlackGateway): Promise<Set<string> | null> {
+async function grantedScopes(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<Set<string> | null> {
   try {
-    return await gw.getGrantedScopes();
+    return await gw.getGrantedScopes(teamId);
   } catch {
     return null;
   }
 }
 
-async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
-  const scopes = await grantedScopes(gw);
+async function canLookupUsers(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<boolean> {
+  const scopes = await grantedScopes(gw, teamId);
   return !scopes || scopes.has("users:read");
 }
 
-async function canReadFiles(gw: SlackGateway): Promise<boolean> {
-  const scopes = await grantedScopes(gw);
+async function canReadFiles(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<boolean> {
+  const scopes = await grantedScopes(gw, teamId);
   return !scopes || scopes.has("files:read");
 }
 
-async function canReadReactions(gw: SlackGateway): Promise<boolean> {
-  const scopes = await grantedScopes(gw);
+async function canReadReactions(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<boolean> {
+  const scopes = await grantedScopes(gw, teamId);
   return !scopes || scopes.has("reactions:read");
 }
+
+const SCOPE_WITHHELD_USERS =
+  "this workspace did not grant the permission to look people up (users:read)";
+const SCOPE_WITHHELD_REACTIONS =
+  "this workspace did not grant the permission to read reactions (reactions:read)";
 
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
@@ -835,8 +890,11 @@ const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "channels:read", backs: "posting outside the bound channel" },
 ];
 
-async function reportMissingPermissions(gw: SlackGateway): Promise<void> {
-  const scopes = await grantedScopes(gw);
+async function reportMissingPermissions(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<void> {
+  const scopes = await grantedScopes(gw, teamId);
   if (!scopes) return;
   const missing = SCOPE_CAPABILITIES.filter((c) => !scopes.has(c.scope));
   if (missing.length === 0) return;
@@ -858,6 +916,7 @@ async function turnContractContext(
   gw: SlackGateway,
   channel: string,
   eventTs: string,
+  teamId: SlackWorkspace,
   opts?: { batched?: boolean },
 ): Promise<{
   canLookupUsers: boolean;
@@ -865,11 +924,11 @@ async function turnContractContext(
   botUserId: string | null;
 }> {
   const [lookup, permalink, botUserId] = await Promise.all([
-    canLookupUsers(gw),
+    canLookupUsers(gw, teamId),
     opts?.batched
       ? Promise.resolve(null)
-      : gw.getPermalink(channel, eventTs).catch(() => null),
-    gw.getBotUserId().catch(() => null),
+      : gw.getPermalink(channel, eventTs, teamId).catch(() => null),
+    gw.getBotUserId(teamId).catch(() => null),
   ]);
   return { canLookupUsers: lookup, permalink, botUserId };
 }
@@ -912,6 +971,7 @@ export function createSlackWorker(
     channel: string;
     threadTs: string;
     eventTs: string;
+    teamId: SlackWorkspace;
     sessionId?: string;
     releaseAttendance?: () => void;
     posted?: boolean;
@@ -1169,6 +1229,7 @@ export function createSlackWorker(
         instanceName: binding.instanceName,
         name: await resolveAgentName(binding.instanceName),
         owner: binding.owner,
+        teamId: binding.teamId,
         ambient: binding.ambient,
         isDefault: binding.isDefault,
       })),
@@ -1196,6 +1257,7 @@ export function createSlackWorker(
     user: string,
     threadTs: string | undefined,
     text: string,
+    teamId: SlackWorkspace,
   ) {
     if (!gateway) {
       process.stderr.write(
@@ -1204,7 +1266,7 @@ export function createSlackWorker(
       return;
     }
     try {
-      await gateway.postEphemeral({ channel, user, threadTs, text });
+      await gateway.postEphemeral({ channel, user, threadTs, text, teamId });
     } catch (err) {
       process.stderr.write(
         `[slack] postEphemeral failed: ${formatError(err)}\n`,
@@ -1403,7 +1465,7 @@ export function createSlackWorker(
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
-    teamId?: string;
+    teamId: SlackWorkspace;
     images: FetchedImage[];
     files: FetchedFile[];
     droppedFiles?: string[];
@@ -1439,6 +1501,7 @@ export function createSlackWorker(
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
+      teamId: ctx.teamId,
       threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
       eventTs: m.eventTs,
       forwarded: ctx.forwardedFrom !== undefined,
@@ -1491,13 +1554,14 @@ export function createSlackWorker(
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
       threadTs: ctx.threadTs,
+      teamId: ctx.teamId,
       instanceName,
     });
     presenter.setThinking();
 
     const isDirectMessage = isDirectMessageId(ctx.channel);
     const [turnContext, agentName] = await Promise.all([
-      turnContractContext(gw, ctx.channel, eventTs, { batched }),
+      turnContractContext(gw, ctx.channel, eventTs, ctx.teamId, { batched }),
       resolveAgentDisplayName(instanceName),
     ]);
     const { botUserId, ...contractContext } = turnContext;
@@ -1525,6 +1589,7 @@ export function createSlackWorker(
         ctx.slackUserId,
         ctx.hasThread ? ctx.threadTs : undefined,
         "This agent can't process images yet — answering text only.",
+        ctx.teamId,
       );
 
     let coldNoticePosted = false;
@@ -1537,6 +1602,7 @@ export function createSlackWorker(
         ctx.slackUserId,
         ctx.hasThread ? ctx.threadTs : undefined,
         "Waking the agent — this can take a minute or two.",
+        ctx.teamId,
       );
     };
 
@@ -1552,6 +1618,7 @@ export function createSlackWorker(
             ctx.slackUserId,
             ctx.hasThread ? ctx.threadTs : undefined,
             `Couldn't use attached file '${f.name}': ${f.reason}`,
+            ctx.teamId,
           ),
       }));
 
@@ -1633,6 +1700,7 @@ export function createSlackWorker(
             : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
       await gw.postMessage({
         channel: ctx.channel,
+        teamId: ctx.teamId,
         threadTs: ctx.threadTs,
         text,
       });
@@ -1646,6 +1714,7 @@ export function createSlackWorker(
         onStillStarting: () =>
           gw.postMessage({
             channel: ctx.channel,
+            teamId: ctx.teamId,
             threadTs: ctx.threadTs,
             text:
               "The agent is still starting — this can take a few more " +
@@ -1714,13 +1783,14 @@ export function createSlackWorker(
       text: string;
       hasThread: boolean;
       threadKey: string;
+      teamId: SlackWorkspace;
       images: FetchedImage[];
     },
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<BuiltPrompt> {
     const bot = {
-      userId: await gw.getBotUserId().catch(() => null),
+      userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
       label: botHistoryLabel(brand),
     };
     const {
@@ -1738,10 +1808,11 @@ export function createSlackWorker(
       bot,
       resolveAgentName,
       null,
+      ctx.teamId,
     );
     const legend =
       hasAgentAuthored || hasUnattributedBot
-        ? historyLegend(await canLookupUsers(gw), {
+        ? historyLegend(await canLookupUsers(gw, ctx.teamId), {
             botLabel: hasUnattributedBot ? bot.label : null,
           })
         : undefined;
@@ -1782,6 +1853,7 @@ export function createSlackWorker(
       channel: string;
       conversationTs: string | undefined;
       threadKey: string;
+      teamId: SlackWorkspace;
     },
   ): Promise<string> {
     const remembered = readThreadSeen(ctx.instanceName, ctx.threadKey);
@@ -1791,6 +1863,7 @@ export function createSlackWorker(
         ? (
             await gw.getThreadTail({
               channel: ctx.channel,
+              teamId: ctx.teamId,
               threadTs: ctx.conversationTs,
               limit: THREAD_LOOKBACK,
             })
@@ -1798,6 +1871,7 @@ export function createSlackWorker(
         : (
             await gw.getChannelHistory({
               channel: ctx.channel,
+              teamId: ctx.teamId,
               limit: CHANNEL_LOOKBACK,
             })
           ).messages;
@@ -1823,6 +1897,7 @@ export function createSlackWorker(
       eventTs: string;
       hasThread: boolean;
       threadKey: string;
+      teamId: SlackWorkspace;
       batchTs: string[];
     },
   ): Promise<CatchUpFrame> {
@@ -1834,9 +1909,10 @@ export function createSlackWorker(
         channel: ctx.channel,
         conversationTs,
         threadKey,
+        teamId: ctx.teamId,
       });
       const bot = {
-        userId: await gw.getBotUserId().catch(() => null),
+        userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
         label: botHistoryLabel(brand),
       };
       const { lines, hasUnattributedBot, readNewestTs, readHasMore } =
@@ -1854,6 +1930,7 @@ export function createSlackWorker(
             triggeringTs: ctx.eventTs,
             batchTs: ctx.batchTs,
           },
+          ctx.teamId,
         );
       const commit = () =>
         noteThreadSeen(
@@ -1872,7 +1949,7 @@ export function createSlackWorker(
       return {
         frame: {
           context: lines,
-          contextLegend: catchUpLegend(await canLookupUsers(gw), {
+          contextLegend: catchUpLegend(await canLookupUsers(gw, ctx.teamId), {
             botLabel: hasUnattributedBot ? bot.label : null,
             someOmitted: readHasMore,
           }),
@@ -2355,6 +2432,7 @@ export function createSlackWorker(
       event.files,
       slackUserId,
       heldBudget,
+      event.teamId ?? ORIGINAL_WORKSPACE,
     );
     for (const f of failures) {
       await ephemeral(
@@ -2362,6 +2440,7 @@ export function createSlackWorker(
         slackUserId,
         event.threadTs,
         `Couldn't use attached ${f.plural ? `${f.kind}s` : f.kind} '${f.name}': ${f.reason}`,
+        event.teamId ?? ORIGINAL_WORKSPACE,
       );
     }
     return {
@@ -2488,6 +2567,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
+        teamId: event.teamId ?? ORIGINAL_WORKSPACE,
         text: unboundConversationCopy(event, opts.directMessage),
       });
       return;
@@ -2496,6 +2576,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
+        teamId: event.teamId ?? ORIGINAL_WORKSPACE,
         text: noDefaultAgentCopy(roster, routed.ambiguousName),
       });
       return;
@@ -2508,6 +2589,7 @@ export function createSlackWorker(
     await enqueueAddressed(
       {
         channelId: event.channel,
+        teamId: binding.teamId,
         threadTs,
         hasThread: !!event.threadTs,
         instanceName: binding.instanceName,
@@ -2523,7 +2605,7 @@ export function createSlackWorker(
         release: fetched.release,
         turn: {
           owner: binding.owner,
-          ...(event.teamId ? { teamId: event.teamId } : {}),
+          teamId: binding.teamId,
           ambient: binding.ambient,
           roster,
           ambiguousName: routed.ambiguousName,
@@ -2534,6 +2616,7 @@ export function createSlackWorker(
 
   type AddressedConversation = {
     channelId: string;
+    teamId: SlackWorkspace;
     threadTs: string;
     hasThread: boolean;
     instanceName: string;
@@ -2542,7 +2625,7 @@ export function createSlackWorker(
 
   type AddressedTurnContext = {
     owner: string;
-    teamId?: string;
+    teamId: SlackWorkspace;
     ambient: boolean;
     roster?: RosterEntry[];
     ambiguousName?: string | null;
@@ -2600,6 +2683,7 @@ export function createSlackWorker(
         const latest = batch.at(-1)!;
         await relaySharedTurn({
           channel: conversation.channelId,
+          teamId: conversation.teamId,
           threadTs: conversation.threadTs,
           messages: batch.map(({ text, eventTs, slackUserId }) => ({
             text,
@@ -2642,6 +2726,7 @@ export function createSlackWorker(
         for (const msg of batch) {
           const ref: TurnRef = {
             channel: conversation.channelId,
+            teamId: conversation.teamId,
             threadTs: conversation.hasThread
               ? conversation.threadTs
               : msg.eventTs,
@@ -2722,7 +2807,7 @@ export function createSlackWorker(
     slackUserId: string;
     instanceName: string;
     owner: string;
-    teamId?: string;
+    teamId: SlackWorkspace;
     images: FetchedImage[];
     files: FetchedFile[];
     droppedFiles?: string[];
@@ -2759,6 +2844,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
+        teamId: args.teamId,
         text: `This agent can't reply yet — its owner must accept the Terms of Use at ${uiBaseUrl}.`,
       });
       return;
@@ -2795,6 +2881,7 @@ export function createSlackWorker(
   async function relayAmbientTurn(args: {
     instanceName: string;
     channel: string;
+    teamId: SlackWorkspace;
     threadKey: string;
     legacyThreadKey?: string;
     replyThreadTs: string;
@@ -2816,6 +2903,7 @@ export function createSlackWorker(
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
       channel: args.channel,
+      teamId: args.teamId,
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
       eventTs: m.eventTs,
       text: m.text,
@@ -2844,6 +2932,7 @@ export function createSlackWorker(
       gw,
       args.channel,
       args.eventTs,
+      args.teamId,
       { batched: args.messages.length > 1 },
     );
     const contract = slackTurnContract({
@@ -2886,6 +2975,7 @@ export function createSlackWorker(
           const caught = await buildCatchUp(gw, {
             instanceName: args.instanceName,
             channel: args.channel,
+            teamId: args.teamId,
             threadTs: args.replyThreadTs,
             eventTs: args.eventTs,
             hasThread: args.hasThread,
@@ -2913,6 +3003,7 @@ export function createSlackWorker(
               threadTs: args.replyThreadTs,
               eventTs: args.eventTs,
               text,
+              teamId: args.teamId,
               hasThread: args.hasThread,
               threadKey: args.threadKey,
               images: args.images,
@@ -3068,6 +3159,7 @@ export function createSlackWorker(
             },
           });
           const { posted, replyText } = await relayAmbientTurn({
+            teamId: reader.teamId,
             roster,
             readers,
             answeredAlready: [...answeredAlready],
@@ -3137,6 +3229,7 @@ export function createSlackWorker(
       event.files,
       slackUserId,
       heldBudget,
+      event.teamId ?? ORIGINAL_WORKSPACE,
     );
     const withheldNote = renderWithheldNote(failures);
 
@@ -3183,7 +3276,7 @@ export function createSlackWorker(
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
-      await reportMissingPermissions(gw);
+      await reportMissingPermissions(gw, ORIGINAL_WORKSPACE);
       return gateway;
     } finally {
       gatewayStarting = null;
@@ -3227,22 +3320,26 @@ export function createSlackWorker(
     },
 
     async listConversations(instanceName: string) {
-      const boundChannelIds =
+      const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
-      if (boundChannelIds.length === 0) return [];
+      if (bound.length === 0) return [];
+      const boundIds = bound.map((c) => c.id);
 
       let botChannels: SlackChannelInfo[] = [];
       const gw = await ensureGateway();
       if (gw) {
-        try {
-          botChannels = await gw.listBotChannels();
-        } catch (err) {
-          process.stderr.write(
-            `[slack] listBotChannels failed: ${formatError(err)}\n`,
-          );
+        const workspaces = [...new Set(bound.map((c) => c.teamId))];
+        for (const teamId of workspaces) {
+          try {
+            botChannels.push(...(await gw.listBotChannels(teamId)));
+          } catch (err) {
+            process.stderr.write(
+              `[slack] listBotChannels failed: ${formatError(err)}\n`,
+            );
+          }
         }
       }
-      const bound = boundChannelIds.map((id) => {
+      const boundConversations = bound.map(({ id }) => {
         const info = botChannels.find((c) => c.id === id);
         return {
           id,
@@ -3254,10 +3351,10 @@ export function createSlackWorker(
         };
       });
       const others = botChannels
-        .filter((c) => !boundChannelIds.includes(c.id))
+        .filter((c) => !boundIds.includes(c.id))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((c) => ({ id: c.id, title: `#${c.name}` }));
-      return [...bound, ...others];
+      return [...boundConversations, ...others];
     },
 
     async postMessage(
@@ -3296,6 +3393,7 @@ export function createSlackWorker(
         if (text) {
           await gw.postMessage({
             channel: target.id,
+            teamId: target.teamId,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
           });
@@ -3304,6 +3402,7 @@ export function createSlackWorker(
           try {
             await gw.uploadFile({
               channelId: target.id,
+              teamId: target.teamId,
               file: attachment.data,
               filename: attachment.filename,
               title: attachment.title,
@@ -3408,6 +3507,7 @@ export function createSlackWorker(
 
       void relaySharedTurn({
         channel: ref.channel,
+        teamId: ref.teamId,
         threadTs: ref.threadTs,
         messages: [
           {
@@ -3441,6 +3541,7 @@ export function createSlackWorker(
           ?.postEphemeral({
             channel: ref.channel,
             user: ref.slackUserId,
+            teamId: ref.teamId,
             threadTs: ref.threadTs,
             text: `\`${self}\` passed your message to \`${target.name}\`, but it couldn't pick it up. Try again, or address \`${self}\` directly.`,
           })
@@ -3511,6 +3612,7 @@ export function createSlackWorker(
       try {
         await gw.postMessage({
           channel: target.id,
+          teamId: target.teamId,
           threadTs,
           text: args.text,
           blocks: renderAssistantBlocks(footer, args.text),
@@ -3520,6 +3622,7 @@ export function createSlackWorker(
           try {
             await gw.uploadFile({
               channelId: target.id,
+              teamId: target.teamId,
               threadTs,
               file: args.attachment.data,
               filename: args.attachment.filename,
@@ -3577,7 +3680,12 @@ export function createSlackWorker(
       if ("error" in target) return target;
 
       try {
-        await gw.addReaction({ channel: target.id, ts: messageTs, name });
+        await gw.addReaction({
+          channel: target.id,
+          ts: messageTs,
+          name,
+          teamId: target.teamId,
+        });
         noteEngagedTurn(
           instanceName,
           (ref) => ref.eventTs === messageTs && ref.channel === target.id,
@@ -3589,12 +3697,22 @@ export function createSlackWorker(
     },
 
     async describeUsers(instanceName: string, userIds: string[]) {
-      const boundChannelIds =
+      const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
-      if (boundChannelIds.length === 0)
-        return { error: "no channel connected" };
+      if (bound.length === 0) return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
+
+      const workspaces = [...new Set(bound.map((c) => c.teamId))];
+      if (workspaces.length !== 1) {
+        return {
+          error:
+            "this agent is connected to more than one Slack workspace, and a " +
+            "user id only means something inside one — ask from a conversation " +
+            "in the workspace the person belongs to",
+        };
+      }
+      const workspace = workspaces[0]!;
 
       const seen = new Set<string>();
       const requested: { raw: string; id: string | null }[] = [];
@@ -3607,8 +3725,12 @@ export function createSlackWorker(
         requested.push({ raw, id });
       }
 
+      const lookupGranted = await canLookupUsers(gw, workspace);
       const users = await Promise.all(
         requested.map(async ({ raw, id }): Promise<ChannelUser> => {
+          if (id && !lookupGranted) {
+            return { id, error: SCOPE_WITHHELD_USERS };
+          }
           if (!id) {
             return {
               id: raw,
@@ -3624,7 +3746,7 @@ export function createSlackWorker(
           const release = await userLookupSemaphore.acquire();
           let info: SlackUserInfo | null;
           try {
-            info = await gw.getUserInfo(id);
+            info = await gw.getUserInfo(id, workspace);
           } catch (err) {
             return { id, error: formatError(err) };
           } finally {
@@ -3638,8 +3760,7 @@ export function createSlackWorker(
     },
 
     async supportsUserLookup() {
-      const gw = await ensureGateway();
-      return gw ? canLookupUsers(gw) : true;
+      return true;
     },
 
     async describeMessageReactions(
@@ -3679,8 +3800,15 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
+      if (!(await canReadReactions(gw, target.teamId)))
+        return { error: SCOPE_WITHHELD_REACTIONS };
+
       try {
-        const reactions = await gw.getMessageReactions(target.id, messageTs);
+        const reactions = await gw.getMessageReactions(
+          target.id,
+          messageTs,
+          target.teamId,
+        );
         if (!reactions) return { error: "message not found" };
         return { reactions, conversationId: target.id, messageTs };
       } catch (err) {
@@ -3689,8 +3817,7 @@ export function createSlackWorker(
     },
 
     async supportsMessageReactions() {
-      const gw = await ensureGateway();
-      return gw ? canReadReactions(gw) : true;
+      return true;
     },
   };
 }

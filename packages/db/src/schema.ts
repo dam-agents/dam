@@ -34,10 +34,17 @@ export const channels = pgTable(
   (table) => [
     index("channels_agent_type_idx").on(table.agentId, table.type),
     uniqueIndex("channels_slack_agent_channel_idx")
-      .on(table.agentId, sql`(${table.config}->>'slackChannelId')`)
+      .on(
+        table.agentId,
+        sql`coalesce(${table.config}->>'teamId', '')`,
+        sql`(${table.config}->>'slackChannelId')`,
+      )
       .where(sql`${table.type} = 'slack'`),
     uniqueIndex("channels_slack_default_agent_idx")
-      .on(sql`(${table.config}->>'slackChannelId')`)
+      .on(
+        sql`coalesce(${table.config}->>'teamId', '')`,
+        sql`(${table.config}->>'slackChannelId')`,
+      )
       .where(
         sql`${table.type} = 'slack' AND ${table.config}->>'default' = 'true'`,
       ),
@@ -49,6 +56,7 @@ export const identityLinks = pgTable(
   {
     provider: text("provider").notNull(),
     externalUserId: text("external_user_id").notNull(),
+    teamId: text("team_id").notNull().default(""),
     keycloakSub: text("keycloak_sub").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -56,6 +64,21 @@ export const identityLinks = pgTable(
   },
   (table) => [primaryKey({ columns: [table.provider, table.externalUserId] })],
 );
+
+export const slackInstalls = pgTable("slack_installs", {
+  teamId: text("team_id").primaryKey(),
+  teamName: text("team_name"),
+  secretPath: text("secret_path").notNull(),
+  secretField: text("secret_field").notNull(),
+  installedBy: text("installed_by"),
+  credentialState: text("credential_state").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const telegramConversations = pgTable(
   "telegram_conversations",

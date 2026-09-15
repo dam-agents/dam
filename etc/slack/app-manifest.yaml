@@ -37,6 +37,14 @@ features:
       should_escape: false
 
 oauth_config:
+  # Only needed to install into more than one workspace. Slack hands the bot
+  # token over by copy-paste for the app's own workspace alone; every other
+  # workspace has to complete the OAuth exchange, which needs this redirect URL
+  # and public distribution activated (Manage Distribution). Replace the host
+  # with the platform's own — the URL is fetched by the installing admin's
+  # browser, never by Slack, so an internal host behind a VPN is fine.
+  redirect_urls:
+    - https://platform.example.com/api/slack/install/callback
   scopes:
     bot:
       - commands
@@ -94,6 +102,12 @@ settings:
       # DM relays plain messages (no mention needed). Group DMs stay
       # mention-driven, so they arrive via app_mention — no message.mpim.
       - message.im
+      # A workspace whose credential has stopped working is marked rather than
+      # cleaned up: its bindings and identity links stay, and re-authorizing
+      # clears the mark. Without these the platform only finds out when a call
+      # fails.
+      - app_uninstalled
+      - tokens_revoked
   interactivity:
     is_enabled: true
   org_deploy_enabled: false

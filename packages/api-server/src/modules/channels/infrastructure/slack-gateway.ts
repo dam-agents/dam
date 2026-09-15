@@ -35,6 +35,23 @@ export type SlackChannelMessageEvent = SlackMentionEvent;
 
 export type SlackAck = (response: { text: string }) => Promise<void>;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for. The empty
+ * string is the install's original workspace — the one whose bot token the
+ * operator set in Helm values, and the one every binding made before this
+ * platform could install itself anywhere else belongs to. Keeping it a value
+ * rather than an absent field is what lets a caller never have "no workspace":
+ * every outbound call names one, and the resolver answers for it without
+ * asking Slack who the operator's token belongs to.
+ */
+export type SlackWorkspace = string;
+
+export const ORIGINAL_WORKSPACE: SlackWorkspace = "";
+
+export type SlackTokenResolver = (
+  teamId: SlackWorkspace,
+) => Promise<string | null>;
+
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
@@ -85,6 +102,7 @@ export interface SlackPostMessage {
   threadTs?: string;
   blocks?: SlackBlock[];
   replyBroadcast?: boolean;
+  teamId: string;
 }
 
 export interface SlackPostEphemeral {
@@ -92,6 +110,7 @@ export interface SlackPostEphemeral {
   user: string;
   threadTs?: string;
   text: string;
+  teamId: string;
 }
 
 export interface SlackUpload {
@@ -101,6 +120,7 @@ export interface SlackUpload {
   title?: string;
   initialComment?: string;
   threadTs?: string;
+  teamId: string;
 }
 
 export interface SlackStartStream {
@@ -109,12 +129,14 @@ export interface SlackStartStream {
   recipientTeamId: string;
   recipientUserId: string;
   markdownText?: string;
+  teamId: string;
 }
 
 export interface SlackAppendStream {
   channel: string;
   ts: string;
   markdownText: string;
+  teamId: string;
 }
 
 export interface SlackStopStream {
@@ -122,12 +144,14 @@ export interface SlackStopStream {
   ts: string;
   markdownText?: string;
   blocks?: SlackBlock[];
+  teamId: string;
 }
 
 export interface SlackSetStatus {
   channel: string;
   threadTs: string;
   status: string;
+  teamId: string;
 }
 
 export interface SlackChannelInfo {
@@ -170,35 +194,51 @@ export interface SlackGateway {
     channel: string;
     ts: string;
     name: string;
+    teamId: string;
   }): Promise<void>;
   getThreadReplies(args: {
     channel: string;
     threadTs: string;
     limit: number;
     oldest?: string;
+    teamId: string;
   }): Promise<SlackThreadRead>;
   getThreadTail(args: {
     channel: string;
     threadTs: string;
     limit: number;
     maxPages?: number;
+    teamId: string;
   }): Promise<SlackThreadRead>;
   getChannelHistory(args: {
     channel: string;
     limit: number;
     oldest?: string;
+    teamId: string;
   }): Promise<SlackChannelRead>;
   uploadFile(args: SlackUpload): Promise<void>;
-  downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
-  listBotChannels(): Promise<SlackChannelInfo[]>;
-  getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
-  getUserInfo(userId: string): Promise<SlackUserInfo | null>;
+  downloadFile(
+    urlPrivate: string,
+    maxBytes: number,
+    teamId: string,
+  ): Promise<ArrayBuffer>;
+  listBotChannels(teamId: string): Promise<SlackChannelInfo[]>;
+  getConversationInfo(
+    channelId: string,
+    teamId: string,
+  ): Promise<{ isMember: boolean } | null>;
+  getUserInfo(userId: string, teamId: string): Promise<SlackUserInfo | null>;
   getMessageReactions(
     channel: string,
     ts: string,
+    teamId: string,
   ): Promise<SlackMessageReaction[] | null>;
-  openDirectMessage(userId: string): Promise<string>;
-  getPermalink(channel: string, ts: string): Promise<string | null>;
-  getGrantedScopes(): Promise<Set<string> | null>;
-  getBotUserId(): Promise<string | null>;
+  openDirectMessage(userId: string, teamId: string): Promise<string>;
+  getPermalink(
+    channel: string,
+    ts: string,
+    teamId: string,
+  ): Promise<string | null>;
+  getGrantedScopes(teamId: string): Promise<Set<string> | null>;
+  getBotUserId(teamId: string): Promise<string | null>;
 }

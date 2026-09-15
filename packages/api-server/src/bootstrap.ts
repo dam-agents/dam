@@ -75,6 +75,13 @@ import {
   type TelegramOAuthPending,
 } from "./modules/channels/infrastructure/telegram-flows.js";
 import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
+import type { SlackInstallPending } from "./modules/channels/infrastructure/slack-install-routes.js";
+import {
+  findSlackInstall,
+  setSlackCredentialState,
+  upsertSlackInstall,
+} from "./modules/channels/infrastructure/slack-installs-repository.js";
+import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -640,7 +647,21 @@ export async function bootstrap() {
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
+  const slackInstallCallbackUrl = `${config.uiBaseUrl}/api/slack/install/callback`;
   const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
+
+  const pendingSlackInstalls = createRedisTtlStore<SlackInstallPending>(
+    sharedRedis,
+    "install:slack",
+    OAUTH_FLOW_TTL_MS,
+  );
+  const slackInstalls = createSlackInstallService({
+    find: findSlackInstall(db),
+    upsert: upsertSlackInstall(db),
+    setState: setSlackCredentialState(db),
+    secrets: secretStores.default(),
+    envBotToken: config.slackBotToken,
+  });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
     ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
@@ -655,6 +676,7 @@ export async function bootstrap() {
       return rows.map((row) => ({
         instanceName: row.agentId,
         owner: row.owner,
+        teamId: row.teamId,
         ambient: row.ambient,
         isDefault: row.isDefault,
       }));
@@ -670,9 +692,10 @@ export async function bootstrap() {
   const slackGatewayFactory = slackTokens
     ? () =>
         createBoltSlackGateway({
-          botToken: slackTokens.botToken,
+          resolveBotToken: slackInstalls.resolveBotToken,
           appToken: slackTokens.appToken,
           commandName: `/${config.brand.short}`,
+          onCredentialRejected: slackInstalls.markRejected,
         })
     : fakeSlackGateway
       ? () => fakeSlackGateway
@@ -1144,6 +1167,9 @@ export async function bootstrap() {
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
+    pendingSlackInstalls,
+    slackInstalls,
+    slackInstallCallbackUrl,
     telegramBindFlows,
     slackBindFlows,
     seedSources,

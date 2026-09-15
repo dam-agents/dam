@@ -72,7 +72,7 @@ function harness(opts: {
     {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
-        opts.boundChannelId ? [opts.boundChannelId] : [],
+        opts.boundChannelId ? [{ id: opts.boundChannelId, teamId: "" }] : [],
     },
     async () => {},
     async () => {},
@@ -231,12 +231,21 @@ describe("slack supportsUserLookup", () => {
     expect(await h.worker.supportsUserLookup()).toBe(true);
   });
 
-  it("is false once users:read is confirmed missing", async () => {
+  it("stays registered when users:read is missing, and says so per id", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.connect().catch(() => {});
 
-    expect(await h.worker.supportsUserLookup()).toBe(false);
+    expect(await h.worker.supportsUserLookup()).toBe(true);
+    const result = await h.describeUsers(["U024BE7LH"]);
+    expect(result).toEqual({
+      users: [
+        {
+          id: "U024BE7LH",
+          error: expect.stringContaining("users:read"),
+        },
+      ],
+    });
   });
 
   it("fails open when the bot is not running", async () => {

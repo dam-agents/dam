@@ -49,7 +49,9 @@ function harness(opts: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
         opts.boundChannelId
-          ? [opts.boundChannelId, ...(opts.extraBoundChannelIds ?? [])]
+          ? [opts.boundChannelId, ...(opts.extraBoundChannelIds ?? [])].map(
+              (id) => ({ id, teamId: "" }),
+            )
           : [],
     },
     async () => {},

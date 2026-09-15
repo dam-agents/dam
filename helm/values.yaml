@@ -789,6 +789,17 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
+  # -- Slack app credentials (Basic Information -> App Credentials). Needed only
+  # to install the app into further workspaces: Slack hands the bot token over
+  # by copy-paste for the app's own workspace alone, and every other workspace
+  # must complete the OAuth exchange, which is what these sign. Leave empty to
+  # keep the install single-workspace — `slackBotToken` still serves it.
+  # The app must have public distribution activated and
+  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL. That
+  # URL is only ever fetched by the installing admin's browser, so it does not
+  # need to be reachable from the internet.
+  slackClientId: ""
+  slackClientSecret: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

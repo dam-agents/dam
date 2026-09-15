@@ -5,6 +5,10 @@ import {
   createArtifactLibraryRoutes,
 } from "../../../modules/artifact-library/index.js";
 import { createSlackOAuthRoutes } from "../../../modules/channels/infrastructure/slack-oauth.js";
+import {
+  createSlackInstallRoutes,
+  SLACK_INSTALL_BOT_SCOPES,
+} from "../../../modules/channels/infrastructure/slack-install-routes.js";
 import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastructure/telegram-oauth.js";
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
@@ -91,6 +95,23 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: boot.slackOauthCallbackUrl,
+        },
+      }),
+    );
+  }
+
+  if (config.slackClientId && config.slackClientSecret) {
+    app.route(
+      "/api/slack",
+      createSlackInstallRoutes({
+        pendingInstalls: boot.pendingSlackInstalls,
+        installs: boot.slackInstalls,
+        brandName: config.brand.name,
+        oauth: {
+          clientId: config.slackClientId,
+          clientSecret: config.slackClientSecret,
+          callbackUrl: boot.slackInstallCallbackUrl,
+          scopes: SLACK_INSTALL_BOT_SCOPES,
         },
       }),
     );

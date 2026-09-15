@@ -1,6 +1,10 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import {
+  FileTooLargeError,
+  ORIGINAL_WORKSPACE,
+  THREAD_TAIL_MAX_PAGES,
+} from "./slack-gateway.js";
 import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
@@ -9,7 +13,9 @@ import type {
   SlackImageFile,
   SlackMessage,
   SlackMessageReaction,
+  SlackTokenResolver,
   SlackUserInfo,
+  SlackWorkspace,
 } from "./slack-gateway.js";
 
 type BoltApp = InstanceType<typeof App>;
@@ -21,12 +27,21 @@ type ChatStopStreamArgs = Parameters<
 >[0];
 
 export interface BoltSlackGatewayDeps {
-  botToken: string;
+  resolveBotToken: SlackTokenResolver;
   appToken: string;
   commandName: string;
+  onCredentialRejected?: (teamId: string) => Promise<void>;
+}
+
+interface WorkspaceAuth {
+  token: string;
+  botUserId: string | null;
+  scopes: Set<string> | null;
+  tested: Promise<void> | null;
 }
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
+const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
 
 function toSlackMessage(m: {
   ts?: string;
@@ -48,24 +63,46 @@ export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
-  let grantedScopes: Set<string> | null = null;
-  let botUserId: string | null = null;
+  const workspaces = new Map<string, WorkspaceAuth>();
 
-  let authTested: Promise<void> | null = null;
+  async function authFor(
+    teamId: SlackWorkspace,
+  ): Promise<WorkspaceAuth | null> {
+    const token = await deps.resolveBotToken(teamId);
+    if (!token) return null;
+    const cached = workspaces.get(teamId);
+    if (cached?.token === token) return cached;
+    const fresh: WorkspaceAuth = {
+      token,
+      botUserId: null,
+      scopes: null,
+      tested: null,
+    };
+    workspaces.set(teamId, fresh);
+    return fresh;
+  }
 
-  async function authTest() {
-    if (!app) return;
-    authTested ??= (async () => {
+  async function tokenFor(teamId: SlackWorkspace): Promise<string | null> {
+    return (await authFor(teamId))?.token ?? null;
+  }
+
+  async function testedAuthFor(
+    teamId: SlackWorkspace,
+  ): Promise<WorkspaceAuth | null> {
+    const auth = await authFor(teamId);
+    if (!auth || !app) return auth;
+    const pending = (auth.tested ??= (async () => {
       try {
-        const result = await app!.client.auth.test();
+        const result = await app!.client.auth.test({ token: auth.token });
         const scopes = result.response_metadata?.scopes;
-        if (scopes) grantedScopes = new Set(scopes);
-        if (typeof result.user_id === "string") botUserId = result.user_id;
+        if (scopes) auth.scopes = new Set(scopes);
+        if (typeof result.user_id === "string") auth.botUserId = result.user_id;
       } catch {
-        authTested = null;
+        auth.tested = null;
       }
-    })();
-    await authTested;
+    })());
+    await pending;
+    return auth;
   }
 
   return {
@@ -73,14 +110,20 @@ export function createBoltSlackGateway(
       if (app) return true;
 
       const bolt = new App({
-        token: deps.botToken,
         appToken: deps.appToken,
         socketMode: true,
         logLevel: LogLevel.DEBUG,
+        authorize: async ({ teamId }) => {
+          const auth = await testedAuthFor(teamId ?? ORIGINAL_WORKSPACE);
+          if (!auth) throw new Error(`${INSTALL_TOKEN_MISSING}: ${teamId}`);
+          return {
+            botToken: auth.token,
+            ...(auth.botUserId ? { botUserId: auth.botUserId } : {}),
+          };
+        },
       });
 
       bolt.event("app_mention", async ({ event, context }) => {
-        botUserId ??= context.botUserId ?? null;
         await handlers.onMention({
           user: event.user,
           channel: event.channel,
@@ -94,7 +137,6 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("message", async ({ event, context }) => {
-        botUserId ??= context.botUserId ?? null;
         const msg = event as {
           channel: string;
           channel_type?: string;
@@ -123,7 +165,18 @@ export function createBoltSlackGateway(
           await handlers.onDirectMessage(payload);
           return;
         }
-        if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
+        const text = msg.text ?? "";
+        const selfId =
+          context.botUserId ??
+          (
+            await testedAuthFor(
+              msg.team ?? context.teamId ?? ORIGINAL_WORKSPACE,
+            )
+          )?.botUserId;
+        if (
+          selfId ? text.includes(`<@${selfId}>`) : /<@[UW][A-Z0-9]+>/.test(text)
+        )
+          return;
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
         }
@@ -142,20 +195,35 @@ export function createBoltSlackGateway(
         );
       });
 
+      const forgetWorkspace = async (teamId: string | undefined) => {
+        if (!teamId) return;
+        workspaces.delete(teamId);
+        await deps.onCredentialRejected?.(teamId);
+      };
+      bolt.event("app_uninstalled", async ({ context }) => {
+        await forgetWorkspace(context.teamId);
+      });
+      bolt.event("tokens_revoked", async ({ event, context }) => {
+        const revoked = (event as { tokens?: { bot?: string[] } }).tokens;
+        if (!revoked?.bot?.length) return;
+        await forgetWorkspace(context.teamId);
+      });
+
       bolt.error(async (error) => {
         process.stderr.write(`[slack] Bolt error: ${error}\n`);
       });
 
+      app = bolt;
       try {
         await bolt.start();
       } catch (err) {
+        app = null;
         process.stderr.write(
           `[slack] Failed to start Slack bot: ${formatError(err)}\n`,
         );
         return false;
       }
 
-      app = bolt;
       return true;
     },
 
@@ -163,15 +231,16 @@ export function createBoltSlackGateway(
       if (app) {
         await app.stop();
         app = null;
-        grantedScopes = null;
-        botUserId = null;
-        authTested = null;
+        workspaces.clear();
       }
     },
 
     async postMessage(args) {
       if (!app) return;
+      const token = await tokenFor(args.teamId);
+      if (!token) return;
       await app.client.chat.postMessage({
+        token,
         channel: args.channel,
         text: args.text,
         thread_ts: args.threadTs,
@@ -182,7 +251,10 @@ export function createBoltSlackGateway(
 
     async postEphemeral(args) {
       if (!app) return;
+      const token = await tokenFor(args.teamId);
+      if (!token) return;
       await app.client.chat.postEphemeral({
+        token,
         channel: args.channel,
         user: args.user,
         thread_ts: args.threadTs,
@@ -192,7 +264,10 @@ export function createBoltSlackGateway(
 
     async startStream(args): Promise<{ ts: string }> {
       if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       const res = await app.client.chat.startStream({
+        token,
         channel: args.channel,
         thread_ts: args.threadTs,
         recipient_team_id: args.recipientTeamId,
@@ -207,7 +282,10 @@ export function createBoltSlackGateway(
 
     async appendStream(args) {
       if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       await app.client.chat.appendStream({
+        token,
         channel: args.channel,
         ts: args.ts,
         markdown_text: args.markdownText,
@@ -216,7 +294,10 @@ export function createBoltSlackGateway(
 
     async stopStream(args) {
       if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       await app.client.chat.stopStream({
+        token,
         channel: args.channel,
         ts: args.ts,
         ...(args.markdownText !== undefined
@@ -228,7 +309,10 @@ export function createBoltSlackGateway(
 
     async setStatus(args) {
       if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       await app.client.assistant.threads.setStatus({
+        token,
         channel_id: args.channel,
         thread_ts: args.threadTs,
         status: args.status,
@@ -237,7 +321,10 @@ export function createBoltSlackGateway(
 
     async addReaction(args) {
       if (!app) return;
+      const token = await tokenFor(args.teamId);
+      if (!token) return;
       await app.client.reactions.add({
+        token,
         channel: args.channel,
         timestamp: args.ts,
         name: args.name,
@@ -246,7 +333,10 @@ export function createBoltSlackGateway(
 
     async getThreadReplies(args) {
       if (!app) return { messages: [], hasMore: false };
+      const token = await tokenFor(args.teamId);
+      if (!token) return { messages: [], hasMore: false };
       const replies = await app.client.conversations.replies({
+        token,
         channel: args.channel,
         ts: args.threadTs,
         limit: args.limit,
@@ -262,6 +352,8 @@ export function createBoltSlackGateway(
 
     async getThreadTail(args) {
       if (!app) return { messages: [], hasMore: false };
+      const token = await tokenFor(args.teamId);
+      if (!token) return { messages: [], hasMore: false };
       const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
       let cursor: string | undefined;
       let fold = emptyTailFold<SlackMessage>();
@@ -272,6 +364,7 @@ export function createBoltSlackGateway(
           break;
         }
         const replies = await app.client.conversations.replies({
+          token,
           channel: args.channel,
           ts: args.threadTs,
           limit: args.limit,
@@ -290,11 +383,14 @@ export function createBoltSlackGateway(
 
     async getChannelHistory(args) {
       if (!app) return { messages: [], hasMore: false };
+      const token = await tokenFor(args.teamId);
+      if (!token) return { messages: [], hasMore: false };
       const pageSize = Math.min(args.limit, CHANNEL_HISTORY_PAGE_SIZE);
       const newestFirst: SlackMessage[] = [];
       let cursor: string | undefined;
       for (;;) {
         const history = await app.client.conversations.history({
+          token,
           channel: args.channel,
           limit: pageSize,
           ...(args.oldest ? { oldest: args.oldest } : {}),
@@ -315,7 +411,10 @@ export function createBoltSlackGateway(
 
     async uploadFile(args) {
       if (!app) return;
+      const token = await tokenFor(args.teamId);
+      if (!token) return;
       const upload = {
+        token,
         channel_id: args.channelId,
         file: args.file,
         filename: args.filename,
@@ -330,9 +429,12 @@ export function createBoltSlackGateway(
     async downloadFile(
       urlPrivate: string,
       maxBytes: number,
+      teamId: SlackWorkspace,
     ): Promise<ArrayBuffer> {
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       const res = await fetch(urlPrivate, {
-        headers: { Authorization: `Bearer ${deps.botToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         await res.body?.cancel().catch(() => {});
@@ -373,12 +475,15 @@ export function createBoltSlackGateway(
       return out.buffer;
     },
 
-    async listBotChannels(): Promise<SlackChannelInfo[]> {
+    async listBotChannels(teamId: SlackWorkspace): Promise<SlackChannelInfo[]> {
       if (!app) return [];
+      const token = await tokenFor(teamId);
+      if (!token) return [];
       const channels: SlackChannelInfo[] = [];
       let cursor: string | undefined;
       do {
         const page = await app.client.users.conversations({
+          token,
           types: "public_channel,private_channel",
           exclude_archived: true,
           limit: 200,
@@ -392,10 +497,13 @@ export function createBoltSlackGateway(
       return channels;
     },
 
-    async getConversationInfo(channelId: string) {
+    async getConversationInfo(channelId: string, teamId: SlackWorkspace) {
       if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
       try {
         const info = await app.client.conversations.info({
+          token,
           channel: channelId,
         });
         if (!info.channel) return null;
@@ -406,11 +514,16 @@ export function createBoltSlackGateway(
       }
     },
 
-    async getUserInfo(userId: string): Promise<SlackUserInfo | null> {
+    async getUserInfo(
+      userId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackUserInfo | null> {
       if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
       let info;
       try {
-        info = await app.client.users.info({ user: userId });
+        info = await app.client.users.info({ token, user: userId });
       } catch (err) {
         if (formatError(err).includes("user_not_found")) return null;
         throw err;
@@ -440,11 +553,15 @@ export function createBoltSlackGateway(
     async getMessageReactions(
       channel: string,
       ts: string,
+      teamId: SlackWorkspace,
     ): Promise<SlackMessageReaction[] | null> {
       if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
       let result;
       try {
         result = await app.client.reactions.get({
+          token,
           channel,
           timestamp: ts,
           full: true,
@@ -460,10 +577,17 @@ export function createBoltSlackGateway(
       }));
     },
 
-    async getPermalink(channel: string, ts: string): Promise<string | null> {
+    async getPermalink(
+      channel: string,
+      ts: string,
+      teamId: SlackWorkspace,
+    ): Promise<string | null> {
       if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
       try {
         const result = await app.client.chat.getPermalink({
+          token,
           channel,
           message_ts: ts,
         });
@@ -473,26 +597,32 @@ export function createBoltSlackGateway(
       }
     },
 
-    async openDirectMessage(userId: string): Promise<string> {
+    async openDirectMessage(
+      userId: string,
+      teamId: SlackWorkspace,
+    ): Promise<string> {
       if (!app) throw new Error("slack bot not running");
-      const opened = await app.client.conversations.open({ users: userId });
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      const opened = await app.client.conversations.open({
+        token,
+        users: userId,
+      });
       const id = opened.channel?.id;
       if (!id) throw new Error("Slack returned no conversation id");
       return id;
     },
 
-    async getGrantedScopes(): Promise<Set<string> | null> {
+    async getGrantedScopes(
+      teamId: SlackWorkspace,
+    ): Promise<Set<string> | null> {
       if (!app) return null;
-      if (grantedScopes) return grantedScopes;
-      await authTest();
-      return grantedScopes;
+      return (await testedAuthFor(teamId))?.scopes ?? null;
     },
 
-    async getBotUserId(): Promise<string | null> {
-      if (botUserId) return botUserId;
+    async getBotUserId(teamId: SlackWorkspace): Promise<string | null> {
       if (!app) return null;
-      await authTest();
-      return botUserId;
+      return (await testedAuthFor(teamId))?.botUserId ?? null;
     },
   };
 }

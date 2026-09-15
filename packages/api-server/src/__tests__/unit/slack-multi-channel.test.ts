@@ -51,11 +51,15 @@ function harness(opts?: {
         {
           instanceName: "agent-1",
           owner: OWNER,
+          teamId: "",
           ambient: false,
           isDefault: true,
         },
       ],
-      resolveSlackChannelsByInstance: async () => [C_ONE, C_TWO],
+      resolveSlackChannelsByInstance: async () => [
+        { id: C_ONE, teamId: "" },
+        { id: C_TWO, teamId: "" },
+      ],
     },
     async () => {},
     async () => {},

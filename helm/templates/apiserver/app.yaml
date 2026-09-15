@@ -195,6 +195,14 @@ spec:
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
+            {{- if .Values.apiServer.slackClientId }}
+            - name: SLACK_CLIENT_ID
+              value: {{ .Values.apiServer.slackClientId | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.slackClientSecret }}
+            - name: SLACK_CLIENT_SECRET
+              value: {{ .Values.apiServer.slackClientSecret | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}

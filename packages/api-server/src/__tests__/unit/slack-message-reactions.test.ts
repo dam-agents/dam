@@ -57,7 +57,7 @@ function harness(opts: {
     {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
-        opts.boundChannelId ? [opts.boundChannelId] : [],
+        opts.boundChannelId ? [{ id: opts.boundChannelId, teamId: "" }] : [],
     },
     async () => {},
     async () => {},
@@ -192,12 +192,15 @@ describe("slack supportsMessageReactions", () => {
     expect(await h.worker.supportsMessageReactions()).toBe(true);
   });
 
-  it("is false once reactions:read is confirmed missing", async () => {
+  it("stays registered when reactions:read is missing, and says so per call", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.connect().catch(() => {});
 
-    expect(await h.worker.supportsMessageReactions()).toBe(false);
+    expect(await h.worker.supportsMessageReactions()).toBe(true);
+    expect(await h.describeReactions({ messageTs: "1700000000.0001" })).toEqual(
+      { error: expect.stringContaining("reactions:read") },
+    );
   });
 
   it("fails open when the bot is not running", async () => {
@@ -208,7 +211,7 @@ describe("slack supportsMessageReactions", () => {
 });
 
 describe("missing optional scopes never fail the gate", () => {
-  it("both scopes withheld: each check resolves false, neither rejects", async () => {
+  it("both scopes withheld: both stay registered, neither rejects", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.connect().catch(() => {});
@@ -218,7 +221,7 @@ describe("missing optional scopes never fail the gate", () => {
         h.worker.supportsUserLookup(),
         h.worker.supportsMessageReactions(),
       ]),
-    ).resolves.toEqual([false, false]);
+    ).resolves.toEqual([true, true]);
   });
 
   it("a probe that throws is unknown, not missing — both fail open", async () => {
@@ -247,7 +250,7 @@ describe("missing optional scopes never fail the gate", () => {
         manager.supportsUserLookup(),
         manager.supportsMessageReactions(),
       ]),
-    ).resolves.toEqual([false, false]);
+    ).resolves.toEqual([true, true]);
 
     expect(
       await manager.listConversations("agent-1", ChannelType.Slack),

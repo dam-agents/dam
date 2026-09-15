@@ -91,6 +91,23 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
 
 4. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
+### More than one workspace
+
+Slack hands the bot token over by copy-paste for the app's own workspace only. Every other workspace has to complete Slack's install handshake, so to serve more than one:
+
+1. In the Slack app, activate public distribution (Manage Distribution) and register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL. Slack never fetches that URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
+2. Deploy with the app's client credentials (Basic Information → App Credentials):
+
+   ```sh
+   mise run cluster:install -- \
+     --set=apiServer.slackClientId=... \
+     --set=apiServer.slackClientSecret=...
+   ```
+
+3. Send a workspace admin `<urls.ui>/api/slack/install/start`. They complete Slack's consent screen while on the VPN, and the workspace's own bot token is stored in a Kubernetes Secret.
+
+The workspace that `slackBotToken` was issued for keeps working without any of this — it stays the fallback. Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
+
 The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 
 A mention in a channel no instance is bound to gets an ephemeral rejection.
