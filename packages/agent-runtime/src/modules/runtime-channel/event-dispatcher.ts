@@ -10,7 +10,7 @@ import type { ContextEnv } from "./dispatcher.js";
 import type { PluginRegistry } from "./infrastructure/plugin-registry.js";
 
 export interface EventDispatcher {
-  invoke(kind: EventKind, payload: unknown): Promise<void>;
+  invoke(kind: EventKind, payload: unknown, eventId: string): Promise<void>;
 }
 
 export function createEventDispatcher(deps: {
@@ -54,7 +54,7 @@ export function createEventDispatcher(deps: {
   }
 
   return {
-    async invoke(kind, payload) {
+    async invoke(kind, payload, eventId) {
       const entry = handlers.get(kind);
       if (!entry) {
         deps.env.log(
@@ -62,7 +62,7 @@ export function createEventDispatcher(deps: {
         );
         return;
       }
-      await entry.handler(payload, entry.ctx);
+      await entry.handler(payload, { ...entry.ctx, eventId });
     },
   };
 }

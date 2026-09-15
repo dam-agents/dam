@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-09-08
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -16,7 +16,7 @@ Two pieces make an Agent a Knowledge Base:
 The owner-scoped knowledge-bases module owns creation and nothing else — reads ride the agents surface. Create is a composition of existing rails:
 
 1. **Agent create** with the Kind marker, passing the create choices through (harness image, provider, and catalog connections) plus the picked KB template, on the trusted egress preset and the template's size. The harness is the user's choice, the same catalogue coding agents pick from — not pinned to Claude Code. Each harness template may declare its **harness family** — which agent CLI runs inside the image, a closed vocabulary owned by the templates contract ([`packages/api-server-api/src/modules/templates/`](../../packages/api-server-api/src/modules/templates/)) and validated when templates load, so a misdeclared family rejects the template rather than degrading silently. The server resolves the family at create and hands it to the Install Command, so the KB tooling lands where that harness reads it; a custom image, or a template that declares none, passes no family along.
-2. **Install Command delivery** over the `workspace-command` rail — a one-shot runtime-channel event alongside `workspace-seed`, on the same durable outbox schedules and Experiments use ([runtime delivery](runtime-delivery.md#event-lifecycle), [agent-lifecycle](agent-lifecycle.md#trigger-fire)). The event survives the pod not being up yet — including an agent parked over budget — and is delivered once the agent is Ready. agent-runtime runs the command in the workspace, in the pod's environment, so egress rides the paired gateway exactly as a harness process would. It runs once: the plugin writes a sentinel on success, so a redelivery (or a pod killed mid-run before the outbox settled) never double-runs a completed install. A failed run stays pending and retries on the next wake until it succeeds or the event's TTL lapses.
+2. **Install Command delivery** over the `workspace-command` rail — a one-shot runtime-channel event alongside `workspace-seed`, on the same durable outbox schedules and Experiments use ([runtime delivery](runtime-delivery.md#event-lifecycle), [schedules](schedules.md#fire)). The event survives the pod not being up yet — including an agent parked over budget — and is delivered once the agent is Ready. agent-runtime runs the command in the workspace, in the pod's environment, so egress rides the paired gateway exactly as a harness process would. It runs once: the plugin writes a sentinel on success, so a redelivery (or a pod killed mid-run before the outbox settled) never double-runs a completed install. A failed run stays pending and retries on the next wake until it succeeds or the event's TTL lapses.
 3. **Wake**, so the freshly created agent comes up and runs the bootstrap before the user does anything. No session is opened and no turn runs — the command mutates the workspace, then the user chats with the ready-made knowledge base.
 
 The module has no persistence of its own: a Knowledge Base is exactly the owner's Agent plus the marker, and deleting the agent deletes the Knowledge Base.

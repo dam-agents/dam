@@ -330,6 +330,13 @@
       "when": 1789041347454,
       "tag": "0046_skinny_callisto",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789462143967,
+      "tag": "0047_real_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

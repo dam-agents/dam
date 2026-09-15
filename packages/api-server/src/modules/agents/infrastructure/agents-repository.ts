@@ -63,9 +63,18 @@ export interface AgentsRepository {
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
-  wakeIfHibernated(id: string): Promise<boolean>;
+  wakeIfHibernated(id: string): Promise<AgentActivityStamp | null>;
+  restoreActivityIfUnchanged(
+    id: string,
+    stamp: AgentActivityStamp,
+  ): Promise<void>;
   isReady(id: string): Promise<boolean>;
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
+}
+
+export interface AgentActivityStamp {
+  previous: string | null;
+  written: string;
 }
 
 export function createAgentsRepository(
@@ -261,16 +270,34 @@ export function createAgentsRepository(
 
     async wakeIfHibernated(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return false;
+      if (!obj) return null;
+      const written = new Date().toISOString();
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: {
           annotations: {
-            [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+            [LAST_ACTIVITY_KEY]: written,
             [STOP_REQUESTED_KEY]: "",
           },
         },
       });
-      return true;
+      return {
+        previous: obj.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
+        written,
+      };
+    },
+
+    async restoreActivityIfUnchanged(id, stamp) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return;
+      if (obj.metadata?.annotations?.[LAST_ACTIVITY_KEY] !== stamp.written)
+        return;
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          annotations: {
+            [LAST_ACTIVITY_KEY]: stamp.previous ?? STALE_ACTIVITY,
+          },
+        },
+      });
     },
 
     async isReady(id) {

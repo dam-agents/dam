@@ -40,3 +40,40 @@ export function lastRunStatus(lastResult?: string): LastRunStatus | null {
     return { label: "Succeeded", className: "text-success" };
   return { label: `Failed: ${lastResult}`, className: "text-destructive" };
 }
+
+export function declinedSummary(status?: {
+  declinedCount?: number;
+  lastDeclinedAt?: string;
+}): string | null {
+  const count = status?.declinedCount ?? 0;
+  if (count === 0) return null;
+  const times = count === 1 ? "once" : `${count} times`;
+  return status?.lastDeclinedAt
+    ? `Declined ${times} since the last run · last: ${formatRunTime(status.lastDeclinedAt)}`
+    : `Declined ${times} since the last run`;
+}
+
+const CLAMP_CHARS = 300;
+
+export function clampText(text: string, max: number = CLAMP_CHARS): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+export interface PrecheckAlert {
+  text: string;
+  reason: string;
+  urgent: boolean;
+}
+
+export function precheckAlert(schedule: Schedule): PrecheckAlert | null {
+  const reason = schedule.status?.lastPrecheckError;
+  if (!reason || !schedule.precheck) return null;
+  const count = schedule.status?.precheckFailedCount ?? 0;
+  const failed =
+    count > 1 ? `Precheck failed ${count} times in a row` : "Precheck failed";
+  return {
+    text: schedule.enabled ? `${failed} — running every time` : failed,
+    reason: clampText(reason),
+    urgent: schedule.enabled,
+  };
+}

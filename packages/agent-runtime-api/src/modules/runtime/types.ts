@@ -117,6 +117,9 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   mcpServers: z.array(z.unknown()).optional(),
+  precheck: z.string().min(1).optional(),
+  fireAt: z.string().datetime({ offset: true }).optional(),
+  lastRunAt: z.string().datetime({ offset: true }).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
 
@@ -127,6 +130,16 @@ export const triggerEvent = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   payload: triggerEventPayload,
 });
+
+export const eventOutcome = z.enum(["ok", "declined", "failed"]);
+export type EventOutcome = z.infer<typeof eventOutcome>;
+
+export const eventReportInput = z.object({
+  eventId: z.string().min(1),
+  outcome: eventOutcome,
+  detail: z.string().max(2_000).optional(),
+});
+export type EventReportInput = z.infer<typeof eventReportInput>;
 
 export const scheduleResetEventPayload = z.object({
   scheduleId: z.string().min(1),

@@ -428,6 +428,7 @@ export const runtimeEvents = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),
     error: text("error"),
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
   },
   (table) => [
     index("runtime_events_agent_pending_idx")
@@ -451,6 +452,10 @@ export const schedules = pgTable(
     nextRun: timestamp("next_run", { withTimezone: true }),
     lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
     lastFiredResult: text("last_fired_result"),
+    lastDeclinedAt: timestamp("last_declined_at", { withTimezone: true }),
+    declinedCount: integer("declined_count").notNull().default(0),
+    lastPrecheckError: text("last_precheck_error"),
+    precheckFailedCount: integer("precheck_failed_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
-import type { DispatchContext } from "agent-runtime-api";
+import type { EventContext } from "agent-runtime-api";
 import {
   createWorkspaceSeedPlugin,
   type CloneFn,
@@ -10,7 +10,8 @@ import {
 
 const URL = "https://github.com/dam-agents/google-workspace.git";
 
-const ctx: DispatchContext = {
+const ctx: EventContext = {
+  eventId: "evt-1:1",
   agentHome: "",
   pluginStateDir: "",
   log: () => {},

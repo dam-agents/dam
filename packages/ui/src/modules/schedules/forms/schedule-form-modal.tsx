@@ -55,6 +55,9 @@ const DAYS_ISO: { iso: number; label: string }[] = [
 const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
+const PRECHECK_HINT =
+  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
+
 interface Props {
   agentId?: string;
   agentChoices?: readonly { id: string; name: string }[];
@@ -111,6 +114,7 @@ export function ScheduleFormModal({
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
 
   const onSubmit = handleSubmit((v) => {
+    const precheck = v.precheck.trim();
     const common = {
       name: v.name,
       rrule: buildRRuleParts(v).body,
@@ -130,10 +134,17 @@ export function ScheduleFormModal({
       onClose();
     };
     if (existing) {
-      updateSchedule.mutate({ id: existing.id, ...common }, { onSuccess });
+      updateSchedule.mutate(
+        { id: existing.id, ...common, precheck: precheck || null },
+        { onSuccess },
+      );
     } else {
       createSchedule.mutate(
-        { agentId: targetAgentId, ...common },
+        {
+          agentId: targetAgentId,
+          ...common,
+          ...(precheck ? { precheck } : {}),
+        },
         { onSuccess },
       );
     }
@@ -307,6 +318,21 @@ export function ScheduleFormModal({
               placeholder="Enter a task prompt"
               rows={3}
               {...register("task")}
+            />
+          </FormField>
+
+          <FormField
+            label="Precheck (optional)"
+            error={errors.precheck?.message}
+            hint={PRECHECK_HINT}
+            disableInset
+          >
+            <Textarea
+              className="min-h-[56px] resize-y font-mono text-xs"
+              variant={errors.precheck ? "invalid" : undefined}
+              placeholder="git fetch -q && git log --oneline HEAD..origin/main | grep -q ."
+              rows={2}
+              {...register("precheck")}
             />
           </FormField>
 
