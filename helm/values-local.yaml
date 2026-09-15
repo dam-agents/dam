@@ -57,12 +57,15 @@ controller:
 # exactly as on a cluster without KubeVirt. Rendered only with
 # virtualization.enabled.
 virtualization:
-  node:
+  runner:
     image:
       repository: platform-vm-runner
       tag: latest
       pullPolicy: Never
     storage: 40Gi
+    # No registry in the lima cluster: cluster:install drops the agent image
+    # archives here and every runner mounts them read-only.
+    imageArchiveHostPath: /var/lib/platform-vm-images
   devicePlugin:
     enabled: true
 

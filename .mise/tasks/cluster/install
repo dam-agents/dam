@@ -551,19 +551,20 @@ fi
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
-# 6b. vm-backend images onto the VM runner. It has no registry to pull
-# from: vm-runner creates a machine from a docker-save archive named after
-# the image reference when one is present in its state dir, which lives on the
-# node's PVC — so this is copied into the running pod, once it exists.
+# 6b. vm-backend images onto the node, where every VM runner mounts them read
+# only: runners are per owner and created on demand, so there is no pod to copy
+# into at install time, and no registry for them to pull from.
 for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
-  echo "Loading $image onto the VM runner..."
+  echo "Loading $image for the VM runners..."
   tar="/tmp/$(printf '%s' "$image" | tr '/:@' '___').tar"
   docker save -o "$tar" "$image"
-  pod=$(kubectl --kubeconfig="$KUBECONFIG" get pod -l app.kubernetes.io/component=vm-runner -o jsonpath='{.items[0].metadata.name}')
-  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- mkdir -p /var/lib/vm-runner/images
-  kubectl --kubeconfig="$KUBECONFIG" cp "$tar" "$pod:/var/lib/vm-runner/images/$(basename "$tar")"
-  # smolvm reads the archive as the machine's own unprivileged uid.
-  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- chmod 644 "/var/lib/vm-runner/images/$(basename "$tar")"
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
+  else
+    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+    limactl shell "$LIMA_INSTANCE" sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
+    limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+  fi
   rm -f "$tar"
 done
 

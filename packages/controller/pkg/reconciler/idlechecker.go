@@ -18,19 +18,18 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
-	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 type IdleChecker struct {
 	client    kubernetes.Interface
 	dynamic   dynamic.Interface
 	config    *config.Config
-	vmRunner  *vmrunner.Client
+	halt      func(ctx context.Context, owner, name string) error
 	busyProbe func(ctx context.Context, agentName string) bool
 }
 
-func (c *IdleChecker) WithVMRunner(node *vmrunner.Client) *IdleChecker {
-	c.vmRunner = node
+func (c *IdleChecker) WithMachineHalt(halt func(ctx context.Context, owner, name string) error) *IdleChecker {
+	c.halt = halt
 	return c
 }
 
@@ -106,7 +105,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, name); err != nil {
+		if err := c.hibernate(ctx, ownerOf(agent), name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -202,12 +201,12 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	return !status.Idle
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.vmRunner, c.config.Namespace, name)
+func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, node *vmrunner.Client, namespace, name string) error {
-	if err := scaleAgentPairToZero(ctx, kube, node, namespace, name); err != nil {
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
+	if err := scaleAgentPairToZero(ctx, kube, halt, owner, namespace, name); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
@@ -219,9 +218,11 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, node *vmrunner.Client, namespace, name string) error {
-	if err := haltMachine(ctx, node, name); err != nil {
-		return err
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
+	if halt != nil {
+		if err := halt(ctx, owner, name); err != nil {
+			return err
+		}
 	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,
@@ -251,12 +252,9 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, node *
 	return nil
 }
 
-func haltMachine(ctx context.Context, node *vmrunner.Client, name string) error {
-	if node == nil {
-		return nil
-	}
-	if _, err := node.Ensure(ctx, name, vmrunner.MachineSpec{Running: false}); err != nil {
-		return fmt.Errorf("stopping machine for %s: %w", name, err)
-	}
-	return nil
+type MachineHalt func(ctx context.Context, owner, name string) error
+
+func ownerOf(agent *unstructured.Unstructured) string {
+	labels := agent.GetLabels()
+	return labels[labelOwner]
 }

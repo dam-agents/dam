@@ -155,7 +155,8 @@ istio:
 # several is the upgrade path.
 virtualization:
   enabled: false
-  node:
+  # The shape of every runner pod the controller creates (one per owner).
+  runner:
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""
@@ -193,6 +194,11 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # A directory on the node holding `docker save` archives named after the
+    # image reference, mounted read-only into every runner. It is how a
+    # cluster with no registry (local dev) gives runners their agent image;
+    # empty means runners pull from the registry as usual.
+    imageArchiveHostPath: ""
     # Extra sources the runner itself admits on machines' published ports,
     # on top of the NetworkPolicy that limits them to the api-server and the
     # controller; empty means the policy is the only gate.

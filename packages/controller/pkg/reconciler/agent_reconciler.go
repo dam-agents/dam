@@ -33,13 +33,16 @@ type AgentReconciler struct {
 	dynamic dynamic.Interface
 	config  *config.Config
 
-	budgetMu    sync.Mutex
-	ownerLocks  map[string]*sync.Mutex
-	deniedWakes map[string]string
-	parkedRetry map[string]struct{}
-	busyProbe   func(ctx context.Context, agentName string) bool
-	vmRunner    *vmrunner.Client
-	requeue     func(name string, after time.Duration)
+	budgetMu       sync.Mutex
+	ownerLocks     map[string]*sync.Mutex
+	deniedWakes    map[string]string
+	parkedRetry    map[string]struct{}
+	busyProbe      func(ctx context.Context, agentName string) bool
+	runnerMu       sync.Mutex
+	runners        map[string]runnerConn
+	runnerEndpoint func(owner string) string
+	runnerIP       func(owner string) (string, error)
+	requeue        func(name string, after time.Duration)
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
@@ -52,11 +55,6 @@ func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentR
 
 func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
 	r.dynamic = d
-	return r
-}
-
-func (r *AgentReconciler) WithVMRunner(c *vmrunner.Client) *AgentReconciler {
-	r.vmRunner = c
 	return r
 }
 
@@ -182,7 +180,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}
-			if err := scaleAgentPairToZero(ctx, r.client, r.vmRunner, r.config.Namespace, name); err != nil {
+			if err := scaleAgentPairToZero(ctx, r.client, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
@@ -222,7 +220,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
 	if agentSpec.IsVM() {
-		if r.vmRunner == nil {
+		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
 		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && !hardStop)
@@ -253,7 +251,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 
 	if hardStop {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.vmRunner, r.config.Namespace, name); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -271,7 +269,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return err
 	}
 	if parked {
-		if err := scaleAgentPairToZero(ctx, r.client, r.vmRunner, r.config.Namespace, name); err != nil {
+		if err := scaleAgentPairToZero(ctx, r.client, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
@@ -412,11 +410,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
-	if r.vmRunner != nil {
-		if err := r.vmRunner.Delete(ctx, name); err != nil {
-			slog.Warn("deleting vm-runner machine", "agent", name, "error", err)
-		}
-	}
+	r.deleteMachineEverywhere(ctx, name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
