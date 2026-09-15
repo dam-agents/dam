@@ -40,6 +40,7 @@ import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import type { Message } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
@@ -82,6 +83,7 @@ import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-har
 import { useTemplates } from "../../templates/api/queries.js";
 import { useTurns } from "../../timeline/api/queries.js";
 import { TurnTelemetry } from "../../timeline/components/turn-telemetry.js";
+import { turnIndexForReply } from "../../timeline/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -269,6 +271,9 @@ export function ChatView() {
   );
   const turnRows =
     sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
+  const isReply = (m: Message): boolean =>
+    m.role === "assistant" && !m.notice && !m.streaming;
+  const replyCount = messages.filter(isReply).length;
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -712,16 +717,16 @@ export function ChatView() {
                         </div>
                       ))}
                     {messages.map((m, mi) => {
-                      const replyIndex =
-                        m.role === "assistant" && !m.notice
-                          ? messages
-                              .slice(0, mi)
-                              .filter(
-                                (p) => p.role === "assistant" && !p.notice,
-                              ).length
-                          : -1;
+                      const replyIndex = isReply(m)
+                        ? messages.slice(0, mi).filter(isReply).length
+                        : -1;
+                      const turnIndex = turnIndexForReply(
+                        turnRows.length,
+                        replyCount,
+                        replyIndex,
+                      );
                       const turn =
-                        replyIndex >= 0 ? turnRows[replyIndex] : undefined;
+                        turnIndex === null ? undefined : turnRows[turnIndex];
                       return (
                         <div key={m.id}>
                           <ChatMessage
