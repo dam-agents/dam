@@ -64,6 +64,12 @@ export type {
 
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
+  resolveSlackWorkspace?: (
+    slackChannelId: string,
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "ambiguous"; teamIds: string[] }
+  >;
   agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;
@@ -131,6 +137,9 @@ export function composeAgentsModule(deps: {
           claimSlackDefaultIfVacantTx(tx, owner, agentId, slackChannelId),
       },
       findSlackBindings: findSlackBindingsByChannelId(deps.db),
+      ...(deps.resolveSlackWorkspace
+        ? { resolveSlackWorkspace: deps.resolveSlackWorkspace }
+        : {}),
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
     }),

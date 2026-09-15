@@ -677,6 +677,10 @@ export interface ChannelRegistry {
 export interface SlackWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
+  knowsConversation(
+    slackChannelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean>;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
@@ -3317,6 +3321,12 @@ export function createSlackWorker(
       gatewayFailed = false;
       if (gw) await gw.stop();
       gateway = null;
+    },
+
+    async knowsConversation(slackChannelId: string, teamId: SlackWorkspace) {
+      const gw = await ensureGateway();
+      if (!gw) return false;
+      return (await gw.getConversationInfo(slackChannelId, teamId)) !== null;
     },
 
     async listConversations(instanceName: string) {

@@ -73,6 +73,12 @@ export interface ApiServerDeps {
   pendingTelegramOAuthFlows: TtlStore<TelegramOAuthPending>;
   pendingSlackInstalls: TtlStore<SlackInstallPending>;
   slackInstalls: SlackInstallService;
+  resolveSlackWorkspace: (
+    slackChannelId: string,
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "ambiguous"; teamIds: string[] }
+  >;
   slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;
   slackBindFlows: SlackBindFlowStore;

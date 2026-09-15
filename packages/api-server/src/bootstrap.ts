@@ -78,9 +78,11 @@ import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slac
 import type { SlackInstallPending } from "./modules/channels/infrastructure/slack-install-routes.js";
 import {
   findSlackInstall,
+  listSlackInstalls,
   setSlackCredentialState,
   upsertSlackInstall,
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
+import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import {
   composeRuntimeDelivery,
@@ -743,6 +745,15 @@ export async function bootstrap() {
       )
     : undefined;
 
+  const resolveSlackWorkspace = createSlackWorkspaceProbe({
+    listInstalledWorkspaces: async () =>
+      (await listSlackInstalls(db)()).map((i) => i.teamId),
+    knowsConversation: async (slackChannelId, teamId) =>
+      slackWorker
+        ? slackWorker.knowsConversation(slackChannelId, teamId)
+        : false,
+  });
+
   const telegramWorker =
     config.telegramBotToken && chatSdkState
       ? createTelegramWorker({
@@ -1095,6 +1106,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       api,
+      resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -1169,6 +1181,7 @@ export async function bootstrap() {
     pendingTelegramOAuthFlows,
     pendingSlackInstalls,
     slackInstalls,
+    resolveSlackWorkspace,
     slackInstallCallbackUrl,
     telegramBindFlows,
     slackBindFlows,
