@@ -110,7 +110,7 @@ Concurrent dispatches from different replicas race naturally: the agent rejects 
 
 One route for every event kind: the agent names the event by the same `id` the payload carried it under, and says how it went — **ok**, **declined**, or **failed** with a reason. The api-server looks the row up by that id *and* the calling agent, which is the ownership check, and routes on the row's own `kind` to whichever subsystem produced it; the reason lands in the event row's error column, the slot that already existed for it.
 
-The vocabulary is deliberately not the reporting subsystem's own: a schedule's Precheck says allow, decline and broke, and that translation happens on the schedules side so the next kind to use this route does not inherit "precheck" in its outcome names. What the route is *not* is a second delivery channel — it carries facts about work already accepted, so nothing is durable about it: a report that fails to send is logged and the outcome is simply never recorded.
+The vocabulary is deliberately not the reporting subsystem's own: a schedule's Precheck says allow, decline and broke, and that translation happens on the schedules side so the next kind to use this route does not inherit "precheck" in its outcome names. What the route is *not* is a second delivery channel — it carries facts about work already accepted, so nothing is durable about it: a report that fails to send is logged and the outcome is simply never recorded. It is idempotent instead: recording the reason also claims the row, so a report that arrives twice is a no-op rather than a second increment on whatever the first one counted.
 
 ### Session-directory report — agent → api-server
 

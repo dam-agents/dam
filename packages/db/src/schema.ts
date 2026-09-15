@@ -428,6 +428,7 @@ export const runtimeEvents = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),
     error: text("error"),
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
   },
   (table) => [
     index("runtime_events_agent_pending_idx")

@@ -1,5 +1,5 @@
 {
-  "id": "47cdad55-0830-42e9-9589-093c7ec1479c",
+  "id": "aa828684-03a6-4c1c-9af2-26ddd839188d",
   "prevId": "25c78722-c030-40bf-b56c-2c8f0bd6b222",
   "version": "7",
   "dialect": "postgresql",
@@ -2761,6 +2761,12 @@
         "error": {
           "name": "error",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }

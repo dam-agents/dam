@@ -70,8 +70,11 @@ export interface OutboxRepo {
     resetContributionErrors?: boolean,
   ): Promise<number>;
   pendingEvents(agentId: string): Promise<PendingEventRow[]>;
-  ownedEvent(eventId: string, agentId: string): Promise<PendingEventRow | null>;
-  recordEventOutcome(eventId: string, detail: string | null): Promise<void>;
+  claimEventReport(
+    eventId: string,
+    agentId: string,
+    detail: string | null,
+  ): Promise<PendingEventRow | null>;
   recordOutcome(
     agentId: string,
     settledVersion: number,
@@ -169,24 +172,23 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return result[0]!.version;
     },
 
-    async ownedEvent(eventId, agentId): Promise<PendingEventRow | null> {
+    async claimEventReport(
+      eventId,
+      agentId,
+      detail,
+    ): Promise<PendingEventRow | null> {
       const rows = (await db
-        .select()
-        .from(runtimeEvents)
+        .update(runtimeEvents)
+        .set({ error: detail, reportedAt: new Date() })
         .where(
           and(
             eq(runtimeEvents.id, eventId),
             eq(runtimeEvents.agentId, agentId),
+            isNull(runtimeEvents.reportedAt),
           ),
-        )) as PendingEventRow[];
+        )
+        .returning()) as PendingEventRow[];
       return rows[0] ?? null;
-    },
-
-    async recordEventOutcome(eventId, detail): Promise<void> {
-      await db
-        .update(runtimeEvents)
-        .set({ error: detail })
-        .where(eq(runtimeEvents.id, eventId));
     },
 
     async pendingEvents(agentId): Promise<PendingEventRow[]> {

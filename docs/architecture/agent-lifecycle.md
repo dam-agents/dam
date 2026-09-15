@@ -37,10 +37,10 @@ sequenceDiagram
   API->>API: insert trigger event into runtime outbox
   API->>K: poke activity — reconciler scales up a hibernated Agent
   API->>P: applyState — delivered only once pod is Ready
-  Note over P: trigger handler runs the schedule's Precheck,<br/>if it has one — a decline ends the fire here
-  P->>API: report the Precheck verdict
-  Note over P: otherwise opens an in-process ACP session<br/>(session/new or session/resume),<br/>submits the task as a prompt
-  Note over P: event settles on the verdict or the prompt;<br/>undelivered events expire after a TTL
+  Note over P: a fire with a Precheck settles on acceptance<br/>and decides afterwards; one without settles<br/>once the prompt is submitted
+  Note over P: opens an in-process ACP session<br/>(session/new or session/resume),<br/>submits the task as a prompt<br/>— unless the Precheck declined
+  P->>API: report the Precheck verdict, whichever it was
+  Note over P: undelivered events expire after a TTL
 
   Note over C: idle checker probes pod,<br/>no active sessions/triggers
   C->>K: scale StatefulSet → 0

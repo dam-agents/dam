@@ -32,17 +32,17 @@ export function createHelloHandler(deps: {
 }): RuntimeDeliveryService {
   return {
     async reportEvent(agentId, input): Promise<void> {
-      const event = await deps.outboxRepo.ownedEvent(input.eventId, agentId);
+      const event = await deps.outboxRepo.claimEventReport(
+        input.eventId,
+        agentId,
+        input.outcome === "ok" ? null : (input.detail ?? input.outcome),
+      );
       if (!event) {
         deps.log(
-          `[runtime-report] ${agentId}: no event ${input.eventId} owned by this agent; dropping`,
+          `[runtime-report] ${agentId}: event ${input.eventId} is not this agent's, or already reported; dropping`,
         );
         return;
       }
-      await deps.outboxRepo.recordEventOutcome(
-        input.eventId,
-        input.outcome === "ok" ? null : (input.detail ?? input.outcome),
-      );
       const handler = deps.eventOutcomeHandler?.(event.kind);
       if (handler) await handler(event, input);
     },

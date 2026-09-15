@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-09-14
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -17,9 +17,9 @@ When a fire is due:
 1. The api-server inserts a `trigger` event into the Agent's runtime outbox in the same transaction that bumps the Agent's version, then signals the delivery worker. The fire is durable from this point; the schedule re-arms once the commit succeeds; a failed commit is retried by the queue, then by the reconcile.
 2. The api-server pokes the Agent's activity annotation so the reconciler scales a hibernated Agent up. The poke never waits on readiness; a poke that errors is recorded as a failed fire on the schedule's status, but the committed event still delivers if the Agent comes `Ready` within its TTL.
 3. The delivery worker pushes the event over the runtime channel's `applyState` — only once the Agent is `Ready`. A waking Agent picks pending events up on its boot-time `hello` catch-up. Every event carries a TTL, so an Agent that stays down through several occurrences (error state, failed poke) doesn't replay a backlog of stale fires when it eventually wakes. Outbox mechanics — versioning, the sweep, expiry — are owned by [runtime delivery](runtime-delivery.md#event-lifecycle).
-4. agent-runtime's trigger handler settles the event and then does the work. A fire with no Precheck opens an ACP session against the harness over an in-process channel and submits the task as a prompt; one with a Precheck (below) settles the moment it accepts the fire and decides afterwards, because a check may run for minutes and the handler runs inside the delivery call ([runtime delivery](runtime-delivery.md#event-lifecycle)). Either way the turn itself runs asynchronously in the harness.
+4. agent-runtime's trigger handler opens an ACP session against the harness over an in-process channel and submits the task as a prompt. The turn itself runs asynchronously in the harness, and the event settles once the prompt is submitted. **A fire carrying a Precheck settles earlier — the moment the handler accepts it** — and decides afterwards: the handler runs inside the delivery call, and a check may run for minutes ([runtime delivery](runtime-delivery.md#event-lifecycle)).
 
-An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice. What redelivery does **not** cover is a fire that was accepted: its session failing to open reaches the pod log and nothing else, and for a prechecked fire that is true of the whole decision. Losing an occurrence this way is the price of not holding the channel open, and for a recurring check the next occurrence pays it back.
+An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice. That safety net ends where a fire is settled. For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes, or a session that then fails to open, reaches the pod log and nothing else. Losing an occurrence that way is the price of not holding the channel open, and for a recurring check the next occurrence pays it back.
 
 ## Precheck
 

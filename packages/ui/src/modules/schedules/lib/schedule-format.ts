@@ -67,7 +67,7 @@ export interface PrecheckAlert {
 
 export function precheckAlert(schedule: Schedule): PrecheckAlert | null {
   const reason = schedule.status?.lastPrecheckError;
-  if (!reason) return null;
+  if (!reason || !schedule.precheck) return null;
   const count = schedule.status?.precheckFailedCount ?? 0;
   const failed =
     count > 1 ? `Precheck failed ${count} times in a row` : "Precheck failed";
