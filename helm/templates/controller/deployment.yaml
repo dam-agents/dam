@@ -79,7 +79,7 @@ spec:
                   "imagePullSecrets" (.Values.imagePullSecrets | default list)
                   "serviceAccountName" (printf "%s-vm-runner" (include "platform.fullname" .))
                   "storage" $r.storage "storageClass" $r.storageClass
-                  "privileged" $r.privileged "devices" (ternary dict $devices $r.privileged)
+                  "devices" $devices
                   "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations

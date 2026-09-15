@@ -285,14 +285,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	if resources.Limits == nil {
 		resources.Limits = corev1.ResourceList{}
 	}
-	if !spec.Privileged {
-		for k, v := range spec.Devices {
-			q, err := resource.ParseQuantity(v)
-			if err != nil {
-				return fmt.Errorf("vm runner device %s: %w", k, err)
-			}
-			resources.Limits[corev1.ResourceName(k)] = q
+	for k, v := range spec.Devices {
+		q, err := resource.ParseQuantity(v)
+		if err != nil {
+			return fmt.Errorf("vm runner device %s: %w", k, err)
 		}
+		resources.Limits[corev1.ResourceName(k)] = q
 	}
 	mounts := []corev1.VolumeMount{
 		{Name: "state", MountPath: "/var/lib/smolvm", SubPath: "smolvm"},
@@ -350,7 +348,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:       &root,
-							Privileged:      ptrBool(spec.Privileged),
 							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}},
 							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 						},
