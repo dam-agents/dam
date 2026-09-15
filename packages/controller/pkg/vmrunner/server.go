@@ -23,7 +23,7 @@ const (
 	guestAgentPort   = 8080
 	loopbackOffset   = 1000
 	opTimeout        = 30 * time.Minute
-	unhealthyRestart = 2 * time.Minute
+	unhealthyRestart = 10 * time.Minute
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -303,6 +303,7 @@ func (s *Server) lock(id string) *sync.Mutex {
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
 	s.pending[id] = op
+	delete(s.unhealthySince, id)
 	s.mu.Unlock()
 	go func() {
 		lock := s.lock(id)

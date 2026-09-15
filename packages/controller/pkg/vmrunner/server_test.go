@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; the image and egress allow-list are fixed for a machine's life and a change is reported, not silently ignored; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is restarted, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed for a machine's life and a change is reported, not silently ignored; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
 package vmrunner
 
 import (
@@ -312,4 +312,17 @@ func TestImageChangeIsReportedNotIgnored(t *testing.T) {
 	st := h.settle(t, "m1")
 	assert.Contains(t, st.Message, "fixed for the machine's life")
 	assert.Contains(t, st.Message, "quay.io/x/vm:2")
+}
+
+// TEST_SCENARIO: a machine that never answered yet (a first boot flattening its image) and one that is mid-wake are both left alone; only a machine that answered before and then went quiet past the window is restarted.
+func TestOnlyAPreviouslyHealthyMachineIsRestartedWhenItGoesQuiet(t *testing.T) {
+	h := newHarness(t)
+	h.node.unhealthySince["m1"] = time.Now().Add(-time.Hour)
+	assert.False(t, h.node.deadForLong("m1"), "a machine that never answered is still booting, not dead")
+
+	h.node.wasHealthy["m1"] = true
+	assert.True(t, h.node.deadForLong("m1"))
+
+	h.node.spawn("m1", StateStarting, func() error { return nil })
+	assert.False(t, h.node.deadForLong("m1"), "a state change restarts the window")
 }
