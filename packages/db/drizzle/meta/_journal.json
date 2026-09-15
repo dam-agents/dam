@@ -327,8 +327,15 @@
     {
       "idx": 46,
       "version": "7",
-      "when": 1789130920112,
-      "tag": "0046_normalize_skill_source_urls",
+      "when": 1789041347454,
+      "tag": "0046_skinny_callisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789474581093,
+      "tag": "0047_normalize_skill_source_urls",
       "breakpoints": true
     }
   ]

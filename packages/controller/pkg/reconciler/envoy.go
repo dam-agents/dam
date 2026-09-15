@@ -482,18 +482,6 @@ func hostShort(host string) string {
 	return hex.EncodeToString(h[:])[:8]
 }
 
-func hostInChains(chains []envoyHostChain, host string) bool {
-	if host == "" {
-		return false
-	}
-	for _, c := range chains {
-		if c.Host == host {
-			return true
-		}
-	}
-	return false
-}
-
 const platformGatewayHealthPath = "/__platform_healthz"
 
 const envoyListenAddress = "0.0.0.0"
@@ -598,7 +586,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 
 func ptrBool(b bool) *bool { return &b }
 
-const envoyBootstrapTemplateRev = "v15-structured-config"
+const envoyBootstrapTemplateRev = "v16-attribution-strip"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

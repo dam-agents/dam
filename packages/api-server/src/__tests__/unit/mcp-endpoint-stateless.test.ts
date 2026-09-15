@@ -38,7 +38,7 @@ function replica() {
     caseStudySubmissions: {},
     caseStudyInspection: {},
     agentImage: async () => null,
-    usageSummary: {},
+    agentTelemetry: {},
   } as unknown as MountMcpDeps);
   return app;
 }

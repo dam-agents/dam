@@ -23,7 +23,10 @@ function wakeError(
   });
 }
 
-function harness(ensureReady: AgentsService["ensureReady"]) {
+function harness(
+  ensureReady: AgentsService["ensureReady"],
+  patienceMs = 60_000,
+) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const acp: AcpClient = {
@@ -63,6 +66,8 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     stubTurnAttendance(),
     stubWorkspaceFiles(),
     (e) => events.push(e),
+    0,
+    { patienceMs, sleep: async () => {} },
   );
 
   return {
@@ -138,15 +143,15 @@ describe("slack wake-failure surfacing", () => {
     expect((h.turnEvents()[0] as { outcome: string }).outcome).toBe("success");
   });
 
-  it("transient failure twice: gives up with the warming-up copy", async () => {
+  it("transient failure past the patience window: gives up with the warming-up copy", async () => {
     let calls = 0;
     const h = harness(async () => {
       calls++;
       throw wakeError({ kind: "agent-pod-not-ready" });
-    });
+    }, 0);
     await h.mention();
 
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
     const joined = h.texts().join("\n");
     expect(joined).toContain("still warming up");
     expect((h.turnEvents()[0] as { outcome: string }).outcome).toBe("failure");

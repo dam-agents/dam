@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	sigsyaml "sigs.k8s.io/yaml"
@@ -10,6 +11,11 @@ import (
 )
 
 type ev = map[string]any
+
+const (
+	attributionAgentHeader      = "x-platform-agent-id"
+	attributionInvocationHeader = "x-platform-invocation-id"
+)
 
 type bootstrapParams struct {
 	ListenAddress          string
@@ -48,7 +54,10 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 	if cfg.ObjectStoreHost != "" {
 		objectStoreAuthority = fmt.Sprintf("%s:%d", cfg.ObjectStoreHost, cfg.ObjectStorePort)
 	}
-	telemetry := cfg.TelemetryEnabled() && !hostInChains(chains, cfg.TelemetryCollectorHost)
+	telemetry := cfg.TelemetryEnabled()
+	if telemetry {
+		chains = chainsWithoutHost(instanceID, chains, cfg.TelemetryCollectorHost)
+	}
 	anyUpgrades := false
 	for _, c := range chains {
 		if c.Upgrades {
@@ -87,6 +96,22 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		return "", fmt.Errorf("marshaling envoy bootstrap: %w", err)
 	}
 	return string(out), nil
+}
+
+func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) []envoyHostChain {
+	if host == "" {
+		return chains
+	}
+	out := make([]envoyHostChain, 0, len(chains))
+	for _, c := range chains {
+		if c.Host == host {
+			slog.Warn("egress chain targets the telemetry collector host; dropping it so the collector chain stamps trusted attribution",
+				"agent", instanceID, "host", host, "chain", c.ChainID)
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
@@ -144,16 +169,7 @@ func buildOuterListener(p bootstrapParams) ev {
 			dynamicForwardProxyHTTPFilter(),
 			routerHTTPFilter(),
 		},
-		"route_config": ev{
-			"name": "connect_routes",
-			"virtual_hosts": []any{
-				ev{
-					"name":    "connect",
-					"domains": []any{"*"},
-					"routes":  buildOuterRoutes(p),
-				},
-			},
-		},
+		"route_config": buildOuterRouteConfig(p),
 	}
 	if p.OTel.Traces {
 		hcm["tracing"] = otelTracing(p, 256)
@@ -168,6 +184,21 @@ func buildOuterListener(p bootstrapParams) ev {
 			ev{"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}}},
 		},
 	}
+}
+
+func buildOuterRouteConfig(p bootstrapParams) ev {
+	routeConfig := ev{
+		"name": "connect_routes",
+		"virtual_hosts": []any{
+			ev{"name": "connect", "domains": []any{"*"}, "routes": buildOuterRoutes(p)},
+		},
+	}
+	if p.Telemetry {
+		applyAttributionMutations(routeConfig, p)
+		return routeConfig
+	}
+	routeConfig["request_headers_to_remove"] = []any{attributionAgentHeader, attributionInvocationHeader}
+	return routeConfig
 }
 
 func buildOuterRoutes(p bootstrapParams) []any {
@@ -364,17 +395,35 @@ func buildChainRouteAction(c envoyHostChain) ev {
 	return route
 }
 
-func buildCollectorChain(p bootstrapParams) ev {
+func attributionHeaderMutations(p bootstrapParams) (add []any, remove []any) {
 	attributionID := p.AttributionID
 	if attributionID == "" {
 		attributionID = p.InstanceID
 	}
-	headersToAdd := []any{
+	add = []any{
 		ev{
-			"header":        ev{"key": "x-platform-agent-id", "value": attributionID},
+			"header":        ev{"key": attributionAgentHeader, "value": attributionID},
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}
+	if !p.attributionOverridden() {
+		return add, []any{attributionInvocationHeader}
+	}
+	return append(add, ev{
+		"header":        ev{"key": attributionInvocationHeader, "value": p.InstanceID},
+		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+	}), nil
+}
+
+func applyAttributionMutations(target ev, p bootstrapParams) {
+	add, remove := attributionHeaderMutations(p)
+	target["request_headers_to_add"] = add
+	if len(remove) > 0 {
+		target["request_headers_to_remove"] = remove
+	}
+}
+
+func buildCollectorChain(p bootstrapParams) ev {
 	route := ev{
 		"match": ev{"prefix": "/"},
 		"route": ev{
@@ -383,15 +432,7 @@ func buildCollectorChain(p bootstrapParams) ev {
 			"timeout":              "0s",
 		},
 	}
-	if p.attributionOverridden() {
-		headersToAdd = append(headersToAdd, ev{
-			"header":        ev{"key": "x-platform-invocation-id", "value": p.InstanceID},
-			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
-		})
-	} else {
-		route["request_headers_to_remove"] = []any{"x-platform-invocation-id"}
-	}
-	route["request_headers_to_add"] = headersToAdd
+	applyAttributionMutations(route, p)
 	hcm := ev{
 		"@type":        "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 		"stat_prefix":  "terminate_otel_collector",

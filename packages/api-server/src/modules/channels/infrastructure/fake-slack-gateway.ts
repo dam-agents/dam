@@ -84,6 +84,20 @@ function threadWindowOf(
   });
 }
 
+function channelWindowOf(
+  history: SlackMessage[],
+  oldest: string | undefined,
+): SlackMessage[] {
+  if (oldest === undefined) return [...history];
+  return history.filter((m) => {
+    if (m.ts === undefined) return true;
+    const at = Number(m.ts);
+    const floor = Number(oldest);
+    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
+    return at >= floor;
+  });
+}
+
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
@@ -216,8 +230,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return { messages: fold.window, hasMore: stoppedShort };
     },
 
-    async getChannelHistory() {
-      return [...history];
+    async getChannelHistory(args) {
+      const newestFirst = channelWindowOf(history, args.oldest).reverse();
+      return {
+        messages: newestFirst.slice(0, args.limit),
+        hasMore: newestFirst.length > args.limit,
+      };
     },
 
     async uploadFile(args) {

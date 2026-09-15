@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ownedApiRequests } from "../../modules/metrics/infrastructure/clickhouse-reader.js";
+import {
+  ownedAgentLogs,
+  ownedAgentSpans,
+  ownedApiRequests,
+} from "../../modules/metrics/infrastructure/clickhouse-reader.js";
+
+const AGENT_GATE =
+  "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
 describe("ownedApiRequests", () => {
   it("matches the exact session by id", () => {
@@ -43,5 +50,62 @@ describe("ownedApiRequests", () => {
     expect(sql).not.toContain("sessionId");
     expect(sql).not.toContain("TraceId");
     expect(sql).toContain("toIntervalHour({hours:UInt32})");
+  });
+});
+
+describe("agent-scoped record predicates", () => {
+  /**
+   * TEST_SCENARIO: The trusted, gateway-stamped agent id is the only thing
+   * standing between one agent's self-read and another agent's telemetry. Every
+   * predicate — including the ones that widen past the LLM-call body shape —
+   * must carry it, with and without a session narrowing.
+   */
+  it("gates every read on the trusted agent attribution", () => {
+    for (const window of [{ hours: 24 }, { hours: 24, sessionId: "s-1" }]) {
+      for (const sql of [
+        ownedApiRequests(window),
+        ownedAgentLogs(window),
+        ownedAgentSpans(window),
+      ]) {
+        expect(sql).toContain(AGENT_GATE);
+      }
+    }
+  });
+
+  // TEST_SCENARIO: The events read serves every record the agent emitted — errors and tool decisions included — so unlike the spend reads it must not narrow to the LLM-call body.
+  it("reads every emitted record, not only LLM calls", () => {
+    expect(ownedAgentLogs({ hours: 24 })).not.toContain("Body =");
+    expect(ownedApiRequests({ hours: 24 })).toContain("Body =");
+  });
+
+  /**
+   * TEST_SCENARIO: Spans carry no session id, so a narrowed span read reaches
+   * the session through the trace family of its call records. It must resolve
+   * that family from the *folded* session set — the queried session plus any run
+   * it spawned — because the cost and record reads fold the same way. Resolving
+   * from the literal session alone would let one sessionId mean a wider set of
+   * runs to the numbers than to the spans, so a spawned run would be counted and
+   * not shown.
+   */
+  it("narrows spans to the folded session's trace family", () => {
+    const sql = ownedAgentSpans({ hours: 24, sessionId: "s-1" });
+    expect(sql).toContain("TraceId IN (");
+    expect(sql).toContain("SELECT DISTINCT TraceId FROM otel_logs");
+    expect(sql).toContain(
+      "OR LogAttributes['session.id'] IN (\n     SELECT DISTINCT LogAttributes['session.id']",
+    );
+  });
+
+  // TEST_SCENARIO: The trace family is resolved inside the query, so no unbounded list of trace ids is carried out of the store and injected back into a follow-up read.
+  it("resolves the trace family in the query, not through a bound parameter", () => {
+    const sql = ownedAgentSpans({ hours: 24, sessionId: "s-1" });
+    expect(sql).not.toContain("{traceIds:Array(String)}");
+  });
+
+  // TEST_SCENARIO: Without a session the span read is a plain owned-window scan; a stray join here would cost a trace resolution on every call.
+  it("applies no trace filter to spans without a sessionId", () => {
+    const sql = ownedAgentSpans({ hours: 24 });
+    expect(sql).not.toContain("TraceId");
+    expect(sql).toContain(AGENT_GATE);
   });
 });
