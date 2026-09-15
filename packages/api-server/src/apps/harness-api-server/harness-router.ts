@@ -26,7 +26,7 @@ import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
-import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
+import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
@@ -44,7 +44,7 @@ export function createHarnessRouter(deps: {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   templates: TemplatesService;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
@@ -68,7 +68,7 @@ export function createHarnessRouter(deps: {
     caseStudyInspection: deps.caseStudyInspection,
     carriesInspectorRole: deps.carriesInspectorRole,
     agentImage: deps.agentImage,
-    usageSummary: deps.usageSummary,
+    agentTelemetry: deps.agentTelemetry,
   });
   mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {

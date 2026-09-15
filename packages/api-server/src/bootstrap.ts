@@ -97,8 +97,8 @@ import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postg
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
   composeMetricsReader,
-  createAgentUsageSummary,
-  createUnavailableAgentUsageSummary,
+  createAgentTelemetry,
+  createUnavailableAgentTelemetry,
 } from "./modules/metrics/index.js";
 import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
@@ -1185,9 +1185,9 @@ export async function bootstrap() {
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
     carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
-    usageSummary: metricsReader
-      ? createAgentUsageSummary({ reader: metricsReader })
-      : createUnavailableAgentUsageSummary(),
+    agentTelemetry: metricsReader
+      ? createAgentTelemetry({ reader: metricsReader })
+      : createUnavailableAgentTelemetry(),
     wakeAgent: wakeAgentFor,
   };
   const extAuthzDeps = {

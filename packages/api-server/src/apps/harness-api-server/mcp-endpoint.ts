@@ -38,8 +38,8 @@ import {
   type CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import {
-  registerUsageSummaryTool,
-  type AgentUsageSummaryService,
+  registerAgentTelemetryTools,
+  type AgentTelemetryService,
 } from "../../modules/metrics/index.js";
 
 function resolveWorkspacePath(input: string): string {
@@ -103,7 +103,7 @@ export interface McpSessionDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -821,9 +821,9 @@ export function createMcpSession(
     },
   });
 
-  registerUsageSummaryTool(server, {
+  registerAgentTelemetryTools(server, {
     agentId,
-    usageSummary: deps.usageSummary,
+    agentTelemetry: deps.agentTelemetry,
   });
 
   server.tool(
@@ -870,7 +870,7 @@ export interface MountMcpDeps {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -917,7 +917,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudySubmissions: deps.caseStudySubmissions,
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
-      usageSummary: deps.usageSummary,
+      agentTelemetry: deps.agentTelemetry,
       supportsUserLookup,
       supportsMessageReactions,
     });
