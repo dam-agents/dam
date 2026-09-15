@@ -221,9 +221,13 @@ virtualization:
     # OpenShift: the plugin needs the privileged SCC; empty renders no binding.
     scc: ""
     domain: squat.ai
-    # Grants each device can be handed out at once; one VM runner pod
-    # needs one, more leaves room for a second consumer on the node.
-    count: 4
+    # How many grants of each device the plugin advertises, which is the cap
+    # on VM runners per node — and runners are per owner, so it is really a
+    # cap on owners per node. Neither /dev/kvm nor /dev/net/tun is consumed by
+    # opening it, so this is an accounting number the device-plugin API
+    # requires rather than a real resource; raise it rather than let a runner
+    # pend for want of a grant.
+    count: 16
     # Where the plugin runs, i.e. which nodes may host machines. Empty falls
     # back to `runner.nodeSelector` / `runner.tolerations`; with both empty it
     # runs on every schedulable node and advertises zero devices where there
