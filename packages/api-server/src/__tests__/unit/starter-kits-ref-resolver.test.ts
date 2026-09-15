@@ -9,16 +9,21 @@ const TAG_OBJECT = "1111111111111111111111111111111111111111";
 const TAG_COMMIT = "2222222222222222222222222222222222222222";
 const BRANCH_SHA = "3333333333333333333333333333333333333333";
 
-const ADVERTISEMENT = [
-  "001e# service=git-upload-pack",
-  "0000",
-  `0159${HEAD_SHA} HEAD multi_ack thin-pack symref=HEAD:refs/heads/main object-format=sha1`,
-  `005b${HEAD_SHA} refs/heads/main`,
-  `005b${BRANCH_SHA} refs/heads/next`,
-  `005b${TAG_OBJECT} refs/tags/v1.4.0`,
-  `005b${TAG_COMMIT} refs/tags/v1.4.0^{}`,
-  "0000",
-].join("\n");
+function pkt(payload: string): string {
+  return (payload.length + 4).toString(16).padStart(4, "0") + payload;
+}
+
+const ADVERTISEMENT =
+  pkt("# service=git-upload-pack\n") +
+  "0000" +
+  pkt(
+    `${HEAD_SHA} HEAD\0multi_ack thin-pack symref=HEAD:refs/heads/main object-format=sha1\n`,
+  ) +
+  pkt(`${HEAD_SHA} refs/heads/main\n`) +
+  pkt(`${BRANCH_SHA} refs/heads/next\n`) +
+  pkt(`${TAG_OBJECT} refs/tags/v1.4.0\n`) +
+  pkt(`${TAG_COMMIT} refs/tags/v1.4.0^{}\n`) +
+  "0000";
 
 function resolverReturning(body: string, ok = true) {
   return createGitRefResolver((async () => ({

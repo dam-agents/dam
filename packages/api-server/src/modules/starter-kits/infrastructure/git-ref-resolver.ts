@@ -15,12 +15,21 @@ export function parseRefAdvertisement(body: string): {
   let head: string | null = null;
   let symrefTarget: string | null = null;
 
-  for (const line of body.split("\n")) {
-    const payload = line.replace(/^[0-9a-f]{4}/, "").trim();
-    if (payload.length === 0) continue;
-    const [sha, rest] = [payload.slice(0, 40), payload.slice(41)];
-    if (!SHA.test(sha) || rest.length === 0) continue;
-    const name = rest.split("\0")[0]!.split(" ")[0]!;
+  let i = 0;
+  while (i + 4 <= body.length) {
+    const len = Number.parseInt(body.slice(i, i + 4), 16);
+    if (Number.isNaN(len)) break;
+    if (len === 0) {
+      i += 4;
+      continue;
+    }
+    const payload = body.slice(i + 4, i + len).trim();
+    i += len;
+
+    const sha = payload.slice(0, 40);
+    if (!SHA.test(sha)) continue;
+    const name = payload.slice(41).split("\0")[0]!.split(" ")[0]!;
+    if (name.length === 0) continue;
     if (name === "HEAD") {
       head = sha;
       const symref = /symref=HEAD:([^\s\0]+)/.exec(payload);
