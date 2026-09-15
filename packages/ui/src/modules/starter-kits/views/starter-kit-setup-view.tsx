@@ -34,6 +34,8 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
+import { kitBadges } from "../lib/catalog-cards.js";
+import { kitIcon } from "../lib/kit-icon.js";
 import {
   allowedHarnesses,
   buildStarterKitApplyInput,
@@ -105,6 +107,8 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
   );
   const apply = useApplyStarterKit();
   const selectAgent = useStore((s) => s.selectAgent);
+  const setView = useStore((s) => s.setView);
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   const connections = useAppConnections();
   const templates = useTemplates();
   const connectionTemplates = useConnectionTemplates();
@@ -214,16 +218,53 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
 
   const slackChannel = kit.channels.find((c) => c.type === "slack") ?? null;
 
+  const KitIcon = kitIcon(kit);
+
   return (
     <SetupPageShell
-      title={`Set up: ${kit.name}`}
-      subtitle={kit.description}
+      title="Create an agent"
+      subtitle="Configure your agent with a name, harness, and connections."
       footer={
         <Button onClick={() => void create()} disabled={!canApply}>
           {apply.isPending ? "Creating…" : "Create agent from this kit"}
         </Button>
       }
     >
+      <section className="mb-8">
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-accent/30 px-4 py-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+            <KitIcon size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">{kit.name}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {kitBadges(kit, connectionTemplates.data ?? [], templateById).map(
+                (b) => (
+                  <Badge key={b.key} variant="muted" size="sm">
+                    {b.label}
+                  </Badge>
+                ),
+              )}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigateToStarterKit(kit.catalog, kit.id)}
+          >
+            Change
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Create a plain agent instead"
+            onClick={() => setView("coding-agent-new")}
+          >
+            <Close size={16} />
+          </Button>
+        </div>
+      </section>
+
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
       <section className="mb-8">
@@ -289,7 +330,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
 
       {statuses.length > 0 && (
         <section className="mb-8">
-          <SectionLabel spaced>What this kit needs</SectionLabel>
+          <SectionLabel spaced>Connections</SectionLabel>
           <ul className="space-y-2 text-sm">
             {statuses.map(({ requirement, satisfied }) => (
               <li
@@ -304,6 +345,9 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                 <div className="min-w-0 flex-1">
                   <div>
                     {describeAccepts(requirement.accepts, templateById)}{" "}
+                    <Badge variant="template" size="sm">
+                      Starter Kit
+                    </Badge>{" "}
                     <span className="text-muted-foreground">
                       ({requirement.required ? "required" : "suggested"})
                     </span>
@@ -392,7 +436,7 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
 
       {kit.schedules.length > 0 && (
         <section className="mb-8">
-          <SectionLabel spaced>Schedules this kit creates</SectionLabel>
+          <SectionLabel spaced>Schedules</SectionLabel>
           <p className="mb-3 text-sm text-muted-foreground">
             Created with the author's defaults. Skip any you do not want; a
             disabled one is created switched off and is one toggle away under
@@ -412,6 +456,9 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{s.name}</span>
+                      <Badge variant="template" size="sm">
+                        Starter Kit
+                      </Badge>
                       {!skipped && (
                         <Badge
                           variant={s.enabled ? "success" : "muted"}
@@ -463,8 +510,8 @@ function StarterKitSetupForm({ kit }: { kit: StarterKitView }) {
             {kit.skillsInKit.map((skill) => (
               <li key={`bundled:${skill.name}`}>
                 {skill.name}{" "}
-                <Badge variant="muted" size="sm">
-                  in the kit
+                <Badge variant="template" size="sm">
+                  Starter Kit
                 </Badge>
                 {skill.description ? (
                   <span className="text-muted-foreground">
