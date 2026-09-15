@@ -97,7 +97,11 @@ export function createTurnRecovery(deps: {
     try {
       const status = await deps.turnStatus(turn.instanceName, turn.sessionId);
       verdict =
-        status === "pending" ? "alive" : status === "ended" ? "over" : "unknown";
+        status === "pending"
+          ? "alive"
+          : status === "ended"
+            ? "over"
+            : "unknown";
     } catch {
       verdict = (await deps.podGone(turn.instanceName).catch(() => false))
         ? "over"

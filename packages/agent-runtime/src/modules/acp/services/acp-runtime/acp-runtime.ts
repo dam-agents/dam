@@ -832,9 +832,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/runResult" && paramsSid) {
         const record = deps.runResults?.readFor(paramsSid) ?? null;
-        // A leftover marker with attempts > 0 is a turn boot recovery has
-        // given up on — nothing on this pod will ever finish it, so it must
-        // not read as pending, or a watcher waits on it forever.
         const leftover = deps.activeTurns
           .leftovers()
           .find((marker) => marker.sessionId === paramsSid);
