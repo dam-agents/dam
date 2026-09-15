@@ -30,7 +30,7 @@ function FieldRow({
   return (
     <div className="flex items-center justify-between gap-4 border-b border-kit-rule px-4 py-2.5 last:border-b-0">
       <span className="shrink-0 text-sm text-foreground">{label}</span>
-      {children}
+      <div className="w-[260px] shrink-0">{children}</div>
     </div>
   );
 }
@@ -127,7 +127,7 @@ export function KitScheduleCard({
           <div className="border-t border-kit-rule">
             <FieldRow label="Repeat">
               <Select
-                className="max-w-[180px]"
+                className="h-9"
                 value={isCron ? "cron" : "rrule"}
                 onChange={(e) =>
                   onChange({
@@ -150,7 +150,7 @@ export function KitScheduleCard({
 
             <FieldRow label={isCron ? "Cron" : "RRULE"}>
               <Input
-                className="h-9 max-w-[280px] font-mono text-right"
+                className="h-9 font-mono"
                 value={isCron ? timing.cron : timing.rrule}
                 onChange={(e) =>
                   onChange({
@@ -166,7 +166,7 @@ export function KitScheduleCard({
             {!isCron && (
               <FieldRow label="Timezone">
                 <Input
-                  className="h-9 max-w-[280px]"
+                  className="h-9"
                   value={timing.timezone}
                   onChange={(e) =>
                     onChange({
@@ -180,7 +180,7 @@ export function KitScheduleCard({
 
             <FieldRow label="Session type">
               <Select
-                className="max-w-[180px]"
+                className="h-9"
                 value={sessionMode}
                 onChange={(e) =>
                   onChange({
