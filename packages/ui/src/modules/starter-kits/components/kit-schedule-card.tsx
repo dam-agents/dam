@@ -5,11 +5,12 @@ import type {
   StarterKitScheduleOverride,
 } from "api-server-api";
 import { rruleToText } from "api-server-api";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ import {
 } from "../../schedules/forms/schedule-form-schema.js";
 import {
   kitScheduleFormValues,
+  kitScheduleModified,
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
 
@@ -44,6 +46,7 @@ export function KitScheduleCard({
   onToggleSkipped,
 }: Props) {
   const enabled = override?.enabled ?? schedule.enabled;
+  const [open, setOpen] = useState(false);
 
   const {
     control,
@@ -66,12 +69,13 @@ export function KitScheduleCard({
   const { body } = buildRRuleParts(values);
   const quietHoursError =
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
+  const modified = kitScheduleModified(schedule, values, enabled);
 
   return (
     <li
       data-testid={`starter-kit-schedule-${schedule.name}`}
       className={cn(
-        "overflow-hidden rounded-lg border",
+        "rounded-lg border",
         skipped
           ? "border-border bg-muted/30 opacity-70"
           : "border-kit-line bg-kit-surface",
@@ -101,6 +105,11 @@ export function KitScheduleCard({
             <Badge variant="kit" size="sm">
               Starter Kit
             </Badge>
+            {modified && !skipped && (
+              <Badge variant="muted" size="sm">
+                Modified
+              </Badge>
+            )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {body ? rruleToText(body) : "—"}
@@ -134,7 +143,23 @@ export function KitScheduleCard({
             </div>
           </div>
 
-          <div className="divide-y divide-kit-rule border-t border-kit-rule">
+          <div className="border-t border-kit-rule px-4 py-2">
+            <DisclosureToggle
+              open={open}
+              onToggle={() => setOpen((o) => !o)}
+              chevronSize={14}
+              chevronClassName="text-muted-foreground"
+              className="text-sm text-muted-foreground hover:text-foreground"
+              testId={`starter-kit-schedule-settings-${schedule.name}`}
+            >
+              Settings
+            </DisclosureToggle>
+          </div>
+
+          <div
+            hidden={!open}
+            className="divide-y divide-kit-rule border-t border-kit-rule"
+          >
             <ScheduleRecurrenceFields
               layout="rows"
               control={control}

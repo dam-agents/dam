@@ -66,6 +66,21 @@ export function kitScheduleFormValues(
   };
 }
 
+export function kitScheduleModified(
+  schedule: StarterKitSchedule,
+  values: ScheduleFormValues,
+  enabled: boolean,
+): boolean {
+  const original = overrideFromForm(
+    kitScheduleFormValues(schedule, undefined),
+    schedule.enabled,
+  );
+  return (
+    JSON.stringify(overrideFromForm(values, enabled)) !==
+    JSON.stringify(original)
+  );
+}
+
 export function overrideFromForm(
   values: ScheduleFormValues,
   enabled: boolean,
