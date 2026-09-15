@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -16,6 +18,7 @@ import {
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
   buildCodingAgentSetupInput,
@@ -34,6 +37,9 @@ export function CodingAgentSetupView() {
   );
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
+  const [browsingKits, setBrowsingKits] = useState(false);
 
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -93,6 +99,37 @@ export function CodingAgentSetupView() {
         </>
       }
     >
+      {kitsEnabled && (
+        <section className="mb-8">
+          <Callout tone="default">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm text-foreground">
+                Want a head start? Pick a starter kit to pre-fill your agent
+                setup.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBrowsingKits(true)}
+              >
+                Browse starter kits
+              </Button>
+            </div>
+          </Callout>
+        </section>
+      )}
+
+      {browsingKits && (
+        <BrowseKitsModal
+          onPick={(catalog, kitId) => {
+            setBrowsingKits(false);
+            navigateToStarterKit(catalog, kitId);
+          }}
+          onClose={() => setBrowsingKits(false)}
+          onStartFromScratch={() => setBrowsingKits(false)}
+        />
+      )}
+
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
       <ImageSection
