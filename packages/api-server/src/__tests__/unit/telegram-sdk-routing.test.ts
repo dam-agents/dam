@@ -1,6 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { Message, type StateAdapter, type Lock } from "chat";
+import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { configureLogger } from "../../core/logger.js";
 import {
   createTelegramChat,
@@ -423,5 +424,60 @@ describe("telegram slash command routing", () => {
     const h = await harness({ boundTo: "agent-1", relay: async () => {} });
     await sendCommand(h, DM_THREAD, "/unbind");
     expect(h.posts.join("\n")).toContain("Chat disconnected");
+  });
+});
+
+describe("telegram adapter update routing", () => {
+  it("routes a real command update through the adapter to the command handler", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { id: 4242, username: "krodo_bot", message_id: 1 },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    try {
+      const adapter = createTelegramAdapter({
+        botToken: "4242:test",
+        mode: "webhook",
+        allowUnverifiedWebhooks: true,
+      });
+      const seen: string[] = [];
+      const chat = createTelegramChat({
+        adapter: adapter as never,
+        state: createMemoryState(),
+        handleMessage: async (_thread, message) => {
+          seen.push(message.text);
+        },
+      });
+      await chat.initialize();
+
+      await adapter.handleWebhook(
+        new Request("https://example.test/telegram", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            update_id: 1,
+            message: {
+              message_id: 7,
+              date: 0,
+              text: "/bind",
+              entities: [{ offset: 0, length: 5, type: "bot_command" }],
+              from: { id: 7779420671, is_bot: false, first_name: "Tom" },
+              chat: { id: 7779420671, type: "private", first_name: "Tom" },
+            },
+          }),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(seen).toEqual(["/bind"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -153,11 +153,20 @@ export const TELEGRAM_COMMANDS = [
 
 async function publishTelegramCommands(botToken: string): Promise<void> {
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
-    });
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/setMyCommands`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
+      },
+    );
+    if (!res.ok) {
+      getLogger().warn(
+        { status: res.status },
+        "telegram.commands.publish_failed",
+      );
+    }
   } catch (err) {
     getLogger().warn(
       { error: String(err) },
