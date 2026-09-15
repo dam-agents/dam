@@ -316,6 +316,7 @@ interface PtySlot {
   lastInputAt: number;
   sawInput: boolean;
   detachedAt: number;
+  dying: boolean;
 }
 
 const ptySlots = new Map<string, PtySlot>();
@@ -373,7 +374,8 @@ function markTerminalSeen(sessionId: string): void {
  * viewer at a time, so an absent client is an unambiguous "not watching" — while
  * one is attached the seen stamp above covers it, and stamping both would race.
  * Output within PTY_DETACH_SETTLE_MS of a detach is the shell repainting after
- * the viewer's parting resize, so it counts as neither activity nor busy.
+ * the viewer's parting resize, and output from a slot being torn down is the
+ * harness dying on SIGHUP, which can take seconds. Neither is activity or busy.
  */
 function markTerminalActivity(sessionId: string): void {
   if (!sessionMetadata.get(sessionId))
@@ -385,7 +387,7 @@ function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot) return;
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
-  slot.detachedAt = Date.now();
+  slot.dying = true;
   try {
     slot.pty?.kill();
   } catch {}
@@ -512,6 +514,7 @@ function attachPty(
         lastInputAt: 0,
         sawInput: false,
         detachedAt: 0,
+        dying: false,
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
@@ -521,7 +524,8 @@ function attachPty(
         const now = Date.now();
         slot.lastOutputAt = now;
         const settling =
-          slot.detachedAt > 0 && now - slot.detachedAt < PTY_DETACH_SETTLE_MS;
+          slot.dying ||
+          (slot.detachedAt > 0 && now - slot.detachedAt < PTY_DETACH_SETTLE_MS);
         if (
           !settling &&
           slot.sawInput &&

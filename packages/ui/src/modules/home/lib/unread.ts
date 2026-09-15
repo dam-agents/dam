@@ -1,4 +1,4 @@
-import { type AttentionItem, SessionMode } from "api-server-api";
+import type { AttentionItem } from "api-server-api";
 
 import type { SessionView } from "../../../types.js";
 
@@ -15,7 +15,6 @@ export function isUnreadSession(
   options?: { open?: boolean },
 ): boolean {
   if (options?.open) return false;
-  if (session.mode === SessionMode.Terminal) return false;
   return laterThanSeen(session.updatedAt, session.seenAt);
 }
 
