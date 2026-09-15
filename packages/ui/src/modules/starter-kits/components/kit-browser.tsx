@@ -103,9 +103,12 @@ export function KitCard({
   );
 }
 
-export function useKitFilter(kits: readonly StarterKitView[]) {
+export function useKitFilter(
+  kits: readonly StarterKitView[],
+  initial: Filter = "all",
+) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(initial);
 
   const shown = useMemo(
     () =>

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { DialogHeader, Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
+import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
@@ -119,7 +120,10 @@ export function HomeView() {
 
   return (
     <div>
-      <HomeGreeting title="Activity" />
+      <HomeGreeting
+        title="Activity"
+        actions={<EntryPointButtons surface="home" />}
+      />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
           <div className="flex w-full items-center justify-between">

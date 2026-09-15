@@ -8,6 +8,7 @@ import {
   routeToPath,
   type SandboxSection,
   type SettingsTab,
+  type StarterKitCategory,
   type View,
 } from "../lib/routes.js";
 
@@ -28,6 +29,7 @@ export interface NavigationSlice {
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
+  starterKitCategory: StarterKitCategory | null;
   sandboxFocus: string | null;
   clearSandboxFocus: () => void;
   hydrateRoute: () => void;
@@ -41,6 +43,7 @@ export interface NavigationSlice {
   navigateToKnowledgeBases: () => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
+  navigateToStarterKits: (category?: StarterKitCategory) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -131,6 +134,14 @@ export const createNavigationSlice: StateCreator<
       agentId: null,
       sandboxFocus: null,
     });
+  },
+  navigateToStarterKits: (category) => {
+    const route = {
+      view: "starter-kits" as const,
+      ...(category ? { category } : {}),
+    };
+    history.pushState(null, "", routeToPath(route));
+    set({ ...routeToNavigationState(route), sandboxFocus: null });
   },
   navigateToKnowledgeBases: () => {
     history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));

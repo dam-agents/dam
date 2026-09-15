@@ -1,5 +1,5 @@
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -66,13 +66,18 @@ export function StarterKitsView() {
   const templates = useConnectionTemplates();
   const setView = useStore((s) => s.setView);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
+  const category = useStore((s) => s.starterKitCategory);
   const templateById = useMemo(
     () => new Map((templates.data ?? []).map((t) => [t.id, t])),
     [templates.data],
   );
 
   const all = useMemo(() => kits.data ?? [], [kits.data]);
-  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(all);
+  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(
+    all,
+    category ?? "all",
+  );
+  useEffect(() => setFilter(category ?? "all"), [category, setFilter]);
   const [featured, ...rest] = shown;
 
   return (
