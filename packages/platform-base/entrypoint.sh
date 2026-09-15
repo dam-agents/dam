@@ -19,6 +19,9 @@ set -eu
 # which is what lets a plain agent image do this; a container never sets the
 # variable and skips it.
 if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
+	if [ "$(id -u)" = 0 ]; then
+		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+	fi
 	if [ "$(stat -c %d /workspace 2>/dev/null)" = "$(stat -c %d / 2>/dev/null)" ]; then
 		echo "agent-entrypoint: /workspace is not the machine's storage disk; refusing to boot without persistence" >&2
 		exit 1
