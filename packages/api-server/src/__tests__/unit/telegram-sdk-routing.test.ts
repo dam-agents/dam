@@ -142,6 +142,8 @@ function makeMessage(threadId: string, text: string, id: string) {
 
 async function harness(opts: {
   boundTo: string | null;
+  isAdmin?: boolean;
+  termsAccepted?: boolean;
   relay: (
     agentId: string,
     thread: unknown,
@@ -163,12 +165,12 @@ async function harness(opts: {
       listByAgent: async () => [],
       unbind: vi.fn(async () => {}),
     },
-    isChatAdmin: async () => true,
+    isChatAdmin: async () => opts.isAdmin ?? true,
     decodeChatId: (threadId) => threadId.split(":")[1]!,
     fetchChatTitle: async () => "Team chat",
     oauthConfig,
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
-    isTermsAccepted: async () => true,
+    isTermsAccepted: async () => opts.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
     brandShort: "dam",
     relay: opts.relay as never,
@@ -278,5 +280,94 @@ describe("telegram Chat SDK routing", () => {
 
     expect(seen).toEqual([]);
     expect(posts).toEqual([]);
+  });
+});
+
+describe("telegram /start probe", () => {
+  async function send(
+    h: Awaited<ReturnType<typeof harness>>,
+    threadId: string,
+    text: string,
+    id = "s-1",
+  ) {
+    await h.chat.processMessage(
+      h.adapter as never,
+      threadId,
+      makeMessage(threadId, text, id),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  it("offers the bind link in an unbound DM", async () => {
+    const h = await harness({ boundTo: null, relay: async () => {} });
+    await send(h, DM_THREAD, "/start");
+    expect(h.seen).toEqual(["/start"]);
+    expect(h.posts.join("\n")).toContain("Connect an agent");
+  });
+
+  it("reports the existing binding in a bound DM", async () => {
+    const h = await harness({ boundTo: "agent-1", relay: async () => {} });
+    await send(h, DM_THREAD, "/start");
+    expect(h.posts.join("\n")).toContain("already connected");
+  });
+
+  it("carries a deep-link payload into the bind flow", async () => {
+    const h = await harness({ boundTo: null, relay: async () => {} });
+    await send(h, DM_THREAD, "/start abc123");
+    expect(h.seen).toEqual(["/start abc123"]);
+    expect(h.posts.join("\n")).toContain("Connect an agent");
+  });
+
+  it("answers /start@botname", async () => {
+    const h = await harness({ boundTo: null, relay: async () => {} });
+    await send(h, DM_THREAD, "/start@dam_dev_bot");
+    expect(h.posts.join("\n")).toContain("Connect an agent");
+  });
+
+  it("offers the bind link in an unbound group", async () => {
+    const h = await harness({ boundTo: null, relay: async () => {} });
+    await send(h, GROUP_THREAD, "/start");
+    expect(h.seen).toEqual(["/start"]);
+    expect(h.posts.join("\n")).toContain("Connect an agent");
+  });
+
+  it("refuses a non-admin in an unbound group", async () => {
+    const h = await harness({
+      boundTo: null,
+      isAdmin: false,
+      relay: async () => {},
+    });
+    await send(h, GROUP_THREAD, "/start");
+    expect(h.posts.join("\n")).toContain("Only group admins");
+  });
+
+  it("answers /start while an agent turn is still running", async () => {
+    let release: () => void = () => {};
+    const running = new Promise<void>((r) => {
+      release = r;
+    });
+    let began: () => void = () => {};
+    const started = new Promise<void>((r) => {
+      began = r;
+    });
+    const h = await harness({
+      boundTo: "agent-1",
+      relay: async () => {
+        began();
+        await running;
+      },
+    });
+
+    h.chat.processMessage(
+      h.adapter as never,
+      DM_THREAD,
+      makeMessage(DM_THREAD, "howdy", "s-a"),
+    );
+    await started;
+    await send(h, DM_THREAD, "/start", "s-b");
+
+    expect(h.seen).toEqual(["howdy", "/start"]);
+    expect(h.posts.join("\n")).toContain("already connected");
+    release();
   });
 });
