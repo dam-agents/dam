@@ -345,3 +345,57 @@ describe("turns line up with the conversation", () => {
     }
   });
 });
+
+describe("turn boundaries when the prompt event is missing", () => {
+  it("splits a session's opening exchanges on an idle gap", async () => {
+    /**
+     * TEST_SCENARIO: the live install emitted no prompt event for a session's
+     * first exchange, so without a second boundary two exchanges merged into
+     * one row.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({ at: "2026-09-14T12:00:00.000Z" }),
+        log({ at: "2026-09-14T12:00:01.000Z" }),
+        log({ at: "2026-09-14T12:05:00.000Z" }),
+        log({
+          at: "2026-09-14T12:10:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(3);
+  });
+
+  it("does not split on a quiet stretch inside a prompted turn", async () => {
+    /**
+     * TEST_SCENARIO: a long tool run goes silent for minutes, and that must not
+     * read as a new exchange — the gap rule applies only before the first
+     * prompt, where no better boundary exists.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({ at: "2026-09-14T12:09:00.000Z" }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(1);
+  });
+});

@@ -3,6 +3,7 @@ import type { TimelineSpan } from "api-server-api";
 import type { UnattachedLog } from "./attach-logs.js";
 
 export const TURN_BOUNDARY_EVENT = "claude_code.user_prompt";
+export const LEADING_GAP_MS = 60_000;
 const CALL_EVENT = "claude_code.api_request";
 const ERROR_EVENT = "claude_code.api_error";
 
@@ -112,11 +113,21 @@ export function groupIntoTurns(
 
   if (items.length === 0) return [];
 
+  const firstPrompt = items.findIndex(
+    (i) => i.log?.event === TURN_BOUNDARY_EVENT,
+  );
+  const leadingEnd = firstPrompt === -1 ? items.length : firstPrompt;
+
   const groups: Item[][] = [];
   let current: Item[] = [];
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     const startsTurn = item.log?.event === TURN_BOUNDARY_EVENT;
-    if (startsTurn && current.length > 0) {
+    const previous = current.at(-1);
+    const idleSplit =
+      index < leadingEnd &&
+      previous !== undefined &&
+      item.ms - previous.endMs >= LEADING_GAP_MS;
+    if ((startsTurn || idleSplit) && current.length > 0) {
       groups.push(current);
       current = [];
     }

@@ -7,6 +7,7 @@ export {
 } from "./domain/attach-logs.js";
 export {
   groupIntoTurns,
+  LEADING_GAP_MS,
   TURN_BOUNDARY_EVENT,
   type TurnGroup,
 } from "./domain/group-turns.js";

@@ -1,6 +1,8 @@
 import type { TimelineLog, TimelineSpan, TurnDetail } from "api-server-api";
 
-export interface WaterfallSpan {
+export interface SpanRow {
+  kind: "span";
+  key: string;
   span: TimelineSpan;
   depth: number;
   offsetPct: number;
@@ -8,11 +10,20 @@ export interface WaterfallSpan {
   logs: TimelineLog[];
 }
 
+export interface LogRow {
+  kind: "log";
+  key: string;
+  log: TimelineLog;
+  offsetPct: number;
+}
+
+export type TimelineRow = SpanRow | LogRow;
+
 export interface Waterfall {
-  rows: WaterfallSpan[];
-  looseLogs: TimelineLog[];
+  rows: TimelineRow[];
   startMs: number;
   totalMs: number;
+  traceCount: number;
 }
 
 const startOf = (iso: string): number => {
@@ -25,13 +36,18 @@ export function spanKindLabel(name: string): string {
   return short === "" ? name : short;
 }
 
-export function buildWaterfall(trace: TurnDetail): Waterfall {
-  const spans = [...trace.spans].sort(
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the time axis is the substrate and the span tree
+ * is an enrichment on top of it, so a record with no trace and a span with a
+ * trace of its own are both placed rather than one of them being set aside.
+ */
+export function buildWaterfall(turn: TurnDetail): Waterfall {
+  const spans = [...turn.spans].sort(
     (a, b) => startOf(a.startedAt) - startOf(b.startedAt),
   );
+  const known = new Set(spans.map((s) => s.spanId));
 
   const byParent = new Map<string, TimelineSpan[]>();
-  const known = new Set(spans.map((s) => s.spanId));
   for (const span of spans) {
     const parent = known.has(span.parentSpanId) ? span.parentSpanId : "";
     const siblings = byParent.get(parent);
@@ -41,35 +57,41 @@ export function buildWaterfall(trace: TurnDetail): Waterfall {
 
   const logsBySpan = new Map<string, TimelineLog[]>();
   const looseLogs: TimelineLog[] = [];
-  for (const log of trace.logs) {
-    if (log.attachedTo === null || !known.has(log.attachedTo)) {
+  for (const log of turn.logs) {
+    if (log.attachedTo !== null && known.has(log.attachedTo)) {
+      const bucket = logsBySpan.get(log.attachedTo);
+      if (bucket) bucket.push(log);
+      else logsBySpan.set(log.attachedTo, [log]);
+    } else {
       looseLogs.push(log);
-      continue;
     }
-    const bucket = logsBySpan.get(log.attachedTo);
-    if (bucket) bucket.push(log);
-    else logsBySpan.set(log.attachedTo, [log]);
   }
 
-  const starts = spans.map((s) => startOf(s.startedAt));
-  const ends = spans.map((s) => startOf(s.startedAt) + s.durationMs);
-  const logTimes = trace.logs.map((l) => startOf(l.at));
-  const startMs = Math.min(...starts, ...logTimes, Number.POSITIVE_INFINITY);
-  const endMs = Math.max(...ends, ...logTimes, Number.NEGATIVE_INFINITY);
-  const base = Number.isFinite(startMs) ? startMs : 0;
-  const totalMs = Number.isFinite(endMs) && endMs > base ? endMs - base : 1;
+  const marks = [
+    ...spans.map((s) => startOf(s.startedAt)),
+    ...spans.map((s) => startOf(s.startedAt) + s.durationMs),
+    ...turn.logs.map((l) => startOf(l.at)),
+  ].filter((n) => n > 0);
+  const startMs = marks.length > 0 ? Math.min(...marks) : 0;
+  const endMs = marks.length > 0 ? Math.max(...marks) : 0;
+  const totalMs = endMs > startMs ? endMs - startMs : 1;
 
-  const rows: WaterfallSpan[] = [];
+  const pct = (ms: number): number =>
+    Math.max(0, Math.min(100, ((ms - startMs) / totalMs) * 100));
+
+  const spanRows: SpanRow[] = [];
   const walk = (parent: string, depth: number): void => {
     for (const span of byParent.get(parent) ?? []) {
-      const from = startOf(span.startedAt) - base;
-      rows.push({
+      const from = startOf(span.startedAt);
+      spanRows.push({
+        kind: "span",
+        key: `span:${span.spanId}`,
         span,
         depth,
-        offsetPct: Math.max(0, Math.min(100, (from / totalMs) * 100)),
+        offsetPct: pct(from),
         widthPct: Math.max(
-          0.4,
-          Math.min(100, (span.durationMs / totalMs) * 100),
+          0.5,
+          Math.min(100 - pct(from), (span.durationMs / totalMs) * 100),
         ),
         logs: (logsBySpan.get(span.spanId) ?? []).sort(
           (a, b) => startOf(a.at) - startOf(b.at),
@@ -80,21 +102,48 @@ export function buildWaterfall(trace: TurnDetail): Waterfall {
   };
   walk("", 0);
 
-  return {
-    rows,
-    looseLogs: looseLogs.sort((a, b) => startOf(a.at) - startOf(b.at)),
-    startMs: base,
-    totalMs,
-  };
-}
+  const logRows: LogRow[] = looseLogs.map((log, i) => ({
+    kind: "log",
+    key: `log:${log.at}:${log.event}:${i}`,
+    log,
+    offsetPct: pct(startOf(log.at)),
+  }));
 
-export function logOffsetPct(
-  log: TimelineLog,
-  startMs: number,
-  totalMs: number,
-): number {
-  const at = startOf(log.at) - startMs;
-  return Math.max(0, Math.min(100, (at / totalMs) * 100));
+  const rowTime = (row: TimelineRow): number =>
+    row.kind === "span" ? startOf(row.span.startedAt) : startOf(row.log.at);
+
+  const topLevel: TimelineRow[] = [];
+  const nested = new Map<string, SpanRow[]>();
+  for (const row of spanRows) {
+    if (row.depth === 0) topLevel.push(row);
+    else {
+      const owner = row.span.parentSpanId;
+      const bucket = nested.get(owner);
+      if (bucket) bucket.push(row);
+      else nested.set(owner, [row]);
+    }
+  }
+
+  const ordered: TimelineRow[] = [...topLevel, ...logRows].sort(
+    (a, b) => rowTime(a) - rowTime(b),
+  );
+
+  const withChildren: TimelineRow[] = [];
+  const emit = (row: TimelineRow): void => {
+    withChildren.push(row);
+    if (row.kind !== "span") return;
+    for (const child of nested.get(row.span.spanId) ?? []) emit(child);
+  };
+  for (const row of ordered) emit(row);
+
+  return {
+    rows: withChildren,
+    startMs,
+    totalMs,
+    traceCount: new Set(
+      turn.logs.map((l) => l.traceId).filter((id) => id !== ""),
+    ).size,
+  };
 }
 
 const COST_KEYS = ["cost_usd_micros"] as const;
@@ -124,4 +173,27 @@ export function logSummary(log: TimelineLog): string {
     return value === undefined || value === "" ? [] : [`${key}=${value}`];
   });
   return parts.join(" · ");
+}
+
+export function logEventLabel(event: string): string {
+  return event.startsWith("claude_code.") ? event.slice(12) : event;
+}
+
+export interface Placement {
+  label: string;
+  exact: boolean;
+}
+
+export function placementOf(log: TimelineLog): Placement {
+  switch (log.attachedBy) {
+    case "request-id":
+      return { label: "matched to this call by its request id", exact: true };
+    case "span-id":
+      return { label: "matched to the span it was emitted in", exact: true };
+    default:
+      return {
+        label: "placed by its timestamp — no link recorded",
+        exact: false,
+      };
+  }
 }
