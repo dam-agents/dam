@@ -27,6 +27,12 @@ export interface AttentionList {
   dismissed: DismissedEntry[];
 }
 
+export interface AttentionDismissal {
+  kind: AttentionItemKind;
+  id: string;
+}
+
 export interface AttentionService {
   listForOwner(): Promise<AttentionList>;
+  dismiss(input: { items: readonly AttentionDismissal[] }): Promise<void>;
 }

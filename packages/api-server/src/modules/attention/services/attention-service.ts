@@ -1,4 +1,5 @@
 import type {
+  AttentionDismissal,
   AttentionItem,
   AttentionList,
   AttentionService,
@@ -30,7 +31,22 @@ function toItem(row: AttentionRecordRow): AttentionItem {
 export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
+  ownsApproval: (approvalId: string) => Promise<boolean>;
 }): AttentionService {
+  const ownsItem = async ({
+    kind,
+    id,
+  }: AttentionDismissal): Promise<boolean> => {
+    if (kind === "approval") return deps.ownsApproval(id);
+    const separator = id.indexOf(":");
+    if (separator <= 0) return false;
+    const record = await deps.repo.getRecord(
+      id.slice(0, separator),
+      id.slice(separator + 1),
+    );
+    return record?.ownerSub === deps.ownerSub;
+  };
+
   return {
     async listForOwner(): Promise<AttentionList> {
       const [records, dismissals] = await Promise.all([
@@ -45,6 +61,14 @@ export function createAttentionService(deps: {
           at: d.dismissedAt.toISOString(),
         })),
       };
+    },
+
+    async dismiss({ items }) {
+      const at = new Date();
+      for (const item of items) {
+        if (!(await ownsItem(item))) continue;
+        await deps.repo.setDismissal(deps.ownerSub, item.kind, item.id, at);
+      }
     },
   };
 }

@@ -412,7 +412,9 @@ export {
   isAmbientThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
+export { attentionDismissInputSchema } from "./modules/attention/schemas.js";
 export type {
+  AttentionDismissal,
   AttentionItem,
   AttentionItemKind,
   AttentionList,

@@ -22,6 +22,10 @@ type RawState = typeof attentionState.$inferSelect;
 
 export interface AttentionRepository {
   listForAgent(agentId: string): Promise<AttentionRecordRow[]>;
+  getRecord(
+    agentId: string,
+    sessionId: string,
+  ): Promise<AttentionRecordRow | null>;
   listForOwner(ownerSub: string, limit: number): Promise<AttentionRecordRow[]>;
   upsertRecord(row: AttentionRecordRow): Promise<void>;
   listDismissals(userSub: string): Promise<DismissalRow[]>;
@@ -74,6 +78,20 @@ export function createAttentionRepository(db: Db): AttentionRepository {
         .from(attentionRecords)
         .where(eq(attentionRecords.agentId, agentId));
       return rows.map(toRecord);
+    },
+
+    async getRecord(agentId, sessionId) {
+      const [row] = await db
+        .select()
+        .from(attentionRecords)
+        .where(
+          and(
+            eq(attentionRecords.agentId, agentId),
+            eq(attentionRecords.sessionId, sessionId),
+          ),
+        )
+        .limit(1);
+      return row ? toRecord(row) : null;
     },
 
     async listForOwner(ownerSub, limit) {

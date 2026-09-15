@@ -1,4 +1,4 @@
-import { type AttentionItem,SessionMode } from "api-server-api";
+import { type AttentionItem, SessionMode } from "api-server-api";
 
 import type { SessionView } from "../../../types.js";
 
