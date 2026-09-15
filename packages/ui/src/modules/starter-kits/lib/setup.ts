@@ -146,7 +146,7 @@ export function preselectedGrants(
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
 export function shortKitVersion(version: string): string {
-  return FULL_SHA.test(version) ? version.slice(0, 7) : version;
+  return FULL_SHA.test(version) ? version.slice(0, 9) : version;
 }
 
 function isProviderTemplate(id: string): id is ProviderPresetType {

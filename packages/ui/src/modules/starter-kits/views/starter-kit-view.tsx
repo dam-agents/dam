@@ -32,6 +32,7 @@ import {
   harnessesLine,
   kitKnowledgeBaseNote,
   kitScheduleCadence,
+  shortKitVersion,
 } from "../lib/setup.js";
 
 const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
@@ -319,7 +320,9 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
               <Section label="Definition">
                 <Row
                   title={kit.seed.url.replace("https://github.com/", "")}
-                  detail={`Cloned by the agent during onboarding${kit.seed.ref ? ` at ${kit.seed.ref}` : ""}`}
+                  detail={`Cloned by the agent during onboarding${
+                    kit.seed.ref ? ` at ${shortKitVersion(kit.seed.ref)}` : ""
+                  }`}
                   trailing={
                     <a
                       href={kit.seed.url}

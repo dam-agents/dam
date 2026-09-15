@@ -187,7 +187,7 @@ describe("buildStarterKitApplyInput", () => {
 describe("shortKitVersion", () => {
   test("shortens a full commit sha and leaves refs alone", () => {
     expect(shortKitVersion("4c525de66db6de74e9c8fd8342e443228c17aa69")).toBe(
-      "4c525de",
+      "4c525de66",
     );
     expect(shortKitVersion("v1.4.0")).toBe("v1.4.0");
     expect(shortKitVersion("local")).toBe("local");
