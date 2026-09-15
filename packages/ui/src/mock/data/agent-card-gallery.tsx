@@ -2,16 +2,13 @@ import { EdgeDevice, Time } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
-import { emitToast } from "../../lib/toast.js";
 import { AgentRow } from "../../modules/agents/components/agent-row.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { ArtifactPreviewDialog } from "../../modules/artifacts/components/artifact-preview-dialog.js";
 import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import { NotificationRow } from "../../modules/home/components/notification-row.js";
-import { useStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import {
   bareAgent,
@@ -463,41 +460,6 @@ function CardDemo({ title, note, agent, temporaryDraw }: CardDemoProps) {
   );
 }
 
-function ToastDemo() {
-  const openApprovals = useStore((s) => s.openApprovals);
-  const agentNames = [
-    "CI Pipeline Agent",
-    "Code Review Agent",
-    "Security Scanner",
-    "Build Agent",
-    "Docs Sync Agent",
-  ];
-
-  const fireToast = () => {
-    const name = agentNames[Math.floor(Math.random() * agentNames.length)]!;
-    emitToast({
-      kind: "warning",
-      message: `${name} needs your approval`,
-      ttl: 6000,
-      action: {
-        label: "Review",
-        onClick: openApprovals,
-      },
-    });
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      <Button variant="outline" size="sm" onClick={fireToast}>
-        Fire approval toast
-      </Button>
-      <span className="text-sm text-muted-foreground">
-        Click to preview the toast notification
-      </span>
-    </div>
-  );
-}
-
 export function AgentCardGallery() {
   document.title = "Notifications";
   return (
@@ -506,10 +468,6 @@ export function AgentCardGallery() {
         title="Production card designs"
         description="Every card state from prod rendered side by side. Review each one to decide what stays or changes."
       />
-
-      <div className="mb-6">
-        <ToastDemo />
-      </div>
 
       <div className="flex flex-col gap-8">
         <NotificationRowSection />

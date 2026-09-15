@@ -1,8 +1,9 @@
-import { ListChecked } from "@carbon/icons-react";
+import { ListChecked, ShieldAlert } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { fireApprovalToast } from "../modules/notifications/hooks/use-approval-toasts.js";
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
 import { setMockEmpty, setMockFirstRun } from "./handlers.js";
@@ -34,6 +35,14 @@ function useReviewScreens(): ReviewScreen[] {
   ];
 }
 
+const TOAST_AGENTS = [
+  "CI Pipeline Agent",
+  "Code Review Agent",
+  "Security Scanner",
+  "Build Agent",
+  "Docs Sync Agent",
+];
+
 export function MockStateBar() {
   const [mode, setMode] = useState<"populated" | "empty" | "first-run">(
     "populated",
@@ -41,6 +50,7 @@ export function MockStateBar() {
   const [indexOpen, setIndexOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
+  const openApprovals = useStore((s) => s.openApprovals);
 
   const pick = (next: "populated" | "empty" | "first-run") => {
     setMode(next);
@@ -128,6 +138,29 @@ export function MockStateBar() {
                 </button>
               );
             })}
+          </div>
+          <div className="border-t border-border px-2 py-2">
+            <button
+              type="button"
+              onClick={() => {
+                const name =
+                  TOAST_AGENTS[
+                    Math.floor(Math.random() * TOAST_AGENTS.length)
+                  ]!;
+                fireApprovalToast(name, openApprovals);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors hover:bg-warning/10"
+            >
+              <ShieldAlert size={16} className="shrink-0 text-warning" />
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium text-foreground">
+                  Fire approval toast
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  Preview the toast notification
+                </p>
+              </div>
+            </button>
           </div>
         </div>
       )}
