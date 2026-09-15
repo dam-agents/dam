@@ -2,6 +2,8 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
+  COMMAND_PATTERN,
+  TELEGRAM_COMMANDS,
   createTelegramMessageHandler,
   type ThreadLike,
 } from "../../modules/channels/infrastructure/telegram.js";
@@ -209,5 +211,16 @@ describe("telegram message handler", () => {
       true,
     );
     expect(h.relay).not.toHaveBeenCalled();
+  });
+
+  it("handles every command it advertises in the Telegram menu", async () => {
+    for (const { command } of TELEGRAM_COMMANDS) {
+      const h = harness({ boundTo: "agent-1" });
+      const thread = makeThread({ isDM: true });
+      await h.handle(thread, { text: `/${command}`, author: author() }, true);
+      expect(COMMAND_PATTERN.test(`/${command}`)).toBe(true);
+      expect(h.relay).not.toHaveBeenCalled();
+      expect(thread.posts.length).toBeGreaterThan(0);
+    }
   });
 });

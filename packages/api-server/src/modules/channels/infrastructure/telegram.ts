@@ -146,6 +146,26 @@ async function fetchTelegramBotUsername(
   }
 }
 
+export const TELEGRAM_COMMANDS = [
+  { command: "bind", description: "Connect this chat to one of your agents" },
+  { command: "unbind", description: "Disconnect this chat from its agent" },
+];
+
+async function publishTelegramCommands(botToken: string): Promise<void> {
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
+    });
+  } catch (err) {
+    getLogger().warn(
+      { error: String(err) },
+      "telegram.commands.publish_failed",
+    );
+  }
+}
+
 export interface ThreadLike {
   id: string;
   isDM: boolean;
@@ -633,6 +653,7 @@ export function createTelegramWorker(deps: {
         await chat.initialize();
         await polling.startPolling();
         bot = { chat, adapter: polling };
+        await publishTelegramCommands(botToken);
         if (!username)
           username = await fetchTelegramBotUsername(botToken).catch(() => null);
         process.stderr.write(
