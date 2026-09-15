@@ -213,6 +213,9 @@ func createOnlyDrift(applied, desired MachineSpec) string {
 }
 
 func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
+	if !machineID.MatchString(id) {
+		return fmt.Errorf("invalid machine id %q", id)
+	}
 	state, err := s.Runtime.State(id)
 	if err != nil {
 		return err
@@ -283,7 +286,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar"); fileExists(archive) {
 		image = archive
 	}
-	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(s.machineDir(id), "ca")); err != nil {
+	dir, err := s.machineDir(id)
+	if err != nil {
+		return err
+	}
+	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca")); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
@@ -293,7 +300,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 }
 
 func (s *Server) writeCA(id, ca string) error {
-	dir := filepath.Join(s.machineDir(id), "ca")
+	base, err := s.machineDir(id)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(base, "ca")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -323,7 +334,12 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := os.RemoveAll(s.machineDir(id)); err != nil {
+	dir, err := s.machineDir(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -502,16 +518,24 @@ func (s *Server) allocatePort(id string) (int, error) {
 	for _, e := range entries {
 		used[s.port(e.Name())] = true
 	}
+	dir, err := s.machineDir(id)
+	if err != nil {
+		return 0, err
+	}
 	for p := s.PortMin; p <= s.PortMax; p++ {
 		if !used[p] {
-			return p, os.WriteFile(filepath.Join(s.machineDir(id), "port"), []byte(strconv.Itoa(p)), 0o644)
+			return p, os.WriteFile(filepath.Join(dir, "port"), []byte(strconv.Itoa(p)), 0o644)
 		}
 	}
 	return 0, errors.New("no free machine port")
 }
 
 func (s *Server) port(id string) int {
-	b, err := os.ReadFile(filepath.Join(s.machineDir(id), "port"))
+	dir, err := s.machineDir(id)
+	if err != nil {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "port"))
 	if err != nil {
 		return 0
 	}
@@ -520,7 +544,11 @@ func (s *Server) port(id string) int {
 }
 
 func (s *Server) readSpec(id string) *MachineSpec {
-	b, err := os.ReadFile(filepath.Join(s.machineDir(id), "spec.json"))
+	dir, err := s.machineDir(id)
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "spec.json"))
 	if err != nil {
 		return nil
 	}
@@ -537,10 +565,19 @@ func (s *Server) writeSpec(id string, spec MachineSpec) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.machineDir(id), "spec.json"), b, 0o600)
+	dir, err := s.machineDir(id)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "spec.json"), b, 0o600)
 }
 
-func (s *Server) machineDir(id string) string { return filepath.Join(s.StateDir, "machines", id) }
+func (s *Server) machineDir(id string) (string, error) {
+	if !machineID.MatchString(id) {
+		return "", fmt.Errorf("invalid machine id %q", id)
+	}
+	return filepath.Join(s.StateDir, "machines", id), nil
+}
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
