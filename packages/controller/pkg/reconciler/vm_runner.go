@@ -66,7 +66,7 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Secret, PVC and Service are created once and never re-applied, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
-func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.ObjectMeta, update func(context.Context, *metav1.ObjectMeta) error) error {
+func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.ObjectMeta, update func() error) error {
 	if len(meta.OwnerReferences) > 0 {
 		return nil
 	}
@@ -75,7 +75,7 @@ func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.Ob
 		return nil
 	}
 	meta.OwnerReferences = refs
-	return update(ctx, meta)
+	return update()
 }
 
 func (r *AgentReconciler) runnerName(owner string) string {
@@ -169,7 +169,7 @@ func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) 
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
-		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
 			_, err := r.client.CoreV1().Secrets(ns).Update(ctx, existing, metav1.UpdateOptions{})
 			return err
 		}); err != nil {
@@ -242,7 +242,7 @@ func selfSignedCert(names ...string) (string, string, error) {
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
 			_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
 			return err
 		})
@@ -287,7 +287,7 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 	if err != nil {
 		return err
 	}
-	return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func(ctx context.Context, _ *metav1.ObjectMeta) error {
+	return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
 		_, err := r.client.CoreV1().Services(ns).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
