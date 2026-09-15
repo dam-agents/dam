@@ -32,6 +32,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
   },
+  {
+    id: "agent-timeline",
+    label: "Agent timeline",
+    description:
+      "Adds a Timeline section to each agent, showing the turns it ran as a waterfall of spans with each call’s log record and cost attached, and an export of the underlying records.",
+  },
 ];
 
 function FeatureRowCard({

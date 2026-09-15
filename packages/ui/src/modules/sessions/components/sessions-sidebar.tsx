@@ -21,6 +21,7 @@ import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
+import { downloadTimelineExport } from "../../timeline/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
@@ -103,6 +104,7 @@ export function SessionsSidebar({
     selectedAgent,
     features?.["session-costs"] ?? false,
   );
+  const timelineEnabled = features?.["agent-timeline"] ?? false;
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
@@ -163,6 +165,17 @@ export function SessionsSidebar({
           onResumeSession(s.sessionId, s.mode);
         }}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
+        {...(timelineEnabled && selectedAgent
+          ? {
+              onExportTimeline: () =>
+                void downloadTimelineExport({
+                  agentId: selectedAgent,
+                  sessionId: s.sessionId,
+                  signal: "logs",
+                  sinceHours: 24 * 30,
+                }),
+            }
+          : {})}
       />
     );
   };

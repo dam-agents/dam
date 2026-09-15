@@ -10,6 +10,10 @@ import {
   createMetricsService,
   createSessionTypeSpend,
 } from "../../../modules/metrics/index.js";
+import {
+  createDisabledTimelineService,
+  createTimelineService,
+} from "../../../modules/timeline/index.js";
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
@@ -60,6 +64,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     schedulesBoot,
     listRegisteredAgentIds,
     metricsReader,
+    timelineReader,
     sessionDirectory,
     terms,
     e2e,
@@ -320,6 +325,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           }),
         })
       : createDisabledMetricsService();
+    const timeline = timelineReader
+      ? createTimelineService({ reader: timelineReader, listOwnedAgents })
+      : createDisabledTimelineService();
 
     return {
       templates,
@@ -347,6 +355,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       liveEvents,
       podSessions,
       metrics,
+      timeline,
       terms,
       usage: composeUsageForOwner(user.sub),
       e2e,
