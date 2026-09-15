@@ -222,6 +222,9 @@ func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
+	if spec.Image != "" && (!imageRef.MatchString(spec.Image) || strings.Contains(spec.Image, "..")) {
+		return fmt.Errorf("invalid image reference %q", spec.Image)
+	}
 	state, err := s.Runtime.State(id)
 	if err != nil {
 		return err
