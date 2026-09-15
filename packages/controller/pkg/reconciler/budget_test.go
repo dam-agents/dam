@@ -595,3 +595,36 @@ func TestBudgetMemoParkedAgentIsNotTrackedForRetry(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Empty(t, r.ParkedForRetry())
 }
+
+// TEST_SCENARIO: a peer on the vm backend holds compute while it runs, and it has no agent StatefulSet — only the paired gateway — so the ceiling has to count it from that gateway or an owner could start past their budget by using vm agents.
+func TestBudgetCountsAVMPeerByItsGateway(t *testing.T) {
+	peer, gatewaySS := runningPeer("peer", "3900m", "7Gi")
+	peer.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	gatewaySS.Name = GatewayName("peer")
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+
+	r, _ := setupReconciler(t, agent, gatewaySS)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, "my-agent"), "the vm peer's size counts, so this start is over budget and parks")
+}
+
+// TEST_SCENARIO: a container peer is counted by its own StatefulSet, never by its gateway — the gateway exists for a moment before the agent StatefulSet does, and a peer must not read as holding compute in that window.
+func TestBudgetDoesNotCountAContainerPeerByItsGatewayAlone(t *testing.T) {
+	peer, gatewaySS := runningPeer("peer", "3900m", "7Gi")
+	gatewaySS.Name = GatewayName("peer")
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+
+	r, _ := setupReconciler(t, agent, gatewaySS)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"), "a container peer with no agent StatefulSet is not up")
+}
