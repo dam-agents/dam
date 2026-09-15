@@ -136,11 +136,12 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 			continue
 		}
 		for _, id := range ids {
-			_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
+			agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
 			if err == nil {
-				continue
-			}
-			if !k8serrors.IsNotFound(err) {
+				if agent.GetLabels()[envoyOwnerLabel] == runner.owner {
+					continue
+				}
+			} else if !k8serrors.IsNotFound(err) {
 				slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
 				continue
 			}
@@ -157,9 +158,15 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 			slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", runner.owner, "error", err)
 			continue
 		}
-		if !anyVMAgent(agents.Items) {
-			r.deleteRunner(ctx, runner.owner)
+		if anyVMAgent(agents.Items) {
+			continue
 		}
+		left, err := runner.client.List(ctx)
+		if err != nil || len(left) > 0 {
+			slog.Info("orphan machine GC: runner kept, it is not empty", "owner", runner.owner, "machines", len(left), "error", err)
+			continue
+		}
+		r.deleteRunner(ctx, runner.owner)
 	}
 }
 
