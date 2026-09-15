@@ -3,7 +3,9 @@ package reconciler
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -483,4 +485,29 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	assert.False(t, node.spec("my-agent").Running, "the machine is stopped, not just the gateway scaled")
 	require.NotEmpty(t, node.puts)
 	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
+}
+
+// TEST_SCENARIO: the controller trusts a runner by the certificate it minted for it, so that certificate has to name the Service the controller dials — a cert for the wrong name fails the handshake, and anything that is not a certificate at all would silently leave the connection unverified.
+func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
+	r, _ := setupReconciler(t, vmAgentCR())
+	r.config.ReleaseName = "platform"
+	r.config.ReleaseNamespace = "default"
+	name := r.runnerName(testOwner)
+
+	certPEM, keyPEM, err := selfSignedCert(name, r.runnerHost(testOwner))
+	require.NoError(t, err)
+	require.NotEmpty(t, keyPEM)
+
+	block, _ := pem.Decode([]byte(certPEM))
+	require.NotNil(t, block, "the minted material is a PEM block")
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err, "and it parses as a certificate")
+	assert.Contains(t, cert.DNSNames, r.runnerHost(testOwner), "the cert names the Service the controller dials")
+	assert.Contains(t, cert.DNSNames, name)
+
+	_, err = vmrunner.NewClient("https://"+r.runnerHost(testOwner)+":4600", "token", certPEM)
+	require.NoError(t, err, "the controller trusts what it minted")
+
+	_, err = vmrunner.NewClient("https://x:4600", "token", "not-a-cert")
+	require.Error(t, err, "and refuses to dial with something that is not a certificate")
 }

@@ -556,3 +556,27 @@ func TestARestartedRunnerRepublishesItsPorts(t *testing.T) {
 	assert.Equal(t, "hello", string(buf[:n]))
 	assert.Equal(t, 1, guest(), "and it reaches the same guest, on the same port it had before")
 }
+
+// TEST_SCENARIO: a delete lands while work is still queued behind it; that work must not run, or it rebuilds a guest for an Agent that no longer exists and leaves it running with nothing left to collect it.
+func TestWorkQueuedBeforeADeleteIsDropped(t *testing.T) {
+	h := newHarness(t)
+	ran := make(chan struct{}, 1)
+
+	lock := h.node.lock("m1")
+	lock.Lock()
+	h.node.spawn("m1", StateCreating, func() error {
+		ran <- struct{}{}
+		return nil
+	})
+
+	h.node.mu.Lock()
+	h.node.gens["m1"]++
+	h.node.mu.Unlock()
+	lock.Unlock()
+
+	select {
+	case <-ran:
+		t.Fatal("work queued against a superseded generation ran anyway")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
