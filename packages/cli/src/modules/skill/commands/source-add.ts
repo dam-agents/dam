@@ -1,6 +1,7 @@
 import { isCancel, text } from "@clack/prompts";
 import { Command } from "commander";
-import { skillCreateSourceInputSchema } from "api-server-api";
+import { normalizeGitUrl } from "agent-runtime-api";
+import { skillCreateSourceFieldsSchema } from "api-server-api";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -34,7 +35,10 @@ export function buildSourceAddCommand(deps: {
     .option("--json", "emit the created SkillSource as JSON")
     .addHelpText(
       "after",
-      "\nThe name defaults to the URL path (github.com/acme/skills → acme/skills);\n" +
+      "\nThe URL may be written any usual way — with or without https://, with a\n" +
+        ".git suffix or a trailing slash, or copied from the address bar including\n" +
+        "/tree/<branch>/<dir>, whose directory becomes the source path.\n" +
+        "\nThe name defaults to the URL path (github.com/acme/skills → acme/skills);\n" +
         "pass --name to override. Adding a URL that a Platform or Agent source already\n" +
         "uses shadows it — removing your source re-exposes the original.\n" +
         "\nExamples:\n" +
@@ -49,25 +53,37 @@ export function buildSourceAddCommand(deps: {
       ) => {
         const json = opts.json ?? false;
 
-        try {
-          new URL(gitUrl);
-        } catch {
-          process.stderr.write(`error: '${gitUrl}' is not a valid URL\n`);
+        const normalized = normalizeGitUrl(gitUrl);
+        if (!normalized) {
+          process.stderr.write(
+            `error: '${gitUrl}' is not a repository URL — expected something like https://github.com/owner/repo\n`,
+          );
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const name = await resolveName(gitUrl, opts.name, json);
+        if (!json && normalized.ref !== undefined) {
+          process.stderr.write(
+            `note: branch '${normalized.ref}' in the URL is ignored — skills are read from the repository default branch\n`,
+          );
+        }
+        if (!json && normalized.path !== undefined && opts.path === undefined) {
+          process.stderr.write(
+            `note: scanning '${normalized.path}' from the URL; pass --path to override\n`,
+          );
+        }
+
+        const name = await resolveName(normalized.gitUrl, opts.name, json);
         const nameCheck =
-          skillCreateSourceInputSchema.shape.name.safeParse(name);
+          skillCreateSourceFieldsSchema.shape.name.safeParse(name);
         if (!nameCheck.success) {
           const msg = nameCheck.error.issues[0]?.message ?? "invalid name";
           process.stderr.write(`error: ${msg}\n`);
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        let path: string | undefined;
+        let path: string | undefined = normalized.path;
         if (opts.path !== undefined) {
-          const pathCheck = skillCreateSourceInputSchema.shape.path.safeParse(
+          const pathCheck = skillCreateSourceFieldsSchema.shape.path.safeParse(
             opts.path,
           );
           if (!pathCheck.success) {
@@ -88,7 +104,7 @@ export function buildSourceAddCommand(deps: {
 
         const result = await deps
           .createSkillsService(host)
-          .addSource({ name, gitUrl, path });
+          .addSource({ name, gitUrl: normalized.gitUrl, path });
         if (!result.ok) {
           if (result.error.kind === "source-exists") {
             process.stderr.write(

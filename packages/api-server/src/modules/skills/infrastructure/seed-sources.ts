@@ -1,3 +1,4 @@
+import { canonicalSourceLocation } from "agent-runtime-api";
 import { z } from "zod/v4";
 import { skillSourcePathSchema, type SkillSource } from "api-server-api";
 
@@ -58,12 +59,13 @@ export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
       );
     }
     seen.set(slug, entry.name);
-    return {
-      id: `${SEED_ID_PREFIX}${slug}`,
-      name: entry.name,
-      gitUrl: entry.gitUrl,
-      ...(entry.path ? { path: entry.path } : {}),
-    };
+    const location = canonicalSourceLocation(entry.gitUrl, entry.path);
+    if (!location) {
+      throw new Error(
+        `SKILL_SOURCES_SEED: ${JSON.stringify(entry.gitUrl)} is not a repository URL`,
+      );
+    }
+    return { id: `${SEED_ID_PREFIX}${slug}`, name: entry.name, ...location };
   });
 }
 

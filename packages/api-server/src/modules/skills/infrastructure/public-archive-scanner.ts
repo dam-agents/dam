@@ -129,7 +129,10 @@ async function findSkillDirs(
       }
       throw err;
     }
-    const dirs = await skillDirsIn(repoDir, root, entries);
+    const dirs = [
+      ...((await isSkillDir(root)) ? [path.relative(repoDir, root)] : []),
+      ...(await skillDirsIn(repoDir, root, entries)),
+    ];
     if (dirs.length === 0) {
       throw new SkillSourcePathError("path-empty", subPath, version);
     }
@@ -154,6 +157,15 @@ async function skillDirsUnder(
     return [];
   }
   return skillDirsIn(repoDir, root, entries);
+}
+
+async function isSkillDir(dir: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(dir, "SKILL.md"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function skillDirsIn(

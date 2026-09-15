@@ -186,6 +186,56 @@ describe("scanPublicGithubArchive", () => {
     expect(skills.map((s) => s.name)).toEqual(["sub-skill"]);
   });
 
+  // TEST_SCENARIO: the source path names a skill's own directory — what a shared link to a skill folder resolves to. The directory is the skill itself, not a parent of skills.
+  it("scans a subPath that is itself a skill directory", async () => {
+    const sha = "c1c2c3c4c5c6c7c8c9c0d1d2d3d4d5d6d7d8d9d0";
+    const tarball = await makeTarball("acme-mono-c1c2c3c", {
+      "skills/html-deck/SKILL.md":
+        "---\nname: html-deck\ndescription: Decks\n---\nbody",
+      "skills/other/SKILL.md": "---\nname: other\n---\nbody",
+    });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/mono/tar.gz/${sha}`,
+      ),
+    );
+
+    const skills = await scanPublicGithubArchive(
+      "https://github.com/acme/mono",
+      "skills/html-deck",
+    );
+
+    expect(skills.map((s) => ({ name: s.name, dir: s.dir }))).toEqual([
+      { name: "html-deck", dir: "skills/html-deck" },
+    ]);
+  });
+
+  // TEST_SCENARIO: the same path is a skill and a parent of skills — both were reachable before the path could name a skill, so neither may be lost.
+  it("scans a subPath that is a skill and a parent of skills", async () => {
+    const sha = "d1d2d3d4d5d6d7d8d9d0e1e2e3e4e5e6e7e8e9e0";
+    const tarball = await makeTarball("acme-mono-d1d2d3d", {
+      "skills/bundle/SKILL.md": "---\nname: bundle\n---\nbody",
+      "skills/bundle/inner/SKILL.md": "---\nname: inner\n---\nbody",
+    });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/mono/tar.gz/${sha}`,
+      ),
+    );
+
+    const skills = await scanPublicGithubArchive(
+      "https://github.com/acme/mono",
+      "skills/bundle",
+    );
+
+    expect(skills.map((s) => s.dir).sort()).toEqual([
+      "skills/bundle",
+      "skills/bundle/inner",
+    ]);
+  });
+
   it("rejects a traversal subPath", async () => {
     const sha = "b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1";
     const tarball = await makeTarball("acme-mono-b0a9f8e", {

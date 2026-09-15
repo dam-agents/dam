@@ -1,13 +1,19 @@
+import { normalizeGitUrl } from "agent-runtime-api";
 import type { SkillSource } from "api-server-api";
 
 export function resolveSourceRef(
   sources: readonly SkillSource[],
   ref: string,
 ): SkillSource | null {
-  if (ref.includes("://")) {
-    return sources.find((s) => s.gitUrl === ref) ?? null;
-  }
-  return sources.find((s) => s.id === ref) ?? null;
+  const byId = sources.find((s) => s.id === ref);
+  if (byId) return byId;
+  const normalized = normalizeGitUrl(ref);
+  if (!normalized) return null;
+  return (
+    sources.find(
+      (s) => normalizeGitUrl(s.gitUrl)?.gitUrl === normalized.gitUrl,
+    ) ?? null
+  );
 }
 
 export function sourceKind(s: SkillSource): "Platform" | "Agent" | "User" {

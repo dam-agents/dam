@@ -60,6 +60,7 @@ export function SkillsModals({
     case "add-source":
       return (
         <AddSkillSourceModal
+          sources={surface.sources}
           onClose={onClose}
           onCreate={surface.createSource}
           onCreateSkills={surface.createLocalSkills}
