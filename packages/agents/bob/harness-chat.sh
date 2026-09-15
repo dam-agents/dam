@@ -14,4 +14,8 @@ approvals=$(node /app/bob-settings.mjs) || exit 1
 # allowlist of safe commands is reachable from the TUI only.
 set --
 [ "$approvals" = "ask" ] || set -- "$@" --auto-approve
-exec bob acp --trust --accept-license "$@"
+# Bob's OTLP exporter builds its own https.Agent, which Node's env-proxy
+# support skips; the preload hands every agent the proxy env, or the export
+# goes direct and dies at the egress policy without a trace.
+bob_bin=$(mise which bob) || exit 1
+exec node --require /app/bob-proxy-agent.cjs "$bob_bin" acp --trust --accept-license "$@"

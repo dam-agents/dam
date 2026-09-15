@@ -8,6 +8,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 |---|---|---|
 | Harness | `bobshell` 2.0.2 (installed from the `bob-shell` COS bucket tarball) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
 | Settings bootstrap | `bob-settings.mjs` | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
+| Proxy preload | `bob-proxy-agent.cjs` | Loaded into the harness with `node --require`; makes every Node HTTP agent honour `HTTPS_PROXY`, which Bob's OTLP exporter otherwise ignores, so spend telemetry reaches the platform collector through the gateway |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
 ## ACP
@@ -131,7 +132,7 @@ Less common toggles, not surfaced on the provider card.
 | `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)). |
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
-| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. |
+| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. The exporter itself ignores `HTTPS_PROXY`; the `bob-proxy-agent.cjs` preload is what routes it through the gateway. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. |
 
 Gone, and silently ignored if an old agent still sets them: `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` and `BOB_SHIM_TRACE` (both belonged to the bridge — resume is native and there are no shim frames to trace).
 
@@ -143,8 +144,8 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
-| `harness-terminal.sh` | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
+| `harness-chat.sh` | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp` under `node --require /app/bob-proxy-agent.cjs`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
+| `harness-terminal.sh` | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI the same way. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
 
 ## Session history
 

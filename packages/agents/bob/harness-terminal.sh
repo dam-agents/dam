@@ -11,4 +11,8 @@ set --
 [ "$approvals" = "ask" ] || set -- "$@" --auto-approve
 # Each terminal open starts a fresh TUI task; Bob's task index can't map onto
 # $HARNESS_SESSION_ID. Users can resume prior tasks with `bob -r`.
-exec bob chat --trust --accept-license "$@"
+# Bob's OTLP exporter builds its own https.Agent, which Node's env-proxy
+# support skips; the preload hands every agent the proxy env, or the export
+# goes direct and dies at the egress policy without a trace.
+bob_bin=$(mise which bob) || exit 1
+exec node --require /app/bob-proxy-agent.cjs "$bob_bin" chat --trust --accept-license "$@"
