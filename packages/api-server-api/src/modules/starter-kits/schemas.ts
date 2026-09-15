@@ -4,6 +4,7 @@ import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
+import { quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
 export const starterKitIdSchema = z
@@ -152,6 +153,7 @@ export const starterKitScheduleOverrideSchema = z.object({
   timing: starterKitScheduleTimingSchema.optional(),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   enabled: z.boolean().optional(),
+  quietHours: z.array(quietWindowSchema).optional(),
 });
 
 export const starterKitApplyInputSchema = z.object({

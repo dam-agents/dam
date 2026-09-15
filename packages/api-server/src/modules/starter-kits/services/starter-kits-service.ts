@@ -159,6 +159,7 @@ export function createStarterKitsService(
               timezone: timing.timezone,
               task: s.task,
               sessionMode,
+              ...(o?.quietHours ? { quietHours: o.quietHours } : {}),
             });
       if (!enabled) await deps.schedules.toggle(created.id);
     }

@@ -1,16 +1,32 @@
 import { Close, Information, Time, Undo } from "@carbon/icons-react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   StarterKitSchedule,
   StarterKitScheduleOverride,
 } from "api-server-api";
+import { rruleToText } from "api-server-api";
+import { useEffect } from "react";
+import { useForm, useWatch } from "react-hook-form";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import { describeTiming, effectiveTiming } from "../lib/setup.js";
+import { QuietHoursEditor } from "../../schedules/forms/quiet-hours-editor.js";
+import {
+  ScheduleRecurrenceFields,
+  ScheduleSessionTypeField,
+} from "../../schedules/forms/schedule-fields.js";
+import {
+  buildRRuleParts,
+  scheduleFormSchema,
+  type ScheduleFormValues,
+} from "../../schedules/forms/schedule-form-schema.js";
+import {
+  kitScheduleFormValues,
+  overrideFromForm,
+} from "../lib/kit-schedule-form.js";
 
 interface Props {
   schedule: StarterKitSchedule;
@@ -20,21 +36,6 @@ interface Props {
   onToggleSkipped: () => void;
 }
 
-function FieldRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-kit-rule px-4 py-2.5 last:border-b-0">
-      <span className="shrink-0 text-sm text-foreground">{label}</span>
-      <div className="w-[260px] shrink-0">{children}</div>
-    </div>
-  );
-}
-
 export function KitScheduleCard({
   schedule,
   override,
@@ -42,10 +43,29 @@ export function KitScheduleCard({
   onChange,
   onToggleSkipped,
 }: Props) {
-  const timing = effectiveTiming(schedule, override);
   const enabled = override?.enabled ?? schedule.enabled;
-  const sessionMode = override?.sessionMode ?? schedule.sessionMode ?? "fresh";
-  const isCron = "cron" in timing;
+
+  const {
+    control,
+    register,
+    formState: { errors },
+  } = useForm<ScheduleFormValues>({
+    resolver: zodResolver(scheduleFormSchema),
+    defaultValues: kitScheduleFormValues(schedule, override),
+    mode: "onChange",
+  });
+  const values = useWatch({ control }) as ScheduleFormValues;
+  const serialised = JSON.stringify(values);
+
+  useEffect(() => {
+    const patch = overrideFromForm(values, enabled);
+    if (patch) onChange(patch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialised, enabled]);
+
+  const { body } = buildRRuleParts(values);
+  const quietHoursError =
+    errors.quietHours?.message ?? errors.quietHours?.root?.message;
 
   return (
     <li
@@ -81,27 +101,17 @@ export function KitScheduleCard({
             <Badge variant="kit" size="sm">
               Starter Kit
             </Badge>
-            {skipped && (
-              <Badge variant="muted" size="sm">
-                skipped
-              </Badge>
-            )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {describeTiming(timing)}
+            {body ? rruleToText(body) : "—"}
           </p>
         </div>
-        <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            className="size-4 accent-[var(--c-kit)]"
-            checked={enabled}
-            disabled={skipped}
-            onChange={(e) => onChange({ enabled: e.target.checked })}
-            aria-label={`Create ${schedule.name} switched on`}
-          />
-          On
-        </label>
+        <Switch
+          checked={enabled}
+          disabled={skipped}
+          onCheckedChange={(on) => onChange({ enabled: on })}
+          aria-label={`Create ${schedule.name} switched on`}
+        />
         <Button
           variant="ghost"
           size="sm"
@@ -124,75 +134,27 @@ export function KitScheduleCard({
             </div>
           </div>
 
-          <div className="border-t border-kit-rule">
-            <FieldRow label="Repeat">
-              <Select
-                className="h-9"
-                value={isCron ? "cron" : "rrule"}
-                onChange={(e) =>
-                  onChange({
-                    timing:
-                      e.target.value === "cron"
-                        ? { cron: "0 9 * * 1-5" }
-                        : {
-                            rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
-                            timezone:
-                              Intl.DateTimeFormat().resolvedOptions().timeZone,
-                          },
-                  })
-                }
-                aria-label={`How ${schedule.name} repeats`}
-              >
-                <option value="cron">Cron (UTC)</option>
-                <option value="rrule">Custom (RRULE)</option>
-              </Select>
-            </FieldRow>
-
-            <FieldRow label={isCron ? "Cron" : "RRULE"}>
-              <Input
-                className="h-9 font-mono"
-                value={isCron ? timing.cron : timing.rrule}
-                onChange={(e) =>
-                  onChange({
-                    timing: isCron
-                      ? { cron: e.target.value }
-                      : { rrule: e.target.value, timezone: timing.timezone },
-                  })
-                }
-                aria-label={`${schedule.name} ${isCron ? "cron" : "rrule"} expression`}
+          <div className="divide-y divide-kit-rule border-t border-kit-rule">
+            <ScheduleRecurrenceFields
+              layout="rows"
+              control={control}
+              register={register}
+              errors={errors}
+              values={values}
+              accentClassName="bg-kit text-white"
+            />
+            <ScheduleSessionTypeField
+              layout="rows"
+              control={control}
+              accentClassName="bg-kit text-white"
+            />
+            <div className="px-4 py-3">
+              <QuietHoursEditor
+                control={control}
+                register={register}
+                {...(quietHoursError ? { error: quietHoursError } : {})}
               />
-            </FieldRow>
-
-            {!isCron && (
-              <FieldRow label="Timezone">
-                <Input
-                  className="h-9"
-                  value={timing.timezone}
-                  onChange={(e) =>
-                    onChange({
-                      timing: { rrule: timing.rrule, timezone: e.target.value },
-                    })
-                  }
-                  aria-label={`${schedule.name} timezone`}
-                />
-              </FieldRow>
-            )}
-
-            <FieldRow label="Session type">
-              <Select
-                className="h-9"
-                value={sessionMode}
-                onChange={(e) =>
-                  onChange({
-                    sessionMode: e.target.value as "continuous" | "fresh",
-                  })
-                }
-                aria-label={`${schedule.name} session type`}
-              >
-                <option value="fresh">Fresh</option>
-                <option value="continuous">Continuous</option>
-              </Select>
-            </FieldRow>
+            </div>
           </div>
         </>
       )}
