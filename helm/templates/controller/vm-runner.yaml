@@ -1,12 +1,12 @@
 {{- if .Values.virtualization.enabled }}
 {{- /*
-The sandbox node: one pod that holds /dev/kvm and runs vm-backend agents as
+The VM runner: one pod that holds /dev/kvm and runs vm-backend agents as
 smolvm microVMs, driven by the controller over its machine API (see
 `virtualization` in values.yaml). Its Service is headless so the controller
 can publish the pod's own IP and machine ports as each vm agent's endpoint.
 Machine disks live on the PVC, so a pod restart keeps every workspace.
 */}}
-{{- $name := printf "%s-sandbox-node" (include "platform.fullname" .) }}
+{{- $name := printf "%s-vm-runner" (include "platform.fullname" .) }}
 {{- $node := .Values.virtualization.node }}
 apiVersion: v1
 kind: ServiceAccount
@@ -15,7 +15,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -24,7 +24,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -41,12 +41,12 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
 spec:
   clusterIP: None
   selector:
     {{- include "platform.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
   ports:
     - name: machine-api
       port: 4600
@@ -59,7 +59,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
   {{- include "platform.annotations" (dict "root" $ "component" $node) | nindent 2 }}
 spec:
   replicas: 1
@@ -70,12 +70,12 @@ spec:
   selector:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: sandbox-node
+      app.kubernetes.io/component: vm-runner
   template:
     metadata:
       labels:
         {{- include "platform.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: sandbox-node
+        app.kubernetes.io/component: vm-runner
         # smolvm NATs each machine out of a nested netns; ztunnel's redirect
         # breaks that, so this pod stays off the ambient mesh.
         istio.io/dataplane-mode: none
@@ -93,12 +93,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: sandbox-node
+        - name: vm-runner
           image: "{{ $node.image.repository }}:{{ $node.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ $node.image.pullPolicy | default "IfNotPresent" }}
           args:
-            - --tls-cert=/etc/platform-sandbox/tls.crt
-            - --tls-key=/etc/platform-sandbox/tls.key
+            - --tls-cert=/etc/vm-runner/tls.crt
+            - --tls-key=/etc/vm-runner/tls.key
             - --allow-from={{ join "," $node.ingressCidrs }}
           ports:
             - name: machine-api
@@ -134,10 +134,10 @@ spec:
               mountPath: /var/lib/smolvm
               subPath: smolvm
             - name: state
-              mountPath: /var/lib/platform-sandbox
-              subPath: platform-sandbox
+              mountPath: /var/lib/vm-runner
+              subPath: vm-runner
             - name: credentials
-              mountPath: /etc/platform-sandbox
+              mountPath: /etc/vm-runner
               readOnly: true
       volumes:
         - name: state
@@ -156,7 +156,7 @@ metadata:
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "platform.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: sandbox-node
+    app.kubernetes.io/component: vm-runner
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

@@ -1,5 +1,5 @@
-// TEST_OVERVIEW: the sandbox node turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
-package sandboxnode
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+package vmrunner
 
 import (
 	"bytes"
@@ -290,7 +290,7 @@ func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
 	for pid, cmdline := range map[string]string{
 		"100":  "/proc/self/exe\x00_boot-vm\x00/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
 		"101":  "/proc/self/exe\x00_boot-vm\x00/home/smolvm/.cache/smolvm/vms/abc1234/boot-config.json",
-		"self": "sandbox-node",
+		"self": "vm-runner",
 	} {
 		require.NoError(t, os.MkdirAll(filepath.Join(proc, pid), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(proc, pid, "cmdline"), []byte(cmdline), 0o644))

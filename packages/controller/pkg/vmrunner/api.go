@@ -1,4 +1,4 @@
-package sandboxnode
+package vmrunner
 
 type MachineSpec struct {
 	Image      string            `json:"image"`

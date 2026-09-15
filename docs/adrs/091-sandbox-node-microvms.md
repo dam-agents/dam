@@ -1,13 +1,13 @@
 ---
 id: 091
-title: The vm Backend runs on a sandbox node pod holding /dev/kvm, not under KubeVirt
+title: The vm Backend runs on a VM runner pod holding /dev/kvm, not under KubeVirt
 status: accepted
 subsystem: platform-topology
-tags: [vm-backend, smolvm, kubevirt, sandbox-node]
-summary: A vm agent is a persistent smolvm microVM inside one chart-rendered sandbox node pod that holds /dev/kvm as a device grant and is driven through a small node agent; KubeVirt, its containerDisk image pipeline and the virtiofs PVC sharing are removed.
+tags: [vm-backend, smolvm, kubevirt, vm-runner]
+summary: A vm agent is a persistent smolvm microVM inside one chart-rendered VM runner pod that holds /dev/kvm as a device grant and is driven through a small node agent; KubeVirt, its containerDisk image pipeline and the virtiofs PVC sharing are removed.
 ---
 
-# ADR-091: The vm Backend runs on a sandbox node pod holding /dev/kvm, not under KubeVirt
+# ADR-091: The vm Backend runs on a VM runner pod holding /dev/kvm, not under KubeVirt
 
 **Date:** 2026-09-14
 **Status:** Accepted
@@ -19,9 +19,9 @@ The `vm` Backend shipped as a KubeVirt VirtualMachine inside a virt-launcher pod
 
 ## Decision
 
-A vm agent is a persistent smolvm machine on a **sandbox node**: one chart-rendered pod (a single-replica Deployment) that runs smolvm and a small node agent from one image, holds `/dev/kvm` and `/dev/net/tun` as device-plugin resources (a generic device plugin the chart ships, so any node with KVM qualifies and no KubeVirt is needed; KubeVirt's own plugins where they exist) and needs only NET_ADMIN beyond a container's default capabilities. The controller drives the node agent's TLS, token-authenticated machine API (ensure with the desired power state, status, delete) through a headless Service. The node agent drives smolvm through its CLI: smolvm's HTTP daemon only accepts registry images, which would have cost a local cluster a registry, and its CLI can resize a machine in place where the daemon cannot. The controller keeps everything else: the paired gateway StatefulSet and its policies are unchanged, the agent StatefulSet is simply not rendered, and the agent Service becomes selector-less with the node pod's IP and the machine's published port as its endpoint so the api-server dials a vm agent like a pod. Hibernation stops the machine; wake starts it; delete removes it with its disk.
+A vm agent is a persistent smolvm machine on a **VM runner**: one chart-rendered pod (a single-replica Deployment) that runs smolvm and a small node agent from one image, holds `/dev/kvm` and `/dev/net/tun` as device-plugin resources (a generic device plugin the chart ships, so any node with KVM qualifies and no KubeVirt is needed; KubeVirt's own plugins where they exist) and needs only NET_ADMIN beyond a container's default capabilities. The controller drives the node agent's TLS, token-authenticated machine API (ensure with the desired power state, status, delete) through a headless Service. The node agent drives smolvm through its CLI: smolvm's HTTP daemon only accepts registry images, which would have cost a local cluster a registry, and its CLI can resize a machine in place where the daemon cannot. The controller keeps everything else: the paired gateway StatefulSet and its policies are unchanged, the agent StatefulSet is simply not rendered, and the agent Service becomes selector-less with the node pod's IP and the machine's published port as its endpoint so the api-server dials a vm agent like a pod. Hibernation stops the machine; wake starts it; delete removes it with its disk.
 
-The guest image is the ordinary agent image plus docker and k3s — an OCI image, no disk build, pulled by the node from its registry or taken from a locally loaded archive where no registry exists. Persistence is the machine's own storage disk on the node pod's volume: the boot bind-mounts the agent's persisted paths from it, so there are no per-agent PVCs, no virtiofs, and no storage-class or migration involvement; size, env and restart requests are applied in place (stop, update, start) so the disk stays, and only the image is fixed for a machine's life. Egress is the node's per-machine allowlist set to exactly the paired gateway's ClusterIP, which the machine reaches over the pod network; that replaces the per-pair NetworkPolicy for vm agents.
+The guest image is the ordinary agent image — the same one the container Backend runs, no VM-specific build; docker and k3s inside the guest are a follow-up — pulled by the runner from its registry or taken from a locally loaded archive where no registry exists. Persistence is the machine's own storage disk on the node pod's volume: the boot bind-mounts the agent's persisted paths from it, so there are no per-agent PVCs, no virtiofs, and no storage-class or migration involvement; size, env and restart requests are applied in place (stop, update, start) so the disk stays, and only the image is fixed for a machine's life. Egress is the node's per-machine allowlist set to exactly the paired gateway's ClusterIP, which the machine reaches over the pod network; that replaces the per-pair NetworkPolicy for vm agents.
 
 One node per install. Placement across several nodes and per-user fair-use limits for machines are follow-ups; locally the install gives the k3s Lima VM nested virtualization and the same pod runs there.
 

@@ -49,7 +49,7 @@ PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agen
 AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
-WORKLOADS="nous openevolve shinkaevolve gepa skydiscover claude-code-vm"
+WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
 # claude-code derivatives outside the agents matrix. Like the agents, their
 # chart tag is pinned by source sha (pin-tags) and main pushes reuse the
 # unchanged ones.
@@ -175,9 +175,6 @@ self_check() {
   chk "$(base_of gepa)" claude-code
   chk "$(base_of skydiscover)" claude-code
   chk "$(base_of claude-code)" platform-base
-  chk "$(base_of claude-code-vm)" claude-code
-  has "$(effective_paths claude-code-vm)" packages/agents/claude-code
-  has "$(effective_paths claude-code-vm)" packages/agents/claude-code-vm
   chk "$(base_of platform-base)" ""
   chk "$(base_of keycloak)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
@@ -197,11 +194,10 @@ self_check() {
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'platform_base=true'
   has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
-  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","claude-code-vm"]'
+  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"platform-base":"'
-  has "$out" '"claude-code-vm":"'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
@@ -217,7 +213,7 @@ case "${1:-}" in
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller sandbox-node platform-base keycloak $AGENTS $SLOW_BUILDS ;;
+  list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $SLOW_BUILDS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
   *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;

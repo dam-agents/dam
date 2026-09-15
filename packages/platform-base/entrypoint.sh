@@ -12,6 +12,22 @@
 # writable at build time (see Dockerfile).
 set -eu
 
+# On the vm Backend the root filesystem is a throwaway overlay and only the
+# machine's storage disk at /workspace survives a stop, so every path the
+# controller declared persistent (PLATFORM_VM_PERSIST_PATHS) is bind-mounted
+# from there, seeded from the image on its first boot. The guest runs as root,
+# which is what lets a plain agent image do this; a container never sets the
+# variable and skips it.
+for path in $(printf '%s' "${PLATFORM_VM_PERSIST_PATHS:-}" | tr ',' ' '); do
+	store="/workspace$path"
+	if [ ! -d "$store" ]; then
+		mkdir -p "$store"
+		[ -d "$path" ] && cp -a "$path/." "$store/"
+	fi
+	mkdir -p "$path"
+	mount --bind "$store" "$path"
+done
+
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt
 extracted=/etc/pki/ca-trust/extracted
@@ -62,10 +78,8 @@ mkdir -p "$home/work"
 # The symlink persists on the volume but /tmp is fresh every pod, so the
 # target is (re)created each boot to keep the link from dangling.
 mkdir -p /tmp/agent-cache
-# On the VM backend $HOME is unprivileged virtiofs, where a non-root caller
-# cannot create symlinks (virtiofsd lacks CAP_CHOWN, the guest kernel returns
-# EPERM); the VM userdata pre-creates the link as root, and if that ever
-# misses, a real ~/.cache on the share is a perf wart — never a boot failure.
+# A failing swap leaves a real ~/.cache on the workspace volume — a perf wart,
+# never a boot failure.
 if [ ! -L "$home/.cache" ]; then
 	# Probe with a scratch link first so a failing swap (e.g. non-root on
 	# unprivileged virtiofs, which EPERMs symlink creation) leaves any

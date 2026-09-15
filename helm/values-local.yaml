@@ -23,14 +23,14 @@ controller:
     templateDefaults:
       imagePullPolicy: IfNotPresent
 
-# The sandbox node (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
+# The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
 # nested virtualization, handed to the pod by the chart's own device plugin
 # exactly as on a cluster without KubeVirt. Rendered only with
 # virtualization.enabled.
 virtualization:
   node:
     image:
-      repository: platform-sandbox-node
+      repository: platform-vm-runner
       tag: latest
       pullPolicy: Never
     storage: 40Gi
@@ -81,7 +81,7 @@ agentTemplates:
   # space-separated `--set foo=bar` is silently dropped.
   claude-code-vm:
     image:
-      repository: platform-claude-code-vm
+      repository: platform-claude-code
       tag: latest
 
   codex:

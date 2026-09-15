@@ -15,18 +15,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
+	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 const (
-	vmInnerClusterNoProxy = "10.144.0.0/16,10.145.0.0/16"
-	vmPersistPathsEnv     = "PLATFORM_VM_PERSIST_PATHS"
-	vmReadinessPoll       = 3 * time.Second
+	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
+	vmReadinessPoll   = 3 * time.Second
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (sandboxnode.MachineStatus, error) {
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, error) {
 	name := agent.Name
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
@@ -35,15 +34,13 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, agentProxyAddr(r.config, gatewayIP)) {
 		env[e.Name] = e.Value
 	}
-	env["NO_PROXY"] += "," + vmInnerClusterNoProxy
-	env["no_proxy"] = env["NO_PROXY"]
 	for _, e := range defaults.Env {
 		env[e.Name] = e.Value
 	}
 	if spec.SecretRef != "" {
 		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, spec.SecretRef, metav1.GetOptions{})
 		if err != nil {
-			return sandboxnode.MachineStatus{}, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
+			return vmrunner.MachineStatus{}, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
 		}
 		for k, v := range sec.Data {
 			env[k] = string(v)
@@ -66,14 +63,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
-		return sandboxnode.MachineStatus{}, errLeafSecretPending
+		return vmrunner.MachineStatus{}, errLeafSecretPending
 	}
 	if err != nil {
-		return sandboxnode.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
+		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
 	cpu, mem := r.limitsOf(spec)
-	machine := sandboxnode.MachineSpec{
+	machine := vmrunner.MachineSpec{
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
 		MemoryMiB:  max(int(mem.Value()>>20), 1),
@@ -84,7 +81,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
 	}
-	st, err := r.vmNode.Ensure(ctx, name, machine)
+	st, err := r.vmRunner.Ensure(ctx, name, machine)
 	if err != nil {
 		return st, err
 	}
@@ -96,9 +93,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, fmt.Errorf("applying agent service: %w", err)
 	}
 	if st.Port > 0 {
-		addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", r.config.VM.NodeAddress)
+		addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", r.config.VM.RunnerAddress)
 		if err != nil || len(addrs) == 0 {
-			return st, fmt.Errorf("resolving sandbox node %s: %w", r.config.VM.NodeAddress, err)
+			return st, fmt.Errorf("resolving VM runner %s: %w", r.config.VM.RunnerAddress, err)
 		}
 		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, addrs[0].String(), int32(st.Port), ownerRef)); err != nil {
 			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
@@ -141,7 +138,7 @@ func (r *AgentReconciler) applyEndpointSlice(ctx context.Context, desired *disco
 	return err
 }
 
-func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st sandboxnode.MachineStatus) error {
+func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {
 	msg := st.Message
 	if !st.Ready {
 		if msg == "" {

@@ -171,7 +171,7 @@ Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port 
 
 ### Hibernate
 
-Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the sandbox node, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
+Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the timeout, skipping any already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
 
@@ -202,7 +202,7 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret, and asks the sandbox node to delete a vm Agent's machine and disk. Sessions are agent-owned files on the PVC (or the machine's disk) and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight Runs are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
+The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret, and asks the VM runner to delete a vm Agent's machine and disk. Sessions are agent-owned files on the PVC (or the machine's disk) and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight Runs are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Agent-scoped Postgres rows, schedules included, go with it on any deletion path ([persistence](persistence.md#lifetime)).
 

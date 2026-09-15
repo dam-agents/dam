@@ -24,8 +24,8 @@ import (
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 type AgentReconciler struct {
@@ -38,7 +38,7 @@ type AgentReconciler struct {
 	deniedWakes map[string]string
 	parkedRetry map[string]struct{}
 	busyProbe   func(ctx context.Context, agentName string) bool
-	vmNode      *sandboxnode.Client
+	vmRunner    *vmrunner.Client
 	requeue     func(name string, after time.Duration)
 }
 
@@ -55,8 +55,8 @@ func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconcile
 	return r
 }
 
-func (r *AgentReconciler) WithSandboxNode(c *sandboxnode.Client) *AgentReconciler {
-	r.vmNode = c
+func (r *AgentReconciler) WithVMRunner(c *vmrunner.Client) *AgentReconciler {
+	r.vmRunner = c
 	return r
 }
 
@@ -220,9 +220,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 
 	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
-	var machine sandboxnode.MachineStatus
+	var machine vmrunner.MachineStatus
 	if agentSpec.IsVM() {
-		if r.vmNode == nil {
+		if r.vmRunner == nil {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
 		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && !hardStop)
@@ -412,9 +412,9 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
-	if r.vmNode != nil {
-		if err := r.vmNode.Delete(ctx, name); err != nil {
-			slog.Warn("deleting sandbox machine", "agent", name, "error", err)
+	if r.vmRunner != nil {
+		if err := r.vmRunner.Delete(ctx, name); err != nil {
+			slog.Warn("deleting vm-runner machine", "agent", name, "error", err)
 		}
 	}
 

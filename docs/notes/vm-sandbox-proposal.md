@@ -1,8 +1,8 @@
 # Full-VM sandboxes (KubeVirt) — architecture proposal
 
 Status: superseded, 2026-09-14 — the KubeVirt backend this proposes was built
-and then replaced by smolvm microVMs on a dedicated sandbox node; see
-[platform-topology](../architecture/platform-topology.md#sandbox-node) for
+and then replaced by smolvm microVMs on a dedicated VM runner; see
+[platform-topology](../architecture/platform-topology.md#vm-runner) for
 what exists. Kept as history of the requirements and the trade-offs weighed.
 
 Original status: proposal, 2026-07-27 — decisions below resolved in a grilling
