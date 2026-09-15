@@ -214,3 +214,19 @@ set; smolvm is installed by its remote installer at image build.
   limits for machines are a follow-up, as is more than one node.
 - `check:crd-backwards-compatibility` fails in a git worktree (go-git cannot
   resolve tags through the worktree gitdir); it is unrelated to this change.
+
+## Per-tenant runner + wake verified (2026-09-15, after the tunnel came back)
+
+The runner is now created per owner by the controller, not by the chart: name
+`<release>-vm-runner-<sha256(owner)[:4]>`, its own Secret (token + self-signed
+cert), PVC, headless Service, Deployment and an owner-scoped ingress
+NetworkPolicy; it is deleted when the owner has no vm Agents left. Verified on
+the local cluster: the controller provisioned the whole set, an agent booted a
+machine on it and went Ready in 280 s.
+
+Wake from hibernate on that runner, with the LiteLLM endpoint reachable again:
+the idle checker had stopped the machine and kept its state dir; opening the
+chat started it, and "ping" was answered "pong" 90 s later. A first send
+attempted within ~10 s of "machine is running" fails with "failed to connect to
+agent" — the published port is open before the in-guest harness listens, so the
+UI reports an undelivered turn. Retrying after the guest is up succeeds.
