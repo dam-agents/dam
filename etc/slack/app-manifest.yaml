@@ -43,6 +43,10 @@ oauth_config:
       # Posting replies (chat.postMessage) and the one-person notices a turn
       # can need (chat.postEphemeral).
       - chat:write
+      # The working status on a turn (assistant.threads.setStatus). Listed here
+      # as well as implied by the assistant_view feature above — Slack's own
+      # assistant templates request it explicitly beside that feature.
+      - assistant:write
       # The agent-driven `react` tool (reactions.add) — the agent's own emoji
       # reactions, including the contextual ack it opens ambient turns with.
       - reactions:write

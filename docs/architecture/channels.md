@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-09-11
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -213,14 +213,14 @@ Keeping those apart is an **invariant**, not tidiness. Attribution used to read 
 
 ### Slack scopes: required vs. optional
 
-Bot scopes in [`etc/slack/app-manifest.yaml`](../../etc/slack/app-manifest.yaml) split into two tiers. **Required** scopes back core turn handling (inbound delivery, posting, the working status); nothing works without them. **Optional** scopes back individual affordances that must degrade rather than take anything else down when the workspace withholds them.
+Bot scopes in [`etc/slack/app-manifest.yaml`](../../etc/slack/app-manifest.yaml) split into two tiers. **Required** scopes back core turn handling (inbound delivery, posting, the working status); nothing works without them. The working status also needs the Agents & AI Apps feature declared — Slack grants its scope only with it. **Optional** scopes back individual affordances that must degrade rather than take anything else down when the workspace withholds them.
 
 A withheld scope has no symptom of its own — the capability it backs behaves as though it were broken — so at startup the granted set is checked against what the running features need and any gap is reported with what it costs. A scope added to the manifest later never reaches an app already installed.
 
 Which of two strategies an optional scope gets follows from what its absence means:
 
 - **Degrade to a smaller result**, when a partial answer is still useful: attempted reactively, with a missing-scope failure caught and turned into a narrower result rather than an outright failure. `describe_channel` without the channel-list scopes still returns the bound conversations; a user profile without `users:read.email` still resolves, minus its `email` field.
-- **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call. On a confirmed miss the affordance drops out of the tool list — and out of any prompt text pointing at it — rather than staying registered to fail forever. `describe_channel_users` and `describe_message_reactions` take this path, both being useless without their scope. An unreachable bot or unanswered check counts as _unknown_, never _missing_, and fails open, so a transient hiccup never hides a working capability.
+- **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call. On a confirmed miss the affordance drops out of the tool list — and out of any prompt text pointing at it — rather than staying registered to fail forever. An unreachable bot or unanswered check counts as _unknown_, never _missing_, and fails open, so a transient hiccup never hides a working capability.
 
 Why the dedicated MCP endpoint: it is the only api-server port the agent's NetworkPolicy admits, and it is per-Agent by path with the mesh admitting each Agent's identity to its own path alone — so what stops a compromised harness posting as another Agent is that boundary, not the channel layer ([platform-topology](platform-topology.md), [security-and-credentials](security-and-credentials.md)). What channels adds is directness: the endpoint dispatches into the same posting path the workers use internally, with no agent-runtime round-trip and no second relay hop.
 
