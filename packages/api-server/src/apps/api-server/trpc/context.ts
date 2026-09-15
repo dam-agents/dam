@@ -2,7 +2,6 @@ import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import { composeAgentsModule } from "../../../modules/agents/index.js";
 import {
-  ANN_STARTER_KIT_GREETED,
   ANN_STARTER_KIT_ONBOARDED,
   EXPERIMENT_ACTIVE_KEY,
 } from "../../../modules/agents/infrastructure/labels.js";
@@ -257,8 +256,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
-      markAgentGreeted: (agentId, at) =>
-        agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_GREETED, at),
+      runtimeMutator,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

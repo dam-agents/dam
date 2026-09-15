@@ -64,7 +64,6 @@ export interface Agent {
   kbTemplateId?: string;
   starterKit?: string;
   starterKitOnboarded?: string;
-  starterKitGreeted?: string;
   features: RuntimeFeatures;
 }
 

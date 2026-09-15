@@ -22,6 +22,7 @@ import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
+import { createOnboardingPlugin } from "./drivers/onboarding-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createExperimentExecutePlugin } from "./drivers/experiment-execute-plugin.js";
 import { createDispatcher, type ContextEnv } from "./dispatcher.js";
@@ -107,6 +108,7 @@ export async function composeRuntimeChannel(
   registry.register(
     createExperimentExecutePlugin({ driver: opts.triggerDriver }),
   );
+  registry.register(createOnboardingPlugin({ driver: opts.triggerDriver }));
 
   const harnessConfigRaw = resolved["harness-config"];
   const harnessConfigPlugin = createHarnessConfigPlugin({

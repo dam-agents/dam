@@ -17,6 +17,8 @@ import {
 import type { LoadedKit } from "../../modules/starter-kits/infrastructure/kits-repository.js";
 import { createStarterKitsService } from "../../modules/starter-kits/services/starter-kits-service.js";
 
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+
 function kit(overrides: Partial<StarterKit> = {}): StarterKit {
   return starterKitSchema.parse({
     schemaVersion: "v1",
@@ -84,7 +86,8 @@ function makeHarness(
     deleted: [] as string[],
     woken: [] as string[],
     onboarded: [] as { id: string; at: string }[],
-    greeted: [] as { id: string; at: string }[],
+    bumped: [] as { agentId: string; events: BumpedEvent[] }[],
+    enqueued: [] as string[],
     cron: [] as { name: string; agentId: string; cron: string }[],
     rrule: [] as { name: string; rrule: string; timezone: string }[],
     toggled: [] as string[],
@@ -177,11 +180,41 @@ function makeHarness(
     markAgentOnboarded: async (id, at) => {
       calls.onboarded.push({ id, at });
     },
-    markAgentGreeted: async (id, at) => {
-      calls.greeted.push({ id, at });
+    runtimeMutator: {
+      async bump(agentId, events) {
+        calls.bumped.push({ agentId, events });
+        return 1;
+      },
+      async enqueueAfterCommit(agentId) {
+        calls.enqueued.push(agentId);
+      },
     },
   });
   return { service, calls };
+}
+
+type BumpedEvent = Parameters<RuntimeMutator["bump"]>[1][number];
+
+const APPLY = {
+  catalog: "platform",
+  kitId: "code-reviewer",
+  name: "reviewer",
+  templateId: "claude-code",
+  connectionIds: ["c-gh"],
+  skipSchedules: [] as string[],
+  scheduleOverrides: [],
+};
+
+function onboardingEvents(calls: { bumped: { events: BumpedEvent[] }[] }) {
+  return calls.bumped
+    .flatMap((b) => b.events)
+    .filter((e) => e.kind === "onboarding");
+}
+
+async function onboardingTaskAfterApply(h: ReturnType<typeof makeHarness>) {
+  await h.service.apply(APPLY);
+  const [event] = onboardingEvents(h.calls);
+  return (event?.payload as { task: string } | undefined)?.task ?? "";
 }
 
 const LOADED: LoadedKit = {
@@ -459,7 +492,10 @@ describe("starter kits: apply", () => {
       },
       wakeAgent: async () => {},
       markAgentOnboarded: async () => {},
-      markAgentGreeted: async () => {},
+      runtimeMutator: {
+        bump: async () => 1,
+        enqueueAfterCommit: async () => {},
+      },
     });
     await expect(
       failing.apply({
@@ -570,7 +606,10 @@ describe("starter kits: apply", () => {
       },
       wakeAgent: async () => {},
       markAgentOnboarded: async () => {},
-      markAgentGreeted: async () => {},
+      runtimeMutator: {
+        bump: async () => 1,
+        enqueueAfterCommit: async () => {},
+      },
     });
     const result = await service.apply({
       catalog: "platform",
@@ -602,44 +641,87 @@ describe("starter kits: apply", () => {
   });
 });
 
-describe("starter kits: onboarding prompt", () => {
-  it("is null for an agent not created from a kit", async () => {
-    const { service } = makeHarness(LOADED, fakeAgent("agent-9"));
-    expect(await service.onboardingPrompt("agent-9")).toBeNull();
-  });
-
-  it("is handed out once — a second caller gets nothing", async () => {
-    const agent = fakeAgent("agent-1", {
-      starterKit: "platform/code-reviewer@abc123",
-    });
-    const { service, calls } = makeHarness(LOADED, agent);
-    expect(await service.onboardingPrompt("agent-1")).toContain(
-      "code-reviewer",
-    );
-    expect(calls.greeted.map((g) => g.id)).toEqual(["agent-1"]);
-    agent.starterKitGreeted = calls.greeted[0].at;
-    expect(await service.onboardingPrompt("agent-1")).toBeNull();
-    expect(calls.greeted).toHaveLength(1);
-  });
-
-  it("is null once the agent has finished onboarding", async () => {
-    const { service } = makeHarness(
+describe("starter kits: onboarding turn", () => {
+  it("apply enqueues one onboarding event that reads the agent's schedules and channels back, and wakes", async () => {
+    const { service, calls } = makeHarness(
       LOADED,
       fakeAgent("agent-1", {
         starterKit: "platform/code-reviewer@abc123",
-        starterKitOnboarded: "2026-09-15T00:00:00Z",
+        channels: [{ type: "slack" } as never],
       }),
     );
-    expect(await service.onboardingPrompt("agent-1")).toBeNull();
+    await service.apply({ ...APPLY, slackChannelId: "C123" });
+
+    const events = onboardingEvents(calls);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.id).toMatch(/^kit-onboarding:agent-1:\d+$/);
+    expect(calls.bumped[0]!.agentId).toBe("agent-1");
+    expect(calls.enqueued).toEqual(["agent-1"]);
+    expect(calls.woken).toEqual(["agent-1"]);
+    const ttlMs = events[0]!.expiresAt.getTime() - Date.now();
+    expect(ttlMs).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
+
+    const task = (events[0]!.payload as { task: string }).task;
+    expect(task).toContain('Schedule "review": enabled');
+    expect(task).toContain('Schedule "benchmark": disabled');
+    expect(task).toContain("Channels bound: slack");
+  });
+
+  it("deletes the agent when the onboarding event cannot be enqueued", async () => {
+    const { calls } = makeHarness(LOADED);
+    const failing = createStarterKitsService({
+      owner: "user-1",
+      repo: { list: async () => [LOADED], get: async () => LOADED },
+      createKnowledgeBaseAgent: async (input) =>
+        fakeAgent("agent-2", { starterKit: input.starterKit }),
+      agents: {
+        create: async (input) =>
+          fakeAgent("agent-2", { starterKit: input.starterKit }),
+        delete: async (id) => {
+          calls.deleted.push(id);
+        },
+        get: async () => null,
+        connectSlack: async () => {
+          throw new Error("unreachable");
+        },
+      },
+      schedules: {
+        createCron: async (input) =>
+          ({ id: "s1", name: input.name }) as Schedule,
+        createRRule: async (input) =>
+          ({ id: "s2", name: input.name }) as Schedule,
+        toggle: async () => null,
+        list: async () => [],
+      },
+      connections: {
+        listConnections: async () => [connection("c-gh", "github-pat")],
+        listTemplates: async () => TEMPLATES,
+        getAgentConnections: async () => ({ connections: [] }) as never,
+      },
+      skills: {
+        applyEntries: async () => ({ applied: [], skipped: [] }) as never,
+      },
+      wakeAgent: async () => {},
+      markAgentOnboarded: async () => {},
+      runtimeMutator: {
+        bump: async () => {
+          throw new Error("outbox down");
+        },
+        enqueueAfterCommit: async () => {},
+      },
+    });
+    await expect(failing.apply(APPLY)).rejects.toThrow("outbox down");
+    expect(calls.deleted).toEqual(["agent-2"]);
   });
 
   it("states what the platform set up and points at ONBOARDING.md", async () => {
-    const { service } = makeHarness(
-      LOADED,
-      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-      [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+    const prompt = await onboardingTaskAfterApply(
+      makeHarness(
+        LOADED,
+        fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+      ),
     );
-    const prompt = await service.onboardingPrompt("agent-1");
     expect(prompt).toContain(
       '"Code reviewer" starter kit (platform/code-reviewer@abc123)',
     );
@@ -655,38 +737,40 @@ describe("starter kits: onboarding prompt", () => {
   });
 
   it("reports a suggested connection the user never granted as NOT connected", async () => {
-    const { service } = makeHarness(
-      LOADED,
-      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-      [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+    const prompt = await onboardingTaskAfterApply(
+      makeHarness(
+        LOADED,
+        fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+      ),
     );
-    const prompt = await service.onboardingPrompt("agent-1");
     expect(prompt).toContain("Connection (suggested, NOT connected): slack");
   });
 
   it("drops a granted connection the user has since deleted", async () => {
-    const { service } = makeHarness(
-      LOADED,
-      fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-      [{ connectionId: "c-gone", grantedAt: "2026-09-14T00:00:00Z" }],
+    const prompt = await onboardingTaskAfterApply(
+      makeHarness(
+        LOADED,
+        fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
+        [{ connectionId: "c-gone", grantedAt: "2026-09-14T00:00:00Z" }],
+      ),
     );
-    const prompt = await service.onboardingPrompt("agent-1");
     expect(prompt).toContain(
       "Connection (required, NOT connected): github-app or github-pat",
     );
   });
 
   it("holds schedules until the agent marks onboarding complete", async () => {
-    const { service, calls } = makeHarness(
+    const h = makeHarness(
       LOADED,
       fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
     );
-    const prompt = await service.onboardingPrompt("agent-1");
+    const prompt = await onboardingTaskAfterApply(h);
     expect(prompt).toContain("mark_onboarding_complete");
 
-    await service.markOnboarded("agent-1");
-    expect(calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
-    expect(calls.onboarded[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    await h.service.markOnboarded("agent-1");
+    expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
+    expect(h.calls.onboarded[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("refuses to mark an agent that came from no kit, and is idempotent", async () => {

@@ -146,10 +146,6 @@ export const starterKitGetInputSchema = z.object({
   id: starterKitIdSchema,
 });
 
-export const starterKitOnboardingInputSchema = z.object({
-  agentId: z.string().min(1),
-});
-
 export const starterKitScheduleTimingSchema = z.union([
   z.object({ cron: z.string().min(1) }),
   z.object({ rrule: z.string().min(1), timezone: z.string().min(1) }),

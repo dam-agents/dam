@@ -11,7 +11,6 @@ describe("app router", () => {
       expect.arrayContaining([
         "starterKits.list",
         "starterKits.get",
-        "starterKits.onboarding",
         "starterKits.create",
       ]),
     );

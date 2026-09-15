@@ -156,6 +156,7 @@ export type {
   FileFormat,
   TriggerEventPayload,
   ExperimentExecuteEventPayload,
+  OnboardingEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
   WorkspaceCommandEventPayload,

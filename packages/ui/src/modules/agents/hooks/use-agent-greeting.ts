@@ -8,7 +8,7 @@ export interface AgentGreetingOptions {
   agentId: string | null;
   active: boolean;
   idle: boolean;
-  command: string | ((agentId: string) => Promise<string | null>);
+  command: string;
   setupReady?: boolean;
   hidden?: boolean;
   sendPrompt: (
@@ -52,11 +52,6 @@ export function useAgentGreeting(opts: AgentGreetingOptions) {
     }
     if (setupReady === false) return;
     greetedForAgentRef.current = agentId;
-    void (async () => {
-      const text =
-        typeof command === "function" ? await command(agentId) : command;
-      if (!text) return;
-      await sendPrompt(text, undefined, { hidden, initiator: "system" });
-    })();
+    void sendPrompt(command, undefined, { hidden, initiator: "system" });
   }, [armed, agentId, sessions, setupReady, command, hidden, sendPrompt]);
 }

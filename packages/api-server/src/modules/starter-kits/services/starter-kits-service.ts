@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { securityLog } from "../../../core/security-log.js";
 import type {
+  Agent,
   AgentCreateInput,
   AgentsService,
   ConnectionsService,
@@ -20,7 +21,6 @@ import {
 import {
   type GrantedTemplate,
   kitRef,
-  parseKitRef,
   unmetRequiredConnections,
 } from "../domain/requirements.js";
 import type {
@@ -28,6 +28,7 @@ import type {
   StarterKitsRepository,
 } from "../infrastructure/kits-repository.js";
 import type { CreateKnowledgeBaseAgent } from "../../knowledge-bases/index.js";
+import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 
 export interface StarterKitsServiceDeps {
@@ -46,9 +47,11 @@ export interface StarterKitsServiceDeps {
   createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
-  markAgentGreeted: (agentId: string, at: string) => Promise<void>;
+  runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   now?: () => Date;
 }
+
+const ONBOARDING_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function agentShape(
   resources: StarterKitResources | undefined,
@@ -168,6 +171,44 @@ export function createStarterKitsService(
     }
   }
 
+  async function enqueueOnboardingTurn(
+    created: Agent,
+    loaded: LoadedKit,
+    version: string,
+  ): Promise<void> {
+    const agentId = created.id;
+    const agent = (await deps.agents.get(agentId)) ?? created;
+    const [schedules, agentConnections] = await Promise.all([
+      deps.schedules.list(agentId),
+      deps.connections.getAgentConnections(agentId),
+    ]);
+    const task = composeOnboardingPrompt({
+      kit: loaded.kit,
+      catalog: loaded.catalog,
+      version,
+      granted: await grantedTemplates(
+        agentConnections.connections.map((c) => c.connectionId),
+        "skip",
+      ),
+      schedules: schedules.map((s) => ({
+        name: s.name,
+        enabled: s.spec.enabled,
+      })),
+      boundChannels: agent.channels.map(() => "slack"),
+      familyTitles: await familyTitles(),
+    });
+    const at = (deps.now ?? (() => new Date()))();
+    await deps.runtimeMutator.bump(agentId, [
+      {
+        id: `kit-onboarding:${agentId}:${at.getTime()}`,
+        kind: "onboarding",
+        payload: { task },
+        expiresAt: new Date(at.getTime() + ONBOARDING_EVENT_TTL_MS),
+      },
+    ]);
+    await deps.runtimeMutator.enqueueAfterCommit(agentId);
+  }
+
   return {
     async list() {
       return (await deps.repo.list()).map(toView);
@@ -231,6 +272,7 @@ export function createStarterKitsService(
         );
         if (input.slackChannelId)
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
+        await enqueueOnboardingTurn(agent, loaded, version);
       } catch (err) {
         await deps.agents.delete(agent.id).catch(() => {});
         throw err;
@@ -271,40 +313,6 @@ export function createStarterKitsService(
 
     async markOnboarded(agentId) {
       await createOnboardingMarker(deps)(agentId, deps.owner);
-    },
-
-    async onboardingPrompt(agentId) {
-      const agent = await deps.agents.get(agentId);
-      if (!agent?.starterKit) return null;
-      if (agent.starterKitGreeted || agent.starterKitOnboarded) return null;
-      const ref = parseKitRef(agent.starterKit);
-      if (!ref) return null;
-      const loaded = await deps.repo.get(ref.catalog, ref.kitId);
-      if (!loaded) return null;
-      const [schedules, agentConnections] = await Promise.all([
-        deps.schedules.list(agentId),
-        deps.connections.getAgentConnections(agentId),
-      ]);
-      const prompt = composeOnboardingPrompt({
-        kit: loaded.kit,
-        catalog: ref.catalog,
-        version: ref.version,
-        granted: await grantedTemplates(
-          agentConnections.connections.map((c) => c.connectionId),
-          "skip",
-        ),
-        schedules: schedules.map((s) => ({
-          name: s.name,
-          enabled: s.spec.enabled,
-        })),
-        boundChannels: agent.channels.map(() => "slack"),
-        familyTitles: await familyTitles(),
-      });
-      await deps.markAgentGreeted(
-        agentId,
-        (deps.now ?? (() => new Date()))().toISOString(),
-      );
-      return prompt;
     },
   };
 }

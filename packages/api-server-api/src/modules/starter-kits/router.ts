@@ -8,7 +8,6 @@ import { toAgentView } from "../agents/router.js";
 import {
   starterKitApplyInputSchema,
   starterKitGetInputSchema,
-  starterKitOnboardingInputSchema,
 } from "./schemas.js";
 
 export const starterKitsRouter = t.router({
@@ -21,12 +20,6 @@ export const starterKitsRouter = t.router({
       if (!kit) throw new TRPCError({ code: "NOT_FOUND" });
       return kit;
     }),
-
-  onboarding: manageAgentsProcedure
-    .input(starterKitOnboardingInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.starterKits.onboardingPrompt(input.agentId),
-    ),
 
   create: manageAgentsProcedure
     .input(starterKitApplyInputSchema)
