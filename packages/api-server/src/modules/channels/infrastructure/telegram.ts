@@ -15,7 +15,15 @@ import {
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { PostMessageOptions } from "../services/channel-manager.js";
-import { type AcpClientFactory } from "../../../core/acp-client.js";
+import {
+  AcpSessionLoadError,
+  AcpTurnAbandonedError,
+  type AcpClientFactory,
+} from "../../../core/acp-client.js";
+import {
+  turnFailureReasonToken,
+  turnFailureUserCopy,
+} from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -510,6 +518,7 @@ export function createTelegramWorker(deps: {
           outcome = "success";
           return;
         } catch (err) {
+          if (!(err instanceof AcpSessionLoadError)) throw err;
           process.stderr.write(
             `[telegram:${agentId}] resume failed, starting fresh: ${err}\n`,
           );
@@ -526,13 +535,17 @@ export function createTelegramWorker(deps: {
     } catch (err) {
       failureReason = isAgentWakeTimeoutError(err)
         ? wakeFailureReasonToken(err.failure)
-        : "acp-error";
+        : err instanceof AcpTurnAbandonedError
+          ? turnFailureReasonToken(err)
+          : "acp-error";
       getLogger().warn(
         { agentId, reason: failureReason, error: String(err) },
         "telegram.turn.failed",
       );
       if (isAgentWakeTimeoutError(err)) {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
+      } else if (err instanceof AcpTurnAbandonedError) {
+        await thread.post(turnFailureUserCopy(err)).catch(() => {});
       }
     } finally {
       releaseAttendance();

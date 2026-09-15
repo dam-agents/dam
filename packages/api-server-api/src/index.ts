@@ -330,13 +330,18 @@ export {
   CASE_STUDY_SCHEDULE_TASK,
 } from "./modules/case-studies/constants.js";
 
-export { usageSummaryInputSchema } from "./modules/metrics/schemas.js";
+export {
+  agentMetricsInputSchema,
+  agentTelemetryInputSchema,
+} from "./modules/metrics/schemas.js";
 export {
   METRICS_MAX_SINCE_HOURS,
   METRICS_MAX_LIMIT,
   METRICS_DEFAULT_LIMIT,
-  USAGE_SUMMARY_MAX_DAYS,
-  USAGE_SUMMARY_DEFAULT_DAYS,
+  AGENT_TELEMETRY_MAX_DAYS,
+  AGENT_TELEMETRY_DEFAULT_DAYS,
+  AGENT_TELEMETRY_MAX_LIMIT,
+  AGENT_TELEMETRY_DEFAULT_LIMIT,
 } from "./modules/metrics/constants.js";
 
 export type {

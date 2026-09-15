@@ -47,7 +47,7 @@ import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
-import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
+import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -66,7 +66,7 @@ export interface HarnessApiServerAppDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
 }
@@ -88,7 +88,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
-    usageSummary,
+    agentTelemetry,
     wakeAgent,
     runtimeProgress,
   } = deps;
@@ -229,7 +229,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudyInspection,
     carriesInspectorRole,
     agentImage: createAgentImageReader(k8sClient),
-    usageSummary,
+    agentTelemetry,
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({

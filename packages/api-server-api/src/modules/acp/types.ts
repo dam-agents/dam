@@ -145,6 +145,7 @@ export type PlatformRunResult = z.infer<typeof platformRunResultSchema>;
 export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("done"), result: platformRunResultSchema }),
   z.object({ status: z.literal("pending") }),
+  z.object({ status: z.literal("interrupted") }),
   z.object({ status: z.literal("none") }),
 ]);
 export type PlatformRunResultResponse = z.infer<

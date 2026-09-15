@@ -16,10 +16,10 @@ const REQUIRED_ENV: Record<string, string> = {
 const MANAGED_KEYS = [
   ...Object.keys(REQUIRED_ENV),
   "APPROVAL_HOLD_SECONDS",
-  "ACP_TURN_CEILING_SECONDS",
+  "ACP_TURN_STALL_PROBE_SECONDS",
 ];
 
-describe("loadConfig — acpTurnCeilingSeconds vs approvalHoldSeconds invariant", () => {
+describe("loadConfig — turn watch invariants", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -37,24 +37,16 @@ describe("loadConfig — acpTurnCeilingSeconds vs approvalHoldSeconds invariant"
     }
   });
 
-  it("rejects a ceiling below the approval hold", () => {
-    process.env.APPROVAL_HOLD_SECONDS = "1800";
-    process.env.ACP_TURN_CEILING_SECONDS = "60";
-    expect(() => loadConfig()).toThrow(
-      /acpTurnCeilingSeconds must be >= approvalHoldSeconds/,
-    );
+  it("raises a stall probe below the approval hold to the hold", () => {
+    process.env.APPROVAL_HOLD_SECONDS = "3600";
+    process.env.ACP_TURN_STALL_PROBE_SECONDS = "1800";
+    expect(loadConfig().acpTurnStallProbeSeconds).toBe(3600);
   });
 
-  it("accepts a ceiling equal to the approval hold", () => {
-    process.env.APPROVAL_HOLD_SECONDS = "1800";
-    process.env.ACP_TURN_CEILING_SECONDS = "1800";
-    expect(loadConfig().acpTurnCeilingSeconds).toBe(1800);
-  });
-
-  it("accepts the built-in defaults (1h ceiling, 30m hold)", () => {
+  it("accepts the built-in defaults (30m probe, 30m hold)", () => {
     const config = loadConfig();
     expect(config.approvalHoldSeconds).toBe(1800);
-    expect(config.acpTurnCeilingSeconds).toBe(3600);
+    expect(config.acpTurnStallProbeSeconds).toBe(1800);
   });
 });
 

@@ -54,6 +54,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       return "the answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
 
   const worker = createSlackWorker(
