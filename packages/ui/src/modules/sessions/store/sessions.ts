@@ -48,6 +48,7 @@ export interface SessionsSlice {
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
+  appendNewSessionDraft: (agentId: string, text: string) => void;
   clearDraft: (key: string) => void;
   migrateDraft: (fromKey: string, toKey: string) => void;
   consumeDroppedAttachments: (key: string) => void;
@@ -145,6 +146,16 @@ export const createSessionsSlice: StateCreator<
         if (empty && !(key in drafts)) return false;
         if (empty) delete drafts[key];
         else drafts[key] = next;
+        return true;
+      }),
+    appendNewSessionDraft: (agentId, text) =>
+      updateDrafts((drafts) => {
+        const key = draftKey(agentId, null);
+        const current = drafts[key] ?? EMPTY_DRAFT;
+        drafts[key] = {
+          ...current,
+          text: current.text.length > 0 ? `${current.text}\n\n${text}` : text,
+        };
         return true;
       }),
     clearDraft: (key) =>
