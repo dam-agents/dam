@@ -4,6 +4,7 @@ import type { StarterKitView } from "api-server-api";
 import { Badge } from "@/components/ui/badge";
 import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -81,9 +82,11 @@ export function KitSkillsSection({ kit }: Props) {
               >
                 <p className="text-sm text-foreground">{skill.name}</p>
                 {skill.description && (
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {skill.description}
-                  </p>
+                  <Tooltip content={skill.description} side="top">
+                    <p className="mt-0.5 line-clamp-1 cursor-help text-sm text-muted-foreground">
+                      {skill.description}
+                    </p>
+                  </Tooltip>
                 )}
               </li>
             ))}
