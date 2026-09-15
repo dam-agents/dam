@@ -6,7 +6,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` 2.0.2 (installed from the `bob-shell` COS bucket tarball) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
+| Harness | `bobshell` 2.0.3 (installed from the `bob-shell` COS bucket tarball) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
 | Settings bootstrap | `bob-settings.mjs` | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
