@@ -68,11 +68,12 @@ function runDividers(
       newest = byTime[cursor];
       cursor += 1;
     }
-    const anchor = newest?.role === "user" ? newest : byTime[cursor];
+    const prompt = newest?.role === "user" ? newest : undefined;
+    const anchor = prompt ?? byTime[cursor];
     if (anchor === undefined) continue;
-    const at = marks.get(anchor.index);
-    if (at === undefined) marks.set(anchor.index, [start.at]);
-    else at.push(start.at);
+    const stacked = prompt === undefined ? undefined : marks.get(anchor.index);
+    if (stacked === undefined) marks.set(anchor.index, [start.at]);
+    else stacked.push(start.at);
   }
   return marks;
 }
