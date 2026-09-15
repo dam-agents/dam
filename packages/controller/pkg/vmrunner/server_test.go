@@ -196,7 +196,9 @@ func TestRestartsInPlaceOnRevisionOrShapeChange(t *testing.T) {
 	resized.MemoryMiB = 4096
 	_, err = c.Ensure(t.Context(), "agent-a", resized)
 	require.NoError(t, err)
-	assert.Equal(t, 4096, h.settle(t, "agent-a").MemoryMiB)
+	st = h.settle(t, "agent-a")
+	assert.Equal(t, 4096, st.MemoryMiB)
+	assert.Zero(t, st.Restarts, "a resize is not a guest that stopped answering")
 	assert.Contains(t, h.calls(), "machine update -n agent-a --cpus 2 --mem 4096")
 	assert.Equal(t, 1, strings.Count(h.calls(), "machine create"))
 	assert.NotContains(t, h.calls(), "delete")
@@ -318,12 +320,12 @@ func TestCreateOnlyDriftIsReportedAndDoesNotBlockTheRest(t *testing.T) {
 	assert.Equal(t, 4096, st.MemoryMiB)
 }
 
-// TEST_SCENARIO: a machine smolvm still calls running has stopped answering long after it was last healthy: the runner stops and starts it rather than reporting the same dead machine forever.
+// TEST_SCENARIO: a machine smolvm still calls running has stopped answering long after it was last healthy: the runner stops and starts it rather than reporting the same dead machine forever, and counts that revival so the platform can tell it from a machine that was merely slow to start.
 func TestADeadGuestIsActuallyRestarted(t *testing.T) {
 	h := newHarness(t)
 	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
 	require.NoError(t, err)
-	h.settle(t, "m1")
+	assert.Zero(t, h.settle(t, "m1").Restarts)
 	before := strings.Count(h.calls(), "machine start -n m1")
 
 	h.node.mu.Lock()
@@ -334,7 +336,7 @@ func TestADeadGuestIsActuallyRestarted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StateRestarting, st.State)
 	assert.False(t, st.Ready, "a machine on its way down is not a ready endpoint")
-	h.settle(t, "m1")
+	assert.EqualValues(t, 1, h.settle(t, "m1").Restarts, "the revival is counted")
 	assert.Greater(t, strings.Count(h.calls(), "machine start -n m1"), before, "the machine was restarted")
 	assert.Contains(t, h.calls(), "machine stop -n m1")
 }
@@ -369,22 +371,6 @@ func TestAMachineIsRefusedWhenTheRunnerHasNoRoom(t *testing.T) {
 	assert.Equal(t, ReasonOutOfCapacity, st.Reason)
 	assert.Contains(t, st.Message, "does not fit")
 	assert.NotContains(t, h.calls(), "machine create -n m2", "nothing is created for a machine that does not fit")
-}
-
-// TEST_SCENARIO: the runner restarts a guest that stopped answering: the count it reports is what lets the platform tell that reboot from a machine that was merely slow to start.
-func TestARestartedGuestIsCounted(t *testing.T) {
-	h := newHarness(t)
-	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
-	require.NoError(t, err)
-	h.settle(t, "m1")
-	assert.Zero(t, h.settle(t, "m1").Restarts)
-
-	h.node.mu.Lock()
-	h.node.health["m1"] = health{everReady: true, quietSince: time.Now().Add(-unhealthyRestart - time.Minute)}
-	h.node.mu.Unlock()
-	_, err = h.client().Ensure(t.Context(), "m1", spec(true))
-	require.NoError(t, err)
-	assert.EqualValues(t, 1, h.settle(t, "m1").Restarts)
 }
 
 // TEST_SCENARIO: a caller puts a machine id that would climb out of the state directory; the id never reaches the filesystem, so no path outside the runner's own tree is touched.
@@ -439,22 +425,4 @@ func TestCapacityCountsMachinesStillBeingCreated(t *testing.T) {
 	st, err = h.client().Ensure(t.Context(), "m1", grow)
 	require.NoError(t, err)
 	assert.Equal(t, ReasonOutOfCapacity, st.Reason, "a resize past the limit is refused, not applied")
-}
-
-// TEST_SCENARIO: a resize restarts a healthy machine; the restart count stays zero, because it counts guests the runner had to revive and the platform reads it as "this guest stopped answering".
-func TestADeliberateRestartIsNotCountedAsAHungGuest(t *testing.T) {
-	h := newHarness(t)
-	c := h.client()
-	_, err := c.Ensure(t.Context(), "m1", spec(true))
-	require.NoError(t, err)
-	h.settle(t, "m1")
-
-	grown := spec(true)
-	grown.MemoryMiB += 256
-	_, err = c.Ensure(t.Context(), "m1", grown)
-	require.NoError(t, err)
-	st := h.settle(t, "m1")
-
-	assert.Contains(t, h.calls(), "machine update", "the resize did restart the machine")
-	assert.Zero(t, st.Restarts, "a resize is not a guest that stopped answering")
 }

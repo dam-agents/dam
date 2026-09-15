@@ -263,7 +263,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		}
 		s.mu.Unlock()
 		if drift != "" {
-			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", oneLine(drift))
+			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", strings.NewReplacer("\n", " ", "\r", " ").Replace(drift))
 			spec.Image, spec.AllowCIDRs = applied.Image, applied.AllowCIDRs
 		}
 	}
@@ -306,7 +306,8 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	if archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar"); fileExists(archive) {
+	archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar")
+	if _, err := os.Stat(archive); err == nil {
 		image = archive
 	}
 	dir, err := s.machineDir(id)
@@ -606,15 +607,6 @@ func (s *Server) machineDir(id string) (string, error) {
 		return "", fmt.Errorf("invalid machine id %q", id)
 	}
 	return filepath.Join(s.StateDir, "machines", id), nil
-}
-
-func oneLine(s string) string {
-	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

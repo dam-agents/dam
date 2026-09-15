@@ -121,7 +121,6 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 	}}
-	r.config.AgentTemplateDefaults.Mounts = []config.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}, {Path: "/scratch"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	var requeued []time.Duration
@@ -290,4 +289,16 @@ func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 
 	require.NoError(t, r.HaltMachine(context.Background(), testOwner, "my-agent"))
 	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
+}
+
+// TEST_SCENARIO: a persisted mount carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
+func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5GG"}}
+	r, node, _ := setupVMReconciler(t, agent)
+
+	err := r.Reconcile(context.Background(), agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "/home/agent")
+	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
 }

@@ -38,7 +38,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		return vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonNotReady, Message: "the owner's VM runner is still starting"}, nil
+		return vmrunner.MachineStatus{Message: "the owner's VM runner is still starting"}, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
@@ -68,9 +68,12 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			continue
 		}
 		persist = append(persist, m.Path)
-		if q, err := resource.ParseQuantity(effectiveMountSize(m, spec, defaults)); err == nil {
-			storageGiB += int((q.Value() + (1 << 30) - 1) >> 30)
+		size := effectiveMountSize(m, spec, defaults)
+		q, err := resource.ParseQuantity(size)
+		if err != nil {
+			return vmrunner.MachineStatus{}, fmt.Errorf("mount %s has size %q: %w", m.Path, size, err)
 		}
+		storageGiB += int((q.Value() + (1 << 30) - 1) >> 30)
 	}
 	env[vmPersistPathsEnv] = strings.Join(persist, ",")
 
