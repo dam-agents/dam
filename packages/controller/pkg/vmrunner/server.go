@@ -52,6 +52,7 @@ type Server struct {
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
 	pending    map[string]string
+	seq        map[string]uint64
 	committing map[string]int
 	failures   map[string]failure
 	listeners  map[string]net.Listener
@@ -64,7 +65,7 @@ type Server struct {
 func (s *Server) Start() error {
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
-	s.restarts, s.committing = map[string]int32{}, map[string]int{}
+	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -179,20 +180,20 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, st)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: status reports an in-flight operation as the machine's state, so a stop that arrives mid-boot has to be planned against that too — the per-machine lock runs it after the boot rather than dropping it and leaving a machine nobody believes is running.
 func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bool) {
+	if !spec.Running {
+		if st.State == StateAbsent || st.State == StateStopped || st.State == StateStopping {
+			return "", false
+		}
+		return StateStopping, false
+	}
 	switch st.State {
 	case StateAbsent:
-		if spec.Running {
-			return StateCreating, false
-		}
+		return StateCreating, false
 	case StateStopped:
-		if spec.Running {
-			return StateStarting, false
-		}
+		return StateStarting, false
 	case StateRunning:
-		if !spec.Running {
-			return StateStopping, false
-		}
 		if applied := s.readSpec(id); applied == nil || needsRestart(*applied, spec) {
 			return StateRestarting, false
 		}
@@ -391,8 +392,11 @@ func (s *Server) lock(id string) *sync.Mutex {
 	return l
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a second operation can be queued behind the one running, so each clears only its own markers — otherwise a finishing boot erases the pending stop queued behind it and the machine reads as settled while the stop has not run.
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
+	s.seq[id]++
+	seq := s.seq[id]
 	s.pending[id] = op
 	s.health[id] = health{everReady: s.health[id].everReady}
 	gen := s.gens[id]
@@ -409,8 +413,10 @@ func (s *Server) spawn(id, op string, fn func() error) {
 			err = fn()
 		}
 		s.mu.Lock()
-		delete(s.pending, id)
-		delete(s.committing, id)
+		if s.seq[id] == seq {
+			delete(s.pending, id)
+			delete(s.committing, id)
+		}
 		if err != nil {
 			s.failures[id] = failure{err.Error(), failureReason(err)}
 			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
