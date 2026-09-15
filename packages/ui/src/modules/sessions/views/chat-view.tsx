@@ -535,8 +535,6 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  const chatHeaderVariant = useStore((s) => s.chatHeaderVariant);
-
   const backButton = (
     <Button
       variant="ghost"
@@ -595,151 +593,16 @@ export function ChatView() {
       />
     );
 
-  const renderHeader = () => {
-    if (chatHeaderVariant === 2) {
-      return (
-        <header
-          className={cn(
-            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content bg-muted/30`,
-            isDemo && DEMO_HEADER_CLASS,
-          )}
-        >
-          {backButton}
-          <div className="flex items-center gap-3 min-w-0">
-            {!isDemo && (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-              />
-            )}
-            <h1
-              className={cn(
-                "text-sm font-bold truncate",
-                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
-              )}
-            >
-              {selectedAgentName}
-            </h1>
-            {isDemo && <DemoHeaderTag />}
-            {agentDropdown}
-          </div>
-          <div className="ml-auto flex items-center gap-2 pr-10">
-            {headerStatus}
-          </div>
-        </header>
-      );
-    }
-
-    if (chatHeaderVariant === 3) {
-      return (
-        <header
-          className={cn(
-            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[52px] border-b border-border shrink-0 relative z-content`,
-            isDemo && DEMO_HEADER_CLASS,
-          )}
-        >
-          {backButton}
-          <div className="flex items-center gap-3 min-w-0">
-            {!isDemo && (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-              />
-            )}
-            <h1
-              className={cn(
-                "text-sm font-bold truncate",
-                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
-              )}
-            >
-              {selectedAgentName}
-            </h1>
-            {isDemo && <DemoHeaderTag />}
-            {agentDropdown}
-          </div>
-          <div className="ml-auto flex items-center gap-2 pr-12">
-            {headerStatus}
-          </div>
-        </header>
-      );
-    }
-
-    if (chatHeaderVariant === 4) {
-      return (
-        <header
-          className={cn(
-            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} flex-col justify-center px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
-            isDemo && DEMO_HEADER_CLASS,
-          )}
-        >
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <button
-              type="button"
-              onClick={() => setView("home")}
-              className="transition-colors hover:text-foreground"
-            >
-              Agents
-            </button>
-            <span className="text-muted-foreground/40">/</span>
-            <span className="text-foreground">{selectedAgentName}</span>
-          </div>
-          <div className="mt-1 flex items-center gap-3">
-            {!isDemo && (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-              />
-            )}
-            <div className="flex items-center gap-2">
-              {agentDropdown}
-              {headerStatus}
-            </div>
-          </div>
-        </header>
-      );
-    }
-
-    if (chatHeaderVariant === 5) {
-      return (
-        <header
-          className={cn(
-            `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
-            isDemo && DEMO_HEADER_CLASS,
-          )}
-        >
-          {backButton}
-          <div className="flex items-center gap-2 rounded-full border border-border bg-muted/40 py-1.5 pl-3 pr-2 min-w-0">
-            {!isDemo && (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-              />
-            )}
-            <h1
-              className={cn(
-                "text-sm font-bold truncate",
-                isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
-              )}
-            >
-              {selectedAgentName}
-            </h1>
-            {isDemo && <DemoHeaderTag />}
-            {agentDropdown}
-          </div>
-          <div className="ml-auto flex items-center gap-2">{headerStatus}</div>
-        </header>
-      );
-    }
-
-    return (
+  return (
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <header
         className={cn(
-          `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
+          `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 pt-2 pb-2 shrink-0 relative z-content`,
           isDemo && DEMO_HEADER_CLASS,
         )}
       >
         {backButton}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           {!isDemo && (
             <span
               aria-hidden
@@ -748,8 +611,10 @@ export function ChatView() {
           )}
           <h1
             className={cn(
-              "text-sm font-bold truncate",
-              isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+              "text-sm font-medium truncate",
+              isDemo
+                ? DEMO_HEADER_TEXT_OVERRIDES.name
+                : "text-muted-foreground",
             )}
           >
             {selectedAgentName}
@@ -759,13 +624,6 @@ export function ChatView() {
         </div>
         <div className="ml-auto flex items-center gap-2">{headerStatus}</div>
       </header>
-    );
-  };
-
-  return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {}
-      {renderHeader()}
 
       {}
       <div className="flex flex-1 min-h-0">
