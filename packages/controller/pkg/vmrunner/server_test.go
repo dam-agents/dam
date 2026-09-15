@@ -388,3 +388,16 @@ func TestARestartedGuestIsCounted(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, h.settle(t, "m1").Restarts)
 }
+
+// TEST_SCENARIO: a caller puts a machine id that would climb out of the state directory; the id never reaches the filesystem, so no path outside the runner's own tree is touched.
+func TestAMachineIDCannotEscapeTheStateDir(t *testing.T) {
+	h := newHarness(t)
+	assert.Error(t, h.node.ensure("../../escape", MachineSpec{MemoryMiB: 512}, false))
+	_, err := h.node.machineDir("../../escape")
+	assert.Error(t, err)
+	assert.NoDirExists(t, filepath.Join(h.node.StateDir, "..", "..", "escape"))
+
+	dir, err := h.node.machineDir("agent-1")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(h.node.StateDir, "machines", "agent-1"), dir)
+}
