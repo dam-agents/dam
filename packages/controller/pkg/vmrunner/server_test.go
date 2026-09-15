@@ -426,3 +426,22 @@ func TestCapacityCountsMachinesStillBeingCreated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ReasonOutOfCapacity, st.Reason, "a resize past the limit is refused, not applied")
 }
+
+// TEST_SCENARIO: an agent is hibernated while its machine is still booting — the first boot takes minutes, so this is the common case, not a rare one. The stop must be honoured after the boot rather than dropped, or the machine runs on holding the runner's memory while the platform believes it is asleep.
+func TestAStopIssuedWhileBootingIsHonoured(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	t.Setenv("FAKE_START_SLEEP", "0.6")
+
+	st, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	require.Equal(t, StateCreating, st.State, "the machine is still coming up")
+
+	stopped := spec(false)
+	st, err = c.Ensure(t.Context(), "m1", stopped)
+	require.NoError(t, err)
+	assert.Equal(t, StateStopping, st.State, "the stop is planned, not dropped")
+
+	h.settle(t, "m1")
+	assert.Contains(t, h.calls(), "machine stop -n m1", "the machine is actually stopped once its boot finishes")
+}
