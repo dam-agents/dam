@@ -14,6 +14,7 @@ export {
 export {
   createDisabledTimelineService,
   createTimelineService,
+  isExchange,
   newestTurns,
   ownedTimelineScope,
   TIMELINE_DISABLED_REASON,

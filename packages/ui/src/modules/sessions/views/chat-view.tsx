@@ -71,6 +71,7 @@ import { ExperimentDockPanel } from "../../experiments/components/experiment-doc
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -79,7 +80,8 @@ import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowle
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { SessionTimelinePanel } from "../../timeline/components/session-timeline-panel.js";
+import { useTurns } from "../../timeline/api/queries.js";
+import { TurnTelemetry } from "../../timeline/components/turn-telemetry.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -165,7 +167,6 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const timelineSessionId = useStore((s) => s.timelineSessionId);
   const openArtifact = useOpenArtifact();
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
@@ -260,6 +261,14 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const timelineEnabled = useFeatures().data?.["agent-timeline"] ?? false;
+  const sessionTurns = useTurns(
+    timelineEnabled ? selectedAgent : null,
+    timelineEnabled ? sessionId : null,
+    24,
+  );
+  const turnRows =
+    sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -702,18 +711,38 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {messages.map((m, mi) => (
-                      <ChatMessage
-                        key={m.id}
-                        message={m}
-                        isLast={mi === messages.length - 1}
-                        hasPendingPermission={hasPendingPermission}
-                        onRetry={sendPrompt}
-                        onFileClick={openFileHandler}
-                        onDelete={deleteMessage}
-                        onLoadOlder={loadOlderKeepingScroll}
-                      />
-                    ))}
+                    {messages.map((m, mi) => {
+                      const replyIndex =
+                        m.role === "assistant" && !m.notice
+                          ? messages
+                              .slice(0, mi)
+                              .filter(
+                                (p) => p.role === "assistant" && !p.notice,
+                              ).length
+                          : -1;
+                      const turn =
+                        replyIndex >= 0 ? turnRows[replyIndex] : undefined;
+                      return (
+                        <div key={m.id}>
+                          <ChatMessage
+                            message={m}
+                            isLast={mi === messages.length - 1}
+                            hasPendingPermission={hasPendingPermission}
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onDelete={deleteMessage}
+                            onLoadOlder={loadOlderKeepingScroll}
+                          />
+                          {turn && selectedAgent && sessionId && (
+                            <TurnTelemetry
+                              agentId={selectedAgent}
+                              sessionId={sessionId}
+                              turn={turn}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
@@ -768,10 +797,7 @@ export function ChatView() {
         </div>
 
         {}
-        {(openFilePath ||
-          openArtifactId ||
-          dockedExperiment ||
-          timelineSessionId) && (
+        {(openFilePath || openArtifactId || dockedExperiment) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -802,13 +828,7 @@ export function ChatView() {
                 "md:border-l md:border-border",
               )}
             >
-              {timelineSessionId && selectedAgent ? (
-                <SessionTimelinePanel
-                  key={timelineSessionId}
-                  agentId={selectedAgent}
-                  sessionId={timelineSessionId}
-                />
-              ) : openFilePath ? (
+              {openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel

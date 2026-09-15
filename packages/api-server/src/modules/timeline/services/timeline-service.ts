@@ -59,6 +59,15 @@ export function ownedTimelineScope(
   return ids.includes(agentId) ? [agentId] : [];
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: session housekeeping records — a connection
+ * opening, a sweep — are not an exchange, and listing them as turns puts rows
+ * in front of the reader that no message in the conversation corresponds to.
+ */
+export function isExchange(turn: TurnSummary): boolean {
+  return turn.calls > 0 || turn.spanCount > 0 || turn.errorCount > 0;
+}
+
 export function newestTurns(
   turns: readonly TurnSummary[],
   limit: number,
@@ -89,7 +98,7 @@ export function createTimelineService(deps: {
         deps.reader.sessionSpans(ids, window, query.spanLimit),
       ]);
 
-      const grouped = groupIntoTurns(logs, spans);
+      const grouped = groupIntoTurns(logs, spans).filter(isExchange);
       return {
         available: true,
         turns: newestTurns(grouped, query.limit),

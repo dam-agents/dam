@@ -159,14 +159,17 @@ describe("createTimelineService", () => {
           at: "2026-09-14T10:00:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T10:00:01.000Z" }),
         log({
           at: "2026-09-14T11:00:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T11:00:01.000Z" }),
         log({
           at: "2026-09-14T12:00:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T12:00:01.000Z" }),
       ],
     });
     const service = createTimelineService({
@@ -262,6 +265,7 @@ describe("turns line up with the conversation", () => {
           at: "2026-09-14T12:02:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T12:02:01.000Z" }),
       ],
       sessionSpans: async () => [
         span({ startedAt: "2026-09-14T12:01:00.500Z" }),
@@ -296,6 +300,7 @@ describe("turns line up with the conversation", () => {
           at: "2026-09-14T12:01:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T12:01:01.000Z" }),
       ],
     });
     const service = createTimelineService({
@@ -362,6 +367,7 @@ describe("turn boundaries when the prompt event is missing", () => {
           at: "2026-09-14T12:10:00.000Z",
           event: "claude_code.user_prompt",
         }),
+        log({ at: "2026-09-14T12:10:01.000Z" }),
       ],
     });
     const service = createTimelineService({
@@ -387,6 +393,55 @@ describe("turn boundaries when the prompt event is missing", () => {
           event: "claude_code.user_prompt",
         }),
         log({ at: "2026-09-14T12:09:00.000Z" }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(1);
+  });
+});
+
+describe("what counts as an exchange", () => {
+  it("leaves session housekeeping out of the listing", async () => {
+    /**
+     * TEST_SCENARIO: a session opens with a connection record and no model
+     * call, which is not a turn and has no message to sit beside.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.mcp_server_connection",
+        }),
+        log({
+          at: "2026-09-14T12:10:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({ at: "2026-09-14T12:10:01.000Z" }),
+      ],
+    });
+    const service = createTimelineService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(1);
+  });
+
+  it("keeps a turn that only errored, since it still happened", async () => {
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-14T12:00:00.000Z",
+          event: "claude_code.api_error",
+        }),
       ],
     });
     const service = createTimelineService({

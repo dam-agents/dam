@@ -201,7 +201,6 @@ export const createSessionsSlice: StateCreator<
         terminalPaused: false,
         openFilePath: null,
         openArtifactId: null,
-        timelineSessionId: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,

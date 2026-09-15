@@ -1,6 +1,6 @@
 # Agent Timeline (trace and log read path)
 
-Last verified: 2026-09-14
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -60,10 +60,10 @@ spans, how many records, which traces it touched — rather than depending on th
 to exist. Records that arrive before any prompt (the first exchange of a session often does)
 form a leading Turn rather than being discarded, because that is where its cost is.
 
-**This is why the surface reads next to the conversation.** One Turn is one exchange, so the
-listing runs in the same order as the transcript beside it and lines up with it row for
-message. Reaching a Turn's detail is a time range within a Session, not a trace lookup —
-which is what lets a Turn hold spans from several traces, or from none.
+**This is why the surface lives inside the conversation.** One Turn is one exchange, so a
+Turn belongs to a reply rather than to a list beside it. Reaching a Turn's detail is a time
+range within a Session, not a trace lookup — which is what lets a Turn hold spans from
+several traces, or from none.
 
 ## Correlating a log record to the call it describes
 
@@ -157,16 +157,23 @@ the response when the cap binds.
 
 ## Progressive disclosure
 
-The in-product surface is **scoped to a Session and lives beside the conversation**, in the
-chat view's docked panel, reached from the Session's own menu. That placement follows from
-what the surface answers: *what did this piece of work do*, asked while looking at the work.
-An agent-wide browser over every Session is a different question and is not built — the
-export covers the cross-Session case for now.
+The in-product surface is **inside the conversation**, not beside it. Each agent reply
+carries a one-line summary of what that exchange cost and how long it took, which expands
+in place to the exchange's own timeline. There is no separate panel and no list of turns to
+cross-reference against the transcript: the transcript *is* the list, and a row of telemetry
+belongs to the message above it.
 
-The panel is revealed by an experimental feature ([features](features.md)); the procedures
-themselves stay open to any authenticated owner. The flag is disclosure, not authorization —
-the raw view is deliberately structural, and the designed diagnostic experience it feeds is
-separate work. The API and the export are therefore usable before the panel is revealed.
+Exchanges are matched to replies by order, which holds because both are the same session's
+sequence and because session housekeeping — a connection opening, a sweep — is not counted
+as an exchange. The sturdier anchor is each message's own timestamp; the chat model does not
+carry one yet, and adopting it is what would make the match structural rather than ordinal.
+
+Session-wide access stays off the conversation: the Session's own menu exports its telemetry
+as a file. The panel is revealed by an experimental feature ([features](features.md)); the
+procedures themselves stay open to any authenticated owner. The flag is disclosure, not
+authorization — the raw view is deliberately structural, and the designed diagnostic
+experience it feeds is separate work. The API and the export are therefore usable before the
+surface is revealed.
 
 ## Disabled backend
 
