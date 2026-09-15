@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
+import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createRunResultStore } from "../../../infrastructure/run-result-store.js";
 import {
   createSessionMetadata,
@@ -17,7 +18,8 @@ import {
  * turn streamed — in the Run Result store, which lives outside the in-memory
  * Session Transcript so the record survives the idle reap. Any client can read
  * it back with the `platform/runResult` extension method: `pending` while the
- * turn runs, `done` with the record after, `none` where nothing was recorded.
+ * turn runs, `done` with the record after, `none` where nothing was recorded,
+ * `interrupted` for a leftover turn boot recovery gave up on.
  * The synthetic `platform/turnEnded` notification carries the promptId and
  * stopReason so a reconnecting headless client can match its own turn.
  */
@@ -144,6 +146,32 @@ describe("acp-runtime: headless runs", () => {
 
     client.send(runResultRequest(4, "sess-unknown"));
     expect(client.reply(4)?.result).toEqual({ status: "none" });
+  });
+
+  /**
+   * TEST_SCENARIO: A leftover Active-Turn marker boot recovery has given up on
+   * (attempts > 0, nothing in flight) must answer `interrupted`, not
+   * `pending` — a watcher would wait forever on a turn this pod will never
+   * finish. A marker still on its first attempt keeps answering `pending`:
+   * boot recovery is about to resume that turn.
+   */
+  it("should answer interrupted for a leftover turn recovery gave up on", () => {
+    const activeTurns = createActiveTurnStore(inMemoryBackend());
+    activeTurns.record("sess-dead");
+    activeTurns.bumpAttempts("sess-dead");
+    activeTurns.record("sess-fresh");
+    const seeded = createWorld({
+      sessionMetadata: createSessionMetadata().store,
+      runResults: createRunResultStore(inMemoryBackend()),
+      activeTurns,
+    });
+    const client = seeded.connect();
+
+    client.send(runResultRequest(5, "sess-dead"));
+    expect(client.reply(5)?.result).toEqual({ status: "interrupted" });
+
+    client.send(runResultRequest(6, "sess-fresh"));
+    expect(client.reply(6)?.result).toEqual({ status: "pending" });
   });
 
   /**

@@ -832,14 +832,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/runResult" && paramsSid) {
         const record = deps.runResults?.readFor(paramsSid) ?? null;
-        const interrupted =
-          !promptScheduler.hasTurnInFlight(paramsSid) &&
-          deps.activeTurns
-            .leftovers()
-            .some((marker) => marker.sessionId === paramsSid);
-        const response =
-          promptScheduler.hasWork(paramsSid) || interrupted
-            ? { status: "pending" }
+        const leftover = deps.activeTurns
+          .leftovers()
+          .find((marker) => marker.sessionId === paramsSid);
+        const response = promptScheduler.hasWork(paramsSid)
+          ? { status: "pending" }
+          : leftover !== undefined
+            ? leftover.attempts > 0
+              ? { status: "interrupted" }
+              : { status: "pending" }
             : record === null
               ? { status: "none" }
               : { status: "done", result: record };

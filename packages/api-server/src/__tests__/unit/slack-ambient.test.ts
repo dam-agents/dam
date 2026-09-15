@@ -68,6 +68,7 @@ function harness(opts: {
       return opts.respond ? await opts.respond(prompt) : "the answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),

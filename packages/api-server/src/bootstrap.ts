@@ -677,12 +677,14 @@ export async function bootstrap() {
       ? () => fakeSlackGateway
       : undefined;
 
-  const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
+  const acpTurnWatch = {
+    stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
+  };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
       instanceName,
-      turnCeilingMs: acpTurnCeilingMs,
+      turnWatch: acpTurnWatch,
     });
 
   const slackWorker = slackGatewayFactory

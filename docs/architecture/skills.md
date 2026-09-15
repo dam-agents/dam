@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-14
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -255,6 +255,6 @@ The on-pod state lives on the per-agent PVC under the configured Skill Paths. PV
 
 - **Filesystem is authoritative for installed state — once the pod has caught up.** `agent_skills` is a declarative record that self-heals on every `state` read whose agent has cleanly applied. A skill removed via the Files panel disappears from the UI without any explicit uninstall. While an apply is in flight the filesystem is not yet evidence about what was just requested, so the self-heal waits.
 - **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
-- **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels](channels.md)) and pins the `agentId` from the verified token, not from tool input.
+- **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channel-turns](channel-turns.md)) and pins the `agentId` from the verified token, not from tool input.
 
 The pod-side invariants — provenance judged against the image, agent-runtime never holding a GitHub credential, publish being REST-only — are stated on [agent-skills](agent-skills.md#invariants).

@@ -40,6 +40,7 @@ function harness(opts: {
     listSessions: async () => [],
     sendPrompt: async () => "x",
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   } as unknown as AcpClient;
   const agents = {
     ensureReady: async () => {},

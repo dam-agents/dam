@@ -2,6 +2,7 @@ import { brandSchema, linksSchema } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
+import { getLogger } from "./core/logger.js";
 import { durationToMinutesStrict } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
@@ -101,7 +102,7 @@ const configSchema = z.object({
   redisUrl: z.string().nullable().default(null),
   redisPassword: z.string().nullable().default(null),
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
-  acpTurnCeilingSeconds: z.coerce.number().int().positive().default(3600),
+  acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
@@ -151,10 +152,15 @@ const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 
 const validatedConfigSchema = configSchema
-  .refine((c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds, {
-    message:
-      "acpTurnCeilingSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval does not die before the hold resolves",
-    path: ["acpTurnCeilingSeconds"],
+  .transform((c) => {
+    const stall = Math.max(c.acpTurnStallProbeSeconds, c.approvalHoldSeconds);
+    if (stall !== c.acpTurnStallProbeSeconds) {
+      getLogger().warn(
+        { configured: c.acpTurnStallProbeSeconds, raisedTo: stall },
+        "ACP_TURN_STALL_PROBE_SECONDS is below APPROVAL_HOLD_SECONDS and was raised to it, so a turn blocked on an approval is never probed before the hold resolves",
+      );
+    }
+    return { ...c, acpTurnStallProbeSeconds: stall };
   })
   .refine(
     (c) =>
@@ -246,7 +252,7 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
-    acpTurnCeilingSeconds: process.env.ACP_TURN_CEILING_SECONDS,
+    acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
