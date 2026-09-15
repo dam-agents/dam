@@ -177,7 +177,9 @@ virtualization:
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
     # Machine disks — every vm agent's workspace — and smolvm's image cache
-    # live here and survive pod restarts and uninstalls (the claim is kept).
+    # live here. The claim outlives a pod restart and a chart upgrade, but not
+    # its owner: the sweep removes a runner once that owner has no vm agents
+    # left, and takes the claim with it, so the next one re-fetches the image.
     # Set once: a later change only grows the claim, and only on a class
     # that allows expansion.
     storage: 100Gi

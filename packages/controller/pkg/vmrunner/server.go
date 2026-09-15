@@ -29,6 +29,8 @@ const (
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+type failure struct{ message, reason string }
+
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
 type Server struct {
@@ -45,20 +47,19 @@ type Server struct {
 	locks          map[string]*sync.Mutex
 	pending        map[string]string
 	committing     map[string]int
-	lastErr        map[string]string
+	failures       map[string]failure
 	listeners      map[string]net.Listener
 	gens           map[string]uint64
 	drift          map[string]string
-	reasons        map[string]string
 	restarts       map[string]int32
 	wasHealthy     map[string]bool
 	unhealthySince map[string]time.Time
 }
 
 func (s *Server) Start() error {
-	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
+	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.wasHealthy, s.unhealthySince = map[string]uint64{}, map[string]string{}, map[string]bool{}, map[string]time.Time{}
-	s.reasons, s.restarts, s.committing = map[string]string{}, map[string]int32{}, map[string]int{}
+	s.restarts, s.committing = map[string]int32{}, map[string]int{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -156,7 +157,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		if op != StateStopping {
 			if err := s.roomFor(id, spec); err != nil {
 				s.mu.Lock()
-				s.lastErr[id], s.reasons[id] = err.Error(), ReasonOutOfCapacity
+				s.failures[id] = failure{err.Error(), ReasonOutOfCapacity}
 				s.mu.Unlock()
 				st.Message, st.Reason, st.Ready = err.Error(), ReasonOutOfCapacity, false
 				writeJSON(w, st)
@@ -361,9 +362,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	delete(s.lastErr, id)
+	delete(s.failures, id)
 	delete(s.drift, id)
-	delete(s.reasons, id)
 	delete(s.restarts, id)
 	delete(s.wasHealthy, id)
 	delete(s.unhealthySince, id)
@@ -407,11 +407,10 @@ func (s *Server) spawn(id, op string, fn func() error) {
 		delete(s.pending, id)
 		delete(s.committing, id)
 		if err != nil {
-			s.lastErr[id], s.reasons[id] = err.Error(), failureReason(err)
+			s.failures[id] = failure{err.Error(), failureReason(err)}
 			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
 		} else {
-			delete(s.lastErr, id)
-			delete(s.reasons, id)
+			delete(s.failures, id)
 		}
 		s.mu.Unlock()
 	}()
@@ -419,8 +418,9 @@ func (s *Server) spawn(id, op string, fn func() error) {
 
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
-	pending, lastErr, drift := s.pending[id], s.lastErr[id], s.drift[id]
-	reason, restarts := s.reasons[id], s.restarts[id]
+	pending, drift, restarts := s.pending[id], s.drift[id], s.restarts[id]
+	failed := s.failures[id]
+	lastErr, reason := failed.message, failed.reason
 	s.mu.Unlock()
 	if lastErr == "" {
 		lastErr = drift
@@ -649,6 +649,11 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 		committing[k] = v
 	}
 	s.mu.Unlock()
+	for other := range committing {
+		if !slices.Contains(ids, other) {
+			ids = append(ids, other)
+		}
+	}
 	used := 0
 	for _, other := range ids {
 		if other == id {
@@ -663,11 +668,6 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 		}
 		if applied := s.readSpec(other); applied != nil {
 			used += applied.MemoryMiB
-		}
-	}
-	for other, mib := range committing {
-		if other != id && !slices.Contains(ids, other) {
-			used += mib
 		}
 	}
 	if used+spec.MemoryMiB+s.ReserveMiB > limit {

@@ -24,11 +24,11 @@ type IdleChecker struct {
 	client    kubernetes.Interface
 	dynamic   dynamic.Interface
 	config    *config.Config
-	halt      func(ctx context.Context, owner, name string) error
+	halt      MachineHalt
 	busyProbe func(ctx context.Context, agentName string) bool
 }
 
-func (c *IdleChecker) WithMachineHalt(halt func(ctx context.Context, owner, name string) error) *IdleChecker {
+func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 	c.halt = halt
 	return c
 }
