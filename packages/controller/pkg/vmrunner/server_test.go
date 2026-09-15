@@ -392,7 +392,7 @@ func TestARestartedGuestIsCounted(t *testing.T) {
 // TEST_SCENARIO: a caller puts a machine id that would climb out of the state directory; the id never reaches the filesystem, so no path outside the runner's own tree is touched.
 func TestAMachineIDCannotEscapeTheStateDir(t *testing.T) {
 	h := newHarness(t)
-	assert.Error(t, h.node.ensure("../../escape", MachineSpec{MemoryMiB: 512}, false))
+	assert.Error(t, h.node.ensure("../../escape", MachineSpec{MemoryMiB: 512}, false, false))
 	_, err := h.node.machineDir("../../escape")
 	assert.Error(t, err)
 	assert.NoDirExists(t, filepath.Join(h.node.StateDir, "..", "..", "escape"))
@@ -441,4 +441,22 @@ func TestCapacityCountsMachinesStillBeingCreated(t *testing.T) {
 	st, err = h.client().Ensure(t.Context(), "m1", grow)
 	require.NoError(t, err)
 	assert.Equal(t, ReasonOutOfCapacity, st.Reason, "a resize past the limit is refused, not applied")
+}
+
+// TEST_SCENARIO: a resize restarts a healthy machine; the restart count stays zero, because it counts guests the runner had to revive and the platform reads it as "this guest stopped answering".
+func TestADeliberateRestartIsNotCountedAsAHungGuest(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	grown := spec(true)
+	grown.MemoryMiB += 256
+	_, err = c.Ensure(t.Context(), "m1", grown)
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+
+	assert.Contains(t, h.calls(), "machine update", "the resize did restart the machine")
+	assert.Zero(t, st.Restarts, "a resize is not a guest that stopped answering")
 }

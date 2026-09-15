@@ -152,7 +152,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.status(id)
-	if op := s.plan(id, spec, st); op != "" {
+	if op, unhealthy := s.plan(id, spec, st); op != "" {
 		if op != StateStopping {
 			if err := s.roomFor(id, spec); err != nil {
 				s.mu.Lock()
@@ -166,35 +166,35 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 			s.committing[id] = spec.MemoryMiB
 			s.mu.Unlock()
 		}
-		force := op == StateRestarting
-		s.spawn(id, op, func() error { return s.ensure(id, spec, force) })
+		restart := op == StateRestarting
+		s.spawn(id, op, func() error { return s.ensure(id, spec, restart, unhealthy) })
 		st.State, st.Ready = op, false
 	}
 	writeJSON(w, st)
 }
 
-func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) string {
+func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bool) {
 	switch st.State {
 	case StateAbsent:
 		if spec.Running {
-			return StateCreating
+			return StateCreating, false
 		}
 	case StateStopped:
 		if spec.Running {
-			return StateStarting
+			return StateStarting, false
 		}
 	case StateRunning:
 		if !spec.Running {
-			return StateStopping
+			return StateStopping, false
 		}
 		if applied := s.readSpec(id); applied == nil || needsRestart(*applied, spec) {
-			return StateRestarting
+			return StateRestarting, false
 		}
 		if !st.Ready && s.deadForLong(id) {
-			return StateRestarting
+			return StateRestarting, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func (s *Server) deadForLong(id string) bool {
@@ -223,7 +223,7 @@ func createOnlyDrift(applied, desired MachineSpec) string {
 	return "fixed at create, so this machine keeps what it has (recreate the agent to change it): " + strings.Join(out, "; ")
 }
 
-func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
+func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) error {
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
@@ -272,8 +272,8 @@ func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
 			return err
 		}
 	}
-	if state == StateRunning && (force || applied == nil || needsRestart(*applied, spec)) {
-		if force {
+	if state == StateRunning && (restart || applied == nil || needsRestart(*applied, spec)) {
+		if unhealthy {
 			s.mu.Lock()
 			s.restarts[id]++
 			s.mu.Unlock()
