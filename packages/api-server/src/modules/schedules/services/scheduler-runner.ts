@@ -112,7 +112,13 @@ export function createSchedulerRunner(
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       const stamp = await deps.wakeAgent(sched.agentId);
       if (stamp && sched.spec.precheck && deps.activityStamps)
-        await deps.activityStamps.set(eventId, stamp).catch(() => {});
+        await deps.activityStamps
+          .set(eventId, stamp)
+          .catch((err: Error) =>
+            log(
+              `fire: stamp stash failed: ${err.message}; no restore on decline`,
+            ),
+          );
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);

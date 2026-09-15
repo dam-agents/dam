@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
+import type { TriggerEventPayload } from "agent-runtime-api";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
@@ -853,10 +854,8 @@ export async function bootstrap() {
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
-      const { scheduleId, precheck } = event.payload as {
-        scheduleId?: string;
-        precheck?: string;
-      };
+      const { scheduleId, precheck } =
+        event.payload as Partial<TriggerEventPayload>;
       if (!scheduleId || !precheck) return;
       await schedulesBoot.runner.reportFire({
         scheduleId,
