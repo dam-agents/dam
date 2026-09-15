@@ -41,14 +41,15 @@ type Server struct {
 	pending        map[string]string
 	lastErr        map[string]string
 	listeners      map[string]net.Listener
-	deleted        map[string]bool
+	gens           map[string]uint64
+	drift          map[string]string
 	wasHealthy     map[string]bool
 	unhealthySince map[string]time.Time
 }
 
 func (s *Server) Start() error {
 	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
-	s.deleted, s.wasHealthy, s.unhealthySince = map[string]bool{}, map[string]bool{}, map[string]time.Time{}
+	s.gens, s.drift, s.wasHealthy, s.unhealthySince = map[string]uint64{}, map[string]string{}, map[string]bool{}, map[string]time.Time{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -119,7 +120,9 @@ func (s *Server) machineIDs() ([]string, error) {
 	}
 	ids := []string{}
 	for _, e := range entries {
-		ids = append(ids, e.Name())
+		if e.IsDir() && machineID.MatchString(e.Name()) {
+			ids = append(ids, e.Name())
+		}
 	}
 	return ids, nil
 }
@@ -135,13 +138,11 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "image, cpus, memoryMiB and storageGiB are required", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	delete(s.deleted, id)
-	s.mu.Unlock()
 	st := s.status(id)
 	if op := s.plan(id, spec, st); op != "" {
-		s.spawn(id, op, func() error { return s.ensure(id, spec) })
-		st.State = op
+		force := op == StateRestarting
+		s.spawn(id, op, func() error { return s.ensure(id, spec, force) })
+		st.State, st.Ready = op, false
 	}
 	writeJSON(w, st)
 }
@@ -179,11 +180,24 @@ func (s *Server) deadForLong(id string) bool {
 
 func needsRestart(applied, desired MachineSpec) bool {
 	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
-		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env) ||
-		applied.Image != desired.Image || !reflect.DeepEqual(applied.AllowCIDRs, desired.AllowCIDRs)
+		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env)
 }
 
-func (s *Server) ensure(id string, spec MachineSpec) error {
+func createOnlyDrift(applied, desired MachineSpec) string {
+	var out []string
+	if applied.Image != desired.Image {
+		out = append(out, fmt.Sprintf("image is %s, wanted %s", applied.Image, desired.Image))
+	}
+	if !reflect.DeepEqual(applied.AllowCIDRs, desired.AllowCIDRs) {
+		out = append(out, fmt.Sprintf("egress allowlist is %v, wanted %v", applied.AllowCIDRs, desired.AllowCIDRs))
+	}
+	if out == nil {
+		return ""
+	}
+	return "fixed at create, so this machine keeps what it has (recreate the agent to change it): " + strings.Join(out, "; ")
+}
+
+func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
 	state, err := s.Runtime.State(id)
 	if err != nil {
 		return err
@@ -204,10 +218,26 @@ func (s *Server) ensure(id string, spec MachineSpec) error {
 		return s.writeSpec(id, spec)
 	}
 	applied := s.readSpec(id)
-	if applied != nil && (applied.Image != spec.Image || !reflect.DeepEqual(applied.AllowCIDRs, spec.AllowCIDRs)) {
-		return fmt.Errorf("machine %s: image and egress allowlist are fixed for the machine's life (have %s %v, want %s %v); recreate the agent", id, applied.Image, applied.AllowCIDRs, spec.Image, spec.AllowCIDRs)
+	if applied != nil {
+		drift := createOnlyDrift(*applied, spec)
+		s.mu.Lock()
+		if drift == "" {
+			delete(s.drift, id)
+		} else {
+			s.drift[id] = drift
+		}
+		s.mu.Unlock()
+		if drift != "" {
+			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", drift)
+			spec.Image, spec.AllowCIDRs = applied.Image, applied.AllowCIDRs
+		}
 	}
-	if state == StateRunning && (applied == nil || needsRestart(*applied, spec)) {
+	if p := s.port(id); p != 0 {
+		if err := s.forward(id, p); err != nil {
+			return err
+		}
+	}
+	if state == StateRunning && (force || applied == nil || needsRestart(*applied, spec)) {
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
 		}
@@ -260,7 +290,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	lock.Lock()
 	defer lock.Unlock()
 	s.mu.Lock()
-	s.deleted[id] = true
+	s.gens[id]++
 	s.mu.Unlock()
 	state, err := s.Runtime.State(id)
 	if err != nil {
@@ -279,6 +309,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	delete(s.lastErr, id)
+	delete(s.drift, id)
 	delete(s.wasHealthy, id)
 	delete(s.unhealthySince, id)
 	if ln := s.listeners[id]; ln != nil {
@@ -304,13 +335,14 @@ func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
 	s.pending[id] = op
 	delete(s.unhealthySince, id)
+	gen := s.gens[id]
 	s.mu.Unlock()
 	go func() {
 		lock := s.lock(id)
 		lock.Lock()
 		defer lock.Unlock()
 		s.mu.Lock()
-		gone := s.deleted[id]
+		gone := s.gens[id] != gen
 		s.mu.Unlock()
 		var err error
 		if !gone {
@@ -330,8 +362,11 @@ func (s *Server) spawn(id, op string, fn func() error) {
 
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
-	pending, lastErr := s.pending[id], s.lastErr[id]
+	pending, lastErr, drift := s.pending[id], s.lastErr[id], s.drift[id]
 	s.mu.Unlock()
+	if lastErr == "" {
+		lastErr = drift
+	}
 	st := MachineStatus{State: StateAbsent, Port: s.port(id), Message: lastErr}
 	if spec := s.readSpec(id); spec != nil {
 		st.CPUs, st.MemoryMiB, st.StorageGiB = spec.CPUs, spec.MemoryMiB, spec.StorageGiB
@@ -342,7 +377,10 @@ func (s *Server) status(id string) MachineStatus {
 	}
 	state, err := s.Runtime.State(id)
 	if err != nil {
-		st.State, st.Message = StateUnknown, err.Error()
+		st.State = StateUnknown
+		if st.Message == "" {
+			st.Message = err.Error()
+		}
 		return st
 	}
 	st.State = state

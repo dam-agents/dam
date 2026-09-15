@@ -51,6 +51,7 @@ controller:
 # ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
 # it so the e2e cluster proves the no-shared-filesystem path. Drops together
 # with the chart's nfsProvisioner block once dev clusters are drained.
+
 # The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
 # nested virtualization, handed to the pod by the chart's own device plugin
 # exactly as on a cluster without KubeVirt. Rendered only with

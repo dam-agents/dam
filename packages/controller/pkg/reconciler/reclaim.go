@@ -41,7 +41,7 @@ func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agen
 		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
 			return false, err
 		}
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, c.name); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.vmRunner, r.config.Namespace, c.name); err != nil {
 			return false, err
 		}
 		slog.InfoContext(ctx, "reclaimed idle agent to admit a blocked start",
