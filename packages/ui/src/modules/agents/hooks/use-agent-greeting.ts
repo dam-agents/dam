@@ -3,6 +3,11 @@ import { useEffect, useRef } from "react";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import type { SendPromptOptions } from "../../sessions/hooks/use-acp-prompt.js";
 import { useIsAgentOperable } from "../api/queries.js";
+import {
+  clearGreeted,
+  hasGreeted,
+  markGreeted,
+} from "../lib/greeted-agents.js";
 
 export interface AgentGreetingOptions {
   agentId: string | null;
@@ -46,12 +51,16 @@ export function useAgentGreeting(opts: AgentGreetingOptions) {
   useEffect(() => {
     if (!armed || !agentId || sessions === undefined) return;
     if (greetedForAgentRef.current === agentId) return;
-    if (sessions.length > 0) {
+    if (sessions.length > 0 || hasGreeted(agentId)) {
       greetedForAgentRef.current = agentId;
       return;
     }
     if (setupReady === false) return;
     greetedForAgentRef.current = agentId;
-    void sendPrompt(command, undefined, { hidden, initiator: "system" });
+    markGreeted(agentId);
+    void sendPrompt(command, undefined, {
+      hidden,
+      initiator: "system",
+    }).catch(() => clearGreeted(agentId));
   }, [armed, agentId, sessions, setupReady, command, hidden, sendPrompt]);
 }
