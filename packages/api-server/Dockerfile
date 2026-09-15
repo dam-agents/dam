@@ -24,8 +24,12 @@ COPY packages/e2e/agents/mock-api/ packages/e2e/agents/mock-api/
 COPY packages/api-server/ packages/api-server/
 COPY packages/db/ packages/db/
 
+# --legacy deploy ignores the lockfile and re-resolves caret ranges against the
+# registry, so the image ships untested minor/patch upgrades. Modern deploy
+# honours --frozen-lockfile; inject-workspace-packages satisfies its guard.
 RUN pnpm --filter api-server exec tsup \
-    && pnpm --filter api-server --prod --legacy deploy /prod
+    && npm_config_inject_workspace_packages=true \
+       pnpm --filter api-server --prod deploy --frozen-lockfile /prod
 
 FROM registry.access.redhat.com/hi/nodejs:24 AS runner
 
