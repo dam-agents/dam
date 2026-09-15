@@ -144,19 +144,11 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	if err != nil {
 		return cpu, mem, fmt.Errorf("listing agent statefulsets: %w", err)
 	}
-	hasAgentSS := make(map[string]bool, len(sss.Items))
-	for i := range sss.Items {
-		hasAgentSS[sss.Items[i].Labels[LabelAgent]] = hasAgentSS[sss.Items[i].Labels[LabelAgent]] || sss.Items[i].Name == sss.Items[i].Labels[LabelAgent]
-	}
 	up := make(map[string]bool, len(sss.Items))
 	for i := range sss.Items {
 		ss := &sss.Items[i]
-		agentName := ss.Labels[LabelAgent]
-		if ss.Name != agentName && (hasAgentSS[agentName] || ss.Name != GatewayName(agentName)) {
-			continue
-		}
 		if ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1 {
-			up[agentName] = true
+			up[ss.Name] = true
 		}
 	}
 
@@ -175,8 +167,11 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 		if err != nil {
 			return cpu, mem, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
-		isUp := up[item.GetName()]
-		if !isUp {
+		workload := item.GetName()
+		if a.Spec.IsVM() {
+			workload = GatewayName(workload)
+		}
+		if !up[workload] {
 			continue
 		}
 		c, m := r.limitsOf(&a.Spec)
