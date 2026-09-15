@@ -63,6 +63,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
       return "the answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
+    turnStatus: async () => "unknown" as const,
   };
 
   const AGENT_NAMES: Record<string, string> = {
@@ -545,7 +546,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
       footered(PEER, "1.3", PEER_WORDS),
     ]);
 
-    h.failSends.count = 2;
+    h.failSends.count = 1;
     await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper any news"));
     expect(h.prompts).toHaveLength(1);
 

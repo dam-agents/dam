@@ -283,6 +283,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
   ): Promise<
     | { status: "done"; result: PlatformRunResult }
     | { status: "pending" }
+    | { status: "interrupted" }
     | { status: "none" }
     | null
   > {
@@ -290,6 +291,15 @@ export function createRunService(deps: RunServiceDeps): RunService {
     if (!res.ok) return null;
     const parsed = platformRunResultResponseSchema.safeParse(res.result);
     return parsed.success ? parsed.data : null;
+  }
+
+  function interruptedRun(sessionId: string) {
+    return err({
+      kind: "run-failed" as const,
+      reason:
+        "the run was interrupted and will not finish — the agent went down mid-run; run it again",
+      sessionId,
+    });
   }
 
   async function reconnectAndFinish(opts: {
@@ -346,6 +356,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
             matchesPrompt(record.result, promptId)
           )
             return finish(record.result);
+          if (record?.status === "interrupted")
+            return interruptedRun(sessionId);
 
           const event = await waiter.next(deadlineAt, conn.closed);
           if (event === "timed-out")
@@ -560,6 +572,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
             });
           if (record.status === "done")
             return ok({ kind: "done" as const, result: record.result });
+          if (record.status === "interrupted") return interruptedRun(sessionId);
           if (record.status === "none" && !input.wait)
             return ok({ kind: "none" as const, sessionId });
           if (!input.wait) return ok({ kind: "pending" as const, sessionId });
