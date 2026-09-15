@@ -158,9 +158,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
-    onTurnStarted: ({ sessionId, channel }) => {
+    onTurnStarted: ({ sessionId, unattended }) => {
       deps.activeTurns.record(sessionId);
-      if (nonViewerChannels.has(channel) && isMachineSession(sessionId)) {
+      if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
@@ -182,8 +182,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         endedAt: new Date().toISOString(),
       });
     },
-    canStart: (sessionId) =>
-      hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
+    canStart: ({ sessionId, unattended }) =>
+      (unattended === true || hasEngagedChannel(sessionId)) &&
+      !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
       deps.undeliveredPrompts.remember(
@@ -999,6 +1000,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           frame: rewritten,
           promptId,
           runPrompt: extractPromptSurface(frame) === "cli",
+          unattended:
+            nonViewerChannels.has(channel) && isMachineSession(promptSessionId),
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
