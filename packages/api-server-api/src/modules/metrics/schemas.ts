@@ -26,7 +26,7 @@ export const metricsOverviewInputSchema = z.object({
     .default(METRICS_DEFAULT_LIMIT),
 });
 
-const agentTelemetryWindowShape = {
+const agentTelemetryShape = {
   days: z
     .number()
     .int()
@@ -43,12 +43,6 @@ const agentTelemetryWindowShape = {
     .describe(
       "Narrow to a single session, including any harness run that session spawned. Omit to cover every session in the window.",
     ),
-};
-
-export const usageSummaryInputSchema = z.object(agentTelemetryWindowShape);
-
-export const agentTelemetryRecordsInputSchema = z.object({
-  ...agentTelemetryWindowShape,
   limit: z
     .number()
     .int()
@@ -56,7 +50,19 @@ export const agentTelemetryRecordsInputSchema = z.object({
     .max(AGENT_TELEMETRY_MAX_LIMIT)
     .default(AGENT_TELEMETRY_DEFAULT_LIMIT)
     .describe(
-      `Most recent records to return, newest first (default ${AGENT_TELEMETRY_DEFAULT_LIMIT}, max ${AGENT_TELEMETRY_MAX_LIMIT}).`,
+      `Most rows to return, newest first (default ${AGENT_TELEMETRY_DEFAULT_LIMIT}, max ${AGENT_TELEMETRY_MAX_LIMIT}). Bounds the row list only; reported totals always cover the whole window.`,
+    ),
+};
+
+export const agentTelemetryInputSchema = z.object(agentTelemetryShape);
+
+export const agentMetricsInputSchema = z.object({
+  ...agentTelemetryShape,
+  granularity: z
+    .enum(["summary", "session", "call"])
+    .default("summary")
+    .describe(
+      "Detail level. 'summary': window totals and the per-model split. 'session': adds a row per session — calls, model time, tokens, cost, first/last activity. 'call': adds a row per LLM call — model, request latency, tokens, context size, cost.",
     ),
 });
 

@@ -78,17 +78,29 @@ describe("agent-scoped record predicates", () => {
     expect(ownedApiRequests({ hours: 24 })).toContain("Body =");
   });
 
-  // TEST_SCENARIO: Spans carry no session id, so narrowing them to a session has to go through the trace family that session's calls belong to — otherwise a session-scoped span read would silently return the agent's whole window.
-  it("narrows spans to a session by its trace family", () => {
-    const sql = ownedAgentSpans({ hours: 24, sessionId: "s-1" });
-    expect(sql).toContain("TraceId IN (");
-    expect(sql).toContain("SELECT DISTINCT TraceId FROM otel_logs");
-    expect(sql).toContain("LogAttributes['session.id'] = {sessionId:String}");
+  /**
+   * TEST_SCENARIO: Spans carry no session id, so a narrowed span read filters on
+   * the trace family resolved for that session. The narrowing is an explicit
+   * trace-id list rather than a subquery, so that a session which resolves to no
+   * traces is distinguishable by the caller instead of collapsing into an empty
+   * result the predicate cannot explain.
+   */
+  it("narrows spans to an explicit trace-id list", () => {
+    const sql = ownedAgentSpans({ hours: 24, sessionId: "s-1" }, ["t-1"]);
+    expect(sql).toContain("TraceId IN {traceIds:Array(String)}");
+    expect(sql).not.toContain("otel_logs");
   });
 
-  // TEST_SCENARIO: Without a session the span read is a plain owned-window scan; a stray join here would cost a full trace resolution on every call.
-  it("applies no trace fold to spans without a sessionId", () => {
+  // TEST_SCENARIO: Without a resolved trace family the span read is a plain owned-window scan; a stray join here would cost a trace resolution on every call.
+  it("applies no trace filter to spans when none was resolved", () => {
     const sql = ownedAgentSpans({ hours: 24 });
+    expect(sql).not.toContain("TraceId");
+    expect(sql).toContain(AGENT_GATE);
+  });
+
+  // TEST_SCENARIO: A sessionId alone must not narrow spans — only a resolved trace family does. Reading the session id straight off the window here would silently return nothing for a harness whose sessions cannot be resolved.
+  it("ignores a session id with no resolved traces", () => {
+    const sql = ownedAgentSpans({ hours: 24, sessionId: "s-1" });
     expect(sql).not.toContain("sessionId");
     expect(sql).not.toContain("TraceId");
   });

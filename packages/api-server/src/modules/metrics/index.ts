@@ -17,10 +17,10 @@ export {
   createUnavailableAgentTelemetry,
   type AgentTelemetryService,
   type AgentTelemetryQuery,
-  type AgentTelemetryRecordsQuery,
-  type AgentUsageSummaryResult,
-  type AgentLlmCallsResult,
-  type AgentTelemetryEventsResult,
-  type AgentTraceSpansResult,
+  type AgentMetricsQuery,
+  type AgentMetricsGranularity,
+  type AgentMetricsResult,
+  type AgentLogsResult,
+  type AgentSpansResult,
 } from "./services/agent-telemetry.js";
 export { registerAgentTelemetryTools } from "./mcp-tools.js";

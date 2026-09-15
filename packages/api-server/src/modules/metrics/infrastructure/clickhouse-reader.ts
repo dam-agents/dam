@@ -73,12 +73,13 @@ export const ownedApiRequests = (w: MetricsWindow): string =>
 
 export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
-export const ownedAgentSpans = (w: MetricsWindow): string => {
+export const ownedAgentSpans = (
+  w: MetricsWindow,
+  traceIds?: readonly string[],
+): string => {
   const base = [AGENT_GATE, ...timeBounds(w)];
-  if (w.sessionId === undefined) return base.join("\n  AND ");
-  return [...base, `TraceId IN (\n       ${sessionTraceIds(w)})`].join(
-    "\n  AND ",
-  );
+  if (traceIds === undefined) return base.join("\n  AND ");
+  return [...base, "TraceId IN {traceIds:Array(String)}"].join("\n  AND ");
 };
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
@@ -360,7 +361,17 @@ export function createClickhouseReader(
       })) satisfies TelemetryEvent[];
     },
 
-    async traceSpans(agentIds, window, limit) {
+    async sessionTraceIds(agentIds, window) {
+      const r = await rows(
+        `${sessionTraceIds(window)}`,
+        windowParams(agentIds, window),
+      );
+      return r
+        .map((x) => String(x.TraceId ?? ""))
+        .filter((id) => id.length > 0);
+    },
+
+    async traceSpans(agentIds, window, limit, traceIds) {
       const r = await rows(
         `SELECT
            Timestamp AS at,
@@ -375,10 +386,14 @@ export function createClickhouseReader(
            StatusMessage AS statusMessage,
            SpanAttributes AS attributes
          FROM otel_traces
-         WHERE ${ownedAgentSpans(window)}
+         WHERE ${ownedAgentSpans(window, traceIds)}
          ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
-        { ...windowParams(agentIds, window), limit },
+        {
+          ...windowParams(agentIds, window),
+          limit,
+          ...(traceIds === undefined ? {} : { traceIds }),
+        },
       );
       return r.map((x) => ({
         at: String(x.at ?? ""),

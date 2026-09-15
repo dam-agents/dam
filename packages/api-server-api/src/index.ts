@@ -331,8 +331,8 @@ export {
 } from "./modules/case-studies/constants.js";
 
 export {
-  agentTelemetryRecordsInputSchema,
-  usageSummaryInputSchema,
+  agentMetricsInputSchema,
+  agentTelemetryInputSchema,
 } from "./modules/metrics/schemas.js";
 export {
   METRICS_MAX_SINCE_HOURS,

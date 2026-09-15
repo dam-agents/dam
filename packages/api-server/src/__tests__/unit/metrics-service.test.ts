@@ -32,6 +32,7 @@ function spyReader(): {
       runtimeBySession: (ids, w) => record(ids, w),
       contextPerCall: (ids, w) => record(ids, w),
       telemetryEvents: (ids, w) => record(ids, w),
+      sessionTraceIds: async () => [],
       traceSpans: (ids, w) => record(ids, w),
       close: async () => {},
     },
@@ -174,6 +175,7 @@ describe("metrics ownership gate", () => {
         runtimeBySession: async () => [],
         contextPerCall: async () => [],
         telemetryEvents: async () => [],
+        sessionTraceIds: async () => [],
         traceSpans: async () => [],
         close: async () => {},
       },
@@ -238,6 +240,7 @@ describe("spendBreakdown per-agent labels", () => {
       runtimeBySession: async () => [],
       contextPerCall: async () => [],
       telemetryEvents: async () => [],
+      sessionTraceIds: async () => [],
       traceSpans: async () => [],
       close: async () => {},
     };
