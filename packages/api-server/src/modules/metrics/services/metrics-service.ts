@@ -78,15 +78,14 @@ export interface MetricsReader {
     window: MetricsWindow,
     limit: number,
   ): Promise<TelemetryEvent[]>;
-  sessionTraceIds(
+  sessionResolves(
     agentIds: readonly string[],
     window: MetricsWindow,
-  ): Promise<string[]>;
+  ): Promise<boolean>;
   traceSpans(
     agentIds: readonly string[],
     window: MetricsWindow,
     limit: number,
-    traceIds?: readonly string[],
   ): Promise<TraceSpan[]>;
   close(): Promise<void>;
 }

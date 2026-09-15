@@ -50,7 +50,7 @@ const agentTelemetryShape = {
     .max(AGENT_TELEMETRY_MAX_LIMIT)
     .default(AGENT_TELEMETRY_DEFAULT_LIMIT)
     .describe(
-      `Most rows to return, newest first (default ${AGENT_TELEMETRY_DEFAULT_LIMIT}, max ${AGENT_TELEMETRY_MAX_LIMIT}). Bounds the row list only; reported totals always cover the whole window.`,
+      `Most rows to return, newest first (default ${AGENT_TELEMETRY_DEFAULT_LIMIT}, max ${AGENT_TELEMETRY_MAX_LIMIT}). Bounds the row list only; a result's own totalsCover states what its totals span.`,
     ),
 };
 

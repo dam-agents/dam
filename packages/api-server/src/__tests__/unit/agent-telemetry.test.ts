@@ -55,7 +55,7 @@ interface Seen {
 function reader(
   byModel: TokenSpendByModel[] = [],
   sessions: ReturnType<typeof session>[] = [],
-  traceIds: string[] = ["t-1"],
+  sessionResolves = true,
 ) {
   const seen: Seen[] = [];
   const note = (
@@ -85,9 +85,9 @@ function reader(
       note(ids, window, limit);
       return [];
     },
-    sessionTraceIds: async (ids, window) => {
+    sessionResolves: async (ids, window) => {
       note(ids, window);
-      return traceIds;
+      return sessionResolves;
     },
     traceSpans: async (ids, window, limit) => {
       note(ids, window, limit);
@@ -291,7 +291,7 @@ describe("agent telemetry", () => {
         contextPerCall: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         traceSpans: async (_i, _w, limit) => rowsFor(limit - 1) as never,
-        sessionTraceIds: async () => ["t-1"],
+        sessionResolves: async () => true,
         spendByAgent: async () => [],
         spendByDay: async () => [],
         spendBySession: async () => [],
@@ -322,7 +322,7 @@ describe("agent telemetry", () => {
         contextPerCall: async (_i, _w, limit) => rowsFor(limit) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit) as never,
         traceSpans: async (_i, _w, limit) => rowsFor(limit) as never,
-        sessionTraceIds: async () => ["t-1"],
+        sessionResolves: async () => true,
         spendByAgent: async () => [],
         spendByDay: async () => [],
         spendBySession: async () => [],
@@ -367,7 +367,7 @@ describe("agent telemetry", () => {
    * nothing", which is a different and wrong claim.
    */
   it("reports an unresolvable span narrowing rather than an empty measurement", async () => {
-    const { r, seen } = reader([], [], []);
+    const { r, seen } = reader([], [], false);
     const svc = createAgentTelemetry({ reader: r });
     const result = await svc.spans("agent-a", {
       days: 7,

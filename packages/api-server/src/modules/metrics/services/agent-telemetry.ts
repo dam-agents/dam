@@ -65,8 +65,18 @@ export interface AgentTelemetryService {
   spans(agentId: string, query: AgentTelemetryQuery): Promise<AgentSpansResult>;
 }
 
-const TOTALS_COVER =
-  "Totals and sessionCount cover every session in the window; any row list beside them is capped at limit, newest first, and says so via truncated.";
+const SESSION_SCOPE =
+  "this session together with any harness run it spawned, across the window";
+
+const WINDOW_SCOPE = "every session in the window";
+
+function totalsCoverFor(query: AgentMetricsQuery): string {
+  const scope = query.sessionId === undefined ? WINDOW_SCOPE : SESSION_SCOPE;
+  const head = `Totals and sessionCount cover ${scope}.`;
+  return query.granularity === "summary"
+    ? `${head} This granularity returns no rows.`
+    : `${head} They are counted separately from the rows below, which are only the most recent up to limit — truncated says whether more exist, so do not expect the rows to sum to the totals.`;
+}
 
 const UNRESOLVED_SESSION =
   "This session has no LLM-call records in the window, so the trace family that identifies its spans cannot be resolved. No narrowing was applied and no spans are reported — this is not a measurement of zero spans. Retry without sessionId to see the agent's spans across the window.";
@@ -107,7 +117,7 @@ export function createAgentTelemetry(deps: {
         totalDurationMs: byModel.reduce((sum, row) => sum + row.durationMs, 0),
         sessionCount: allSessions.length,
         byModel,
-        totalsCover: TOTALS_COVER,
+        totalsCover: totalsCoverFor(query),
       };
       if (query.granularity === "session") {
         const { rows, truncated } = page(allSessions, query.limit);
@@ -137,15 +147,10 @@ export function createAgentTelemetry(deps: {
 
     async spans(agentId, query) {
       const window = windowFor(query);
-      if (query.sessionId === undefined) {
-        const { rows, truncated } = page(
-          await deps.reader.traceSpans([agentId], window, query.limit + 1),
-          query.limit,
-        );
-        return { ...measured(query), spans: rows, truncated };
-      }
-      const traceIds = await deps.reader.sessionTraceIds([agentId], window);
-      if (traceIds.length === 0) {
+      if (
+        query.sessionId !== undefined &&
+        !(await deps.reader.sessionResolves([agentId], window))
+      ) {
         return {
           ...measured(query),
           spans: [],
@@ -154,12 +159,7 @@ export function createAgentTelemetry(deps: {
         };
       }
       const { rows, truncated } = page(
-        await deps.reader.traceSpans(
-          [agentId],
-          window,
-          query.limit + 1,
-          traceIds,
-        ),
+        await deps.reader.traceSpans([agentId], window, query.limit + 1),
         query.limit,
       );
       return { ...measured(query), spans: rows, truncated };

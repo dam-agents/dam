@@ -21,7 +21,7 @@ export function registerAgentTelemetryTools(
 ): void {
   server.tool(
     "get_metrics",
-    `What this agent's runs cost and how long they took, from the platform's own attributed accounting — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals and a per-model token/cost split, and with granularity adds a row per session or a row per LLM call. ${SELF} Totals and sessionCount always cover the whole window; any row list is capped at limit and flags truncated. ${UNMEASURED}`,
+    `What this agent's runs cost and how long they took, from the platform's own attributed accounting — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals and a per-model token/cost split, and with granularity adds a row per session or a row per LLM call. ${SELF} Every result carries totalsCover, which states what its totals span for the arguments you passed and whether rows came back capped. ${UNMEASURED}`,
     agentMetricsInputSchema.shape,
     (query) =>
       run(async () =>
