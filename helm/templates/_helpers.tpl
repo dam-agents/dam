@@ -506,9 +506,14 @@ API Server ServiceAccount name
   value: "1000"
 {{- end }}
 
-{{/* Bob Shell reads none of the standard OTEL_* env for its own telemetry — it
-     builds a tracer from BOB_TELEMETRY_* alone and posts OTLP/HTTP JSON to
-     {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log records.
+{{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP
+     JSON to {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log
+     records. Since 2.0.3 it also reads OTEL_EXPORTER_OTLP_{ENDPOINT,TRACES_ENDPOINT,
+     HEADERS,PROTOCOL}: when an endpoint is set it ignores BOB_TELEMETRY_PROVIDER
+     and exports to that endpoint and to IBM's own at once, and it accepts only
+     http/json — the Claude Code rail's http/protobuf fails its env parse, which
+     drops the whole rail and sends the export to IBM. So a Bob image belongs on
+     this rail, never on the Claude Code one.
      Three of these are load-bearing rather than cosmetic:
        - the LF key pair is validated even though the collector ignores it, and
          a failed parse silently falls back to Bob's own IBM endpoint;
