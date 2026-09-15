@@ -169,10 +169,12 @@ virtualization:
     # every node virt-handler runs on). Any plugin exposing /dev/kvm and
     # /dev/net/tun works; a cluster with none cannot host vm agents.
     devices: {}
-    # OpenShift: name of a built-in SCC to bind to the node's ServiceAccount
-    # (the pod runs as root with NET_ADMIN, so `privileged` is the one that
-    # admits it; the pod still requests only what it needs). Empty = no
-    # binding rendered.
+    # OpenShift: name of a *built-in* SCC to bind to the runner's
+    # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
+    # is on, the chart binds its own SCC, which grants exactly the uid 0 and
+    # NET_ADMIN the runner needs and nothing else. Set this only where that
+    # SCC is off, or where the runner needs a shape it refuses (a hostPath for
+    # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
     # Machine disks — every vm agent's workspace — and smolvm's image cache
     # live here and survive pod restarts and uninstalls (the claim is kept).
