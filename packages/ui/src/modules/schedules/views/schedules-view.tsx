@@ -288,7 +288,7 @@ function ScheduleRow({
 
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" onClick={onViewResults}>
-            View runs
+            View results
           </Button>
 
           <Switch

@@ -63,7 +63,7 @@ export function HomeView() {
     return (
       <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
         <div className="anim-in">
-          <PageHeader title="Agents" />
+          <PageHeader title="Home" />
           <ListSkeleton rows={2} rowHeight={70} />
         </div>
       </div>
@@ -78,7 +78,7 @@ export function HomeView() {
     <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
       <div className="anim-in">
         <PageHeader
-          title="Agents"
+          title="Home"
           description="Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
           actions={
             <>

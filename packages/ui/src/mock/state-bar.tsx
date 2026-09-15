@@ -1,4 +1,4 @@
-import { ColorPalette, ListChecked } from "@carbon/icons-react";
+import { ListChecked } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -18,7 +18,6 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
 import { setMockEmpty, setMockFirstRun } from "./handlers.js";
-import { IconInventory } from "./icon-inventory.js";
 
 interface ReviewScreen {
   label: string;
@@ -68,71 +67,60 @@ function useReviewScreens(): ReviewScreen[] {
 }
 
 export function MockStateBar() {
-  const [mode, setMode] = useState<"populated" | "empty" | "first-run">(
-    "populated",
-  );
+  const [mode, setMode] = useState<"populated" | "empty">("populated");
   const [indexOpen, setIndexOpen] = useState(false);
-  const [iconInventoryOpen, setIconInventoryOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
-  const realPacks = useStore((s) => s.realPacks);
-  const setRealPacks = useStore((s) => s.setRealPacks);
 
-  const pick = (next: "populated" | "empty" | "first-run") => {
+  const pick = (next: "populated" | "empty") => {
     setMode(next);
     setMockEmpty(next === "empty");
-    setMockFirstRun(next === "first-run");
+    setMockFirstRun(false);
 
     const empty = next === "empty";
-    const fresh = next === "first-run";
 
     queryClient.setQueryData(["agents", "list-with-channels"], {
-      list: empty || fresh ? [] : agents,
-      availableChannels: fresh ? [] : channelsAvailable,
+      list: empty ? [] : agents,
+      availableChannels: channelsAvailable,
     });
-    queryClient.setQueryData(["approvals", "owner"], fresh ? [] : approvals);
+    queryClient.setQueryData(["approvals", "owner"], approvals);
 
     const trpcKey = (proc: string) => [
       proc.split("."),
       { input: undefined, type: "query" },
     ];
-    queryClient.setQueryData(
-      trpcKey("connections.list"),
-      fresh ? [] : connections,
-    );
+    queryClient.setQueryData(trpcKey("connections.list"), connections);
     queryClient.setQueryData(
       trpcKey("connections.listTemplates"),
       connectionTemplates,
     );
     queryClient.setQueryData(trpcKey("connections.getAgentConnections"), {
-      connections: fresh
-        ? []
-        : agentConnections.map((c) => ({ ...c, connectionId: c.id })),
+      connections: agentConnections.map((c) => ({
+        ...c,
+        connectionId: c.id,
+      })),
     });
     queryClient.setQueryData(
       trpcKey("experiments.list"),
-      empty || fresh ? [] : experiments,
+      empty ? [] : experiments,
     );
     queryClient.setQueryData(
       trpcKey("experiments.driverSummaries"),
-      empty || fresh ? [] : driverSummaries,
+      empty ? [] : driverSummaries,
     );
-    queryClient.setQueryData(trpcKey("schedules.list"), fresh ? [] : schedules);
-    queryClient.setQueryData(
-      trpcKey("schedules.listForOwner"),
-      fresh ? [] : schedules,
-    );
+    queryClient.setQueryData(trpcKey("schedules.list"), schedules);
+    queryClient.setQueryData(trpcKey("schedules.listForOwner"), schedules);
     queryClient.setQueryData(
       trpcKey("knowledgeBases.list"),
-      empty || fresh ? [] : knowledgeBases,
+      empty ? [] : knowledgeBases,
     );
     queryClient.setQueryData(
       trpcKey("artifactLibrary.list"),
-      empty || fresh ? [] : artifacts,
+      empty ? [] : artifacts,
     );
     queryClient.setQueryData(
       trpcKey("artifactLibrary.listFolders"),
-      empty || fresh ? [] : artifactFolders,
+      empty ? [] : artifactFolders,
     );
   };
 
@@ -142,7 +130,7 @@ export function MockStateBar() {
         <span className="text-sm font-medium text-muted-foreground">
           Preview:
         </span>
-        {(["populated", "empty", "first-run"] as const).map((m) => (
+        {(["populated", "empty"] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -154,38 +142,10 @@ export function MockStateBar() {
                 : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
-            {m === "populated"
-              ? "Populated"
-              : m === "empty"
-                ? "Empty"
-                : "First run"}
+            {m === "populated" ? "Real data" : "Empty"}
           </button>
         ))}
-
-        <span className="mx-1 h-4 w-px bg-border" />
-
-        <button
-          type="button"
-          onClick={() => setRealPacks(!realPacks)}
-          className={cn(
-            "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-            realPacks
-              ? "bg-preset text-white"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-          )}
-        >
-          Real data
-        </button>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setIconInventoryOpen(true)}
-        className="fixed bottom-4 right-16 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted"
-        aria-label="Open icon inventory"
-      >
-        <ColorPalette size={16} className="text-foreground" />
-      </button>
 
       <button
         type="button"
@@ -248,10 +208,6 @@ export function MockStateBar() {
             })}
           </div>
         </div>
-      )}
-
-      {iconInventoryOpen && (
-        <IconInventory onClose={() => setIconInventoryOpen(false)} />
       )}
     </>
   );

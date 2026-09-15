@@ -1,7 +1,4 @@
-import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
-
-import { Badge } from "@/components/ui/badge";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
@@ -14,9 +11,6 @@ import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
-import { useNotifications } from "./modules/notifications/api/queries.js";
-import { NotificationsPanel } from "./modules/notifications/components/notifications-panel.js";
-import { isNeedsYou } from "./modules/notifications/lib/notification-types.js";
 import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
@@ -58,39 +52,8 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
-function NotificationBell() {
-  const toggleNotifications = useStore((s) => s.toggleNotifications);
-  const { items } = useNotifications();
-  const needsYouCount = items.filter(isNeedsYou).length;
-
-  return (
-    <button
-      type="button"
-      onClick={toggleNotifications}
-      aria-label={
-        needsYouCount > 0
-          ? `Notifications, ${needsYouCount} pending`
-          : "Notifications"
-      }
-      className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      <Notification size={16} />
-      {needsYouCount > 0 && (
-        <Badge
-          variant="default"
-          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-accent px-1 text-[10px] font-bold text-white hover:bg-accent"
-        >
-          {needsYouCount > 9 ? "9+" : needsYouCount}
-        </Badge>
-      )}
-    </button>
-  );
-}
-
 function MainApp() {
   const view = useStore((s) => s.view);
-  const notificationsOpen = useStore((s) => s.notificationsOpen);
-  const setNotificationsOpen = useStore((s) => s.setNotificationsOpen);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -123,18 +86,9 @@ function MainApp() {
         <div className="flex h-full bg-background overflow-hidden">
           <IconRail hideMobileBar />
           <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-10 px-4 pt-3 md:px-6">
-              <div className="pointer-events-auto">
-                <NotificationBell />
-              </div>
-            </div>
             <ChatView />
           </div>
         </div>
-        <NotificationsPanel
-          open={notificationsOpen}
-          onClose={() => setNotificationsOpen(false)}
-        />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -145,11 +99,6 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-10 flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <NotificationBell />
-            </div>
-          </div>
           {view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : view === "home" ? (
@@ -185,10 +134,6 @@ function MainApp() {
           )}
         </main>
       </div>
-      <NotificationsPanel
-        open={notificationsOpen}
-        onClose={() => setNotificationsOpen(false)}
-      />
       <DialogOverlay />
       <ConnectionBanner />
     </div>

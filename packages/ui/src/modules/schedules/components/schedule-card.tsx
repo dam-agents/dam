@@ -2,7 +2,6 @@ import {
   Edit,
   OverflowMenuVertical,
   Pause,
-  Play,
   Share,
   Time,
   TrashCan,
@@ -136,8 +135,8 @@ export function ScheduleCard({ schedule, onEdit, onViewResults }: Props) {
               Edit schedule
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onViewResults}>
-              <Play size={16} className="mr-2.5 text-muted-foreground" />
-              View runs
+              <Time size={16} className="mr-2.5 text-muted-foreground" />
+              View results
             </DropdownMenuItem>
             {sessionMode === "continuous" && (
               <DropdownMenuItem onSelect={handleReset}>

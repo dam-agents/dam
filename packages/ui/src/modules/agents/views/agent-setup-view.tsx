@@ -46,6 +46,7 @@ import { buildPackSummaryMessage } from "../../packs/lib/pack-summary-message.js
 import { packToSetupDefaults } from "../../packs/lib/pack-to-setup-defaults.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
+import { SandboxSizeSection } from "../../sandboxes/components/sandbox-size-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
@@ -152,6 +153,8 @@ export function AgentSetupView() {
       providerRef: form.providerRef,
       connectionIds: form.connectionIds,
       registryCredential,
+      sizeCpuMilli: form.sizeCpuMilli,
+      sizeMemoryMi: form.sizeMemoryMi,
     };
     return isCodingAgentSetupComplete(draft);
   })();
@@ -163,6 +166,8 @@ export function AgentSetupView() {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
     registryCredential,
+    sizeCpuMilli: form.sizeCpuMilli,
+    sizeMemoryMi: form.sizeMemoryMi,
   });
 
   const create = async () => {
@@ -215,6 +220,8 @@ export function AgentSetupView() {
         providerRef: form.providerRef,
         connectionIds: form.connectionIds,
         registryCredential,
+        sizeCpuMilli: form.sizeCpuMilli,
+        sizeMemoryMi: form.sizeMemoryMi,
       };
       const agent = await createAgent.mutateAsync(
         buildCodingAgentSetupInput(draft),
@@ -453,6 +460,12 @@ export function AgentSetupView() {
         selected={form.providerRef}
         onSelect={(providerRef) => update({ providerRef })}
         policy={setupProviderPolicy("coding-agent")}
+      />
+
+      <SandboxSizeSection
+        sizeCpuMilli={form.sizeCpuMilli}
+        sizeMemoryMi={form.sizeMemoryMi}
+        onChange={(patch) => update(patch)}
       />
 
       <ScheduleSetupSection

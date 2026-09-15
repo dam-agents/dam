@@ -43,6 +43,6 @@ export const createPacksSlice: StateCreator<
       next.set(agentId, packId);
       return { createdFromPack: next };
     }),
-  realPacks: false,
+  realPacks: true,
   setRealPacks: (on) => set({ realPacks: on }),
 });

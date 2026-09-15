@@ -1,20 +1,22 @@
 import {
   Add,
-  ChevronDown,
-  ChevronUp,
   Close,
-  Launch,
+  Edit,
   OverflowMenuVertical,
+  Pause,
+  Share,
   Time,
+  TrashCan,
 } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -24,7 +26,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
@@ -37,8 +39,7 @@ import {
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
-import { scheduleCadenceText } from "../lib/schedule-format.js";
-import { ScheduleDetails } from "./schedule-details.js";
+import { formatRunTime, scheduleCadenceText } from "../lib/schedule-format.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
 interface Props {
@@ -163,8 +164,6 @@ export function ScheduleIndicator({ agentId, onManage }: Props) {
 
 function PanelScheduleCard({
   schedule,
-  isExpanded,
-  onToggleExpanded,
   onEdit,
   onViewResults,
 }: {
@@ -183,8 +182,7 @@ function PanelScheduleCard({
   const guardEdit = useScheduleEditGuard();
 
   const cadence = scheduleCadenceText(schedule);
-  const nextRunHint =
-    enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
+  const nextRunTime = status?.nextRun ? formatRunTime(status.nextRun) : null;
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -210,37 +208,44 @@ function PanelScheduleCard({
       resetScheduleSession.mutate({ id });
   };
 
+  const subtitle = [
+    cadence,
+    nextRunTime && enabled ? `Next ${nextRunTime}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <Card>
-      <div className="flex items-center gap-3 p-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-foreground">
-            {name}
+    <div
+      className={cn(
+        CARD_SURFACE,
+        CARD_HOVER,
+        "group flex items-center gap-4 rounded-xl px-4 py-3",
+      )}
+    >
+      <div
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+          enabled
+            ? "bg-blue-100/50 text-accent dark:bg-blue-950/50"
+            : "bg-muted text-muted-foreground",
+        )}
+      >
+        {enabled ? <Time size={16} /> : <Pause size={16} />}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold text-foreground">
+          {name}
+        </p>
+        {subtitle && (
+          <p className="truncate text-[14px] text-muted-foreground">
+            {subtitle}
           </p>
-          <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
-            {cadence && <span className="truncate">{cadence}</span>}
-            {nextRunHint && (
-              <>
-                <span aria-hidden>·</span>
-                <span
-                  className="inline-flex items-center gap-1 whitespace-nowrap"
-                  title={
-                    status?.nextRun
-                      ? `Next run: ${formatDateTime(status.nextRun)}`
-                      : undefined
-                  }
-                >
-                  <Time size={12} /> {nextRunHint}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+        )}
+      </div>
 
-        <Button variant="outline" size="sm" onClick={onViewResults}>
-          <Launch size={14} /> Results
-        </Button>
-
+      <div className="flex shrink-0 items-center gap-2">
         <Switch
           checked={enabled}
           onCheckedChange={() => toggleSchedule.mutate({ id })}
@@ -258,39 +263,29 @@ function PanelScheduleCard({
               <OverflowMenuVertical size={16} />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
+          <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={handleEdit}>
+              <Edit size={16} className="mr-2.5 text-muted-foreground" />
               Edit schedule
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onViewResults}>
+              <Time size={16} className="mr-2.5 text-muted-foreground" />
+              View results
             </DropdownMenuItem>
             {sessionMode === "continuous" && (
               <DropdownMenuItem onSelect={handleReset}>
+                <Share size={16} className="mr-2.5 text-muted-foreground" />
                 Reset session
               </DropdownMenuItem>
             )}
+            <DropdownMenuSeparator />
             <DropdownMenuItem tone="danger" onSelect={handleDelete}>
-              Delete schedule
+              <TrashCan size={16} className="mr-2.5" />
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
-      <button
-        type="button"
-        onClick={onToggleExpanded}
-        className="flex w-full items-center gap-1 border-t border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
-      >
-        {isExpanded ? (
-          <>
-            Hide details <ChevronUp size={14} />
-          </>
-        ) : (
-          <>
-            View details <ChevronDown size={14} />
-          </>
-        )}
-      </button>
-
-      {isExpanded && <ScheduleDetails schedule={schedule} />}
-    </Card>
+    </div>
   );
 }
