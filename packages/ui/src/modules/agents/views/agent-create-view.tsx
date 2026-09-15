@@ -336,8 +336,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {kit && (
         <section className="mb-8">
-          <Inset className="flex items-center gap-4 rounded-xl border border-template/20 bg-template-light px-4 py-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-template/15 text-template">
+          <Inset className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
               <Gift size={16} />
             </span>
             <div className="min-w-0 flex-1">
@@ -350,7 +350,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                   connectionTemplates.data ?? [],
                   templateById,
                 ).map((b) => (
-                  <Badge key={b.key} variant="template" size="sm">
+                  <Badge key={b.key} variant="kit" size="sm">
                     {b.label}
                   </Badge>
                 ))}
@@ -482,7 +482,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 <div className="min-w-0 flex-1">
                   <div>
                     {describeAccepts(requirement.accepts, templateById)}{" "}
-                    <Badge variant="template" size="sm">
+                    <Badge variant="kit" size="sm">
                       Starter Kit
                     </Badge>{" "}
                     <span className="text-muted-foreground">
@@ -575,7 +575,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                           ? "In a Slack channel"
                           : "In a Telegram chat"}
                       </span>
-                      <Badge variant="template" size="sm">
+                      <Badge variant="kit" size="sm">
                         Starter Kit
                       </Badge>
                     </div>
@@ -629,7 +629,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                   className={`overflow-hidden rounded-xl border ${
                     skipped
                       ? "border-border bg-muted/30 opacity-70"
-                      : "border-template/20 bg-template-light"
+                      : "border-kit-line bg-kit-surface"
                   }`}
                 >
                   <div className="flex items-center gap-4 px-4 py-3">
@@ -637,7 +637,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                       className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
                         skipped
                           ? "bg-muted text-muted-foreground"
-                          : "bg-template/15 text-template"
+                          : "bg-kit-tint text-kit"
                       }`}
                     >
                       <Time size={16} />
@@ -649,7 +649,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                         >
                           {s.name}
                         </span>
-                        <Badge variant="template" size="sm">
+                        <Badge variant="kit" size="sm">
                           Starter Kit
                         </Badge>
                         {skipped && (
@@ -687,24 +687,24 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
                   {!skipped && (
                     <>
-                      <div className="border-t border-template/20 px-4 py-3">
-                        <div className="flex items-start gap-2.5 rounded-lg bg-template/10 px-3 py-2.5">
+                      <div className="border-t border-kit-rule px-4 py-3">
+                        <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
                           <Information
                             size={16}
-                            className="mt-0.5 shrink-0 text-template"
+                            className="mt-0.5 shrink-0 text-kit"
                           />
                           <p className="text-sm text-foreground/80">{s.task}</p>
                         </div>
                       </div>
-                      <dl className="border-t border-template/20 text-sm">
-                        <div className="flex items-center justify-between border-b border-template/10 px-4 py-3">
+                      <dl className="border-t border-kit-rule text-sm">
+                        <div className="flex items-center justify-between border-b border-kit-rule px-4 py-3">
                           <dt className="text-foreground">Repeat</dt>
                           <dd className="font-mono text-muted-foreground">
                             {"cron" in s ? s.cron : s.rrule}
                           </dd>
                         </div>
                         {"timezone" in s && (
-                          <div className="flex items-center justify-between border-b border-template/10 px-4 py-3">
+                          <div className="flex items-center justify-between border-b border-kit-rule px-4 py-3">
                             <dt className="text-foreground">Timezone</dt>
                             <dd className="text-muted-foreground">
                               {s.timezone}
@@ -739,7 +739,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             {kit.skillsInKit.map((skill) => (
               <li key={`bundled:${skill.name}`}>
                 {skill.name}{" "}
-                <Badge variant="template" size="sm">
+                <Badge variant="kit" size="sm">
                   Starter Kit
                 </Badge>
                 {skill.description ? (

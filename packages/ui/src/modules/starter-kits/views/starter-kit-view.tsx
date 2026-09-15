@@ -181,7 +181,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
       <DialogHeader
         title={kit.name}
         titleAccessory={
-          <Badge variant="template">{CATEGORY_LABEL[kit.category]}</Badge>
+          <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
         }
         subtitle={kit.description}
         onClose={close}

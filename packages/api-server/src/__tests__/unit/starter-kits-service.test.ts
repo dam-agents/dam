@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { starterKitApplyInputSchema } from "api-server-api";
 import type {
   Agent,
   AgentCreateInput,
@@ -201,6 +202,7 @@ describe("starter kits: apply", () => {
       connectionIds: ["c-gh", "c-slack"],
       slackChannelId: "C123",
       skipSchedules: [],
+      scheduleOverrides: [],
     });
 
     expect(result.agent.id).toBe("agent-1");
@@ -247,6 +249,7 @@ describe("starter kits: apply", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh"],
       skipSchedules: ["benchmark"],
+      scheduleOverrides: [],
     });
     expect(calls.cron.map((c) => c.name)).toEqual(["review"]);
     expect(calls.rrule).toEqual([]);
@@ -263,6 +266,7 @@ describe("starter kits: apply", () => {
         templateId: "claude-code",
         connectionIds: ["c-slack"],
         skipSchedules: [],
+        scheduleOverrides: [],
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(calls.created).toEqual([]);
@@ -277,6 +281,7 @@ describe("starter kits: apply", () => {
         name: "r",
         connectionIds: ["c-gh"],
         skipSchedules: [],
+        scheduleOverrides: [],
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
@@ -294,6 +299,7 @@ describe("starter kits: apply", () => {
       templateId: "claude-code",
       connectionIds: [],
       skipSchedules: [],
+      scheduleOverrides: [],
     });
     expect(pinned.calls.created[0].templateId).toBeUndefined();
     expect(pinned.calls.created[0].image).toBe("quay.io/acme/nous:1.0.0");
@@ -314,6 +320,7 @@ describe("starter kits: apply", () => {
       name: "nous-1",
       connectionIds: [],
       skipSchedules: [],
+      scheduleOverrides: [],
     });
     expect(own.calls.created[0].size).toEqual({ cpu: "2", memory: "4Gi" });
     expect(own.calls.created[0].storage).toBe("10Gi");
@@ -329,10 +336,53 @@ describe("starter kits: apply", () => {
       templateId: "claude-code",
       connectionIds: [],
       skipSchedules: [],
+      scheduleOverrides: [],
     });
     expect(onHarness.calls.created[0].templateId).toBe("claude-code");
     expect(onHarness.calls.created[0].size).toBeUndefined();
     expect(onHarness.calls.created[0].storage).toBe("20Gi");
+  });
+
+  it("creates a kit schedule with the user's overrides", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      templateId: "claude-code",
+      connectionIds: ["c-gh"],
+      skipSchedules: [],
+      scheduleOverrides: [
+        {
+          name: "review",
+          timing: { rrule: "FREQ=DAILY;BYHOUR=7", timezone: "Europe/Prague" },
+          sessionMode: "continuous",
+          enabled: false,
+        },
+      ],
+    });
+
+    expect(calls.rrule).toContainEqual(
+      expect.objectContaining({
+        name: "review",
+        rrule: "FREQ=DAILY;BYHOUR=7",
+        timezone: "Europe/Prague",
+      }),
+    );
+    expect(calls.cron.map((c) => c.name)).not.toContain("review");
+  });
+
+  it("rejects an override that names an rrule with no timezone", () => {
+    expect(
+      starterKitApplyInputSchema.safeParse({
+        catalog: "platform",
+        kitId: "code-reviewer",
+        name: "r",
+        scheduleOverrides: [
+          { name: "review", timing: { rrule: "FREQ=DAILY" } },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("deletes the agent when seeding fails after create", async () => {
@@ -383,6 +433,7 @@ describe("starter kits: apply", () => {
         templateId: "t",
         connectionIds: ["c-gh"],
         skipSchedules: [],
+        scheduleOverrides: [],
       }),
     ).rejects.toThrow("schedules down");
     expect(calls.deleted).toEqual(["agent-2"]);
@@ -411,6 +462,7 @@ describe("starter kits: apply", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh"],
       skipSchedules: [],
+      scheduleOverrides: [],
     });
     expect(calls.woken).toEqual(["agent-1"]);
     expect(calls.skillEntries).toEqual([
@@ -488,6 +540,7 @@ describe("starter kits: apply", () => {
       templateId: "t",
       connectionIds: ["c-gh"],
       skipSchedules: [],
+      scheduleOverrides: [],
     });
     expect(result.agent.id).toBe("agent-3");
     expect(result.skillsError).toBe("agent never became reachable");
@@ -504,6 +557,7 @@ describe("starter kits: apply", () => {
         templateId: "t",
         connectionIds: [],
         skipSchedules: [],
+        scheduleOverrides: [],
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

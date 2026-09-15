@@ -12,6 +12,8 @@ import type {
   starterKitImageSchema,
   starterKitParameterSchema,
   starterKitResourcesSchema,
+  starterKitScheduleOverrideSchema,
+  starterKitScheduleTimingSchema,
   starterKitScheduleSchema,
   starterKitSchema,
 } from "./schemas.js";
@@ -25,6 +27,12 @@ export type StarterKitBundledSkills = z.infer<
 >;
 export type ResolvedSkill = z.infer<typeof resolvedSkillSchema>;
 export type StarterKitSchedule = z.infer<typeof starterKitScheduleSchema>;
+export type StarterKitScheduleOverride = z.infer<
+  typeof starterKitScheduleOverrideSchema
+>;
+export type StarterKitScheduleTiming = z.infer<
+  typeof starterKitScheduleTimingSchema
+>;
 export type StarterKitImage = z.infer<typeof starterKitImageSchema>;
 export type StarterKitParameter = z.infer<typeof starterKitParameterSchema>;
 export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;

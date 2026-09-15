@@ -9,6 +9,7 @@ import type {
   StarterKitApplyInput,
   StarterKitApplyResult,
   StarterKitResources,
+  StarterKitScheduleOverride,
   StarterKitsService,
   StarterKitView,
 } from "api-server-api";
@@ -129,27 +130,37 @@ export function createStarterKitsService(
     agentId: string,
     loaded: LoadedKit,
     skip: readonly string[],
+    overrides: readonly StarterKitScheduleOverride[],
   ): Promise<void> {
     for (const s of loaded.kit.schedules) {
       if (skip.includes(s.name)) continue;
+      const o = overrides.find((x) => x.name === s.name);
+      const sessionMode = o?.sessionMode ?? s.sessionMode;
+      const enabled = o?.enabled ?? s.enabled;
+      const timing =
+        o?.timing ??
+        ("cron" in s
+          ? { cron: s.cron }
+          : { rrule: s.rrule, timezone: s.timezone });
+
       const created =
-        "cron" in s
+        "cron" in timing
           ? await deps.schedules.createCron({
               name: s.name,
               agentId,
-              cron: s.cron,
+              cron: timing.cron,
               task: s.task,
-              sessionMode: s.sessionMode,
+              sessionMode,
             })
           : await deps.schedules.createRRule({
               name: s.name,
               agentId,
-              rrule: s.rrule,
-              timezone: s.timezone,
+              rrule: timing.rrule,
+              timezone: timing.timezone,
               task: s.task,
-              sessionMode: s.sessionMode,
+              sessionMode,
             });
-      if (!s.enabled) await deps.schedules.toggle(created.id);
+      if (!enabled) await deps.schedules.toggle(created.id);
     }
   }
 
@@ -202,7 +213,12 @@ export function createStarterKitsService(
       });
 
       try {
-        await seedSchedules(agent.id, loaded, input.skipSchedules);
+        await seedSchedules(
+          agent.id,
+          loaded,
+          input.skipSchedules,
+          input.scheduleOverrides,
+        );
         if (input.slackChannelId)
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
       } catch (err) {

@@ -189,6 +189,8 @@ export type {
   StarterKitParameter,
   StarterKitResources,
   StarterKitSchedule,
+  StarterKitScheduleOverride,
+  StarterKitScheduleTiming,
   StarterKitView,
   StarterKitsService,
 } from "./modules/starter-kits/types.js";

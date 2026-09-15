@@ -142,6 +142,18 @@ export const starterKitOnboardingInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const starterKitScheduleTimingSchema = z.union([
+  z.object({ cron: z.string().min(1) }),
+  z.object({ rrule: z.string().min(1), timezone: z.string().min(1) }),
+]);
+
+export const starterKitScheduleOverrideSchema = z.object({
+  name: z.string().min(1),
+  timing: starterKitScheduleTimingSchema.optional(),
+  sessionMode: z.enum(["continuous", "fresh"]).optional(),
+  enabled: z.boolean().optional(),
+});
+
 export const starterKitApplyInputSchema = z.object({
   catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
@@ -155,4 +167,5 @@ export const starterKitApplyInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)).default([]),
   slackChannelId: z.string().min(1).optional(),
   skipSchedules: z.array(z.string().min(1)).default([]),
+  scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
