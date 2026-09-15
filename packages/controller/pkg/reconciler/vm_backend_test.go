@@ -29,6 +29,7 @@ type fakeNode struct {
 	specs    map[string]vmrunner.MachineSpec
 	statuses map[string]vmrunner.MachineStatus
 	deleted  []string
+	puts     []vmrunner.MachineSpec
 }
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
@@ -54,6 +55,7 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
+			n.puts = append(n.puts, spec)
 			st, ok := n.statuses[id]
 			if !ok {
 				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000}
@@ -461,4 +463,19 @@ func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 
 	assert.Equal(t, []string{"someone-elses"}, node.deleted,
 		"the machine whose Agent belongs to another owner is collected, and this owner's own machine is left alone")
+}
+
+// TEST_SCENARIO: hibernating a vm agent has to stop its machine, which is how the platform reclaims a runner's memory — scaling the gateway alone would leave the guest running while the owner's budget counts that memory as free.
+func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running, "the machine is up before we put it to sleep")
+
+	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", "my-agent"))
+
+	assert.False(t, node.spec("my-agent").Running, "the machine is stopped, not just the gateway scaled")
+	require.NotEmpty(t, node.puts)
+	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
 }
