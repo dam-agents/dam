@@ -2,6 +2,7 @@ import { brandSchema, linksSchema } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
+import { getLogger } from "./core/logger.js";
 import { durationToMinutesStrict } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
@@ -102,11 +103,6 @@ const configSchema = z.object({
   redisPassword: z.string().nullable().default(null),
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
-  acpTurnRunawayCapSeconds: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(21600),
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
@@ -158,14 +154,13 @@ export type Config = z.infer<typeof configSchema>;
 const validatedConfigSchema = configSchema
   .transform((c) => {
     const stall = Math.max(c.acpTurnStallProbeSeconds, c.approvalHoldSeconds);
-    return {
-      ...c,
-      acpTurnStallProbeSeconds: stall,
-      acpTurnRunawayCapSeconds:
-        c.acpTurnRunawayCapSeconds === 0
-          ? 0
-          : Math.max(c.acpTurnRunawayCapSeconds, stall),
-    };
+    if (stall !== c.acpTurnStallProbeSeconds) {
+      getLogger().warn(
+        { configured: c.acpTurnStallProbeSeconds, raisedTo: stall },
+        "ACP_TURN_STALL_PROBE_SECONDS is below APPROVAL_HOLD_SECONDS and was raised to it, so a turn blocked on an approval is never probed before the hold resolves",
+      );
+    }
+    return { ...c, acpTurnStallProbeSeconds: stall };
   })
   .refine(
     (c) =>
@@ -258,7 +253,6 @@ export function loadConfig(): Config {
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
-    acpTurnRunawayCapSeconds: process.env.ACP_TURN_RUNAWAY_CAP_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,

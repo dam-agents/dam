@@ -679,7 +679,6 @@ export async function bootstrap() {
 
   const acpTurnWatch = {
     stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-    runawayCapMs: config.acpTurnRunawayCapSeconds * 1000,
   };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({

@@ -52,7 +52,6 @@ import {
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
-  type AcpTurnAbandonCause,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import {
@@ -757,7 +756,6 @@ const MAY_STILL_RUN_REASONS = new Set([
   "acp-error",
   "relay-lost",
   "turn-stalled",
-  "turn-runaway",
 ]);
 
 function mayLeaveHarnessRunning(
@@ -770,22 +768,11 @@ function mayLeaveHarnessRunning(
   );
 }
 
-function undeliveredNudge(
-  threadTs: string,
-  cause: AcpTurnAbandonCause,
-): string {
-  const whatHappened =
-    cause === "runaway"
-      ? "Your previous turn in this Slack thread was stopped at the platform's time limit before a reply was posted"
-      : "Your previous turn in this Slack thread ended without a reply being posted";
-  const ask =
-    cause === "runaway"
-      ? `Post what you have so far with the reply tool (threadTs="${threadTs}"), and say how you would continue — for example by taking the work in parts.`
-      : `Post your result now with the reply tool (threadTs="${threadTs}").`;
+function undeliveredNudge(threadTs: string): string {
   return [
     "<turn-undelivered>",
-    `${whatHappened} — the person waiting in the thread never saw an answer.`,
-    ask,
+    "Your previous turn in this Slack thread ended without a reply being posted — the person waiting in the thread never saw an answer.",
+    `Post your result now with the reply tool (threadTs="${threadTs}").`,
     "If silence was deliberate, call no_reply_needed instead.",
     "</turn-undelivered>",
   ].join("\n");
@@ -1530,7 +1517,6 @@ export function createSlackWorker(
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
         const delivered = () =>
           turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff);
-        const cause = err.abandonCause;
         turnRecovery.watch({
           instanceName,
           sessionId,
@@ -1546,7 +1532,7 @@ export function createSlackWorker(
               beginTurn(instanceName, ref);
               try {
                 await makeAcpClient(instanceName).sendPrompt(
-                  undeliveredNudge(ctx.threadTs, cause),
+                  undeliveredNudge(ctx.threadTs),
                   { resumeSessionId: sessionId },
                 );
               } finally {

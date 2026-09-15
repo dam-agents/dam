@@ -13,16 +13,6 @@ export function turnFailureUserCopy(err: AcpTurnAbandonedError): string {
         "The agent went quiet partway through and didn't finish. Mention it " +
         "again to have it pick up where it left off — its progress is saved."
       );
-    case "runaway": {
-      const limit =
-        err.capSeconds !== undefined
-          ? `after ${formatHours(err.capSeconds)}`
-          : "at its time limit";
-      return (
-        `I stopped this task ${limit} — it was still running. Its progress ` +
-        "is saved; for work this size, try asking for it in parts."
-      );
-    }
   }
 }
 
@@ -32,13 +22,5 @@ export function turnFailureReasonToken(err: AcpTurnAbandonedError): string {
       return "relay-lost";
     case "stalled":
       return "turn-stalled";
-    case "runaway":
-      return "turn-runaway";
   }
-}
-
-function formatHours(seconds: number): string {
-  const hours = seconds / 3600;
-  const rounded = Math.round(hours * 10) / 10;
-  return rounded === 1 ? "1 hour" : `${rounded} hours`;
 }

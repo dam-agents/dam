@@ -17,7 +17,6 @@ const MANAGED_KEYS = [
   ...Object.keys(REQUIRED_ENV),
   "APPROVAL_HOLD_SECONDS",
   "ACP_TURN_STALL_PROBE_SECONDS",
-  "ACP_TURN_RUNAWAY_CAP_SECONDS",
 ];
 
 describe("loadConfig — turn watch invariants", () => {
@@ -44,22 +43,10 @@ describe("loadConfig — turn watch invariants", () => {
     expect(loadConfig().acpTurnStallProbeSeconds).toBe(3600);
   });
 
-  it("raises a nonzero runaway cap below the stall probe to the probe", () => {
-    process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "60";
-    expect(loadConfig().acpTurnRunawayCapSeconds).toBe(1800);
-  });
-
-  it("keeps a zero runaway cap as disabled, even under a large hold", () => {
-    process.env.APPROVAL_HOLD_SECONDS = "30000";
-    process.env.ACP_TURN_RUNAWAY_CAP_SECONDS = "0";
-    expect(loadConfig().acpTurnRunawayCapSeconds).toBe(0);
-  });
-
-  it("accepts the built-in defaults (30m probe, 6h cap, 30m hold)", () => {
+  it("accepts the built-in defaults (30m probe, 30m hold)", () => {
     const config = loadConfig();
     expect(config.approvalHoldSeconds).toBe(1800);
     expect(config.acpTurnStallProbeSeconds).toBe(1800);
-    expect(config.acpTurnRunawayCapSeconds).toBe(21600);
   });
 });
 

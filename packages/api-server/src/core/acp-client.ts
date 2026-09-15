@@ -13,8 +13,6 @@ import { getLogger } from "./logger.js";
 const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
 const DEFAULT_STALL_PROBE_MS = 30 * 60 * 1000;
-const DEFAULT_RUNAWAY_CAP_MS = 6 * 60 * 60 * 1000;
-const RUNAWAY_CANCEL_GRACE_MS = 60_000;
 const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
 const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
@@ -29,19 +27,15 @@ export class AcpSessionLoadError extends Error {
   }
 }
 
-export type AcpTurnAbandonCause = "connection-lost" | "stalled" | "runaway";
+export type AcpTurnAbandonCause = "connection-lost" | "stalled";
 
 export class AcpTurnAbandonedError extends Error {
-  readonly capSeconds: number | undefined;
-
   constructor(
     readonly abandonCause: AcpTurnAbandonCause,
     message: string,
-    opts?: { capSeconds?: number },
   ) {
     super(message);
     this.name = "AcpTurnAbandonedError";
-    this.capSeconds = opts?.capSeconds;
   }
 }
 
@@ -50,7 +44,6 @@ type ConnectionWatch =
   | {
       kind: "turn";
       stallProbeMs: number;
-      runawayCapMs: number;
       sessionId: () => string | null;
     };
 
@@ -307,9 +300,6 @@ async function withAcpConnection<T>(
 
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let probeTimer: ReturnType<typeof setInterval> | undefined;
-  let capTimer: ReturnType<typeof setTimeout> | undefined;
-  let graceTimer: ReturnType<typeof setTimeout> | undefined;
-  let runawayError: AcpTurnAbandonedError | null = null;
 
   if (watch.kind === "deadline") {
     deadlineTimer = setTimeout(() => {
@@ -344,40 +334,12 @@ async function withAcpConnection<T>(
           probing = false;
         });
     }, watch.stallProbeMs);
-
-    if (watch.runawayCapMs > 0) {
-      capTimer = setTimeout(() => {
-        const capSeconds = Math.round(watch.runawayCapMs / 1000);
-        runawayError = new AcpTurnAbandonedError(
-          "runaway",
-          `ACP turn cancelled at the ${capSeconds}s runaway cap`,
-          { capSeconds },
-        );
-        const sessionId = watch.sessionId();
-        if (sessionId !== null) {
-          void Promise.resolve(connection.cancel({ sessionId })).catch(
-            (err) => {
-              getLogger().debug(
-                { err, clientName, sessionId },
-                "acp runaway cancel failed",
-              );
-            },
-          );
-        }
-        graceTimer = setTimeout(
-          () => abortWith(runawayError!),
-          RUNAWAY_CANCEL_GRACE_MS,
-        );
-      }, watch.runawayCapMs);
-    }
   }
 
   const cleanup = () => {
     clearInterval(heartbeat);
     if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     if (probeTimer !== undefined) clearInterval(probeTimer);
-    if (capTimer !== undefined) clearTimeout(capTimer);
-    if (graceTimer !== undefined) clearTimeout(graceTimer);
     if (
       ws.readyState === WebSocket.OPEN ||
       ws.readyState === WebSocket.CONNECTING
@@ -403,7 +365,6 @@ async function withAcpConnection<T>(
         });
       }),
     ]);
-    if (runawayError !== null) throw runawayError;
     return result;
   } finally {
     cleanup();
@@ -414,7 +375,6 @@ export type AcpClientFactory = (instanceName: string) => AcpClient;
 
 export interface AcpTurnWatchConfig {
   stallProbeMs?: number;
-  runawayCapMs?: number;
 }
 
 export function createAcpClient(opts: {
@@ -433,7 +393,6 @@ function createAcpClientForUrl(
   turnWatch: AcpTurnWatchConfig,
 ): AcpClient {
   const stallProbeMs = turnWatch.stallProbeMs ?? DEFAULT_STALL_PROBE_MS;
-  const runawayCapMs = turnWatch.runawayCapMs ?? DEFAULT_RUNAWAY_CAP_MS;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       const { stream, ws } = await wsStream(url);
@@ -520,7 +479,6 @@ function createAcpClientForUrl(
         {
           kind: "turn",
           stallProbeMs,
-          runawayCapMs,
           sessionId: () => watchSessionId,
         },
         async (connection, init) => {
@@ -644,7 +602,6 @@ function createAcpClientForUrl(
         {
           kind: "turn",
           stallProbeMs,
-          runawayCapMs,
           sessionId: () => watchSessionId,
         },
         async (connection, _init) => {

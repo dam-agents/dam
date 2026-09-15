@@ -734,12 +734,6 @@ apiServer:
   # minutes.
   acpTurnStallProbeSeconds: 1800
 
-  # -- Absolute cap (seconds) on a single channel turn. On trip the turn
-  # is cancelled on the harness, then reported as stopped. 0 disables the
-  # cap; a nonzero value below the stall probe is raised to it at load.
-  # Default 6 hours.
-  acpTurnRunawayCapSeconds: 21600
-
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
   # the api-server proxy boundary (rejects oversized Content-Length AND
   # destroys the upstream pipe when streamed bytes pass the cap). The

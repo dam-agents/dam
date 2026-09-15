@@ -357,8 +357,6 @@ spec:
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: ACP_TURN_STALL_PROBE_SECONDS
               value: {{ .Values.apiServer.acpTurnStallProbeSeconds | quote }}
-            - name: ACP_TURN_RUNAWAY_CAP_SECONDS
-              value: {{ .Values.apiServer.acpTurnRunawayCapSeconds | quote }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
