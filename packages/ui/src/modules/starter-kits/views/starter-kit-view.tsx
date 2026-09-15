@@ -25,6 +25,7 @@ import {
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
+import { ClampedText } from "../components/clamped-text.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
@@ -80,7 +81,10 @@ function Row({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{title}</p>
         {detail && (
-          <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
+          <ClampedText
+            text={detail}
+            className="mt-0.5 text-sm text-muted-foreground"
+          />
         )}
       </div>
       {trailing}
