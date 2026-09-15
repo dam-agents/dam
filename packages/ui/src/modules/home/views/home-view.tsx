@@ -6,7 +6,6 @@ import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
 import { ComputeUsage } from "../../budgets/components/compute-usage.js";
-import { StarterKitsWidget } from "../../starter-kits/components/starter-kits-widget.js";
 import {
   type ArtifactTouched,
   useFeed,
@@ -101,9 +100,6 @@ export function HomeView() {
       <div>
         <HomeGreeting title="Welcome" />
         <WelcomeEntryPoints />
-        <div className="mt-4">
-          <StarterKitsWidget />
-        </div>
       </div>
     );
   }
@@ -219,7 +215,6 @@ export function HomeView() {
           <div className="rounded-2xl border border-border bg-card p-6">
             <ComputeUsage agents={agents} workingAgentIds={workingAgentIds} />
           </div>
-          <StarterKitsWidget />
           <SpendWidget />
           <SchedulesWidget />
         </aside>
