@@ -51,6 +51,8 @@ controller:
 # ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
 # it so the e2e cluster proves the no-shared-filesystem path. Drops together
 # with the chart's nfsProvisioner block once dev clusters are drained.
+nfsProvisioner:
+  enabled: true
 
 # The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
 # nested virtualization, handed to the pod by the chart's own device plugin
@@ -76,8 +78,6 @@ virtualization:
   devicePlugin:
     enabled: true
 
-nfsProvisioner:
-  enabled: true
 
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
