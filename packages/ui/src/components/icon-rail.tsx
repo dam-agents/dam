@@ -1,11 +1,11 @@
 import {
   Book,
   type CarbonIconType,
-  Catalog,
   ChevronLeft,
   ChevronRight,
   Code,
   Folders,
+  Gift,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -64,9 +64,9 @@ export function IconRail({
     navigate: navigateToKnowledgeBases,
   };
   const starterKits: Destination = {
-    label: "Starter kits",
+    label: "Starter Kits",
     shortLabel: "Kits",
-    icon: Catalog,
+    icon: Gift,
     active:
       view === "starter-kits" ||
       view === "starter-kit" ||

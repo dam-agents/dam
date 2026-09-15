@@ -148,6 +148,24 @@ kits:
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["ok"]);
   });
 
+  it("pins a kit's seed ref to the commit it resolved to", async () => {
+    const SEED_SHA = "b".repeat(40);
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml": "kits:\n  - path: a\n",
+      "a/kit.yaml": KIT(
+        "a",
+        "seed:\n  url: https://github.com/acme/def\n  ref: main\n",
+      ),
+    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }], {
+      resolve: async (_url, ref) => (ref === "main" ? SEED_SHA : SHA),
+    });
+    await refresh.run();
+
+    const loaded = await repo.get("platform", "a");
+    expect(loaded?.kit.seed?.ref).toBe(SEED_SHA);
+  });
+
   it("drops a kit that fails validation and keeps the rest", async () => {
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: bad\n  - path: good\n",

@@ -98,14 +98,24 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     }
     const kit = parsed.data;
 
-    let skillsInKit: ResolvedSkill[] = [];
     const seedUrl = kit.seed?.url ?? gitUrl;
-    if (kit.bundledSkills && seedUrl) {
-      const seedRef = kit.seed?.ref
-        ? ((await deps.refs.resolve(seedUrl, kit.seed.ref)) ?? kit.seed.ref)
-        : seedUrl === gitUrl
+    let seedRef: string | undefined;
+    if (seedUrl) {
+      seedRef =
+        seedUrl === gitUrl && kit.seed?.ref === undefined
           ? version
-          : ((await deps.refs.resolve(seedUrl)) ?? "HEAD");
+          : ((await deps.refs.resolve(seedUrl, kit.seed?.ref)) ??
+            kit.seed?.ref);
+      if (kit.seed && seedRef === undefined) {
+        getLogger().warn(
+          { catalog: named.name, id: kit.id, seedUrl, ref: kit.seed.ref },
+          "starter kits: could not resolve the seed ref to a commit",
+        );
+      }
+    }
+
+    let skillsInKit: ResolvedSkill[] = [];
+    if (kit.bundledSkills && seedUrl && seedRef) {
       try {
         skillsInKit = await deps.scanSkills(
           seedUrl,
@@ -120,12 +130,17 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       }
     }
 
+    const pinnedKit =
+      kit.seed && seedRef
+        ? { ...kit, seed: { ...kit.seed, ref: seedRef } }
+        : kit;
+
     return {
       catalog: named.name,
       kitId: kit.id,
       version,
       source: source.locator,
-      kit,
+      kit: pinnedKit,
       skillsInKit,
     };
   }
