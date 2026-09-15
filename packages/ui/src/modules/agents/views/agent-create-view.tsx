@@ -15,7 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
+import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -303,7 +305,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     >
       {!kit && kitsEnabled && (
         <section className="mb-8">
-          <Callout tone="default">
+          <Callout tone="default" inset>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-sm text-foreground">
                 Want a head start? Pick a starter kit to pre-fill your agent
@@ -334,7 +336,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {kit && (
         <section className="mb-8">
-          <div className="flex items-center gap-4 rounded-xl border border-template/20 bg-template-light px-4 py-3">
+          <Inset className="flex items-center gap-4 rounded-xl border border-template/20 bg-template-light px-4 py-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-template/15 text-template">
               <Gift size={16} />
             </span>
@@ -369,7 +371,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             >
               <Close size={16} />
             </Button>
-          </div>
+          </Inset>
         </section>
       )}
 
@@ -404,14 +406,14 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
           {bringsImage ? (
-            <Callout tone="default">
+            <Callout tone="default" inset>
               <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
               <div className="mt-1 font-mono text-xs text-muted-foreground">
                 {kit.image?.ref}
               </div>
             </Callout>
           ) : noHarnessInstalled ? (
-            <Callout tone="warning">
+            <Callout tone="warning" inset>
               This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")}
               , and none of those is installed here.
             </Callout>
@@ -431,7 +433,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && resourcesLine && (
         <section className="mb-8">
           <SectionLabel spaced>Size</SectionLabel>
-          <Callout tone="default">
+          <Callout tone="default" inset>
             <div>{resourcesLine}</div>
             {kit.resources?.note && (
               <div className="mt-1 text-muted-foreground">
@@ -450,7 +452,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {noCompatibleProvider ? (
         <section className="mb-8">
           <SectionLabel spaced>Provider</SectionLabel>
-          <Callout tone="warning">
+          <Callout tone="warning" inset>
             This kit asks for a provider that the chosen harness cannot run on.
             Pick another harness, or a kit whose provider fits.
           </Callout>
@@ -554,7 +556,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             {kit.channels.map((channel) => (
               <li
                 key={channel.type}
-                className="rounded-lg border border-border px-4 py-3"
+                className={cn(
+                  FIELD_INSET,
+                  "rounded-lg border border-border px-4 py-3",
+                )}
               >
                 <div className="flex items-start gap-3">
                   <ConnectionIcon
@@ -614,7 +619,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
-          <ul className="flex flex-col gap-3">
+          <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
             {kit.schedules.map((s) => {
               const skipped = form.skippedSchedules.includes(s.name);
               return (
