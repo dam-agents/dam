@@ -75,8 +75,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	name := r.runnerName(owner)
 	ns := r.config.ReleaseNamespace
 
-	token, caPEM, err := r.ensureRunnerSecret(ctx, owner)
-	if err != nil {
+	if _, _, err := r.ensureRunnerSecret(ctx, owner); err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerPVC(ctx, owner); err != nil {
@@ -91,7 +90,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	client, err := r.runnerClient(owner, token, caPEM)
+	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
 		return nil, false, err
 	}
@@ -100,6 +99,15 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 		return client, false, err
 	}
 	return client, dep.Status.ReadyReplicas > 0, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — mint or read its credentials, then dial it — so the credential is never handled anywhere but here.
+func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunner.Client, error) {
+	token, caPEM, err := r.ensureRunnerSecret(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return r.runnerClient(owner, token, caPEM)
 }
 
 func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Client, error) {
@@ -387,11 +395,7 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 		if owner == "" {
 			continue
 		}
-		token, ca, err := r.ensureRunnerSecret(ctx, owner)
-		if err != nil {
-			continue
-		}
-		client, err := r.runnerClient(owner, token, ca)
+		client, err := r.runnerFor(ctx, owner)
 		if err != nil {
 			continue
 		}
