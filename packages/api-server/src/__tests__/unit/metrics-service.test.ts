@@ -234,7 +234,7 @@ describe("spendBreakdown per-agent labels", () => {
   ): MetricsReader {
     return {
       tokenSpendByModel: async () => [],
-      spendByAgent: async () => rows,
+      spendByAgent: async () => rows.map((r) => ({ ...r, credits: [] })),
       spendByDay: async () => [],
       spendBySession: async () => [],
       runtimeBySession: async () => [],
@@ -266,8 +266,18 @@ describe("spendBreakdown per-agent labels", () => {
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
-      { agentId: "driver-1", agentName: "stellar-sparrow", costUsd: 202.48 },
-      { agentId: "driver-2", agentName: "quiet-heron", costUsd: 3.5 },
+      {
+        agentId: "driver-1",
+        agentName: "stellar-sparrow",
+        costUsd: 202.48,
+        credits: [],
+      },
+      {
+        agentId: "driver-2",
+        agentName: "quiet-heron",
+        costUsd: 3.5,
+        credits: [],
+      },
     ]);
   });
 
@@ -291,7 +301,12 @@ describe("spendBreakdown per-agent labels", () => {
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
-      { agentId: "agent-live", agentName: "stellar-sparrow", costUsd: 0.04 },
+      {
+        agentId: "agent-live",
+        agentName: "stellar-sparrow",
+        costUsd: 0.04,
+        credits: [],
+      },
     ]);
   });
 
@@ -315,6 +330,7 @@ describe("spendBreakdown per-agent labels", () => {
         agentId: "agent-odd",
         agentName: "invocation-7445bdaa11ff",
         costUsd: 7,
+        credits: [],
       },
     ]);
   });
@@ -331,7 +347,12 @@ describe("spendBreakdown per-agent labels", () => {
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
-      { agentId: "agent-gone", agentName: "old-friend", costUsd: 12 },
+      {
+        agentId: "agent-gone",
+        agentName: "old-friend",
+        costUsd: 12,
+        credits: [],
+      },
     ]);
   });
 });

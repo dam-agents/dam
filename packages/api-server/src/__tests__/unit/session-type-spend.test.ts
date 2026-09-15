@@ -25,9 +25,9 @@ describe("spend by session type", () => {
   it("folds each session into its category and books unknown sessions rather than dropping them", async () => {
     const spend = createSessionTypeSpend({
       readSpend: async () => [
-        { sessionId: "s1", costUsd: 1 },
-        { sessionId: "s2", costUsd: 5 },
-        { sessionId: "gone", costUsd: 2 },
+        { sessionId: "s1", costUsd: 1, credits: [] },
+        { sessionId: "s2", costUsd: 5, credits: [] },
+        { sessionId: "gone", costUsd: 2, credits: [] },
       ],
       categorizeSessions: async () =>
         new Map<string, SessionCategory>([
@@ -37,9 +37,9 @@ describe("spend by session type", () => {
       isEnabled: async () => true,
     });
     expect(await spend.breakdown(["a-1"], {})).toEqual([
-      { category: "scheduled", costUsd: 5 },
-      { category: "unknown", costUsd: 2 },
-      { category: "chats", costUsd: 1 },
+      { category: "scheduled", costUsd: 5, credits: [] },
+      { category: "unknown", costUsd: 2, credits: [] },
+      { category: "chats", costUsd: 1, credits: [] },
     ]);
   });
 });

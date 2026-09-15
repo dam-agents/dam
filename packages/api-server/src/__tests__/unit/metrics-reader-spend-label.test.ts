@@ -22,7 +22,7 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
     await createClickhouseReader(client).spendByAgent(["a-1"], { hours: 24 });
     expect(queries).toHaveLength(1);
     expect(queries[0]).toContain(
-      "argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName",
+      "argMaxIf(agentNameRaw, ts, invocationId = '' AND agentNameRaw != '') AS agentName",
     );
     expect(queries[0]).toContain(
       "ResourceAttributes['platform.agent.id'] AS agentId",
@@ -31,14 +31,19 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
 
   it("yields an empty agentName for a bucket whose only in-window rows are child rows", async () => {
     const { client } = fakeClient([
-      { agentId: "root-driver", agentName: null, costUsd: "1.5" },
+      {
+        agentId: "root-driver",
+        agentName: null,
+        costUsd: "1.5",
+        credits: [[""], [0]],
+      },
     ]);
     const out = await createClickhouseReader(client).spendByAgent(
       ["root-driver"],
       { hours: 24 },
     );
     expect(out).toEqual([
-      { agentId: "root-driver", agentName: "", costUsd: 1.5 },
+      { agentId: "root-driver", agentName: "", costUsd: 1.5, credits: [] },
     ]);
   });
 });

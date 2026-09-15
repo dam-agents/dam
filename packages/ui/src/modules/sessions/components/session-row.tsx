@@ -27,7 +27,12 @@ import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import {
+  formatCreditsExact,
+  formatSpend,
+  formatTokens,
+  formatUsdCell,
+} from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
@@ -168,10 +173,10 @@ export function SessionRow({
           {cost && (
             <span
               className="tabular-nums"
-              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · ${formatSpend(cost.costUsd, cost.credits, (v) => `$${v.toFixed(4)}`, formatCreditsExact)}`}
             >
               {" · "}
-              {formatUsdCell(cost.costUsd)}
+              {formatSpend(cost.costUsd, cost.credits, formatUsdCell)}
             </span>
           )}
         </span>
