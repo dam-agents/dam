@@ -27,8 +27,8 @@ const (
 	// Agent gen 9: storageClass added to AgentSpec — a per-agent pin for the
 	// class its workspace volumes provision on and the destination its
 	// storage migration targets; empty inherits the install-wide class.
-	// Agent gen 10: the vm backend no longer rejects secretRef — it runs the
-	// agent StatefulSet under a microVM RuntimeClass, so envFrom projects.
+	// Agent gen 10: the vm backend no longer rejects secretRef — the
+	// controller reads the Secret and folds its keys into the machine's env.
 	AgentSchemaGeneration = 10
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
