@@ -81,10 +81,8 @@ mkdir -p /tmp/agent-cache
 # A failing swap leaves a real ~/.cache on the workspace volume — a perf wart,
 # never a boot failure.
 if [ ! -L "$home/.cache" ]; then
-	# Probe with a scratch link first so a failing swap (e.g. non-root on
-	# unprivileged virtiofs, which EPERMs symlink creation) leaves any
-	# existing cache directory intact instead of deleting it with no
-	# replacement.
+	# Probe with a scratch link first so a failing swap leaves any existing
+	# cache directory intact instead of deleting it with no replacement.
 	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
 		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
 	else
