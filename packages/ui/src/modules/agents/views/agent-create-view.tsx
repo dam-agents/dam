@@ -51,12 +51,12 @@ import {
   type ConnectTarget,
   harnessesLine,
   isStarterKitSetupComplete,
+  kitConnectionIds,
   kitResourcesLine,
   ownAgentLine,
   preselectedGrants,
   providerPolicyForKit,
   requirementStatuses,
-  satisfiesKitRequirement,
   type StarterKitSetupDraft,
   toggleSkipped,
   withOverride,
@@ -190,6 +190,21 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     scheduleOverrides: form.scheduleOverrides,
   };
   const owned = connections.data ?? [];
+  const kitOwnedConnectionIds = useMemo(
+    () =>
+      kit
+        ? kitConnectionIds(
+            kit,
+            owned.filter((c) => form.connectionIds.includes(c.id)),
+            templateById,
+          )
+        : new Set<string>(),
+    [kit, owned, form.connectionIds, templateById],
+  );
+  const grantedKitConnections = useMemo(
+    () => owned.filter((c) => kitOwnedConnectionIds.has(c.id)),
+    [owned, kitOwnedConnectionIds],
+  );
   const statuses = kit
     ? requirementStatuses(kit, draft, owned, templateById)
     : [];
@@ -462,22 +477,18 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         onToggle={toggleConnection}
         oauthReturnView={returnPath}
         title="Connections"
-        badgeForGroup={(group) =>
-          kit && satisfiesKitRequirement(kit, group, templateById) ? (
-            <Badge variant="kit" size="sm">
-              Starter Kit
-            </Badge>
-          ) : null
-        }
+        excludeIds={kitOwnedConnectionIds}
         leading={
           kit && statuses.length > 0 ? (
             <KitRequirementsCard
               kit={kit}
               statuses={statuses}
               owned={owned}
+              granted={grantedKitConnections}
               templateById={templateById}
               templates={connectionTemplates.data ?? []}
               onUse={(id: string) => toggleConnection(id, true)}
+              onRevoke={(id: string) => toggleConnection(id, false)}
               onConnect={setConnectTarget}
             />
           ) : undefined

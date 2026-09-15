@@ -262,19 +262,28 @@ export function withOverride(
     : [...overrides, next];
 }
 
-export function satisfiesKitRequirement(
-  kit: Pick<StarterKitView, "connections">,
-  group: { connections: readonly { templateId: string }[] },
+export function accepts(
+  requirement: { accepts: readonly string[] },
+  connection: { templateId: string },
   templates: TemplateIndex,
 ): boolean {
-  return group.connections.some((c) => {
-    const familyId = templates.get(c.templateId)?.family?.id;
-    return kit.connections.some(
-      (req) =>
-        req.accepts.includes(c.templateId) ||
-        (familyId !== undefined && req.accepts.includes(familyId)),
-    );
-  });
+  const familyId = templates.get(connection.templateId)?.family?.id;
+  return (
+    requirement.accepts.includes(connection.templateId) ||
+    (familyId !== undefined && requirement.accepts.includes(familyId))
+  );
+}
+
+export function kitConnectionIds(
+  kit: Pick<StarterKitView, "connections">,
+  granted: readonly { id: string; templateId: string }[],
+  templates: TemplateIndex,
+): Set<string> {
+  return new Set(
+    granted
+      .filter((c) => kit.connections.some((r) => accepts(r, c, templates)))
+      .map((c) => c.id),
+  );
 }
 
 export function toggleSkipped(

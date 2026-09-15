@@ -8,7 +8,6 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
-import type { CatalogProviderGroup } from "../../../connections/lib/catalog-providers.js";
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
@@ -68,14 +67,14 @@ export function ConnectionsSetupSection({
   oauthReturnView,
   title,
   leading,
-  badgeForGroup,
+  excludeIds,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   oauthReturnView: string;
   title?: string;
   leading?: React.ReactNode;
-  badgeForGroup?: (group: CatalogProviderGroup) => React.ReactNode;
+  excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -83,10 +82,10 @@ export function ConnectionsSetupSection({
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
+      excludeProviderConnections(connectionsQ.data ?? []).filter(
+        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
       ),
-    [connectionsQ.data, grantedIds],
+    [connectionsQ.data, grantedIds, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
 
@@ -99,7 +98,6 @@ export function ConnectionsSetupSection({
         onOpenCatalog={() => setCatalogOpen(true)}
         {...(title ? { title } : {})}
         {...(leading ? { leading } : {})}
-        {...(badgeForGroup ? { badgeForGroup } : {})}
       />
       {catalogOpen && (
         <ConnectionCatalogModal

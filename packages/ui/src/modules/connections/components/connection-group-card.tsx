@@ -21,7 +21,6 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
-  badge?: React.ReactNode;
 }
 
 export function ConnectionGroupCard({
@@ -33,7 +32,6 @@ export function ConnectionGroupCard({
   onDelete,
   deletingId = null,
   maintenance,
-  badge,
 }: Props) {
   const { provider, connections } = group;
   return (
@@ -49,15 +47,9 @@ export function ConnectionGroupCard({
         />
       }
       titleAccessory={
-        (showCount || badge) && (
-          <span className="flex shrink-0 items-center gap-2">
-            {showCount && (
-              <span className="text-sm text-muted-foreground">
-                {connections.length} connection
-                {connections.length === 1 ? "" : "s"}
-              </span>
-            )}
-            {badge}
+        showCount && (
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {connections.length} connection{connections.length === 1 ? "" : "s"}
           </span>
         )
       }

@@ -1,11 +1,18 @@
-import { Information } from "@carbon/icons-react";
-import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
+import { Close, Information } from "@carbon/icons-react";
+import type {
+  ConnectionTemplateView,
+  ConnectionView,
+  StarterKitView,
+} from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { GithubAppInstallButton } from "../../connections/components/github-app-install-hint.js";
+import { GithubStepsCallout } from "../../connections/forms/github-steps-callout.js";
 import {
+  accepts,
   type ConnectTarget,
   connectTargets,
   describeAccepts,
@@ -19,9 +26,11 @@ interface Props {
   kit: StarterKitView;
   statuses: readonly RequirementStatus[];
   owned: readonly GrantedConnection[];
+  granted: readonly ConnectionView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
   templates: readonly ConnectionTemplateView[];
   onUse: (connectionId: string) => void;
+  onRevoke: (connectionId: string) => void;
   onConnect: (target: ConnectTarget) => void;
 }
 
@@ -40,13 +49,13 @@ export function KitRequirementsCard({
   kit,
   statuses,
   owned,
+  granted,
   templateById,
   templates,
   onUse,
+  onRevoke,
   onConnect,
 }: Props) {
-  const unmet = statuses.filter((s) => !s.satisfied);
-  if (unmet.length === 0) return null;
   const why = kit.connections.find((c) => c.required && c.note)?.note;
 
   return (
@@ -63,8 +72,11 @@ export function KitRequirementsCard({
       )}
 
       <ul>
-        {unmet.map(({ requirement }) => {
+        {statuses.map(({ requirement, satisfied }) => {
           const slug = iconSlugFor(requirement.accepts, templates);
+          const filling = granted.filter((c) =>
+            accepts(requirement, c, templateById),
+          );
           return (
             <li
               key={requirement.accepts.join("|")}
@@ -106,7 +118,7 @@ export function KitRequirementsCard({
                 )}
               </div>
 
-              {!isProviderRequirement(requirement) && (
+              {!satisfied && !isProviderRequirement(requirement) && (
                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
                   {ownedMatches(requirement, owned, templateById).map((c) => (
                     <Button
@@ -131,6 +143,44 @@ export function KitRequirementsCard({
                     </Button>
                   ))}
                 </div>
+              )}
+              {filling.length > 0 && (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {filling.map((c) => (
+                    <li
+                      key={c.id}
+                      className="rounded-lg border border-kit-line bg-card"
+                    >
+                      <GithubStepsCallout
+                        templateId={c.templateId}
+                        className="mx-3 mt-3"
+                      />
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <ConnectionIcon
+                          iconSlug={templateById.get(c.templateId)?.iconSlug}
+                          alt=""
+                          size={16}
+                          className="shrink-0 text-foreground/80"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                          {c.name}
+                        </span>
+                        <Badge variant="muted" size="sm">
+                          {templateById.get(c.templateId)?.name ?? c.templateId}
+                        </Badge>
+                        <GithubAppInstallButton connection={c} />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove ${c.name}`}
+                          onClick={() => onRevoke(c.id)}
+                        >
+                          <Close size={16} />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </li>
           );
