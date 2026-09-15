@@ -73,14 +73,13 @@ The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
-- **Per-pair agent egress NetworkPolicy** (controller-rendered,
-  `<id>-agent-egress`) is the sole gate on the agent → paired gateway
-  hop. The agent pod opts out of ambient mesh, so the kernel sees real
+- **Per-pair agent egress NetworkPolicy** is the sole gate on the
+  agent → paired gateway hop. The agent pod opts out of ambient mesh, so the kernel sees real
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
-- **Agent ingress NetworkPolicy** (chart-rendered,
-  `agent-ingress-platform-only`) admits ingress to the agent port only
+- **vm Backend.** Its gates live with the per-owner [VM runner](platform-topology.md#vm-runner).
+- **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
   busy-probe). agent-runtime serves unauthenticated on the assumption
   that this kernel gate is the auth boundary; kubelet probes are

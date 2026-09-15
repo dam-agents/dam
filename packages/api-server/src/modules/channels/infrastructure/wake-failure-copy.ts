@@ -35,8 +35,9 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           );
         case "MachineOutOfCapacity":
           return (
-            "This agent can't start right now: the VM runner has no room " +
-            "left. Stop another VM agent, or ask an admin for more capacity."
+            "This agent can't start: the VM runner has no room left. Stop " +
+            "another VM agent, or ask an admin for more capacity, then " +
+            "start it again."
           );
         case "MachineBootFailed":
           return (

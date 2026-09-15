@@ -416,3 +416,29 @@ func TestAnImageReferenceIsRefusedWhenItCouldEscapeAPathOrALogLine(t *testing.T)
 	}
 	assert.NoFileExists(t, filepath.Join(h.node.StateDir, "images", "..", "..", "etc", "passwd.tar"))
 }
+
+// TEST_SCENARIO: two machines are admitted at once and a third resizes upward; memory still committed by an operation that has not finished counts against the runner's limit, so concurrent creates cannot together overcommit it and a grow is gated like a create.
+func TestCapacityCountsMachinesStillBeingCreated(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	t.Setenv("FAKE_START_SLEEP", "0.5")
+
+	first := spec(true)
+	first.MemoryMiB = 1536
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	st, err := h.client().Ensure(t.Context(), "m2", second)
+	require.NoError(t, err)
+	assert.Equal(t, ReasonOutOfCapacity, st.Reason, "a machine still booting still holds its memory")
+	assert.NotContains(t, h.calls(), "machine create -n m2")
+
+	h.settle(t, "m1")
+	grow := spec(true)
+	grow.MemoryMiB = 4096
+	st, err = h.client().Ensure(t.Context(), "m1", grow)
+	require.NoError(t, err)
+	assert.Equal(t, ReasonOutOfCapacity, st.Reason, "a resize past the limit is refused, not applied")
+}

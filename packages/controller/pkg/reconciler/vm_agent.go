@@ -181,6 +181,16 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if !r.config.VM.Enabled || owner == "" {
 		return nil
 	}
+	agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !anyVMAgent([]unstructured.Unstructured{*agent}) {
+		return nil
+	}
 	token, ca, err := r.ensureRunnerSecret(ctx, owner)
 	if err != nil {
 		return err
