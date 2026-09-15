@@ -1,7 +1,7 @@
-# MicroVM runtimes for the sandbox node — survey and prototypes
+# MicroVM runtimes for the VM runner — survey and prototypes
 
 Status: research note, 2026-09-14. Compares the runtimes that could replace
-smolvm inside the sandbox node pod ([platform-topology](../architecture/platform-topology.md#sandbox-node)).
+smolvm inside the VM runner pod ([platform-topology](../architecture/platform-topology.md#vm-runner)).
 The bar, set by JP: a guest must run k3s, the host must get memory back when
 the guest frees it (virtio-balloon with free page reporting), and the option
 must not be obviously worse than the smolvm implementation that works today.
@@ -61,7 +61,7 @@ shared guest (Ubuntu 24.04 cloud image, cloud-init installs k3s and reports on
 the serial console, a NAT'd tap) and one runner per VMM that records boot and
 k3s timings and the VMM's host RSS before and after the guest frees 1 GiB.
 Run on the local Lima k3s VM (arm64, nested KVM, 10 vCPU) — the same nested
-host the sandbox node pod uses locally, so absolute numbers are pessimistic.
+host the VM runner pod uses locally, so absolute numbers are pessimistic.
 
 Measured 2026-09-14 (2 vCPU, 2 GiB guests, Ubuntu 24.04 cloud image, k3s
 installed from the internet inside the guest):
@@ -94,7 +94,7 @@ its numbers mean anything.
 ## What replacing smolvm would cost
 
 Both survivors are VMMs, not OCI runtimes. Each needs, on top of what
-sandbox-node does today: an OCI-to-disk step (flatten the image to ext4 with a
+vm-runner does today: an OCI-to-disk step (flatten the image to ext4 with a
 kernel and initrd the VMM can boot), a tap per machine with NAT (CAP_NET_ADMIN,
 which the node pod already has), and our own guest agent or SSH for exec.
 Cloud Hypervisor's OpenAPI socket and Firecracker's REST socket are both a

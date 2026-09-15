@@ -242,10 +242,10 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
 		}
 	}
-	cfg.VM.NodeToken = os.Getenv("SANDBOX_NODE_TOKEN")
-	cfg.VM.NodeCA = os.Getenv("SANDBOX_NODE_CA")
-	if cfg.VM.Enabled && (cfg.VM.NodeURL == "" || cfg.VM.NodeAddress == "" || cfg.VM.NodeToken == "") {
-		return nil, fmt.Errorf("AGENT_VM: enabled needs nodeUrl and nodeAddress, plus SANDBOX_NODE_TOKEN")
+	cfg.VM.RunnerToken = os.Getenv("VM_RUNNER_TOKEN")
+	cfg.VM.RunnerCA = os.Getenv("VM_RUNNER_CA")
+	if cfg.VM.Enabled && (cfg.VM.RunnerURL == "" || cfg.VM.RunnerAddress == "" || cfg.VM.RunnerToken == "") {
+		return nil, fmt.Errorf("AGENT_VM: enabled needs runnerUrl and runnerAddress, plus VM_RUNNER_TOKEN")
 	}
 	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
 		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))

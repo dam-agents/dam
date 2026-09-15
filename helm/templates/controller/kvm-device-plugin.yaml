@@ -1,7 +1,7 @@
 {{- if and .Values.virtualization.enabled .Values.virtualization.devicePlugin.enabled }}
 {{- /*
 Advertises /dev/kvm and /dev/net/tun as extended resources on every node it
-runs on, so the sandbox node pod can hold them without privilege on a cluster
+runs on, so the VM runner pod can hold them without privilege on a cluster
 that has no KubeVirt (whose virt-handler is the alternative source of such a
 grant). The plugin itself is the one privileged piece: it needs the kubelet's
 device-plugin socket dir and /dev from the host.

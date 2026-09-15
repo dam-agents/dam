@@ -1,4 +1,4 @@
-package sandboxnode
+package vmrunner
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func NewClient(url, token, caPEM string) (*Client, error) {
 	if caPEM != "" {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(caPEM)) {
-			return nil, fmt.Errorf("sandbox node CA: no certificate in PEM")
+			return nil, fmt.Errorf("VM runner CA: no certificate in PEM")
 		}
 		c.HTTP.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
 	}
@@ -58,19 +58,19 @@ func (c *Client) do(ctx context.Context, method, id string, body any) (MachineSt
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return MachineStatus{}, fmt.Errorf("sandbox node: %w", err)
+		return MachineStatus{}, fmt.Errorf("VM runner: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return MachineStatus{}, fmt.Errorf("sandbox node: %s %s: %s: %s", method, id, resp.Status, bytes.TrimSpace(raw))
+		return MachineStatus{}, fmt.Errorf("VM runner: %s %s: %s: %s", method, id, resp.Status, bytes.TrimSpace(raw))
 	}
 	var st MachineStatus
 	if resp.StatusCode == http.StatusNoContent {
 		return st, nil
 	}
 	if err := json.Unmarshal(raw, &st); err != nil {
-		return MachineStatus{}, fmt.Errorf("sandbox node: decoding status: %w", err)
+		return MachineStatus{}, fmt.Errorf("VM runner: decoding status: %w", err)
 	}
 	return st, nil
 }

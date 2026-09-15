@@ -25,8 +25,8 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
-	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
 	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
+	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 func main() {
@@ -140,12 +140,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	if cfg.VM.Enabled {
-		node, err := sandboxnode.NewClient(cfg.VM.NodeURL, cfg.VM.NodeToken, cfg.VM.NodeCA)
+		node, err := vmrunner.NewClient(cfg.VM.RunnerURL, cfg.VM.RunnerToken, cfg.VM.RunnerCA)
 		if err != nil {
-			slog.Error("configuring sandbox node client", "error", err)
+			slog.Error("configuring VM runner client", "error", err)
 			return
 		}
-		agentReconciler.WithSandboxNode(node)
+		agentReconciler.WithVMRunner(node)
 	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)

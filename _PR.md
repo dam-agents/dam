@@ -3,9 +3,10 @@
 ## What this branch does
 
 `backend.type: vm` agents no longer run under KubeVirt. They run as persistent
-smolvm microVMs inside one **sandbox node** pod — a single-replica Deployment
-from `packages/controller/Dockerfile.sandbox-node` (Fedora + smolvm + the
-`sandbox-node` agent) that holds `/dev/kvm` and `/dev/net/tun` as
+smolvm microVMs inside one **VM runner** pod (renamed from "sandbox node" on
+2026-09-15: it is a pod that runs VMs, not a node) — a single-replica
+Deployment from `packages/controller/Dockerfile.vm-runner` (Fedora + smolvm +
+the `vm-runner` agent) that holds `/dev/kvm` and `/dev/net/tun` as
 device-plugin resources and runs as root with NET_ADMIN, not privileged. The
 chart ships squat's generic-device-plugin as a DaemonSet
 (`virtualization.devicePlugin.enabled`) so any node with /dev/kvm qualifies —
@@ -64,7 +65,7 @@ device-plugin pod keeps the same node agent and image.
   `--mem` is a cap, the host commits only touched pages and got 1.5 GiB back
   within ~50 s of the guest freeing it. Guest page cache stays until the guest
   drops it.
-- **smolvm quirks:** `-p` binds 127.0.0.1 only (sandbox-node forwards
+- **smolvm quirks:** `-p` binds 127.0.0.1 only (vm-runner forwards
   `0.0.0.0:P` → `127.0.0.1:P+1000` with a source allow-list); archives must be
   world-readable (per-VM uid 2000000+); the guest image flattener rejects
   absolute-target symlinks under `/usr/local/bin` (k3s' bundled iptables goes
@@ -95,14 +96,14 @@ device-plugin pod keeps the same node agent and image.
   KVM), so first boots are flaky locally and a 4 GiB machine never makes it;
   on bare metal
   the guest is up in ~2 s. When smolvm gives up it leaves the guest process
-  running (100 % CPU, still booting) — sandbox-node now kills that orphan
-  after a failed start, and catatonit reaps the zombies (sandbox-node was
+  running (100 % CPU, still booting) — vm-runner now kills that orphan
+  after a failed start, and catatonit reaps the zombies (vm-runner was
   PID 1). Each retry is a fresh boot; the controller's 3 s requeue drives it.
 - **Unclean stops** (a node pod restart kills every guest): smolvm then reports
   the machine `unreachable` until a `machine stop` recovers it, and the root
   overlay (`overlay.qcow2`, the throwaway root layer — the flattened image
   and the workspace live on `storage.raw`) comes back dirty, which makes the
-  next boot exit with code 1 before the kernel prints anything. sandbox-node
+  next boot exit with code 1 before the kernel prints anything. vm-runner
   now stops, clears the stale sockets/lock/pid and the overlay before every
   start; with that, a machine killed with its pod comes back in ~40 s.
 - First boot of the 760 MB vm image flattens it inside the guest (~20 min
@@ -122,6 +123,16 @@ device-plugin pod keeps the same node agent and image.
   smolvm's 30 s window any more, while a 5 MB alpine guest still did in 6 s —
   so the second and third VM agents never came up. The `vm-sandboxes` feature
   flag is revealed by tapping the version label five times in Settings.
+
+## One image family (2026-09-15)
+
+The separate `claude-code-vm` image is gone. The vm template boots the plain
+`claude-code` image: the persistence prelude (bind-mount the persisted paths
+from the `/workspace` storage disk) moved into `platform-base`'s entrypoint,
+where it is a no-op for containers, and docker + k3s inside the guest are
+dropped for now (DAM-in-DAM is a follow-up — likely a shared read-only tools
+volume on the runner rather than 300 MB in every image). Any template can now
+be run as a VM by setting `backend.type: vm`.
 
 ## Known gaps (also in ADR 091)
 

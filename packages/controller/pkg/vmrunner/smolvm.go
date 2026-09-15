@@ -1,4 +1,4 @@
-package sandboxnode
+package vmrunner
 
 import (
 	"bytes"

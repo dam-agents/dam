@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's sandbox node pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 #MISE raw=true
 #MISE depends=["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
 #
@@ -41,7 +41,7 @@ AGENT_VALUE_FLAGS=()
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # virtualization.enabled drives extra provisioning below (nested virt on the
-# k3s VM, the vm image archive loaded onto the sandbox node pod) — resolve it
+# k3s VM, the vm image archive loaded onto the VM runner pod) — resolve it
 # from the values file + --set flags (chart default is false) so one flag
 # configures the whole stack.
 VIRT_ENABLED=""
@@ -55,7 +55,7 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
   esac
 done
 if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && [ ! -e /dev/kvm ]; then
-  echo "FATAL: virtualization.enabled=true needs /dev/kvm on this host (the sandbox node pod runs microVMs on it)." >&2
+  echo "FATAL: virtualization.enabled=true needs /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
   exit 1
 fi
 
@@ -109,10 +109,10 @@ else
     echo "Starting k3s VM..."
     limactl start "$LIMA_INSTANCE"
   fi
-  # Pre-existing VM without nested virt (create-time only): the sandbox node
+  # Pre-existing VM without nested virt (create-time only): the VM runner
   # pod would have no /dev/kvm — stop early with the fix.
   if [ -n "$VIRT_ENABLED" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
-    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the sandbox node needs it." >&2
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the VM runner needs it." >&2
     echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true" >&2
     echo "(nested virtualization needs Apple silicon M3+ on macOS 15+)." >&2
     exit 1
@@ -458,7 +458,7 @@ else
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      # vm-backend images run inside the sandbox node pod's machines, never
+      # vm-backend images run inside the VM runner pod's machines, never
       # as k3s containers; they are loaded onto that pod after the install.
       if [ "$backend" = vm ]; then VM_IMAGES+=("$image"); else AGENT_IMAGES+=("$image"); fi
     elif [ -d "packages/e2e/agents/$comp" ]; then
@@ -480,7 +480,7 @@ else
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
   PLATFORM_IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest)
-  [ -n "$VIRT_ENABLED" ] && PLATFORM_IMAGES+=(platform-sandbox-node:latest)
+  [ -n "$VIRT_ENABLED" ] && PLATFORM_IMAGES+=(platform-vm-runner:latest)
   docker save -o "$tar" "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}"
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$tar"
@@ -537,7 +537,7 @@ if [ "$NO_RESTART" = true ]; then
 else
   echo "Restarting pods..."
   kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
-  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-sandbox-node
+  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-vm-runner
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
@@ -548,19 +548,19 @@ fi
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
-# 6b. vm-backend images onto the sandbox node. It has no registry to pull
-# from: sandbox-node creates a machine from a docker-save archive named after
+# 6b. vm-backend images onto the VM runner. It has no registry to pull
+# from: vm-runner creates a machine from a docker-save archive named after
 # the image reference when one is present in its state dir, which lives on the
 # node's PVC — so this is copied into the running pod, once it exists.
 for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
-  echo "Loading $image onto the sandbox node..."
+  echo "Loading $image onto the VM runner..."
   tar="/tmp/$(printf '%s' "$image" | tr '/:@' '___').tar"
   docker save -o "$tar" "$image"
-  pod=$(kubectl --kubeconfig="$KUBECONFIG" get pod -l app.kubernetes.io/component=sandbox-node -o jsonpath='{.items[0].metadata.name}')
-  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- mkdir -p /var/lib/platform-sandbox/images
-  kubectl --kubeconfig="$KUBECONFIG" cp "$tar" "$pod:/var/lib/platform-sandbox/images/$(basename "$tar")"
+  pod=$(kubectl --kubeconfig="$KUBECONFIG" get pod -l app.kubernetes.io/component=vm-runner -o jsonpath='{.items[0].metadata.name}')
+  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- mkdir -p /var/lib/vm-runner/images
+  kubectl --kubeconfig="$KUBECONFIG" cp "$tar" "$pod:/var/lib/vm-runner/images/$(basename "$tar")"
   # smolvm reads the archive as the machine's own unprivileged uid.
-  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- chmod 644 "/var/lib/platform-sandbox/images/$(basename "$tar")"
+  kubectl --kubeconfig="$KUBECONFIG" exec "$pod" -- chmod 644 "/var/lib/vm-runner/images/$(basename "$tar")"
   rm -f "$tar"
 done
 

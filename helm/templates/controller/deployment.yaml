@@ -70,19 +70,19 @@ spec:
             - name: STORAGE_MIGRATION
               value: {{ .Values.controller.storageMigration | toJson | quote }}
             # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
-            {{- $nodeHost := printf "%s-sandbox-node.%s.svc" (include "platform.fullname" .) .Release.Namespace }}
+            {{- $nodeHost := printf "%s-vm-runner.%s.svc" (include "platform.fullname" .) .Release.Namespace }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "nodeUrl" (printf "https://%s:4600" $nodeHost) "nodeAddress" $nodeHost | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "runnerUrl" (printf "https://%s:4600" $nodeHost) "runnerAddress" $nodeHost | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
-            - name: SANDBOX_NODE_TOKEN
+            - name: VM_RUNNER_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "platform.fullname" . }}-sandbox-node
+                  name: {{ include "platform.fullname" . }}-vm-runner
                   key: token
-            - name: SANDBOX_NODE_CA
+            - name: VM_RUNNER_CA
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "platform.fullname" . }}-sandbox-node
+                  name: {{ include "platform.fullname" . }}-vm-runner
                   key: tls.crt
             {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR

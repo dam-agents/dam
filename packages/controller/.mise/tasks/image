@@ -2,4 +2,4 @@
 #MISE dir="{{vars.repo_root}}"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-controller:latest packages/controller/
-docker build -t platform-sandbox-node:latest -f packages/controller/Dockerfile.sandbox-node packages/controller/
+docker build -t platform-vm-runner:latest -f packages/controller/Dockerfile.vm-runner packages/controller/

@@ -72,7 +72,7 @@ type AgentSpec struct {
 	// Backend selects the isolation substrate the agent workload runs on;
 	// nil = container. Immutable after create (enforced by the api-server,
 	// the sole spec writer). `vm` runs the agent as a persistent microVM on
-	// the install's sandbox node instead of a StatefulSet: the controller
+	// the install's VM runner instead of a StatefulSet: the controller
 	// drives the node's machine API, and the agent Service resolves to the
 	// machine's published port; the paired gateway is unaffected.
 	// +optional

@@ -69,11 +69,11 @@ type AgentNPGateInit struct {
 }
 
 type VMConfig struct {
-	Enabled     bool   `json:"enabled,omitempty"`
-	NodeURL     string `json:"nodeUrl,omitempty"`
-	NodeAddress string `json:"nodeAddress,omitempty"`
-	NodeToken   string `json:"-"`
-	NodeCA      string `json:"-"`
+	Enabled       bool   `json:"enabled,omitempty"`
+	RunnerURL     string `json:"runnerUrl,omitempty"`
+	RunnerAddress string `json:"runnerAddress,omitempty"`
+	RunnerToken   string `json:"-"`
+	RunnerCA      string `json:"-"`
 }
 
 type AgentProbes struct {

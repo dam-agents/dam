@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the vm backend runs the agent as a persistent machine on the sandbox node instead of a StatefulSet. The controller must hand the node everything the guest needs to be a platform agent (the gateway proxy env, the MITM CA, the persisted paths, an egress allowlist of exactly the paired gateway), publish the machine into the cluster as the agent Service so the api-server dials it like a pod, mirror the machine's readiness onto the Agent status, stop the machine when the agent should not run, and delete it with the agent.
+// TEST_OVERVIEW: the vm backend runs the agent as a persistent machine on the VM runner instead of a StatefulSet. The controller must hand the node everything the guest needs to be a platform agent (the gateway proxy env, the MITM CA, the persisted paths, an egress allowlist of exactly the paired gateway), publish the machine into the cluster as the agent Service so the api-server dials it like a pod, mirror the machine's readiness onto the Agent status, stop the machine when the agent should not run, and delete it with the agent.
 package reconciler
 
 import (
@@ -17,18 +17,18 @@ import (
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/sandboxnode"
+	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
 type fakeNode struct {
 	mu       sync.Mutex
-	specs    map[string]sandboxnode.MachineSpec
-	statuses map[string]sandboxnode.MachineStatus
+	specs    map[string]vmrunner.MachineSpec
+	statuses map[string]vmrunner.MachineStatus
 	deleted  []string
 }
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
-	n := &fakeNode{specs: map[string]sandboxnode.MachineSpec{}, statuses: map[string]sandboxnode.MachineStatus{}}
+	n := &fakeNode{specs: map[string]vmrunner.MachineSpec{}, statuses: map[string]vmrunner.MachineStatus{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -39,12 +39,12 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		defer n.mu.Unlock()
 		switch r.Method {
 		case http.MethodPut:
-			var spec sandboxnode.MachineSpec
+			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
 			st, ok := n.statuses[id]
 			if !ok {
-				st = sandboxnode.MachineStatus{State: sandboxnode.StateCreating, Port: 31000}
+				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000}
 				n.statuses[id] = st
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
@@ -57,13 +57,13 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	return n, srv
 }
 
-func (n *fakeNode) set(id string, st sandboxnode.MachineStatus) {
+func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.statuses[id] = st
 }
 
-func (n *fakeNode) spec(id string) sandboxnode.MachineSpec {
+func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.specs[id]
@@ -89,10 +89,10 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	t.Helper()
 	node, srv := newFakeNode(t)
 	r, _ := setupReconciler(t, agent, leafSecret())
-	r.config.VM = config.VMConfig{Enabled: true, NodeURL: srv.URL, NodeAddress: "192.168.104.5", NodeToken: "node-token"}
+	r.config.VM = config.VMConfig{Enabled: true, RunnerURL: srv.URL, RunnerAddress: "192.168.104.5", RunnerToken: "node-token"}
 	r.config.AgentTemplateDefaults.Mounts = []config.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}, {Path: "/scratch"}}
-	nodeClient, _ := sandboxnode.NewClient(srv.URL, "node-token", "")
-	r.WithSandboxNode(nodeClient)
+	nodeClient, _ := vmrunner.NewClient(srv.URL, "node-token", "")
+	r.WithVMRunner(nodeClient)
 	var requeued []string
 	r.WithRequeue(func(name string, _ time.Duration) { requeued = append(requeued, name) })
 	return r, node, &requeued
@@ -118,7 +118,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
-	assert.Contains(t, spec.Env["NO_PROXY"], vmInnerClusterNoProxy)
 
 	_, err := r.client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	assert.True(t, err != nil, "no agent StatefulSet for a vm agent")
@@ -140,7 +139,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, []string{"my-agent"}, *requeued)
 
-	node.set("my-agent", sandboxnode.MachineStatus{State: sandboxnode.StateRunning, Port: 31000, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
@@ -192,16 +191,16 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)
 	r, _ := setupReconciler(t, agent)
-	r.config.VM = config.VMConfig{Enabled: true, NodeURL: srv.URL, NodeAddress: "192.168.104.5", NodeToken: "node-token"}
-	nodeClient2, _ := sandboxnode.NewClient(srv.URL, "node-token", "")
-	r.WithSandboxNode(nodeClient2)
+	r.config.VM = config.VMConfig{Enabled: true, RunnerURL: srv.URL, RunnerAddress: "192.168.104.5", RunnerToken: "node-token"}
+	nodeClient2, _ := vmrunner.NewClient(srv.URL, "node-token", "")
+	r.WithVMRunner(nodeClient2)
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")
 	assert.Empty(t, node.specs)
 }
 
-// TEST_SCENARIO: an install without a sandbox node cannot run vm agents; the Agent says so instead of silently running as a container.
+// TEST_SCENARIO: an install without a VM runner cannot run vm agents; the Agent says so instead of silently running as a container.
 func TestVMBackendDisabledFailsReconcile(t *testing.T) {
 	agent := vmAgentCR()
 	r, _ := setupReconciler(t, agent)

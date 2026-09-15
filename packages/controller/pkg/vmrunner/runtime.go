@@ -1,4 +1,4 @@
-package sandboxnode
+package vmrunner
 
 type Runtime interface {
 	State(id string) string
