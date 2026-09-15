@@ -20,6 +20,7 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
+import { spendBreakdown } from "./data/spend.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
@@ -162,6 +163,7 @@ function getFixtures(): Record<string, unknown> {
     "repos.list": [],
     "apiKeys.list": [],
     "metrics.usage": { totalTokens: 0, totalCostCents: 0 },
+    "metrics.spendBreakdown": spendBreakdown,
     "harnessConfig.get": {},
     "harnessConfig.status": {
       catalog: {

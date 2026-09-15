@@ -324,7 +324,9 @@ window.fetch = async (
       const procs = procPath.split(",");
       const results = procs.map((proc) => {
         const data = fixtures[proc];
-        return { result: { data: data !== undefined ? data : null } };
+        return {
+          result: { type: "data", data: data !== undefined ? data : null },
+        };
       });
       return new Response(JSON.stringify(results), {
         status: 200,

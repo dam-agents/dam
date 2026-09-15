@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import { totalCostUsd } from "../../metrics/lib/totals.js";
 import {
@@ -15,6 +16,7 @@ const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 
 export function SpendWidget() {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const [period, setPeriod] = useState<SpendPeriod>("1m");
   const timeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -68,9 +70,14 @@ export function SpendWidget() {
       {spenders.length > 0 ? (
         <div className="space-y-3">
           {spenders.map((spender) => (
-            <div key={spender.agentId}>
+            <button
+              key={spender.agentId}
+              type="button"
+              onClick={() => navigateToSandboxHome(spender.agentId, "usage")}
+              className="group -mx-2 w-[calc(100%+16px)] rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
+            >
               <div className="mb-1 flex items-center justify-between">
-                <span className="truncate text-sm text-muted-foreground">
+                <span className="truncate text-sm text-muted-foreground group-hover:text-foreground">
                   {spender.agentName}
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -83,7 +90,7 @@ export function SpendWidget() {
                   width: top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
                 }}
               />
-            </div>
+            </button>
           ))}
         </div>
       ) : (
