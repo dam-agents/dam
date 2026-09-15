@@ -39,7 +39,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 --> statement-breakpoint
-CREATE FUNCTION skill_source_canonical_url(url text) RETURNS text AS $$
+CREATE FUNCTION skill_source_prepare_url(url text) RETURNS text AS $$
 DECLARE
   out text := url;
   origin text;
@@ -48,15 +48,36 @@ BEGIN
   IF out !~ '^[a-zA-Z][a-zA-Z0-9+.-]*://' THEN
     out := 'https://' || out;
   END IF;
-  out := regexp_replace(out, '^(https?://)[^/@]*@', '\1');
   origin := substring(out from '^[^:]+://[^/]*');
   IF origin IS NOT NULL THEN
     out := lower(origin) || substr(out, length(origin) + 1);
   END IF;
+  out := regexp_replace(out, '^(https?://)[^/@]*@', '\1');
   out := regexp_replace(out, '^http://', 'https://');
   out := regexp_replace(out, '^(https://[^/:]+):(80|443)(/|$)', '\1\3');
   out := regexp_replace(out, '^https://www\.github\.com(/|$)', 'https://github.com\1');
-  out := regexp_replace(out, '/-/(tree|blob)/', '/\1/');
+  RETURN regexp_replace(out, '/-/(tree|blob)/', '/\1/');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+--> statement-breakpoint
+CREATE FUNCTION skill_source_browse_path(url text) RETURNS text AS $$
+DECLARE
+  prepared text := skill_source_prepare_url(url);
+  raw text;
+BEGIN
+  raw := substring(prepared from '^https://[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/tree/[^/]+/(.+)$');
+  IF raw IS NULL THEN
+    raw := substring(prepared from '^https://[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/blob/[^/]+/(.+)/[^/]+$');
+  END IF;
+  IF raw IS NULL THEN RETURN NULL; END IF;
+  RETURN skill_source_decode_path(raw);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+--> statement-breakpoint
+CREATE FUNCTION skill_source_canonical_url(url text) RETURNS text AS $$
+DECLARE
+  out text := skill_source_prepare_url(url);
+BEGIN
   out := regexp_replace(out, '^(https://[^/]+/[^/]+/[^/]+(?:/[^/]+)*?)/(tree|blob)/.*$', '\1');
   IF out ~ '^https://github\.com/' THEN
     out := lower(regexp_replace(out, '^(https://github\.com/[^/]+/[^/]+).*$', '\1'));
@@ -66,14 +87,9 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 --> statement-breakpoint
 UPDATE "skill_sources"
-SET "path" = skill_source_decode_path(substring(regexp_replace("git_url", '/-/tree/', '/tree/') from '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/tree/[^/]+/(.+)$'))
+SET "path" = skill_source_browse_path("git_url")
 WHERE "path" IS NULL
-  AND regexp_replace("git_url", '/-/tree/', '/tree/') ~ '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/tree/[^/]+/.+$';
---> statement-breakpoint
-UPDATE "skill_sources"
-SET "path" = skill_source_decode_path(substring(regexp_replace("git_url", '/-/blob/', '/blob/') from '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/blob/[^/]+/(.+)/[^/]+$'))
-WHERE "path" IS NULL
-  AND regexp_replace("git_url", '/-/blob/', '/blob/') ~ '^https?://(?:[^/@]*@)?[^/]+/[^/]+/[^/]+(?:/[^/]+)*?/blob/[^/]+/.+/[^/]+$';
+  AND skill_source_browse_path("git_url") IS NOT NULL;
 --> statement-breakpoint
 DELETE FROM "skill_sources" s
 WHERE EXISTS (
@@ -116,6 +132,10 @@ SET "skills" = COALESCE(
 WHERE jsonb_typeof("skills") = 'array';
 --> statement-breakpoint
 DROP FUNCTION skill_source_canonical_url(text);
+--> statement-breakpoint
+DROP FUNCTION skill_source_browse_path(text);
+--> statement-breakpoint
+DROP FUNCTION skill_source_prepare_url(text);
 --> statement-breakpoint
 DROP FUNCTION skill_source_decode_path(text);
 --> statement-breakpoint
