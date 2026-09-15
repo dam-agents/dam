@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { platformRunResultResponseSchema } from "api-server-api";
 import { z } from "zod";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
@@ -30,8 +31,6 @@ export class AcpSessionLoadError extends Error {
 export type AcpTurnAbandonCause = "connection-lost" | "stalled";
 
 export class AcpTurnAbandonedError extends Error {
-  lastFrameAt: number | undefined;
-
   constructor(
     readonly abandonCause: AcpTurnAbandonCause,
     message: string,
@@ -49,12 +48,10 @@ type ConnectionWatch =
       sessionId: () => string | null;
     };
 
-const runResultStatusSchema = z.object({ status: z.string() });
-
-async function probeTurnAlive(
+async function probeTurnStatus(
   connection: ClientSideConnection,
   sessionId: string,
-): Promise<"alive" | "gone" | "unknown"> {
+): Promise<AcpTurnStatus> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const raw = await Promise.race([
@@ -66,9 +63,11 @@ async function probeTurnAlive(
         );
       }),
     ]);
-    const parsed = runResultStatusSchema.safeParse(raw);
+    const parsed = platformRunResultResponseSchema.safeParse(raw);
     if (!parsed.success) return "unknown";
-    return parsed.data.status === "pending" ? "alive" : "gone";
+    if (parsed.data.status === "pending") return "pending";
+    if (parsed.data.status === "interrupted") return "interrupted";
+    return "ended";
   } catch {
     return "unknown";
   } finally {
@@ -211,7 +210,7 @@ export type TriggerSessionOpts = {
   mcpServers?: unknown[];
 } & SessionAttach;
 
-export type AcpTurnStatus = "pending" | "ended" | "unknown";
+export type AcpTurnStatus = "pending" | "ended" | "interrupted" | "unknown";
 
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
@@ -319,11 +318,11 @@ async function withAcpConnection<T>(
       const sessionId = watch.sessionId();
       if (sessionId === null) return;
       probing = true;
-      void probeTurnAlive(connection, sessionId)
+      void probeTurnStatus(connection, sessionId)
         .then((verdict) => {
-          if (verdict === "alive") {
+          if (verdict === "pending") {
             lastFrameAt = Date.now();
-          } else if (verdict === "gone") {
+          } else if (verdict !== "unknown") {
             abortWith(
               new AcpTurnAbandonedError(
                 "stalled",
@@ -355,23 +354,16 @@ async function withAcpConnection<T>(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    const withFrameStamp = (err: Error): Error => {
-      if (err instanceof AcpTurnAbandonedError && err.lastFrameAt === undefined)
-        err.lastFrameAt = lastFrameAt;
-      return err;
-    };
     const result = await Promise.race([
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
-          reject(withFrameStamp(abortError));
+          reject(abortError);
           return;
         }
-        ac.signal.addEventListener(
-          "abort",
-          () => reject(withFrameStamp(abortError)),
-          { once: true },
-        );
+        ac.signal.addEventListener("abort", () => reject(abortError), {
+          once: true,
+        });
       }),
     ]);
     return result;
@@ -589,14 +581,7 @@ function createAcpClientForUrl(
         "platform-turn-status",
         {},
         { kind: "deadline", ms: TURN_STATUS_DEADLINE_MS },
-        async (connection) => {
-          const verdict = await probeTurnAlive(connection, sessionId);
-          return verdict === "alive"
-            ? "pending"
-            : verdict === "gone"
-              ? "ended"
-              : "unknown";
-        },
+        (connection) => probeTurnStatus(connection, sessionId),
       );
     },
 

@@ -58,7 +58,7 @@ import {
   turnFailureReasonToken,
   turnFailureUserCopy,
 } from "./turn-failure-copy.js";
-import { createTurnRecovery } from "./turn-recovery.js";
+import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -903,7 +903,6 @@ export function createSlackWorker(
     sessionId?: string;
     releaseAttendance?: () => void;
     posted?: boolean;
-    postedAt?: number;
     messaged?: boolean;
     declined?: boolean;
     forwarded?: boolean;
@@ -964,13 +963,22 @@ export function createSlackWorker(
     }
   }
 
-  function refreshLinger(instanceName: string, refs: TurnRef[]) {
-    let lingering = lingeringTurns.get(instanceName);
-    if (!lingering) {
-      lingering = new Map();
-      lingeringTurns.set(instanceName, lingering);
+  const watchedTurnRefs = new Map<string, Set<TurnRef>>();
+
+  function holdWatchedRefs(instanceName: string, refs: TurnRef[]) {
+    let held = watchedTurnRefs.get(instanceName);
+    if (!held) {
+      held = new Set();
+      watchedTurnRefs.set(instanceName, held);
     }
-    for (const ref of refs) lingering.set(ref, Date.now() + TURN_LINGER_MS);
+    for (const ref of refs) held.add(ref);
+  }
+
+  function releaseWatchedRefs(instanceName: string, refs: TurnRef[]) {
+    const held = watchedTurnRefs.get(instanceName);
+    if (!held) return;
+    for (const ref of refs) held.delete(ref);
+    if (held.size === 0) watchedTurnRefs.delete(instanceName);
   }
 
   function lingeringFor(instanceName: string): TurnRef[] {
@@ -1021,6 +1029,9 @@ export function createSlackWorker(
     for (let i = lingering.length - 1; i >= 0; i--) {
       if (match(lingering[i]!)) return lingering[i];
     }
+    for (const ref of watchedTurnRefs.get(instanceName) ?? []) {
+      if (match(ref)) return ref;
+    }
     return undefined;
   }
 
@@ -1032,7 +1043,6 @@ export function createSlackWorker(
     const engaged = findTurnRef(instanceName, match);
     if (!engaged) return;
     engaged.posted = true;
-    engaged.postedAt = Date.now();
     if (opts.messaged) engaged.messaged = true;
     if (opts.replyText) {
       engaged.replyText = engaged.replyText
@@ -1527,24 +1537,23 @@ export function createSlackWorker(
         (ref) => ref.sessionId !== undefined,
       )?.sessionId;
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
-        const deliveredSince = (sinceMs: number) =>
-          turnRefs.some(
-            (ref) =>
-              ref.declined ||
-              ref.handedOff ||
-              (ref.postedAt !== undefined && ref.postedAt > sinceMs),
-          );
+        const delivered = (end: WatchedTurnEnd) =>
+          end === "interrupted"
+            ? turnRefs.some((ref) => ref.declined || ref.handedOff)
+            : turnRefs.some(
+                (ref) => ref.posted || ref.declined || ref.handedOff,
+              );
+        holdWatchedRefs(instanceName, turnRefs);
         turnRecovery.watch({
           instanceName,
           sessionId,
-          lastSeenWorkingAt: err.lastFrameAt,
-          deliveredSince,
-          onStillRunning: () => refreshLinger(instanceName, turnRefs),
-          recover: async (sinceMs) => {
+          isDelivered: delivered,
+          onDone: () => releaseWatchedRefs(instanceName, turnRefs),
+          recover: async (end) => {
             await agents().ensureReady(instanceName);
             let nudged = false;
             await withSessionTurnLock(instanceName, threadKey, async () => {
-              if (deliveredSince(sinceMs)) return;
+              if (delivered(end)) return;
               nudged = true;
               const ref = turnRefs.at(-1)!;
               beginTurn(instanceName, ref);
@@ -1555,7 +1564,7 @@ export function createSlackWorker(
                 );
               } finally {
                 endTurn(instanceName, ref);
-                if (!deliveredSince(sinceMs)) {
+                if (!delivered("clean")) {
                   getLogger().info(
                     {
                       agentId: instanceName,
@@ -1573,7 +1582,7 @@ export function createSlackWorker(
                 channel: "slack",
                 agentId: instanceName,
                 actorSub: null,
-                outcome: deliveredSince(sinceMs) ? "success" : "failure",
+                outcome: delivered("clean") ? "success" : "failure",
                 reason: "recovery-nudge",
               });
             }
