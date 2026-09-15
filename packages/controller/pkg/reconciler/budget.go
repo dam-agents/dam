@@ -64,6 +64,15 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	return allowedVerdict, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: this gate exists to stop a running machine growing past its owner's ceiling, so an unreachable runner means there is no such machine to protect — and refusing here would wedge the reconcile that creates the runner in the first place.
+func (r *AgentReconciler) runnerMachine(ctx context.Context, owner, name string) (vmrunner.MachineStatus, error) {
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
+	}
+	return client.Status(ctx, name)
+}
+
 func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, owner string) (budgetVerdict, bool, error) {
 	if owner == "" {
 		return allowedVerdict, false, nil
@@ -73,13 +82,10 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		if !r.config.VM.Enabled {
 			return allowedVerdict, false, nil
 		}
-		client, err := r.runnerFor(ctx, owner)
+		st, err := r.runnerMachine(ctx, owner, agent.Name)
 		if err != nil {
-			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
-		}
-		st, err := client.Status(ctx, agent.Name)
-		if err != nil {
-			return budgetVerdict{}, false, fmt.Errorf("reading vm machine: %w", err)
+			slog.Warn("resize budget check: reading vm machine", "agent", agent.Name, "error", err)
+			return allowedVerdict, false, nil
 		}
 		if st.State != vmrunner.StateRunning || (newCPU.MilliValue() <= int64(st.CPUs)*1000 && newMem.Value() <= int64(st.MemoryMiB)<<20) {
 			return allowedVerdict, false, nil

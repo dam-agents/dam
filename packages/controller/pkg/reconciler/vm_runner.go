@@ -83,7 +83,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	if err := applyNetworkPolicy(ctx, r.client, buildRunnerNetworkPolicy(owner, r.config.ReleaseName, ns)); err != nil {
+	if err := applyNetworkPolicy(ctx, r.client, buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns)); err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
@@ -240,7 +240,8 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 	return r.applyService(ctx, svc)
 }
 
-func buildRunnerNetworkPolicy(owner, release, ns string) *networkingv1.NetworkPolicy {
+// UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	first := intstr.FromInt(31000)
@@ -248,7 +249,7 @@ func buildRunnerNetworkPolicy(owner, release, ns string) *networkingv1.NetworkPo
 	peer := func(component string) networkingv1.NetworkPolicyPeer {
 		return networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
 			"app.kubernetes.io/component": component,
-			"app.kubernetes.io/instance":  release,
+			"app.kubernetes.io/instance":  instanceLabel,
 		}}}
 	}
 	return &networkingv1.NetworkPolicy{
