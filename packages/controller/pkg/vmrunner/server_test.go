@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is stopped and started again, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed at create, so a change to either is reported and the rest of the spec still applies; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port.
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is stopped and started again, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed at create, so a change to either is reported and the rest of the spec still applies; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port; a machine is admitted only when the runner has the memory for it, and a guest the runner had to restart is counted so the platform can tell a reboot from a slow start.
 package vmrunner
 
 import (
@@ -351,4 +351,40 @@ func TestOnlyAPreviouslyHealthyMachineIsRestartedWhenItGoesQuiet(t *testing.T) {
 
 	h.node.spawn("m1", StateStarting, func() error { return nil })
 	assert.False(t, h.node.deadForLong("m1"), "a state change restarts the window")
+}
+
+// TEST_SCENARIO: the runner has room for one more machine, not two: the second is refused with a message naming what is committed, and it is refused before anything is spawned.
+func TestAMachineIsRefusedWhenTheRunnerHasNoRoom(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	small := spec(true)
+	small.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", small)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	st, err := h.client().Ensure(t.Context(), "m2", second)
+	require.NoError(t, err)
+	assert.Equal(t, ReasonOutOfCapacity, st.Reason)
+	assert.Contains(t, st.Message, "does not fit")
+	assert.NotContains(t, h.calls(), "machine create -n m2", "nothing is created for a machine that does not fit")
+}
+
+// TEST_SCENARIO: the runner restarts a guest that stopped answering: the count it reports is what lets the platform tell that reboot from a machine that was merely slow to start.
+func TestARestartedGuestIsCounted(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Zero(t, h.settle(t, "m1").Restarts)
+
+	h.node.mu.Lock()
+	h.node.wasHealthy["m1"] = true
+	h.node.unhealthySince["m1"] = time.Now().Add(-unhealthyRestart - time.Minute)
+	h.node.mu.Unlock()
+	_, err = h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, h.settle(t, "m1").Restarts)
 }

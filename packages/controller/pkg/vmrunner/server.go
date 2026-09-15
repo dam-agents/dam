@@ -29,12 +29,14 @@ const (
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type Server struct {
-	Token     string
-	StateDir  string
-	Runtime   Runtime
-	PortMin   int
-	PortMax   int
-	AllowFrom []*net.IPNet
+	Token      string
+	StateDir   string
+	Runtime    Runtime
+	PortMin    int
+	PortMax    int
+	MemoryMiB  int
+	ReserveMiB int
+	AllowFrom  []*net.IPNet
 
 	mu             sync.Mutex
 	locks          map[string]*sync.Mutex
@@ -43,6 +45,8 @@ type Server struct {
 	listeners      map[string]net.Listener
 	gens           map[string]uint64
 	drift          map[string]string
+	reasons        map[string]string
+	restarts       map[string]int32
 	wasHealthy     map[string]bool
 	unhealthySince map[string]time.Time
 }
@@ -50,6 +54,7 @@ type Server struct {
 func (s *Server) Start() error {
 	s.locks, s.pending, s.lastErr, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]string{}, map[string]net.Listener{}
 	s.gens, s.drift, s.wasHealthy, s.unhealthySince = map[string]uint64{}, map[string]string{}, map[string]bool{}, map[string]time.Time{}
+	s.reasons, s.restarts = map[string]string{}, map[string]int32{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -140,6 +145,16 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	st := s.status(id)
 	if op := s.plan(id, spec, st); op != "" {
+		if op == StateCreating || op == StateStarting {
+			if err := s.roomFor(id, spec); err != nil {
+				s.mu.Lock()
+				s.lastErr[id], s.reasons[id] = err.Error(), ReasonOutOfCapacity
+				s.mu.Unlock()
+				st.Message, st.Reason, st.Ready = err.Error(), ReasonOutOfCapacity, false
+				writeJSON(w, st)
+				return
+			}
+		}
 		force := op == StateRestarting
 		s.spawn(id, op, func() error { return s.ensure(id, spec, force) })
 		st.State, st.Ready = op, false
@@ -238,6 +253,11 @@ func (s *Server) ensure(id string, spec MachineSpec, force bool) error {
 		}
 	}
 	if state == StateRunning && (force || applied == nil || needsRestart(*applied, spec)) {
+		if force {
+			s.mu.Lock()
+			s.restarts[id]++
+			s.mu.Unlock()
+		}
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
 		}
@@ -310,6 +330,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	delete(s.lastErr, id)
 	delete(s.drift, id)
+	delete(s.reasons, id)
+	delete(s.restarts, id)
 	delete(s.wasHealthy, id)
 	delete(s.unhealthySince, id)
 	if ln := s.listeners[id]; ln != nil {
@@ -351,10 +373,11 @@ func (s *Server) spawn(id, op string, fn func() error) {
 		s.mu.Lock()
 		delete(s.pending, id)
 		if err != nil {
-			s.lastErr[id] = err.Error()
+			s.lastErr[id], s.reasons[id] = err.Error(), failureReason(err)
 			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
 		} else {
 			delete(s.lastErr, id)
+			delete(s.reasons, id)
 		}
 		s.mu.Unlock()
 	}()
@@ -363,11 +386,12 @@ func (s *Server) spawn(id, op string, fn func() error) {
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
 	pending, lastErr, drift := s.pending[id], s.lastErr[id], s.drift[id]
+	reason, restarts := s.reasons[id], s.restarts[id]
 	s.mu.Unlock()
 	if lastErr == "" {
 		lastErr = drift
 	}
-	st := MachineStatus{State: StateAbsent, Port: s.port(id), Message: lastErr}
+	st := MachineStatus{State: StateAbsent, Reason: reason, Restarts: restarts, Port: s.port(id), Message: lastErr}
 	if spec := s.readSpec(id); spec != nil {
 		st.CPUs, st.MemoryMiB, st.StorageGiB = spec.CPUs, spec.MemoryMiB, spec.StorageGiB
 	}
@@ -528,4 +552,74 @@ func writeJSON(w http.ResponseWriter, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("writing response", "error", err)
 	}
+}
+
+func failureReason(err error) string {
+	m := err.Error()
+	switch {
+	case strings.Contains(m, "cannot read archive"), strings.Contains(m, "--image"), strings.Contains(m, "pull"):
+		return ReasonImageUnavailable
+	case strings.Contains(m, "no free machine port"):
+		return ReasonOutOfCapacity
+	default:
+		return ReasonBootFailed
+	}
+}
+
+func (s *Server) roomFor(id string, spec MachineSpec) error {
+	limit := s.MemoryMiB
+	if limit == 0 {
+		limit = memoryLimitMiB()
+	}
+	if limit == 0 {
+		return nil
+	}
+	ids, err := s.machineIDs()
+	if err != nil {
+		return err
+	}
+	used := 0
+	for _, other := range ids {
+		if other == id {
+			continue
+		}
+		if state, err := s.Runtime.State(other); err != nil || state != StateRunning {
+			continue
+		}
+		if applied := s.readSpec(other); applied != nil {
+			used += applied.MemoryMiB
+		}
+	}
+	if used+spec.MemoryMiB+s.ReserveMiB > limit {
+		return fmt.Errorf("this machine's %d MiB does not fit: the VM runner has %d MiB for machines and %d MiB is already committed; stop another agent or give the runner more memory",
+			spec.MemoryMiB, limit-s.ReserveMiB, used)
+	}
+	return nil
+}
+
+func memoryLimitMiB() int {
+	if b, err := os.ReadFile("/sys/fs/cgroup/memory.max"); err == nil {
+		if v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
+			return int(v >> 20)
+		}
+	}
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "MemTotal:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0
+		}
+		kb, err := strconv.Atoi(fields[1])
+		if err != nil {
+			return 0
+		}
+		return kb >> 10
+	}
+	return 0
 }

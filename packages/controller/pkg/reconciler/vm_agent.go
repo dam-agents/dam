@@ -181,5 +181,13 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		}
 		r.requeue(agent.Name, poll)
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, "MachineNotReady", msg, 0, "")
+	reason := st.Reason
+	if reason == "" {
+		reason = vmrunner.ReasonNotReady
+	}
+	restartReason := ""
+	if st.Restarts > 0 {
+		restartReason = "GuestStoppedAnswering"
+	}
+	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, st.Restarts, restartReason)
 }

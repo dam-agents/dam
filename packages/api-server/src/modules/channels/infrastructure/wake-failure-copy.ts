@@ -28,6 +28,21 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: it ran out of memory. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineImageUnavailable":
+          return (
+            "This agent failed to start: its image isn't available to the " +
+            "VM runner. Check the agent's page or contact its owner."
+          );
+        case "MachineOutOfCapacity":
+          return (
+            "This agent can't start right now: the VM runner has no room " +
+            "left. Stop another VM agent, or ask an admin for more capacity."
+          );
+        case "MachineBootFailed":
+          return (
+            "This agent failed to start: its sandbox VM didn't boot. " +
+            "Check the agent's page or contact its owner."
+          );
         default:
           return (
             "This agent failed to start: it crashed while starting. " +

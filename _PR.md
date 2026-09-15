@@ -180,6 +180,25 @@ from the api-server pod and from the Mac). The ping → pong recorded above was
 on the pre-review build, and the model calls the VM agent did make went out
 through its gateway exactly as the container's did.
 
+Third round (2026-09-15, JP's calls): the guest stays root — the VM is the
+boundary, smolvm already runs each machine under its own host uid, and the
+docker/k3s follow-up needs it (IS_SANDBOX=1 is set, so Claude Code runs).
+Implemented from the "not fixed" list:
+- the runner admits a machine only if its memory fits what is left, counting
+  the machines already running and keeping `reserveMiB` for itself; its own
+  ceiling comes from the pod's memory limit through the downward API
+- it counts the restarts it performs on a guest that stopped answering, and
+  the controller publishes that count, so a rebooted guest is distinguishable
+  from a slow start (invocation liveness reads it)
+- it names why a machine is not ready (MachineBootFailed,
+  MachineImageUnavailable, MachineOutOfCapacity, MachineNotReady) and the
+  api-server treats the first three as failures with their own copy instead
+  of retrying a "still starting" agent forever
+
+Still open: `dam ssh` logs in as `agent` while the guest runs as root, so the
+session lands on a uid that cannot write its own home — the fix is for the
+runtime to advertise its user and the CLI to honour it.
+
 Documented, not fixed: one runner pod hosts every user's machine (cross-tenant
 blast radius, per-tenant runner is the upgrade path); secrets travel on the
 smolvm argv inside the runner pod; the runner has no resource limits unless
