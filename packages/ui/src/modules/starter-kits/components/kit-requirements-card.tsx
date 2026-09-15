@@ -1,4 +1,4 @@
-import { CheckmarkFilled, Information } from "@carbon/icons-react";
+import { Information } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,8 @@ export function KitRequirementsCard({
   onUse,
   onConnect,
 }: Props) {
+  const unmet = statuses.filter((s) => !s.satisfied);
+  if (unmet.length === 0) return null;
   const why = kit.connections.find((c) => c.required && c.note)?.note;
 
   return (
@@ -61,7 +63,7 @@ export function KitRequirementsCard({
       )}
 
       <ul>
-        {statuses.map(({ requirement, satisfied }) => {
+        {unmet.map(({ requirement }) => {
           const slug = iconSlugFor(requirement.accepts, templates);
           return (
             <li
@@ -97,47 +99,38 @@ export function KitRequirementsCard({
                     {requirement.note}
                   </p>
                 )}
-                {!satisfied && isProviderRequirement(requirement) && (
+                {isProviderRequirement(requirement) && (
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     Pick one under Provider above.
                   </p>
                 )}
               </div>
 
-              {satisfied ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-sm text-success">
-                  <CheckmarkFilled size={16} />
-                  {isProviderRequirement(requirement)
-                    ? "Connected"
-                    : "Connected below"}
-                </span>
-              ) : (
-                !isProviderRequirement(requirement) && (
-                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                    {ownedMatches(requirement, owned, templateById).map((c) => (
-                      <Button
-                        key={`use-${c.id}`}
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => onUse(c.id)}
-                        data-testid={`starter-kit-use-${c.id}`}
-                      >
-                        Use {c.name ?? c.id}
-                      </Button>
-                    ))}
-                    {connectTargets(requirement, templateById).map((t) => (
-                      <Button
-                        key={t.key}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onConnect(t)}
-                        data-testid={`starter-kit-connect-${t.key}`}
-                      >
-                        Connect {t.label}
-                      </Button>
-                    ))}
-                  </div>
-                )
+              {!isProviderRequirement(requirement) && (
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  {ownedMatches(requirement, owned, templateById).map((c) => (
+                    <Button
+                      key={`use-${c.id}`}
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onUse(c.id)}
+                      data-testid={`starter-kit-use-${c.id}`}
+                    >
+                      Use {c.name ?? c.id}
+                    </Button>
+                  ))}
+                  {connectTargets(requirement, templateById).map((t) => (
+                    <Button
+                      key={t.key}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onConnect(t)}
+                      data-testid={`starter-kit-connect-${t.key}`}
+                    >
+                      Connect {t.label}
+                    </Button>
+                  ))}
+                </div>
               )}
             </li>
           );

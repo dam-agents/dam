@@ -262,6 +262,21 @@ export function withOverride(
     : [...overrides, next];
 }
 
+export function satisfiesKitRequirement(
+  kit: Pick<StarterKitView, "connections">,
+  group: { connections: readonly { templateId: string }[] },
+  templates: TemplateIndex,
+): boolean {
+  return group.connections.some((c) => {
+    const familyId = templates.get(c.templateId)?.family?.id;
+    return kit.connections.some(
+      (req) =>
+        req.accepts.includes(c.templateId) ||
+        (familyId !== undefined && req.accepts.includes(familyId)),
+    );
+  });
+}
+
 export function toggleSkipped(
   skipped: readonly string[],
   name: string,

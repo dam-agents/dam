@@ -56,6 +56,7 @@ import {
   preselectedGrants,
   providerPolicyForKit,
   requirementStatuses,
+  satisfiesKitRequirement,
   type StarterKitSetupDraft,
   toggleSkipped,
   withOverride,
@@ -461,6 +462,13 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         onToggle={toggleConnection}
         oauthReturnView={returnPath}
         title="Connections"
+        badgeForGroup={(group) =>
+          kit && satisfiesKitRequirement(kit, group, templateById) ? (
+            <Badge variant="kit" size="sm">
+              Starter Kit
+            </Badge>
+          ) : null
+        }
         leading={
           kit && statuses.length > 0 ? (
             <KitRequirementsCard

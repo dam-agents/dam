@@ -19,6 +19,7 @@ interface Props {
   inset?: boolean;
   title?: string;
   leading?: React.ReactNode;
+  badgeForGroup?: (group: CatalogProviderGroup) => React.ReactNode;
 }
 
 export function GrantedConnectionsPanel({
@@ -29,6 +30,7 @@ export function GrantedConnectionsPanel({
   inset = true,
   title = "My connections",
   leading,
+  badgeForGroup,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -81,6 +83,7 @@ export function GrantedConnectionsPanel({
             })}
             onManage={onOpenCatalog}
             maintenance={maintenance.rowActions}
+            badge={badgeForGroup?.(group)}
           />
         ))}
       </Wrap>
