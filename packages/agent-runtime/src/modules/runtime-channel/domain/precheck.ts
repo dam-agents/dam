@@ -19,21 +19,6 @@ function capped(stdout: string): string | undefined {
   return `${kept}\n[truncated at ${CONTEXT_CAP_BYTES} bytes]`;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Turns the result of one Precheck process into a
- * verdict, so no caller reads an exit code itself. The split follows grep: `0`
- * allows the run, `1` declines it, and every other way the command can end — a
- * higher exit code, the deadline, a command that will not spawn — is the
- * Precheck breaking rather than saying no, which allows the run and carries the
- * reason. Keeping the broken case apart from the declining one is the whole
- * point: a typo that exited 127 would otherwise silence a Schedule forever and
- * look exactly like "nothing changed". Stdout becomes context appended to the
- * task prompt, capped so a runaway `git log` cannot flood the turn it was meant
- * to save; stderr belongs to the pod log and never reaches the prompt. A broken
- * Precheck still produces context, because the task was written expecting some:
- * a prompt that says "see the precheck output below" must never be followed by
- * nothing, or the turn acts on a reference it cannot resolve.
- */
 export function verdictFor(result: RunOnceResult): PrecheckOutcome {
   if (result.ok) {
     const context = capped(result.value.stdout);
