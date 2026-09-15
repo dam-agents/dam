@@ -30,6 +30,8 @@ export class AcpSessionLoadError extends Error {
 export type AcpTurnAbandonCause = "connection-lost" | "stalled";
 
 export class AcpTurnAbandonedError extends Error {
+  lastFrameAt: number | undefined;
+
   constructor(
     readonly abandonCause: AcpTurnAbandonCause,
     message: string,
@@ -353,16 +355,23 @@ async function withAcpConnection<T>(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
+    const withFrameStamp = (err: Error): Error => {
+      if (err instanceof AcpTurnAbandonedError && err.lastFrameAt === undefined)
+        err.lastFrameAt = lastFrameAt;
+      return err;
+    };
     const result = await Promise.race([
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
-          reject(abortError);
+          reject(withFrameStamp(abortError));
           return;
         }
-        ac.signal.addEventListener("abort", () => reject(abortError), {
-          once: true,
-        });
+        ac.signal.addEventListener(
+          "abort",
+          () => reject(withFrameStamp(abortError)),
+          { once: true },
+        );
       }),
     ]);
     return result;

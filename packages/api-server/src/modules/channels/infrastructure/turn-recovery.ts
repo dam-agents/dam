@@ -4,10 +4,12 @@ import { getLogger } from "../../../core/logger.js";
 
 const POLL_INTERVAL_MS = 2 * 60_000;
 const RECOVERY_WINDOW_MS = 2 * 60 * 60_000;
+const DELIVERY_GRACE_MS = 2 * 60_000;
 
 export interface WatchedTurn {
   instanceName: string;
   sessionId: string;
+  lastSeenWorkingAt?: number;
   deliveredSince: (sinceMs: number) => boolean;
   onStillRunning: () => void;
   recover: (sinceMs: number) => Promise<void>;
@@ -34,6 +36,11 @@ interface WatchState {
  * is the whole delivery verdict: a reply counts as the answer only if the
  * agent stopped working after it, so an early acknowledgement never masks a
  * lost result, and the agent's own late answer never triggers a second one.
+ * "Last seen working" starts as the relay's own final observation of the
+ * turn (not this watch's creation, which happens after the relay gave up)
+ * and advances with each alive poll; the comparison allows one observation
+ * interval of grace, because a reply's own frames trail its post — an answer
+ * delivered seconds before the turn ended must count as delivered.
  * The work is over only on a positive signal — the runtime says the turn
  * ended (or was abandoned by boot recovery), or the platform reports the pod
  * gone, which for a running turn means the same because the idle checker
@@ -120,9 +127,10 @@ export function createTurnRecovery(deps: {
     }
 
     drop(key);
-    if (turn.deliveredSince(state.lastAliveAt)) return;
+    const sinceMs = state.lastAliveAt - DELIVERY_GRACE_MS;
+    if (turn.deliveredSince(sinceMs)) return;
     try {
-      await turn.recover(state.lastAliveAt);
+      await turn.recover(sinceMs);
     } catch (err) {
       getLogger().info(
         {
@@ -142,7 +150,7 @@ export function createTurnRecovery(deps: {
       const state: WatchState = {
         gen: nextGen++,
         deadline: Date.now() + RECOVERY_WINDOW_MS,
-        lastAliveAt: Date.now(),
+        lastAliveAt: turn.lastSeenWorkingAt ?? Date.now(),
       };
       watches.set(key, state);
       schedule(key, turn, state);

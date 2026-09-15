@@ -1537,6 +1537,7 @@ export function createSlackWorker(
         turnRecovery.watch({
           instanceName,
           sessionId,
+          lastSeenWorkingAt: err.lastFrameAt,
           deliveredSince,
           onStillRunning: () => refreshLinger(instanceName, turnRefs),
           recover: async (sinceMs) => {

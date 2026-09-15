@@ -77,7 +77,7 @@ describe("turn recovery", () => {
    * Recovery must fire, and only once, however long the clock runs on.
    */
   it("recovers exactly once when the turn ends with no reply after last-alive", async () => {
-    const postAt = Date.now() + POLL_MS - 60_000;
+    const postAt = Date.now() - 10 * 60_000;
     const recovery = createTurnRecovery({
       turnStatus: scripted(["pending", "ended"]),
       podGone: async () => false,
@@ -107,6 +107,28 @@ describe("turn recovery", () => {
     });
     recovery.watch(turn);
     await vi.advanceTimersByTimeAsync(5 * POLL_MS);
+    expect(calls.recover).toBe(0);
+    recovery.stop();
+  });
+
+  /**
+   * TEST_SCENARIO: The answer landed seconds before the relay lost the turn
+   * — the agent stopped working right after its reply. The watch starts from
+   * the relay's last observation of the turn, with grace for the frames that
+   * trail a post, so this turn counts as delivered and is never nudged.
+   */
+  it("never recovers a turn whose answer landed just before the abandon", async () => {
+    const postAt = Date.now() - 30_000;
+    const recovery = createTurnRecovery({
+      turnStatus: scripted(["ended"]),
+      podGone: async () => false,
+    });
+    const { turn, calls } = makeTurn({
+      lastSeenWorkingAt: Date.now() - 25_000,
+      deliveredSince: (sinceMs) => postAt > sinceMs,
+    });
+    recovery.watch(turn);
+    await vi.advanceTimersByTimeAsync(2 * POLL_MS);
     expect(calls.recover).toBe(0);
     recovery.stop();
   });
