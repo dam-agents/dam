@@ -176,6 +176,8 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, []string{"10.42.0.9"}, eps.Endpoints[0].Addresses)
 	assert.Equal(t, int32(31000), *eps.Ports[0].Port)
 	assert.Equal(t, "my-agent", eps.Labels["kubernetes.io/service-name"])
+	require.NotNil(t, eps.Endpoints[0].Conditions.Ready)
+	assert.False(t, *eps.Endpoints[0].Conditions.Ready, "a machine that is still booting takes no traffic")
 
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
@@ -186,6 +188,9 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
+	eps, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.True(t, *eps.Endpoints[0].Conditions.Ready, "a ready machine takes traffic — kube-proxy drops an endpoint that never turns ready")
 	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
 }
 

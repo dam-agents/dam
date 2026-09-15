@@ -528,3 +528,31 @@ func TestFailureReasonsMatchWhatTheUserIsTold(t *testing.T) {
 		assert.Equal(t, tc.want, failureReason(errors.New(tc.err)), "error %q", tc.err)
 	}
 }
+
+// TEST_SCENARIO: the runner pod restarts — an OOM, a node drain, a chart roll — and its machines survive on the kept volume. Their published ports have to come back with the process, or every vm agent stays unreachable with a machine that looks perfectly healthy.
+func TestARestartedRunnerRepublishesItsPorts(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+	require.NotZero(t, st.Port)
+
+	h.node.Close()
+	restarted := &Server{
+		Token: h.node.Token, StateDir: h.node.StateDir, Runtime: h.node.Runtime,
+		PortMin: h.node.PortMin, PortMax: h.node.PortMax, MemoryMiB: h.node.MemoryMiB,
+	}
+	require.NoError(t, restarted.Start())
+	t.Cleanup(restarted.Close)
+
+	guest := fakeGuest(t, st.Port+loopbackOffset)
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", st.Port))
+	require.NoError(t, err, "the machine's port is listening again after the restart")
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 5)
+	n, err := conn.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(buf[:n]))
+	assert.Equal(t, 1, guest(), "and it reaches the same guest, on the same port it had before")
+}
