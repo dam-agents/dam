@@ -56,12 +56,12 @@ build did not boot with stock configs two weeks before this note.
 
 ## Prototypes
 
-Scripts in [`meta/microvm-prototypes/`](../../meta/microvm-prototypes/): a
-shared guest (Ubuntu 24.04 cloud image, cloud-init installs k3s and reports on
-the serial console, a NAT'd tap) and one runner per VMM that records boot and
-k3s timings and the VMM's host RSS before and after the guest frees 1 GiB.
-Run on the local Lima k3s VM (arm64, nested KVM, 10 vCPU) — the same nested
-host the VM runner pod uses locally, so absolute numbers are pessimistic.
+The numbers below came from throwaway scripts, not kept in the repo: a shared
+guest (Ubuntu 24.04 cloud image, cloud-init installs k3s and reports on the
+serial console, a NAT'd tap) and one runner per VMM that recorded boot and k3s
+timings and the VMM's host RSS before and after the guest freed 1 GiB. Run on
+the local Lima k3s VM (arm64, nested KVM, 10 vCPU) — the same nested host the
+VM runner pod uses locally, so absolute numbers are pessimistic.
 
 Measured 2026-09-14 (2 vCPU, 2 GiB guests, Ubuntu 24.04 cloud image, k3s
 installed from the internet inside the guest):
