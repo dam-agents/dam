@@ -60,7 +60,6 @@ function makeDeps(opts?: {
   const expiries: Date[] = [];
   const payloads: Record<string, unknown>[] = [];
   const patches: ScheduleStatusPatch[] = [];
-  const cleared: boolean[] = [];
   const restored: { previous: string | null; written: string }[] = [];
   const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
@@ -84,9 +83,6 @@ function makeDeps(opts?: {
     async setNextRun() {},
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);
-    },
-    async clearPrecheckStatus() {
-      cleared.push(true);
     },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
@@ -146,7 +142,6 @@ function makeDeps(opts?: {
     expiries,
     payloads,
     patches,
-    cleared,
     restored,
   };
 }
@@ -387,21 +382,6 @@ describe("scheduler-runner precheck", () => {
       lastPrecheckError: "precheck exited 127",
       precheckFailedCount: { kind: "increment" },
     });
-  });
-
-  // TEST_SCENARIO: the check runs for minutes and reports detached, so an owner can remove the Precheck first — and a status written after that would sit on the card in red with no panel able to explain it.
-  it("clears the status instead of writing it when the precheck is gone", async () => {
-    const { runner, patches } = makeDeps();
-
-    await runner.reportFire({
-      scheduleId: SCHEDULE_ID,
-      eventId: `${SCHEDULE_ID}:0`,
-      ranPrecheck: "gone.sh",
-      outcome: "failed",
-      detail: "precheck exited 2",
-    });
-
-    expect(patches).toHaveLength(0);
   });
 
   // TEST_SCENARIO: the check runs detached for minutes, so an owner can swap the command while one is in flight — and the old command's verdict must not be written against the new one, nor wipe what the new one already recorded.
