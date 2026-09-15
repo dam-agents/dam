@@ -22,6 +22,7 @@ import (
 const (
 	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
 	vmReadinessPoll   = 3 * time.Second
+	vmHealthPoll      = time.Minute
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
@@ -170,13 +171,15 @@ func (r *AgentReconciler) applyEndpointSlice(ctx context.Context, desired *disco
 
 func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {
 	msg := st.Message
-	if !st.Ready {
-		if msg == "" {
-			msg = "machine is " + st.State
+	if !st.Ready && msg == "" {
+		msg = "machine is " + st.State
+	}
+	if r.requeue != nil {
+		poll := vmHealthPoll
+		if !st.Ready {
+			poll = vmReadinessPoll
 		}
-		if r.requeue != nil {
-			r.requeue(agent.Name, vmReadinessPoll)
-		}
+		r.requeue(agent.Name, poll)
 	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, "MachineNotReady", msg, 0, "")
 }
