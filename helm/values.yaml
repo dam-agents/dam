@@ -202,6 +202,15 @@ virtualization:
     # cluster with no registry (local dev) gives runners their agent image;
     # empty means runners pull from the registry as usual.
     imageArchiveHostPath: ""
+    # How the runner resolves the registry it fetches agent images from.
+    # `Default` is the node's resolver: the right answer whenever
+    # egressExceptCidrs confines this pod away from Service and pod addresses,
+    # because the cluster's DNS is a Service backed by pods in exactly those
+    # ranges — every lookup through it times out, and a pull dies on the name
+    # rather than the fetch. `ClusterFirst` is for an install whose registry
+    # lives inside the cluster and whose excepts leave that range reachable;
+    # it resolves Service names and loses nothing, since nothing is blocked.
+    dnsPolicy: Default
     # Extra sources the runner itself admits on machines' published ports,
     # on top of the NetworkPolicy that limits them to the api-server and the
     # controller; empty means the policy is the only gate.
@@ -223,8 +232,9 @@ virtualization:
     # pods, Services, and link-local — the node's metadata endpoint lives there
     # on every cloud and is the classic way out of a sandbox with credentials.
     # On OpenShift the internal registry is a Service address, so excepting the
-    # Service range blocks pulls from it: name that registry in egressCidrs, or
-    # stage images on the node instead.
+    # Service range blocks pulls from it: name that registry in egressCidrs and
+    # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
+    # below so the runner can resolve it — or stage images on the node instead.
     egressCidrs: []
     # Subtracted from the entries above that contain them — Kubernetes rejects
     # a policy whose exception falls outside its own block, so a narrow entry

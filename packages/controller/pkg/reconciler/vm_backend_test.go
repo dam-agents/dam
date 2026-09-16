@@ -143,6 +143,19 @@ func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 		"ClusterFirst would send every lookup to a Service address the runner's own egress policy drops")
 }
 
+// TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
+func TestAnInstallCanAskForClusterResolution(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.DNSPolicy = "ClusterFirst"
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.DNSClusterFirst, dep.Spec.Template.Spec.DNSPolicy)
+}
+
 // TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()

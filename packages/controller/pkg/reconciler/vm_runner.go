@@ -375,6 +375,14 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm would chown each machine's data dir to run the VMM under an unprivileged uid, and the runner cannot: the chart's SCC drops every capability but NET_ADMIN, so that chown fails and no machine starts. SMOLVM_VM_UID_DROP=off leaves the VMM as uid 0 inside a container that is itself the boundary — no capabilities, no privilege escalation, seccomp and SELinux — rather than widening the SCC to admit CHOWN.
+// UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
+func runnerDNSPolicy(configured string) corev1.DNSPolicy {
+	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
+		return corev1.DNSClusterFirst
+	}
+	return corev1.DNSDefault
+}
+
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -429,8 +437,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
-					// UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service, and this pod is deliberately kept away from Service and pod addresses — so with an egress policy in force it cannot resolve anything through it, and a registry pull fails on the lookup rather than the fetch. The node's own resolver is reachable and is what a pod confined like this one has left. It costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it.
-					DNSPolicy:                    corev1.DNSDefault,
+					DNSPolicy:                    runnerDNSPolicy(spec.DNSPolicy),
 					ServiceAccountName:           spec.ServiceAccountName,
 					AutomountServiceAccountToken: ptrBool(false),
 					NodeSelector:                 spec.NodeSelector,

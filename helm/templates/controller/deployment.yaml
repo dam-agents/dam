@@ -83,6 +83,7 @@ spec:
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
+                  "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "imageCacheClaim" (ternary (printf "%s-vm-runner-images" (include "platform.fullname" .)) "" $cacheOn)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources }}
