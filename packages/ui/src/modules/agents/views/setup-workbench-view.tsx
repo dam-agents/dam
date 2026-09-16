@@ -47,6 +47,7 @@ import {
   EMPTY_REGISTRY_CREDENTIAL,
   type RegistryCredential,
 } from "../../sandboxes/components/registry-credential-section.js";
+import { SandboxSizeSection } from "../../sandboxes/components/sandbox-size-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import {
   ConnectionsSetupSection,
@@ -177,6 +178,18 @@ export function SetupWorkbenchView() {
           </StateBlock>
           <StateBlock label="With Starter Kit">
             <ChannelsColumnPreset pack={samplePack} />
+          </StateBlock>
+        </SectionGroup>
+
+        <SectionGroup label="Compute">
+          <StateBlock label="Empty">
+            <ComputeColumnEmpty />
+          </StateBlock>
+          <StateBlock label="Filled (manual)">
+            <ComputeColumnFilled />
+          </StateBlock>
+          <StateBlock label="With Starter Kit">
+            <ComputeColumnPreset pack={samplePack} />
           </StateBlock>
         </SectionGroup>
       </div>
@@ -1150,6 +1163,62 @@ function ChannelsColumnPreset({ pack }: { pack: Pack }) {
           return next;
         })
       }
+      packName={pack.name}
+    />
+  );
+}
+
+function ComputeColumnEmpty() {
+  const [cpu, setCpu] = useState<number | null>(null);
+  const [mem, setMem] = useState<number | null>(null);
+  return (
+    <SandboxSizeSection
+      sizeCpuMilli={cpu}
+      sizeMemoryMi={mem}
+      onChange={(patch) => {
+        if (patch.sizeCpuMilli != null) setCpu(patch.sizeCpuMilli);
+        if (patch.sizeMemoryMi != null) setMem(patch.sizeMemoryMi);
+      }}
+    />
+  );
+}
+
+function ComputeColumnFilled() {
+  const [cpu, setCpu] = useState<number | null>(1500);
+  const [mem, setMem] = useState<number | null>(1536);
+  return (
+    <SandboxSizeSection
+      sizeCpuMilli={cpu}
+      sizeMemoryMi={mem}
+      onChange={(patch) => {
+        if (patch.sizeCpuMilli != null) setCpu(patch.sizeCpuMilli);
+        if (patch.sizeMemoryMi != null) setMem(patch.sizeMemoryMi);
+      }}
+    />
+  );
+}
+
+function ComputeColumnPreset({ pack }: { pack: Pack }) {
+  const recommended = {
+    cpu: pack.sizeCpuMilli ?? 1000,
+    mem: pack.sizeMemoryMi ?? 1024,
+  };
+  const [cpu, setCpu] = useState<number | null>(recommended.cpu);
+  const [mem, setMem] = useState<number | null>(recommended.mem);
+  return (
+    <SandboxSizeSection
+      sizeCpuMilli={cpu}
+      sizeMemoryMi={mem}
+      onChange={(patch) => {
+        if (patch.sizeCpuMilli != null) setCpu(patch.sizeCpuMilli);
+        if (patch.sizeMemoryMi != null) setMem(patch.sizeMemoryMi);
+      }}
+      recommendedCpuMilli={pack.sizeCpuMilli}
+      recommendedMemoryMi={pack.sizeMemoryMi}
+      onResetToRecommended={() => {
+        setCpu(recommended.cpu);
+        setMem(recommended.mem);
+      }}
     />
   );
 }

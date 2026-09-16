@@ -18,6 +18,10 @@ import { rruleToText } from "api-server-api";
 import { GithubIcon } from "@/components/brand-icons";
 import { Modal } from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
+import {
+  formatCores,
+  formatMiAsMemory,
+} from "@/modules/budgets/lib/format";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { CardIcon } from "@/modules/providers/components/card-icon";
@@ -189,7 +193,8 @@ export function PackDetailSheet({
                     </IconTile>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">
-                        2 CPU · 2 Gi
+                        {formatCores(pack.sizeCpuMilli ?? 1000)} CPU ·{" "}
+                        {formatMiAsMemory(pack.sizeMemoryMi ?? 1024)}
                       </p>
                     </div>
                   </div>

@@ -76,6 +76,8 @@ export interface Pack {
   category: PackCategory;
   included: PackSlot[];
   required: PackSlot[];
+  sizeCpuMilli?: number;
+  sizeMemoryMi?: number;
 }
 
 export const PACKS: Pack[] = [
@@ -559,6 +561,8 @@ export const REAL_PACKS: Pack[] = [
         demoValue: "#code-review",
       },
     ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
   },
   {
     id: "meeting-assistant",

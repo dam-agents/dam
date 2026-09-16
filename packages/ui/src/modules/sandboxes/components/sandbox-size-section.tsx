@@ -1,3 +1,5 @@
+import { Information } from "@carbon/icons-react";
+
 import { SectionLabel } from "@/components/ui/section-label";
 import { Slider } from "@/components/ui/slider";
 
@@ -21,6 +23,9 @@ interface Props {
   disabled?: boolean;
   restartNote?: string;
   currentSize?: { cpu?: string; memory?: string };
+  recommendedCpuMilli?: number;
+  recommendedMemoryMi?: number;
+  onResetToRecommended?: () => void;
 }
 
 export function SandboxSizeSection({
@@ -31,6 +36,9 @@ export function SandboxSizeSection({
   disabled,
   restartNote,
   currentSize,
+  recommendedCpuMilli,
+  recommendedMemoryMi,
+  onResetToRecommended,
 }: Props) {
   const { data: budget } = useBudgetReserved();
 
@@ -66,6 +74,29 @@ export function SandboxSizeSection({
         How much compute this agent can use while running. It counts against
         your budget only while the agent is up.
       </p>
+      {recommendedCpuMilli != null && recommendedMemoryMi != null && (
+        <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-preset-border/50 bg-preset-light/50 px-3 py-2.5">
+          <Information size={16} className="mt-0.5 shrink-0 text-preset" />
+          <p className="text-sm leading-relaxed text-foreground/80">
+            This starter kit requires {formatCores(recommendedCpuMilli)} CPU ·{" "}
+            {formatMiAsMemory(recommendedMemoryMi)} to run properly.
+            {onResetToRecommended &&
+              (cpu !== recommendedCpuMilli ||
+                memory !== recommendedMemoryMi) && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="font-medium text-preset underline underline-offset-2"
+                    onClick={onResetToRecommended}
+                  >
+                    Reset to recommended
+                  </button>
+                </>
+              )}
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-4">
         <SizeSlider
           label="CPU"

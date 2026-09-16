@@ -455,6 +455,17 @@ export function AgentSetupView() {
         sizeCpuMilli={form.sizeCpuMilli}
         sizeMemoryMi={form.sizeMemoryMi}
         onChange={(patch) => update(patch)}
+        recommendedCpuMilli={pendingPack?.sizeCpuMilli}
+        recommendedMemoryMi={pendingPack?.sizeMemoryMi}
+        onResetToRecommended={
+          pendingPack?.sizeCpuMilli != null
+            ? () =>
+                update({
+                  sizeCpuMilli: pendingPack.sizeCpuMilli,
+                  sizeMemoryMi: pendingPack.sizeMemoryMi,
+                })
+            : undefined
+        }
       />
 
       <ScheduleSetupSection
@@ -557,6 +568,7 @@ export function AgentSetupView() {
             return next;
           })
         }
+        packName={pendingPack?.name}
       />
 
       {catalogOpen && (
@@ -889,11 +901,15 @@ export function ChannelsSetupSection({
   presetChannels,
   selectedChannels,
   onToggleChannel,
+  packName,
 }: {
   presetChannels: PackSlot[];
   selectedChannels: Set<string>;
   onToggleChannel: (label: string) => void;
+  packName?: string;
 }) {
+  const suggestedSlot = presetChannels[0];
+
   return (
     <section className="mb-8">
       <SectionLabel spaced>
@@ -902,6 +918,16 @@ export function ChannelsSetupSection({
           <span className="font-normal text-muted-foreground">(optional)</span>
         </span>
       </SectionLabel>
+      {packName && suggestedSlot && (
+        <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-preset-border/50 bg-preset-light/50 px-3 py-2.5">
+          <Information size={16} className="mt-0.5 shrink-0 text-preset" />
+          <p className="text-sm leading-relaxed text-foreground/80">
+            {packName} suggests connecting{" "}
+            {suggestedSlot.label} to{" "}
+            {suggestedSlot.description?.toLowerCase() ?? "stay in the loop"}
+          </p>
+        </div>
+      )}
       <Inset className="flex flex-col gap-3">
         {AVAILABLE_CHANNELS.map((ch) => {
           const matchesSlot = (s: PackSlot) => {
@@ -946,22 +972,14 @@ export function ChannelCard({
   isFromPreset: boolean;
   onToggle: () => void;
 }) {
-  const isPresetSelected = isSelected && isFromPreset;
-
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={
-        isPresetSelected
-          ? cn(
-              "flex items-center gap-3 rounded-lg border border-preset-border/50 bg-preset-light/50 px-4 py-3 text-left transition-colors",
-            )
-          : cardSelectionVariants({
-              selected: isSelected,
-              className: "flex items-center gap-3 px-4 py-3 text-left",
-            })
-      }
+      className={cardSelectionVariants({
+        selected: isSelected,
+        className: "flex items-center gap-3 px-4 py-3 text-left",
+      })}
     >
       <span className="shrink-0">
         <ConnectionIcon iconSlug={channel.iconSlug} alt="" size={16} />
@@ -971,7 +989,7 @@ export function ChannelCard({
           <span className="text-sm font-medium text-foreground">
             {channel.label}
           </span>
-          {isFromPreset && <Badge variant="preset">Starter Kit</Badge>}
+          {isFromPreset && <Badge variant="muted">Suggested</Badge>}
         </span>
         <span className="block text-sm text-muted-foreground">
           {channel.description}
@@ -981,11 +999,9 @@ export function ChannelCard({
         <span
           className={cn(
             "flex size-4 items-center justify-center rounded-[3px] border",
-            isPresetSelected
-              ? "border-preset bg-preset"
-              : isSelected
-                ? "border-foreground bg-foreground"
-                : "border-muted-foreground/50",
+            isSelected
+              ? "border-foreground bg-foreground"
+              : "border-muted-foreground/50",
           )}
         >
           {isSelected && <Checkmark size={12} className="text-white" />}
