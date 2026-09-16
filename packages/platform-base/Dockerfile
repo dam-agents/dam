@@ -52,9 +52,10 @@ RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise
 # realpath in the console scripts because tool-bin symlinks them: $0's own
 # dirname is tool-bin, not the interpreter's bin (upstream's script does this
 # too). The runner stage's postinstall hook symlinks them from here.
+COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
 RUN set -eu; \
     W="$(mise where python)"; sp="$(echo "$W"/lib/python3.*/site-packages)"; \
-    rm -rf "$sp"/pip "$sp"/pip-*.dist-info "$W"/bin/pip "$W"/bin/pip3 "$W"/bin/pip3.*; \
+    drop-pip "$W/bin/python3"; \
     mkdir "$sp/pip"; \
     printf '__version__ = "24.3.1"\n' > "$sp/pip/__init__.py"; \
     printf 'import os, sys\n\nfrom pip import __version__\n\n# `uv pip --version` is an error, and everything probes `pip --version`.\nif sys.argv[1:2] in (["--version"], ["-V"]):\n    print(f"pip {__version__} (uv shim)")\n    raise SystemExit(0)\n\nos.environ["UV_PYTHON"] = sys.executable\nos.execvp("uv", ["uv", "pip", *sys.argv[1:]])\n' > "$sp/pip/__main__.py"; \
@@ -189,6 +190,7 @@ RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     pip --version | grep -q "^pip "; \
     pip list >/dev/null
 
+COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
