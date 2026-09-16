@@ -248,6 +248,7 @@ export function assembleAgent(
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,
     starterKit: infra.starterKit,
+    starterKitOnboarded: infra.starterKitOnboarded,
     features,
   };
 }
