@@ -214,7 +214,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && !hardStop)
+		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
 		if stderrors.Is(err, errLeafSecretPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
 		}
