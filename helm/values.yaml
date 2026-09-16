@@ -238,6 +238,18 @@ virtualization:
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
+  # One volume every runner mounts, holding the agent images as archives. A
+  # machine may reach only its gateway, so the guest cannot pull its own image;
+  # the runner fetches it here on a miss, and every other owner then boots that
+  # image without touching the registry. Needs a ReadWriteMany class — on ODF
+  # that is `ocs-storagecluster-cephfs`. Without it each runner falls back to
+  # its own disk, which means one pull per owner for the same few images.
+  # The runner keeps the archives inside a share of this volume, evicting the
+  # least recently written first, so a tag per deploy does not fill it.
+  imageCache:
+    enabled: false
+    storageClass: ""
+    size: 50Gi
   devicePlugin:
     enabled: false
     image:

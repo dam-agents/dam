@@ -82,6 +82,7 @@ spec:
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
+                  "imageCacheClaim" (ternary (printf "%s-vm-runner-images" (include "platform.fullname" .)) "" .Values.virtualization.imageCache.enabled)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources }}
             - name: AGENT_VM
