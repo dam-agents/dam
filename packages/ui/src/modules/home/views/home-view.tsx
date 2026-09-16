@@ -90,17 +90,12 @@ export function HomeView() {
     <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
       <div className="anim-in">
         <PageHeader
-          title="Agents"
+          title="Home"
           description="Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
           actions={
             <>
-              <Button
-                variant="outline"
-                onClick={() => setBrowsePacksOpen(true)}
-              >
-                Browse starter kits
-              </Button>
-              <Button onClick={createAgent}>Create agent</Button>
+              <Button variant="outline">Browse starter kits</Button>
+              <Button>Create agent</Button>
             </>
           }
         />
@@ -118,11 +113,11 @@ export function HomeView() {
         </div>
 
         <SandboxList
-          agents={visible}
+          agents={visible.slice(0, 3)}
           drawByDriver={drawByDriver}
           rowProps={rowProps}
-          onStop={(agent) => void stopSandbox(agent)}
-          onDelete={(agent) => void deleteSandbox(agent)}
+          onStop={() => {}}
+          onDelete={() => {}}
         />
 
         <BrowsePacksModal
@@ -166,7 +161,7 @@ function ApprovalBanner() {
       onClick={openApprovals}
       className="mb-6 flex w-full items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
     >
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 dark:bg-warning/20">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 dark:bg-warning/20">
         <Warning size={16} className="text-warning" />
       </div>
       <div className="min-w-0 flex-1">

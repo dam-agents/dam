@@ -1,29 +1,11 @@
-import { EdgeDevice, Time } from "@carbon/icons-react";
+import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/ui/page-header";
 
-import { AgentRow } from "../../modules/agents/components/agent-row.js";
-import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { ArtifactPreviewDialog } from "../../modules/artifacts/components/artifact-preview-dialog.js";
-import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import { NotificationRow } from "../../modules/home/components/notification-row.js";
-import type { AgentView } from "../../types.js";
-import {
-  bareAgent,
-  demoPackAgent,
-  errorAgent,
-  experimentAgent,
-  fixtureSchedules,
-  fullAgent,
-  hibernatedUnknownSkills,
-  knowledgeBaseAgent,
-  neverHibernatesButHibernated,
-  neverHibernatesOverBudget,
-  packSkippedAgent,
-  singularAgent,
-} from "./agent-card-fixtures.js";
 import { agents } from "./agents.js";
 
 const running = agents.find((a) => a.state === "running")!;
@@ -123,11 +105,10 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<EdgeDevice size={16} />}
             channelKind="agent"
-            agentName="CI Pipeline Agent"
-            action="Run integration test suite for v2.4 release"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="12 min ago"
             working
-            onOpen={noop}
           />
         </div>
 
@@ -136,11 +117,10 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<EdgeDevice size={16} />}
             channelKind="agent"
-            agentName="Bug Triage Agent"
-            action="Triage and label open issues from last sprint"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="30 min ago"
             unread
-            onOpen={noop}
           />
         </div>
 
@@ -149,14 +129,11 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<EdgeDevice size={16} />}
             channelKind="agent"
-            agentName="Build Agent"
-            action="Build release v2.4-rc1 artifacts for all platforms"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="30 min ago"
             unread
-            artifact={{
-              name: "release-v2.4-rc1-artifacts-linux-amd64.zip",
-            }}
-            onOpen={noop}
+            artifact={{ name: "artifact-name.html" }}
             onArtifactClick={() =>
               setPreviewArtifact(mockArtifacts["art-bundle"]!)
             }
@@ -168,11 +145,10 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<EdgeDevice size={16} />}
             channelKind="agent"
-            agentName="Design Token Agent"
-            action="Sync Figma variables to CSS custom properties"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="2 hours ago"
             read
-            onOpen={noop}
           />
         </div>
 
@@ -181,59 +157,14 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<EdgeDevice size={16} />}
             channelKind="agent"
-            agentName="CI Pipeline Agent"
-            action="Run integration test suite for v2.4 release"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="45 min ago"
             read
-            artifact={{ name: "coverage-report-v2.4.html" }}
-            onOpen={noop}
+            artifact={{ name: "artifact-name.html" }}
             onArtifactClick={() =>
               setPreviewArtifact(mockArtifacts["art-coverage"]!)
             }
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <StateLabel>Hover — Working</StateLabel>
-          <NotificationRow
-            channelIcon={<EdgeDevice size={16} />}
-            channelKind="agent"
-            agentName="CI Pipeline Agent"
-            action="Run integration test suite for v2.4 release"
-            meta="12 min ago"
-            working
-            forceHover
-            onOpen={noop}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <StateLabel>Hover — Unread</StateLabel>
-          <NotificationRow
-            channelIcon={<EdgeDevice size={16} />}
-            channelKind="agent"
-            agentName="Bug Triage Agent"
-            action="Triage and label open issues from last sprint"
-            meta="30 min ago"
-            unread
-            forceHover
-            onOpen={noop}
-            onDismiss={noop}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <StateLabel>Hover — Read</StateLabel>
-          <NotificationRow
-            channelIcon={<EdgeDevice size={16} />}
-            channelKind="agent"
-            agentName="Design Token Agent"
-            action="Sync Figma variables to CSS custom properties"
-            meta="2 hours ago"
-            read
-            forceHover
-            onOpen={noop}
-            onDismiss={noop}
           />
         </div>
       </div>
@@ -248,11 +179,10 @@ function NotificationRowSection() {
             channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
             channelKind="slack"
             agentName="Code Review Agent"
-            action="Review PR #487 migrate user service to gRPC"
-            channel="engineering"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
             meta="4 min ago"
             working
-            onOpen={noop}
           />
         </div>
 
@@ -262,11 +192,10 @@ function NotificationRowSection() {
             channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
             channelKind="slack"
             agentName="Code Review Agent"
-            action="Review PR #347 auth middleware refactor"
-            channel="pull-requests"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
             meta="1 hour ago"
             unread
-            onOpen={noop}
           />
         </div>
 
@@ -275,13 +204,12 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
             channelKind="slack"
-            agentName="Security Scanner"
-            action="Run dependency audit and vulnerability scan"
-            channel="security"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
             meta="2 hours ago"
             read
-            artifact={{ name: "adr-017-event-sourcing.md" }}
-            onOpen={noop}
+            artifact={{ name: "artifact-name.html" }}
             onArtifactClick={() =>
               setPreviewArtifact(mockArtifacts["art-adr"]!)
             }
@@ -294,27 +222,10 @@ function NotificationRowSection() {
             channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
             channelKind="slack"
             agentName="Code Review Agent"
-            action="Review PR #347 auth middleware refactor"
-            channel="pull-requests"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
             meta="1 hour ago"
             read
-            onOpen={noop}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <StateLabel>Hover — Unread</StateLabel>
-          <NotificationRow
-            channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
-            channelKind="slack"
-            agentName="Code Review Agent"
-            action="Review PR #347 auth middleware refactor"
-            channel="pull-requests"
-            meta="1 hour ago"
-            unread
-            forceHover
-            onOpen={noop}
-            onDismiss={noop}
           />
         </div>
       </div>
@@ -328,10 +239,9 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<Time size={16} />}
             channelKind="schedule"
-            agentName="Docs Sync Agent"
-            action="Nightly API reference rebuild"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="Scheduled 8:00 AM"
-            onOpen={noop}
           />
         </div>
 
@@ -340,11 +250,10 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<Time size={16} />}
             channelKind="schedule"
-            agentName="Metrics Agent"
-            action="Daily deployment metrics report"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="Scheduled 8:00 AM"
-            artifact={{ name: "deploy-metrics-sep-10.html" }}
-            onOpen={noop}
+            artifact={{ name: "artifact-name.html" }}
             onArtifactClick={noop}
           />
         </div>
@@ -354,26 +263,10 @@ function NotificationRowSection() {
           <NotificationRow
             channelIcon={<Time size={16} />}
             channelKind="schedule"
-            agentName="Docs Sync Agent"
-            action="Nightly API reference rebuild"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="6 hours ago"
             read
-            onOpen={noop}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <StateLabel>Hover — Read</StateLabel>
-          <NotificationRow
-            channelIcon={<Time size={16} />}
-            channelKind="schedule"
-            agentName="Docs Sync Agent"
-            action="Nightly API reference rebuild"
-            meta="6 hours ago"
-            read
-            forceHover
-            onOpen={noop}
-            onDismiss={noop}
           />
         </div>
       </div>
@@ -383,32 +276,106 @@ function NotificationRowSection() {
 
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-3">
-          <StateLabel>Unread</StateLabel>
-          <NotificationRow
-            channelIcon={
-              <ChannelLogo src="/icons/telegram.svg" alt="Telegram" />
-            }
-            channelKind="telegram"
-            agentName="PM Standup Bot"
-            action="Generate daily standup summary for sprint 14"
-            meta="2 hours ago"
-            onOpen={noop}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
           <StateLabel>Read</StateLabel>
           <NotificationRow
             channelIcon={
               <ChannelLogo src="/icons/telegram.svg" alt="Telegram" />
             }
             channelKind="telegram"
-            agentName="PM Standup Bot"
-            action="Generate daily standup summary for sprint 14"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="2 hours ago"
             read
-            onOpen={noop}
           />
+        </div>
+      </div>
+
+      {/* ── Approvals ────────────────────────────────────────────── */}
+      <SectionHeader title="Approvals" />
+
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Pending (needs you)</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="2 min ago"
+            unread
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Allowed</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="15 min ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-success/10 px-2.5 py-1 text-sm font-medium text-success">
+                Allowed
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Allowed permanently</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="1 hour ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-success/10 px-2.5 py-1 text-sm font-medium text-success">
+                Allowed permanently
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Denied</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="30 min ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-destructive/10 px-2.5 py-1 text-sm font-medium text-destructive">
+                Denied
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Denied permanently</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="2 hours ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-destructive/10 px-2.5 py-1 text-sm font-medium text-destructive">
+                Denied permanently
+              </span>
+            </div>
+          </NotificationRow>
         </div>
       </div>
 
@@ -422,43 +389,6 @@ function NotificationRowSection() {
   );
 }
 
-interface CardDemoProps {
-  title: string;
-  note: string;
-  agent: AgentView;
-  temporaryDraw?: { count: number; cpuMilli: number; memoryMi: number };
-}
-
-function CardDemo({ title, note, agent, temporaryDraw }: CardDemoProps) {
-  const display = resolveAgentDisplay(agent, new Set(), new Set());
-  const scheduleCount = fixtureSchedules.filter(
-    (s) => s.agentId === agent.id && s.enabled,
-  ).length;
-
-  return (
-    <div>
-      <div className="mb-2">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{note}</p>
-      </div>
-      <AgentRow
-        agent={agent}
-        display={display}
-        temporaryDraw={temporaryDraw}
-        deletePending={false}
-        onSelect={noop}
-        onConfigure={noop}
-        configureLabel="Configure agent"
-        onWake={noop}
-        onRestart={noop}
-        onPause={noop}
-        onStop={noop}
-        onDelete={noop}
-        scheduleCount={scheduleCount || undefined}
-      />
-    </div>
-  );
-}
 
 export function AgentCardGallery() {
   document.title = "Notifications";
@@ -471,115 +401,6 @@ export function AgentCardGallery() {
 
       <div className="flex flex-col gap-8">
         <NotificationRowSection />
-
-        {/* ── Agent Cards (from remote) ──────────────────────────── */}
-        <SectionHeader title="Agent Cards" />
-
-        <CardDemo
-          title="1. Full card"
-          note="Slack channels, schedules, always-on, running."
-          agent={fullAgent}
-        />
-
-        <CardDemo
-          title="2. Bare card"
-          note="Nothing attached. The metadata row should be absent."
-          agent={bareAgent}
-        />
-
-        <CardDemo
-          title="3. One-of-each"
-          note="Singular forms: 1 channel, 1 schedule."
-          agent={singularAgent}
-        />
-
-        <CardDemo
-          title="4. Hibernated"
-          note="Common real case: agent is hibernated."
-          agent={hibernatedUnknownSkills}
-        />
-
-        <CardDemo
-          title="5a. Always-on but currently hibernated"
-          note="Never-hibernates but stopped — shows Idle (Always-on) badge."
-          agent={neverHibernatesButHibernated}
-        />
-
-        <CardDemo
-          title="5b. Always-on but over budget"
-          note="Always-on badge only shows when running — this shows Over budget badge."
-          agent={neverHibernatesOverBudget}
-        />
-
-        <CardDemo
-          title="6. Knowledge base"
-          note="Just an agent now — no special kind badge."
-          agent={knowledgeBaseAgent}
-        />
-
-        <CardDemo
-          title="7. Experiment"
-          note="Just an agent now — no special kind badge."
-          agent={experimentAgent}
-        />
-
-        <CardDemo
-          title="8. Pack-created agent"
-          note="No pack badge shown — pack is just a starting template."
-          agent={packSkippedAgent}
-        />
-
-        <CardDemo
-          title="9. Error state with contribution failures"
-          note="Error badge, contribution failures badge, error status."
-          agent={errorAgent}
-        />
-
-        <CardDemo
-          title="10. Demo agent"
-          note="Running agent created from a pack."
-          agent={demoPackAgent}
-        />
-
-        {/* Overflow menu — static render for screenshot */}
-        <div>
-          <div className="mb-2">
-            <p className="text-sm font-semibold text-foreground">
-              11. Overflow menu
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Static render of the agent card dropdown menu.
-            </p>
-          </div>
-          <div className="inline-flex min-w-[200px] flex-col rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              Configure agent
-            </div>
-            <div className="my-1 h-px bg-border" />
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              <ConnectionIcon iconSlug="slack" alt="" size={16} />
-              Add to Slack channel
-            </div>
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-              Add to Telegram chat
-            </div>
-            <div className="my-1 h-px bg-border" />
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              Restart
-            </div>
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              Pause — wakes on next use
-            </div>
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
-              Stop — until started again
-            </div>
-            <div className="my-1 h-px bg-border" />
-            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm text-danger hover:bg-danger-light">
-              Delete agent
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

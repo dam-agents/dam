@@ -1,3 +1,9 @@
+import {
+  Checkmark,
+  ErrorOutline,
+  Information,
+  Warning,
+} from "@carbon/icons-react";
 import { useEffect } from "react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
@@ -20,8 +26,13 @@ const Toaster = (props: ToasterProps) => {
       theme={resolved}
       className="toaster group"
       position="top-right"
-      richColors
       closeButton
+      icons={{
+        info: <Information size={16} />,
+        warning: <Warning size={16} />,
+        success: <Checkmark size={16} />,
+        error: <ErrorOutline size={16} />,
+      }}
       toastOptions={{
         classNames: {
           toast: "group toast group-[.toaster]:shadow-lg",

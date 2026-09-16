@@ -27,6 +27,8 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 export let mockEmpty = false;
 export let mockFirstRun = false;
 
+const resolvedApprovalIds = new Set<string>();
+
 export function setMockEmpty(value: boolean) {
   mockEmpty = value;
   if (value) mockFirstRun = false;
@@ -37,6 +39,10 @@ export function setMockFirstRun(value: boolean) {
   if (value) mockEmpty = false;
 }
 
+export function resetResolvedApprovals() {
+  resolvedApprovalIds.clear();
+}
+
 function getFixtures(): Record<string, unknown> {
   const empty = mockEmpty;
   const fresh = mockFirstRun;
@@ -45,8 +51,14 @@ function getFixtures(): Record<string, unknown> {
     "agents.get": agents[1],
     "channels.available": fresh ? [] : channelsAvailable,
     "channels.telegramBot": null,
-    "approvals.listForOwner": fresh ? [] : approvals,
-    "approvals.listForInstance": fresh ? [] : approvals.slice(0, 2),
+    "approvals.listForOwner": fresh
+      ? []
+      : approvals.filter((a) => !resolvedApprovalIds.has(a.id)),
+    "approvals.listForInstance": fresh
+      ? []
+      : approvals
+          .slice(0, 2)
+          .filter((a) => !resolvedApprovalIds.has(a.id)),
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
@@ -396,13 +408,56 @@ export const handlers = [
     return HttpResponse.json(results);
   }),
 
+  // Agent-specific tRPC mutations (POST)
+  http.post(/\/api\/agents\/[^/]+\/trpc\/.*/, async ({ request }) => {
+    const url = new URL(request.url);
+    const procedurePath = url.pathname.replace(
+      /^\/api\/agents\/[^/]+\/trpc\//,
+      "",
+    );
+    const procedures = procedurePath.split(",");
+
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {
+      /* no body */
+    }
+
+    const results = procedures.map((proc, idx) => {
+      console.info(`[MSW] Mock agent mutation: ${proc}`);
+      if (
+        proc === "approvals.approveOnce" ||
+        proc === "approvals.approvePermanent" ||
+        proc === "approvals.approveHost" ||
+        proc === "approvals.denyForever" ||
+        proc === "approvals.dismiss"
+      ) {
+        const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+        const id = input?.approvalId ?? input?.id;
+        if (id) resolvedApprovalIds.add(id);
+        return { result: { data: { ok: true } } };
+      }
+      return { result: { data: null } };
+    });
+
+    return HttpResponse.json(results);
+  }),
+
   // tRPC batch mutations (POST)
-  http.post("/api/trpc/*", ({ request }) => {
+  http.post("/api/trpc/*", async ({ request }) => {
     const url = new URL(request.url);
     const procedurePath = url.pathname.replace("/api/trpc/", "");
     const procedures = procedurePath.split(",");
 
-    const results = procedures.map((proc) => {
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {
+      /* no body */
+    }
+
+    const results = procedures.map((proc, idx) => {
       console.info(`[MSW] Mock mutation: ${proc}`);
       if (proc === "agents.create") {
         mockEmpty = false;
@@ -426,6 +481,18 @@ export const handlers = [
             data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
           },
         };
+      }
+      if (
+        proc === "approvals.approveOnce" ||
+        proc === "approvals.approvePermanent" ||
+        proc === "approvals.approveHost" ||
+        proc === "approvals.denyForever" ||
+        proc === "approvals.dismiss"
+      ) {
+        const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+        const id = input?.approvalId ?? input?.id;
+        if (id) resolvedApprovalIds.add(id);
+        return { result: { data: { ok: true } } };
       }
       return { result: { data: null } };
     });

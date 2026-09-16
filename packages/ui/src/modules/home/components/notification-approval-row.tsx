@@ -1,8 +1,4 @@
-import {
-  OverflowMenuVertical,
-  Settings,
-  ShieldAlert,
-} from "@carbon/icons-react";
+import { OverflowMenuVertical, Settings, Warning } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
@@ -57,11 +53,8 @@ export function NotificationApprovalRow({
     >
       <div className="relative shrink-0 pt-0.5">
         <div className="flex size-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
-          <ShieldAlert size={16} />
+          <Warning size={16} />
         </div>
-        {!resolved && (
-          <span className="absolute -left-0.5 top-0 size-2.5 rounded-full border-2 border-background bg-warning" />
-        )}
       </div>
 
       <div className="min-w-0 flex-1">

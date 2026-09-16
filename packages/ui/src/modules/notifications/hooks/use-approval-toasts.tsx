@@ -1,61 +1,41 @@
-import { ShieldAlert } from "@carbon/icons-react";
+import { Warning } from "@carbon/icons-react";
 import { useEffect, useRef } from "react";
 import { toast as sonner } from "sonner";
 
-import { Button } from "@/components/ui/button";
-
 import { useStore } from "../../../store.js";
 import { useNotifications } from "../api/queries.js";
+import { approvalHeadline } from "../lib/approval-copy.js";
 import { isNeedsYou } from "../lib/notification-types.js";
+import type { NotificationItem } from "../lib/notification-types.js";
 
-function ApprovalToast({
-  agentName,
-  onReview,
-  onDismiss,
-}: {
-  agentName: string;
-  onReview: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="flex w-full items-center gap-3">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-warning/15 dark:bg-warning/20">
-        <ShieldAlert size={16} className="text-warning" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-foreground">
-          {agentName} needs your approval
-        </p>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shrink-0 border-warning/30 text-warning hover:bg-warning/10 hover:text-warning"
-        onClick={() => {
-          onReview();
-          onDismiss();
-        }}
-      >
-        Review
-      </Button>
-    </div>
-  );
-}
-
-export function fireApprovalToast(agentName: string, onReview: () => void) {
+export function fireApprovalToast(
+  agentName: string,
+  headline: string,
+  onReview: () => void,
+) {
   sonner.custom(
     (id) => (
-      <ApprovalToast
-        agentName={agentName}
-        onReview={onReview}
-        onDismiss={() => sonner.dismiss(id)}
-      />
+      <button
+        type="button"
+        onClick={() => {
+          onReview();
+          sonner.dismiss(id);
+        }}
+        className="flex w-[356px] cursor-pointer items-center gap-3 rounded-lg border border-warning/30 bg-[color-mix(in_srgb,var(--c-warning)_10%,white)] px-4 py-3 text-left shadow-lg transition-colors hover:bg-[color-mix(in_srgb,var(--c-warning)_15%,white)] dark:bg-[var(--c-warning-light)] dark:hover:bg-[color-mix(in_srgb,var(--c-warning)_20%,var(--background))]"
+      >
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/10">
+          <Warning size={16} className="text-warning" />
+        </div>
+        <p className="min-w-0 flex-1 text-sm leading-snug">
+          <span className="font-semibold text-foreground">{agentName}</span>
+          <span className="text-foreground">
+            {" "}
+            {headline.toLowerCase()}
+          </span>
+        </p>
+      </button>
     ),
-    {
-      duration: 6000,
-      className:
-        "!rounded-2xl !border !border-warning/30 !bg-warning/5 !p-4 dark:!border-warning/20 dark:!bg-warning/10",
-    },
+    { duration: 6000 },
   );
 }
 
@@ -81,7 +61,10 @@ export function useApprovalToasts() {
       seenIds.current.add(item.id);
 
       const agentName = agentMap.get(item.agentId) ?? "An agent";
-      fireApprovalToast(agentName, openApprovals);
+      const headline = approvalHeadline(
+        (item as Extract<NotificationItem, { type: "approval-tool" }>).approval,
+      );
+      fireApprovalToast(agentName, headline, openApprovals);
     }
   }, [approvalItems, agents, openApprovals]);
 }

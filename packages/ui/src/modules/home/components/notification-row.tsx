@@ -68,10 +68,11 @@ export function NotificationRow({
         }
       }}
       className={cn(
-        "group flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+        "group flex w-full gap-3 rounded-xl px-4 py-4 text-left transition-colors",
         onOpen && "cursor-pointer hover:bg-muted/50",
         forceHover && onOpen && "bg-muted/50",
-        unread && "bg-[#f4f4f4]/50 dark:bg-white/[0.03]",
+        ((unread && channelKind !== "telegram") || working) &&
+          "bg-[#f4f4f4]/50 dark:bg-white/[0.03]",
       )}
     >
       <div className="relative shrink-0 pt-0.5">
@@ -90,23 +91,27 @@ export function NotificationRow({
             <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
           </span>
         )}
-        {unread && !working && (
+        {unread && !working && channelKind !== "telegram" && (
           <span className="absolute -left-0.5 top-0 size-2.5 rounded-full border-2 border-background bg-accent" />
         )}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] leading-snug">
-          <span className={cn("text-foreground", !read && "font-semibold")}>
-            {agentName}
-          </span>
-          <span className="text-muted-foreground"> {action}</span>
+        <div className="flex items-baseline gap-1 text-sm leading-snug">
+          <p className="min-w-0 truncate">
+            <span className={cn("text-foreground", !read && "font-semibold")}>
+              {agentName}
+            </span>
+            <span className="text-muted-foreground"> {action}</span>
+          </p>
           {channel && (
-            <span className="text-muted-foreground/60"> #{channel}</span>
+            <span className="shrink-0 text-muted-foreground/60">
+              #{channel}
+            </span>
           )}
-        </p>
+        </div>
 
-        <p className="mt-0.5 text-sm text-muted-foreground">{meta}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>
 
         {artifact && (
           <button

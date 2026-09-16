@@ -1,11 +1,10 @@
-import { Activity, ChevronLeft, ChevronRight } from "@carbon/icons-react";
+import { Activity } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { Badge } from "@/components/ui/badge";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { DocsLauncher } from "./components/docs-launcher.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
@@ -21,7 +20,6 @@ import { isNeedsYou } from "./modules/notifications/lib/notification-types.js";
 import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
-import type { ChatHeaderVariant } from "./modules/platform/store/sidebar.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SchedulesView } from "./modules/schedules/views/schedules-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -60,41 +58,6 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
-const VARIANT_LABELS: Record<ChatHeaderVariant, string> = {
-  1: "Inline label",
-  2: "Inset card",
-  3: "Left-anchored minimal",
-  4: "Divider-separated",
-  5: "Agent chip + recessed",
-};
-
-function ChatHeaderSwitcher() {
-  const variant = useStore((s) => s.chatHeaderVariant);
-  const cycle = useStore((s) => s.cycleChatHeader);
-
-  return (
-    <div className="fixed bottom-4 left-1/2 z-[9999] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
-      <button
-        type="button"
-        onClick={() => cycle(-1)}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <ChevronLeft size={16} />
-      </button>
-      <span className="min-w-[220px] text-center text-sm font-medium text-foreground">
-        Header {variant}/5 — {VARIANT_LABELS[variant]}
-      </span>
-      <button
-        type="button"
-        onClick={() => cycle(1)}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <ChevronRight size={16} />
-      </button>
-    </div>
-  );
-}
-
 function NotificationBell() {
   const toggleNotifications = useStore((s) => s.toggleNotifications);
   const { items } = useNotifications();
@@ -115,7 +78,7 @@ function NotificationBell() {
       {needsYouCount > 0 && (
         <Badge
           variant="default"
-          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-accent px-1 text-[10px] font-bold text-white hover:bg-accent"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
         >
           {needsYouCount > 9 ? "9+" : needsYouCount}
         </Badge>
@@ -169,14 +132,12 @@ function MainApp() {
             <ChatView />
           </div>
         </div>
-        <ChatHeaderSwitcher />
         <NotificationsPanel
           open={notificationsOpen}
           onClose={() => setNotificationsOpen(false)}
         />
         <DialogOverlay />
         <ConnectionBanner />
-        <DocsLauncher />
       </>
     );
 
@@ -227,7 +188,6 @@ function MainApp() {
       />
       <DialogOverlay />
       <ConnectionBanner />
-      <DocsLauncher />
     </div>
   );
 }

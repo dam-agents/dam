@@ -3,10 +3,10 @@ import {
   EdgeDevice,
   OverflowMenuVertical,
   Settings,
-  ShieldAlert,
   Time,
+  Warning,
 } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -62,7 +62,7 @@ function channelIcon(kind: ChannelKind) {
         <img src="/icons/telegram.svg" alt="Telegram" className="size-4" />
       );
     case "approval":
-      return <ShieldAlert size={16} />;
+      return <Warning size={16} />;
     case "agent":
       return <EdgeDevice size={16} />;
   }
@@ -90,7 +90,14 @@ export function NotificationRow({
   const kind = channelKindFor(item, agents ?? []);
 
   if (item.type === "approval-tool" || item.type === "approval-network") {
-    return <ApprovalRow item={item} agentName={agentName} meta={meta} />;
+    return (
+      <ApprovalRow
+        item={item}
+        agentName={agentName}
+        meta={meta}
+        onDismiss={onDismiss}
+      />
+    );
   }
 
   const isRunning = item.type === "running";
@@ -109,9 +116,9 @@ export function NotificationRow({
         }
       }}
       className={cn(
-        "group flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+        "group flex w-full gap-3 rounded-xl px-4 py-4 text-left transition-colors",
         onOpen && "cursor-pointer hover:bg-muted/50",
-        isUnread && "bg-[#f4f4f4]/50 dark:bg-white/[0.03]",
+        (isUnread || isRunning) && "bg-[#f4f4f4]/50 dark:bg-white/[0.03]",
       )}
     >
       <div className="relative shrink-0 pt-0.5">
@@ -136,22 +143,23 @@ export function NotificationRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] leading-snug">
-          <span className={cn("text-foreground", !isRead && "font-semibold")}>
-            {agentName}
-          </span>
-          <span className="text-muted-foreground">
-            {" "}
-            {item.session.title ?? "Session"}
-          </span>
-          {kind === "slack" && (item.session as any).slackChannel && (
-            <span className="text-muted-foreground/60">
+        <div className="flex items-baseline gap-1 text-sm leading-snug">
+          <p className="min-w-0 truncate">
+            <span className={cn("text-foreground", !isRead && "font-semibold")}>
+              {agentName}
+            </span>
+            <span className="text-muted-foreground">
               {" "}
+              {item.session.title ?? "Session"}
+            </span>
+          </p>
+          {kind === "slack" && (item.session as any).slackChannel && (
+            <span className="shrink-0 text-muted-foreground/60">
               #{(item.session as any).slackChannel}
             </span>
           )}
-        </p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{meta}</p>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>
 
         {item.artifactName && (
           <button
@@ -192,16 +200,24 @@ function ApprovalRow({
   item,
   agentName,
   meta,
+  onDismiss,
 }: {
   item: NotificationItem & {
     type: "approval-tool" | "approval-network";
   };
   agentName: string;
   meta: string;
+  onDismiss?: () => void;
 }) {
   const { actions, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(item.approval);
   const [resolved, setResolved] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!resolved || !onDismiss) return;
+    const timer = setTimeout(onDismiss, 2000);
+    return () => clearTimeout(timer);
+  }, [resolved, onDismiss]);
 
   const allowOnce = actions.find((a) => a.id === "allow-once");
   const rest = actions.filter((a) => a.id !== "allow-once");
@@ -212,18 +228,15 @@ function ApprovalRow({
   };
 
   return (
-    <div className="group flex w-full gap-3 rounded-xl px-3 py-3 text-left">
+    <div className="group flex w-full gap-3 rounded-xl px-4 py-4 text-left">
       <div className="relative shrink-0 pt-0.5">
         <div className="flex size-10 items-center justify-center rounded-xl bg-warning/10 text-warning">
-          <ShieldAlert size={16} />
+          <Warning size={16} />
         </div>
-        {!resolved && (
-          <span className="absolute -left-0.5 top-0 size-2.5 rounded-full border-2 border-background bg-warning" />
-        )}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] leading-snug">
+        <p className="text-sm leading-snug">
           <span className="font-semibold text-foreground">{agentName}</span>
           <span className="text-muted-foreground">
             {" "}
@@ -248,8 +261,8 @@ function ApprovalRow({
               className={cn(
                 "inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium",
                 resolved.startsWith("Denied")
-                  ? "bg-[#fff1f1] text-destructive dark:bg-destructive/15"
-                  : "bg-[#defbe6] text-success dark:bg-success/15",
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-success/10 text-success",
               )}
             >
               {resolved}
@@ -353,7 +366,7 @@ function ApprovalRow({
       </div>
 
       <div className="flex shrink-0 items-start pt-0.5">
-        <span className="text-sm text-muted-foreground">{meta}</span>
+        <span className="text-xs text-muted-foreground">{meta}</span>
       </div>
     </div>
   );

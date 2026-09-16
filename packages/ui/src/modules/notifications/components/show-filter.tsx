@@ -1,4 +1,4 @@
-import { ChevronDown, Reset } from "@carbon/icons-react";
+import { ChevronDown, Filter, Reset } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +80,7 @@ function TypeDropdown({
           size="xs"
           className="text-sm font-normal text-muted-foreground"
         >
+          <Filter size={16} />
           {label}
           <ChevronDown size={14} />
         </Button>
@@ -118,6 +119,7 @@ function StatusDropdown({
           size="xs"
           className="text-sm font-normal text-muted-foreground"
         >
+          <Filter size={16} />
           {label}
           <ChevronDown size={14} />
         </Button>
