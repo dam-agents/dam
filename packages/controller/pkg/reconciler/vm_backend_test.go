@@ -21,6 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -567,4 +569,38 @@ func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
 		"a registry block carries no cluster exception, because the API server would reject the policy")
 	assert.Equal(t, []string{"10.128.0.0/14", "172.30.0.0/16"}, blocks["0.0.0.0/0"],
 		"an open block carries them, which is where they do the work")
+}
+
+// TEST_SCENARIO: an agent the runner refused is parked and retried every 30s, so the gateway must not be brought up and taken down on that cadence — a scheduled and killed pod each cycle, for an agent that cannot run.
+func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	// The end state is zero either way; what matters is that it was never
+	// written as one, which is what schedules and kills a pod every retry.
+	for _, action := range r.client.(*fake.Clientset).Actions() {
+		var ss *appsv1.StatefulSet
+		switch a := action.(type) {
+		case k8stesting.CreateAction:
+			ss, _ = a.GetObject().(*appsv1.StatefulSet)
+		case k8stesting.UpdateAction:
+			ss, _ = a.GetObject().(*appsv1.StatefulSet)
+		}
+		if ss == nil || ss.Name != GatewayName("my-agent") || ss.Spec.Replicas == nil {
+			continue
+		}
+		assert.Equal(t, int32(0), *ss.Spec.Replicas, "the gateway is never written as running for an agent the runner refused")
+	}
+	r.budgetMu.Lock()
+	_, queued := r.parkedRetry["my-agent"]
+	r.budgetMu.Unlock()
+	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }

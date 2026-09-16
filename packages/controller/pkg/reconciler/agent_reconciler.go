@@ -196,18 +196,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
-	stampRollRev(gatewaySS, rollRev)
 	gatewaySvc := BuildGatewayService(name, r.config, ownerRef)
-
-	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
-	}
-	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
-		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
-			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
-	}
-	timer.mark("gatewayStatefulSet")
 	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
@@ -255,6 +244,17 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		}
 		timer.mark("agentService")
 	}
+
+	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	stampRollRev(gatewaySS, rollRev)
+	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
+	}
+	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
+		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
+			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
+	}
+	timer.mark("gatewayStatefulSet")
 
 	if hardStop {
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
