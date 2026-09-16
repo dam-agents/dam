@@ -87,6 +87,16 @@ function useReviewScreens(): ReviewScreen[] {
       go: () => setView("setup-workbench"),
     },
     {
+      label: "Schedule (Setup)",
+      note: "Schedule cards in agent creation form.",
+      go: () => setView("agent-new"),
+    },
+    {
+      label: "Schedule (Configure)",
+      note: "Schedule panel in agent configure tab.",
+      go: () => setView("home"),
+    },
+    {
       label: "Spend detail link",
       note: "Hover the ? next to Spend — tooltip has a link to the usage page.",
       go: () => {
