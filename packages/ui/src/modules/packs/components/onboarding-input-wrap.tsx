@@ -19,7 +19,7 @@ export function OnboardingInputBar({ agentId }: { agentId: string | null }) {
   const done = state.steps.filter((s) => s.done).length;
 
   return (
-    <div className="px-4 md:px-8">
+    <div className="px-4 md:px-8 -mb-[13px] relative z-10">
       <div className="mx-auto max-w-[813px]">
         <HoverCard openDelay={150} closeDelay={300}>
           <HoverCardTrigger asChild>

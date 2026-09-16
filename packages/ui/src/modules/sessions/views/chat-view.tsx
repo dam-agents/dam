@@ -79,7 +79,6 @@ import {
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
 import { OnboardingInputBar } from "../../packs/components/onboarding-input-wrap.js";
-import { OnboardingTag } from "../../packs/components/onboarding-tag.js";
 import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
@@ -605,9 +604,7 @@ export function ChatView() {
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {!isDemo && selectedAgent && (
-            <OnboardingTag agentId={selectedAgent} />
-          )}
+          {null}
           {isDemo && demoActions ? (
             <DemoHeaderActions actions={demoActions} />
           ) : (
