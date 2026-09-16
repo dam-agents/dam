@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
@@ -102,22 +101,34 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, err
 	}
 
-	svc := BuildAgentService(name, r.config, ownerRef)
-	svc.Spec.Selector = nil
-	svc.Spec.ClusterIP = ""
-	if err := r.applyService(ctx, svc); err != nil {
-		return st, fmt.Errorf("applying agent service: %w", err)
-	}
 	if st.Port > 0 {
-		ip, err := r.runnerPodIP(ctx, owner)
-		if err != nil {
-			return st, err
-		}
-		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, ip, int32(st.Port), st.Ready, ownerRef)); err != nil {
-			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
+		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
+			return st, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
 	return st, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
+func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner string, port int, ownerRef metav1.OwnerReference) error {
+	desired := BuildAgentService(name, r.config, ownerRef)
+	desired.Spec.ClusterIP = ""
+	desired.Spec.Selector = vmRunnerSelector(owner)
+	desired.Spec.Ports[0].TargetPort = intstr.FromInt(port)
+
+	cli := r.client.CoreV1().Services(r.config.Namespace)
+	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	existing.Spec.Selector = desired.Spec.Selector
+	existing.Spec.Ports = desired.Spec.Ports
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
+	return err
 }
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
@@ -209,40 +220,6 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
 	return nil
-}
-
-func buildVMEndpointSlice(name, namespace, address string, port int32, ready bool, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
-	portName, tcp := "acp", corev1.ProtocolTCP
-	return &discoveryv1.EndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				LabelAgent: name, LabelPair: name, LabelRole: RoleAgent,
-				discoveryv1.LabelServiceName: name,
-				discoveryv1.LabelManagedBy:   "platform-controller",
-			},
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-		AddressType: discoveryv1.AddressTypeIPv4,
-		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{address}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}}},
-		Ports:       []discoveryv1.EndpointPort{{Name: &portName, Port: &port, Protocol: &tcp}},
-	}
-}
-
-func (r *AgentReconciler) applyEndpointSlice(ctx context.Context, desired *discoveryv1.EndpointSlice) error {
-	cli := r.client.DiscoveryV1().EndpointSlices(desired.Namespace)
-	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	desired.ResourceVersion = existing.ResourceVersion
-	_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
 }
 
 func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {

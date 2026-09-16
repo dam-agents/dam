@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -135,7 +136,6 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 		ServiceAccountName: "platform-vm-runner",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
@@ -184,7 +184,6 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		ServiceAccountName: "platform-vm-runner",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	var requeued []time.Duration
 	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
@@ -218,15 +217,9 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Nil(t, svc.Spec.Selector)
-	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
-	eps, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10.42.0.9"}, eps.Endpoints[0].Addresses)
-	assert.Equal(t, int32(31000), *eps.Ports[0].Port)
-	assert.Equal(t, "my-agent", eps.Labels["kubernetes.io/service-name"])
-	require.NotNil(t, eps.Endpoints[0].Conditions.Ready)
-	assert.False(t, *eps.Endpoints[0].Conditions.Ready, "a machine that is still booting takes no traffic")
+	assert.Equal(t, vmRunnerSelector(testOwner), svc.Spec.Selector, "the agent Service selects the owner's runner")
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "a headless Service would hand back the pod address without remapping the port")
+	assert.Equal(t, intstr.FromInt(31000), svc.Spec.Ports[0].TargetPort, "the agent port maps onto the one this machine publishes on the runner")
 
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
@@ -237,9 +230,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	eps, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.True(t, *eps.Endpoints[0].Conditions.Ready, "a ready machine takes traffic — kube-proxy drops an endpoint that never turns ready")
 	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
 }
 
@@ -291,7 +281,6 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")
