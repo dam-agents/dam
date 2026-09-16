@@ -538,6 +538,13 @@ export const REAL_PACKS: Pack[] = [
         description:
           "Step-by-step guide that walks the agent through first-run setup",
       },
+      {
+        kind: "schedule",
+        label: "Daily PR review",
+        description:
+          "Checks for stale pull requests every morning and nudges reviewers",
+        demoValue: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      },
     ],
     required: [
       {

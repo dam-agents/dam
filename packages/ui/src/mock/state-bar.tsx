@@ -65,6 +65,7 @@ if (!document.getElementById("review-flash-style")) {
 
 function useReviewScreens(): ReviewScreen[] {
   const setView = useStore((s) => s.setView);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   return [
     {
       label: "Home",
@@ -94,7 +95,11 @@ function useReviewScreens(): ReviewScreen[] {
     {
       label: "Schedule (Configure)",
       note: "Schedule panel in agent configure tab.",
-      go: () => setView("home"),
+      go: () =>
+        navigateToSandboxHome(
+          "a1b2c3d4-0002-4000-8000-000000000002",
+          "schedules",
+        ),
     },
     {
       label: "Spend detail link",
@@ -228,7 +233,8 @@ export function MockStateBar() {
                 (s.label === "Agent setup" && view === "agent-new") ||
                 (s.label === "Setup workbench" && view === "setup-workbench") ||
                 (s.label === "Schedule (Setup)" && view === "agent-new") ||
-                (s.label === "Schedule (Configure)" && view === "home") ||
+                (s.label === "Schedule (Configure)" &&
+                  view === "sandbox-home") ||
                 (s.label === "Spend detail link" && view === "home") ||
                 (s.label === "Card gallery" && view === "card-gallery");
               return (

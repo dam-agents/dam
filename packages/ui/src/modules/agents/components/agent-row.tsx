@@ -1,4 +1,4 @@
-import { Chemistry, OverflowMenuVertical, Power } from "@carbon/icons-react";
+import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { DemoHeaderTag } from "../../packs/components/demo-treatments.js";
 import { OnboardingTag } from "../../packs/components/onboarding-tag.js";
 import type {
   AgentDisplay,
@@ -32,7 +31,6 @@ export interface AgentRowProps {
   display: AgentDisplay;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
-  isDemo?: boolean;
   onSelect: () => void;
   onConfigure: () => void;
   configureLabel: string;
@@ -41,6 +39,8 @@ export interface AgentRowProps {
   onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
+  onAddToSlack?: () => void;
+  onAddToTelegram?: () => void;
   scheduleCount?: number;
 }
 
@@ -95,7 +95,6 @@ export function AgentRow({
   display,
   temporaryDraw,
   deletePending,
-  isDemo,
   onSelect,
   onConfigure,
   configureLabel,
@@ -104,6 +103,8 @@ export function AgentRow({
   onPause,
   onStop,
   onDelete,
+  onAddToSlack,
+  onAddToTelegram,
   scheduleCount,
 }: AgentRowProps) {
   const slackChannels = agent.channels.filter((c) => c.type === "slack") as {
@@ -115,11 +116,9 @@ export function AgentRow({
   const visibleSlack = slackChannels.slice(0, maxVisibleSlack);
   const slackOverflow = slackChannels.length - visibleSlack.length;
 
-  const isAlwaysOn =
-    display.state === "running_always_on" || display.state === "idle_always_on";
   const hasSchedules = (scheduleCount ?? 0) > 0;
   const hasSlack = slackChannels.length > 0;
-  const hasMeta = hasSchedules || hasSlack || isAlwaysOn;
+  const hasMeta = hasSchedules || hasSlack;
 
   return (
     <div
@@ -136,7 +135,6 @@ export function AgentRow({
             <h2 className="min-w-0 truncate text-base font-semibold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
               {agent.name}
             </h2>
-            {isDemo && <DemoHeaderTag />}
             <OnboardingTag agentId={agent.id} />
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
@@ -157,13 +155,6 @@ export function AgentRow({
                   <ConnectionIcon iconSlug="slack" alt="" size={16} />
                   {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
                   {slackOverflow > 0 && `, +${slackOverflow}`}
-                </Badge>
-              )}
-
-              {isAlwaysOn && (
-                <Badge variant="muted" className="gap-1.5">
-                  <Power size={16} />
-                  Always on
                 </Badge>
               )}
 
@@ -213,6 +204,18 @@ export function AgentRow({
                 <DropdownMenuItem onSelect={onConfigure}>
                   {configureLabel}
                 </DropdownMenuItem>
+                {onAddToSlack && (
+                  <DropdownMenuItem onSelect={onAddToSlack}>
+                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                    Add to a Slack channel
+                  </DropdownMenuItem>
+                )}
+                {onAddToTelegram && (
+                  <DropdownMenuItem onSelect={onAddToTelegram}>
+                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+                    Add to a Telegram chat
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 {display.powerAction === "start" ? (
                   <DropdownMenuItem onSelect={onWake}>
