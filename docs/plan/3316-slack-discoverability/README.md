@@ -67,7 +67,7 @@ is wrong are called out in the sub-issues that touch them.
 | 02 | [x] [Bind walkthrough modal and setup Channels section](./02-bind-modal-setup-section.md) | The shared bind modal and the Channels section on the three setup views. | — |
 | 03 | [x] [Channel vs connection explainer](./03-channel-vs-connection-explainer.md) | Accessible popover, the "Slack Account" rename, three placements, two cross-links. | 02 |
 | 04 | [x] [Channel visibility on the agent list and chat launcher](./04-channel-visibility-list-launcher.md) | Row chips, overflow entries, launcher tiles. | 01, 02 |
-| 05 | [Agent Channels section](./05-agent-channels-section.md) | Names instead of ids; Telegram rows reach parity. | 01, 03 |
+| 05 | [x] [Agent Channels section](./05-agent-channels-section.md) | Names instead of ids; Telegram rows reach parity. | 01, 03 |
 | 06 | [Session rows show their channel](./06-session-rows-channel.md) | Messenger logo, channel name, relative time. | 01 |
 | 07 | [Bind picker redesign](./07-bind-picker-redesign.md) | Search, sections, card rows, sticky action — both messengers. | 01 |
 | 08 | [Bind success redesign](./08-bind-success-redesign.md) | Simplified copy and the ambient toggle — both messengers. | 07 |

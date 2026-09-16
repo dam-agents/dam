@@ -22,6 +22,10 @@ export function findSlackChannels(
   return agent?.channels.filter((c) => c.type === ChannelType.Slack) ?? [];
 }
 
+export function slackChannelLabel(channel: SlackChannel): string {
+  return channel.name ? `#${channel.name}` : channel.slackChannelId;
+}
+
 export function useSlackChannelForm(
   agent: AgentView,
   channel: SlackChannel | undefined,

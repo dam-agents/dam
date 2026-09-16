@@ -6,6 +6,7 @@ import type { AgentView } from "../../../../types.js";
 import { useAgents } from "../../../agents/api/queries.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 import { useTelegramChats } from "../../../telegram/api/queries.js";
+import { slackChannelLabel } from "../../hooks/use-slack-channel-form.js";
 
 const SHOWN = 2;
 
@@ -18,7 +19,7 @@ export function AgentChannelChips({
 }) {
   const slackNames = agent.channels
     .filter((c) => c.type === ChannelType.Slack)
-    .map((c) => (c.name ? `#${c.name}` : c.slackChannelId));
+    .map(slackChannelLabel);
   const telegramReady = useAgents().data?.availableChannels?.telegram;
   const telegramNames = (
     useTelegramChats(telegramReady ? agent.id : undefined).data?.chats ?? []

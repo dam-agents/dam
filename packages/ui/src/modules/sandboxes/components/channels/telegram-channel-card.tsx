@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
@@ -7,13 +7,14 @@ import {
   useTelegramChats,
 } from "../../../telegram/api/queries.js";
 import { ChannelCard } from "./channel-card.js";
+import { ChannelRow } from "./channel-row.js";
 
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
   const bot = useTelegramBot();
   const handle = bot.data?.username;
 
   return (
-    <ChannelCard iconSlug="telegram" title="Telegram">
+    <ChannelCard iconSlug="telegram" title="Telegram Chat">
       <div className="flex flex-col gap-3 px-4 py-4">
         <ConnectedChats agentId={agentId} />
         <p className="text-sm text-muted-foreground">
@@ -55,26 +56,23 @@ function ConnectedChats({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-col gap-2">
       {chats.data.chats.map((chat) => (
-        <div
+        <ChannelRow
           key={chat.conversationId}
-          className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5"
-        >
-          <span className="flex-1 truncate text-sm text-foreground">
-            {chat.title}
-          </span>
-          <Button
-            variant="ghost"
-            tone="danger"
-            size="sm"
-            disabled={unbind.isPending}
-            onClick={() =>
-              unbind.mutate({ agentId, conversationId: chat.conversationId })
-            }
-            className="shrink-0"
-          >
-            Disconnect
-          </Button>
-        </div>
+          title={chat.title}
+          actionsLabel={`Telegram chat ${chat.title} actions`}
+          menuTestId="telegram-chat-menu"
+          actions={
+            <DropdownMenuItem
+              tone="danger"
+              disabled={unbind.isPending}
+              onSelect={() =>
+                unbind.mutate({ agentId, conversationId: chat.conversationId })
+              }
+            >
+              Disconnect
+            </DropdownMenuItem>
+          }
+        />
       ))}
     </div>
   );
