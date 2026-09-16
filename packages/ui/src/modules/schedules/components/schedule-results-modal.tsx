@@ -23,7 +23,7 @@ function ResultRow({ session, onOpen }: RowProps) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-3 border-t border-border px-5 py-3 text-left hover:bg-muted md:px-6"
+      className="flex w-full items-center gap-3 not-first:border-t not-first:border-border px-5 py-3 text-left hover:bg-muted md:px-6"
     >
       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
         {summary}
