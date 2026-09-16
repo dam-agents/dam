@@ -10,8 +10,13 @@ icon: document
 onboarding: { command: wiki-onboard }
 knowledgeBase:
   template: plain-wiki
+# The toolkit is the workspace: seeded at the commit the catalog resolved, then
+# its own bootstrap runs from that checkout — nothing is fetched at install.
+seed:
+  url: https://github.com/dam-agents/plain-wiki
+  ref: main
 install:
-  command: "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/plain-wiki/main/bootstrap.sh | bash"
+  command: PLAIN_WIKI_BASE="file://$PWD" bash bootstrap.sh
   harnessEnv: PLAIN_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:

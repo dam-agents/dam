@@ -11,8 +11,13 @@ icon: chart
 onboarding: { command: wiki-onboard }
 knowledgeBase:
   template: llm-wiki
+# The toolkit is the workspace: seeded at the commit the catalog resolved, then
+# its own bootstrap runs from that checkout — nothing is fetched at install.
+seed:
+  url: https://github.com/dam-agents/llm-wiki-v2
+  ref: main
 install:
-  command: "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/llm-wiki-v2/main/bootstrap.sh | bash"
+  command: bash bootstrap.sh
   harnessEnv: LLM_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:
