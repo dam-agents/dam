@@ -131,7 +131,7 @@ export function createBoltSlackGateway(
           threadTs: event.thread_ts,
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
-          teamId: event.team ?? context.teamId,
+          teamId: event.team ?? context.teamId ?? ORIGINAL_WORKSPACE,
           channelType: (event as { channel_type?: string }).channel_type,
         });
       });
@@ -151,6 +151,7 @@ export function createBoltSlackGateway(
         };
         if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
         if (msg.bot_id || !msg.user) return;
+        const workspace = msg.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
         const payload = {
           user: msg.user,
           channel: msg.channel,
@@ -158,7 +159,7 @@ export function createBoltSlackGateway(
           threadTs: msg.thread_ts,
           text: msg.text ?? "",
           files: msg.files,
-          teamId: msg.team ?? context.teamId,
+          teamId: workspace,
           channelType: msg.channel_type,
         };
         if (msg.channel_type === "im") {
@@ -167,12 +168,7 @@ export function createBoltSlackGateway(
         }
         const text = msg.text ?? "";
         const selfId =
-          context.botUserId ??
-          (
-            await testedAuthFor(
-              msg.team ?? context.teamId ?? ORIGINAL_WORKSPACE,
-            )
-          )?.botUserId;
+          context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
         if (
           selfId ? text.includes(`<@${selfId}>`) : /<@[UW][A-Z0-9]+>/.test(text)
         )
@@ -188,7 +184,7 @@ export function createBoltSlackGateway(
             text: command.text,
             userId: command.user_id,
             channelId: command.channel_id,
-            teamId: command.team_id,
+            teamId: command.team_id ?? ORIGINAL_WORKSPACE,
           },
           (response) =>
             ack({ response_type: "ephemeral", text: response.text }),

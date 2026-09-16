@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
 import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelMessageEvent,
@@ -18,11 +19,18 @@ export interface FakeSlackChannel {
   botIsMember: boolean;
 }
 
+export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
+  teamId?: string;
+};
+export type FiredSlackCommand = Omit<SlackSlashCommand, "teamId"> & {
+  teamId?: string;
+};
+
 export interface FakeSlackGateway extends SlackGateway {
-  fireMention(event: SlackMentionEvent): Promise<void>;
-  fireMessage(event: SlackChannelMessageEvent): Promise<void>;
-  fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
-  fireCommand(command: SlackSlashCommand): Promise<string>;
+  fireMention(event: FiredSlackEvent): Promise<void>;
+  fireMessage(event: FiredSlackEvent): Promise<void>;
+  fireDirectMessage(event: FiredSlackEvent): Promise<void>;
+  fireCommand(command: FiredSlackCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
@@ -301,19 +309,35 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return `D-${userId}`;
     },
 
-    async fireMention(event) {
+    async fireMention(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onMention(event);
     },
 
-    async fireMessage(event) {
+    async fireMessage(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onMessage(event);
     },
 
-    async fireDirectMessage(event) {
+    async fireDirectMessage(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onDirectMessage(event);
     },
 
-    async fireCommand(command) {
+    async fireCommand(input) {
+      const command: SlackSlashCommand = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       let ackText = "";
       await requireHandlers().onCommand(command, async ({ text }) => {
         ackText = text;

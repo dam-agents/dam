@@ -2435,7 +2435,7 @@ export function createSlackWorker(
       event.files,
       slackUserId,
       heldBudget,
-      event.teamId ?? ORIGINAL_WORKSPACE,
+      event.teamId,
     );
     for (const f of failures) {
       await ephemeral(
@@ -2443,7 +2443,7 @@ export function createSlackWorker(
         slackUserId,
         event.threadTs,
         `Couldn't use attached ${f.plural ? `${f.kind}s` : f.kind} '${f.name}': ${f.reason}`,
-        event.teamId ?? ORIGINAL_WORKSPACE,
+        event.teamId,
       );
     }
     return {
@@ -2570,7 +2570,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
-        teamId: event.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: event.teamId,
         text: unboundConversationCopy(event, opts.directMessage),
       });
       return;
@@ -2579,7 +2579,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
-        teamId: event.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: event.teamId,
         text: noDefaultAgentCopy(roster, routed.ambiguousName),
       });
       return;
@@ -3232,7 +3232,7 @@ export function createSlackWorker(
       event.files,
       slackUserId,
       heldBudget,
-      event.teamId ?? ORIGINAL_WORKSPACE,
+      event.teamId,
     );
     const withheldNote = renderWithheldNote(failures);
 

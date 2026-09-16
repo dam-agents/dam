@@ -13,28 +13,6 @@ export class FileTooLargeError extends Error {
   }
 }
 
-export interface SlackMentionEvent {
-  user?: string;
-  channel: string;
-  ts: string;
-  threadTs?: string;
-  text: string;
-  files?: SlackImageFile[];
-  teamId?: string;
-  channelType?: string;
-}
-
-export interface SlackSlashCommand {
-  text: string;
-  userId: string;
-  channelId: string;
-  teamId?: string;
-}
-
-export type SlackChannelMessageEvent = SlackMentionEvent;
-
-export type SlackAck = (response: { text: string }) => Promise<void>;
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for. The empty
  * string is the install's original workspace — the one whose bot token the
@@ -47,6 +25,28 @@ export type SlackAck = (response: { text: string }) => Promise<void>;
 export type SlackWorkspace = string;
 
 export const ORIGINAL_WORKSPACE: SlackWorkspace = "";
+
+export interface SlackMentionEvent {
+  user?: string;
+  channel: string;
+  ts: string;
+  threadTs?: string;
+  text: string;
+  files?: SlackImageFile[];
+  teamId: SlackWorkspace;
+  channelType?: string;
+}
+
+export interface SlackSlashCommand {
+  text: string;
+  userId: string;
+  channelId: string;
+  teamId: SlackWorkspace;
+}
+
+export type SlackChannelMessageEvent = SlackMentionEvent;
+
+export type SlackAck = (response: { text: string }) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
