@@ -52,7 +52,6 @@ export function IconRail({
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
-    iconClassName: "text-preset",
   };
   const schedules: Destination = {
     label: "Schedules",

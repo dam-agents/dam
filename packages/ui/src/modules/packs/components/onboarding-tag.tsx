@@ -21,7 +21,7 @@ export function OnboardingTag({ agentId }: { agentId: string }) {
     <HoverCard openDelay={150} closeDelay={300}>
       <HoverCardTrigger asChild>
         <Badge variant="preset" className="cursor-default">
-          Setup {done}/{state.steps.length}
+          Onboarding {done}/{state.steps.length}
         </Badge>
       </HoverCardTrigger>
       <HoverCardContent side="bottom" align="start" className="w-64">
