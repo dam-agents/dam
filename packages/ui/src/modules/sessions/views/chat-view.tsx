@@ -78,7 +78,7 @@ import {
   DemoHeaderActions,
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
-import { OnboardingInputBar } from "../../packs/components/onboarding-input-wrap.js";
+import { OnboardingInputWrap } from "../../packs/components/onboarding-input-wrap.js";
 import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
@@ -203,6 +203,11 @@ export function ChatView() {
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
+  const onboardingActive = useStore((s) => {
+    if (!selectedAgent) return false;
+    const ob = s.onboardingByAgent.get(selectedAgent);
+    return !!ob && !ob.completed;
+  });
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
@@ -803,15 +808,16 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                <OnboardingInputBar agentId={selectedAgent} />
-                <ChatInputArea
-                  textareaRef={textareaRef}
-                  busy={busy}
-                  loadingSession={loadingSession}
-                  onSend={sendPrompt}
-                  onStop={stopAgent}
-                  rotatingPlaceholder={rotatingPlaceholder}
-                />
+                <OnboardingInputWrap agentId={selectedAgent}>
+                  <ChatInputArea
+                    textareaRef={textareaRef}
+                    busy={busy}
+                    loadingSession={loadingSession}
+                    onSend={sendPrompt}
+                    onStop={stopAgent}
+                    rotatingPlaceholder={rotatingPlaceholder}
+                  />
+                </OnboardingInputWrap>
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
@@ -830,7 +836,7 @@ export function ChatView() {
                             }
                           />
                         )}
-                        {selectedAgent && (
+                        {selectedAgent && !onboardingActive && (
                           <>
                             <span className="text-border">·</span>
                             <ScheduleIndicator

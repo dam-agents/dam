@@ -37,6 +37,16 @@ async function main() {
       queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
     }
 
+    {
+      const { REAL_PACKS } = await import("./modules/packs/data/packs.js");
+      const { agents } = await import("./mock/data/agents.js");
+      const pack = REAL_PACKS[0];
+      const agentId = agents[0]?.id;
+      if (pack && agentId) {
+        useStore.getState().initOnboarding(agentId, pack);
+      }
+    }
+
     await loadBrand().then(applyBrand);
     const { default: App } = await import("./app.js");
     const { MockStateBar } = await import("./mock/state-bar.js");

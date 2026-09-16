@@ -202,7 +202,9 @@ export function ChatInput({
           }}
         />
         <div
-          className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
+          className={
+            `flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`
+          }
         >
           {attachments.length > 0 && (
             <div className="flex gap-2 flex-wrap px-3 pt-3">

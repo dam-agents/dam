@@ -922,8 +922,7 @@ export function ChannelsSetupSection({
         <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-preset-border/50 bg-preset-light/50 px-3 py-2.5">
           <Information size={16} className="mt-0.5 shrink-0 text-preset" />
           <p className="text-sm leading-relaxed text-foreground/80">
-            {packName} suggests connecting{" "}
-            {suggestedSlot.label} to{" "}
+            {packName} suggests connecting {suggestedSlot.label} to{" "}
             {suggestedSlot.description?.toLowerCase() ?? "stay in the loop"}
           </p>
         </div>

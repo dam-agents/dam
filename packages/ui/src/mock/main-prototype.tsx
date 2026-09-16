@@ -13,7 +13,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { applyBrand } from "../brand.js";
-import { PACKS } from "../modules/packs/data/packs.js";
+import { PACKS, REAL_PACKS } from "../modules/packs/data/packs.js";
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
 import { agents } from "./data/agents.js";
@@ -235,7 +235,7 @@ queryClient.setQueryData(trpcKey("files.list"), [
 
 // ─── Seed onboarding state for one agent ────────────────────────────────────
 {
-  const pack = PACKS.find((p) => p.id === "docs-maintainer");
+  const pack = REAL_PACKS[0];
   if (pack) {
     const agentId = agents[0]?.id;
     if (agentId) {

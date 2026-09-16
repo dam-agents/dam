@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { REAL_PACKS } from "../modules/packs/data/packs.js";
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
 import { agents } from "./data/agents.js";
@@ -66,10 +67,12 @@ if (!document.getElementById("review-flash-style")) {
 function useReviewScreens(): ReviewScreen[] {
   const setView = useStore((s) => s.setView);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const initOnboarding = useStore((s) => s.initOnboarding);
   return [
     {
       label: "Home",
-      note: "Agent list or welcome empty state.",
+      note: "Agent list and new agent cards.",
       go: () => setView("home"),
     },
     {
@@ -83,18 +86,18 @@ function useReviewScreens(): ReviewScreen[] {
       go: () => setView("agent-new"),
     },
     {
-      label: "Setup workbench",
-      note: "Iterate on setup section interactions — normal vs starter kit.",
+      label: "Starter kit components",
+      note: "All component variations for starter kits in the agent setup.",
       go: () => setView("setup-workbench"),
     },
     {
       label: "Schedule (Setup)",
-      note: "Schedule cards in agent creation form.",
+      note: "Simplified schedule cards.",
       go: () => setView("agent-new"),
     },
     {
       label: "Schedule (Configure)",
-      note: "Schedule panel in agent configure tab.",
+      note: "Simplified schedule cards.",
       go: () =>
         navigateToSandboxHome(
           "a1b2c3d4-0002-4000-8000-000000000002",
@@ -115,7 +118,17 @@ function useReviewScreens(): ReviewScreen[] {
       go: () => setView("home"),
     },
     {
-      label: "Card gallery",
+      label: "Onboarding in chat UI",
+      note: "Onboarding bar wrapping the chat input.",
+      go: () => {
+        const agentId = "a1b2c3d4-0001-4000-8000-000000000001";
+        const pack = REAL_PACKS[0];
+        if (pack) initOnboarding(agentId, pack);
+        selectAgent(agentId);
+      },
+    },
+    {
+      label: "New Agent card designs",
       note: "Agent card design — every state side by side.",
       go: () => setView("card-gallery"),
     },
@@ -231,12 +244,15 @@ export function MockStateBar() {
                 (s.label === "Home" && view === "home") ||
                 (s.label === "Starter Kits" && view === "presets") ||
                 (s.label === "Agent setup" && view === "agent-new") ||
-                (s.label === "Setup workbench" && view === "setup-workbench") ||
+                (s.label === "Starter kit components" &&
+                  view === "setup-workbench") ||
                 (s.label === "Schedule (Setup)" && view === "agent-new") ||
                 (s.label === "Schedule (Configure)" &&
                   view === "sandbox-home") ||
                 (s.label === "Spend detail link" && view === "home") ||
-                (s.label === "Card gallery" && view === "card-gallery");
+                (s.label === "Onboarding in chat UI" && view === "chat") ||
+                (s.label === "New Agent card designs" &&
+                  view === "card-gallery");
               return (
                 <button
                   key={s.label}

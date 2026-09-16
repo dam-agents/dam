@@ -18,12 +18,9 @@ import { rruleToText } from "api-server-api";
 import { GithubIcon } from "@/components/brand-icons";
 import { Modal } from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
-import {
-  formatCores,
-  formatMiAsMemory,
-} from "@/modules/budgets/lib/format";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
+import { formatCores, formatMiAsMemory } from "@/modules/budgets/lib/format";
 import { CardIcon } from "@/modules/providers/components/card-icon";
 
 import type { Pack, PackIngredientKind, PackSlot } from "../data/packs.js";

@@ -487,6 +487,13 @@ export const handlers = [
         createdConnections.push(newConn);
         return { result: { data: { id } } };
       }
+      if (
+        proc === "agents.wake" ||
+        proc === "agents.pause" ||
+        proc === "agents.stop"
+      ) {
+        return { result: { data: agents[1] } };
+      }
       return { result: { data: null } };
     });
 
