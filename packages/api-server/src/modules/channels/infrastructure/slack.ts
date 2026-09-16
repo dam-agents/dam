@@ -1275,6 +1275,7 @@ export function createSlackWorker(
     verdictRefs: TurnRef[];
     anchorRef: TurnRef;
     isDelivered: () => boolean;
+    isCancelled: () => boolean;
     sawFailure: boolean;
     externalActorId?: string;
   }): Promise<void> {
@@ -1293,9 +1294,9 @@ export function createSlackWorker(
     let answered: boolean | undefined;
     try {
       await withSessionTurnLock(instanceName, threadKey, async () => {
-        if (args.isDelivered()) return;
+        if (args.isDelivered() || args.isCancelled()) return;
         await agents().ensureReady(instanceName);
-        if (args.isDelivered()) return;
+        if (args.isDelivered() || args.isCancelled()) return;
         const before = disposition();
         beginTurn(instanceName, args.anchorRef);
         try {
@@ -1467,8 +1468,9 @@ export function createSlackWorker(
           sessionId,
           isDelivered: (end) => deliveredBy(refs, end),
           onDone: () => releaseWatchedRefs(instanceName, refs),
-          recover: (end) =>
+          recover: (end, isCancelled) =>
             runUndeliveredNudge({
+              isCancelled,
               instanceName,
               sessionId,
               threadKey,

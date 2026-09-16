@@ -203,6 +203,45 @@ describe("turn recovery", () => {
   });
 
   /**
+   * TEST_SCENARIO: a recovery judged on the spot still has to be callable
+   * off. Another queue can hold a turn on the same thread session, so a turn
+   * that answers the person can land while the nudge waits its turn on that
+   * session. If the dismissal cannot reach a recovery already under way, the
+   * nudge goes ahead over its own turn's refs and the person is answered
+   * twice.
+   */
+  it("lets a dismissal reach a recovery that is already running", async () => {
+    const recovery = createTurnRecovery({
+      turnStatus: scripted(["ended"]),
+      podGone: async () => false,
+    });
+    let release!: () => void;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    let cancelledWhenChecked: boolean | undefined;
+    recovery.watch(
+      {
+        instanceName: "agent-1",
+        sessionId: "s-1",
+        isDelivered: () => false,
+        recover: async (_end, isCancelled) => {
+          await held;
+          cancelledWhenChecked = isCancelled();
+        },
+      },
+      { endedAs: "clean" },
+    );
+
+    recovery.dismiss("agent-1", "s-1");
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(cancelledWhenChecked).toBe(true);
+    recovery.stop();
+  });
+
+  /**
    * TEST_SCENARIO: A later turn on the same session succeeded, so the worker
    * dismissed the watch. The old turn's nudge must never fire after that,
    * and the dismissal releases the caller's bookkeeping.
