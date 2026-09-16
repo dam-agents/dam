@@ -28,11 +28,13 @@ import type {
   LoadedKit,
   StarterKitsRepository,
 } from "../infrastructure/kits-repository.js";
-import type { CreateKnowledgeBaseAgent } from "../../knowledge-bases/index.js";
+import { emit, EventType } from "../../../events.js";
 import {
   initializationEvent,
   type RuntimeMutator,
+  workspaceCommandEvent,
 } from "../../runtime-delivery/index.js";
+import { kitInstallCommand } from "../domain/install.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 
@@ -49,7 +51,7 @@ export interface StarterKitsServiceDeps {
     "listConnections" | "listTemplates" | "getAgentConnections"
   >;
   skills: Pick<SkillsService, "applyEntries">;
-  createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
+  surface: string;
   readTemplateSpec: ReadTemplateSpec;
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
@@ -83,6 +85,7 @@ function toView(loaded: LoadedKit): StarterKitView {
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
+  const now = deps.now ?? (() => new Date());
   async function requireKit(
     catalog: string,
     kitId: string,
@@ -211,7 +214,7 @@ export function createStarterKitsService(
       harness,
     );
     if (task === null) return;
-    const at = (deps.now ?? (() => new Date()))();
+    const at = now();
     await deps.runtimeMutator.bump(agentId, [
       initializationEvent(agentId, task, at),
     ]);
@@ -252,11 +255,19 @@ export function createStarterKitsService(
         });
       }
 
+      const harness =
+        kit.image?.harness ??
+        (input.templateId
+          ? (await deps.readTemplateSpec(input.templateId))?.spec.harness
+          : undefined);
       const createInput: AgentCreateInput = {
         name: input.name,
         ...(kit.image
           ? { image: kit.image.ref }
           : { templateId: input.templateId }),
+        ...(kit.knowledgeBase
+          ? { kind: "knowledge-base", kbTemplateId: kit.knowledgeBase.template }
+          : {}),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),
@@ -265,15 +276,16 @@ export function createStarterKitsService(
           : {}),
         starterKit: kitRef(loaded.catalog, kit.id, version),
       };
-      const agent = kit.knowledgeBase
-        ? await deps.createKnowledgeBaseAgent(
-            createInput,
-            kit.knowledgeBase.template,
-            null,
-          )
-        : await deps.agents.create(createInput);
+      const agent = await deps.agents.create(createInput);
 
       try {
+        const install = kitInstallCommand(kit, harness);
+        if (install !== null) {
+          await deps.runtimeMutator.bump(agent.id, [
+            workspaceCommandEvent("kit-install", agent.id, install, now()),
+          ]);
+          await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+        }
         const seeded = await seedSchedules(
           agent.id,
           loaded,
@@ -284,21 +296,21 @@ export function createStarterKitsService(
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
         const holds = kit.onboarding !== false && seeded > 0;
         if (!holds)
-          await deps.markAgentOnboarded(
-            agent.id,
-            (deps.now ?? (() => new Date()))().toISOString(),
-          );
-        const harness =
-          kit.image?.harness ??
-          (input.templateId
-            ? (await deps.readTemplateSpec(input.templateId))?.spec.harness
-            : undefined);
+          await deps.markAgentOnboarded(agent.id, now().toISOString());
         await enqueueOnboardingTurn(agent, loaded, version, holds, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch(() => {});
         throw err;
       }
       await deps.wakeAgent(agent.id);
+      if (createInput.kind)
+        emit({
+          type: EventType.KindedAgentCreated,
+          agentId: agent.id,
+          actorSub: deps.owner,
+          surface: deps.surface,
+          kind: createInput.kind,
+        });
 
       let skills: StarterKitApplyResult["skills"] = null;
       let skillsError: string | null = null;

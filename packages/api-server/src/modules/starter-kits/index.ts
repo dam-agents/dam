@@ -1,6 +1,6 @@
 export {
   composeStarterKitsForOwner,
-  knowledgeBaseOnboardingCommand,
+  kitForKnowledgeBaseTemplate,
 } from "./compose.js";
 export {
   createStarterKitsRepository,

@@ -5,9 +5,8 @@ import { emit, EventType } from "../../../events.js";
 import {
   initializationEvent,
   type RuntimeMutator,
+  workspaceCommandEvent,
 } from "../../runtime-delivery/index.js";
-
-const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface KindedAgentCreateDeps {
   owner: string;
@@ -37,12 +36,12 @@ export async function createKindedAgent(
   try {
     const at = now();
     await deps.runtimeMutator.bump(agent.id, [
-      {
-        id: `${args.eventIdPrefix}:${agent.id}:${at.getTime()}`,
-        kind: "workspace-command",
-        payload: { command: args.installCommand },
-        expiresAt: new Date(at.getTime() + INSTALL_EVENT_TTL_MS),
-      },
+      workspaceCommandEvent(
+        args.eventIdPrefix,
+        agent.id,
+        args.installCommand,
+        at,
+      ),
       ...(args.initializationTask !== null
         ? [initializationEvent(agent.id, args.initializationTask, at)]
         : []),

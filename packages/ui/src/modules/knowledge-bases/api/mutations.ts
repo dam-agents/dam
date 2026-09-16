@@ -3,7 +3,6 @@ import type { KnowledgeBaseTemplateId } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
-import type { EgressPreset } from "../../../types.js";
 import { agentsKeys } from "../../agents/api/queries.js";
 
 export interface CreateKnowledgeBaseInput {
@@ -11,7 +10,6 @@ export interface CreateKnowledgeBaseInput {
   templateId: string;
   kbTemplateId: KnowledgeBaseTemplateId;
   connectionIds?: string[];
-  egressPreset?: EgressPreset;
 }
 
 export function useCreateKnowledgeBase() {

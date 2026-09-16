@@ -1,91 +1,48 @@
+import { TRPCError } from "@trpc/server";
 import type {
   Agent,
-  AgentCreateInput,
-  AgentsService,
-  HarnessFamily,
   KnowledgeBaseCreateInput,
   KnowledgeBasesService,
   KnowledgeBaseTemplateId,
+  StarterKitApplyInput,
+  StarterKitApplyResult,
 } from "api-server-api";
-import {
-  createKindedAgent,
-  type KindedAgentCreateDeps,
-} from "../../agents/services/kinded-agent-create.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
-import type { ReadTemplateSpec } from "../../templates/index.js";
-import { spellHarnessCommand } from "../../templates/index.js";
-import { buildKnowledgeBaseInstallCommand } from "../domain/install-command.js";
 
-export type CreateKnowledgeBaseAgent = (
-  input: AgentCreateInput,
-  kbTemplateId: KnowledgeBaseTemplateId,
-  initializationTask: string | null,
-) => Promise<Agent>;
-
-interface Deps {
-  owner: string;
-  surface: string;
-  agents: Pick<AgentsService, "create" | "delete">;
-  readTemplateSpec: ReadTemplateSpec;
-  kitOnboardingCommand: (
+export interface KnowledgeBasesDeps {
+  kitForTemplate: (
     kbTemplateId: KnowledgeBaseTemplateId,
-  ) => Promise<string | undefined>;
-  runtimeMutator: RuntimeMutator;
-  wakeAgent: (agentId: string) => Promise<void>;
-  now?: () => Date;
-}
-
-async function harnessFamilyOf(
-  deps: Pick<Deps, "readTemplateSpec">,
-  templateId: string | undefined,
-): Promise<HarnessFamily | undefined> {
-  if (!templateId) return undefined;
-  return (await deps.readTemplateSpec(templateId))?.spec.harness;
+  ) => Promise<{ catalog: string; kitId: string } | undefined>;
+  applyKit: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Creating a knowledge base — the kind marker plus
- * the template's bootstrap, run once in the workspace, and the initialization
- * turn the caller hands over (null when a starter kit owns it). Exported on
- * its own because a starter kit can declare a knowledge base too, and must
- * reach the same procedure rather than its own copy of the install command.
+ * UNIT_BOUNDARY_DESCRIPTION: The Knowledge Bases form's create, kept for the
+ * form until it retires. A knowledge base is a regular starter kit, so this
+ * only finds the built-in kit that declares the picked template and applies
+ * it with the form's choices; the kit owns the marker, the install and the
+ * first session.
  */
-export function createKnowledgeBaseAgentFactory(
-  deps: Deps,
-): CreateKnowledgeBaseAgent {
-  const rail: KindedAgentCreateDeps = deps;
-  return async (input, kbTemplateId, initializationTask) =>
-    createKindedAgent(rail, {
-      createInput: { ...input, kind: "knowledge-base" },
-      installCommand: buildKnowledgeBaseInstallCommand(
-        kbTemplateId,
-        await harnessFamilyOf(deps, input.templateId),
-      ),
-      initializationTask,
-      eventIdPrefix: "kb-install",
-      securityEvent: "knowledge_base.create",
-    });
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The Knowledge Bases form's own create. Its first
- * turn is the onboarding command the built-in kit for the same template
- * declares, spelled for the chosen harness — the kit is the one place that
- * knows it; a template no kit declares opens idle.
- */
-export function createKnowledgeBasesService(deps: Deps): KnowledgeBasesService {
-  const createAgent = createKnowledgeBaseAgentFactory(deps);
+export function createKnowledgeBasesService(
+  deps: KnowledgeBasesDeps,
+): KnowledgeBasesService {
   return {
     async create(input: KnowledgeBaseCreateInput): Promise<Agent> {
-      const { kbTemplateId, ...rest } = input;
-      const command = await deps.kitOnboardingCommand(kbTemplateId);
-      const task = command
-        ? spellHarnessCommand(
-            command,
-            await harnessFamilyOf(deps, rest.templateId),
-          )
-        : null;
-      return createAgent(rest, kbTemplateId, task);
+      const kit = await deps.kitForTemplate(input.kbTemplateId);
+      if (!kit)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `no starter kit declares the knowledge-base template "${input.kbTemplateId}"`,
+        });
+      const { agent } = await deps.applyKit({
+        catalog: kit.catalog,
+        kitId: kit.kitId,
+        name: input.name,
+        templateId: input.templateId,
+        connectionIds: input.connectionIds ?? [],
+        skipSchedules: [],
+        scheduleOverrides: [],
+      });
+      return agent;
     },
   };
 }

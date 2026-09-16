@@ -11,6 +11,9 @@ icon: chart
 onboarding: { command: wiki-onboard }
 knowledgeBase:
   template: llm-wiki
+install:
+  command: "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/llm-wiki-v2/main/bootstrap.sh | bash"
+  harnessEnv: LLM_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover

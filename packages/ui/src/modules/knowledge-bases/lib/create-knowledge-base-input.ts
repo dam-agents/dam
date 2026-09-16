@@ -41,7 +41,6 @@ export function buildKnowledgeBaseCreateInput(
     name: draft.name.trim(),
     templateId: draft.templateId,
     kbTemplateId: draft.kbTemplateId,
-    egressPreset: "trusted",
     connectionIds,
   };
 }

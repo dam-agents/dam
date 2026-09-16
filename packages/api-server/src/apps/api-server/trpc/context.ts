@@ -21,7 +21,7 @@ import {
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
 import {
   composeStarterKitsForOwner,
-  knowledgeBaseOnboardingCommand,
+  kitForKnowledgeBaseTemplate,
 } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
@@ -175,18 +175,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
     });
-    const { knowledgeBases, createKnowledgeBaseAgent } =
-      composeKnowledgeBasesForOwner({
-        owner: user.sub,
-        surface,
-        agents,
-        readTemplateSpec,
-        kitOnboardingCommand: knowledgeBaseOnboardingCommand(starterKitsRepo),
-        runtimeMutator,
-        wakeAgent: async (agentId) => {
-          await agentsRepo.wakeIfHibernated(agentId);
-        },
-      });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,
       db,
@@ -255,7 +243,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       schedules,
       connections,
       skills,
-      createKnowledgeBaseAgent,
+      surface,
       readTemplateSpec,
       wakeAgent: async (agentId) => {
         await agentsRepo.wakeIfHibernated(agentId);
@@ -263,6 +251,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+    });
+    const { knowledgeBases } = composeKnowledgeBasesForOwner({
+      kitForTemplate: kitForKnowledgeBaseTemplate(starterKitsRepo),
+      applyKit: (input) => starterKits.apply(input),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

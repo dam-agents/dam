@@ -9,21 +9,22 @@ import {
 } from "./services/starter-kits-service.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The onboarding command a knowledge-base template
- * opens on, read from the built-in kit that declares that template — the kit
- * file is the one place it is written down. The Knowledge Bases form's create
- * reaches it through this port; a template no resolved kit declares yields
- * nothing, and that knowledge base opens idle.
+ * UNIT_BOUNDARY_DESCRIPTION: Which built-in kit a knowledge-base template is —
+ * the kit that declares it. A knowledge base is a regular starter kit; the
+ * Knowledge Bases form, kept until it retires, only needs to know which one to
+ * apply for the template the user picked.
  */
-export function knowledgeBaseOnboardingCommand(
+export function kitForKnowledgeBaseTemplate(
   repo: Pick<StarterKitsRepository, "list">,
-): (kbTemplateId: KnowledgeBaseTemplateId) => Promise<string | undefined> {
+): (
+  kbTemplateId: KnowledgeBaseTemplateId,
+) => Promise<{ catalog: string; kitId: string } | undefined> {
   return async (kbTemplateId) => {
-    const kit = (await repo.list()).find(
-      (loaded) => loaded.kit.knowledgeBase?.template === kbTemplateId,
-    )?.kit;
-    return kit?.onboarding && "command" in kit.onboarding
-      ? kit.onboarding.command
+    const loaded = (await repo.list()).find(
+      (candidate) => candidate.kit.knowledgeBase?.template === kbTemplateId,
+    );
+    return loaded
+      ? { catalog: loaded.catalog, kitId: loaded.kit.id }
       : undefined;
   };
 }

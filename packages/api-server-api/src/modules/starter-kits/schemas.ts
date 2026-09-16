@@ -98,6 +98,14 @@ export const starterKitKnowledgeBaseSchema = z.object({
   template: knowledgeBaseTemplateIdSchema,
 });
 
+export const starterKitInstallSchema = z.object({
+  command: z.string().min(1),
+  harnessEnv: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name")
+    .optional(),
+});
+
 export const starterKitResourcesSchema = agentSizeSchema.extend({
   storage: storageQuantitySchema.optional(),
   note: z.string().min(1).optional(),
@@ -120,6 +128,7 @@ export const starterKitSchema = z.object({
   image: starterKitImageSchema.optional(),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
+  install: starterKitInstallSchema.optional(),
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   providers: providerListSchema.min(1).optional(),
   seed: z

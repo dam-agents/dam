@@ -95,11 +95,11 @@ function makeHarness(
     toggled: [] as string[],
     slack: [] as { agentId: string; channel: string; ambient?: boolean }[],
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
-    kbCreated: [] as { input: AgentCreateInput; kbTemplateId: string }[],
   };
   let nextScheduleId = 0;
   const service = createStarterKitsService({
     owner: "user-1",
+    surface: "ui",
     repo: {
       async list() {
         return loaded ? [loaded] : [];
@@ -109,10 +109,6 @@ function makeHarness(
           ? loaded
           : null;
       },
-    },
-    async createKnowledgeBaseAgent(input, kbTemplateId) {
-      calls.kbCreated.push({ input, kbTemplateId });
-      return fakeAgent("agent-1", { starterKit: input.starterKit });
     },
     agents: {
       async create(input) {
@@ -294,28 +290,52 @@ describe("starter kits: apply", () => {
     expect(calls.deleted).toEqual([]);
   });
 
-  it("creates a kit that declares a knowledge base through the kb rail", async () => {
-    const { service, calls } = makeHarness({
-      ...LOADED,
-      kit: kit({ knowledgeBase: { template: "plain-wiki" } }),
+  it("creates a knowledge-base kit as a regular kit: kind and template stamped, its install queued before its first session", async () => {
+    const wiki = kit({
+      schedules: [],
+      seed: undefined,
+      knowledgeBase: { template: "plain-wiki" },
+      install: {
+        command: "curl -fsSL https://example.com/bootstrap.sh | bash",
+        harnessEnv: "PLAIN_WIKI_HARNESS",
+      },
+      onboarding: { command: "wiki-onboard" },
     });
-    await service.apply({
-      catalog: "platform",
-      kitId: "code-reviewer",
+    const { service, calls } = makeHarness({ ...LOADED, kit: wiki });
+    await service.apply({ ...APPLY, name: "team wiki", templateId: "codex" });
+    expect(calls.created[0]).toMatchObject({
       name: "team wiki",
-      templateId: "claude-code",
-      connectionIds: ["c-gh"],
-      skipSchedules: ["review", "benchmark"],
-      scheduleOverrides: [],
-    });
-    expect(calls.created).toEqual([]);
-    expect(calls.kbCreated).toHaveLength(1);
-    expect(calls.kbCreated[0].kbTemplateId).toBe("plain-wiki");
-    expect(calls.kbCreated[0].input).toMatchObject({
-      name: "team wiki",
-      templateId: "claude-code",
+      templateId: "codex",
+      kind: "knowledge-base",
+      kbTemplateId: "plain-wiki",
       starterKit: "platform/code-reviewer@abc123",
     });
+    const events = calls.bumped.flatMap((b) => b.events);
+    expect(events.map((e) => e.kind)).toEqual([
+      "workspace-command",
+      "initialization",
+    ]);
+    expect(events[0]!.id).toMatch(/^kit-install:agent-1:\d+$/);
+    expect(events[0]!.payload).toEqual({
+      command:
+        "export PLAIN_WIKI_HARNESS=codex; curl -fsSL https://example.com/bootstrap.sh | bash",
+    });
+    expect(events[1]!.payload).toEqual({ task: "/prompts:wiki-onboard" });
+    expect(calls.woken).toEqual(["agent-1"]);
+  });
+
+  it("runs a kit's install without a harness variable when no family is known", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({
+        schedules: [],
+        install: { command: "echo hi", harnessEnv: "WIKI_HARNESS" },
+      }),
+    });
+    await service.apply(APPLY);
+    const [install] = calls.bumped.flatMap((b) => b.events);
+    expect(install!.payload).toEqual({ command: "echo hi" });
+    expect(calls.created[0]).not.toHaveProperty("kind");
   });
 
   it("leaves out the schedules the user chose to skip", async () => {
@@ -467,9 +487,8 @@ describe("starter kits: apply", () => {
     const { calls } = makeHarness(LOADED);
     const failing = createStarterKitsService({
       owner: "user-1",
+      surface: "ui",
       repo: { list: async () => [LOADED], get: async () => LOADED },
-      createKnowledgeBaseAgent: async (input) =>
-        fakeAgent("agent-2", { starterKit: input.starterKit }),
       agents: {
         create: async (input) =>
           fakeAgent("agent-2", { starterKit: input.starterKit }),
@@ -576,8 +595,7 @@ describe("starter kits: apply", () => {
     const deleted: string[] = [];
     const service = createStarterKitsService({
       owner: "user-1",
-      createKnowledgeBaseAgent: async (input) =>
-        fakeAgent("agent-1", { starterKit: input.starterKit }),
+      surface: "ui",
       repo: {
         list: async () => [],
         get: async () => ({
@@ -685,9 +703,8 @@ describe("starter kits: onboarding turn", () => {
     const { calls } = makeHarness(LOADED);
     const failing = createStarterKitsService({
       owner: "user-1",
+      surface: "ui",
       repo: { list: async () => [LOADED], get: async () => LOADED },
-      createKnowledgeBaseAgent: async (input) =>
-        fakeAgent("agent-2", { starterKit: input.starterKit }),
       agents: {
         create: async (input) =>
           fakeAgent("agent-2", { starterKit: input.starterKit }),

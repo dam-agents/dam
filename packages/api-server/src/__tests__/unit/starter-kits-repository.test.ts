@@ -209,6 +209,27 @@ kits:
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a"]);
   });
 
+  it("keeps a kit's install command from any catalog", async () => {
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml":
+        "kits:\n  - path: kits/local\n  - gitUrl: https://github.com/acme/remote\n    ref: v1\n",
+      "kits/local/kit.yaml": KIT("local", "install:\n  command: echo hi\n"),
+    });
+    const remote = memorySource("https://github.com/acme/remote#v1", {
+      "kit.yaml": KIT("remote", "install:\n  command: echo hi\n"),
+    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }], {
+      sourceForEntry: () => remote,
+    });
+    await refresh.run();
+    const kits = await repo.list();
+    expect(kits.map((k) => k.kit.id).sort()).toEqual(["local", "remote"]);
+    expect(kits.map((k) => k.kit.install?.command)).toEqual([
+      "echo hi",
+      "echo hi",
+    ]);
+  });
+
   it("replaces a catalog's kits on each refresh", async () => {
     const catalog = memorySource("/catalog", {
       "catalog.yaml": "kits:\n  - path: a\n",

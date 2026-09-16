@@ -10,6 +10,9 @@ icon: document
 onboarding: { command: wiki-onboard }
 knowledgeBase:
   template: plain-wiki
+install:
+  command: "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/plain-wiki/main/bootstrap.sh | bash"
+  harnessEnv: PLAIN_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover
