@@ -20,7 +20,38 @@ export interface ResolvedKitRow {
 export interface ResolvedCatalogRepository {
   list(): Promise<ResolvedKitRow[]>;
   get(catalog: string, kitId: string): Promise<ResolvedKitRow | null>;
+  upsert(rows: ResolvedKitRow[]): Promise<void>;
   replaceCatalog(catalog: string, rows: ResolvedKitRow[]): Promise<void>;
+}
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+async function upsertRows(tx: Tx, rows: ResolvedKitRow[]): Promise<void> {
+  for (const row of rows) {
+    await tx
+      .insert(starterKitCatalogEntries)
+      .values({
+        catalog: row.catalog,
+        kitId: row.kitId,
+        version: row.version,
+        source: row.source,
+        kit: row.kit,
+        bundledSkills: row.skillsInKit,
+      })
+      .onConflictDoUpdate({
+        target: [
+          starterKitCatalogEntries.catalog,
+          starterKitCatalogEntries.kitId,
+        ],
+        set: {
+          version: row.version,
+          source: row.source,
+          kit: row.kit,
+          bundledSkills: row.skillsInKit,
+          refreshedAt: sql`now()`,
+        },
+      });
+  }
 }
 
 function toRow(r: {
@@ -63,33 +94,13 @@ export function createResolvedCatalogRepository(
       return rows[0] ? toRow(rows[0]) : null;
     },
 
+    async upsert(rows) {
+      await db.transaction((tx) => upsertRows(tx, rows));
+    },
+
     async replaceCatalog(catalog, rows) {
       await db.transaction(async (tx) => {
-        for (const row of rows) {
-          await tx
-            .insert(starterKitCatalogEntries)
-            .values({
-              catalog: row.catalog,
-              kitId: row.kitId,
-              version: row.version,
-              source: row.source,
-              kit: row.kit,
-              bundledSkills: row.skillsInKit,
-            })
-            .onConflictDoUpdate({
-              target: [
-                starterKitCatalogEntries.catalog,
-                starterKitCatalogEntries.kitId,
-              ],
-              set: {
-                version: row.version,
-                source: row.source,
-                kit: row.kit,
-                bundledSkills: row.skillsInKit,
-                refreshedAt: sql`now()`,
-              },
-            });
-        }
+        await upsertRows(tx, rows);
         const keep = rows.map((r) => r.kitId);
         await tx
           .delete(starterKitCatalogEntries)

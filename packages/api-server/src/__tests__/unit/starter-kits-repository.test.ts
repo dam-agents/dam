@@ -26,6 +26,9 @@ function memoryResolved(): ResolvedCatalogRepository {
   return {
     list: async () => [...rows.values()],
     get: async (catalog, kitId) => rows.get(`${catalog}/${kitId}`) ?? null,
+    upsert: async (next) => {
+      for (const row of next) rows.set(`${row.catalog}/${row.kitId}`, row);
+    },
     replaceCatalog: async (catalog, next) => {
       for (const key of [...rows.keys()])
         if (key.startsWith(`${catalog}/`)) rows.delete(key);
@@ -185,6 +188,25 @@ kits:
     await refresh.run();
     expect(await repo.list()).toEqual([]);
     expect(catalog.reads).toEqual(["catalog.yaml"]);
+  });
+
+  it("keeps a stored kit whose entry fails to resolve, and drops it only from a complete read", async () => {
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml": "kits:\n  - path: a\n  - path: b\n",
+      "a/kit.yaml": KIT("a"),
+      "b/kit.yaml": KIT("b"),
+    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }]);
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a", "b"]);
+
+    delete catalog.files["b/kit.yaml"];
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a", "b"]);
+
+    catalog.files["catalog.yaml"] = "kits:\n  - path: a\n";
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a"]);
   });
 
   it("replaces a catalog's kits on each refresh", async () => {

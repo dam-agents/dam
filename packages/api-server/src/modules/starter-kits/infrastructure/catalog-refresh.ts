@@ -187,7 +187,17 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       }
       byId.set(row.kitId, row);
     }
-    await deps.repo.replaceCatalog(named.name, [...byId.values()]);
+    const rows = [...byId.values()];
+    const failed = resolved.filter((row) => row === null).length;
+    if (failed > 0) {
+      getLogger().warn(
+        { catalog: named.name, failed, resolved: rows.length },
+        "starter kits: incomplete read; the failed entries keep their stored rows",
+      );
+      await deps.repo.upsert(rows);
+      return;
+    }
+    await deps.repo.replaceCatalog(named.name, rows);
   }
 
   return {
