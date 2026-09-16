@@ -22,6 +22,7 @@ controller:
   agent:
     templateDefaults:
       imagePullPolicy: IfNotPresent
+
   # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
   # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
@@ -53,6 +54,39 @@ controller:
 nfsProvisioner:
   enabled: true
 
+# The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
+# nested virtualization, handed to the pod by the chart's own device plugin.
+# Rendered only with virtualization.enabled.
+virtualization:
+  runner:
+    image:
+      repository: platform-vm-runner
+      tag: latest
+      pullPolicy: Never
+    storage: 40Gi
+    # The lima VM has 20 GiB; leave the rest for k3s and the platform pods.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 12Gi
+    # No registry in the lima cluster: cluster:install drops the agent image
+    # archives here and every runner mounts them read-only.
+    imageArchiveHostPath: /var/lib/platform-vm-images
+    # Images come from the node, not a registry, so the runner needs nothing
+    # outside the cluster — and the exclusions keep it out of the cluster too.
+    # DNS and the paired gateways are admitted by selector regardless.
+    egressCidrs:
+      - 0.0.0.0/0
+    egressExceptCidrs:
+      - 10.42.0.0/16
+      - 10.43.0.0/16
+      - 169.254.0.0/16
+  devicePlugin:
+    enabled: true
+
+
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
 agentTemplates:
@@ -67,7 +101,7 @@ agentTemplates:
   # space-separated `--set foo=bar` is silently dropped.
   claude-code-vm:
     image:
-      repository: platform-claude-code-vm
+      repository: platform-claude-code
       tag: latest
 
   codex:

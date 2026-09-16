@@ -10,10 +10,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "Try again; if this keeps happening, contact an admin."
       );
     case "over-budget":
-      return (
-        "This agent can't start right now: its owner is at their compute " +
-        "budget. Ask the owner to free room and start it again."
-      );
+      return `This agent can't start right now: ${c.message}.`;
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":
@@ -26,6 +23,22 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "OutOfMemory":
           return (
             "This agent failed to start: it ran out of memory. " +
+            "Check the agent's page or contact its owner."
+          );
+        case "MachineImageUnavailable":
+          return (
+            "This agent failed to start: its image isn't available to the " +
+            "VM runner. Check the agent's page or contact its owner."
+          );
+        case "MachineEgressChanged":
+          return (
+            "This agent can't start: its sandbox is pinned to a network " +
+            "address its gateway no longer has, so it was stopped rather " +
+            "than left pointing somewhere else. Recreate the agent."
+          );
+        case "MachineBootFailed":
+          return (
+            "This agent failed to start: its sandbox VM didn't boot. " +
             "Check the agent's page or contact its owner."
           );
         default:

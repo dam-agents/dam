@@ -10,6 +10,9 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
+{{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
+{{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- end -}}
@@ -50,5 +53,55 @@ A missing text or version would lock out every account at first request.
 {{- end -}}
 {{- if not (.Values.terms.version | default "" | trim) -}}
 {{- fail "terms.version is required. Bump on material text changes to re-prompt every user." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The runner admits machines against its own memory limit, read through the
+downward API. With no limit that reads as the node's allocatable, so the
+runner promises machines the whole node while itself being BestEffort and
+first evicted — taking every machine with it.
+*/}}
+{{- define "platform.validate.vmRunnerNeedsAMemoryLimit" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $r := .Values.virtualization.runner.resources | default dict -}}
+{{- if not (dig "limits" "memory" "" $r) -}}
+{{- fail "virtualization.enabled=true requires virtualization.runner.resources.limits.memory. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A machine's egress allowlist is enforced by smolvm inside the very process an
+escaped guest would own. The runner's own NetworkPolicy is the only gate behind
+it, and it cannot default to closed because the runner pulls agent images — so
+an install has to say, rather than inherit an open pod by omission.
+*/}}
+{{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- if not .Values.virtualization.runner.egressCidrs -}}
+{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs — the only kernel gate behind a guest's own egress allowlist. See virtualization.runner.egressCidrs in values.yaml for what to set; to leave the runner unconfined, say so out loud with [0.0.0.0/0] and no exceptions." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+On OpenShift the chart's own SCC is the only one the runner and the device
+plugin get, and it admits neither a privileged container nor a hostPath
+volume. Without a built-in SCC bound as well, admission refuses the pod and
+the failure is silent where it hurts most: a rejected device plugin advertises
+no KVM resource, so every runner pod pends forever on a resource nothing will
+ever publish. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
+signal that this is an OpenShift cluster.
+*/}}
+{{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
+{{- if and .Values.virtualization.enabled .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- if and $v.devicePlugin.enabled (not $v.devicePlugin.scc) -}}
+{{- fail "on OpenShift, virtualization.devicePlugin.enabled=true requires virtualization.devicePlugin.scc (the plugin runs privileged with the kubelet's device-plugin socket and /dev). Set it to `privileged`, or the DaemonSet never admits, advertises no KVM resource, and every VM runner pod pends forever." -}}
+{{- end -}}
+{{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

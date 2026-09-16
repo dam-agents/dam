@@ -22,11 +22,14 @@ export interface WakeConditionsSnapshot {
   gatewayPodNotReadyReason?: string;
 }
 
-const POD_FAILURE_REASONS = new Set([
+export const POD_FAILURE_REASONS = new Set([
   "OutOfMemory",
   "ImagePullFailure",
   "InvalidImageName",
   "ContainerTerminated",
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+  "MachineEgressChanged",
 ]);
 
 const GATEWAY_FAILURE_REASONS = new Set([
@@ -39,7 +42,12 @@ export function classifyWakeFailure(
 ): WakeFailureCause {
   if (s === null) return { kind: "not-found" };
   if (s.overBudget)
-    return { kind: "over-budget", message: s.overBudgetMessage ?? "" };
+    return {
+      kind: "over-budget",
+      message:
+        s.overBudgetMessage ||
+        "starting this agent would exceed your compute budget — stop a running agent to free room",
+    };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
     return {
@@ -101,10 +109,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "not-found":
       return "the agent no longer exists";
     case "over-budget":
-      return (
-        c.message ||
-        "starting this agent would exceed your compute budget — stop a running agent to free room"
-      );
+      return c.message;
     case "hibernated-not-scaled":
       return "scale-up was never started";
     case "agent-pod-failed":
@@ -115,6 +120,12 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image cannot be pulled";
         case "InvalidImageName":
           return "the agent image reference is invalid";
+        case "MachineImageUnavailable":
+          return "the agent image is not available to the VM runner";
+        case "MachineBootFailed":
+          return "the agent's microVM did not boot";
+        case "MachineEgressChanged":
+          return "the agent's sandbox is pinned to a network address its gateway no longer has";
         default:
           return "the agent crashed while starting";
       }

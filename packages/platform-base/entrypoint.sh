@@ -12,6 +12,33 @@
 # writable at build time (see Dockerfile).
 set -eu
 
+# On the vm Backend the root filesystem is a throwaway overlay and only the
+# machine's storage disk at /workspace survives a stop, so every path the
+# controller declared persistent (PLATFORM_VM_PERSIST_PATHS) is bind-mounted
+# from there, seeded from the image on its first boot. The guest runs as root,
+# which is what lets a plain agent image do this; a container never sets the
+# variable and skips it.
+if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
+	# sshd would otherwise drop an `agent` login to uid 65532, into a home the
+	# root-run harness owns: nothing writable, none of the injected environment.
+	if [ "$(id -u)" = 0 ]; then
+		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+	fi
+	if [ "$(stat -c %d /workspace 2>/dev/null)" = "$(stat -c %d / 2>/dev/null)" ]; then
+		echo "agent-entrypoint: /workspace is not the machine's storage disk; refusing to boot without persistence" >&2
+		exit 1
+	fi
+	for path in $(printf '%s' "$PLATFORM_VM_PERSIST_PATHS" | tr ',' ' '); do
+		store="/workspace$path"
+		if [ ! -d "$store" ]; then
+			mkdir -p "$store"
+			[ -d "$path" ] && [ ! "$path" -ef "$store" ] && cp -a "$path/." "$store/"
+		fi
+		mkdir -p "$path"
+		[ "$path" -ef "$store" ] || mount --bind "$store" "$path"
+	done
+fi
+
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt
 extracted=/etc/pki/ca-trust/extracted
@@ -62,15 +89,11 @@ mkdir -p "$home/work"
 # The symlink persists on the volume but /tmp is fresh every pod, so the
 # target is (re)created each boot to keep the link from dangling.
 mkdir -p /tmp/agent-cache
-# On the VM backend $HOME is unprivileged virtiofs, where a non-root caller
-# cannot create symlinks (virtiofsd lacks CAP_CHOWN, the guest kernel returns
-# EPERM); the VM userdata pre-creates the link as root, and if that ever
-# misses, a real ~/.cache on the share is a perf wart — never a boot failure.
+# A failing swap leaves a real ~/.cache on the workspace volume — a perf wart,
+# never a boot failure.
 if [ ! -L "$home/.cache" ]; then
-	# Probe with a scratch link first so a failing swap (e.g. non-root on
-	# unprivileged virtiofs, which EPERMs symlink creation) leaves any
-	# existing cache directory intact instead of deleting it with no
-	# replacement.
+	# Probe with a scratch link first so a failing swap leaves any existing
+	# cache directory intact instead of deleting it with no replacement.
 	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
 		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
 	else

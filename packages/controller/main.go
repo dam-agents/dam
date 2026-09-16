@@ -140,6 +140,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
+	if cfg.VM.Enabled {
+		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
+	}
 	go idleChecker.RunLoop(ctx)
 
 	warmPool := reconciler.NewWarmPoolManager(client, cfg)
@@ -153,6 +156,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
+	agentReconciler.WithRequeue(agentQueue.AddAfter)
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
@@ -329,6 +333,7 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 		start := time.Now()
 		r.ReconcileOrphanPVCs(sctx)
 		r.ReconcileOrphanLeafSecrets(sctx)
+		r.ReconcileOrphanMachines(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}

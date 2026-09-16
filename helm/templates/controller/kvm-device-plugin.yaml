@@ -1,0 +1,84 @@
+{{- if and .Values.virtualization.enabled .Values.virtualization.devicePlugin.enabled }}
+{{- /*
+Advertises /dev/kvm and /dev/net/tun as extended resources on every node it
+runs on, so the VM runner pod can hold them without privilege on a cluster
+that has no KubeVirt (whose virt-handler is the alternative source of such a
+grant). The plugin itself is the one privileged piece: it needs the kubelet's
+device-plugin socket dir and /dev from the host.
+*/}}
+{{- $name := printf "%s-kvm-device-plugin" (include "platform.fullname" .) }}
+{{- $dp := .Values.virtualization.devicePlugin }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kvm-device-plugin
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kvm-device-plugin
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kvm-device-plugin
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kvm-device-plugin
+        istio.io/dataplane-mode: none
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      priorityClassName: system-node-critical
+      {{- with ($dp.nodeSelector | default .Values.virtualization.runner.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with ($dp.tolerations | default .Values.virtualization.runner.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: generic-device-plugin
+          image: "{{ $dp.image.repository }}@{{ $dp.image.digest }}"
+          imagePullPolicy: {{ $dp.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - --domain={{ $dp.domain }}
+            - --device={"name":"kvm","groups":[{"count":{{ $dp.count }},"paths":[{"path":"/dev/kvm"}]}]}
+            - --device={"name":"tun","groups":[{"count":{{ $dp.count }},"paths":[{"path":"/dev/net/tun"}]}]}
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
+{{- with $dp.scc }}
+---
+{{ include "platform.sccRoleBinding" (dict "root" $ "name" $name "component" "kvm-device-plugin" "scc" .) }}
+{{- end }}
+{{- end }}

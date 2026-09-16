@@ -32,7 +32,6 @@ func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 		authzPolicyListGVR: "AuthorizationPolicyList",
 		AgentsGVR:          "AgentList",
 		UserBudgetsGVR:     "UserBudgetList",
-		VirtualMachinesGVR: "VirtualMachineList",
 	}
 	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }

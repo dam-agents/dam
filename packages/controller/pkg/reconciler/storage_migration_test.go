@@ -418,6 +418,7 @@ func TestStorageMigration_ConcurrencyCap(t *testing.T) {
 	assert.Equal(t, 2, gated, "only Concurrency agents admitted per pass")
 }
 
+// TEST_SCENARIO: a vm agent's workspace is a disk on the VM runner, not a PVC, and it has no pod for the barrier to wait on — the migration passes over it instead of forcing it down.
 func TestStorageMigration_SkipsVMBackend(t *testing.T) {
 	agent := agentCR()
 	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
