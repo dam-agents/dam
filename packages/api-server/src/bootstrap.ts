@@ -650,7 +650,9 @@ export async function bootstrap() {
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
-  const slackInstallCallbackUrl = `${config.uiBaseUrl}/api/slack/install/callback`;
+  const slackInstallCallbackUrl =
+    config.slackInstallCallbackUrl ??
+    `${config.uiBaseUrl}/api/slack/install/callback`;
   const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
 
   const pendingSlackInstalls = createRedisTtlStore<SlackInstallPending>(

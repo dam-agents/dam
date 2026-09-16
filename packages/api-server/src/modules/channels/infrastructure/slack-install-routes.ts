@@ -50,6 +50,20 @@ export interface SlackInstallRoutesDeps {
   installerRole: string;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c]!,
+  );
+}
+
 interface SlackOAuthAccessResponse {
   ok?: boolean;
   error?: string;
@@ -173,7 +187,7 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
     });
 
     return c.html(
-      `<html><body><h2>${deps.brandName} is installed</h2>` +
+      `<html><body><h2>${escapeHtml(deps.brandName)} is installed</h2>` +
         `<p>This workspace can now reach agents. You can close this window.</p>` +
         `</body></html>`,
     );
