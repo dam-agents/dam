@@ -1,6 +1,7 @@
 package vmrunner
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -10,13 +11,16 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -25,6 +29,9 @@ const (
 	loopbackOffset   = 1000
 	opTimeout        = 30 * time.Minute
 	unhealthyRestart = 10 * time.Minute
+	pullTimeout      = 20 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the archives may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the archive being written and for whatever the volume is shared with.
+	cacheBudgetPercent = 80
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -37,6 +44,9 @@ type health struct {
 	quietSince time.Time
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
+var cachedArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
+
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
 type Server struct {
@@ -48,6 +58,7 @@ type Server struct {
 	MemoryMiB  int
 	ReserveMiB int
 	AllowFrom  []*net.IPNet
+	Crane      string
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -322,6 +333,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
 	archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar")
+	if _, err := os.Stat(archive); err != nil && s.Crane != "" {
+		if err := s.cacheImage(image, archive); err != nil {
+			return err
+		}
+	}
 	if _, err := os.Stat(archive); err == nil {
 		image = archive
 	}
@@ -336,6 +352,79 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return err
 	}
 	return s.Runtime.Start(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the four images nearly every owner uses are fetched once for the cluster rather than once per machine. Written under a unique temporary name and renamed, so runners racing on the same image all end up with a whole archive.
+func (s *Server) cacheImage(ref, archive string) error {
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(archive), ".pull-*")
+	if err != nil {
+		return err
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, s.Crane, "pull", ref, tmp.Name()).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pulling %s: %w: %s", ref, err, strings.TrimSpace(string(out)))
+	}
+	if err := os.Rename(tmp.Name(), archive); err != nil {
+		return err
+	}
+	s.evictImages(filepath.Dir(archive), archive, s.cacheBudget(filepath.Dir(archive)))
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
+func (s *Server) cacheBudget(dir string) int64 {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return 0
+	}
+	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
+}
+
+func (s *Server) evictImages(dir, keep string, budget int64) {
+	if budget <= 0 {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type archive struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	var all []archive
+	var used int64
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || e.IsDir() || !cachedArchive.MatchString(e.Name()) {
+			continue
+		}
+		used += info.Size()
+		all = append(all, archive{filepath.Join(dir, e.Name()), info.Size(), info.ModTime()})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
+	for _, a := range all {
+		if used <= budget {
+			return
+		}
+		if a.path == keep {
+			continue
+		}
+		if err := os.Remove(a.path); err != nil {
+			continue
+		}
+		used -= a.size
+		slog.Info("image cache: evicted an archive to stay inside the volume", "archive", filepath.Base(a.path), "bytes", a.size)
+	}
 }
 
 func (s *Server) writeCA(id, ca string) error {

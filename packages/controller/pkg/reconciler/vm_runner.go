@@ -408,7 +408,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr.To[int32](0o400)}}},
 	}
-	if host := spec.ImageArchiveHostPath; host != "" {
+	if claim := spec.ImageCacheClaim; claim != "" {
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: "/var/lib/vm-runner/images"})
+		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
+		}})
+	} else if host := spec.ImageArchiveHostPath; host != "" {
 		dir := corev1.HostPathDirectoryOrCreate
 		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: "/var/lib/vm-runner/images", ReadOnly: true})
 		volumes = append(volumes, corev1.Volume{Name: "image-archives", VolumeSource: corev1.VolumeSource{

@@ -13,6 +13,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
+{{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- end -}}
@@ -102,6 +103,20 @@ signal that this is an OpenShift cluster.
 {{- end -}}
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Both values back the same directory in the runner — the shared cache as a
+ReadWriteMany claim, the host path as a hostPath — and only one volume can be
+mounted there. Rather than silently preferring one, say so.
+*/}}
+{{- define "platform.validate.oneBackingForTheRunnerImages" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- if and ($v.imageCache | default dict).enabled $v.runner.imageArchiveHostPath -}}
+{{- fail "virtualization.imageCache.enabled and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the shared cache, or keep the host path and turn the cache off." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

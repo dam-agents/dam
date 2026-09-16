@@ -15,6 +15,7 @@ func main() {
 	listen := flag.String("listen", ":4600", "address to serve the machine API on")
 	stateDir := flag.String("state-dir", "/var/lib/vm-runner", "per-machine state (published port, CA file, applied spec) and local image archives under images/")
 	smolvm := flag.String("smolvm", "smolvm", "smolvm binary")
+	crane := flag.String("crane", "crane", "crane binary, used to fetch an agent image the shared cache does not hold (empty disables the fetch)")
 	portMin := flag.Int("port-min", 31000, "first port machines are published on")
 	portMax := flag.Int("port-max", 31099, "last port machines are published on")
 	memory := flag.Int("memory-mib", 0, "memory the runner may commit to machines; required")
@@ -33,6 +34,7 @@ func main() {
 	srv := &vmrunner.Server{
 		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, Runtime: &vmrunner.Smolvm{Bin: *smolvm},
 		PortMin: *portMin, PortMax: *portMax, MemoryMiB: *memory, ReserveMiB: *reserve,
+		Crane: *crane,
 	}
 	for _, c := range strings.Split(*allowFrom, ",") {
 		if c = strings.TrimSpace(c); c != "" {

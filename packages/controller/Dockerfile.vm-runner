@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /vm-runner ./cmd/vm-runner
 
+
 FROM quay.io/fedora/fedora:42 AS runner
 
 # tar unpacks image archives, e2fsprogs makes and grows machine disks; the
@@ -31,6 +32,9 @@ RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-cor
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
 # from this one file. Upstream has not rebuilt it as of 1.16.1, so replace it here.
 # Drop this once a smolvm release ships a current crane.
+#
+# The same binary serves the runner: a machine may reach only its gateway, so the
+# guest cannot fetch its own image and the runner fetches it into the shared cache.
 ARG CRANE_VERSION=v0.22.1
 RUN set -eu; \
     case "$(uname -m)" in \
@@ -41,8 +45,9 @@ RUN set -eu; \
     curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${arch}.tar.gz" -o /tmp/crane.tar.gz; \
     echo "$sha /tmp/crane.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/crane.tar.gz -C /opt/smolvm/agent-rootfs/usr/local/bin crane; \
+    cp /opt/smolvm/agent-rootfs/usr/local/bin/crane /usr/local/bin/crane; \
     rm /tmp/crane.tar.gz; \
-    chmod 0755 /opt/smolvm/agent-rootfs/usr/local/bin/crane
+    chmod 0755 /opt/smolvm/agent-rootfs/usr/local/bin/crane /usr/local/bin/crane
 
 COPY --from=builder /vm-runner /usr/local/bin/vm-runner
 

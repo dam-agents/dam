@@ -623,6 +623,62 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.Equal(t, before, h.calls())
 }
 
+// TEST_SCENARIO: a machine may reach only its gateway, so the guest cannot fetch its own image — the runner does, once, onto a volume every runner shares. A second machine on the same image must find the archive already there and not fetch again.
+func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
+	h := newHarness(t)
+	fetches := filepath.Join(t.TempDir(), "fetches")
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nhead -c 4096 /dev/zero > \"$3\"\n"), 0o755))
+	h.node.Crane = crane
+
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	_, err = c.Ensure(t.Context(), "agent-b", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-b")
+
+	pulled, err := os.ReadFile(fetches)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(strings.Fields(strings.TrimSpace(string(pulled))))/3,
+		"the second machine boots from the archive the first left behind: %s", pulled)
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar"),
+		"smolvm is handed the archive, never the registry reference")
+}
+
+// TEST_SCENARIO: every deploy adds an image under a fresh tag and nothing else prunes the shared volume, so without eviction it fills and then refuses every machine. The oldest archive goes first, and the one just fetched is never the victim.
+func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
+	h := newHarness(t)
+	dir := filepath.Join(h.node.StateDir, "images")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	write := func(name string, age time.Duration) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, make([]byte, 1<<20), 0o644))
+		at := time.Now().Add(-age)
+		require.NoError(t, os.Chtimes(path, at, at))
+		return path
+	}
+	stranger := filepath.Join(dir, "not-ours\nforged.tar")
+	require.NoError(t, os.WriteFile(stranger, make([]byte, 1<<20), 0o644))
+	require.NoError(t, os.Chtimes(stranger, time.Now().Add(-9*time.Hour), time.Now().Add(-9*time.Hour)))
+
+	oldest := write("oldest.tar", 2*time.Hour)
+	newer := write("newer.tar", time.Hour)
+	keep := write("keep.tar", 0)
+
+	h.node.evictImages(dir, keep, 2<<20+1<<19)
+
+	_, oldestErr := os.Stat(oldest)
+	_, newerErr := os.Stat(newer)
+	_, keepErr := os.Stat(keep)
+	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first")
+	assert.NoError(t, newerErr, "the newer one stays while the budget allows it")
+	assert.NoError(t, keepErr, "the archive just fetched is never the one evicted")
+	_, strangerErr := os.Stat(stranger)
+	assert.NoError(t, strangerErr, "a file this runner did not write is left alone, however old — the volume is shared, and its name never reaches a log line")
+}
+
 // TEST_SCENARIO: an operator's Secret reaches the guest on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs. The value is removed whatever shape the tool prints it in — quoted, behind a different flag, or in a Go-style argument list — because matching the one shape I happened to imagine is not a defence.
 func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 	secret := "sk-live-abc123"
