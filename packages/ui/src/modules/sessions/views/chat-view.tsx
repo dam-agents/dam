@@ -369,10 +369,7 @@ export function ChatView() {
   useOpenOnboardingSession({
     agentId: selectedAgent,
     active:
-      view === "chat" &&
-      agentView !== null &&
-      agentView.starterKit !== null &&
-      agentView.starterKitOnboarded === null,
+      view === "chat" && agentView !== null && agentView.starterKit !== null,
     idle: chatIdle,
     resumeSession,
   });
