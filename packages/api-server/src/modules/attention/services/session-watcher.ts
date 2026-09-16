@@ -9,6 +9,7 @@ import type { PodSessionClient } from "../infrastructure/pod-session-watch.js";
 
 const RECONCILE_BACKSTOP_MS = 60_000;
 const CAPTURE_DEBOUNCE_MS = 250;
+const CAPTURE_RETRY_MS = 15_000;
 const COMPAT_POLL_MS = 15_000;
 
 export interface SessionWatcher {
@@ -23,6 +24,14 @@ interface Held {
   read(): Promise<PodSession[]>;
   poll: ReturnType<typeof setInterval> | null;
   debounce: ReturnType<typeof setTimeout> | null;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Re-arms a capture the pod read or the database
+   * refused. A watched agent is captured only when its session list changes, so
+   * a failed pass would otherwise wait for the next notice — and a pass that
+   * failed before removing a session the agent stopped listing leaves that card
+   * on the owner's feed until some other session on the same agent moves.
+   */
+  retry: ReturnType<typeof setTimeout> | null;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: What this agent's rows looked like at the last
    * capture, so an unchanged notice costs nothing but the pod read. Most
@@ -91,9 +100,11 @@ export function createSessionWatcher(deps: {
       return;
     }
     entry.busy = true;
+    let failed = false;
     try {
       await captureOnce(agentId, entry);
     } catch (error) {
+      failed = true;
       deps.log(`capture failed for ${agentId}: ${(error as Error).message}`);
     } finally {
       entry.busy = false;
@@ -101,17 +112,14 @@ export function createSessionWatcher(deps: {
     if (entry.repeat && held.get(agentId) === entry) {
       entry.repeat = false;
       await capture(agentId);
+      return;
     }
+    if (failed) scheduleRetry(agentId);
+    else clearRetry(entry);
   }
 
   async function captureOnce(agentId: string, entry: Held): Promise<void> {
-    let sessions: PodSession[];
-    try {
-      sessions = await entry.read();
-    } catch (error) {
-      deps.log(`capture failed for ${agentId}: ${(error as Error).message}`);
-      return;
-    }
+    const sessions = await entry.read();
     if (held.get(agentId) !== entry) return;
 
     let wrote = false;
@@ -142,8 +150,6 @@ export function createSessionWatcher(deps: {
         for (const sessionId of gone) entry.known.delete(sessionId);
         wrote = true;
       }
-    } catch (error) {
-      deps.log(`capture failed for ${agentId}: ${(error as Error).message}`);
     } finally {
       if (wrote)
         emit({
@@ -164,12 +170,29 @@ export function createSessionWatcher(deps: {
     entry.debounce.unref?.();
   }
 
+  function scheduleRetry(agentId: string): void {
+    const entry = held.get(agentId);
+    if (!entry || entry.retry) return;
+    entry.retry = setTimeout(() => {
+      entry.retry = null;
+      void capture(agentId);
+    }, CAPTURE_RETRY_MS);
+    entry.retry.unref?.();
+  }
+
+  function clearRetry(entry: Held): void {
+    if (!entry.retry) return;
+    clearTimeout(entry.retry);
+    entry.retry = null;
+  }
+
   function release(agentId: string): void {
     const entry = held.get(agentId);
     if (!entry) return;
     entry.close();
     if (entry.poll) clearInterval(entry.poll);
     if (entry.debounce) clearTimeout(entry.debounce);
+    clearRetry(entry);
     held.delete(agentId);
   }
 
@@ -182,6 +205,7 @@ export function createSessionWatcher(deps: {
       read: () => deps.pods.listSessions(agent.id),
       poll: null,
       debounce: null,
+      retry: null,
       known: null,
       busy: false,
       repeat: false,
