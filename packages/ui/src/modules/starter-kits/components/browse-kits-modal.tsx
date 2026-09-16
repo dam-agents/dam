@@ -12,16 +12,23 @@ import { Callout } from "@/components/ui/callout";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
-import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
+import {
+  type Filter,
+  KitCard,
+  KitFilterBar,
+  useKitFilter,
+} from "./kit-browser.js";
 
 export function BrowseKitsModal({
   onPick,
   onClose,
   onStartFromScratch,
+  initialFilter = "all",
 }: {
   onPick: (catalog: string, kitId: string) => void;
   onClose: () => void;
   onStartFromScratch: () => void;
+  initialFilter?: Filter;
 }) {
   const kits = useStarterKits();
   const templates = useConnectionTemplates();
@@ -30,7 +37,10 @@ export function BrowseKitsModal({
     [templates.data],
   );
   const all = useMemo(() => kits.data ?? [], [kits.data]);
-  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(all);
+  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(
+    all,
+    initialFilter,
+  );
 
   return (
     <Modal widthClass="w-[800px]" onClose={onClose}>

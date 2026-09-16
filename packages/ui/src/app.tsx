@@ -59,11 +59,20 @@ export default function App() {
 const SETUP_VIEWS = new Set<Route["view"]>([
   "coding-agent-new",
   "knowledge-base-new",
+  "starter-kit-new",
+]);
+
+const KIT_VIEWS = new Set<Route["view"]>([
+  "starter-kits",
+  "starter-kit",
+  "starter-kit-new",
 ]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
+  const features = useFeatures();
+  const kitsEnabled = features.data?.["starter-kits"] ?? false;
+  const kitsSettling = features.isPending && KIT_VIEWS.has(view);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -136,7 +145,8 @@ function MainApp() {
                 <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
-              ) : view === "starter-kits" && kitsEnabled ? (
+              ) : kitsSettling ? null : view === "starter-kits" &&
+                kitsEnabled ? (
                 <StarterKitsView />
               ) : view === "starter-kit" && kitsEnabled ? (
                 <>

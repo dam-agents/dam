@@ -1,14 +1,17 @@
 import type { EntryPointChoice } from "api-server-api";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
+import type { Filter } from "../../starter-kits/components/kit-browser.js";
 import { useRecordEntryPoint } from "../../usage/api/mutations.js";
 
 interface Nav {
   setView: (view: "coding-agent-new" | "knowledge-base-new") => void;
-  navigateToStarterKits: (category?: "knowledge") => void;
+  browseKits: (shelf: Filter) => void;
 }
 
 interface EntryPoint {
@@ -26,7 +29,7 @@ const CREATE_AGENT: EntryPoint = {
 const BROWSE_KITS: EntryPoint = {
   choice: "starter-kit",
   label: "Browse starter kits",
-  go: (nav) => nav.navigateToStarterKits(),
+  go: (nav) => nav.browseKits("all"),
 };
 
 const KNOWLEDGE_BASE_FROM_TEMPLATE: EntryPoint = {
@@ -38,7 +41,7 @@ const KNOWLEDGE_BASE_FROM_TEMPLATE: EntryPoint = {
 const KNOWLEDGE_BASE_FROM_KITS: EntryPoint = {
   choice: "starter-kit",
   label: "Create knowledge base agent",
-  go: (nav) => nav.navigateToStarterKits("knowledge"),
+  go: (nav) => nav.browseKits("knowledge"),
 };
 
 const KNOWLEDGE_BASE_ONLY: EntryPoint = {
@@ -46,13 +49,12 @@ const KNOWLEDGE_BASE_ONLY: EntryPoint = {
   label: "Create knowledge base agent",
 };
 
-function useEnter() {
+function useEnter(browseKits: (shelf: Filter) => void) {
   const setView = useStore((s) => s.setView);
-  const navigateToStarterKits = useStore((s) => s.navigateToStarterKits);
   const recordEntryPoint = useRecordEntryPoint();
   return (entryPoint: EntryPoint) => {
     recordEntryPoint.mutate({ choice: entryPoint.choice });
-    entryPoint.go({ setView, navigateToStarterKits });
+    entryPoint.go({ setView, browseKits });
   };
 }
 
@@ -73,8 +75,10 @@ function entryPointsFor(
  * UNIT_BOUNDARY_DESCRIPTION: The ways into creating something, as buttons.
  * Home offers the catalog and a plain agent; the Knowledge Bases surface
  * offers only a knowledge base, which with kits on means the knowledge shelf
- * of the catalog. With kits off each falls back to the template flows, so no
- * install loses an entry point.
+ * of the catalog. The catalog opens as the Browse Kits modal over the current
+ * page — the same modal the setup page's Change button opens — and a pick
+ * goes straight to that kit's setup. With kits off each entry falls back to
+ * the template flows, so no install loses an entry point.
  */
 export function EntryPointButtons({
   surface,
@@ -84,7 +88,10 @@ export function EntryPointButtons({
   primary?: "kits" | "agent";
 }) {
   const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
-  const enter = useEnter();
+  const setView = useStore((s) => s.setView);
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
+  const [browsing, setBrowsing] = useState<Filter | null>(null);
+  const enter = useEnter(setBrowsing);
   const [lead, second] = entryPointsFor(surface, kitsEnabled, primary);
   if (!lead) return null;
   return (
@@ -101,13 +108,30 @@ export function EntryPointButtons({
           {second.label}
         </Button>
       )}
+      {browsing && (
+        <BrowseKitsModal
+          initialFilter={browsing}
+          onPick={(catalog, kitId) => {
+            setBrowsing(null);
+            navigateToStarterKit(catalog, kitId);
+          }}
+          onClose={() => setBrowsing(null)}
+          onStartFromScratch={() => {
+            setBrowsing(null);
+            setView("coding-agent-new");
+          }}
+        />
+      )}
     </>
   );
 }
 
 export function useCreateKnowledgeBase(): () => void {
   const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
-  const enter = useEnter();
+  const navigateToStarterKits = useStore((s) => s.navigateToStarterKits);
+  const enter = useEnter((shelf) =>
+    navigateToStarterKits(shelf === "knowledge" ? "knowledge" : undefined),
+  );
   return () =>
     enter(kitsEnabled ? KNOWLEDGE_BASE_FROM_KITS : KNOWLEDGE_BASE_ONLY);
 }

@@ -38,6 +38,11 @@ export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (!lastResult) return null;
   if (lastResult === "success")
     return { label: "Succeeded", className: "text-success" };
+  if (lastResult.startsWith("held:"))
+    return {
+      label: `Held: ${lastResult.slice("held:".length).trim()}`,
+      className: "text-muted-foreground",
+    };
   return { label: `Failed: ${lastResult}`, className: "text-destructive" };
 }
 

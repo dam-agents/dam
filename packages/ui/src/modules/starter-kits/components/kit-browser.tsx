@@ -16,7 +16,7 @@ import {
 } from "../lib/catalog-cards.js";
 import { kitIcon } from "../lib/kit-icon.js";
 
-type Filter = StarterKitView["category"] | "all";
+export type Filter = StarterKitView["category"] | "all";
 
 export function KitBadges({
   kit,
