@@ -103,7 +103,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   if (
     config.slackClientId &&
     config.slackClientSecret &&
-    config.keycloakInstallerRole
+    config.keycloakSlackInstallerRole
   ) {
     app.route(
       "/api/slack",
@@ -111,7 +111,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
         pendingInstalls: boot.pendingSlackInstalls,
         installs: boot.slackInstalls,
         brandName: config.brand.name,
-        installerRole: config.keycloakInstallerRole,
+        installerRole: config.keycloakSlackInstallerRole,
         oauth: {
           clientId: config.slackClientId,
           clientSecret: config.slackClientSecret,

@@ -83,7 +83,7 @@ const configSchema = z.object({
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   keycloakInspectorRole: z.string().optional(),
-  keycloakInstallerRole: z.string().optional(),
+  keycloakSlackInstallerRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
   agentWorkDir: z.string().default("/home/agent/work"),
   agentIdleTimeoutMinutes: z.number().int().min(0),
@@ -232,7 +232,7 @@ export function loadConfig(): Config {
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
-    keycloakInstallerRole: process.env.KEYCLOAK_INSTALLER_ROLE,
+    keycloakSlackInstallerRole: process.env.KEYCLOAK_SLACK_INSTALLER_ROLE,
     agentHome: process.env.AGENT_HOME,
     agentWorkDir: process.env.AGENT_WORK_DIR,
     agentIdleTimeoutMinutes: durationToMinutesStrict(

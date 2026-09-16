@@ -569,13 +569,16 @@ keycloak:
   # upstream group to the `inspectors` group. Set to empty string to disable
   # usage-data access entirely (the endpoint will not be mounted).
   inspectorRole: "platform-inspector"
-  # -- Realm role required to connect another Slack workspace
-  # (`GET /api/slack/install/start`). Connecting a workspace is install-wide,
-  # not per-Agent, so it is an operator action rather than something any user
-  # may start. Leave empty to disable the install surface entirely (the start
-  # route will not be mounted) — the workspace the operator's `slackBotToken`
-  # was issued for keeps working either way.
-  installerRole: "platform-installer"
+  # -- Realm role required to connect another Slack workspace. Connecting a
+  # workspace is install-wide, not per-Agent, so it is an operator action
+  # rather than something any user may start. The chart auto-creates this role
+  # plus a `slack-installers` group mapped to it; grant access by adding users
+  # to the group via the Keycloak admin UI. Holders also see the Slack
+  # workspaces tab in Settings — it is hidden from everyone else. Leave empty
+  # to disable the install surface entirely (neither route is mounted) — the
+  # workspace the operator's `slackBotToken` was issued for keeps working
+  # either way.
+  slackInstallerRole: "platform-slack-installer"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""

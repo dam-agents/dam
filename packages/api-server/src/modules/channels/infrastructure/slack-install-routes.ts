@@ -119,6 +119,10 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
     await next();
   };
 
+  routes.get("/install/status", (c) =>
+    c.json({ canInstall: (c.get("roles") ?? []).includes(deps.installerRole) }),
+  );
+
   routes.use("/install/start", installerOnly);
 
   routes.get("/install/start", async (c) => {

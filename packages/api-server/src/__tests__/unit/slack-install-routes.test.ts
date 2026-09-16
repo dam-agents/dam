@@ -26,7 +26,7 @@ import { configureLogger } from "../../core/logger.js";
 
 configureLogger({ level: "error", write: () => {} });
 
-const INSTALLER_ROLE = "platform-installer";
+const INSTALLER_ROLE = "platform-slack-installer";
 const OPERATOR = "kc|operator-1";
 const CALLBACK = "https://platform.example/api/slack/install/callback";
 
@@ -96,6 +96,26 @@ describe("slack install routes", () => {
 
     expect(res.status).toBe(403);
     expect(h.pending.size).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: The UI asks whether to show the install surface at all.
+   * Unlike the start route this answers rather than refuses — a 403 carries no
+   * information a UI can render — so a non-installer must get a plain `false`
+   * and an installer a plain `true`.
+   */
+  it("tells the UI who may install, without refusing either of them", async () => {
+    const asInstaller = await harness().routes.request(
+      "/api/slack/install/status",
+    );
+    const asStranger = await harness({
+      roles: ["some-other-role"],
+    }).routes.request("/api/slack/install/status");
+
+    expect(asInstaller.status).toBe(200);
+    expect(await asInstaller.json()).toEqual({ canInstall: true });
+    expect(asStranger.status).toBe(200);
+    expect(await asStranger.json()).toEqual({ canInstall: false });
   });
 
   /**

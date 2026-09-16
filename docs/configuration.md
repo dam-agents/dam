@@ -104,10 +104,11 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
      --set=apiServer.slackClientSecret=...
    ```
 
-3. Grant yourself the `keycloak.installerRole` realm role, then `GET /api/slack/install/start` as an authenticated operator. It answers with a `slack.com` consent URL — connecting a workspace is install-wide, so only an operator may start one.
-4. Send that URL to an admin of the workspace you are adding. They approve it **while on the VPN**, because Slack redirects their browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. The admin needs no platform account.
+3. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
+4. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of that role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
+5. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
 
-Leaving `keycloak.installerRole` empty disables the install surface entirely — the workspace `slackBotToken` was issued for keeps working either way.
+Leaving `keycloak.slackInstallerRole` empty disables the install surface entirely — no routes, no tab — and the workspace `slackBotToken` was issued for keeps working either way.
 
 Connecting a channel does not change: you still paste a conversation id. One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out. Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
 

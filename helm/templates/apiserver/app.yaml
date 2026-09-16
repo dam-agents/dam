@@ -277,9 +277,9 @@ spec:
             - name: KEYCLOAK_REQUIRED_ROLE
               value: {{ .Values.keycloak.requiredRole | quote }}
             {{- end }}
-            {{- if .Values.keycloak.installerRole }}
-            - name: KEYCLOAK_INSTALLER_ROLE
-              value: {{ .Values.keycloak.installerRole | quote }}
+            {{- if .Values.keycloak.slackInstallerRole }}
+            - name: KEYCLOAK_SLACK_INSTALLER_ROLE
+              value: {{ .Values.keycloak.slackInstallerRole | quote }}
             {{- end }}
             {{- if .Values.keycloak.inspectorRole }}
             - name: KEYCLOAK_INSPECTOR_ROLE

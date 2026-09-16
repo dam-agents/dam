@@ -125,7 +125,7 @@ data:
           }
         }
       ],
-      {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.installerRole }}
+      {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
       "roles": {
         "realm": [
           {{- $first := true }}
@@ -144,17 +144,17 @@ data:
           }
           {{- $first = false }}
           {{- end }}
-          {{- if .Values.keycloak.installerRole }}
+          {{- if .Values.keycloak.slackInstallerRole }}
           {{- if not $first }},{{ end }}
           {
-            "name": {{ .Values.keycloak.installerRole | quote }},
+            "name": {{ .Values.keycloak.slackInstallerRole | quote }},
             "description": {{ printf "Allows connecting another Slack workspace to %s" .Values.brand.name | quote }}
           }
           {{- end }}
         ]
       },
       {{- end }}
-      {{- if or .Values.keycloak.inspectorRole .Values.keycloak.installerRole }}
+      {{- if or .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
       "groups": [
         {{- $firstGroup := true }}
         {{- if .Values.keycloak.inspectorRole }}
@@ -164,11 +164,11 @@ data:
         }
         {{- $firstGroup = false }}
         {{- end }}
-        {{- if .Values.keycloak.installerRole }}
+        {{- if .Values.keycloak.slackInstallerRole }}
         {{- if not $firstGroup }},{{ end }}
         {
-          "name": "installers",
-          "realmRoles": [{{ .Values.keycloak.installerRole | quote }}]
+          "name": "slack-installers",
+          "realmRoles": [{{ .Values.keycloak.slackInstallerRole | quote }}]
         }
         {{- end }}
       ],
@@ -192,12 +192,12 @@ data:
           {{- if .Values.keycloak.requiredRole }}
           ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
           {{- end }}
-          {{- if and .Values.keycloak.inspectorRole .Values.keycloak.installerRole }}
-          ,"groups": ["/inspectors", "/installers"]
+          {{- if and .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
+          ,"groups": ["/inspectors", "/slack-installers"]
           {{- else if .Values.keycloak.inspectorRole }}
           ,"groups": ["/inspectors"]
-          {{- else if .Values.keycloak.installerRole }}
-          ,"groups": ["/installers"]
+          {{- else if .Values.keycloak.slackInstallerRole }}
+          ,"groups": ["/slack-installers"]
           {{- end }}
         },
         {{- end }}
