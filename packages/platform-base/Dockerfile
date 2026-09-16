@@ -37,9 +37,31 @@ RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
 RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install python
-# mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643, CVE-2026-13346); self-upgrade
-# until a python release bundles pip >= 26.2.0.
-RUN mise exec python -- python -m pip install --upgrade pip==26.2.0
+# Drop pip, keep `pip`. mise's CPython bundles pip, and pip's vendor tree is
+# what every setuptools/msgpack finding on this image and its derivatives comes
+# from — site-packages holds nothing else. No pip release fixes them (pip main
+# vendors msgpack 1.2.1; its setuptools is still 70.3.0), and uv is already the
+# documented path for Python work here (AGENTS.md) and what the workload images
+# build on. So the real pip goes and a shim forwards `python -m pip` to
+# `uv pip` against the same interpreter, which needs no --system: mise's python
+# carries no EXTERNALLY-MANAGED marker.
+# Ceiling: uv has no equivalent for pip's `download`, `config`, `cache` or
+# `hash`, which now fail as unknown subcommands. `python -m venv` still seeds a
+# real pip from the untouched ensurepip wheel — deleting that would break a
+# stdlib feature to clean a file nothing executes.
+# realpath in the console scripts because tool-bin symlinks them: $0's own
+# dirname is tool-bin, not the interpreter's bin (upstream's script does this
+# too). The runner stage's postinstall hook symlinks them from here.
+RUN set -eu; \
+    W="$(mise where python)"; sp="$(echo "$W"/lib/python3.*/site-packages)"; \
+    rm -rf "$sp"/pip "$sp"/pip-*.dist-info "$W"/bin/pip "$W"/bin/pip3 "$W"/bin/pip3.*; \
+    mkdir "$sp/pip"; \
+    printf '__version__ = "24.3.1"\n' > "$sp/pip/__init__.py"; \
+    printf 'import os, sys\n\nfrom pip import __version__\n\n# `uv pip --version` is an error, and everything probes `pip --version`.\nif sys.argv[1:2] in (["--version"], ["-V"]):\n    print(f"pip {__version__} (uv shim)")\n    raise SystemExit(0)\n\nos.environ["UV_PYTHON"] = sys.executable\nos.execvp("uv", ["uv", "pip", *sys.argv[1:]])\n' > "$sp/pip/__main__.py"; \
+    for b in pip pip3; do \
+    printf '#!/bin/sh\nexec "$(dirname -- "$(realpath -- "$0")")/python3" -m pip "$@"\n' > "$W/bin/$b"; \
+    chmod 755 "$W/bin/$b"; \
+    done
 # node 24.19.0's bundled npm ships vulnerable brace-expansion 5.0.7, ip-address
 # 10.2.0, tar 7.5.19 and undici 6.27.0; self-upgrade until a node release
 # bundles npm >= 11.19.1. Not npm 12: 12.0.2 predates the 11.19.1 dep bumps and
@@ -113,8 +135,8 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 USER root
 WORKDIR /app
 # MISE_PROVENANCE_API_FAILURES_FATAL: the lazy-tools shims (below) run `mise
-# install` until the tool is resolved — uv, uvx, kubectl, oc and gws, the tiers
-# that stayed lazy. mise re-verifies each tool's GitHub
+# install` until the tool is resolved — kubectl, oc and gws, the tiers that
+# stayed lazy. mise re-verifies each tool's GitHub
 # artifact attestation against api.github.com, and a long-lived agent doing
 # this thousands of times/hr exhausts the per-token rate limit — every call
 # then loops on 429s (observed on dev: one agent driving ~1k 429/hr). Keeping
@@ -144,7 +166,7 @@ RUN chmod 0755 /usr/local/lib/platform-python
 RUN set -eu; \
     install -d -o 65532 /usr/local/share/tool-bin; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
+    for spec in python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
@@ -160,9 +182,12 @@ RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extr
 
 USER 65532
 RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
-    MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh; \
+    MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh uv; \
     rm -rf /tmp/.local; \
-    test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
+    test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node; \
+    test -x /usr/local/share/tool-bin/uv && test -x /usr/local/share/tool-bin/uvx; \
+    pip --version | grep -q "^pip "; \
+    pip list >/dev/null
 
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
