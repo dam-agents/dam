@@ -188,16 +188,19 @@ func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bo
 		}
 		return StateStopping, false
 	}
+	applied := s.readSpec(id)
+	if applied != nil && egressChanged(*applied, spec) && st.State != StateAbsent {
+		if st.State == StateRunning {
+			return StateStopping, false
+		}
+		return "", false
+	}
 	switch st.State {
 	case StateAbsent:
 		return StateCreating, false
 	case StateStopped:
 		return StateStarting, false
 	case StateRunning:
-		applied := s.readSpec(id)
-		if applied != nil && egressChanged(*applied, spec) {
-			return StateStopping, false
-		}
 		if applied == nil || needsRestart(*applied, spec) {
 			return StateRestarting, false
 		}

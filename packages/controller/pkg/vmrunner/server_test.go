@@ -599,6 +599,13 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.Contains(t, st.Message, "recreate the agent")
 	assert.Contains(t, h.calls(), "machine stop -n m1", "it is stopped, not left running on the old address")
 	assert.NotContains(t, h.calls(), "--allow-cidr 10.0.0.2/32", "and never re-created with the new one behind the user's back")
+
+	before := h.calls()
+	st, err = c.Ensure(t.Context(), "m1", moved)
+	require.NoError(t, err)
+	assert.Equal(t, ReasonEgressChanged, st.Reason, "the reason holds across ticks")
+	assert.Equal(t, StateStopped, st.State, "a bricked machine is left stopped, not planned to start again and reserving memory it will never use")
+	assert.Equal(t, before, h.calls())
 }
 
 // TEST_SCENARIO: an operator's Secret reaches the guest on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs. The value is removed whatever shape the tool prints it in — quoted, behind a different flag, or in a Go-style argument list — because matching the one shape I happened to imagine is not a defence.
