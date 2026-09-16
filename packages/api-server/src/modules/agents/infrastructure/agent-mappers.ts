@@ -116,7 +116,8 @@ function readyCondition(obj: KubeObject) {
 function agentPodTerminationMessage(obj: KubeObject): string | undefined {
   const status = (obj.status ?? {}) as AgentStatusObject;
   const c = status.conditions?.find((c) => c.type === "AgentPodReady");
-  return c?.status === "False" && c.message ? c.message : undefined;
+  if (c?.status !== "False" || !c.message) return undefined;
+  return c.reason && POD_FAILURE_REASONS.has(c.reason) ? c.message : undefined;
 }
 
 function agentPodRestarts(obj: KubeObject): number {

@@ -87,6 +87,12 @@ rules:
   # removes those Deployments itself (see `virtualization` in values.yaml).
   # Gated, because on a split-namespace install this is a ClusterRole and
   # Deployment write includes the platform's own Deployments.
+  # Read-only, and only to explain why a VM runner is not ready: the
+  # Deployment reports zero ready replicas and nothing else, while the pod
+  # carries the scheduling or image failure the agent's status should name.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "create", "update", "delete"]

@@ -38,7 +38,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		return vmrunner.MachineStatus{Message: "the owner's VM runner is still starting"}, nil
+		return vmrunner.MachineStatus{Message: r.runnerNotReadyMessage(ctx, owner)}, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
