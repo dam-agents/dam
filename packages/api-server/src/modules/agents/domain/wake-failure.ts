@@ -42,7 +42,12 @@ export function classifyWakeFailure(
 ): WakeFailureCause {
   if (s === null) return { kind: "not-found" };
   if (s.overBudget)
-    return { kind: "over-budget", message: s.overBudgetMessage ?? "" };
+    return {
+      kind: "over-budget",
+      message:
+        s.overBudgetMessage ||
+        "starting this agent would exceed your compute budget — stop a running agent to free room",
+    };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
     return {
@@ -104,10 +109,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "not-found":
       return "the agent no longer exists";
     case "over-budget":
-      return (
-        c.message ||
-        "starting this agent would exceed your compute budget — stop a running agent to free room"
-      );
+      return c.message;
     case "hibernated-not-scaled":
       return "scale-up was never started";
     case "agent-pod-failed":

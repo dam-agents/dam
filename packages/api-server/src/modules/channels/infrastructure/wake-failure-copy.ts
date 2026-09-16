@@ -10,12 +10,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "Try again; if this keeps happening, contact an admin."
       );
     case "over-budget":
-      if (c.message)
-        return `This agent can't start right now: ${c.message} Start it again once there is room.`;
-      return (
-        "This agent can't start right now: its owner is at their compute " +
-        "budget. Ask the owner to free room and start it again."
-      );
+      return `This agent can't start right now: ${c.message}.`;
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":
