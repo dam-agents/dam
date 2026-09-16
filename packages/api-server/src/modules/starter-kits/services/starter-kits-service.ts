@@ -137,9 +137,11 @@ export function createStarterKitsService(
     loaded: LoadedKit,
     skip: readonly string[],
     overrides: readonly StarterKitScheduleOverride[],
-  ): Promise<void> {
+  ): Promise<number> {
+    let seeded = 0;
     for (const s of loaded.kit.schedules) {
       if (skip.includes(s.name)) continue;
+      seeded += 1;
       const o = overrides.find((x) => x.name === s.name);
       const sessionMode = o?.sessionMode ?? s.sessionMode;
       const enabled = o?.enabled ?? s.enabled;
@@ -169,12 +171,14 @@ export function createStarterKitsService(
             });
       if (!enabled) await deps.schedules.toggle(created.id);
     }
+    return seeded;
   }
 
   async function enqueueOnboardingTurn(
     created: Agent,
     loaded: LoadedKit,
     version: string,
+    holds: boolean,
   ): Promise<void> {
     const agentId = created.id;
     const agent = (await deps.agents.get(agentId)) ?? created;
@@ -196,6 +200,7 @@ export function createStarterKitsService(
       })),
       boundChannels: agent.channels.map(() => "slack"),
       familyTitles: await familyTitles(),
+      holds,
     });
     const at = (deps.now ?? (() => new Date()))();
     await deps.runtimeMutator.bump(agentId, [
@@ -264,7 +269,7 @@ export function createStarterKitsService(
         : await deps.agents.create(createInput);
 
       try {
-        await seedSchedules(
+        const seeded = await seedSchedules(
           agent.id,
           loaded,
           input.skipSchedules,
@@ -272,7 +277,15 @@ export function createStarterKitsService(
         );
         if (input.slackChannelId)
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
-        await enqueueOnboardingTurn(agent, loaded, version);
+        const onboards = kit.onboarding !== false;
+        const holds = onboards && seeded > 0;
+        if (!holds)
+          await deps.markAgentOnboarded(
+            agent.id,
+            (deps.now ?? (() => new Date()))().toISOString(),
+          );
+        if (onboards)
+          await enqueueOnboardingTurn(agent, loaded, version, holds);
       } catch (err) {
         await deps.agents.delete(agent.id).catch(() => {});
         throw err;

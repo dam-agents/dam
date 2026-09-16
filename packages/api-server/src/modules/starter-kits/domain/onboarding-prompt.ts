@@ -10,6 +10,7 @@ export interface OnboardingFacts {
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
   familyTitles: ReadonlyMap<string, string>;
+  holds?: boolean;
 }
 
 export function describeAccepts(
@@ -71,7 +72,10 @@ function defaultInstruction(kit: StarterKit): string {
 
 export function composeOnboardingPrompt(facts: OnboardingFacts): string {
   const { kit } = facts;
-  const instruction = kit.onboarding?.prompt ?? defaultInstruction(kit);
+  const instruction =
+    (kit.onboarding ? kit.onboarding.prompt : undefined) ??
+    defaultInstruction(kit);
+  const holds = facts.holds ?? facts.schedules.length > 0;
   return [
     `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
     definitionLine(kit),
@@ -85,7 +89,11 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     ...parameterLines(kit),
     "",
     instruction,
-    "",
-    "Every schedule on this agent is HELD until you call the mark_onboarding_complete tool, so nothing fires against a half-configured agent. Call it once, when the configuration above is genuinely in place — not before. If the user leaves onboarding unfinished, leave it uncalled.",
+    ...(holds
+      ? [
+          "",
+          "Every schedule on this agent is HELD until you call the mark_onboarding_complete tool, so nothing fires against a half-configured agent. Call it once, when the configuration above is genuinely in place — not before. If the user leaves onboarding unfinished, leave it uncalled.",
+        ]
+      : []),
   ].join("\n");
 }

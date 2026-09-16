@@ -121,7 +121,9 @@ export const starterKitSchema = z.object({
   seed: z
     .object({ url: z.url(), ref: z.string().min(1).optional() })
     .optional(),
-  onboarding: z.object({ prompt: z.string().min(1) }).optional(),
+  onboarding: z
+    .union([z.literal(false), z.object({ prompt: z.string().min(1) })])
+    .optional(),
   connections: z.array(starterKitConnectionRequirementSchema).default([]),
   channels: z.array(starterKitChannelSchema).default([]),
   schedules: z.array(starterKitScheduleSchema).default([]),

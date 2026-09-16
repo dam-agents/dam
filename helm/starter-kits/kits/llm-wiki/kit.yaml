@@ -7,6 +7,8 @@ description: >-
   questions.
 category: knowledge
 icon: chart
+# The knowledge-base template's own onboarding command greets on first open.
+onboarding: false
 knowledgeBase:
   template: llm-wiki
 providers: [ibm-litellm, anthropic, openai]

@@ -512,9 +512,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             ))}
           </ul>
           <p className={cn(FIELD_INSET, "mt-3 text-sm text-muted-foreground")}>
-            Created with the kit author&apos;s defaults and held until
-            onboarding finishes. Adjust any of them, or skip what you do not
-            want.
+            {kit.onboarding === false
+              ? "Created with the kit author's defaults."
+              : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
+            Adjust any of them, or skip what you do not want.
           </p>
         </section>
       )}

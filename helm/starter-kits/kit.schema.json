@@ -142,15 +142,23 @@
       ]
     },
     "onboarding": {
-      "type": "object",
-      "properties": {
-        "prompt": {
-          "type": "string",
-          "minLength": 1
+      "anyOf": [
+        {
+          "type": "boolean",
+          "const": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "prompt"
+          ]
         }
-      },
-      "required": [
-        "prompt"
       ]
     },
     "connections": {

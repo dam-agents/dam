@@ -331,8 +331,9 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                   />
                 ))}
                 <li className="text-sm text-muted-foreground">
-                  Created on the new agent. They stay held until onboarding is
-                  finished, so nothing runs against a half-configured agent.
+                  {kit.onboarding === false
+                    ? "Created on the new agent."
+                    : "Created on the new agent. They stay held until onboarding is finished, so nothing runs against a half-configured agent."}
                 </li>
               </Section>
             )}

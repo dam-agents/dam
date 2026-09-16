@@ -768,10 +768,27 @@ describe("starter kits: onboarding turn", () => {
     );
     const prompt = await onboardingTaskAfterApply(h);
     expect(prompt).toContain("mark_onboarding_complete");
+    expect(h.calls.onboarded).toEqual([]);
 
     await h.service.markOnboarded("agent-1");
     expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
     expect(h.calls.onboarded[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("a kit that opts out opens no session and is onboarded at create", async () => {
+    const h = makeHarness({ ...LOADED, kit: kit({ onboarding: false }) });
+    await h.service.apply(APPLY);
+    expect(onboardingEvents(h.calls)).toEqual([]);
+    expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
+    expect(h.calls.woken).toEqual(["agent-1"]);
+  });
+
+  it("a kit whose apply created no schedules is onboarded at create, and its briefing holds nothing", async () => {
+    const h = makeHarness({ ...LOADED, kit: kit({ schedules: [] }) });
+    const prompt = await onboardingTaskAfterApply(h);
+    expect(prompt).toContain("Values only the user can supply");
+    expect(prompt).not.toContain("mark_onboarding_complete");
+    expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
   });
 
   it("refuses to mark an agent that came from no kit, and is idempotent", async () => {
