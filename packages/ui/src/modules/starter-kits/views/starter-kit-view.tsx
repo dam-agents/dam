@@ -1,4 +1,4 @@
-import { ArrowLeft, Launch, PlayFilledAlt } from "@carbon/icons-react";
+import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 import { useMemo } from "react";
 
@@ -19,7 +19,6 @@ import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
   sizeInMi,
-  slotsFor,
   slotUnitOf,
 } from "../../budgets/lib/slots.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
@@ -55,29 +54,35 @@ function acceptedTemplates(
 }
 
 function Row({
+  icon,
   icons,
   title,
   detail,
   trailing,
 }: {
+  icon?: React.ReactNode;
   icons?: string[];
   title: string;
   detail?: string;
   trailing?: React.ReactNode;
 }) {
+  const tile = icon ?? (icons && icons.length > 0);
   return (
     <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      {icons && icons.length > 0 && (
-        <div className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border px-2 py-2">
-          {icons.slice(0, 3).map((slug) => (
-            <ConnectionIcon
-              key={slug}
-              iconSlug={slug}
-              alt=""
-              size={16}
-              className="text-foreground/80"
-            />
-          ))}
+      {tile && (
+        <div className="flex h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-card px-2">
+          {icon ??
+            icons
+              ?.slice(0, 3)
+              .map((slug) => (
+                <ConnectionIcon
+                  key={slug}
+                  iconSlug={slug}
+                  alt=""
+                  size={16}
+                  className="text-foreground/80"
+                />
+              ))}
         </div>
       )}
       <div className="min-w-0 flex-1">
@@ -198,7 +203,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
-    return { slots: slotsFor(mi, unit), label: formatSizeLabel(mi, unit) };
+    return { label: formatSizeLabel(mi, unit) };
   }, [kit.resources, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
@@ -357,25 +362,14 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
             {size && (
               <Section label="Compute">
                 <Row
+                  icon={<Meter size={16} className="text-muted-foreground" />}
                   title={size.label}
                   detail={
                     kit.resources?.storage
                       ? `${kit.resources.storage} disk. ${kit.resources.note ?? ""}`.trim()
                       : kit.resources?.note
                   }
-                  trailing={
-                    <Badge variant="muted" size="sm">
-                      {size.slots} {size.slots === 1 ? "slot" : "slots"}
-                    </Badge>
-                  }
                 />
-                {size.slots > 1 && (
-                  <li className="text-sm text-muted-foreground">
-                    This kit asks for more than one slot of your compute
-                    ceiling. CPU and memory stay editable on the agent; disk is
-                    fixed at create.
-                  </li>
-                )}
               </Section>
             )}
 
