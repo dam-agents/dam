@@ -91,9 +91,7 @@ export function ScheduleResultsModal({
                 comingUp={comingUp}
                 onStart={() => wakeAgent.wake(agentId)}
               >
-                — each run opens a session inside the agent, so the list of past
-                runs is only readable while it is running. Start the agent to
-                see them.
+                — Start the agent to see runs.
               </AgentStoppedCallout>
             </div>
             <LastRunLine schedule={schedule} />
