@@ -6,8 +6,8 @@ export type SlackCredentialState = "active" | "rejected";
 export interface SlackInstall {
   teamId: string;
   teamName: string | null;
-  secretPath: string;
-  secretField: string;
+  secretPath: string | null;
+  secretField: string | null;
   installedBy: string | null;
   credentialState: SlackCredentialState;
 }
@@ -45,13 +45,14 @@ export function upsertSlackInstall(db: Db) {
   return async (install: {
     teamId: string;
     teamName: string | null;
-    secretPath: string;
-    secretField: string;
+    secretPath: string | null;
+    secretField: string | null;
     installedBy: string | null;
+    credentialState: SlackCredentialState;
   }): Promise<void> => {
     await db
       .insert(slackInstalls)
-      .values({ ...install, credentialState: "active" })
+      .values(install)
       .onConflictDoUpdate({
         target: slackInstalls.teamId,
         set: {
@@ -59,7 +60,7 @@ export function upsertSlackInstall(db: Db) {
           secretPath: install.secretPath,
           secretField: install.secretField,
           installedBy: install.installedBy,
-          credentialState: "active",
+          credentialState: install.credentialState,
           updatedAt: sql`now()`,
         },
       });

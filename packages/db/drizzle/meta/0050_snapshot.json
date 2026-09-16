@@ -1,5 +1,5 @@
 {
-  "id": "cb3ca98b-4ce7-4d00-831f-62b7b990cd9a",
+  "id": "1503c7e9-0469-4d3b-963b-58f8c36ab015",
   "prevId": "1456eda5-3b2b-48d4-8b26-2536354427a5",
   "version": "7",
   "dialect": "postgresql",
@@ -3268,13 +3268,13 @@
           "name": "secret_path",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "secret_field": {
           "name": "secret_field",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "installed_by": {
           "name": "installed_by",

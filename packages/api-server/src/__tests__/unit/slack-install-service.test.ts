@@ -55,7 +55,7 @@ function installRow(teamId: string, secretPath: string): SlackInstall {
     secretField: "botToken",
     installedBy: null,
     credentialState: "active",
-  } as SlackInstall;
+  };
 }
 
 describe("slack install service — the original workspace's two names", () => {
@@ -140,17 +140,74 @@ describe("slack install service — the original workspace's two names", () => {
   });
 
   /**
-   * TEST_SCENARIO: A workspace this platform never recorded — the shape a
-   * refused install leaves behind, because Slack has already installed the app
-   * by the time the organization check turns it away, and keeps delivering its
-   * events. It must get no token at all. Handing it the operator's token would
-   * answer for a workspace nobody agreed to serve, using the credential of the
-   * one workspace that was set up by hand.
+   * TEST_SCENARIO: A workspace this platform never recorded. It must get no
+   * token: handing it the operator's token would answer for a workspace nobody
+   * agreed to serve, using the credential of the one workspace that was set up
+   * by hand.
    */
   it("gives no token to a workspace it has no row for", async () => {
     const { svc } = service({ identifiesAs: ORIGINAL_TEAM });
 
+    expect(await svc.resolveBotToken("T-STRANGER")).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: A refused install, which is the case that matters most here.
+   * Slack had already installed the app by the time the organization check
+   * turned it away, so its events keep arriving. The refusal is recorded, so it
+   * is refused on the strength of its own row and needs no question asked of
+   * Slack — including while Slack cannot be asked anything at all.
+   */
+  it("refuses a workspace whose install was refused, even when Slack cannot be asked", async () => {
+    const refused: SlackInstall = {
+      teamId: "T-REFUSED",
+      teamName: "Somebody else",
+      secretPath: null,
+      secretField: null,
+      installedBy: null,
+      credentialState: "rejected",
+    };
+    const { svc } = service({
+      identifiesAs: null,
+      installs: { "T-REFUSED": refused },
+    });
+
     expect(await svc.resolveBotToken("T-REFUSED")).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: Slack cannot say which workspace the operator's token belongs
+   * to, and an event arrives naming that workspace by its real team id. Before
+   * the identification is available there is no way to tell that id apart from
+   * a stranger's, and refusing it would drop the original workspace's own
+   * mentions — so the operator's token still answers, and the guess is not
+   * written into the token cache, where it would outlive the outage that caused
+   * it.
+   */
+  it("keeps serving the original workspace while its identity is unknown, and caches nothing", async () => {
+    let answer: string | null = null;
+    const calls: string[] = [];
+    const svc = createSlackInstallService({
+      find: async () => null,
+      upsert: async () => {},
+      setState: async () => {},
+      installLock: async (_key, run) => run(),
+      envBotToken: ENV_TOKEN,
+      identifyWorkspace: async (token) => {
+        calls.push(token);
+        return answer;
+      },
+      secrets: {
+        storeId: "k8s",
+        getField: async () => null,
+      } as unknown as SecretStore,
+    });
+
+    expect(await svc.resolveBotToken(ORIGINAL_TEAM)).toBe(ENV_TOKEN);
+
+    answer = "T-SOMEONE-ELSE";
+    expect(await svc.resolveBotToken(ORIGINAL_TEAM)).toBeNull();
+    expect(calls).toHaveLength(2);
   });
 
   /**

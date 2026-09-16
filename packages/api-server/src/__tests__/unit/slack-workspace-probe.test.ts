@@ -145,4 +145,25 @@ describe("slack workspace probe", () => {
 
     expect(await probe("C1")).toEqual({ kind: "unreachable" });
   });
+
+  /**
+   * TEST_SCENARIO: A genuinely wrong conversation id, while one workspace
+   * permanently withholds the scope the question needs. The workspaces that
+   * could answer all said no, so that is the answer — otherwise one broken
+   * workspace would turn every typo into a retryable "try again" forever.
+   */
+  it("keeps a definite answer when only one workspace cannot be asked", async () => {
+    const probe = createSlackWorkspaceProbe({
+      listInstalledWorkspaces: async () => ["T2"],
+      standingIn: async (
+        _channel: string,
+        teamId: string,
+      ): Promise<SlackConversationStanding> => {
+        if (teamId === "T2") throw new Error("missing_scope");
+        return "unknown";
+      },
+    });
+
+    expect(await probe("C1")).toEqual({ kind: "unknown" });
+  });
 });

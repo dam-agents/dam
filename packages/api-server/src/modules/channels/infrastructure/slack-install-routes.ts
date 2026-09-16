@@ -91,9 +91,9 @@ async function exchangeInstallCode(
   return (await res.json()) as SlackOAuthAccessResponse;
 }
 
-async function revokeToken(token: string): Promise<void> {
+async function revokeToken(token: string): Promise<string | null> {
   try {
-    await fetch("https://slack.com/api/auth.revoke", {
+    const res = await fetch("https://slack.com/api/auth.revoke", {
       method: "POST",
       signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
       headers: {
@@ -102,8 +102,11 @@ async function revokeToken(token: string): Promise<void> {
       },
       body: new URLSearchParams({ token }),
     });
-  } catch {
-    return;
+    const body = (await res.json()) as { revoked?: boolean; error?: string };
+    if (body.revoked === true) return null;
+    return body.error ?? `http-${res.status}`;
+  } catch (err) {
+    return formatError(err);
   }
 }
 
@@ -194,15 +197,23 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
 
     const organization = deps.oauth.enterpriseId;
     if (organization && result.enterprise?.id !== organization) {
-      await revokeToken(result.access_token);
-      securityLog("warn", "slack.install.denied", {
+      await deps.installs.recordRefusal({
+        teamId,
+        teamName: result.team?.name ?? null,
+      });
+      const revokeError = await revokeToken(result.access_token);
+      securityLog(revokeError ? "error" : "warn", "slack.install.denied", {
         category: "credential",
         actor: pending.startedBy || null,
         actorKind: "user",
         surface: "slack",
         decision: "deny",
         reason: "outside-organization",
-        detail: { teamId },
+        detail: {
+          teamId,
+          grantWithdrawn: revokeError === null,
+          ...(revokeError ? { revokeError } : {}),
+        },
       });
       return c.text(
         "That workspace is outside the Slack organization this platform serves.",

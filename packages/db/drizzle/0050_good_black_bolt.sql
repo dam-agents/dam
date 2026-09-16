@@ -1,14 +1,18 @@
 -- #3516: Slack gains one bot credential per workspace, so two things change.
 --
--- slack_installs holds one row per workspace that completed the install
--- handshake. The bot token itself never lands here — it goes to a Kubernetes
--- Secret and the row only points at it, so Postgres holds no credential. The
--- install that predates this table has no row at all: it keeps being served by
--- the operator-supplied token in api-server env. That token answers for that
--- one workspace and no other — a workspace with no row is one nobody agreed to
--- serve, which is what a refused install leaves behind, and it gets nothing.
+-- slack_installs holds one row per workspace whose install handshake the
+-- platform saw through — accepted or refused. The bot token itself never lands
+-- here — it goes to a Kubernetes Secret and the row only points at it, so
+-- Postgres holds no credential. A refused workspace has no Secret to point at,
+-- which is why the pointer is nullable: the row exists to say "this workspace
+-- is not served", and that has to be recorded rather than inferred, because
+-- Slack has already installed the app by the time a refusal is decided and
+-- keeps delivering that workspace's events.
 -- credential_state is an enum rather than free text because a value outside the
 -- known set would read as usable and quietly serve a dead credential.
+-- The install that predates this table has no row at all: it keeps being served
+-- by the operator-supplied token in api-server env. That token answers for that
+-- one workspace and no other.
 --
 -- The channel indexes change because a Slack channel id is unique inside its
 -- workspace, not across them, so once a second workspace is installed the old
@@ -24,8 +28,8 @@ CREATE TYPE "public"."slack_credential_state" AS ENUM('active', 'rejected');--> 
 CREATE TABLE "slack_installs" (
 	"team_id" text PRIMARY KEY NOT NULL,
 	"team_name" text,
-	"secret_path" text NOT NULL,
-	"secret_field" text NOT NULL,
+	"secret_path" text,
+	"secret_field" text,
 	"installed_by" text,
 	"credential_state" "slack_credential_state" DEFAULT 'active' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,

@@ -23,14 +23,20 @@ export interface SlackInstallRecord {
   installedBy: string | null;
 }
 
+export interface SlackInstallRefusal {
+  teamId: string;
+  teamName: string | null;
+}
+
 export interface SlackInstallServiceDeps {
   find: (teamId: string) => Promise<SlackInstall | null>;
   upsert: (install: {
     teamId: string;
     teamName: string | null;
-    secretPath: string;
-    secretField: string;
+    secretPath: string | null;
+    secretField: string | null;
     installedBy: string | null;
+    credentialState: SlackCredentialState;
   }) => Promise<void>;
   setState: (teamId: string, state: SlackCredentialState) => Promise<void>;
   secrets: SecretStore;
@@ -43,6 +49,7 @@ export interface SlackInstallServiceDeps {
 export interface SlackInstallService {
   resolveBotToken: SlackTokenResolver;
   record: (install: SlackInstallRecord) => Promise<string>;
+  recordRefusal: (refusal: SlackInstallRefusal) => Promise<void>;
   markRejected: (teamId: string) => Promise<void>;
 }
 
@@ -74,18 +81,30 @@ export function createSlackInstallService(
     return teamId === ORIGINAL_WORKSPACE ? originalWorkspaceId() : teamId;
   }
 
-  async function readWorkspaceToken(teamId: string): Promise<string | null> {
+  async function readWorkspaceToken(
+    teamId: string,
+  ): Promise<{ token: string | null; answered: boolean }> {
     const install = await deps.find(teamId);
     if (install) {
-      if (install.credentialState !== "active") return null;
+      if (install.credentialState !== "active" || !install.secretPath) {
+        return { token: null, answered: true };
+      }
       const stored = await deps.secrets.getField({
         storeId: deps.secrets.storeId,
         path: install.secretPath,
-        field: install.secretField,
+        field: install.secretField ?? SECRET_FIELD,
       });
-      return stored ?? null;
+      return { token: stored ?? null, answered: true };
     }
-    return (await originalWorkspaceId()) === teamId ? deps.envBotToken : null;
+
+    const original = await originalWorkspaceId();
+    if (original === null) {
+      return { token: deps.envBotToken, answered: false };
+    }
+    return {
+      token: original === teamId ? deps.envBotToken : null,
+      answered: true,
+    };
   }
 
   return {
@@ -100,8 +119,8 @@ export function createSlackInstallService(
       if (pending) return pending;
 
       const resolving = readWorkspaceToken(key)
-        .then((token) => {
-          tokens.set(key, { token, at: now() });
+        .then(({ token, answered }) => {
+          if (answered) tokens.set(key, { token, at: now() });
           return token;
         })
         .finally(() => inFlight.delete(key));
@@ -113,11 +132,11 @@ export function createSlackInstallService(
       return deps.installLock(`slack-install:${install.teamId}`, async () => {
         const meta = { owner: SECRET_OWNER, purpose: SECRET_PURPOSE };
         const existing = await deps.find(install.teamId);
-        const ref: SecretRef = existing
+        const ref: SecretRef = existing?.secretPath
           ? {
               storeId: deps.secrets.storeId,
               path: existing.secretPath,
-              field: existing.secretField,
+              field: existing.secretField ?? SECRET_FIELD,
             }
           : { ...deps.secrets.mintRef(meta), field: SECRET_FIELD };
 
@@ -128,9 +147,24 @@ export function createSlackInstallService(
           secretPath: ref.path,
           secretField: ref.field,
           installedBy: install.installedBy,
+          credentialState: "active",
         });
         tokens.delete(install.teamId);
         return ref.path;
+      });
+    },
+
+    async recordRefusal(refusal: SlackInstallRefusal): Promise<void> {
+      await deps.installLock(`slack-install:${refusal.teamId}`, async () => {
+        await deps.upsert({
+          teamId: refusal.teamId,
+          teamName: refusal.teamName,
+          secretPath: null,
+          secretField: null,
+          installedBy: null,
+          credentialState: "rejected",
+        });
+        tokens.delete(refusal.teamId);
       });
     },
 

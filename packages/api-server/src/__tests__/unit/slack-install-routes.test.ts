@@ -34,6 +34,7 @@ function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
   const { store: pendingInstalls, map: pending } =
     createInspectableTtlStore<SlackInstallPending>();
   const recorded: { teamId: string; installedBy: string | null }[] = [];
+  const refused: string[] = [];
   const installs = {
     record: async (install: { teamId: string; installedBy: string | null }) => {
       recorded.push({
@@ -41,6 +42,9 @@ function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
         installedBy: install.installedBy,
       });
       return "platform-secret-slack-install-abc";
+    },
+    recordRefusal: async (refusal: { teamId: string }) => {
+      refused.push(refusal.teamId);
     },
   } as unknown as SlackInstallService;
 
@@ -72,13 +76,20 @@ function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
       }),
     );
 
-  return { routes, pending, recorded };
+  return { routes, pending, recorded, refused };
 }
 
 function slackReplies(body: unknown) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(JSON.stringify(body))),
+    vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.includes("auth.revoke") ? { ok: true, revoked: true } : body,
+          ),
+        ),
+    ),
   );
 }
 
@@ -237,6 +248,7 @@ describe("slack install routes", () => {
 
     expect(res.status).toBe(403);
     expect(h.recorded).toEqual([]);
+    expect(h.refused).toEqual(["T-OUTSIDE"]);
   });
 
   /**
