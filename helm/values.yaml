@@ -918,9 +918,18 @@ apiServer:
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
-    # Container registries
+    # Container registries. The registry host alone never pulls: Docker Hub
+    # first hands out an anonymous token from auth.docker.io, then 307s the
+    # blob off to whichever CDN serves the caller's region. ghcr.io redirects
+    # its blobs the same way. registry.k8s.io is deliberately absent: it fans
+    # blobs out to regional mirrors this literal-hostname list cannot express.
     - quay.io
     - registry-1.docker.io
+    - auth.docker.io
+    - production.cloudfront.docker.com
+    - production.cloudflare.docker.com
+    - ghcr.io
+    - pkg-containers.githubusercontent.com
     # Go modules
     - proxy.golang.org
     - sum.golang.org
@@ -939,6 +948,9 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
+    # k3s: the installer resolves a channel, then downloads from GitHub above
+    - get.k3s.io
+    - update.k3s.io
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
