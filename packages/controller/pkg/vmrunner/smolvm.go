@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"time"
 )
 
+const slowStatus = time.Second
+
 type Smolvm struct {
 	Bin string
 }
@@ -23,7 +26,11 @@ type Smolvm struct {
 func (r *Smolvm) State(id string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, "machine", "status", "-n", id, "--json").Output()
+	if elapsed := time.Since(started); elapsed > slowStatus {
+		slog.Warn("machine status is slow to answer", "machine", id, "duration_ms", elapsed.Milliseconds())
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && bytes.Contains(exit.Stderr, []byte("not found")) {
@@ -140,10 +147,14 @@ func envArgs(env map[string]string) []string {
 func (r *Smolvm) run(secrets []string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
+	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, args...).CombinedOutput()
+	op := strings.Join(args[:2], " ")
 	if err != nil {
-		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, redact(strings.TrimSpace(string(out)), secrets))
+		slog.Warn("machine operation failed", "op", op, "duration_ms", time.Since(started).Milliseconds())
+		return fmt.Errorf("smolvm %s: %w: %s", op, err, redact(strings.TrimSpace(string(out)), secrets))
 	}
+	slog.Info("machine operation", "op", op, "duration_ms", time.Since(started).Milliseconds())
 	return nil
 }
 
