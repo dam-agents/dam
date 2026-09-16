@@ -248,6 +248,14 @@ export function createAttentionRepository(db: Db): AttentionRepository {
 
     async deleteOlderThan(days) {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60_000);
+      await db
+        .delete(attentionState)
+        .where(
+          and(
+            eq(attentionState.itemKind, "approval"),
+            lt(attentionState.dismissedAt, cutoff),
+          ),
+        );
       const stale = await db
         .select({
           agentId: attentionRecords.agentId,
