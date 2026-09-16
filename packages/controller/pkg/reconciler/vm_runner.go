@@ -116,7 +116,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.Namespace, r.config.VM.Runner.EgressCIDRs)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.Namespace, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
 	np.OwnerReferences = r.runnerOwnerRef(ctx)
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
@@ -295,7 +295,7 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string, egress []string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	first := intstr.FromInt(31000)
@@ -322,7 +322,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string,
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}},
-			Egress: runnerEgress(agentNS, egress),
+			Egress: runnerEgress(agentNS, egress, exceptCIDRs),
 		},
 	}
 }
@@ -335,7 +335,7 @@ func policyTypes(egress []string) []networkingv1.PolicyType {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
-func runnerEgress(agentNS string, cidrs []string) []networkingv1.NetworkPolicyEgressRule {
+func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
 	}
@@ -351,7 +351,7 @@ func runnerEgress(agentNS string, cidrs []string) []networkingv1.NetworkPolicyEg
 	}}
 	for _, cidr := range cidrs {
 		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr}}},
+			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: except}}},
 		})
 	}
 	return rules

@@ -214,11 +214,16 @@ virtualization:
     # other owner's gateway. Set this and the runner is confined to DNS, the
     # paired gateways, and these CIDRs. It cannot default to closed because
     # the runner also pulls agent images, so the registry has to be named:
-    #   egressCidrs: ["0.0.0.0/0"]            # registry anywhere, still no
-    #                                         # intra-cluster except gateways
-    #                                         # if your CNI excludes pod IPs
-    #   egressCidrs: ["203.0.113.0/24"]       # or just the registry
+    # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
+    # allows everything and confines nothing — pair it with the cluster's own
+    # ranges in egressExceptCidrs, or name the registry directly:
+    #   egressCidrs: ["0.0.0.0/0"]
+    #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16"]   # pods, services
     egressCidrs: []
+    # Subtracted from every entry above. This is what actually keeps an escaped
+    # guest away from the platform's datastores and other owners' gateways,
+    # which are reached by pod and Service addresses.
+    egressExceptCidrs: []
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs

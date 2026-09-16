@@ -326,7 +326,7 @@ func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default", "test-agents", nil)
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default", "test-agents", nil, nil)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -520,12 +520,12 @@ func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 
 // TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
 func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
-	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", nil)
+	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", nil, nil)
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
 		"with nowhere named, the runner still pulls images and the policy only admits callers")
 	assert.Empty(t, open.Spec.Egress)
 
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", []string{"203.0.113.0/24"})
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
 	require.Len(t, confined.Spec.Egress, 3, "DNS, the paired gateways, and what the install named")
 
@@ -537,13 +537,15 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}
-			if to.IPBlock != nil && to.IPBlock.CIDR == "203.0.113.0/24" {
+			if to.IPBlock != nil && to.IPBlock.CIDR == "0.0.0.0/0" {
 				sawCIDR = true
+				assert.Equal(t, []string{"10.128.0.0/14"}, to.IPBlock.Except,
+					"an open block matches in-cluster addresses too, so the cluster's own ranges are subtracted")
 			}
 		}
 	}
 	assert.True(t, sawGateway, "a guest can still reach its own gateway")
-	assert.True(t, sawCIDR, "and the runner can still reach the registry it was told about")
+	assert.True(t, sawCIDR, "and the runner can still reach the registry, minus the cluster itself")
 }
 
 // TEST_SCENARIO: a runner built under an older naming scheme survives an upgrade; its agents have already moved to the new name, so it sits there holding a guest, a disk and a device grant with nothing that would ever collect it.

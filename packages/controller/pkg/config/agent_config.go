@@ -84,6 +84,7 @@ type VMRunnerSpec struct {
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
 	IngressCIDRs         []string                      `json:"ingressCidrs,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
+	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
 	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
