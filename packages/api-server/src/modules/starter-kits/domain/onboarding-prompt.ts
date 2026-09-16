@@ -61,13 +61,13 @@ function parameterLines(kit: StarterKit): string[] {
 
 function definitionLine(kit: StarterKit): string {
   if (!kit.seed) return "This kit ships no definition repository.";
-  const at = kit.seed.ref ? ` at ref ${kit.seed.ref}` : "";
-  return `Definition repository: ${kit.seed.url}${at}. Clone it into your work directory first.`;
+  const at = kit.seed.ref ? ` at ${kit.seed.ref}` : "";
+  return `Definition repository: ${kit.seed.url}${at} — checked out in your work directory before this session opened.`;
 }
 
 function defaultInstruction(kit: StarterKit): string {
   return kit.seed
-    ? "Then follow ONBOARDING.md at the root of the cloned definition."
+    ? "Then follow ONBOARDING.md at the root of your work directory."
     : "Ask the user for the values above, then start the work they describe.";
 }
 

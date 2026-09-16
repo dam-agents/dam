@@ -338,6 +338,20 @@ describe("starter kits: apply", () => {
     expect(calls.created[0]).not.toHaveProperty("kind");
   });
 
+  it("seeds the kit's definition into the workspace and says so in the briefing", async () => {
+    const h = makeHarness(LOADED);
+    const prompt = await onboardingTaskAfterApply(h);
+    expect(h.calls.created[0]).toMatchObject({
+      gitRepo: { url: "https://github.com/acme/code-guardian", ref: "v1.4.0" },
+    });
+    expect(prompt).toContain("checked out in your work directory");
+    expect(prompt).not.toContain("Clone it");
+
+    const seedless = makeHarness({ ...LOADED, kit: kit({ seed: undefined }) });
+    await seedless.service.apply(APPLY);
+    expect(seedless.calls.created[0]).not.toHaveProperty("gitRepo");
+  });
+
   it("leaves out the schedules the user chose to skip", async () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply({
@@ -758,7 +772,7 @@ describe("starter kits: onboarding turn", () => {
       '"Code reviewer" starter kit (platform/code-reviewer@abc123)',
     );
     expect(prompt).toContain(
-      "https://github.com/acme/code-guardian at ref v1.4.0",
+      "https://github.com/acme/code-guardian at v1.4.0 — checked out in your work directory",
     );
     expect(prompt).toContain(
       "Connection (required, connected): github-app or github-pat",

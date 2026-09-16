@@ -6,6 +6,7 @@ import type { EventContext } from "agent-runtime-api";
 import {
   createWorkspaceSeedPlugin,
   type CloneFn,
+  type FetchAtShaFn,
 } from "../../modules/runtime-channel/drivers/workspace-seed-plugin.js";
 
 const URL = "https://github.com/dam-agents/google-workspace.git";
@@ -17,10 +18,14 @@ const ctx: EventContext = {
   log: () => {},
 };
 
-function setup(clone: CloneFn) {
+function setup(clone: CloneFn, fetchAtSha?: FetchAtShaFn) {
   const workDir = join(mkdtempSync(join(tmpdir(), "seed-ws-")), "work");
-  const seed = createWorkspaceSeedPlugin({ workDir, clone, log: () => {} })
-    .bindEvent!("workspace-seed", { impl: "workspace-seed" });
+  const seed = createWorkspaceSeedPlugin({
+    workDir,
+    clone,
+    ...(fetchAtSha ? { fetchAtSha } : {}),
+    log: () => {},
+  }).bindEvent!("workspace-seed", { impl: "workspace-seed" });
   return { seed: (payload: unknown) => seed(payload, ctx), workDir };
 }
 
@@ -37,6 +42,19 @@ describe("workspace-seed plugin", () => {
     const { seed, workDir } = setup(clone);
     await seed({ url: URL, ref: "develop" });
     expect(clone).toHaveBeenCalledWith(URL, workDir, "develop");
+  });
+
+  it("fetches a full commit sha directly instead of cloning a branch", async () => {
+    const clone = vi.fn<CloneFn>(async () => ({ ok: true, value: undefined }));
+    const fetchAtSha = vi.fn<FetchAtShaFn>(async () => ({
+      ok: true,
+      value: undefined,
+    }));
+    const { seed, workDir } = setup(clone, fetchAtSha);
+    const sha = "a".repeat(40);
+    await seed({ url: URL, ref: sha });
+    expect(fetchAtSha).toHaveBeenCalledWith(URL, sha, workDir);
+    expect(clone).not.toHaveBeenCalled();
   });
 
   it("skips when the work dir already holds a repo (.git present)", async () => {

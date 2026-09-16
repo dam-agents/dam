@@ -18,15 +18,33 @@ export type CloneFn = (
   ref?: string,
 ) => Promise<Result<void, SkillsDomainError>>;
 
+export type FetchAtShaFn = (
+  url: string,
+  sha: string,
+  dest: string,
+) => Promise<Result<void, SkillsDomainError>>;
+
+const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Seeds the work directory from a repository once.
+ * A branch or tag is a shallow clone; a full commit sha — what a starter kit's
+ * seed resolves to — is fetched directly, because `git clone --branch` takes
+ * only a branch or tag. Either way the work directory becomes the checkout.
+ */
 export function createWorkspaceSeedPlugin(deps: {
   workDir: string;
   clone?: CloneFn;
+  fetchAtSha?: FetchAtShaFn;
   log: (msg: string) => void;
 }): Plugin {
   const clone: CloneFn =
     deps.clone ??
     ((url, dest, ref) =>
       createGitProtocolClient().cloneShallow(url, dest, 50, ref));
+  const fetchAtSha: FetchAtShaFn =
+    deps.fetchAtSha ??
+    ((url, sha, dest) => createGitProtocolClient().fetchAtSha(url, sha, dest));
 
   const seed = async ({
     url,
@@ -43,7 +61,10 @@ export function createWorkspaceSeedPlugin(deps: {
       );
     }
     deps.log(`[workspace-seed] cloning ${url}${at} into ${deps.workDir}`);
-    const res = await clone(url, deps.workDir, ref);
+    const res =
+      ref && COMMIT_SHA.test(ref)
+        ? await fetchAtSha(url, ref, deps.workDir)
+        : await clone(url, deps.workDir, ref);
     if (!res.ok) {
       const e = res.error;
       const detail = "detail" in e ? `: ${e.detail}` : "";

@@ -268,6 +268,14 @@ export function createStarterKitsService(
         ...(kit.knowledgeBase
           ? { kind: "knowledge-base", kbTemplateId: kit.knowledgeBase.template }
           : {}),
+        ...(kit.seed
+          ? {
+              gitRepo: {
+                url: kit.seed.url,
+                ...(kit.seed.ref ? { ref: kit.seed.ref } : {}),
+              },
+            }
+          : {}),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),
