@@ -271,6 +271,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	falseVal := false
 	automountSAToken := &falseVal
 	shareProcessNS := &falseVal
+	enableServiceLinks := &falseVal
 
 	podMeta := metav1.ObjectMeta{
 		Labels: podLabels,
@@ -285,6 +286,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		InitContainers:                initContainers,
 		AutomountServiceAccountToken:  automountSAToken,
 		ShareProcessNamespace:         shareProcessNS,
+		EnableServiceLinks:            enableServiceLinks,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
