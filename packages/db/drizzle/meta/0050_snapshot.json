@@ -1,5 +1,5 @@
 {
-  "id": "97bf87b9-4ac0-42af-b660-136cd6b7a7ab",
+  "id": "cb3ca98b-4ce7-4d00-831f-62b7b990cd9a",
   "prevId": "1456eda5-3b2b-48d4-8b26-2536354427a5",
   "version": "7",
   "dialect": "postgresql",
@@ -1843,13 +1843,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
         },
         "keycloak_sub": {
           "name": "keycloak_sub",

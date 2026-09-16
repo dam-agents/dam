@@ -30,7 +30,7 @@ export interface BoltSlackGatewayDeps {
   resolveBotToken: SlackTokenResolver;
   appToken: string;
   commandName: string;
-  onCredentialRejected?: (teamId: string) => Promise<void>;
+  onCredentialRejected: (teamId: string) => Promise<void>;
 }
 
 interface WorkspaceAuth {
@@ -169,10 +169,7 @@ export function createBoltSlackGateway(
         const text = msg.text ?? "";
         const selfId =
           context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
-        if (
-          selfId ? text.includes(`<@${selfId}>`) : /<@[UW][A-Z0-9]+>/.test(text)
-        )
-          return;
+        if (selfId && text.includes(`<@${selfId}>`)) return;
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
         }
@@ -194,7 +191,7 @@ export function createBoltSlackGateway(
       const forgetWorkspace = async (teamId: string | undefined) => {
         if (!teamId) return;
         workspaces.delete(teamId);
-        await deps.onCredentialRejected?.(teamId);
+        await deps.onCredentialRejected(teamId);
       };
       bolt.event("app_uninstalled", async ({ context }) => {
         await forgetWorkspace(context.teamId);

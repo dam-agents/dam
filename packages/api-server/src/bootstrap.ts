@@ -613,6 +613,8 @@ export async function bootstrap() {
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
     api,
+    resolveSlackWorkspace: (slackChannelId) =>
+      resolveSlackWorkspace(slackChannelId),
     agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,

@@ -102,7 +102,7 @@ export interface SlackPostMessage {
   threadTs?: string;
   blocks?: SlackBlock[];
   replyBroadcast?: boolean;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackPostEphemeral {
@@ -110,7 +110,7 @@ export interface SlackPostEphemeral {
   user: string;
   threadTs?: string;
   text: string;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackUpload {
@@ -120,7 +120,7 @@ export interface SlackUpload {
   title?: string;
   initialComment?: string;
   threadTs?: string;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackStartStream {
@@ -129,14 +129,14 @@ export interface SlackStartStream {
   recipientTeamId: string;
   recipientUserId: string;
   markdownText?: string;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackAppendStream {
   channel: string;
   ts: string;
   markdownText: string;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackStopStream {
@@ -144,14 +144,14 @@ export interface SlackStopStream {
   ts: string;
   markdownText?: string;
   blocks?: SlackBlock[];
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackSetStatus {
   channel: string;
   threadTs: string;
   status: string;
-  teamId: string;
+  teamId: SlackWorkspace;
 }
 
 export interface SlackChannelInfo {
@@ -194,51 +194,54 @@ export interface SlackGateway {
     channel: string;
     ts: string;
     name: string;
-    teamId: string;
+    teamId: SlackWorkspace;
   }): Promise<void>;
   getThreadReplies(args: {
     channel: string;
     threadTs: string;
     limit: number;
     oldest?: string;
-    teamId: string;
+    teamId: SlackWorkspace;
   }): Promise<SlackThreadRead>;
   getThreadTail(args: {
     channel: string;
     threadTs: string;
     limit: number;
     maxPages?: number;
-    teamId: string;
+    teamId: SlackWorkspace;
   }): Promise<SlackThreadRead>;
   getChannelHistory(args: {
     channel: string;
     limit: number;
     oldest?: string;
-    teamId: string;
+    teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   uploadFile(args: SlackUpload): Promise<void>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,
-    teamId: string,
+    teamId: SlackWorkspace,
   ): Promise<ArrayBuffer>;
-  listBotChannels(teamId: string): Promise<SlackChannelInfo[]>;
+  listBotChannels(teamId: SlackWorkspace): Promise<SlackChannelInfo[]>;
   getConversationInfo(
     channelId: string,
-    teamId: string,
+    teamId: SlackWorkspace,
   ): Promise<{ isMember: boolean } | null>;
-  getUserInfo(userId: string, teamId: string): Promise<SlackUserInfo | null>;
+  getUserInfo(
+    userId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackUserInfo | null>;
   getMessageReactions(
     channel: string,
     ts: string,
-    teamId: string,
+    teamId: SlackWorkspace,
   ): Promise<SlackMessageReaction[] | null>;
-  openDirectMessage(userId: string, teamId: string): Promise<string>;
+  openDirectMessage(userId: string, teamId: SlackWorkspace): Promise<string>;
   getPermalink(
     channel: string,
     ts: string,
-    teamId: string,
+    teamId: SlackWorkspace,
   ): Promise<string | null>;
-  getGrantedScopes(teamId: string): Promise<Set<string> | null>;
-  getBotUserId(teamId: string): Promise<string | null>;
+  getGrantedScopes(teamId: SlackWorkspace): Promise<Set<string> | null>;
+  getBotUserId(teamId: SlackWorkspace): Promise<string | null>;
 }
