@@ -4,8 +4,28 @@ import { useState } from "react";
 
 import { PageHeader } from "@/components/ui/page-header";
 
+import { AgentRow } from "../../modules/agents/components/agent-row.js";
+import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { ArtifactPreviewDialog } from "../../modules/artifacts/components/artifact-preview-dialog.js";
+import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import { NotificationRow } from "../../modules/home/components/notification-row.js";
+import type { AgentView } from "../../types.js";
+import {
+  allFixtureAgents,
+  bareAgent,
+  demoPackAgent,
+  errorAgent,
+  experimentAgent,
+  fixtureSchedules,
+  fullAgent,
+  hibernatedUnknownSkills,
+  knowledgeBaseAgent,
+  neverHibernatesButHibernated,
+  neverHibernatesOverBudget,
+  packSkippedAgent,
+  singularAgent,
+  temporaryDriverAgent,
+} from "./agent-card-fixtures.js";
 import { agents } from "./agents.js";
 
 const running = agents.find((a) => a.state === "running")!;
@@ -390,8 +410,66 @@ function NotificationRowSection() {
 }
 
 
+function CardDemo({
+  agent,
+  label,
+  isDemo,
+}: {
+  agent: AgentView;
+  label: string;
+  isDemo?: boolean;
+}) {
+  const display = resolveAgentDisplay(agent, new Set(), new Set());
+  const scheduleCount = fixtureSchedules.filter(
+    (s) => s.agentId === agent.id,
+  ).length;
+  return (
+    <div className="flex flex-col gap-3">
+      <StateLabel>{label}</StateLabel>
+      <AgentRow
+        agent={agent}
+        display={display}
+        deletePending={false}
+        isDemo={isDemo}
+        onSelect={noop}
+        onConfigure={noop}
+        configureLabel="Configure"
+        onWake={noop}
+        onRestart={noop}
+        onPause={noop}
+        onStop={noop}
+        onDelete={noop}
+        scheduleCount={scheduleCount}
+      />
+    </div>
+  );
+}
+
+function AgentCardSection() {
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader title="Agent Cards" />
+
+      <div className="flex flex-col gap-8">
+        <CardDemo agent={fullAgent} label="§5-1 Full card — always-on, slack, schedules" />
+        <CardDemo agent={bareAgent} label="§5-2 Bare card — nothing attached" />
+        <CardDemo agent={singularAgent} label="§5-3 One-of-each — singular forms" />
+        <CardDemo agent={hibernatedUnknownSkills} label="§5-4 Hibernated, unknown skills" />
+        <CardDemo agent={neverHibernatesButHibernated} label="§5-5a Never-hibernates but stopped" />
+        <CardDemo agent={neverHibernatesOverBudget} label="§5-5b Never-hibernates, over budget" />
+        <CardDemo agent={knowledgeBaseAgent} label="§5-6 Knowledge base" />
+        <CardDemo agent={experimentAgent} label="§5-7 Experiment" />
+        <CardDemo agent={packSkippedAgent} label="§5-8 Pack applied, partly skipped" />
+        <CardDemo agent={errorAgent} label="§5-9 Error state" />
+        <CardDemo agent={temporaryDriverAgent} label="§5-10 Temporary-agent driver" />
+        <CardDemo agent={demoPackAgent} label="§5-11 Demo pack agent" isDemo />
+      </div>
+    </div>
+  );
+}
+
 export function AgentCardGallery() {
-  document.title = "Notifications";
+  document.title = "Card Gallery";
   return (
     <div>
       <PageHeader
@@ -401,6 +479,7 @@ export function AgentCardGallery() {
 
       <div className="flex flex-col gap-8">
         <NotificationRowSection />
+        <AgentCardSection />
       </div>
     </div>
   );
