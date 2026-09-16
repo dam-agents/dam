@@ -39,7 +39,7 @@ function LastRunLine({ schedule }: { schedule: Schedule }) {
   if (!lastRun) return null;
   const status = lastRunStatus(schedule.status?.lastResult);
   return (
-    <p className="px-5 pb-1 pt-4 text-sm text-muted-foreground md:px-6">
+    <p className="px-5 pb-4 text-sm text-muted-foreground md:px-6">
       Last run {formatRunTime(lastRun)}
       {status && <span className={status.className}> — {status.label}</span>}
     </p>
@@ -86,7 +86,6 @@ export function ScheduleResultsModal({
       <DialogBody flush className="min-h-[50vh]">
         {!operable && (
           <>
-            <LastRunLine schedule={schedule} />
             <div className="px-5 py-4 md:px-6">
               <AgentStoppedCallout
                 comingUp={comingUp}
@@ -97,6 +96,7 @@ export function ScheduleResultsModal({
                 see them.
               </AgentStoppedCallout>
             </div>
+            <LastRunLine schedule={schedule} />
           </>
         )}
         {operable && sessionsQuery.isError && (
