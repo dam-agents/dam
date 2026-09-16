@@ -6,6 +6,8 @@ import {
   CardText,
   Chat,
   LinkButton,
+  type Adapter,
+  type LogLevel,
   type CardElement,
   type Thread,
   type StateAdapter,
@@ -91,16 +93,20 @@ async function isTelegramChatAdmin(
   userId: string,
 ): Promise<boolean> {
   const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`;
-  const res = await fetch(url);
-  if (!res.ok) return false;
-  const data = (await res.json()) as {
-    ok: boolean;
-    result?: { status: string };
-  };
-  if (!data.ok || !data.result) return false;
-  return (
-    data.result.status === "creator" || data.result.status === "administrator"
-  );
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      ok: boolean;
+      result?: { status: string };
+    };
+    if (!data.ok || !data.result) return false;
+    return (
+      data.result.status === "creator" || data.result.status === "administrator"
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function fetchTelegramChatTitle(
@@ -148,6 +154,35 @@ async function fetchTelegramBotUsername(
   }
 }
 
+export const TELEGRAM_COMMANDS = [
+  { command: "bind", description: "Connect this chat to one of your agents" },
+  { command: "unbind", description: "Disconnect this chat from its agent" },
+];
+
+async function publishTelegramCommands(botToken: string): Promise<void> {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/setMyCommands`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
+      },
+    );
+    if (!res.ok) {
+      getLogger().warn(
+        { status: res.status },
+        "telegram.commands.publish_failed",
+      );
+    }
+  } catch (err) {
+    getLogger().warn(
+      { error: String(err) },
+      "telegram.commands.publish_failed",
+    );
+  }
+}
+
 export interface ThreadLike {
   id: string;
   isDM: boolean;
@@ -165,13 +200,21 @@ export interface TelegramInboundMessage {
   };
 }
 
-function isCommand(text: string, command: string): boolean {
+function isCommand(
+  text: string,
+  command: string,
+  botUsername: string | null,
+): boolean {
+  if (text === command || text.startsWith(`${command} `)) return true;
+  if (!text.startsWith(`${command}@`)) return false;
+  const addressed = text.slice(command.length + 1).split(/\s+/)[0] ?? "";
   return (
-    text === command ||
-    text.startsWith(`${command} `) ||
-    text.startsWith(`${command}@`)
+    botUsername !== null &&
+    addressed.toLowerCase() === botUsername.toLowerCase()
   );
 }
+
+export const COMMAND_PATTERN = /^\/(?:bind|unbind|start)(?:@\S+)?(?:\s|$)/;
 
 export function createTelegramMessageHandler(deps: {
   conversations: TelegramConversationsPort;
@@ -182,7 +225,7 @@ export function createTelegramMessageHandler(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  brandShort: string;
+  botUsername: () => string | null;
   relay: (
     agentId: string,
     thread: ThreadLike,
@@ -190,8 +233,6 @@ export function createTelegramMessageHandler(deps: {
     author: TelegramInboundMessage["author"],
   ) => Promise<void>;
 }) {
-  const brandCmd = `/${deps.brandShort}`;
-
   async function denyNonAdmin(
     thread: ThreadLike,
     telegramUserId: string,
@@ -212,7 +253,7 @@ export function createTelegramMessageHandler(deps: {
       reason: "not-group-admin",
       detail: { telegramUserId, threadId: thread.id, command: action },
     });
-    await thread.post(`Only group admins can \`${brandCmd} ${action}\`.`);
+    await thread.post(`Only group admins can \`/${action}\`.`);
     return true;
   }
 
@@ -222,7 +263,7 @@ export function createTelegramMessageHandler(deps: {
     const binding = await deps.conversations.findAgentByConversation(thread.id);
     if (binding) {
       await thread.post(
-        `This chat is already connected to an agent. Send \`${brandCmd} unbind\` first to reconnect.`,
+        "This chat is already connected to an agent. Send `/unbind` first to reconnect.",
       );
       return;
     }
@@ -271,9 +312,7 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: thread.id, byTelegramUserId: telegramUserId },
     });
-    await thread.post(
-      `Chat disconnected. Send \`${brandCmd} bind\` to connect it again.`,
-    );
+    await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
 
   return async function handleMessage(
@@ -284,28 +323,14 @@ export function createTelegramMessageHandler(deps: {
     if (message.author.isMe) return;
     const text = message.text.trim();
 
-    if (isCommand(text, brandCmd)) {
-      const sub =
-        text
-          .slice(brandCmd.length)
-          .replace(/^@\S+/, "")
-          .trim()
-          .toLowerCase()
-          .split(/\s+/)[0] ?? "";
-      if (sub === "bind") {
-        await handleBind(thread, message.author.userId);
-      } else if (sub === "unbind") {
-        await handleUnbind(thread, message.author.userId);
-      } else {
-        await thread.post(
-          `Send \`${brandCmd} bind\` to connect an agent, or \`${brandCmd} unbind\` to disconnect.`,
-        );
-      }
+    const self = deps.botUsername();
+    if (isCommand(text, "/bind", self) || isCommand(text, "/start", self)) {
+      await handleBind(thread, message.author.userId);
       return;
     }
 
-    if (isCommand(text, "/start")) {
-      await handleBind(thread, message.author.userId);
+    if (isCommand(text, "/unbind", self)) {
+      await handleUnbind(thread, message.author.userId);
       return;
     }
 
@@ -326,7 +351,7 @@ export function createTelegramMessageHandler(deps: {
       });
       if (thread.isDM) {
         await thread.post(
-          `This chat isn't connected to an agent. An admin needs to send \`${brandCmd} bind\`.`,
+          "This chat isn't connected to an agent. An admin needs to send `/bind`.",
         );
       }
       return;
@@ -345,6 +370,72 @@ export function createTelegramMessageHandler(deps: {
   };
 }
 
+export function createTelegramChat(deps: {
+  adapter: Adapter;
+  state: StateAdapter;
+  logLevel?: LogLevel;
+  handleMessage: (
+    thread: ThreadLike,
+    message: TelegramInboundMessage,
+    subscribe: boolean,
+  ) => Promise<void>;
+}): Chat {
+  const chat = new Chat({
+    userName: "platform",
+    adapters: { telegram: deps.adapter },
+    state: deps.state,
+    ...(deps.logLevel ? { logger: deps.logLevel } : {}),
+  });
+
+  const dispatch = async (
+    thread: ThreadLike,
+    message: TelegramInboundMessage,
+    subscribe: boolean,
+  ) => {
+    try {
+      await deps.handleMessage(thread, message, subscribe);
+    } catch (err) {
+      getLogger().warn(
+        { threadId: thread.id, error: String(err) },
+        "telegram.inbound.failed",
+      );
+    }
+  };
+
+  chat.onDirectMessage((thread, message) => dispatch(thread, message, true));
+  chat.onNewMention((thread, message) => dispatch(thread, message, true));
+  chat.onSubscribedMessage((thread, message) =>
+    dispatch(thread, message, false),
+  );
+  chat.onNewMessage(COMMAND_PATTERN, (thread, message) =>
+    dispatch(thread, message, true),
+  );
+  chat.onSlashCommand(async (event) => {
+    const channel = event.channel;
+    const thread: ThreadLike = {
+      id: channel.id,
+      isDM: event.adapter.isDM?.(channel.id) ?? channel.isDM,
+      post: (message) => channel.post(message),
+      subscribe: () => deps.state.subscribe(channel.id),
+    };
+    await dispatch(
+      thread,
+      {
+        text: [event.command, event.text].filter(Boolean).join(" ").trim(),
+        author: {
+          userId: event.user.userId,
+          userName: event.user.userName,
+          fullName: event.user.fullName,
+          isMe: event.user.isMe ?? false,
+        },
+      },
+      true,
+    );
+  });
+
+  return chat;
+}
+
 export function createTelegramWorker(deps: {
   botToken: string;
   configuredBotUsername?: string | null;
@@ -356,8 +447,8 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  brandShort: string;
   brandName: string;
+  logLevel?: LogLevel;
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
@@ -567,12 +658,6 @@ export function createTelegramWorker(deps: {
       try {
         const polling = createTelegramAdapter({ botToken, mode: "polling" });
         adapter = polling;
-        const chat = new Chat({
-          userName: "platform",
-          adapters: { telegram: polling },
-          state: deps.state,
-        });
-
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
           isChatAdmin:
@@ -584,23 +669,21 @@ export function createTelegramWorker(deps: {
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
           uiBaseUrl: deps.uiBaseUrl,
-          brandShort: deps.brandShort,
+          botUsername: () => username,
           relay: enqueueTelegramTurn,
         });
 
-        chat.onDirectMessage((thread, message) =>
-          handleMessage(thread, message, true),
-        );
-        chat.onNewMention((thread, message) =>
-          handleMessage(thread, message, true),
-        );
-        chat.onSubscribedMessage((thread, message) =>
-          handleMessage(thread, message, false),
-        );
+        const chat = createTelegramChat({
+          adapter: polling,
+          state: deps.state,
+          ...(deps.logLevel ? { logLevel: deps.logLevel } : {}),
+          handleMessage,
+        });
 
         await chat.initialize();
         await polling.startPolling();
         bot = { chat, adapter: polling };
+        await publishTelegramCommands(botToken);
         if (!username)
           username = await fetchTelegramBotUsername(botToken).catch(() => null);
         process.stderr.write(

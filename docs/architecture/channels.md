@@ -19,7 +19,7 @@ Multiple bindings share the Agent but never each other's conversations: routing 
 Channels split along a structural axis that has real consequences for secrets and identity:
 
 - **Platform channel** — one app serves the whole install. The operator configures it once via Helm values; per-Agent config is just _which conversation this Agent listens to_. Both messengers are platform channels today. On Slack, identity linking ties messenger users to Keycloak subs at the workspace level.
-- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram _conversation_ binds to exactly one Agent — the owner consents by completing an in-chat `/platform bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram _conversation_ binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
 
 ### Shared access — the one model
 
@@ -141,9 +141,9 @@ Which of two strategies an optional scope gets follows from what its absence mea
 
 ### Telegram — platform channel
 
-- **Transport.** Long-poll `getUpdates` — one client for the install, started by the lease-holding replica at boot (the Bot API admits no second consumer) so `/platform bind` works in chats that have no binding yet.
+- **Transport.** Long-poll `getUpdates` — one client for the install, started by the lease-holding replica at boot (the Bot API admits no second consumer) so `/bind` works in chats that have no binding yet. The same boot step advertises the command list to the Bot API, which is what makes the commands offered when someone types `/`.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env. No per-Agent Secrets, no token at rest in Postgres.
-- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the _conversation_: someone sends `/platform bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing _their own_ Agents. The bot posts a confirmation in the chat. The chat's members never authenticate. `/platform unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released. Unbound groups stay silent so the bot does not spam every chat it has been added to. The command surface is deliberately the same subcommand form Slack uses, with a bare `/platform` printing the two commands.
+- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the _conversation_: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing _their own_ Agents. The bot posts a confirmation in the chat. The chat's members never authenticate. `/unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released. Unbound groups stay silent so the bot does not spam every chat it has been added to. The command surface is bare — `/bind`, `/unbind`, `/start` — not Slack's brand-prefixed form: a Telegram command is already scoped to the bot it reaches.
 - **Lifecycle.** There is none per Agent — bindings are rows, not runtime state. Agent deletion clears the Agent's rows, on any deletion path.
 
 Slack keeps per-Agent worker registration via `SlackConnected` / `SlackDisconnected` / `AgentDeleted` events on the rxjs bus, which is in-process, so they act only where the workers run — a bind served by another replica reaches the worker through the binding rows, which every path re-reads. Bootstrap runs when a replica takes the api-server lease: transports start independently, so one outage does not stop the others, and a failed one retries on a timer. It then walks the bindings to restore the registrations.
@@ -154,7 +154,7 @@ A channel message becoming an agent turn — the inbound relay into an ACP sessi
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: install-wide credentials from Helm and a conversation→Agent binding table, differing mainly in where the binding is gestured — Slack from the UI/CLI or an in-chat `/platform bind`, Telegram from an in-chat `/platform bind` plus the web agent picker. Both expose the same in-chat command surface — `/platform bind` and `/platform unbind`. Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
+Both messengers are platform channels: install-wide credentials from Helm and a conversation→Agent binding table, differing mainly in where the binding is gestured — Slack from the UI/CLI or an in-chat `/platform bind`, Telegram from an in-chat `/bind` plus the web agent picker. The verbs match; the spelling follows each messenger — Slack prefixes its registered slash command, Telegram uses bare ones. Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 
 ## Persistence touchpoints
 

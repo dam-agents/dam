@@ -33,7 +33,7 @@ COPY packages/api-server/ packages/api-server/
 COPY packages/db/ packages/db/
 
 RUN pnpm --filter api-server exec tsup \
-    && pnpm --filter api-server --prod --legacy deploy /prod
+    && pnpm --filter api-server deploy --frozen-lockfile --prod --node-linker=hoisted /prod
 
 FROM registry.access.redhat.com/hi/nodejs:24 AS runner
 
