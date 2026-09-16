@@ -1,6 +1,7 @@
 import { SessionType } from "api-server-api";
 import { useEffect, useRef } from "react";
 
+import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 
@@ -20,9 +21,11 @@ export function useOpenOnboardingSession(opts: {
   const { agentId, active, idle, resumeSession } = opts;
   const openedForAgentRef = useRef<string | null>(null);
   const operable = useIsAgentOperable(agentId);
+  const requestedSession = useStore((st) => st.pendingResumeSessionId);
   const armed =
     active &&
     idle &&
+    requestedSession === null &&
     agentId !== null &&
     operable &&
     openedForAgentRef.current !== agentId;
