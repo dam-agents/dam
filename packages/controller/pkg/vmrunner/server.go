@@ -656,9 +656,6 @@ func failureReason(err error) string {
 func (s *Server) roomFor(id string, spec MachineSpec) error {
 	limit := s.MemoryMiB
 	if limit == 0 {
-		limit = memoryLimitMiB()
-	}
-	if limit == 0 {
 		return nil
 	}
 	ids, err := s.machineIDs()
@@ -697,31 +694,4 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 			spec.MemoryMiB, limit-s.ReserveMiB, used)
 	}
 	return nil
-}
-
-func memoryLimitMiB() int {
-	if b, err := os.ReadFile("/sys/fs/cgroup/memory.max"); err == nil {
-		if v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
-			return int(v >> 20)
-		}
-	}
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if !strings.HasPrefix(line, "MemTotal:") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return 0
-		}
-		kb, err := strconv.Atoi(fields[1])
-		if err != nil {
-			return 0
-		}
-		return kb >> 10
-	}
-	return 0
 }

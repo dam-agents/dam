@@ -17,7 +17,7 @@ func main() {
 	smolvm := flag.String("smolvm", "smolvm", "smolvm binary")
 	portMin := flag.Int("port-min", 31000, "first port machines are published on")
 	portMax := flag.Int("port-max", 31099, "last port machines are published on")
-	memory := flag.Int("memory-mib", 0, "memory the runner may commit to machines (0 = read the container's own limit)")
+	memory := flag.Int("memory-mib", 0, "memory the runner may commit to machines; required")
 	reserve := flag.Int("reserve-mib", 512, "memory kept for the runner itself when admitting a machine")
 	tokenFile := flag.String("token-file", "/etc/vm-runner/token", "bearer token the controller authenticates with")
 	tlsCert := flag.String("tls-cert", "", "TLS certificate for the machine API (plain HTTP when unset)")
@@ -43,6 +43,10 @@ func main() {
 			}
 			srv.AllowFrom = append(srv.AllowFrom, n)
 		}
+	}
+	if *memory <= 0 {
+		slog.Error("--memory-mib is required: without it the runner admits machines against no limit at all")
+		os.Exit(1)
 	}
 	for _, dev := range []string{"/dev/kvm", "/dev/net/tun"} {
 		if err := os.Chmod(dev, 0o666); err != nil {
