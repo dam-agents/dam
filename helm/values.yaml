@@ -206,16 +206,15 @@ virtualization:
     # on top of the NetworkPolicy that limits them to the api-server and the
     # controller; empty means the policy is the only gate.
     ingressCidrs: []
-    # Where the runner pod itself may send traffic. EMPTY MEANS UNRESTRICTED,
-    # which is how a cluster behaves without a policy — and it is the weakest
-    # point of this design: a machine's egress allowlist is enforced by smolvm
-    # inside the very process an escaped guest would own, so with no kernel
-    # gate behind it such a guest reaches the platform's datastores and every
-    # other owner's gateway. Set this and the runner is confined to DNS, the
-    # paired gateways, and these CIDRs. It cannot default to closed because
-    # the runner also pulls agent images, so the registry has to be named:
-    # REQUIRED when virtualization.enabled — the install fails without it,
-    # because an unstated choice here means an unconfined runner.
+    # Where the runner pod itself may send traffic. REQUIRED when
+    # virtualization.enabled — the install fails without it, because leaving
+    # it empty means no policy at all, and that is the weakest point of this
+    # design: a machine's egress allowlist is enforced by smolvm inside the
+    # very process an escaped guest would own, so with no kernel gate behind
+    # it such a guest reaches the platform's datastores and every other
+    # owner's gateway. Set this and the runner is confined to DNS, the paired
+    # gateways, and these CIDRs. It cannot default to closed because the
+    # runner also pulls agent images, so the registry has to be named.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
     # allows everything and confines nothing — pair it with the cluster's own
     # ranges in egressExceptCidrs, or name the registry directly:

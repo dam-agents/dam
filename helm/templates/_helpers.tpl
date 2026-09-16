@@ -535,3 +535,28 @@ API Server ServiceAccount name
 - name: BOB_TELEMETRY_LF_SECRET_KEY
   value: "unused"
 {{- end }}
+
+{{/*
+OpenShift grants `use` on a built-in SCC through an auto-generated ClusterRole
+named system:openshift:scc:<scc>. The VM runner identity and the KVM device
+plugin both bind one the same way.
+Args: dict "root" $ "name" <ServiceAccount> "component" <label> "scc" <scc>.
+*/}}
+{{- define "platform.sccRoleBinding" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}-scc
+  namespace: {{ .root.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" .root | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:{{ .scc }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .name }}
+    namespace: {{ .root.Release.Namespace }}
+{{- end }}

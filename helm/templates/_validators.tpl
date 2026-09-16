@@ -12,6 +12,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
+{{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- end -}}
@@ -80,6 +81,27 @@ an install has to say, rather than inherit an open pod by omission.
 {{- if .Values.virtualization.enabled -}}
 {{- if not .Values.virtualization.runner.egressCidrs -}}
 {{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs — the only kernel gate behind a guest's own egress allowlist. See virtualization.runner.egressCidrs in values.yaml for what to set; to leave the runner unconfined, say so out loud with [0.0.0.0/0] and no exceptions." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+On OpenShift the chart's own SCC is the only one the runner and the device
+plugin get, and it admits neither a privileged container nor a hostPath
+volume. Without a built-in SCC bound as well, admission refuses the pod and
+the failure is silent where it hurts most: a rejected device plugin advertises
+no KVM resource, so every runner pod pends forever on a resource nothing will
+ever publish. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
+signal that this is an OpenShift cluster.
+*/}}
+{{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
+{{- if and .Values.virtualization.enabled .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- if and $v.devicePlugin.enabled (not $v.devicePlugin.scc) -}}
+{{- fail "on OpenShift, virtualization.devicePlugin.enabled=true requires virtualization.devicePlugin.scc (the plugin runs privileged with the kubelet's device-plugin socket and /dev). Set it to `privileged`, or the DaemonSet never admits, advertises no KVM resource, and every VM runner pod pends forever." -}}
+{{- end -}}
+{{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

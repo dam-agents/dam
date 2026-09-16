@@ -18,23 +18,7 @@ metadata:
     app.kubernetes.io/component: vm-runner
 {{- with .Values.virtualization.runner.scc }}
 ---
-{{- /* OpenShift: `use` on a built-in SCC comes as an auto-generated ClusterRole. */}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ $name }}-scc
-  namespace: {{ $.Release.Namespace }}
-  labels:
-    {{- include "platform.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: vm-runner
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:openshift:scc:{{ . }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $name }}
-    namespace: {{ $.Release.Namespace }}
+{{ include "platform.sccRoleBinding" (dict "root" $ "name" $name "component" "vm-runner" "scc" .) }}
 {{- end }}
 {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 ---
