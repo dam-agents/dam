@@ -140,6 +140,20 @@ describe("slack install service — the original workspace's two names", () => {
   });
 
   /**
+   * TEST_SCENARIO: A workspace this platform never recorded — the shape a
+   * refused install leaves behind, because Slack has already installed the app
+   * by the time the organization check turns it away, and keeps delivering its
+   * events. It must get no token at all. Handing it the operator's token would
+   * answer for a workspace nobody agreed to serve, using the credential of the
+   * one workspace that was set up by hand.
+   */
+  it("gives no token to a workspace it has no row for", async () => {
+    const { svc } = service({ identifiesAs: ORIGINAL_TEAM });
+
+    expect(await svc.resolveBotToken("T-REFUSED")).toBeNull();
+  });
+
+  /**
    * TEST_SCENARIO: Another workspace, which has nothing to do with the operator
    * token, still resolves through its own row.
    */

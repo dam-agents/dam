@@ -14,13 +14,14 @@ export function SlackWorkspacesView() {
   const start = useStartSlackInstall();
   const invitation = useSlackInvitationLink();
   const { copy, state: copyState } = useCopy();
+  const link = invitation.data;
 
   const copyLabel =
     copyState === "copied"
-      ? "Link copied"
+      ? "Copied"
       : copyState === "failed"
-        ? "Couldn't copy"
-        : "Copy an invitation link";
+        ? "Couldn't copy — select it instead"
+        : "Copy";
 
   return (
     <div className="anim-in">
@@ -32,9 +33,9 @@ export function SlackWorkspacesView() {
       <Card className="p-5">
         <p className="text-sm text-muted-foreground">
           An admin of the workspace you are adding has to approve {brandShort}{" "}
-          in Slack. Go there yourself if you administer that workspace, or copy
-          an invitation link and send it to someone who does — they need no{" "}
-          {brandShort} account. A link is good for 24 hours and works once.
+          in Slack. Go there yourself if you administer that workspace, or
+          create an invitation link and send it to someone who does — they need
+          no {brandShort} account. A link is good for 24 hours and works once.
         </p>
         <p className="mt-3 text-sm text-muted-foreground">
           Whoever approves it needs to be on the VPN, because Slack sends their
@@ -47,12 +48,27 @@ export function SlackWorkspacesView() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => copy(() => invitation.mutateAsync())}
+            onClick={() => invitation.mutate()}
             disabled={invitation.isPending}
           >
-            {invitation.isPending ? "Creating…" : copyLabel}
+            {invitation.isPending ? "Creating…" : "Create an invitation link"}
           </Button>
         </div>
+
+        {link && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <input
+              readOnly
+              value={link}
+              aria-label="Slack invitation link"
+              onFocus={(e) => e.currentTarget.select()}
+              className="min-w-0 flex-1 rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs"
+            />
+            <Button variant="outline" size="sm" onClick={() => copy(link)}>
+              {copyLabel}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

@@ -476,7 +476,11 @@ export function createAgentsService(deps: {
   };
   resolveSlackWorkspace: (
     slackChannelId: string,
-  ) => Promise<{ kind: "resolved"; teamId: string } | { kind: "unknown" }>;
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "unknown" }
+    | { kind: "unreachable" }
+  >;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -545,6 +549,9 @@ export function createAgentsService(deps: {
     );
 
     const workspace = await deps.resolveSlackWorkspace(slackChannelId);
+    if (workspace.kind === "unreachable") {
+      return err({ type: "WorkspaceUnreachable" as const });
+    }
     if (workspace.kind !== "resolved") {
       return err({ type: "WorkspaceUnresolved" as const });
     }

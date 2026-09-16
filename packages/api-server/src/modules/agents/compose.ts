@@ -66,7 +66,11 @@ export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   resolveSlackWorkspace: (
     slackChannelId: string,
-  ) => Promise<{ kind: "resolved"; teamId: string } | { kind: "unknown" }>;
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "unknown" }
+    | { kind: "unreachable" }
+  >;
   agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;

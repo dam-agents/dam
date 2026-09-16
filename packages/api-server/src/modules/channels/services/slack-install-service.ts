@@ -76,14 +76,16 @@ export function createSlackInstallService(
 
   async function readWorkspaceToken(teamId: string): Promise<string | null> {
     const install = await deps.find(teamId);
-    if (!install) return deps.envBotToken;
-    if (install.credentialState !== "active") return null;
-    const stored = await deps.secrets.getField({
-      storeId: deps.secrets.storeId,
-      path: install.secretPath,
-      field: install.secretField,
-    });
-    return stored ?? null;
+    if (install) {
+      if (install.credentialState !== "active") return null;
+      const stored = await deps.secrets.getField({
+        storeId: deps.secrets.storeId,
+        path: install.secretPath,
+        field: install.secretField,
+      });
+      return stored ?? null;
+    }
+    return (await originalWorkspaceId()) === teamId ? deps.envBotToken : null;
   }
 
   return {

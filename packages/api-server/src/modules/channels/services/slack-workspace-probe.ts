@@ -7,7 +7,8 @@ export type SlackConversationStanding = "member" | "known" | "unknown";
 
 export type SlackWorkspaceResolution =
   | { kind: "resolved"; teamId: SlackWorkspace }
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  | { kind: "unreachable" };
 
 export interface SlackWorkspaceProbeDeps {
   listInstalledWorkspaces: () => Promise<SlackWorkspace[]>;
@@ -29,7 +30,11 @@ export interface SlackWorkspaceProbeDeps {
  * place. Membership is what separates them — a workspace the bot was invited
  * to can post, one that merely sees the channel cannot — and among equals the
  * original workspace wins so the answer is stable across binds. Only a
- * conversation no connected workspace can see is refused.
+ * conversation no connected workspace can see is refused — and a workspace
+ * that could not be asked at all, because it withheld the scope the question
+ * needs or Slack did not answer, is reported apart from one that answered no.
+ * Reading the two the same way tells an operator to check a conversation id
+ * that was right all along.
  *
  * The install that predates multi-workspace support is the empty workspace,
  * and while it is the only one no call is made at all: a single-workspace
@@ -45,16 +50,20 @@ export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
 
     const members: SlackWorkspace[] = [];
     const seers: SlackWorkspace[] = [];
+    let anyUnreachable = false;
     for (const teamId of candidates) {
-      const standing = await deps
-        .standingIn(slackChannelId, teamId)
-        .catch((): SlackConversationStanding => "unknown");
+      let standing: SlackConversationStanding;
+      try {
+        standing = await deps.standingIn(slackChannelId, teamId);
+      } catch {
+        anyUnreachable = true;
+        continue;
+      }
       if (standing === "member") members.push(teamId);
       else if (standing === "known") seers.push(teamId);
     }
     const chosen = members[0] ?? seers[0];
-    return chosen === undefined
-      ? { kind: "unknown" }
-      : { kind: "resolved", teamId: chosen };
+    if (chosen !== undefined) return { kind: "resolved", teamId: chosen };
+    return anyUnreachable ? { kind: "unreachable" } : { kind: "unknown" };
   };
 }

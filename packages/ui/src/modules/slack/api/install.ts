@@ -13,7 +13,12 @@ async function authFetch(path: string): Promise<Response> {
 export async function fetchSlackInstallAvailability(): Promise<boolean> {
   const res = await authFetch("/api/slack/install/status");
   const routeIsNotMounted = res.status === 404;
-  if (routeIsNotMounted || !res.ok) return false;
+  if (routeIsNotMounted) return false;
+  if (!res.ok) {
+    throw new Error(
+      `Could not check the Slack install surface (${res.status})`,
+    );
+  }
   return installStatusSchema.parse(await res.json()).canInstall;
 }
 

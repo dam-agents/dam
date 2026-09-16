@@ -91,6 +91,22 @@ async function exchangeInstallCode(
   return (await res.json()) as SlackOAuthAccessResponse;
 }
 
+async function revokeToken(token: string): Promise<void> {
+  try {
+    await fetch("https://slack.com/api/auth.revoke", {
+      method: "POST",
+      signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: `Bearer ${token}`,
+      },
+      body: new URLSearchParams({ token }),
+    });
+  } catch {
+    return;
+  }
+}
+
 async function exchangeOrError(
   oauth: SlackInstallOAuthConfig,
   code: string,
@@ -178,6 +194,7 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
 
     const organization = deps.oauth.enterpriseId;
     if (organization && result.enterprise?.id !== organization) {
+      await revokeToken(result.access_token);
       securityLog("warn", "slack.install.denied", {
         category: "credential",
         actor: pending.startedBy || null,

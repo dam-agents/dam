@@ -4,7 +4,9 @@
 -- handshake. The bot token itself never lands here — it goes to a Kubernetes
 -- Secret and the row only points at it, so Postgres holds no credential. The
 -- install that predates this table has no row at all: it keeps being served by
--- the operator-supplied token in api-server env, which stays the last resort.
+-- the operator-supplied token in api-server env. That token answers for that
+-- one workspace and no other — a workspace with no row is one nobody agreed to
+-- serve, which is what a refused install leaves behind, and it gets nothing.
 -- credential_state is an enum rather than free text because a value outside the
 -- known set would read as usable and quietly serve a dead credential.
 --

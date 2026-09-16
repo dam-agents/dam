@@ -197,6 +197,12 @@ export const agentsRouter = t.router({
             message:
               "No connected Slack workspace can see that conversation — check the id, and invite the bot to the channel first if it is private",
           });
+        case "WorkspaceUnreachable":
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "Slack could not be asked which workspace that conversation belongs to. The conversation id may well be right — try again, and if it persists check that the app still holds the channels:read and groups:read scopes",
+          });
       }
     }),
 

@@ -128,4 +128,21 @@ describe("slack workspace probe", () => {
 
     expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "T2" });
   });
+
+  /**
+   * TEST_SCENARIO: No workspace could be asked at all — every one withheld the
+   * scope the question needs, or Slack is down. That is not the same answer as
+   * "nobody can see it": reading them alike tells the operator to check a
+   * conversation id that was right all along, so the two are reported apart.
+   */
+  it("separates being unable to ask from nobody being able to see it", async () => {
+    const probe = createSlackWorkspaceProbe({
+      listInstalledWorkspaces: async () => ["T2"],
+      standingIn: async () => {
+        throw new Error("missing_scope");
+      },
+    });
+
+    expect(await probe("C1")).toEqual({ kind: "unreachable" });
+  });
 });

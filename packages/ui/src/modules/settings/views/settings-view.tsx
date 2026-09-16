@@ -60,10 +60,11 @@ export function SettingsView() {
   const { data: flags } = useFeatures();
   const showFeatures =
     isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
-  const { data: canInstallSlack } = useSlackInstallAvailability();
+  const slackInstall = useSlackInstallAvailability();
+  const showSlackWorkspaces = slackInstall.data === true;
   const tabs = [
     ...baseTabs,
-    ...(canInstallSlack
+    ...(showSlackWorkspaces
       ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
       : []),
     ...(showFeatures
@@ -73,7 +74,7 @@ export function SettingsView() {
   const rawTab = useStore((s) => s.settingsTab);
   const hiddenTab =
     (rawTab === "features" && !showFeatures) ||
-    (rawTab === "slack-workspaces" && canInstallSlack === false);
+    (rawTab === "slack-workspaces" && !showSlackWorkspaces);
   const activeTab = hiddenTab ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
@@ -221,9 +222,7 @@ export function SettingsView() {
           </div>
         )}
 
-        {activeTab === "slack-workspaces" && canInstallSlack && (
-          <SlackWorkspacesView />
-        )}
+        {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
 
         {activeTab === "features" && <FeaturesTab />}
       </div>
