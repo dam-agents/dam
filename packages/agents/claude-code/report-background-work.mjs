@@ -31,12 +31,19 @@ try {
           ? { command: String(task.command).slice(0, 500) }
           : {}),
       }));
+    const telemetryPromptId =
+      typeof payload.prompt_id === "string" && payload.prompt_id
+        ? payload.prompt_id
+        : undefined;
     await fetch(
       `${runtime}/api/sessions/${encodeURIComponent(sessionId)}/background-work`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({
+          items,
+          ...(telemetryPromptId ? { telemetryPromptId } : {}),
+        }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       },
     );

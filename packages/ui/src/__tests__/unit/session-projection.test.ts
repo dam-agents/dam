@@ -673,3 +673,39 @@ describe("mergeLocalFailures", () => {
     );
   });
 });
+
+describe("applyUpdate — the harness's name for the prompt", () => {
+  test("platform_turn_ended stamps the harness prompt id on the reply it closes", () => {
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "hello", true),
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+      telemetryPromptId: "otel-1",
+    });
+    expect(out[1].streaming).toBe(false);
+    expect(out[1].telemetryPromptId).toBe("otel-1");
+  });
+
+  test("a replayed frame's prompt id lands on the reply being streamed", () => {
+    /**
+     * TEST_SCENARIO: history rebuilt from the harness's transcript has no
+     * turnEnded to carry the id, so each replayed chunk names it instead.
+     */
+    const start: Message[] = [userMsg("u1", "hi")];
+    const out = applyUpdate(start, txtChunk("hello"), undefined, "otel-2");
+    expect(out[1].role).toBe("assistant");
+    expect(out[1].telemetryPromptId).toBe("otel-2");
+  });
+
+  test("a frame without a prompt id leaves the reply's name alone", () => {
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      { ...assistantMsg("a1", "hel", true), telemetryPromptId: "otel-3" },
+    ];
+    const out = applyUpdate(start, txtChunk("lo"));
+    expect(out[1].telemetryPromptId).toBe("otel-3");
+  });
+});

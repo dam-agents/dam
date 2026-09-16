@@ -6,22 +6,31 @@ export interface ReplyLike {
   streaming: boolean;
   notice?: boolean;
   at?: string;
+  telemetryPromptId?: string;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a prompt sent and the reply it produced. The
- * prompt's own time is the anchor, because a user message carries one from the
- * moment it is sent while a reply gains one only once the session is reloaded —
- * anchoring on the reply would fall back to guessing for exactly the turns
- * being watched live.
+ * UNIT_BOUNDARY_DESCRIPTION: a prompt sent and the reply it produced. Once the
+ * turn has ended the reply carries the harness's own name for the prompt, and
+ * that name is the join. The prompt's time is kept for the exchanges that never
+ * learned it — the prompt's, not the reply's, because a user message carries
+ * one from the moment it is sent while a reply gains one only as it streams.
  */
 interface Exchange {
   replyId: string;
+  key: string | null;
   promptAt: number | null;
   pending: boolean;
 }
 
-const CLOCK_SKEW_MS = 5_000;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the slack the time fallback allows between a
+ * prompt's stamp and the start of the turn it caused. Both come from the pod's
+ * clock except the sender's own bubble, which keeps the browser's stamp until
+ * the session is reloaded. A keyed exchange never falls back to time, so the
+ * slack only governs replies from before the harness named its prompts.
+ */
+const PROMPT_ORDER_SLACK_MS = 5_000;
 
 const ms = (iso: string | undefined): number | null => {
   if (iso === undefined || iso === "") return null;
@@ -40,18 +49,24 @@ export function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
       continue;
     }
     if (!isReply(m)) continue;
-    exchanges.push({ replyId: m.id, promptAt, pending: m.streaming });
+    exchanges.push({
+      replyId: m.id,
+      key: m.telemetryPromptId ?? null,
+      promptAt,
+      pending: m.streaming,
+    });
     promptAt = null;
   }
   return exchanges;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a turn belongs to the exchange whose prompt it
- * followed — the latest prompt sent at or before the turn began. A turn that
- * followed no prompt yet recorded belongs to an exchange that has not finished,
- * so it waits rather than attaching to the previous reply and moving later,
- * which is what made a span appear under one turn and then jump to the next.
+ * UNIT_BOUNDARY_DESCRIPTION: a turn belongs to the reply that carries its
+ * prompt id. Failing that, and only for an exchange with no id of its own, it
+ * belongs to the exchange whose prompt it followed — the latest prompt sent at
+ * or before the turn began. A turn that followed no prompt yet recorded, or
+ * whose reply is still streaming, waits rather than attaching to the previous
+ * reply and moving later. A keyed match is never displaced by a timed one.
  */
 export function matchTurnsToReplies(
   turns: readonly TurnSummary[],
@@ -61,17 +76,33 @@ export function matchTurnsToReplies(
   const exchanges = exchangesOf(messages);
   if (turns.length === 0 || exchanges.length === 0) return matched;
 
+  const byKey = new Map<string, TurnSummary>();
+  for (const turn of turns) {
+    if (turn.promptId !== null) byKey.set(turn.promptId, turn);
+  }
+
+  const claimed = new Set<string>();
+  for (const exchange of exchanges) {
+    if (exchange.key === null || exchange.pending) continue;
+    const turn = byKey.get(exchange.key);
+    if (turn === undefined) continue;
+    matched.set(exchange.replyId, turn);
+    claimed.add(turn.turnId);
+  }
+
   const anchored = exchanges.filter(
-    (e): e is Exchange & { promptAt: number } => e.promptAt !== null,
+    (e): e is Exchange & { promptAt: number } =>
+      e.key === null && e.promptAt !== null,
   );
-  if (anchored.length === 0) return positionally(turns, exchanges, matched);
+  if (anchored.length === 0) return matched;
 
   for (const turn of turns) {
+    if (claimed.has(turn.turnId)) continue;
     const startedAt = ms(turn.startedAt);
     if (startedAt === null) continue;
     const owner = anchored.reduce<(Exchange & { promptAt: number }) | null>(
       (best, e) =>
-        e.promptAt <= startedAt + CLOCK_SKEW_MS &&
+        e.promptAt <= startedAt + PROMPT_ORDER_SLACK_MS &&
         (best === null || e.promptAt > best.promptAt)
           ? e
           : best,
@@ -80,35 +111,4 @@ export function matchTurnsToReplies(
     if (owner !== null && !owner.pending) matched.set(owner.replyId, turn);
   }
   return matched;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the fallback for a transcript whose prompts carry
- * no time. Lining up from the newest end keeps the most recent reply right and
- * leaves the oldest unlabelled, rather than shifting every reply onto the next
- * one's telemetry.
- */
-function positionally(
-  turns: readonly TurnSummary[],
-  exchanges: readonly Exchange[],
-  matched: Map<string, TurnSummary>,
-): Map<string, TurnSummary> {
-  exchanges.forEach((exchange, index) => {
-    const turnIndex = turns.length - exchanges.length + index;
-    const turn = turnIndex >= 0 ? turns[turnIndex] : undefined;
-    if (turn !== undefined && !exchange.pending) {
-      matched.set(exchange.replyId, turn);
-    }
-  });
-  return matched;
-}
-
-export function turnIndexForReply(
-  turnCount: number,
-  replyCount: number,
-  replyIndex: number,
-): number | null {
-  if (replyIndex < 0 || replyIndex >= replyCount) return null;
-  const index = turnCount - replyCount + replyIndex;
-  return index >= 0 && index < turnCount ? index : null;
 }

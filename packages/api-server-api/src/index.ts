@@ -801,6 +801,7 @@ export type {
   TelemetryExportQuery,
   TelemetryExportSignal,
   TurnSummary,
+  TurnGrouping,
   TurnDetail,
   TelemetrySpan,
   TelemetryLog,

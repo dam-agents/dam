@@ -51,6 +51,7 @@ const log = (over: Partial<UnattachedLog>): UnattachedLog => ({
 const span = (over: Partial<TelemetrySpan>): TelemetrySpan => ({
   spanId: "s1",
   parentSpanId: "",
+  traceId: "",
   name: "claude_code.llm_request",
   kind: "SPAN_KIND_INTERNAL",
   service: "claude-code",
@@ -547,5 +548,247 @@ describe("a root span starts a turn", () => {
     const result = await service.turns(TURNS_QUERY);
 
     expect(result.available && result.turns).toHaveLength(1);
+  });
+});
+
+describe("turns are keyed by the harness prompt id", () => {
+  const P1 = "5c1a9d3e-0001-4000-8000-000000000001";
+  const P2 = "5c1a9d3e-0002-4000-8000-000000000002";
+  const keyed = (promptId: string, over: Partial<UnattachedLog> = {}) =>
+    log({
+      ...over,
+      attributes: { "prompt.id": promptId, ...(over.attributes ?? {}) },
+    });
+
+  it("lists one turn per prompt id, whatever the markers did", async () => {
+    /**
+     * TEST_SCENARIO: the second prompt emitted no prompt record and started
+     * inside the marker debounce, so a time grouping would have folded it into
+     * the first; the stamp says they are two exchanges.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        keyed(P1, {
+          at: "2026-09-16T12:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        keyed(P1, {
+          at: "2026-09-16T12:00:01.000Z",
+          attributes: { cost_usd_micros: "5000" },
+        }),
+        keyed(P2, {
+          at: "2026-09-16T12:00:01.500Z",
+          attributes: { cost_usd_micros: "7000" },
+        }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns.map((t) => t.turnId)).toEqual([
+      P1,
+      P2,
+    ]);
+    if (result.available) {
+      expect(result.turns.map((t) => t.groupedBy)).toEqual([
+        "prompt-id",
+        "prompt-id",
+      ]);
+      expect(result.turns.map((t) => t.promptId)).toEqual([P1, P2]);
+      expect(result.turns[0]?.costUsd).toBeCloseTo(0.005);
+      expect(result.turns[1]?.costUsd).toBeCloseTo(0.007);
+    }
+  });
+
+  it("joins a span to its prompt by trace id", async () => {
+    const { reader } = spyReader({
+      logRecords: async () => [
+        keyed(P1, { at: "2026-09-16T12:00:00.000Z", traceId: "t1" }),
+      ],
+      sessionSpans: async () => [
+        span({ traceId: "t1", startedAt: "2026-09-16T12:05:00.000Z" }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(1);
+    if (result.available) {
+      expect(result.turns[0]?.spanCount).toBe(1);
+      expect(result.turns[0]?.traceIds).toEqual(["t1"]);
+    }
+  });
+
+  it("joins an untraced record and a separately-traced span by the records' window", async () => {
+    /**
+     * TEST_SCENARIO: the live install produced a turn whose records carried no
+     * trace id while its root span had one of its own and opened milliseconds
+     * before the prompt record.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        keyed(P1, { at: "2026-09-16T12:00:00.409Z", traceId: "" }),
+      ],
+      sessionSpans: async () => [
+        span({
+          traceId: "t9",
+          name: "claude_code.interaction",
+          startedAt: "2026-09-16T12:00:00.392Z",
+        }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toHaveLength(1);
+    if (result.available) {
+      expect(result.turns[0]?.promptId).toBe(P1);
+      expect(result.turns[0]?.spanCount).toBe(1);
+    }
+  });
+
+  it("leaves a span outside every keyed turn to the time grouping", async () => {
+    const { reader } = spyReader({
+      logRecords: async () => [keyed(P1, { at: "2026-09-16T12:00:00.000Z" })],
+      sessionSpans: async () => [
+        span({ traceId: "tz", startedAt: "2026-09-16T12:30:00.000Z" }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns.map((t) => t.groupedBy)).toEqual([
+      "prompt-id",
+      "time",
+    ]);
+    if (result.available) {
+      expect(result.turns[1]?.promptId).toBeNull();
+      expect(result.turns[1]?.turnId).toBe("2026-09-16T12:30:00.000Z");
+    }
+  });
+
+  it("orders unkeyed turns among keyed ones by time", async () => {
+    /**
+     * TEST_SCENARIO: an older exchange with no stamp and a newer stamped one
+     * must list oldest first, not stamped first.
+     */
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({
+          at: "2026-09-16T11:00:00.000Z",
+          event: "claude_code.user_prompt",
+        }),
+        log({ at: "2026-09-16T11:00:01.000Z" }),
+        keyed(P1, { at: "2026-09-16T12:00:00.000Z" }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns.map((t) => t.groupedBy)).toEqual([
+      "time",
+      "prompt-id",
+    ]);
+  });
+});
+
+describe("reading one turn", () => {
+  function capturingReader() {
+    const seen: { logFilter?: unknown; spanWindow?: unknown } = {};
+    const reader: TelemetryReader = {
+      sessionSpans: async (_ids, window) => {
+        seen.spanWindow = window;
+        return [];
+      },
+      logRecords: async (_ids, filter) => {
+        seen.logFilter = filter;
+        return [];
+      },
+    };
+    return { reader, seen };
+  }
+
+  it("reads a keyed turn through a padded window narrowed to its prompt id", async () => {
+    /**
+     * TEST_SCENARIO: the prompt id already isolates the records, so the
+     * padding admits the turn's own root span and its last record, never a
+     * neighbour.
+     */
+    const { reader, seen } = capturingReader();
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turn({
+      agentId: "a1",
+      sessionId: "s1",
+      promptId: "p-1",
+      from: "2026-09-16T12:00:00.000Z",
+      to: "2026-09-16T12:00:05.000Z",
+      spanLimit: 100,
+      logLimit: 100,
+    });
+
+    expect(seen.logFilter).toEqual({
+      fromIso: "2026-09-16T11:59:58.000Z",
+      toIso: "2026-09-16T12:00:07.000Z",
+      sessionId: "s1",
+      promptId: "p-1",
+    });
+    expect(seen.spanWindow).toEqual({
+      fromIso: "2026-09-16T11:59:58.000Z",
+      toIso: "2026-09-16T12:00:07.000Z",
+      sessionId: "s1",
+    });
+    expect(result.available && result.turn.turnId).toBe("p-1");
+    expect(result.available && result.turn.promptId).toBe("p-1");
+  });
+
+  it("reads an unkeyed turn by its exact time range", async () => {
+    const { reader, seen } = capturingReader();
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turn({
+      agentId: "a1",
+      sessionId: "s1",
+      from: "2026-09-16T12:00:00.000Z",
+      to: "2026-09-16T12:00:05.000Z",
+      spanLimit: 100,
+      logLimit: 100,
+    });
+
+    expect(seen.logFilter).toEqual({
+      fromIso: "2026-09-16T12:00:00.000Z",
+      toIso: "2026-09-16T12:00:05.000Z",
+      sessionId: "s1",
+    });
+    expect(result.available && result.turn.turnId).toBe(
+      "2026-09-16T12:00:00.000Z",
+    );
+    expect(result.available && result.turn.promptId).toBeNull();
   });
 });

@@ -41,6 +41,7 @@ export function TurnTelemetry({
     sessionId,
     open ? turn.startedAt : null,
     open ? turn.endedAt : null,
+    turn.promptId,
   );
   const loaded = detail.data?.available === true ? detail.data.turn : undefined;
   const selectedSpan =

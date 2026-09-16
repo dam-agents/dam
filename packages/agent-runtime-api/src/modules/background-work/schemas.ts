@@ -19,4 +19,9 @@ export const backgroundWorkReportSchema = z.object({
   items: z
     .array(backgroundWorkItemSchema)
     .transform((items) => items.slice(0, 64)),
+  telemetryPromptId: z
+    .string()
+    .min(1)
+    .transform((id) => id.slice(0, 128))
+    .optional(),
 });

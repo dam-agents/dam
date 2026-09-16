@@ -16,6 +16,7 @@ import {
 const span = (over: Partial<TelemetrySpan>): TelemetrySpan => ({
   spanId: "s1",
   parentSpanId: "",
+  traceId: "",
   name: "claude_code.interaction",
   kind: "SPAN_KIND_INTERNAL",
   service: "nous",

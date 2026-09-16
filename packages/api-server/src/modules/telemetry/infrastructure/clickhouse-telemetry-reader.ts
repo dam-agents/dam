@@ -51,6 +51,9 @@ export const ownedLogs = (f: TelemetryLogFilter): string =>
     ...(f.sessionId === undefined
       ? []
       : ["LogAttributes['session.id'] = {sessionId:String}"]),
+    ...(f.promptId === undefined
+      ? []
+      : ["LogAttributes['prompt.id'] = {promptId:String}"]),
     ...(f.event === undefined ? [] : ["Body = {event:String}"]),
     ...(f.contains === undefined
       ? []
@@ -71,6 +74,7 @@ const windowParams = (agentIds: readonly string[], w: TelemetryWindow) => ({
 const logParams = (agentIds: readonly string[], f: TelemetryLogFilter) => ({
   ...windowParams(agentIds, f),
   ...(f.traceId === undefined ? {} : { traceId: f.traceId }),
+  ...(f.promptId === undefined ? {} : { promptId: f.promptId }),
   ...(f.event === undefined ? {} : { event: f.event }),
   ...(f.contains === undefined ? {} : { contains: f.contains }),
 });
@@ -120,6 +124,7 @@ export function createClickhouseTelemetryReader(
         `SELECT
            SpanId AS spanId,
            ParentSpanId AS parentSpanId,
+           TraceId AS traceId,
            toString(SpanName) AS name,
            toString(SpanKind) AS kind,
            toString(ServiceName) AS service,
@@ -139,6 +144,7 @@ export function createClickhouseTelemetryReader(
       return r.map((x) => ({
         spanId: s(x.spanId),
         parentSpanId: s(x.parentSpanId),
+        traceId: s(x.traceId),
         name: s(x.name),
         kind: s(x.kind),
         service: s(x.service),

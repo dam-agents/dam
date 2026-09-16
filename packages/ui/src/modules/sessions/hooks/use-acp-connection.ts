@@ -39,6 +39,7 @@ export interface LiveConnection {
 interface CollectedUpdate {
   update: AcpUpdate;
   at?: string;
+  telemetryPromptId?: string;
 }
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
@@ -283,6 +284,9 @@ export function useAcpConnection(
           collector.updates.push({
             update,
             ...(frame.at !== undefined && { at: frame.at }),
+            ...(frame.telemetryPromptId !== undefined && {
+              telemetryPromptId: frame.telemetryPromptId,
+            }),
           });
           return;
         }
@@ -373,7 +377,12 @@ export function useAcpConnection(
         settleReplay(
           updates.reduce<Message[]>(
             (acc, collected) =>
-              applyUpdate(acc, collected.update, collected.at),
+              applyUpdate(
+                acc,
+                collected.update,
+                collected.at,
+                collected.telemetryPromptId,
+              ),
             [],
           ),
           { turnInFlight: turn.success && turn.data.inFlight },

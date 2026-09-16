@@ -4,13 +4,12 @@ import { describe, expect, it } from "vitest";
 import {
   matchTurnsToReplies,
   type ReplyLike,
-  turnIndexForReply,
 } from "../../modules/telemetry/lib/align-turns.js";
 
 /**
- * TEST_OVERVIEW: which reply a turn's telemetry belongs under. The prompt is the
- * anchor — a user message carries a time from the moment it is sent, while a
- * reply only gains one once the session is reloaded.
+ * TEST_OVERVIEW: which reply a turn's telemetry belongs under. The harness's
+ * own name for the prompt is the join when both sides carry it; the prompt's
+ * time is the fallback for replies that never learned that name.
  */
 
 const turn = (
@@ -18,6 +17,8 @@ const turn = (
   over: Partial<TurnSummary> = {},
 ): TurnSummary => ({
   turnId: startedAt,
+  promptId: null,
+  groupedBy: "time",
   startedAt,
   endedAt: startedAt,
   durationMs: 0,
@@ -37,6 +38,9 @@ const turn = (
   ...over,
 });
 
+const keyedTurn = (promptId: string, startedAt: string): TurnSummary =>
+  turn(startedAt, { turnId: promptId, promptId, groupedBy: "prompt-id" });
+
 const prompt = (at?: string): ReplyLike => ({
   id: `u-${at ?? "none"}`,
   role: "user",
@@ -44,13 +48,85 @@ const prompt = (at?: string): ReplyLike => ({
   ...(at === undefined ? {} : { at }),
 });
 
-const reply = (id: string, streaming = false): ReplyLike => ({
+const reply = (id: string, over: Partial<ReplyLike> = {}): ReplyLike => ({
   id,
   role: "assistant",
-  streaming,
+  streaming: false,
+  ...over,
 });
 
-describe("matchTurnsToReplies", () => {
+describe("matchTurnsToReplies by the harness prompt id", () => {
+  it("puts a turn under the reply that carries its prompt id", () => {
+    /**
+     * TEST_SCENARIO: the clocks disagree wildly — the turn started long before
+     * the prompt was stamped — and the key still wins.
+     */
+    const turns = [keyedTurn("p1", "2026-09-16T09:00:00.000Z")];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1", { telemetryPromptId: "p1" }),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
+  });
+
+  it("holds a keyed reply's turn back while the reply still streams", () => {
+    const turns = [keyedTurn("p1", "2026-09-16T12:00:01.000Z")];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1", { telemetryPromptId: "p1", streaming: true }),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).size).toBe(0);
+  });
+
+  it("does not lend a keyed reply an unkeyed turn by time", () => {
+    /**
+     * TEST_SCENARIO: the reply knows its prompt id but that turn's records have
+     * not landed yet; guessing from the clock would show and then swap.
+     */
+    const turns = [turn("2026-09-16T12:00:01.000Z")];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1", { telemetryPromptId: "p-missing" }),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).size).toBe(0);
+  });
+
+  it("never lets a timed match displace a keyed one", () => {
+    const turns = [
+      keyedTurn("p1", "2026-09-16T12:00:01.000Z"),
+      turn("2026-09-16T12:00:30.000Z"),
+    ];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1", { telemetryPromptId: "p1" }),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
+  });
+
+  it("matches keyed and unkeyed exchanges side by side", () => {
+    const turns = [
+      turn("2026-09-16T12:00:01.000Z"),
+      keyedTurn("p2", "2026-09-16T12:05:01.000Z"),
+    ];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1"),
+      prompt("2026-09-16T12:05:00.000Z"),
+      reply("r2", { telemetryPromptId: "p2" }),
+    ];
+
+    const matched = matchTurnsToReplies(turns, messages);
+
+    expect(matched.get("r1")?.turnId).toBe("2026-09-16T12:00:01.000Z");
+    expect(matched.get("r2")?.turnId).toBe("p2");
+  });
+});
+
+describe("matchTurnsToReplies by time, for replies without a prompt id", () => {
   it("puts a turn under the reply to the prompt it followed", () => {
     const turns = [
       turn("2026-09-16T12:00:01.000Z"),
@@ -71,9 +147,8 @@ describe("matchTurnsToReplies", () => {
 
   it("does not park an in-flight turn on the previous reply", () => {
     /**
-     * TEST_SCENARIO: the bug this exists for — a turn whose reply is still
-     * streaming was attaching to the reply before it, then jumping forward when
-     * the reply finished. It waits instead.
+     * TEST_SCENARIO: a turn whose reply is still streaming was attaching to
+     * the reply before it, then jumping forward when the reply finished.
      */
     const turns = [
       turn("2026-09-16T12:00:01.000Z"),
@@ -83,7 +158,7 @@ describe("matchTurnsToReplies", () => {
       prompt("2026-09-16T12:00:00.000Z"),
       reply("r1"),
       prompt("2026-09-16T12:05:00.000Z"),
-      reply("r2", true),
+      reply("r2", { streaming: true }),
     ];
 
     const matched = matchTurnsToReplies(turns, messages);
@@ -92,19 +167,10 @@ describe("matchTurnsToReplies", () => {
     expect(matched.has("r2")).toBe(false);
   });
 
-  it("attaches the turn as soon as its reply stops streaming", () => {
-    const turns = [turn("2026-09-16T12:05:01.000Z")];
-    const settled = [prompt("2026-09-16T12:05:00.000Z"), reply("r2")];
-
-    expect(matchTurnsToReplies(turns, settled).get("r2")?.turnId).toBe(
-      "2026-09-16T12:05:01.000Z",
-    );
-  });
-
-  it("tolerates a prompt clock running slightly ahead of the harness", () => {
+  it("tolerates a prompt stamp running slightly ahead of the harness", () => {
     /**
-     * TEST_SCENARIO: the browser stamps the prompt and the harness stamps the
-     * telemetry, so a small skew must not push the turn onto the wrong prompt.
+     * TEST_SCENARIO: the sender's own bubble keeps the browser's stamp, so a
+     * small lead must not push the turn onto the wrong prompt.
      */
     const turns = [turn("2026-09-16T12:00:00.000Z")];
     const messages = [prompt("2026-09-16T12:00:02.000Z"), reply("r1")];
@@ -135,7 +201,7 @@ describe("matchTurnsToReplies", () => {
     const turns = [turn("2026-09-16T12:00:01.000Z")];
     const messages = [
       prompt("2026-09-16T12:00:00.000Z"),
-      { id: "n1", role: "assistant", streaming: false, notice: true },
+      reply("n1", { notice: true }),
       reply("r1"),
     ];
 
@@ -145,25 +211,18 @@ describe("matchTurnsToReplies", () => {
     expect(matched.get("r1")).toBeDefined();
   });
 
-  it("falls back to position when no prompt carries a time", () => {
+  it("leaves a reply with neither a prompt id nor a prompt time unlabelled", () => {
+    /**
+     * TEST_SCENARIO: lining such replies up by position shifted every reply
+     * onto the next one's telemetry; showing nothing is the honest answer.
+     */
     const turns = [
       turn("2026-09-16T12:00:00.000Z"),
       turn("2026-09-16T12:05:00.000Z"),
     ];
-    const messages = [
-      prompt(),
-      reply("r1"),
-      prompt(),
-      reply("r2"),
-      prompt(),
-      reply("r3"),
-    ];
+    const messages = [prompt(), reply("r1"), prompt(), reply("r2")];
 
-    const matched = matchTurnsToReplies(turns, messages);
-
-    expect(matched.has("r1")).toBe(false);
-    expect(matched.get("r2")?.turnId).toBe("2026-09-16T12:00:00.000Z");
-    expect(matched.get("r3")?.turnId).toBe("2026-09-16T12:05:00.000Z");
+    expect(matchTurnsToReplies(turns, messages).size).toBe(0);
   });
 
   it("matches nothing when there are no turns", () => {
@@ -175,8 +234,8 @@ describe("matchTurnsToReplies", () => {
 
   it("is stable when a later turn arrives", () => {
     /**
-     * TEST_SCENARIO: polling must not move an already-placed turn, which is what
-     * produced the jumping between adjacent replies.
+     * TEST_SCENARIO: polling must not move an already-placed turn, which is
+     * what produced the jumping between adjacent replies.
      */
     const messages = [
       prompt("2026-09-16T12:00:00.000Z"),
@@ -194,25 +253,5 @@ describe("matchTurnsToReplies", () => {
     );
 
     expect(first.get("r1")?.turnId).toBe(second.get("r1")?.turnId);
-  });
-});
-
-describe("turnIndexForReply", () => {
-  const alignAll = (turnCount: number, replyCount: number) =>
-    Array.from({ length: replyCount }, (_, i) =>
-      turnIndexForReply(turnCount, replyCount, i),
-    );
-
-  it("maps one-to-one when the counts agree", () => {
-    expect(alignAll(3, 3)).toEqual([0, 1, 2]);
-  });
-
-  it("keeps the newest reply correct when a turn is missing", () => {
-    expect(alignAll(4, 5)).toEqual([null, 0, 1, 2, 3]);
-  });
-
-  it("refuses an index outside the reply range", () => {
-    expect(turnIndexForReply(3, 3, -1)).toBeNull();
-    expect(turnIndexForReply(3, 3, 3)).toBeNull();
   });
 });

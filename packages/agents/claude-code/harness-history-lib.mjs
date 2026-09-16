@@ -50,12 +50,32 @@ function objectOr(value) {
   return typeof value === "object" && value !== null ? value : {};
 }
 
-function withStamp(notification, at) {
-  if (at === null) return notification;
+function promptIdOf(message) {
+  const id = message.promptId;
+  return typeof id === "string" && id !== "" ? id : null;
+}
+
+function isToolResultOnly(content) {
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    content.every((item) => item?.type === "tool_result")
+  );
+}
+
+function withStamp(notification, at, telemetryPromptId) {
+  if (at === null && telemetryPromptId === null) return notification;
   const meta = objectOr(notification._meta);
   return {
     ...notification,
-    _meta: { ...meta, platform: { ...objectOr(meta.platform), at } },
+    _meta: {
+      ...meta,
+      platform: {
+        ...objectOr(meta.platform),
+        ...(at !== null ? { at } : {}),
+        ...(telemetryPromptId !== null ? { telemetryPromptId } : {}),
+      },
+    },
   };
 }
 
@@ -80,6 +100,7 @@ export async function loadHistory(sessionId) {
   const toolUseCache = {};
   const taskState = new Map();
   const lines = [];
+  let telemetryPromptId = null;
 
   for (const message of messages) {
     const messageId = agent.messageIdForGrouping(message);
@@ -92,6 +113,13 @@ export async function loadHistory(sessionId) {
     const at = stampOf(message);
     let content = message.message.content;
     const parentToolUseId = parentToolUseIdOf(message);
+    if (
+      message.type === "user" &&
+      parentToolUseId === null &&
+      !isToolResultOnly(content)
+    ) {
+      telemetryPromptId = promptIdOf(message);
+    }
     if (message.type === "assistant" && parentToolUseId) {
       content = stripSubagentTextAndThinking(content);
     }
@@ -118,7 +146,7 @@ export async function loadHistory(sessionId) {
         JSON.stringify({
           jsonrpc: "2.0",
           method: "session/update",
-          params: withStamp(notification, at),
+          params: withStamp(notification, at, telemetryPromptId),
         }),
       );
     }

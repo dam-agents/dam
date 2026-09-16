@@ -33,6 +33,7 @@ export function useTurn(
   sessionId: string | null,
   from: string | null,
   to: string | null,
+  promptId: string | null,
 ) {
   const startedMs = from === null ? Number.NaN : Date.parse(from);
   const inFlight =
@@ -41,7 +42,13 @@ export function useTurn(
   return useQuery({
     ...trpc.telemetry.turn.queryOptions(
       agentId && sessionId && from && to
-        ? { agentId, sessionId, from, to }
+        ? {
+            agentId,
+            sessionId,
+            from,
+            to,
+            ...(promptId === null ? {} : { promptId }),
+          }
         : skipToken,
     ),
     staleTime: inFlight ? 2_000 : 300_000,

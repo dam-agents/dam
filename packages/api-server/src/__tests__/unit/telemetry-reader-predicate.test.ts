@@ -50,14 +50,17 @@ describe("ownedLogs", () => {
     const sql = ownedLogs({
       traceId: "abc",
       sessionId: "s-1",
+      promptId: "p-1",
       event: "claude_code.api_request",
       contains: "boom",
     });
     expect(sql).toContain("TraceId = {traceId:String}");
     expect(sql).toContain("LogAttributes['session.id'] = {sessionId:String}");
+    expect(sql).toContain("LogAttributes['prompt.id'] = {promptId:String}");
     expect(sql).toContain("Body = {event:String}");
     expect(sql).toContain("{contains:String}");
     expect(sql).not.toContain("abc");
+    expect(sql).not.toContain("p-1");
     expect(sql).not.toContain("boom");
   });
 

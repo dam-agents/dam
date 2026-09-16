@@ -14,7 +14,7 @@ import {
   attachLogsToSpans,
   type UnattachedLog,
 } from "../domain/attach-logs.js";
-import { groupIntoTurns } from "../domain/group-turns.js";
+import { BOUNDARY_DEBOUNCE_MS, groupIntoTurns } from "../domain/group-turns.js";
 
 export const TELEMETRY_DISABLED_REASON =
   "The telemetry backend is not enabled on this deployment, so agent traces and logs are not recorded here.";
@@ -28,8 +28,31 @@ export interface TelemetryWindow {
 
 export interface TelemetryLogFilter extends TelemetryWindow {
   traceId?: string;
+  promptId?: string;
   event?: string;
   contains?: string;
+}
+
+const shiftIso = (iso: string, deltaMs: number): string => {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? iso : new Date(ms + deltaMs).toISOString();
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a turn addressed by its prompt id is read through
+ * a window padded by the marker slack on both sides. The prompt id already
+ * narrows the records to the one turn, so the padding cannot admit a
+ * neighbour's records; what it admits is the turn's own root span, which opens
+ * a few milliseconds before the first record, and the last record itself,
+ * which the listing's half-open end would otherwise exclude.
+ */
+export function turnWindow(query: TelemetryTurnQuery): TelemetryWindow {
+  const padMs = query.promptId === undefined ? 0 : BOUNDARY_DEBOUNCE_MS;
+  return {
+    fromIso: shiftIso(query.from, -padMs),
+    toIso: shiftIso(query.to, padMs),
+    sessionId: query.sessionId,
+  };
 }
 
 export interface TelemetryReader {
@@ -114,16 +137,16 @@ export function createTelemetryService(deps: {
         await deps.listOwnedAgents(),
         query.agentId,
       );
-      const window: TelemetryWindow = {
-        fromIso: query.from,
-        toIso: query.to,
-        sessionId: query.sessionId,
-      };
+      const window = turnWindow(query);
+      const recordFilter: TelemetryLogFilter =
+        query.promptId === undefined
+          ? window
+          : { ...window, promptId: query.promptId };
       const [logs, spans] =
         ids.length === 0
           ? [[] as UnattachedLog[], [] as TelemetrySpan[]]
           : await Promise.all([
-              deps.reader.logRecords(ids, window, query.logLimit),
+              deps.reader.logRecords(ids, recordFilter, query.logLimit),
               deps.reader.sessionSpans(ids, window, query.spanLimit),
             ]);
 
@@ -132,7 +155,8 @@ export function createTelemetryService(deps: {
       return {
         available: true,
         turn: {
-          turnId: query.from,
+          turnId: query.promptId ?? query.from,
+          promptId: query.promptId ?? null,
           startedAt: query.from,
           durationMs:
             Number.isNaN(startedMs) || Number.isNaN(endedMs)

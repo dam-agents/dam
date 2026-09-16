@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-09-15
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -42,8 +42,9 @@ flowchart LR
 
 ## The unit is a Turn, not a trace
 
-A **Turn** is everything one exchange produced: the records and spans between one prompt and
-the next, in time order. It is deliberately **not** the OpenTelemetry trace.
+A **Turn** is everything one exchange produced: the records the harness stamped with one
+prompt id, and the spans that belong with them. It is deliberately **not** the OpenTelemetry
+trace.
 
 The trace is the obvious unit and the wrong one, because what a trace contains is the
 harness's business and it varies turn to turn. Observed on one live install inside a single
@@ -53,17 +54,25 @@ child; the third emitted records and no spans whatever. Grouping on the trace id
 turns that into three rows of three different shapes — one of them invisible — for three
 exchanges that a reader watching the conversation would call the same kind of thing.
 
-Grouping on time bounded by the prompt event survives all three. Every record and span the
-session produced is ordered by timestamp and cut at each prompt; the pieces between two cuts
-are one Turn. A Turn therefore reports how much structure it happens to have — how many
-spans, how many records, which traces it touched — rather than depending on that structure
-to exist. Records that arrive before any prompt (the first exchange of a session often does)
-form a leading Turn rather than being discarded, because that is where its cost is.
+Keying on the **prompt id** survives all three. The harness assigns every prompt an
+identifier and stamps it on each log record that prompt causes until the next one; every
+record carrying the same id is one Turn, whatever the harness did or did not span in
+between, and the id is the Turn's identity — stable across polls, where a start time would
+move as late records land. Spans carry no prompt id. A span joins the Turn whose records
+share its trace, or, when those records carry no trace, the Turn whose records surround its
+start — padded by the few milliseconds a root span opens before the prompt record. A Turn
+therefore reports how much structure it happens to have — how many spans, how many records,
+which traces it touched — rather than depending on that structure to exist.
+
+Records the harness did not stamp — the session's housekeeping, and everything an older
+harness emitted — fall back to grouping on time: ordered by timestamp and cut at each prompt
+record or root span, with a leading region split on an idle gap. Which rule made a Turn
+travels in the response, so a consumer can tell a keyed Turn from an inferred one.
 
 **This is why the surface lives inside the conversation.** One Turn is one exchange, so a
-Turn belongs to a reply rather than to a list beside it. Reaching a Turn's detail is a time
-range within a Session, not a trace lookup — which is what lets a Turn hold spans from
-several traces, or from none.
+Turn belongs to a reply rather than to a list beside it. Reaching a keyed Turn's detail is a
+prompt id within a Session; an inferred Turn is reached by its time range. Neither is a trace
+lookup — which is what lets a Turn hold spans from several traces, or from none.
 
 ## Correlating a log record to the call it describes
 
@@ -138,8 +147,9 @@ agent and one Session; the record read narrows on request. The field-level shape
 - **Turns** — the listing for one Session over a window: when each Turn started, how long it
   took, how many spans and records it holds, which traces it touched, which models it called,
   and what it cost.
-- **Turn** — one Turn in full, addressed by its time range: its spans, its log records, and
-  the resolved attachment between them.
+- **Turn** — one Turn in full, addressed by its prompt id within a window, or by its time
+  range when it has none: its spans, its log records, and the resolved attachment between
+  them.
 - **Log records** — a flat read across traces, filtered by Session, by event, or by a text
   match over the record and its attributes; the way to answer *what did my agent do* without
   starting from a trace.
@@ -163,12 +173,17 @@ in place to the exchange's own timeline. There is no separate panel and no list 
 cross-reference against the transcript: the transcript *is* the list, and a row of telemetry
 belongs to the message above it.
 
-A Turn is matched to the reply that closed it, using the reply's **own timestamp**: every
-Turn belongs to the first reply posted at or after the Turn began. That survives the
-harness merging two exchanges into one Turn, which a positional match could not — it would
-shift every reply onto the following Turn's telemetry. A transcript whose messages carry no
-time falls back to position from the newest end, so the most recent reply stays correct and
-the oldest goes unlabelled rather than wrong.
+A Turn is matched to its reply **by the prompt id**. The harness hands the runtime its id
+for the running turn from a hook, and the runtime names it on the end-of-turn notification
+([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), which is logged and
+replayed like the rest of the transcript; a history rebuilt from the harness's own
+transcript carries the id on each replayed frame instead. So a reply knows which Turn it
+belongs to, and the join is a lookup rather than a guess. A reply that never learned its id
+falls back to the prompt's time: the Turn belongs to the exchange whose prompt was the latest
+sent at or before the Turn began, with a few seconds' slack for a sender's own message, which
+keeps the browser's stamp until the session is reloaded. A keyed match is never displaced by
+a timed one, a reply still streaming shows nothing until it settles, and a reply with neither
+an id nor a time stays unlabelled rather than being lined up by position.
 
 Session-wide access stays off the conversation: the Session's own menu exports its telemetry
 as a file. The panel is revealed by an experimental feature ([features](features.md)); the

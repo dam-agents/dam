@@ -111,6 +111,7 @@ export function SpanDetail({
             ...(span.parentSpanId === ""
               ? {}
               : { "parent.span.id": span.parentSpanId }),
+            ...(span.traceId === "" ? {} : { "trace.id": span.traceId }),
             "span.kind": span.kind,
             "started.at": span.startedAt,
             ...(span.invocationId === null

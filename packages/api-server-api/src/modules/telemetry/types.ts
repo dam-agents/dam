@@ -13,8 +13,12 @@ export type TelemetryLogsQuery = z.infer<typeof telemetryLogsInputSchema>;
 export type TelemetryExportQuery = z.infer<typeof telemetryExportQuerySchema>;
 export type TelemetryExportSignal = z.infer<typeof telemetryExportSignalSchema>;
 
+export type TurnGrouping = "prompt-id" | "time";
+
 export interface TurnSummary {
   turnId: string;
+  promptId: string | null;
+  groupedBy: TurnGrouping;
   startedAt: string;
   endedAt: string;
   durationMs: number;
@@ -38,6 +42,7 @@ export type LogAttachment = "request-id" | "span-id" | "trace-root";
 export interface TelemetrySpan {
   spanId: string;
   parentSpanId: string;
+  traceId: string;
   name: string;
   kind: string;
   service: string;
@@ -66,6 +71,7 @@ export interface TelemetryLog {
 
 export interface TurnDetail {
   turnId: string;
+  promptId: string | null;
   startedAt: string;
   durationMs: number;
   spans: TelemetrySpan[];

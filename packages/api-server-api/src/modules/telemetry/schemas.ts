@@ -52,6 +52,7 @@ export const telemetryTurnsInputSchema = z.object({
 export const telemetryTurnInputSchema = z.object({
   agentId: z.string().min(1),
   sessionId: z.string().min(1),
+  promptId: z.string().min(1).max(200).optional(),
   from: z.string().datetime(),
   to: z.string().datetime(),
   spanLimit: z.coerce
