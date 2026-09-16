@@ -65,9 +65,11 @@ Apply the `/react-ui-engineering` skill.
    | VS Code / Zed | Open workspace in your local editor |
    | Slack Channel | Mention the agent in a connected channel |
 
-   **Add a Telegram tile** alongside the Slack one, for the same reason as the chips. Figma shows
-   only Slack; Telegram is in scope for this feature. Word its description to match the Slack
-   one's shape, and confirm the wording against the frame when you request it.
+   **No Telegram tile.** The plan originally called for one alongside Slack. Built and reviewed
+   2026-09-16: a fifth tile leaves an orphan on the last row of the 2×2 the design draws, and
+   Slack is the capability this feature advertises. Telegram stays reachable from the setup
+   Channels section, the agent-list overflow menu, and the agent's own Channels card, so nothing
+   is lost. Figma draws four tiles; four it is.
 
    The messenger tiles open the modal from sub-issue 02. Drop the prototype's background gradient —
    Figma's tiles are flat.
@@ -81,7 +83,7 @@ Apply the `/react-ui-engineering` skill.
 - [ ] A Slack channel whose name cannot be resolved falls back to its id.
 - [ ] The overflow menu reads exactly as above, and each messenger entry opens the right modal.
 - [ ] Menu entries and launcher tiles are absent for a messenger the install has not configured.
-- [ ] The launcher is a 2×2 grid with the four tiles plus Telegram, flat, no gradient.
+- [ ] The launcher is a 2×2 grid of the four tiles, flat, no gradient. No Telegram tile.
 - [ ] The grid and the rows hold up at mobile width.
 - [ ] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
 

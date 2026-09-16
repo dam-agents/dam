@@ -1,5 +1,12 @@
+import { useState } from "react";
+
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import {
+  type BindMessenger,
+  ChannelBindModal,
+} from "../../sandboxes/components/channels/channel-bind-modal.js";
+import { useAgents } from "../api/queries.js";
 import type { useAgentRows } from "../hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../utils/agent-kind.js";
 import type { TemporarySandboxSplit } from "../utils/temporary-sandboxes.js";
@@ -25,6 +32,10 @@ export function SandboxList({
   const selectAgent = useStore((s) => s.selectAgent);
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const messengers = useAgents().data?.availableChannels ?? {};
+  const [bindMessenger, setBindMessenger] = useState<BindMessenger | null>(
+    null,
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -43,8 +54,16 @@ export function SandboxList({
           configureLabel="Configure agent"
           onStop={() => onStop(agent)}
           onDelete={() => onDelete(agent)}
+          messengers={messengers}
+          onAddToChannel={setBindMessenger}
         />
       ))}
+      {bindMessenger && (
+        <ChannelBindModal
+          messengers={[bindMessenger]}
+          onClose={() => setBindMessenger(null)}
+        />
+      )}
     </div>
   );
 }

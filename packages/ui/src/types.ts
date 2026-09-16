@@ -1,5 +1,10 @@
 import type { PromptBlock } from "api-server-api";
-import type { AgentKind, EnvVar, HarnessFamily } from "api-server-api";
+import type {
+  AgentKind,
+  EnvVar,
+  HarnessFamily,
+  SlackChannel,
+} from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -134,15 +139,7 @@ export interface AgentView {
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
-  channels: (
-    | {
-        type: "slack";
-        slackChannelId: string;
-        ambient?: boolean;
-        default?: boolean;
-      }
-    | { type: "telegram" }
-  )[];
+  channels: SlackChannel[];
   kbTemplateId: string | null;
   spawnedBy: string | null;
   kind?: AgentKind;

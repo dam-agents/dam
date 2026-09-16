@@ -127,12 +127,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     if (!agent || !availableChannels) return undefined;
     if (!availableChannels.slack && !availableChannels.telegram)
       return "No messenger configured";
-    const kinds = [
-      ...new Set(
-        agent.channels.map((c) => (c.type === "slack" ? "Slack" : "Telegram")),
-      ),
-    ];
-    return kinds.length > 0 ? kinds.join(", ") : "No channels connected";
+    return agent.channels.length > 0 ? "Slack" : "No channels connected";
   }, [agent, availableChannels]);
 
   const schedulesSummary = useMemo(() => {
