@@ -20,7 +20,7 @@ export function isStarterKitAgent(agent: AgentView): boolean {
 
 export interface AgentKindBadge {
   label: string;
-  variant: "accent" | "template" | "muted" | "warning";
+  variant: "accent" | "template" | "muted" | "warning" | "kit";
 }
 
 const KIND_BADGE: Record<AgentKind, AgentKindBadge> = {
@@ -33,14 +33,30 @@ export function agentKindBadge(agent: AgentView): AgentKindBadge | null {
   return KIND_BADGE[agent.kind] ?? { label: agent.kind, variant: "muted" };
 }
 
+export function parseStarterKitRef(
+  ref: string,
+): { catalog: string; kit: string; version: string | null } | null {
+  const at = ref.lastIndexOf("@");
+  const path = at > 0 ? ref.slice(0, at) : ref;
+  const slash = path.indexOf("/");
+  if (slash <= 0 || slash === path.length - 1) return null;
+  return {
+    catalog: path.slice(0, slash),
+    kit: path.slice(slash + 1),
+    version: at > 0 ? ref.slice(at + 1) : null,
+  };
+}
+
 export function starterKitBadge(
   agent: Pick<AgentView, "starterKit">,
 ): (AgentKindBadge & { title: string }) | null {
   if (!agent.starterKit) return null;
-  const at = agent.starterKit.lastIndexOf("@");
-  const path = at > 0 ? agent.starterKit.slice(0, at) : agent.starterKit;
-  const kit = path.slice(path.indexOf("/") + 1);
-  return { label: kit, variant: "muted", title: agent.starterKit };
+  const ref = parseStarterKitRef(agent.starterKit);
+  return {
+    label: ref?.kit ?? agent.starterKit,
+    variant: "muted",
+    title: agent.starterKit,
+  };
 }
 
 export function onboardingBadge(
@@ -49,7 +65,7 @@ export function onboardingBadge(
   if (!agent.starterKit || agent.starterKitOnboarded) return null;
   return {
     label: "Onboarding",
-    variant: "warning",
+    variant: "kit",
     title:
       "Still being set up. Its schedules are held until the agent marks onboarding complete.",
   };

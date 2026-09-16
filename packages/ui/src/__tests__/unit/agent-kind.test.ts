@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   onboardingBadge,
+  parseStarterKitRef,
   starterKitBadge,
 } from "../../modules/agents/utils/agent-kind.js";
 
@@ -32,7 +33,7 @@ describe("onboardingBadge", () => {
       starterKitOnboarded: null,
     });
     expect(badge?.label).toBe("Onboarding");
-    expect(badge?.variant).toBe("warning");
+    expect(badge?.variant).toBe("kit");
     expect(badge?.title).toMatch(/schedules are held/);
   });
 
@@ -49,5 +50,25 @@ describe("onboardingBadge", () => {
     expect(
       onboardingBadge({ starterKit: null, starterKitOnboarded: null }),
     ).toBeNull();
+  });
+});
+
+describe("parseStarterKitRef", () => {
+  test("splits catalog, kit and version", () => {
+    expect(parseStarterKitRef("platform/code-reviewer@abc123")).toEqual({
+      catalog: "platform",
+      kit: "code-reviewer",
+      version: "abc123",
+    });
+  });
+
+  test("tolerates a ref without a version, and rejects one without a catalog", () => {
+    expect(parseStarterKitRef("curated/docs")).toEqual({
+      catalog: "curated",
+      kit: "docs",
+      version: null,
+    });
+    expect(parseStarterKitRef("code-reviewer@abc")).toBeNull();
+    expect(parseStarterKitRef("platform/@v1")).toBeNull();
   });
 });
