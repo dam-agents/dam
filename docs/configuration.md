@@ -106,7 +106,9 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
 
 3. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
 4. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of that role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
-5. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
+5. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
+
+This is an invitation rather than open enrollment, and the two are not interchangeable. Both sides consent: an operator decides the platform is willing to serve a workspace, and an admin of that workspace grants it. A consent redirect the platform did not invite is refused — including the "Sharable URL" Slack's own Manage Distribution page hands out, which carries no invitation, so that URL is not the way in.
 
 Leaving `keycloak.slackInstallerRole` empty disables the install surface entirely — no routes, no tab — and the workspace `slackBotToken` was issued for keeps working either way.
 

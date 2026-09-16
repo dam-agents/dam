@@ -426,6 +426,7 @@ export async function bootstrap() {
   secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
+  const SLACK_INSTALL_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
@@ -665,7 +666,7 @@ export async function bootstrap() {
   const pendingSlackInstalls = createRedisTtlStore<SlackInstallPending>(
     sharedRedis,
     "install:slack",
-    OAUTH_FLOW_TTL_MS,
+    SLACK_INSTALL_HANDOFF_TTL_MS,
   );
   const slackInstalls = createSlackInstallService({
     find: findSlackInstall(db),

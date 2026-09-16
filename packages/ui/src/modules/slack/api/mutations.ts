@@ -14,6 +14,13 @@ export function useStartSlackInstall() {
   });
 }
 
+export function useSlackInvitationLink() {
+  return useMutation({
+    mutationFn: fetchSlackInstallLink,
+    meta: { errorToast: "Couldn't create the invitation link" },
+  });
+}
+
 export function useBindSlackChannel() {
   return useMutation({
     ...trpc.agents.bindSlackChannel.mutationOptions(),
