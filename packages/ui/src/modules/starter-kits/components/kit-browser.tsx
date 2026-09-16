@@ -91,7 +91,7 @@ export function KitCard({
       <div className="flex flex-1 flex-col gap-2 p-4">
         <h3 className="text-base font-semibold text-foreground">{kit.name}</h3>
         <p className="flex-1 text-sm text-muted-foreground">
-          {kit.description}
+          {kit.tagline ?? kit.description}
         </p>
         <KitBadges
           kit={kit}

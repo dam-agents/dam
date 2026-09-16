@@ -78,6 +78,7 @@ import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
+import { useOpenOnboardingSession } from "../../starter-kits/hooks/use-open-onboarding-session.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
@@ -365,6 +366,16 @@ export function ChatView() {
     resumeSession,
   ]);
 
+  useOpenOnboardingSession({
+    agentId: selectedAgent,
+    active:
+      view === "chat" &&
+      agentView !== null &&
+      agentView.starterKit !== null &&
+      agentView.starterKitOnboarded === null,
+    idle: chatIdle,
+    resumeSession,
+  });
   const pushSessionUrl = useCallback(
     (sid: string | null, mode: SessionMode | null) => {
       if (view !== "chat" || !selectedAgent) return;

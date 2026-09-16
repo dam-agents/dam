@@ -333,8 +333,8 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
               </Section>
             )}
 
-            {size && size.slots > 1 && (
-              <Section label="Compute resources">
+            {size && (
+              <Section label="Compute">
                 <Row
                   title={size.label}
                   detail={
@@ -344,15 +344,17 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                   }
                   trailing={
                     <Badge variant="muted" size="sm">
-                      {size.slots} slots
+                      {size.slots} {size.slots === 1 ? "slot" : "slots"}
                     </Badge>
                   }
                 />
-                <li className="text-sm text-muted-foreground">
-                  This kit asks for more than one slot of your compute ceiling.
-                  CPU and memory stay editable on the agent; disk is fixed at
-                  create.
-                </li>
+                {size.slots > 1 && (
+                  <li className="text-sm text-muted-foreground">
+                    This kit asks for more than one slot of your compute
+                    ceiling. CPU and memory stay editable on the agent; disk is
+                    fixed at create.
+                  </li>
+                )}
               </Section>
             )}
 

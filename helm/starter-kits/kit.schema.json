@@ -21,6 +21,10 @@
       "type": "string",
       "minLength": 1
     },
+    "tagline": {
+      "type": "string",
+      "minLength": 1
+    },
     "category": {
       "type": "string",
       "enum": [

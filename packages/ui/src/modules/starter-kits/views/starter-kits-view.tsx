@@ -50,7 +50,9 @@ function FeaturedCard({
           </span>
           <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
         </div>
-        <p className="text-sm text-muted-foreground">{kit.description}</p>
+        <p className="text-sm text-muted-foreground">
+          {kit.tagline ?? kit.description}
+        </p>
         <KitBadges
           kit={kit}
           templates={templates}

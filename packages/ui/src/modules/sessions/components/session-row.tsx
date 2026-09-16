@@ -15,6 +15,7 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -143,6 +144,11 @@ export function SessionRow({
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
+          {s.onboarding && (
+            <Badge variant="kit" size="sm" className="shrink-0">
+              Onboarding
+            </Badge>
+          )}
           <SessionIndicators
             scheduled={scheduled}
             terminal={terminal}

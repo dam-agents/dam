@@ -59,12 +59,14 @@ function useEnter() {
 function entryPointsFor(
   surface: "home" | "knowledge-bases",
   kitsEnabled: boolean,
+  primary: "kits" | "agent",
 ): EntryPoint[] {
   if (surface === "knowledge-bases")
     return [kitsEnabled ? KNOWLEDGE_BASE_FROM_KITS : KNOWLEDGE_BASE_ONLY];
-  return kitsEnabled
-    ? [BROWSE_KITS, CREATE_AGENT]
-    : [CREATE_AGENT, KNOWLEDGE_BASE_FROM_TEMPLATE];
+  if (!kitsEnabled) return [CREATE_AGENT, KNOWLEDGE_BASE_FROM_TEMPLATE];
+  return primary === "agent"
+    ? [CREATE_AGENT, BROWSE_KITS]
+    : [BROWSE_KITS, CREATE_AGENT];
 }
 
 /**
@@ -76,12 +78,14 @@ function entryPointsFor(
  */
 export function EntryPointButtons({
   surface,
+  primary = "kits",
 }: {
   surface: "home" | "knowledge-bases";
+  primary?: "kits" | "agent";
 }) {
   const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
   const enter = useEnter();
-  const [lead, second] = entryPointsFor(surface, kitsEnabled);
+  const [lead, second] = entryPointsFor(surface, kitsEnabled, primary);
   if (!lead) return null;
   return (
     <>

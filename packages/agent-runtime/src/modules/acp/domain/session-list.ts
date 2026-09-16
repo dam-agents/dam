@@ -21,6 +21,7 @@ export interface SessionMetaLike {
     type?: string;
     scheduleId?: string;
     experimentId?: string;
+    onboarding?: boolean;
     threadTs?: string;
   };
   createdAt: string;
@@ -64,6 +65,7 @@ function fromEntry(
     title: listed?.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
     experimentId: entry.meta.experimentId ?? null,
+    onboarding: entry.meta.onboarding === true,
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,
     runStartedAt: entry.runStartedAt ?? null,
@@ -86,6 +88,7 @@ function fromHarnessOnly(
     title: listed.title ?? null,
     scheduleId: null,
     experimentId: null,
+    onboarding: false,
     threadTs: null,
     seenAt: null,
     runStartedAt: null,

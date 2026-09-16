@@ -37,7 +37,11 @@ describe("onboarding plugin", () => {
     expect(calls).toEqual([
       {
         task: "You were created from a kit.",
-        platformMeta: { type: SessionType.Regular, mode: SessionMode.Chat },
+        platformMeta: {
+          type: SessionType.Regular,
+          mode: SessionMode.Chat,
+          onboarding: true,
+        },
       },
     ]);
   });

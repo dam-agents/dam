@@ -31,7 +31,11 @@ export function createOnboardingPlugin(deps: {
         const p = payload as OnboardingEventPayload;
         await deps.driver.start({
           task: p.task,
-          platformMeta: { type: SessionType.Regular, mode: SessionMode.Chat },
+          platformMeta: {
+            type: SessionType.Regular,
+            mode: SessionMode.Chat,
+            onboarding: true,
+          },
         });
       };
     },

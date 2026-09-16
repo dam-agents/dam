@@ -18,19 +18,30 @@ export interface KitBadge {
 export function kitBadges(
   kit: Pick<
     StarterKitView,
-    "schedules" | "connections" | "skills" | "skillsInKit" | "knowledgeBase"
+    | "schedules"
+    | "channels"
+    | "connections"
+    | "skills"
+    | "skillsInKit"
+    | "knowledgeBase"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
 ): KitBadge[] {
   const badges: KitBadge[] = [];
 
-  if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
-
   if (kit.schedules.length > 0) {
     badges.push({
       key: "schedules",
       label: `${kit.schedules.length} ${kit.schedules.length === 1 ? "Schedule" : "Schedules"}`,
+    });
+  }
+
+  for (const channel of kit.channels) {
+    badges.push({
+      key: `channel:${channel.type}`,
+      label: channel.type === "slack" ? "Slack" : "Telegram",
+      iconSlug: channel.type,
     });
   }
 
@@ -46,6 +57,8 @@ export function kitBadges(
       ...(match?.iconSlug ? { iconSlug: match.iconSlug } : {}),
     });
   }
+
+  if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
   const skills = kit.skillsInKit.length + kit.skills.length;
   if (skills > 0) {

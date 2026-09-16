@@ -65,6 +65,7 @@ import {
 } from "../../starter-kits/lib/setup.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { SkillSourcesSetupSection } from "../components/skill-sources-setup-section.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -481,58 +482,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      <ConnectionsSetupSection
-        connectionIds={form.connectionIds}
-        onToggle={toggleConnection}
-        oauthReturnView={returnPath}
-        title="Connections"
-        excludeIds={kitOwnedConnectionIds}
-        leading={
-          kit && connectionRequirements(kit).length > 0 ? (
-            <KitRequirementsCard
-              kit={kit}
-              owned={owned}
-              granted={grantedKitConnections}
-              templateById={templateById}
-              templates={connectionTemplates.data ?? []}
-              onUse={(id: string) => toggleConnection(id, true)}
-              onRevoke={(id: string) => toggleConnection(id, false)}
-              onConnect={setConnectTarget}
-            />
-          ) : undefined
-        }
-      />
-      {!kit && (
-        <LifecycleSetupSection
-          value={form.hibernationTimeoutMin}
-          onChange={(hibernationTimeoutMin) =>
-            update({ hibernationTimeoutMin })
-          }
-          sizeMi={
-            selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
-          }
-        />
-      )}
-      {connectTarget && (
-        <ConnectionCatalogModal
-          initialProviderId={connectTarget.providerId}
-          initialTemplateId={connectTarget.templateId}
-          onClose={() => setConnectTarget(null)}
-          sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
-          oauthReturnView={returnPath}
-        />
-      )}
-
-      {kit && kit.channels.length > 0 && (
-        <KitChannelsSection
-          kit={kit}
-          slackChannelId={form.slackChannelId}
-          onSlackChannelIdChange={(slackChannelId) =>
-            update({ slackChannelId })
-          }
-        />
-      )}
-
       {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
@@ -571,7 +520,65 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </section>
       )}
 
-      {kit && <KitSkillsSection kit={kit} />}
+      <ConnectionsSetupSection
+        connectionIds={form.connectionIds}
+        onToggle={toggleConnection}
+        oauthReturnView={returnPath}
+        title="Connections"
+        excludeIds={kitOwnedConnectionIds}
+        leading={
+          kit && connectionRequirements(kit).length > 0 ? (
+            <KitRequirementsCard
+              kit={kit}
+              owned={owned}
+              granted={grantedKitConnections}
+              templateById={templateById}
+              templates={connectionTemplates.data ?? []}
+              onUse={(id: string) => toggleConnection(id, true)}
+              onRevoke={(id: string) => toggleConnection(id, false)}
+              onConnect={setConnectTarget}
+            />
+          ) : undefined
+        }
+      />
+      {!kit && (
+        <LifecycleSetupSection
+          value={form.hibernationTimeoutMin}
+          onChange={(hibernationTimeoutMin) =>
+            update({ hibernationTimeoutMin })
+          }
+          sizeMi={
+            selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
+          }
+        />
+      )}
+      {kit ? (
+        <>
+          <KitSkillsSection kit={kit} />
+          <SkillSourcesSetupSection standalone={false} />
+        </>
+      ) : (
+        <SkillSourcesSetupSection standalone />
+      )}
+      {connectTarget && (
+        <ConnectionCatalogModal
+          initialProviderId={connectTarget.providerId}
+          initialTemplateId={connectTarget.templateId}
+          onClose={() => setConnectTarget(null)}
+          sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
+          oauthReturnView={returnPath}
+        />
+      )}
+
+      {kit && kit.channels.length > 0 && (
+        <KitChannelsSection
+          kit={kit}
+          slackChannelId={form.slackChannelId}
+          onSlackChannelIdChange={(slackChannelId) =>
+            update({ slackChannelId })
+          }
+        />
+      )}
 
       {kit && kit.parameters.length > 0 && (
         <section className="mb-8">

@@ -108,6 +108,7 @@ export const starterKitSchema = z.object({
   id: starterKitIdSchema,
   name: z.string().min(1),
   description: z.string().min(1),
+  tagline: z.string().min(1).optional(),
   category: starterKitCategorySchema,
   icon: z.string().min(1).optional(),
   video: z.url().optional(),
