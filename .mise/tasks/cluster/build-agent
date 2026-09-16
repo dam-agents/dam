@@ -10,7 +10,7 @@ else
 fi
 
 # Rebuild only the agents the cluster has deployed — their entries in the
-# agent-templates ConfigMap (one CM keyed by "<name>.yaml"). Capture
+# harness-templates ConfigMap (one CM keyed by "<name>.yaml"). Capture
 # first so a kubectl failure aborts rather than looking like "nothing deployed".
 DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
   | yq -r '.items[] | select(.metadata.name | test("-harness-templates$"))
