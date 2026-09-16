@@ -244,4 +244,5 @@ export interface SlackGateway {
   ): Promise<string | null>;
   getGrantedScopes(teamId: SlackWorkspace): Promise<Set<string> | null>;
   getBotUserId(teamId: SlackWorkspace): Promise<string | null>;
+  identifyWorkspace(botToken: string): Promise<string | null>;
 }

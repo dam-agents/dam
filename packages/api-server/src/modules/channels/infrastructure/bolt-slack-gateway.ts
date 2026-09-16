@@ -617,5 +617,15 @@ export function createBoltSlackGateway(
       if (!app) return null;
       return (await testedAuthFor(teamId))?.botUserId ?? null;
     },
+
+    async identifyWorkspace(botToken: string): Promise<string | null> {
+      if (!app) return null;
+      try {
+        const result = await app.client.auth.test({ token: botToken });
+        return typeof result.team_id === "string" ? result.team_id : null;
+      } catch {
+        return null;
+      }
+    },
   };
 }

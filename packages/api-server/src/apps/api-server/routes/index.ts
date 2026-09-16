@@ -117,6 +117,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
           clientSecret: config.slackClientSecret,
           callbackUrl: boot.slackInstallCallbackUrl,
           scopes: SLACK_INSTALL_BOT_SCOPES,
+          enterpriseId: config.slackEnterpriseId,
         },
       }),
     );

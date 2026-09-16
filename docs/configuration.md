@@ -101,8 +101,11 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
    ```sh
    mise run cluster:install -- \
      --set=apiServer.slackClientId=... \
-     --set=apiServer.slackClientSecret=...
+     --set=apiServer.slackClientSecret=... \
+     --set=apiServer.slackEnterpriseId=...   # Enterprise Grid only; see below
    ```
+
+   On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id — a workspace outside it is then refused at the moment its credential would be accepted. Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one. Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
 
 3. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
 4. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of that role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.

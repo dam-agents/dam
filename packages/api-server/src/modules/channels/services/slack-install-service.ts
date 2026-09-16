@@ -36,6 +36,7 @@ export interface SlackInstallServiceDeps {
   secrets: SecretStore;
   installLock: XactLock;
   envBotToken: string | null;
+  identifyWorkspace: (botToken: string) => Promise<string | null>;
   now?: () => number;
 }
 
@@ -51,6 +52,27 @@ export function createSlackInstallService(
   const now = deps.now ?? (() => Date.now());
   const tokens = new Map<string, { token: string | null; at: number }>();
   const inFlight = new Map<string, Promise<string | null>>();
+  let originalWorkspace: string | null = null;
+  let identifying: Promise<string | null> | null = null;
+
+  async function originalWorkspaceId(): Promise<string | null> {
+    if (originalWorkspace) return originalWorkspace;
+    if (!deps.envBotToken) return null;
+    identifying ??= deps
+      .identifyWorkspace(deps.envBotToken)
+      .then((teamId) => {
+        if (teamId) originalWorkspace = teamId;
+        return teamId;
+      })
+      .finally(() => {
+        identifying = null;
+      });
+    return identifying;
+  }
+
+  async function workspaceKey(teamId: SlackWorkspace): Promise<string | null> {
+    return teamId === ORIGINAL_WORKSPACE ? originalWorkspaceId() : teamId;
+  }
 
   async function readWorkspaceToken(teamId: string): Promise<string | null> {
     const install = await deps.find(teamId);
@@ -66,21 +88,22 @@ export function createSlackInstallService(
 
   return {
     async resolveBotToken(teamId: SlackWorkspace): Promise<string | null> {
-      if (teamId === ORIGINAL_WORKSPACE) return deps.envBotToken;
+      const key = await workspaceKey(teamId);
+      if (!key) return deps.envBotToken;
 
-      const cached = tokens.get(teamId);
+      const cached = tokens.get(key);
       if (cached && now() - cached.at < TOKEN_CACHE_TTL_MS) return cached.token;
 
-      const pending = inFlight.get(teamId);
+      const pending = inFlight.get(key);
       if (pending) return pending;
 
-      const resolving = readWorkspaceToken(teamId)
+      const resolving = readWorkspaceToken(key)
         .then((token) => {
-          tokens.set(teamId, { token, at: now() });
+          tokens.set(key, { token, at: now() });
           return token;
         })
-        .finally(() => inFlight.delete(teamId));
-      inFlight.set(teamId, resolving);
+        .finally(() => inFlight.delete(key));
+      inFlight.set(key, resolving);
       return resolving;
     },
 

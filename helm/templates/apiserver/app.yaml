@@ -203,6 +203,10 @@ spec:
             - name: SLACK_CLIENT_SECRET
               value: {{ .Values.apiServer.slackClientSecret | quote }}
             {{- end }}
+            {{- if .Values.apiServer.slackEnterpriseId }}
+            - name: SLACK_ENTERPRISE_ID
+              value: {{ .Values.apiServer.slackEnterpriseId | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}

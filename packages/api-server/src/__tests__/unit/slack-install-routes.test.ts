@@ -30,7 +30,7 @@ const INSTALLER_ROLE = "platform-slack-installer";
 const OPERATOR = "kc|operator-1";
 const CALLBACK = "https://platform.example/api/slack/install/callback";
 
-function harness(opts?: { roles?: string[] }) {
+function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
   const { store: pendingInstalls, map: pending } =
     createInspectableTtlStore<SlackInstallPending>();
   const recorded: { teamId: string; installedBy: string | null }[] = [];
@@ -67,6 +67,7 @@ function harness(opts?: { roles?: string[] }) {
           clientSecret: "secret-1",
           callbackUrl: CALLBACK,
           scopes: SLACK_INSTALL_BOT_SCOPES,
+          enterpriseId: opts?.enterpriseId ?? "",
         },
       }),
     );
@@ -209,6 +210,60 @@ describe("slack install routes", () => {
 
     expect(res.status).toBe(400);
     expect(h.recorded).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: An install configured for one Slack organization is offered
+   * a workspace from outside it. Several reads downstream hold that a
+   * conversation id and a user id each name one thing, which is true only
+   * inside one organization, so the workspace is refused where the credential
+   * would be accepted rather than left for those reads to get wrong.
+   */
+  it("refuses a workspace outside the organization it is configured for", async () => {
+    const h = harness({ enterpriseId: "E-OURS" });
+    slackReplies({
+      ok: true,
+      access_token: "xoxb-outsider",
+      team: { id: "T-OUTSIDE", name: "Someone else" },
+      enterprise: { id: "E-THEIRS" },
+    });
+    const start = await h.routes.request("/api/slack/install/start");
+    const { url } = (await start.json()) as { url: string };
+    const state = new URL(url).searchParams.get("state")!;
+
+    const res = await h.routes.request(
+      `/api/slack/install/callback?code=abc&state=${state}`,
+    );
+
+    expect(res.status).toBe(403);
+    expect(h.recorded).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The same workspace, on an install that names no
+   * organization — the only thing a standalone Slack app can do, since Slack
+   * reports no organization for one. The check has to be off rather than
+   * refusing everything.
+   */
+  it("accepts any workspace when no organization is configured", async () => {
+    const h = harness();
+    slackReplies({
+      ok: true,
+      access_token: "xoxb-standalone",
+      team: { id: "T-STANDALONE", name: "Standalone" },
+    });
+    const start = await h.routes.request("/api/slack/install/start");
+    const { url } = (await start.json()) as { url: string };
+    const state = new URL(url).searchParams.get("state")!;
+
+    const res = await h.routes.request(
+      `/api/slack/install/callback?code=abc&state=${state}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.recorded).toEqual([
+      { teamId: "T-STANDALONE", installedBy: OPERATOR },
+    ]);
   });
 
   /**

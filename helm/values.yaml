@@ -810,6 +810,15 @@ apiServer:
   # need to be reachable from the internet.
   slackClientId: ""
   slackClientSecret: ""
+  # -- Slack enterprise (organization) id that a connecting workspace must
+  # belong to, read from Slack's own install response. Empty means any
+  # workspace an operator invites may connect, which is what a standalone
+  # (non-Enterprise-Grid) app has to use — Slack reports no organization for
+  # those. Set it on an Enterprise Grid install: a Slack conversation id and a
+  # Slack user id each identify one thing only inside one organization, and two
+  # organizations connected at once would let a conversation reach the wrong
+  # Agent and a person inherit another person's platform identity.
+  slackEnterpriseId: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

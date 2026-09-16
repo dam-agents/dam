@@ -40,6 +40,7 @@ export interface SlackInstallOAuthConfig {
   clientSecret: string;
   callbackUrl: string;
   scopes: string[];
+  enterpriseId: string;
 }
 
 export interface SlackInstallRoutesDeps {
@@ -69,6 +70,7 @@ interface SlackOAuthAccessResponse {
   error?: string;
   access_token?: string;
   team?: { id?: string; name?: string };
+  enterprise?: { id?: string; name?: string } | null;
 }
 
 async function exchangeInstallCode(
@@ -172,6 +174,23 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
         reason: result.error ?? "exchange-failed",
       });
       return c.text("Could not complete the install. Try again.", 400);
+    }
+
+    const organization = deps.oauth.enterpriseId;
+    if (organization && result.enterprise?.id !== organization) {
+      securityLog("warn", "slack.install.denied", {
+        category: "credential",
+        actor: pending.startedBy || null,
+        actorKind: "user",
+        surface: "slack",
+        decision: "deny",
+        reason: "outside-organization",
+        detail: { teamId },
+      });
+      return c.text(
+        "That workspace is outside the Slack organization this platform serves.",
+        403,
+      );
     }
 
     await deps.installs.record({
