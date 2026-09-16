@@ -87,22 +87,17 @@ function useReviewScreens(): ReviewScreen[] {
       go: () => setView("setup-workbench"),
     },
     {
-      label: "Schedule (Setup)",
-      note: "Schedule cards in agent creation form.",
-      go: () => setView("agent-new"),
-    },
-    {
-      label: "Schedule (Configure)",
-      note: "Schedule panel in agent configure tab.",
-      go: () => setView("home"),
-    },
-    {
       label: "Spend detail link",
       note: "Hover the ? next to Spend — tooltip has a link to the usage page.",
       go: () => {
         setView("home");
         flashElement("[data-review='spend-tooltip']");
       },
+    },
+    {
+      label: "Onboarding tag on agent card",
+      note: "Purple 'Onboarding 1/3' badge on agent row; hover for checklist.",
+      go: () => setView("home"),
     },
     {
       label: "Card gallery",

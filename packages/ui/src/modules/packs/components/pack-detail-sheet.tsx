@@ -333,6 +333,11 @@ const KIND_FALLBACK_ICONS: Partial<Record<PackIngredientKind, CarbonIconType>> =
 function resolveIconSlug(slot: PackSlot): string | null {
   const text =
     `${slot.label} ${slot.description} ${slot.demoValue ?? ""} ${slot.templateId ?? ""}`.toLowerCase();
+  if (
+    slot.label.toLowerCase() === "github enterprise" ||
+    slot.templateId === "github-enterprise"
+  )
+    return "github-enterprise";
   if (slot.label.toLowerCase() === "github" || slot.templateId === "github")
     return "github";
   if (text.includes("slack") || text.includes("#")) return "slack";
@@ -381,6 +386,18 @@ function SetupSlotIcon({ slot }: { slot: PackSlot }) {
   }
 
   const iconSlug = resolveIconSlug(slot);
+  if (iconSlug === "github-enterprise") {
+    return (
+      <IconTile>
+        <GithubIcon
+          width={16}
+          height={16}
+          className="block"
+          style={{ color: "#0f62fe" }}
+        />
+      </IconTile>
+    );
+  }
   if (iconSlug === "github") {
     return (
       <IconTile>

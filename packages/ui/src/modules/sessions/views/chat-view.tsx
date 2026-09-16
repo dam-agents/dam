@@ -78,6 +78,7 @@ import {
   DemoHeaderActions,
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
+import { OnboardingInputBar } from "../../packs/components/onboarding-input-wrap.js";
 import { OnboardingTag } from "../../packs/components/onboarding-tag.js";
 import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
@@ -805,6 +806,7 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
+                <OnboardingInputBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
