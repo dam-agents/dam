@@ -105,8 +105,17 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
 			return st, fmt.Errorf("applying agent service: %w", err)
 		}
+		r.dropSupersededEndpointSlice(ctx, name)
 	}
 	return st, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an earlier release wrote this Service's endpoint by hand, under the agent's own name. Kubernetes now keeps one of its own for the same Service, and two slices naming one Service are unioned — so a leftover that once read ready, pointing at an address its machine no longer answers on, would take a share of the traffic and nothing would repair it. Delete is enough: the generated slice carries a suffixed name, so only the hand-written one matches. Remove this once no cluster has reconciled a vm agent under the old mechanism.
+func (r *AgentReconciler) dropSupersededEndpointSlice(ctx context.Context, name string) {
+	err := r.client.DiscoveryV1().EndpointSlices(r.config.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		slog.Warn("removing the endpoint slice an earlier release wrote by hand", "agent", name, "error", err)
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.

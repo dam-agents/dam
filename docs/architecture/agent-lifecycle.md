@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-15
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -58,7 +58,7 @@ sequenceDiagram
 
 Creation is per-purpose: each kind in the GUI has its own setup form; the hidden experiment surface creates over the API. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and dispatches to the owning module rather than the plain agent create, which guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A new agent takes its template's size and the trusted egress preset, both editable on the agent afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
 
-The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate. On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the workspace is the machine's disk on the owner's [VM runner](platform-topology.md#vm-runner), and the agent Service is selector-less.
+The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate. On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the workspace is the machine's disk on the owner's [VM runner](platform-topology.md#vm-runner), and the agent Service selects that runner rather than a pod of its own.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller then lists that Secret first on the pod's `imagePullSecrets`, ahead of any install-wide default. The kubelet consumes it to pull the image — it never enters the pod, and a stuck pull surfaces as an image-pull failure on the pod rather than a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 

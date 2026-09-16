@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,6 +112,24 @@ func runnerSecret() *corev1.Secret {
 	}
 }
 
+// TEST_SCENARIO: a cluster that already ran a vm agent under the old mechanism has an endpoint slice the controller wrote by hand, under the agent's own name. Kubernetes maintains that Service's endpoints now and unions every slice naming it, so a leftover reading ready would take a share of the traffic toward an address its machine no longer answers on.
+func TestTheHandWrittenEndpointSliceIsRemoved(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	_, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Create(ctx, &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+		AddressType: discoveryv1.AddressTypeIPv4,
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	_, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the hand-written slice is gone, leaving only the one Kubernetes keeps")
+}
+
 // TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
@@ -189,7 +208,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	return r, node, &requeued
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets a selector-less agent Service backed by the node's published port and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
