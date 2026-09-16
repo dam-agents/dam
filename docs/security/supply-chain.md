@@ -1,6 +1,6 @@
 # Supply-chain security
 
-Last verified: 2026-06-12
+Last verified: 2026-09-15
 
 | Dependency type | CVE defense | Zero-day defense |
 |---|---|---|
