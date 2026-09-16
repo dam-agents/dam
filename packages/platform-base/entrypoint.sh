@@ -37,6 +37,34 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 		mkdir -p "$path"
 		[ "$path" -ef "$store" ] || mount --bind "$store" "$path"
 	done
+
+	# A machine is a whole VM, so it can run the services a container cannot,
+	# but its init is still catatonit. openrc supplies the supervisor those
+	# installers look for (k3s gives up without systemd or /sbin/openrc-run),
+	# and the image stages that one path out of reach so a container agent
+	# keeps failing the probe. Linking it in is what makes this a machine that
+	# can host services. openrc's own state lives in /run, which every boot
+	# starts empty, and without it every openrc command fails.
+	if [ "$(id -u)" = 0 ] && [ -x /usr/libexec/openrc-run ]; then
+		ln -sf /usr/libexec/openrc-run /usr/bin/openrc-run
+		mkdir -p /run/openrc
+		touch /run/openrc/softlevel
+		# A registered service has to outlive the throwaway overlay, so the
+		# service registry sits on the storage disk with the persisted paths.
+		# The image's own scripts are copied over it on every boot rather than
+		# seeded once: they are version-coupled to the binaries above, and a
+		# copy taken at first boot would outlive an openrc upgrade.
+		for reg in /etc/init.d /etc/runlevels; do
+			[ "$(stat -c %d "$reg")" = "$(stat -c %d /workspace)" ] && continue
+			mkdir -p "/workspace$reg"
+			cp -a "$reg/." "/workspace$reg/"
+			mount --bind "/workspace$reg" "$reg"
+		done
+		# Backgrounded: a wedged service would otherwise hold the boot past the
+		# runner's readiness window, and the machine would read as never ready.
+		# A service whose program was not persisted fails here and says so.
+		openrc default &
+	fi
 fi
 
 mitm_ca=/etc/platform/ca/ca.crt
