@@ -79,6 +79,9 @@ export function composeAgentsModule(deps: {
   contributionsProgress: ContributionsProgressPort;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
+  resolveSlackChannelNames?: (
+    slackChannelIds: string[],
+  ) => Promise<Record<string, string | null>>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -133,6 +136,7 @@ export function composeAgentsModule(deps: {
       findSlackBindings: findSlackBindingsByChannelId(deps.db),
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
+      resolveSlackChannelNames: deps.resolveSlackChannelNames,
     }),
     repo,
     isOwnedAgent: (agentId) =>

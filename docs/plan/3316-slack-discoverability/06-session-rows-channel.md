@@ -39,7 +39,9 @@ The frame carries two annotations; read them with it.
 3. **Resolve each side's conversation.**
 
    - **Slack.** The channel id is already on the wire, encoded in `threadTs` as `<channelId>:<ts>`
-     or `ambient:<channelId>`. Parse it with the helper from sub-issue 01, then resolve the name.
+     or `ambient:<channelId>`. Parse it with `slackChannelIdFromThreadKey` from sub-issue 01, then
+     match it against the agent's channels, whose `name` sub-issue 01 populates. A client-side
+     join, like Telegram's — **no backend work**, and `SessionView` is unchanged.
    - **Telegram.** `threadTs` holds the conversation id directly, and `useTelegramChats(agentId)`
      already returns `{ conversationId, title }`. This is a client-side join — **no backend work**.
 

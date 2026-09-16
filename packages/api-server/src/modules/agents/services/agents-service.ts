@@ -484,6 +484,9 @@ export function createAgentsService(deps: {
   >;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
+  resolveSlackChannelNames?: (
+    slackChannelIds: string[],
+  ) => Promise<Record<string, string | null>>;
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
@@ -497,6 +500,38 @@ export function createAgentsService(deps: {
         unsupportedKinds: [],
       };
     }
+  }
+
+  async function slackChannelNames(
+    channelLists: ChannelConfig[][],
+  ): Promise<Record<string, string | null>> {
+    if (!deps.resolveSlackChannelNames) return {};
+    const ids = [
+      ...new Set(
+        channelLists
+          .flat()
+          .flatMap((c) =>
+            c.type === ChannelType.Slack ? [c.slackChannelId] : [],
+          ),
+      ),
+    ];
+    if (ids.length === 0) return {};
+    try {
+      return await deps.resolveSlackChannelNames(ids);
+    } catch {
+      return {};
+    }
+  }
+
+  function withChannelNames(
+    channels: ChannelConfig[],
+    names: Record<string, string | null>,
+  ): ChannelConfig[] {
+    return channels.map((channel) => {
+      if (channel.type !== ChannelType.Slack) return channel;
+      const name = names[channel.slackChannelId];
+      return name ? { ...channel, name } : channel;
+    });
   }
 
   async function templateUpdateFor(
@@ -519,7 +554,7 @@ export function createAgentsService(deps: {
     ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
-      channels,
+      withChannelNames(channels, await slackChannelNames([channels])),
       status.failures,
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
@@ -601,10 +636,14 @@ export function createAgentsService(deps: {
     }
 
     const status = await safeStatus(id);
+    const boundChannels = txResult.value.channels;
     return ok(
       assembleAgent(
         infra,
-        txResult.value.channels,
+        withChannelNames(
+          boundChannels,
+          await slackChannelNames([boundChannels]),
+        ),
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
@@ -644,6 +683,8 @@ export function createAgentsService(deps: {
         deps.agentEnvRepo.listMany([...infraIds]),
       ]);
 
+      const channelNames = await slackChannelNames([...channelMap.values()]);
+
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
       ];
@@ -662,7 +703,7 @@ export function createAgentsService(deps: {
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
-          channelMap.get(infra.id) ?? [],
+          withChannelNames(channelMap.get(infra.id) ?? [], channelNames),
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,

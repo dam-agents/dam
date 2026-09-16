@@ -109,6 +109,9 @@ interface Worker {
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
   supportsMessageReactions?(): Promise<boolean>;
+  resolveConversationNames?(
+    channelIds: string[],
+  ): Promise<Record<string, string | null>>;
 }
 
 export interface ChannelManager {
@@ -159,6 +162,9 @@ export interface ChannelManager {
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
   supportsMessageReactions(): Promise<boolean>;
+  resolveSlackConversationNames(
+    channelIds: string[],
+  ): Promise<Record<string, string | null>>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -173,6 +179,7 @@ export const channelRpcRequestSchema = z.object({
     "supportsUserLookup",
     "describeMessageReactions",
     "supportsMessageReactions",
+    "resolveConversationNames",
   ]),
   args: z.array(z.unknown()),
 });
@@ -190,6 +197,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   supportsUserLookup: z.tuple([]),
   describeMessageReactions: forInstance.rest(z.unknown()),
   supportsMessageReactions: z.tuple([]),
+  resolveConversationNames: z.tuple([z.array(z.string())]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -244,6 +252,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ error: z.string() }),
   ]),
   supportsMessageReactions: z.boolean(),
+  resolveConversationNames: z.record(z.string(), z.string().nullable()),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -480,6 +489,9 @@ export function createChannelManager(deps: {
       );
       return results.some(Boolean);
     },
+    resolveConversationNames: (channelIds: string[]) =>
+      slackWorker?.resolveConversationNames?.(channelIds) ??
+      Promise.resolve({}),
   } as const;
 
   subscriptions.push(
@@ -632,6 +644,12 @@ export function createChannelManager(deps: {
         [],
         localHandlers.supportsUserLookup,
       ).catch(() => true);
+    },
+
+    resolveSlackConversationNames(channelIds) {
+      return dispatch("resolveConversationNames", [channelIds], () =>
+        localHandlers.resolveConversationNames(channelIds),
+      ).catch(() => ({}));
     },
 
     describeMessageReactions(instanceName, channelType, query) {

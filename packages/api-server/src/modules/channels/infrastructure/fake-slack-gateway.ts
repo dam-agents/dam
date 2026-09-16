@@ -271,7 +271,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     async getConversationInfo(channelId) {
       const channel = channels.find((c) => c.id === channelId);
-      return channel ? { isMember: channel.botIsMember } : null;
+      return channel
+        ? { isMember: channel.botIsMember, name: channel.name }
+        : null;
     },
 
     async getUserInfo(userId) {

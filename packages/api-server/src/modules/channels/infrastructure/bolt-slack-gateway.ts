@@ -396,7 +396,10 @@ export function createBoltSlackGateway(
           channel: channelId,
         });
         if (!info.channel) return null;
-        return { isMember: !!info.channel.is_member };
+        return {
+          isMember: !!info.channel.is_member,
+          name: info.channel.name ?? null,
+        };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;
         throw err;

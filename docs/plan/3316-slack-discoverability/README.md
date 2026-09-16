@@ -63,7 +63,7 @@ is wrong are called out in the sub-issues that touch them.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Slack channel name resolution](./01-channel-name-resolution.md) | Backend. Resolve a Slack conversation id to its name, for bindings and sessions alike. | — |
+| 01 | [x] [Slack channel name resolution](./01-channel-name-resolution.md) | Backend. Resolve a Slack conversation id to its name, for bindings and sessions alike. | — |
 | 02 | [Bind walkthrough modal and setup Channels section](./02-bind-modal-setup-section.md) | The shared bind modal and the Channels section on the three setup views. | — |
 | 03 | [Channel vs connection explainer](./03-channel-vs-connection-explainer.md) | Accessible popover, the "Slack Account" rename, three placements, two cross-links. | 02 |
 | 04 | [Channel visibility on the agent list and chat launcher](./04-channel-visibility-list-launcher.md) | Row chips, overflow entries, launcher tiles. | 01, 02 |
@@ -96,9 +96,9 @@ Each sub-issue names the one that applies.
 ### Tests
 
 **Do not author new tests.** Verification leans on the existing suite (`mise run test`,
-`mise run check`) plus the manual smoke test each sub-issue specifies. The one exception is
-called out explicitly in sub-issue 01, where a pure parsing helper has edge cases and no manual
-smoke path.
+`mise run check`) plus the manual smoke test each sub-issue specifies. Sub-issue 01 proposed one
+exception for a pure parsing helper; the user declined it during implementation, so the rule has
+no exceptions.
 
 ### Vocabulary
 
@@ -158,6 +158,11 @@ Not open questions. Recorded so nobody reopens them.
   frame before building it, which is where this gets settled.
 - **Resolve channel names on read, with a cache** — not persisted at bind. Channels get renamed,
   and a stale name is worse than a slightly slower one. Reasoning in sub-issue 01.
+- **Session channel names are a client-side join**, decided during implementation of 01. The UI
+  parses `threadTs` and matches the agent's channels, which already carry names. `SessionView`
+  gains no field. Sub-issue 01 step 5 and sub-issue 06 step 3 are updated to agree.
+- **Figma frames come from the user**, pasted per sub-issue. The `figma-dev` MCP server refused
+  the connection, so the implementing agent cannot pull them itself.
 - **Keep the "Default" badge** on Slack channel rows, which Figma does not draw. The frame shows
   a channel that is not a default; removing the badge would lose real information.
 

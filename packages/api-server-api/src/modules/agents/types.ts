@@ -23,6 +23,7 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
+  name?: string;
   ambient?: boolean;
   default?: boolean;
 }

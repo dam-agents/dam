@@ -190,7 +190,9 @@ export interface SlackGateway {
   uploadFile(args: SlackUpload): Promise<void>;
   downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
   listBotChannels(): Promise<SlackChannelInfo[]>;
-  getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
+  getConversationInfo(
+    channelId: string,
+  ): Promise<{ isMember: boolean; name: string | null } | null>;
   getUserInfo(userId: string): Promise<SlackUserInfo | null>;
   getMessageReactions(
     channel: string,

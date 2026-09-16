@@ -46,6 +46,9 @@ function fakeSlackWorker(): SlackWorker {
       messageTs: "1.1",
     })),
     supportsMessageReactions: vi.fn(async () => true),
+    resolveConversationNames: vi.fn(
+      async (): Promise<Record<string, string | null>> => ({}),
+    ),
   };
 }
 

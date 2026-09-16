@@ -691,6 +691,9 @@ export interface SlackWorker {
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
   supportsMessageReactions(): Promise<boolean>;
+  resolveConversationNames(
+    channelIds: string[],
+  ): Promise<Record<string, string | null>>;
 }
 
 export interface SlackOAuthPending {
@@ -792,7 +795,11 @@ export function undeliveredNudge(
 
 const USER_CACHE_TTL_MS = 10 * 60_000;
 
+const CONVERSATION_NAME_TTL_MS = 5 * 60_000;
+
 const userLookupSemaphore = createSemaphore(5);
+
+const conversationInfoSemaphore = createSemaphore(5);
 
 function normalizeSlackUserId(input: string): string | null {
   const bare = input.trim().replace(/^<@/, "").replace(/>$/, "").split("|")[0]!;
@@ -1077,6 +1084,52 @@ export function createSlackWorker(
       }
     }
     userCache.set(id, { user, expiresAt: now + USER_CACHE_TTL_MS });
+  }
+
+  const conversationNameCache = new Map<
+    string,
+    { name: string | null; expiresAt: number }
+  >();
+
+  function cacheConversationName(id: string, name: string | null) {
+    const now = Date.now();
+    if (conversationNameCache.size > 500) {
+      for (const [key, entry] of conversationNameCache) {
+        if (entry.expiresAt <= now) conversationNameCache.delete(key);
+      }
+    }
+    conversationNameCache.set(id, {
+      name,
+      expiresAt: now + CONVERSATION_NAME_TTL_MS,
+    });
+  }
+
+  const conversationNameInFlight = new Map<string, Promise<string | null>>();
+
+  function resolveConversationName(
+    gw: SlackGateway,
+    id: string,
+  ): Promise<string | null> {
+    const pending = conversationNameInFlight.get(id);
+    if (pending) return pending;
+    const lookup = (async () => {
+      const release = await conversationInfoSemaphore.acquire();
+      try {
+        const info = await gw.getConversationInfo(id);
+        cacheConversationName(id, info?.name ?? null);
+        return info?.name ?? null;
+      } catch (err) {
+        process.stderr.write(
+          `[slack] conversations.info failed for ${id}: ${formatError(err)}\n`,
+        );
+        return null;
+      } finally {
+        release();
+        conversationNameInFlight.delete(id);
+      }
+    })();
+    conversationNameInFlight.set(id, lookup);
+    return lookup;
   }
 
   const AMBIGUOUS_THREAD_ERROR =
@@ -3640,6 +3693,31 @@ export function createSlackWorker(
     async supportsUserLookup() {
       const gw = await ensureGateway();
       return gw ? canLookupUsers(gw) : true;
+    },
+
+    async resolveConversationNames(channelIds: string[]) {
+      const now = Date.now();
+      const names: Record<string, string | null> = {};
+      const unresolved: string[] = [];
+      for (const id of new Set(channelIds)) {
+        const cached = conversationNameCache.get(id);
+        if (cached && cached.expiresAt > now) names[id] = cached.name;
+        else unresolved.push(id);
+      }
+      if (unresolved.length === 0) return names;
+
+      const gw = await ensureGateway();
+      if (!gw) {
+        for (const id of unresolved) names[id] = null;
+        return names;
+      }
+
+      await Promise.all(
+        unresolved.map(async (id) => {
+          names[id] = await resolveConversationName(gw, id);
+        }),
+      );
+      return names;
     },
 
     async describeMessageReactions(

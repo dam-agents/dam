@@ -415,6 +415,7 @@ export {
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
+  slackChannelIdFromThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";

@@ -48,9 +48,11 @@ also need a rename webhook to stay honest, which is more machinery than the prob
    given a `threadTs`, return the channel id, handling both `<channelId>:<ts>` and
    `ambient:<channelId>`, and returning `null` for anything else. Sub-issue 06 consumes this.
 
-5. **Expose resolution to session listing.** Decide where 06 gets its names — extending the
-   session list response is the straightforward route. Keep it optional for the same reason as
-   step 3.
+5. **Session names need no backend.** Decided during implementation: sub-issue 06 joins
+   client-side. The UI parses `threadTs` to a channel id and matches it against the agent's
+   channels, which carry names from step 3. This mirrors the Telegram half of 06 and keeps
+   `SessionView` unchanged. A session in a since-unbound channel shows no name, which 06 already
+   allows.
 
 ## Acceptance criteria
 
@@ -79,11 +81,9 @@ response carries the channel's human name next to its `C0…` id. Revoke nothing
 nothing: re-read within a few seconds and confirm from the api-server logs that a second Slack
 API call was not made.
 
-**The one sanctioned new test.** The thread-key parser is pure, has edge cases that never surface
-in a manual smoke path (malformed keys, a channel id containing a colon, an ambient key), and is
-consumed by session rendering where a silent `null` would simply hide channels. Add unit tests
-for it beside the existing `sessions` unit tests. Do not add tests for anything else in this
-slice.
+**No new tests.** The plan sanctioned unit tests for the thread-key parser; the user declined
+during implementation. The parser's edge cases were verified with a throwaway spec that was run
+and deleted. Do not add tests in this slice.
 
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the user
 can confirm it by hand.
