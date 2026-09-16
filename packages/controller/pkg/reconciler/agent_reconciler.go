@@ -142,25 +142,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			running = false
 			parked = true
 		} else {
-			verdict, err := r.budgetAllows(ctx, agent, owner)
+			refusal, err := r.budgetAllows(ctx, agent, owner)
 			if err != nil {
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
 			}
-			if !verdict.allowed {
+			if refusal != "" {
 				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
 				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
 				}
 				if freed {
-					if verdict, err = r.budgetAllows(ctx, agent, owner); err != nil {
+					if refusal, err = r.budgetAllows(ctx, agent, owner); err != nil {
 						return fmt.Errorf("agent %s: budget re-check: %w", name, err)
 					}
 				}
 			}
-			if !verdict.allowed {
+			if refusal != "" {
 				running = false
 				parked = true
-				overBudget = verdict.message
+				overBudget = refusal
 				if !autoRetry {
 					r.recordDeniedWake(name, lastActivity)
 				}
@@ -171,14 +171,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 
 	if running {
-		verdict, grew, err := r.resizeAllows(ctx, agent, owner)
+		refusal, err := r.resizeAllows(ctx, agent, owner)
 		if err != nil {
 			return fmt.Errorf("agent %s: resize budget check: %w", name, err)
 		}
-		if grew && !verdict.allowed {
+		if refusal != "" {
 			running = false
 			parked = true
-			overBudget = verdict.message
+			overBudget = refusal
 			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}

@@ -349,10 +349,9 @@ func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
 
-	verdict, changed, err := r.resizeAllows(context.Background(), agent, testOwner)
+	refusal, err := r.resizeAllows(context.Background(), agent, testOwner)
 	require.NoError(t, err, "an unreachable runner must not fail the reconcile")
-	assert.True(t, verdict.allowed)
-	assert.False(t, changed)
+	assert.Empty(t, refusal)
 }
 
 // TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the controller's own Deployment, so the cluster collects them all; a single object missing the reference strands a running VM and its disk.
