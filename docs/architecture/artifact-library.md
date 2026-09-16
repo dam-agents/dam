@@ -78,6 +78,12 @@ normal chat path. Replies, queued turns and delivery errors appear in chat; the
 page receives no separate answer. Publishing an updated artifact uses the normal
 version flow.
 
+The renderer injects a platform-owned prompt API without changing the stored
+HTML. It sends requests to the host over `window.postMessage`; the in-app
+sandbox retains an opaque origin and receives no app credentials. The host
+validates both the message payload and the sending window against its preview
+frame: the injected API is an authoring convenience, not an authorization gate.
+
 Callbacks are available only in the chat's docked preview, including fullscreen,
 and work in a newly started conversation without reloading the page.
 Library previews and historical versions cannot send prompts, and disabling the
