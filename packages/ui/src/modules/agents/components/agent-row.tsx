@@ -1,4 +1,4 @@
-import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
+import { Chemistry, Gift, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,11 @@ import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { agentKindBadge } from "../utils/agent-kind.js";
+import {
+  agentKindBadge,
+  onboardingBadge,
+  starterKitBadge,
+} from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
   formatTemporaryDraw,
@@ -69,6 +73,8 @@ export function AgentRow({
   onDelete,
 }: Props) {
   const kindBadge = agentKindBadge(agent);
+  const kitBadge = starterKitBadge(agent);
+  const onboarding = onboardingBadge(agent);
   return (
     <Card
       data-testid="agent-row"
@@ -84,6 +90,29 @@ export function AgentRow({
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
+            </Badge>
+          )}
+          {kitBadge && (
+            <Badge
+              variant={kitBadge.variant}
+              className="shrink-0"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Gift size={12} aria-hidden />
+                {kitBadge.label}
+              </span>
+            </Badge>
+          )}
+          {onboarding && (
+            <Badge
+              variant={onboarding.variant}
+              className="shrink-0"
+              title={onboarding.title}
+              data-testid="agent-onboarding-badge"
+            >
+              {onboarding.label}
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />

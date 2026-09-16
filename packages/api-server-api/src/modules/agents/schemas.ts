@@ -31,6 +31,13 @@ export const agentSizeSchema = z.object({
   memory: memoryQuantitySchema.optional(),
 });
 
+export const storageQuantitySchema = z
+  .string()
+  .regex(/^\d+(Mi|Gi)$/, "storage must look like '512Mi' or '10Gi'")
+  .refine((v) => toMemoryMi(v) >= 1024, {
+    message: "storage must be at least 1Gi",
+  });
+
 export const agentGetInputSchema = idSchema;
 export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
@@ -74,6 +81,7 @@ export const agentCreateInputSchema = z
       .optional(),
     connectionIds: z.array(z.string()).optional(),
     size: agentSizeSchema.optional(),
+    storage: storageQuantitySchema.optional(),
     sweepable: z.boolean().optional(),
     lifetimeMs: z.number().int().min(0).optional(),
   })

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Code,
   Folders,
+  Gift,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -15,6 +16,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { useFeatures } from "../modules/features/api/queries.js";
 import { useStore } from "../store.js";
 
 interface Destination {
@@ -37,6 +39,7 @@ export function IconRail({
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
 
   const sandboxes: Destination = {
     label: "Home",
@@ -60,6 +63,17 @@ export function IconRail({
     badge: 0,
     navigate: navigateToKnowledgeBases,
   };
+  const starterKits: Destination = {
+    label: "Starter Kits",
+    shortLabel: "Kits",
+    icon: Gift,
+    active:
+      view === "starter-kits" ||
+      view === "starter-kit" ||
+      view === "starter-kit-new",
+    badge: 0,
+    navigate: () => setView("starter-kits"),
+  };
   const artifacts: Destination = {
     label: "Artifacts",
     icon: Folders,
@@ -74,6 +88,14 @@ export function IconRail({
     badge: 0,
     navigate: () => navigateToSettings(),
   };
+
+  const primary: Destination[] = [
+    sandboxes,
+    codingAgents,
+    knowledgeBases,
+    ...(kitsEnabled ? [starterKits] : []),
+  ];
+  const secondary: Destination[] = [artifacts, settings];
 
   return (
     <>
@@ -133,24 +155,31 @@ export function IconRail({
           </Tooltip>
         </div>
         <div className="mt-px flex flex-col gap-px">
-          <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...codingAgents} expanded={expandedNav} />
-          <RailItem {...knowledgeBases} expanded={expandedNav} />
+          {primary.map((destination) => (
+            <RailItem
+              key={destination.label}
+              {...destination}
+              expanded={expandedNav}
+            />
+          ))}
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
-          <RailItem {...artifacts} expanded={expandedNav} />
-          <RailItem {...settings} expanded={expandedNav} />
+          {secondary.map((destination) => (
+            <RailItem
+              key={destination.label}
+              {...destination}
+              expanded={expandedNav}
+            />
+          ))}
         </div>
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, codingAgents, knowledgeBases, artifacts, settings].map(
-            (destination) => (
-              <BottomBarItem key={destination.label} {...destination} />
-            ),
-          )}
+          {[...primary, ...secondary].map((destination) => (
+            <BottomBarItem key={destination.label} {...destination} />
+          ))}
         </nav>
       )}
     </>

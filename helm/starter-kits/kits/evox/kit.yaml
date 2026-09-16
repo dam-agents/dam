@@ -1,0 +1,25 @@
+schemaVersion: v1
+id: evox
+name: EvoX
+description: >-
+  Self-evolving code and algorithm optimization (SkyDiscover). Brings its own agent, built on Claude Code.
+category: research
+icon: chart
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md
+image:
+  ref: quay.io/dam-agents/skydiscover # @ci-pin skydiscover-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, openai]
+resources:
+  storage: 5Gi
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.
+env:
+  - name: SKYDISCOVER_SEARCH
+    value: evox
+parameters:
+  - name: target repository or problem definition
+    required: true
+  - name: optimization goal and how it is measured
+    required: true

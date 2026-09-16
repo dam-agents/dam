@@ -1,0 +1,23 @@
+schemaVersion: v1
+id: k-search
+name: K-Search
+description: >-
+  LLM-driven GPU kernel optimization with evaluation on Modal. Brings its own
+  agent.
+category: research
+icon: search
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/k-search/README.md
+image:
+  ref: quay.io/dam-agents/k-search # @ci-pin k-search-image-tag
+  providers: [ibm-litellm, openai]
+resources:
+  cpu: "2"
+  memory: 4Gi
+  storage: 5Gi
+connections:
+  - accepts: [modal]
+    required: true
+    note: Kernel evaluation runs on Modal cloud GPUs.
+parameters:
+  - name: kernel or benchmark to optimize
+    required: true

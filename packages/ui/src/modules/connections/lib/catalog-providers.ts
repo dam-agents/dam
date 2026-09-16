@@ -27,55 +27,22 @@ export interface CatalogProviderGroup {
   connections: ConnectionView[];
 }
 
-const STATIC_PROVIDERS: readonly {
-  id: string;
-  title: string;
-  templateIds: readonly string[];
-  tab: CatalogTab;
-}[] = [
-  {
-    id: "github",
-    title: "GitHub",
-    templateIds: ["github", "github-pat", "github-app"],
-    tab: "apps",
-  },
-  {
-    id: "github-enterprise",
-    title: "GitHub Enterprise",
-    templateIds: [
-      "github-enterprise",
-      "github-enterprise-pat",
-      "github-enterprise-app",
-    ],
-    tab: "apps",
-  },
-  { id: "modal", title: "Modal", templateIds: ["modal"], tab: "apps" },
-  {
-    id: "kubernetes",
-    title: "Kubernetes / OpenShift",
-    templateIds: ["kubernetes"],
-    tab: "apps",
-  },
-  {
-    id: "mcp-server",
-    title: "MCP servers",
-    templateIds: ["custom-mcp-oauth", "custom-mcp-none"],
-    tab: "mcp",
-  },
-  {
-    id: "custom-header",
-    title: "Custom Headers",
-    templateIds: ["custom-header"],
-    tab: "custom-headers",
-  },
+const FAMILY_TAB: Record<string, CatalogTab> = {
+  "mcp-server": "mcp",
+  "custom-header": "custom-headers",
+};
+
+const FAMILY_ORDER: readonly string[] = [
+  "github",
+  "github-enterprise",
+  "modal",
+  "kubernetes",
 ];
 
-const STATIC_TITLE_BY_TEMPLATE_ID = new Map(
-  STATIC_PROVIDERS.flatMap((p) => p.templateIds.map((id) => [id, p.title])),
-);
-
-export function catalogProviderTitle(templateId: string): string | undefined {
-  return STATIC_TITLE_BY_TEMPLATE_ID.get(templateId);
+export function catalogProviderTitle(
+  template: Pick<ConnectionTemplateView, "family"> | undefined,
+): string | undefined {
+  return template?.family?.title;
 }
 
 const METHOD_COPY: Record<string, { title: string; description: string }> = {
@@ -156,27 +123,26 @@ export function groupCatalog({
   connections: readonly ConnectionView[];
 }): Map<CatalogTab, CatalogProviderGroup[]> {
   const templateById = new Map(allTemplates.map((t) => [t.id, t]));
-  const staticByTemplateId = new Map(
-    STATIC_PROVIDERS.flatMap((p) =>
-      p.templateIds.map((id) => [id, p] as const),
-    ),
-  );
 
   const groups = new Map<string, CatalogProviderGroup>();
   const groupFor = (templateId: string): CatalogProviderGroup => {
-    const def = staticByTemplateId.get(templateId);
-    const providerId = def?.id ?? templateId;
-    const existing = groups.get(providerId);
-    if (existing) return existing;
     const template = templateById.get(templateId);
-    const provider: CatalogProvider = def
+    const family = template?.family;
+    const providerId = family?.id ?? templateId;
+    const existing = groups.get(providerId);
+    if (existing) {
+      if (!existing.provider.iconSlug && template?.iconSlug)
+        existing.provider.iconSlug = template.iconSlug;
+      return existing;
+    }
+    const provider: CatalogProvider = family
       ? {
-          id: def.id,
-          title: def.title,
-          iconSlug: def.templateIds
-            .map((id) => templateById.get(id)?.iconSlug)
-            .find(Boolean),
-          tab: def.tab,
+          id: family.id,
+          title: family.title,
+          iconSlug: template?.iconSlug,
+          tab:
+            FAMILY_TAB[family.id] ??
+            (template ? tabForCategory(template.category) : "apps"),
         }
       : {
           id: templateId,
@@ -193,25 +159,19 @@ export function groupCatalog({
     return group;
   };
 
-  const offeredIds = new Set(offeredTemplates.map((t) => t.id));
-  for (const def of STATIC_PROVIDERS)
-    if (def.templateIds.some((id) => offeredIds.has(id)))
-      groupFor(def.templateIds.find((id) => offeredIds.has(id))!);
   for (const t of offeredTemplates) groupFor(t.id).templates.push(t);
   for (const c of connections) groupFor(c.templateId).connections.push(c);
 
-  for (const def of STATIC_PROVIDERS) {
-    const group = groups.get(def.id);
-    group?.templates.sort(
-      (a, b) => def.templateIds.indexOf(a.id) - def.templateIds.indexOf(b.id),
-    );
-  }
-
+  const rank = (g: CatalogProviderGroup) => {
+    const i = FAMILY_ORDER.indexOf(g.provider.id);
+    return i === -1 ? FAMILY_ORDER.length : i;
+  };
   const byTab = new Map<CatalogTab, CatalogProviderGroup[]>(
     CATALOG_TAB_ORDER.map((tab) => [tab, []]),
   );
   for (const group of groups.values())
     byTab.get(group.provider.tab)!.push(group);
+  for (const list of byTab.values()) list.sort((a, b) => rank(a) - rank(b));
   return byTab;
 }
 

@@ -1,4 +1,4 @@
-import type { PromptBlock } from "api-server-api";
+import type { PromptBlock, ProviderPresetType } from "api-server-api";
 import type { AgentKind, EnvVar, HarnessFamily } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -92,8 +92,9 @@ export interface TemplateView {
   name: string;
   image: string;
   description?: string;
-  category: "harness" | "preconfigured";
+  category: "harness";
   harness?: HarnessFamily;
+  providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;
@@ -143,6 +144,8 @@ export interface AgentView {
     | { type: "telegram" }
   )[];
   kbTemplateId: string | null;
+  starterKit: string | null;
+  starterKitOnboarded: string | null;
   spawnedBy: string | null;
   kind?: AgentKind;
 }

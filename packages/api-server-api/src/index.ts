@@ -181,6 +181,32 @@ export {
   experimentFolderName,
 } from "./modules/experiments/schemas.js";
 export type {
+  StarterKit,
+  StarterKitApplyInput,
+  StarterKitBundledSkills,
+  ResolvedSkill,
+  StarterKitApplyResult,
+  StarterKitCatalog,
+  StarterKitCatalogEntry,
+  StarterKitCategory,
+  StarterKitConnectionRequirement,
+  StarterKitImage,
+  StarterKitParameter,
+  StarterKitResources,
+  StarterKitSchedule,
+  StarterKitScheduleOverride,
+  StarterKitScheduleTiming,
+  StarterKitView,
+  StarterKitsService,
+} from "./modules/starter-kits/types.js";
+export {
+  starterKitApplyInputSchema,
+  starterKitCatalogSchema,
+  starterKitScheduleOverrideSchema,
+  starterKitCategorySchema,
+  starterKitSchema,
+} from "./modules/starter-kits/schemas.js";
+export type {
   KnowledgeBaseCreateInput,
   KnowledgeBaseTemplateId,
   KnowledgeBasesService,
@@ -375,6 +401,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionFamilyView,
   ConnectionTemplateView,
   TemplateInput as ConnectionTemplateInput,
   TemplateInputState as ConnectionTemplateInputState,
@@ -466,6 +493,7 @@ export type {
   SkillRef,
   SkillApplyBatchInput,
   SkillSet,
+  SkillEntriesApplyInput,
   SkillSetApplyInput,
   SkillSetApplyResult,
   SkillSetCreateInput,

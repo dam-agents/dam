@@ -467,7 +467,7 @@ API Server ServiceAccount name
 {{- else if eq $rail "bob" }}
 {{- include "platform.agentTelemetry.env.bob" . }}
 {{- else }}
-{{- fail (printf "agentTemplates.%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "harnessTemplates.%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
@@ -560,3 +560,13 @@ subjects:
     name: {{ .name }}
     namespace: {{ .root.Release.Namespace }}
 {{- end }}
+
+{{/*
+Whether a built-in starter kit is enabled: `starterKits.builtin.kits.<id>.enabled`,
+defaulting to true when the kit has no entry. Usage:
+  {{ include "platform.starterKits.kitEnabled" (dict "root" $ "id" $id) }} -> "true" | ""
+*/}}
+{{- define "platform.starterKits.kitEnabled" -}}
+{{- $cfg := index (.root.Values.starterKits.builtin.kits | default dict) .id -}}
+{{- if or (not $cfg) (ne $cfg.enabled false) -}}true{{- end -}}
+{{- end -}}

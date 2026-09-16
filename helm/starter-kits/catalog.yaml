@@ -1,0 +1,14 @@
+# The platform's built-in starter kit catalog. Shipped inside the chart and
+# mounted into the api-server; the `platform` catalog on every install.
+# Workload kits pin their image by the same publish step that pins every
+# other image (`# @ci-pin <component>-image-tag`).
+kits:
+  - path: kits/llm-wiki
+  - path: kits/plain-wiki
+  - path: kits/nous
+  - path: kits/openevolve
+  - path: kits/shinkaevolve
+  - path: kits/gepa
+  - path: kits/adaevolve
+  - path: kits/evox
+  - path: kits/k-search

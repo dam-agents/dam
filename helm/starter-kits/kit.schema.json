@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dam-agents/dam-starter-kits/main/kit.schema.json",
+  "title": "Starter kit",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "knowledge",
+        "software",
+        "productivity",
+        "research"
+      ]
+    },
+    "icon": {
+      "type": "string",
+      "minLength": 1
+    },
+    "video": {
+      "type": "string",
+      "format": "uri"
+    },
+    "docsUrl": {
+      "type": "string",
+      "format": "uri"
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex",
+            "pi",
+            "bob"
+          ]
+        },
+        "providers": {
+          "type": "array",
+          "items": {}
+        }
+      },
+      "required": [
+        "ref"
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?m?$"
+        },
+        "memory": {
+          "type": "string",
+          "pattern": "^\\d+(Mi|Gi)$"
+        },
+        "storage": {
+          "type": "string",
+          "pattern": "^\\d+(Mi|Gi)$"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "knowledgeBase": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string",
+          "enum": [
+            "llm-wiki",
+            "plain-wiki"
+          ]
+        }
+      },
+      "required": [
+        "template"
+      ]
+    },
+    "harnesses": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "codex",
+          "pi",
+          "bob"
+        ]
+      }
+    },
+    "providers": {
+      "minItems": 1,
+      "type": "array",
+      "items": {}
+    },
+    "seed": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "onboarding": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "prompt"
+      ]
+    },
+    "connections": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "accepts": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": {
+            "default": false,
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepts"
+        ]
+      }
+    },
+    "channels": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "telegram"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      }
+    },
+    "schedules": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "task": {
+                "type": "string",
+                "minLength": 1
+              },
+              "enabled": {
+                "default": true,
+                "type": "boolean"
+              },
+              "sessionMode": {
+                "type": "string",
+                "enum": [
+                  "continuous",
+                  "fresh"
+                ]
+              },
+              "cron": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name",
+              "task",
+              "cron"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "task": {
+                "type": "string",
+                "minLength": 1
+              },
+              "enabled": {
+                "default": true,
+                "type": "boolean"
+              },
+              "sessionMode": {
+                "type": "string",
+                "enum": [
+                  "continuous",
+                  "fresh"
+                ]
+              },
+              "rrule": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timezone": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name",
+              "task",
+              "rrule",
+              "timezone"
+            ]
+          }
+        ]
+      }
+    },
+    "skills": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source",
+          "name"
+        ]
+      }
+    },
+    "bundledSkills": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "env": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ]
+      }
+    },
+    "hibernationTimeoutMin": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "parameters": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "default": false,
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "description",
+    "category"
+  ]
+}

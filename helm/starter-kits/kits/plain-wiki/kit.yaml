@@ -1,0 +1,16 @@
+schemaVersion: v1
+id: plain-wiki
+name: Plain Wiki
+description: >-
+  A knowledge base agent that keeps markdown files and organizes them for you.
+  Lightweight, and works with no network beyond the model.
+category: knowledge
+icon: document
+knowledgeBase:
+  template: plain-wiki
+providers: [ibm-litellm, anthropic, openai]
+parameters:
+  - name: what the knowledge base should cover
+    required: true
+  - name: files or notes to start from
+    required: false

@@ -1,0 +1,52 @@
+import { z } from "zod/v4";
+
+const seedSchema = z.array(
+  z
+    .object({
+      name: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits and dashes"),
+      url: z.url().optional(),
+      path: z.string().min(1).optional(),
+    })
+    .refine((c) => (c.url ? 1 : 0) + (c.path ? 1 : 0) === 1, {
+      message: "a catalog names exactly one of url or path",
+    }),
+);
+
+export interface CatalogSeed {
+  name: string;
+  locator: string;
+}
+
+export function parseCatalogSeeds(raw: string | undefined): CatalogSeed[] {
+  if (!raw || raw.trim() === "") return [];
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `STARTER_KITS_CATALOGS is not valid JSON: ${(err as Error).message}`,
+    );
+  }
+  const parsed = seedSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new Error(
+      `STARTER_KITS_CATALOGS is invalid: ${parsed.error.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ")}`,
+    );
+  }
+  const seen = new Set<string>();
+  for (const c of parsed.data) {
+    if (seen.has(c.name))
+      throw new Error(`STARTER_KITS_CATALOGS names catalog "${c.name}" twice`);
+    seen.add(c.name);
+  }
+  return parsed.data.map((c) => ({
+    name: c.name,
+    locator: (c.url ?? c.path)!,
+  }));
+}

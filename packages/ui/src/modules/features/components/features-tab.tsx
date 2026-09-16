@@ -32,6 +32,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
   },
+  {
+    id: "starter-kits",
+    label: "Starter kits",
+    description:
+      "Reveals the starter kit catalog — a Kits destination in the rail and a Start-from-a-kit widget on Home — for creating an agent from a proven setup.",
+  },
 ];
 
 function FeatureRowCard({

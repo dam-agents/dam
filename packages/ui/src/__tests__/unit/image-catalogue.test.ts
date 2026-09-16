@@ -22,8 +22,6 @@ const CATALOGUE = [
   template("claude-code", false),
   template("codex", false),
   template("claude-code-vm", true),
-  template("nous", false, "preconfigured"),
-  template("nous-vm", true, "preconfigured"),
 ];
 
 describe("imageCatalogue", () => {

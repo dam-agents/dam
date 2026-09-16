@@ -28,7 +28,7 @@ nfsProvisioner:
 # `docker save platform-<name>:latest` it; in CI that image is neither pulled
 # (only controller/api-server/ui/keycloak/mock are) nor built (SKIP_IMAGE_BUILD=1),
 # so a stray enabled template fails the load with "reference does not exist".
-agentTemplates:
+harnessTemplates:
   claude-code:
     enabled: false
   nous:

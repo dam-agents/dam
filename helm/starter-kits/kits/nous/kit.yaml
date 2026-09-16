@@ -1,0 +1,32 @@
+schemaVersion: v1
+id: nous
+name: Nous
+description: >-
+  Hypothesis-driven experimentation campaigns against a target system the
+  agent clones, builds, patches and measures. Runs on the pre-built Nous
+  image.
+category: research
+icon: microscope
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md
+image:
+  ref: quay.io/dam-agents/nous # @ci-pin nous-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, anthropic]
+resources:
+  cpu: "2"
+  memory: 4Gi
+  storage: 10Gi
+  note: >-
+    A campaign clones, builds and runs the target system, with a git worktree
+    per arm and its own Python environment — more CPU, memory and disk than a
+    chat agent.
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.
+hibernationTimeoutMin: 0
+parameters:
+  - name: target repository
+    required: true
+  - name: campaign goal
+    required: true
+    note: What to optimize and how it is measured.

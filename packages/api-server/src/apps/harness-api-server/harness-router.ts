@@ -11,6 +11,7 @@ import type {
   TemplatesService,
 } from "api-server-api";
 import type { DefaultResourceLimits } from "../../modules/agents/index.js";
+import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes, type AgentKbDeps } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
@@ -33,6 +34,7 @@ export function createHarnessRouter(deps: {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  markOnboardingComplete: OnboardingMarker;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
@@ -59,6 +61,7 @@ export function createHarnessRouter(deps: {
     k8s: deps.k8s,
     composeSkills: deps.composeSkills,
     schedulesServiceFor: deps.schedulesServiceFor,
+    markOnboardingComplete: deps.markOnboardingComplete,
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,

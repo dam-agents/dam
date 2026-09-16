@@ -1,6 +1,6 @@
 {{/*
 Agent templates. One ConfigMap in the RELEASE namespace with a
-`<name>.yaml` data key per enabled `.Values.agentTemplates` entry. It is
+`<name>.yaml` data key per enabled `.Values.harnessTemplates` entry. It is
 mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
 boot — the api-server no longer reads templates dynamically via the K8s API,
 so this CM needs no label selector and no agent-namespace placement.
@@ -17,16 +17,16 @@ never see `$HOME`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "platform.fullname" . }}-agent-templates
+  name: {{ include "platform.fullname" . }}-harness-templates
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 data:
-  {{- range $name, $tmpl := .Values.agentTemplates }}
+  {{- range $name, $tmpl := .Values.harnessTemplates }}
   {{- if and $tmpl $tmpl.enabled }}
   {{- /* backend access must stay behind the nil guard above — a nulled
-         template entry (`agentTemplates.foo: null`) has no fields. */}}
+         template entry (`harnessTemplates.foo: null`) has no fields. */}}
   {{- $isVM := and $tmpl.backend (eq ($tmpl.backend.type | default "") "vm") }}
   {{- if or (not $isVM) $.Values.virtualization.enabled }}
   {{- $home := "/home/agent" }}
@@ -42,6 +42,10 @@ data:
     {{- end }}
     {{- with $tmpl.harness }}
     harness: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.providers }}
+    providers:
+      {{- toYaml . | nindent 6 }}
     {{- end }}
     {{- with $tmpl.tags }}
     tags:
@@ -82,7 +86,7 @@ data:
       {{- toYaml . | nindent 6 }}
     {{- end }}
     {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
-    {{- fail (printf "agentTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
+    {{- fail (printf "harnessTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
     {{- end }}
     {{- if $tmpl.imagePullSecret }}
     imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}

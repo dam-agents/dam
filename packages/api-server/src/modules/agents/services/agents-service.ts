@@ -39,6 +39,7 @@ import {
   ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
+  ANN_STARTER_KIT,
 } from "../infrastructure/labels.js";
 import {
   seedTelemetryIdentity,
@@ -700,7 +701,11 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size },
+          {
+            description: input.description,
+            size: input.size,
+            storage: input.storage,
+          },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -711,6 +716,7 @@ export function createAgentsService(deps: {
             image: input.image,
             description: input.description,
             size: input.size,
+            storage: input.storage,
           },
           deps.agentDefaultLimits,
         );
@@ -771,6 +777,8 @@ export function createAgentsService(deps: {
       if (input.kind) createAnnotations[ANN_AGENT_KIND] = input.kind;
       if (input.kbTemplateId)
         createAnnotations[ANN_KB_TEMPLATE] = input.kbTemplateId;
+      if (input.starterKit)
+        createAnnotations[ANN_STARTER_KIT] = input.starterKit;
 
       let infra: InfraAgent;
       try {

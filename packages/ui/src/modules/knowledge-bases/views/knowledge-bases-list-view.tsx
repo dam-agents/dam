@@ -1,6 +1,5 @@
 import type { KbShareView } from "api-server-api";
 
-import { Button } from "@/components/ui/button";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -8,6 +7,10 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
+import {
+  EntryPointButtons,
+  useCreateKnowledgeBase,
+} from "../../agents/components/entry-point-buttons.js";
 import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
@@ -38,8 +41,7 @@ export function KnowledgeBasesListView() {
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
-  const createKnowledgeBase = () => setView("knowledge-base-new");
+  const createKnowledgeBase = useCreateKnowledgeBase();
   const showConfirm = useStore((s) => s.showConfirm);
 
   const deleteKnowledgeBase = async (agent: AgentView) => {
@@ -58,9 +60,7 @@ export function KnowledgeBasesListView() {
         }
         actions={
           knowledgeBases.length > 0 ? (
-            <Button onClick={createKnowledgeBase}>
-              Create knowledge base agent
-            </Button>
+            <EntryPointButtons surface="knowledge-bases" />
           ) : undefined
         }
       />

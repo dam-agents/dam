@@ -15,6 +15,7 @@ import { CatalogPaneHeader } from "./catalog-pane-header.js";
 interface Props {
   group: CatalogProviderGroup;
   oauthReturnView?: string;
+  initialTemplateId?: string;
   onBack: () => void;
   onCreated: (id: string) => void;
 }
@@ -22,11 +23,16 @@ interface Props {
 export function CatalogCreatePane({
   group,
   oauthReturnView,
+  initialTemplateId,
   onBack,
   onCreated,
 }: Props) {
   const templates = group.templates;
-  const [selectedId, setSelectedId] = useState(templates[0]?.id);
+  const [selectedId, setSelectedId] = useState(
+    templates.some((t) => t.id === initialTemplateId)
+      ? initialTemplateId
+      : templates[0]?.id,
+  );
   const [editedName, setEditedName] = useState<string>();
   const listRef = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(false);

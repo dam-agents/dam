@@ -36,7 +36,11 @@ export function concreteResources(
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
-  opts: { description?: string; size?: { cpu?: string; memory?: string } },
+  opts: {
+    description?: string;
+    size?: { cpu?: string; memory?: string };
+    storage?: string;
+  },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
   return {
@@ -49,7 +53,7 @@ export function assembleSpecFromTemplate(
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
-    storageSize: tmplSpec.storageSize,
+    storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
     backend: tmplSpec.backend,
     runtimeClassName: tmplSpec.runtimeClassName,
@@ -63,6 +67,7 @@ export function assembleSpecFromImage(
     image?: string;
     description?: string;
     size?: { cpu?: string; memory?: string };
+    storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
@@ -71,5 +76,6 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
+    storageSize: opts.storage,
   };
 }

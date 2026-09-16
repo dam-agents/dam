@@ -1,0 +1,22 @@
+schemaVersion: v1
+id: openevolve
+name: OpenEvolve
+description: >-
+  Evolutionary code-optimization agent: evolves programs against a fitness function you define. Brings its own agent, built on Claude Code.
+category: research
+icon: chart
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md
+image:
+  ref: quay.io/dam-agents/openevolve # @ci-pin openevolve-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, openai]
+resources:
+  storage: 5Gi
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.
+parameters:
+  - name: target repository or problem definition
+    required: true
+  - name: optimization goal and how it is measured
+    required: true

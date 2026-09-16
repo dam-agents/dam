@@ -1,9 +1,11 @@
 import type {
   Agent,
+  AgentCreateInput,
   AgentsService,
   HarnessFamily,
   KnowledgeBaseCreateInput,
   KnowledgeBasesService,
+  KnowledgeBaseTemplateId,
 } from "api-server-api";
 import {
   createKindedAgent,
@@ -13,7 +15,12 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { buildKnowledgeBaseInstallCommand } from "../domain/install-command.js";
 
-export function createKnowledgeBasesService(deps: {
+export type CreateKnowledgeBaseAgent = (
+  input: AgentCreateInput,
+  kbTemplateId: KnowledgeBaseTemplateId,
+) => Promise<Agent>;
+
+interface Deps {
   owner: string;
   surface: string;
   agents: Pick<AgentsService, "create" | "delete">;
@@ -21,29 +28,44 @@ export function createKnowledgeBasesService(deps: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   now?: () => Date;
-}): KnowledgeBasesService {
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Creating a knowledge base — the kind marker plus
+ * the template's bootstrap, run once in the workspace. Exported on its own
+ * because a starter kit can declare a knowledge base too, and must reach the
+ * same procedure rather than its own copy of the install command.
+ */
+export function createKnowledgeBaseAgentFactory(
+  deps: Deps,
+): CreateKnowledgeBaseAgent {
   const rail: KindedAgentCreateDeps = deps;
 
-  async function resolveHarnessFamily(
-    input: KnowledgeBaseCreateInput,
+  async function harnessFamily(
+    templateId: string | undefined,
   ): Promise<HarnessFamily | undefined> {
-    if (!input.templateId) return undefined;
-    const tmpl = await deps.readTemplateSpec(input.templateId);
-    return tmpl?.spec.harness;
+    if (!templateId) return undefined;
+    return (await deps.readTemplateSpec(templateId))?.spec.harness;
   }
 
+  return async (input, kbTemplateId) =>
+    createKindedAgent(rail, {
+      createInput: { ...input, kind: "knowledge-base" },
+      installCommand: buildKnowledgeBaseInstallCommand(
+        kbTemplateId,
+        await harnessFamily(input.templateId),
+      ),
+      eventIdPrefix: "kb-install",
+      securityEvent: "knowledge_base.create",
+    });
+}
+
+export function createKnowledgeBasesService(deps: Deps): KnowledgeBasesService {
+  const createAgent = createKnowledgeBaseAgentFactory(deps);
   return {
     async create(input: KnowledgeBaseCreateInput): Promise<Agent> {
-      const family = await resolveHarnessFamily(input);
-      return createKindedAgent(rail, {
-        createInput: { ...input, kind: "knowledge-base" },
-        installCommand: buildKnowledgeBaseInstallCommand(
-          input.kbTemplateId,
-          family,
-        ),
-        eventIdPrefix: "kb-install",
-        securityEvent: "knowledge_base.create",
-      });
+      const { kbTemplateId, ...rest } = input;
+      return createAgent(rest, kbTemplateId);
     },
   };
 }

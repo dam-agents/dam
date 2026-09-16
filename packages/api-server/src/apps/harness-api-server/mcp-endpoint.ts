@@ -28,6 +28,7 @@ import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
@@ -96,6 +97,7 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
+  markOnboardingComplete: ((agentId: string) => Promise<void>) | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
@@ -610,6 +612,26 @@ export function createMcpSession(
       ),
   );
 
+  if (deps.markOnboardingComplete) {
+    const markOnboardingComplete = deps.markOnboardingComplete;
+    server.tool(
+      "mark_onboarding_complete",
+      "Call this once your starter kit's onboarding is genuinely finished: every value the kit needs has been collected from the user and written where it expects it. Until you call it, the platform HOLDS every schedule on this agent — occurrences are skipped, not queued up — so calling it early is worse than calling it late. If the user abandons onboarding, leave it uncalled.",
+      {},
+      async () => {
+        await markOnboardingComplete(agentId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Onboarding marked complete. Schedules on this agent are now live.",
+            },
+          ],
+        };
+      },
+    );
+  }
+
   server.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
@@ -877,6 +899,7 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  markOnboardingComplete: OnboardingMarker;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -922,6 +945,9 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       k8s: deps.k8s,
       skills,
       schedules,
+      markOnboardingComplete: verified.onboardingPending
+        ? (id) => deps.markOnboardingComplete(id, verified.owner)
+        : null,
       artifactLibrary,
       invocations,
       experiments,

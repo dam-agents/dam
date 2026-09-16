@@ -16,6 +16,7 @@ export const eventKind = z.enum([
   "workspace-seed",
   "workspace-command",
   "experiment-execute",
+  "onboarding",
   "harness-config",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
@@ -203,6 +204,19 @@ export const experimentExecuteEvent = z.object({
   payload: experimentExecuteEventPayload,
 });
 
+export const onboardingEventPayload = z.object({
+  task: z.string().min(1),
+});
+export type OnboardingEventPayload = z.infer<typeof onboardingEventPayload>;
+
+export const onboardingEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("onboarding"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: onboardingEventPayload,
+});
+
 export const harnessConfigEventPayload = z.object({
   model: z.string().min(1).optional(),
   mode: z.string().min(1).optional(),
@@ -227,6 +241,7 @@ export const event = z.discriminatedUnion("kind", [
   workspaceSeedEvent,
   workspaceCommandEvent,
   experimentExecuteEvent,
+  onboardingEvent,
   harnessConfigEvent,
 ]);
 export type Event = z.infer<typeof event>;

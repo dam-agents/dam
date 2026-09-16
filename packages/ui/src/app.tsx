@@ -8,9 +8,11 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { StarterKitSetupView } from "./modules/agents/views/agent-create-view.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { useFeatures } from "./modules/features/api/queries.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -21,6 +23,8 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
+import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
+import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
@@ -59,6 +63,7 @@ const SETUP_VIEWS = new Set<Route["view"]>([
 
 function MainApp() {
   const view = useStore((s) => s.view);
+  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -112,7 +117,11 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "home" ||
+                  view === "starter-kits" ||
+                  view === "starter-kit"
+                  ? "max-w-[1200px]"
+                  : "max-w-[960px]",
               )}
             >
               {view === "home" ? (
@@ -127,6 +136,15 @@ function MainApp() {
                 <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
+              ) : view === "starter-kits" && kitsEnabled ? (
+                <StarterKitsView />
+              ) : view === "starter-kit" && kitsEnabled ? (
+                <>
+                  <StarterKitsView />
+                  <StarterKitDetailView />
+                </>
+              ) : view === "starter-kit-new" && kitsEnabled ? (
+                <StarterKitSetupView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

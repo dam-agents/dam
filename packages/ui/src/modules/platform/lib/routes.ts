@@ -1,3 +1,4 @@
+import { starterKitCategorySchema } from "api-server-api";
 import { z } from "zod";
 
 export const settingsTabSchema = z.enum([
@@ -22,6 +23,8 @@ export const sandboxSectionSchema = z.enum([
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
+export type StarterKitCategory = z.infer<typeof starterKitCategorySchema>;
+
 export type Route =
   | { view: "home" }
   | { view: "chat"; agent: string; session?: string }
@@ -35,6 +38,9 @@ export type Route =
   | { view: "knowledge-base-new" }
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
+  | { view: "starter-kits"; category?: StarterKitCategory }
+  | { view: "starter-kit"; catalog: string; kit: string }
+  | { view: "starter-kit-new"; catalog: string; kit: string }
   | { view: "artifacts" };
 
 export type View = Route["view"];
@@ -107,6 +113,32 @@ export function parseRoute(path: string): Route {
   }
   if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
+  if (path === "/starter-kits") return { view: "starter-kits" };
+  const starterKitsCategoryMatch = path.match(/^\/starter-kits\/([^/]+)$/);
+  if (starterKitsCategoryMatch) {
+    const category = starterKitCategorySchema.safeParse(
+      decodeSegment(starterKitsCategoryMatch[1]!),
+    );
+    return category.success
+      ? { view: "starter-kits", category: category.data }
+      : { view: "starter-kits" };
+  }
+  const starterKitNewMatch = path.match(
+    /^\/starter-kits\/([^/]+)\/([^/]+)\/new$/,
+  );
+  if (starterKitNewMatch)
+    return {
+      view: "starter-kit-new",
+      catalog: decodeSegment(starterKitNewMatch[1]!),
+      kit: decodeSegment(starterKitNewMatch[2]!),
+    };
+  const starterKitMatch = path.match(/^\/starter-kits\/([^/]+)\/([^/]+)$/);
+  if (starterKitMatch)
+    return {
+      view: "starter-kit",
+      catalog: decodeSegment(starterKitMatch[1]!),
+      kit: decodeSegment(starterKitMatch[2]!),
+    };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
   const knowledgeBaseConfigMatch = path.match(
@@ -163,6 +195,14 @@ export function routeToPath(route: Route): string {
       return "/knowledge-bases/new";
     case "knowledge-base-chat":
       return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
+    case "starter-kits":
+      return route.category
+        ? `/starter-kits/${route.category}`
+        : "/starter-kits";
+    case "starter-kit":
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
+    case "starter-kit-new":
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
     default: {
@@ -177,10 +217,23 @@ export function routeToNavigationState(route: Route): {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitCatalog: string | null;
+  starterKitId: string | null;
+  starterKitCategory: StarterKitCategory | null;
 } {
   return {
     view: route.view,
+    starterKitCategory:
+      route.view === "starter-kits" ? (route.category ?? null) : null,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
+    starterKitCatalog:
+      route.view === "starter-kit-new" || route.view === "starter-kit"
+        ? route.catalog
+        : null,
+    starterKitId:
+      route.view === "starter-kit-new" || route.view === "starter-kit"
+        ? route.kit
+        : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",
