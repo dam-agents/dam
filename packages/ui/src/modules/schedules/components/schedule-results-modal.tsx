@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format-time";
 
 import type { Schedule, SessionView } from "../../../types.js";
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { AgentStoppedCallout } from "../../agents/components/agent-stopped-callout.js";
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
@@ -59,15 +60,17 @@ export function ScheduleResultsModal({
   onClose,
   onResumeSession,
 }: Props) {
-  const { operable, comingUp } = useOperableState(agentId);
+  const { comingUp } = useOperableState(agentId);
+  const runState = useAgentRunState(agentId);
+  const stopped = runState !== undefined && runState !== "running";
   const wakeAgent = useWakeAgent();
   const sessionsQuery = useScheduleSessions(
-    operable ? agentId : null,
+    stopped ? null : agentId,
     schedule.id,
   );
   const sessions = sessionsQuery.data ?? [];
 
-  const subtitle = !operable
+  const subtitle = stopped
     ? "Past runs are recorded in the agent"
     : sessionsQuery.isPending
       ? "Loading runs…"
@@ -84,7 +87,7 @@ export function ScheduleResultsModal({
         onClose={onClose}
       />
       <DialogBody flush className="min-h-[50vh]">
-        {!operable && (
+        {stopped && (
           <>
             <div className="px-5 py-4 md:px-6">
               <AgentStoppedCallout
@@ -97,7 +100,7 @@ export function ScheduleResultsModal({
             <LastRunLine schedule={schedule} />
           </>
         )}
-        {operable && sessionsQuery.isError && (
+        {!stopped && sessionsQuery.isError && (
           <div className="flex flex-col items-center gap-3 px-5 py-6 md:px-6">
             <p className="text-center text-sm text-muted-foreground">
               Couldn&rsquo;t read past runs from the agent.
@@ -112,7 +115,7 @@ export function ScheduleResultsModal({
             </Button>
           </div>
         )}
-        {operable &&
+        {!stopped &&
           !sessionsQuery.isPending &&
           !sessionsQuery.isError &&
           sessions.length === 0 && (
