@@ -45,6 +45,7 @@ import { KitChannelsSection } from "../../starter-kits/components/kit-channels-s
 import { KitKnowledgeBaseNote } from "../../starter-kits/components/kit-knowledge-base-note.js";
 import { KitRequirementsCard } from "../../starter-kits/components/kit-requirements-card.js";
 import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
+import { KitSeedNote } from "../../starter-kits/components/kit-seed-note.js";
 import { KitSkillsSection } from "../../starter-kits/components/kit-skills-section.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
 import {
@@ -388,7 +389,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 </p>
               )}
               {kit && (
-                <KitKnowledgeBaseNote kit={kit} className="mt-1.5 text-xs" />
+                <>
+                  <KitSeedNote kit={kit} className="mt-1.5 text-xs" />
+                  <KitKnowledgeBaseNote kit={kit} className="mt-1.5 text-xs" />
+                </>
               )}
             </div>
             <Button
