@@ -25,7 +25,7 @@ export interface FakeSlackGateway extends SlackGateway {
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
-  setChannels(channels: FakeSlackChannel[]): void;
+  setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
@@ -101,7 +101,7 @@ function channelWindowOf(
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
-  let channels: FakeSlackChannel[] = [];
+  const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
@@ -133,6 +133,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async postMessage(args) {
       outbound.push({
         kind: "message",
+        teamId: args.teamId,
         channel: args.channel,
         text: args.text,
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
@@ -145,6 +146,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async postEphemeral(args) {
       outbound.push({
         kind: "ephemeral",
+        teamId: args.teamId,
         channel: args.channel,
         user: args.user,
         text: args.text,
@@ -156,6 +158,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       const ts = `stream-${nextStreamTs++}`;
       outbound.push({
         kind: "stream_start",
+        teamId: args.teamId,
         channel: args.channel,
         threadTs: args.threadTs,
         ts,
@@ -173,6 +176,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async appendStream(args) {
       outbound.push({
         kind: "stream_append",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         text: args.markdownText,
@@ -182,6 +186,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async stopStream(args) {
       outbound.push({
         kind: "stream_stop",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         ...(args.markdownText !== undefined ? { text: args.markdownText } : {}),
@@ -191,6 +196,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async setStatus(args) {
       outbound.push({
         kind: "status",
+        teamId: args.teamId,
         channel: args.channel,
         threadTs: args.threadTs,
         status: args.status,
@@ -200,6 +206,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async addReaction(args) {
       outbound.push({
         kind: "reaction",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         name: args.name,
@@ -241,6 +248,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async uploadFile(args) {
       outbound.push({
         kind: "upload",
+        teamId: args.teamId,
         channelId: args.channelId,
         filename: args.filename,
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
@@ -263,14 +271,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       fileBytes.set(urlPrivate, bytes);
     },
 
-    async listBotChannels() {
-      return channels
+    async listBotChannels(teamId) {
+      return (channelsByWorkspace.get(teamId) ?? [])
         .filter((c) => c.botIsMember)
         .map(({ id, name }) => ({ id, name }));
     },
 
-    async getConversationInfo(channelId) {
-      const channel = channels.find((c) => c.id === channelId);
+    async getConversationInfo(channelId, teamId) {
+      const channel = (channelsByWorkspace.get(teamId) ?? []).find(
+        (c) => c.id === channelId,
+      );
       return channel ? { isMember: channel.botIsMember } : null;
     },
 
@@ -319,8 +329,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       outbound.length = 0;
     },
 
-    setChannels(next) {
-      channels = [...next];
+    setChannels(next, teamId = "") {
+      channelsByWorkspace.set(teamId, [...next]);
     },
 
     setHistory(next) {
