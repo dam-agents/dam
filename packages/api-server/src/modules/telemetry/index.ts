@@ -20,6 +20,7 @@ export {
   isExchange,
   newestTurns,
   ownedTelemetryScope,
+  scopeOwnedAgentIds,
   TELEMETRY_DISABLED_REASON,
   turnWindow,
   type OwnedAgent,

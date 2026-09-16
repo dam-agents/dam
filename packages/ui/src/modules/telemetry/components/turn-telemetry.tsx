@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import type { TurnSummary } from "api-server-api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -44,14 +44,20 @@ export function TurnTelemetry({
     turn.promptId,
   );
   const loaded = detail.data?.available === true ? detail.data.turn : undefined;
-  const selectedSpan =
-    selectedKey?.startsWith("span:") === true
-      ? loaded?.spans.find((s) => `span:${s.spanId}` === selectedKey)
-      : undefined;
-  const selectedLog =
-    selectedKey?.startsWith("log:") === true
-      ? loaded?.logs.find((l) => selectedKey.includes(`:${l.at}:${l.event}:`))
-      : undefined;
+  const selectedSpan = useMemo(
+    () =>
+      selectedKey?.startsWith("span:") === true
+        ? loaded?.spans.find((s) => `span:${s.spanId}` === selectedKey)
+        : undefined,
+    [loaded, selectedKey],
+  );
+  const selectedLog = useMemo(
+    () =>
+      selectedKey?.startsWith("log:") === true
+        ? loaded?.logs.find((l) => selectedKey.includes(`:${l.at}:${l.event}:`))
+        : undefined,
+    [loaded, selectedKey],
+  );
 
   return (
     <div className="mt-1">

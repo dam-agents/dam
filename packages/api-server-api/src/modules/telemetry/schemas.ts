@@ -9,6 +9,7 @@ import {
   TELEMETRY_MAX_LOG_ROWS,
   TELEMETRY_MAX_SINCE_HOURS,
   TELEMETRY_MAX_SPANS,
+  TELEMETRY_MAX_TRACE_HOURS,
   TELEMETRY_MAX_TURNS,
 } from "./constants.js";
 
@@ -49,25 +50,35 @@ export const telemetryTurnsInputSchema = z.object({
     .default(TELEMETRY_DEFAULT_LOGS),
 });
 
-export const telemetryTurnInputSchema = z.object({
-  agentId: z.string().min(1),
-  sessionId: z.string().min(1),
-  promptId: z.string().min(1).max(200).optional(),
-  from: z.string().datetime(),
-  to: z.string().datetime(),
-  spanLimit: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(TELEMETRY_MAX_SPANS)
-    .default(TELEMETRY_DEFAULT_SPANS),
-  logLimit: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(TELEMETRY_MAX_LOGS)
-    .default(TELEMETRY_DEFAULT_LOGS),
-});
+export const telemetryTurnInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1),
+    promptId: z.string().min(1).max(200).optional(),
+    from: z.string().datetime(),
+    to: z.string().datetime(),
+    spanLimit: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(TELEMETRY_MAX_SPANS)
+      .default(TELEMETRY_DEFAULT_SPANS),
+    logLimit: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(TELEMETRY_MAX_LOGS)
+      .default(TELEMETRY_DEFAULT_LOGS),
+  })
+  .refine(
+    (q) =>
+      Date.parse(q.to) - Date.parse(q.from) <=
+      TELEMETRY_MAX_TRACE_HOURS * 3_600_000,
+    {
+      message: `a turn window may not exceed ${TELEMETRY_MAX_TRACE_HOURS} hours`,
+      path: ["to"],
+    },
+  );
 
 export const telemetryLogsInputSchema = z.object({
   agentId: z.string().min(1).optional(),

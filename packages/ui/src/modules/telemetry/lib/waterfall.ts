@@ -157,7 +157,10 @@ export function buildWaterfall(turn: TurnDetail): Waterfall {
     startMs,
     totalMs,
     traceCount: new Set(
-      turn.logs.map((l) => l.traceId).filter((id) => id !== ""),
+      [
+        ...turn.logs.map((l) => l.traceId),
+        ...turn.spans.map((s) => s.traceId),
+      ].filter((id) => id !== ""),
     ).size,
   };
 }

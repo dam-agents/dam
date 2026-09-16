@@ -602,6 +602,8 @@ export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
+  buildPlatformTurnTelemetryNotification,
+  platformTurnTelemetryParamsSchema,
   platformPromptAcceptedNotificationSchema,
   platformPromptAcceptedParamsSchema,
   buildPlatformPromptAcceptedNotification,
@@ -629,6 +631,7 @@ export {
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
+  PlatformTurnTelemetryParams,
   PlatformPromptAcceptedNotification,
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,

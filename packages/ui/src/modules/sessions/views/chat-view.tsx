@@ -6,7 +6,7 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
-import { SessionMode } from "api-server-api";
+import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import {
   type CSSProperties,
   useCallback,
@@ -282,14 +282,21 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryStreaming = useMemo(
+    () => messages.some((m) => m.role === "assistant" && m.streaming),
+    [messages],
+  );
   const sessionTurns = useTurns(
     telemetryEnabled ? selectedAgent : null,
     telemetryEnabled ? sessionId : null,
-    24,
+    TELEMETRY_MAX_SINCE_HOURS,
+    telemetryStreaming,
   );
-  const turnRows =
-    sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
-  const turnForMessage = matchTurnsToReplies(turnRows, messages);
+  const turnForMessage = useMemo(() => {
+    const rows =
+      sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
+    return matchTurnsToReplies(rows, messages);
+  }, [sessionTurns.data, messages]);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;

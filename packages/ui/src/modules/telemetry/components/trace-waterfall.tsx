@@ -1,4 +1,5 @@
 import type { TurnDetail } from "api-server-api";
+import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -28,7 +29,7 @@ export function TraceWaterfall({
   onSelect: (key: string) => void;
   compact?: boolean;
 }) {
-  const wf = buildWaterfall(turn);
+  const wf = useMemo(() => buildWaterfall(turn), [turn]);
   const labelCols = compact ? "minmax(0,150px)" : "minmax(0,240px)";
   const indentPx = compact ? 10 : 14;
   const metaCol = compact ? "56px" : "68px";

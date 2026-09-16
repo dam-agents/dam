@@ -107,6 +107,23 @@ describe("matchTurnsToReplies by the harness prompt id", () => {
     expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
   });
 
+  it("does not lend a still-streaming reply's keyed turn to an earlier reply", () => {
+    /**
+     * TEST_SCENARIO: the keyed turn belongs to r2, which is still streaming, so
+     * it is not claimed yet. The time fallback must still leave it alone rather
+     * than hand it to the earlier keyless r1.
+     */
+    const turns = [keyedTurn("p2", "2026-09-16T12:05:01.000Z")];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1"),
+      prompt("2026-09-16T12:05:00.000Z"),
+      reply("r2", { telemetryPromptId: "p2", streaming: true }),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).size).toBe(0);
+  });
+
   it("matches keyed and unkeyed exchanges side by side", () => {
     const turns = [
       turn("2026-09-16T12:00:01.000Z"),

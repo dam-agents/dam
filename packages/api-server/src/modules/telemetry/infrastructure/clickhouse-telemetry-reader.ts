@@ -120,7 +120,7 @@ export function createClickhouseTelemetryReader(
 
   return {
     async sessionSpans(agentIds, window, limit) {
-      const r = await rows(
+      const newestFirst = await rows(
         `SELECT
            SpanId AS spanId,
            ParentSpanId AS parentSpanId,
@@ -137,29 +137,31 @@ export function createClickhouseTelemetryReader(
            SpanAttributes AS attributes
          FROM otel_traces
          WHERE ${ownedSpans(window)}
-         ORDER BY Timestamp
+         ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
         { ...windowParams(agentIds, window), limit },
       );
-      return r.map((x) => ({
-        spanId: s(x.spanId),
-        parentSpanId: s(x.parentSpanId),
-        traceId: s(x.traceId),
-        name: s(x.name),
-        kind: s(x.kind),
-        service: s(x.service),
-        startedAt: toIsoUtc(x.startedAt),
-        durationMs: n(x.durationNs) / 1e6,
-        statusCode: s(x.statusCode),
-        statusMessage: s(x.statusMessage),
-        agentId: s(x.agentId),
-        invocationId: nullable(x.invocationId),
-        attributes: attrs(x.attributes),
-      })) satisfies TelemetrySpan[];
+      return newestFirst
+        .map((x) => ({
+          spanId: s(x.spanId),
+          parentSpanId: s(x.parentSpanId),
+          traceId: s(x.traceId),
+          name: s(x.name),
+          kind: s(x.kind),
+          service: s(x.service),
+          startedAt: toIsoUtc(x.startedAt),
+          durationMs: n(x.durationNs) / 1e6,
+          statusCode: s(x.statusCode),
+          statusMessage: s(x.statusMessage),
+          agentId: s(x.agentId),
+          invocationId: nullable(x.invocationId),
+          attributes: attrs(x.attributes),
+        }))
+        .reverse() satisfies TelemetrySpan[];
     },
 
     async logRecords(agentIds, filter, limit) {
-      const r = await rows(
+      const newestFirst = await rows(
         `SELECT
            Timestamp AS at,
            SpanId AS spanId,
@@ -172,21 +174,23 @@ export function createClickhouseTelemetryReader(
            LogAttributes AS attributes
          FROM otel_logs
          WHERE ${ownedLogs(filter)}
-         ORDER BY Timestamp
+         ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
         { ...logParams(agentIds, filter), limit },
       );
-      return r.map((x) => ({
-        at: toIsoUtc(x.at),
-        spanId: s(x.spanId),
-        traceId: s(x.traceId),
-        event: s(x.event),
-        severity: s(x.severity),
-        service: s(x.service),
-        agentId: s(x.agentId),
-        invocationId: nullable(x.invocationId),
-        attributes: attrs(x.attributes),
-      })) satisfies UnattachedLog[];
+      return newestFirst
+        .map((x) => ({
+          at: toIsoUtc(x.at),
+          spanId: s(x.spanId),
+          traceId: s(x.traceId),
+          event: s(x.event),
+          severity: s(x.severity),
+          service: s(x.service),
+          agentId: s(x.agentId),
+          invocationId: nullable(x.invocationId),
+          attributes: attrs(x.attributes),
+        }))
+        .reverse() satisfies UnattachedLog[];
     },
   };
 }

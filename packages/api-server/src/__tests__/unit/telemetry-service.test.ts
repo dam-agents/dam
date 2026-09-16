@@ -5,6 +5,7 @@ import {
   createDisabledTelemetryService,
   createTelemetryService,
   ownedTelemetryScope,
+  scopeOwnedAgentIds,
   type TelemetryReader,
   type UnattachedLog,
 } from "../../modules/telemetry/index.js";
@@ -790,5 +791,61 @@ describe("reading one turn", () => {
       "2026-09-16T12:00:00.000Z",
     );
     expect(result.available && result.turn.promptId).toBeNull();
+  });
+});
+
+describe("scopeOwnedAgentIds — one rule for every transport", () => {
+  it("unions live and registered agents so a deleted agent stays readable", () => {
+    expect(
+      scopeOwnedAgentIds({
+        liveIds: ["live-only", "both"],
+        registeredIds: ["both", "deleted"],
+        granted: "*",
+      }).sort(),
+    ).toEqual(["both", "deleted", "live-only"]);
+  });
+
+  it("intersects with the key's granted scope", () => {
+    expect(
+      scopeOwnedAgentIds({
+        liveIds: ["a1", "a2"],
+        registeredIds: ["a3"],
+        granted: ["a2"],
+      }),
+    ).toEqual(["a2"]);
+  });
+
+  it("narrows to one named agent, or yields nothing when it is not readable", () => {
+    expect(
+      scopeOwnedAgentIds({
+        liveIds: ["a1"],
+        registeredIds: ["a2"],
+        granted: "*",
+        agentId: "a2",
+      }),
+    ).toEqual(["a2"]);
+    expect(
+      scopeOwnedAgentIds({
+        liveIds: ["a1"],
+        registeredIds: [],
+        granted: "*",
+        agentId: "not-mine",
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a live agent the owner table has not caught up with", () => {
+    /**
+     * TEST_SCENARIO: the divergence this replaces — a live agent missing from
+     * the registered set was readable in the conversation but exported empty.
+     */
+    expect(
+      scopeOwnedAgentIds({
+        liveIds: ["fresh"],
+        registeredIds: [],
+        granted: "*",
+        agentId: "fresh",
+      }),
+    ).toEqual(["fresh"]);
   });
 });

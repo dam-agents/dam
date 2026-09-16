@@ -119,23 +119,24 @@ holds the platform's operational log stream, which carries real identities that 
 scoping never governed. Serving the platform side of a trace is a later step that depends
 on provenance being positively established at ingest rather than inferred from an absence.
 
-A trace with no records the caller owns is reported as **not found** rather than refused,
-so the surface never confirms the existence of a trace the caller cannot read.
+Every read is scoped to the agents the caller owns before it reaches the store, so an agent
+the caller does not own contributes no rows: an empty allowlist returns nothing without a
+query rather than confirming or denying what that agent produced.
 
 ## Reading the store
 
 The reader is the only component in this subsystem that speaks to the telemetry store; it
-shares the store connection with the spend reader rather than opening its own. Every read
-is **bounded by a window in the contract**, capped at the store's retention, because the
-span table is ordered for service-and-name scans rather than trace lookups — an unbounded
-lookup by trace identifier leans entirely on a probabilistic index whose cost grows with
-the whole retention. Opening one trace narrows the window further from the start time the
-listing already returned. Beyond the window, each query carries execution-time and
-rows-read ceilings and **fails rather than truncating silently**, since a short answer
-rendered as complete is the failure worth designing against. Where a cap does bind, the
-response says so and the surface reports it.
+opens its own connection to the same store the spend reader uses rather than sharing one
+client. Every read is **bounded by a window in the contract** — a relative span of hours for
+a listing, and an explicit range for one Turn, which the contract caps at a few hours. A
+capped read takes the **newest** rows of its window and re-sorts them into time order, so a
+cap that binds drops the oldest rows and never the newest — the exchanges beside the reply a
+reader is looking at. Each query also carries execution-time and rows-read ceilings and
+**fails rather than truncating silently**, since a short answer rendered as complete is the
+failure worth designing against. Where a cap does bind, the response says so and the surface
+reports it.
 
-Spend per trace is read from the log side and merged with the span side in the service, so
+Spend per Turn is read from the log side and merged with the span side in the service, so
 neither query has to span two tables.
 
 ## Contract
@@ -159,8 +160,9 @@ window — see the emptiness invariant above.
 
 ### Bulk export
 
-A separate authenticated route streams the same owner-scoped records as newline-delimited
-JSON, one object per line, for spans or for log records over a window. It exists because
+A separate authenticated route serves the same owner-scoped records as newline-delimited
+JSON, one object per line, for spans or for log records over a window. It buffers the rows
+under a cap rather than streaming from the store. It exists because
 the point of the subsystem is that a user can take their agents' telemetry elsewhere, and a
 typed query response is the wrong shape for that. It is bounded by a row cap and says so in
 the response when the cap binds.

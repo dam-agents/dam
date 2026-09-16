@@ -7,10 +7,14 @@ import {
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { TelemetryReader } from "./services/telemetry-service.js";
-import { TELEMETRY_DISABLED_REASON } from "./services/telemetry-service.js";
+import {
+  scopeOwnedAgentIds,
+  TELEMETRY_DISABLED_REASON,
+} from "./services/telemetry-service.js";
 
 export interface TelemetryRoutesDeps {
   reader: TelemetryReader | null;
+  listLiveAgentIds: (rawSub: string) => Promise<string[]>;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
 }
 
@@ -21,13 +25,16 @@ async function ownedIds(
   user: UserIdentity,
   agentId: string | undefined,
 ): Promise<string[]> {
-  const registered = await deps.listRegisteredAgentIds(user.sub);
-  const scoped =
-    user.agentIds === "*"
-      ? registered
-      : registered.filter((id) => user.agentIds.includes(id));
-  if (!agentId) return scoped;
-  return scoped.includes(agentId) ? [agentId] : [];
+  const [liveIds, registeredIds] = await Promise.all([
+    deps.listLiveAgentIds(user.sub),
+    deps.listRegisteredAgentIds(user.sub),
+  ]);
+  return scopeOwnedAgentIds({
+    liveIds,
+    registeredIds,
+    granted: user.agentIds,
+    agentId,
+  });
 }
 
 function ndjson(rows: readonly unknown[]): string {
@@ -62,6 +69,22 @@ export function createTelemetryRoutes(deps: TelemetryRoutesDeps) {
     const query = parsed.data;
     const ids = await ownedIds(deps, c.get("user"), query.agentId);
 
+    const stampFor = new Date().toISOString().slice(0, 10);
+    const scopeFor = query.agentId ?? "all-agents";
+    const withHeaders = (truncated: boolean) => {
+      c.header("content-type", "application/x-ndjson; charset=utf-8");
+      c.header(
+        "content-disposition",
+        `attachment; filename="telemetry-${scopeFor}-${query.signal}-${stampFor}.ndjson"`,
+      );
+      if (truncated) c.header("x-platform-truncated", "true");
+    };
+
+    if (ids.length === 0) {
+      withHeaders(false);
+      return c.body(ndjson([]));
+    }
+
     const window = {
       hours: query.sinceHours,
       ...(query.sessionId === undefined ? {} : { sessionId: query.sessionId }),
@@ -77,16 +100,7 @@ export function createTelemetryRoutes(deps: TelemetryRoutesDeps) {
       return c.json({ error: storeFailureMessage(err) }, 502);
     }
 
-    const stamp = new Date().toISOString().slice(0, 10);
-    const scope = query.agentId ?? "all-agents";
-    c.header("content-type", "application/x-ndjson; charset=utf-8");
-    c.header(
-      "content-disposition",
-      `attachment; filename="telemetry-${scope}-${query.signal}-${stamp}.ndjson"`,
-    );
-    if (rows.length >= TELEMETRY_EXPORT_MAX_ROWS) {
-      c.header("x-platform-truncated", "true");
-    }
+    withHeaders(rows.length >= TELEMETRY_EXPORT_MAX_ROWS);
     return c.body(ndjson(rows));
   });
 

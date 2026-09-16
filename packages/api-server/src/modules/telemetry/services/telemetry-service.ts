@@ -83,6 +83,30 @@ export function ownedTelemetryScope(
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: the one rule that decides which agents a caller may
+ * read telemetry for, so every transport resolves the same set. The readable
+ * set is the caller's live agents unioned with the ones the owner table still
+ * remembers — a deleted agent stays readable while the store retains it —
+ * intersected with the key's granted scope, then narrowed to one agent when the
+ * caller named one. The narrowing yields an empty allowlist for an agent the
+ * caller cannot read, which the caller turns into no rows without a query.
+ */
+export function scopeOwnedAgentIds(input: {
+  liveIds: readonly string[];
+  registeredIds: readonly string[];
+  granted: readonly string[] | "*";
+  agentId?: string;
+}): string[] {
+  const owned = [...new Set([...input.liveIds, ...input.registeredIds])];
+  const scoped =
+    input.granted === "*"
+      ? owned
+      : owned.filter((id) => input.granted.includes(id));
+  if (input.agentId === undefined) return scoped;
+  return scoped.includes(input.agentId) ? [input.agentId] : [];
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: session housekeeping records — a connection
  * opening, a sweep — are not an exchange, and listing them as turns puts rows
  * in front of the reader that no message in the conversation corresponds to.

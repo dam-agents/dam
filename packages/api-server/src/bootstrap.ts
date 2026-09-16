@@ -1171,6 +1171,8 @@ export async function bootstrap() {
         "/",
         createTelemetryRoutes({
           reader: telemetryReader,
+          listLiveAgentIds: (ownerSub) =>
+            liveAgentsRepo.list(ownerSub).then((list) => list.map((a) => a.id)),
           listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
         }),
       ),

@@ -97,7 +97,7 @@ export function matchTurnsToReplies(
   if (anchored.length === 0) return matched;
 
   for (const turn of turns) {
-    if (claimed.has(turn.turnId)) continue;
+    if (turn.promptId !== null || claimed.has(turn.turnId)) continue;
     const startedAt = ms(turn.startedAt);
     if (startedAt === null) continue;
     const owner = anchored.reduce<(Exchange & { promptAt: number }) | null>(
