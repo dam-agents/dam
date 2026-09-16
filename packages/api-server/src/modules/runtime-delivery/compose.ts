@@ -47,6 +47,8 @@ import {
   type ContributionsProgress,
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
+import { emit, EventType } from "../../events.js";
+import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -136,6 +138,10 @@ export function composeRuntimeDelivery(
   });
 
   const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
+  for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
+    eventOutcomeHandlers.set(kind, async (event) => {
+      emit({ type: EventType.AgentUpdated, agentId: event.agentId });
+    });
 
   const hello = createHelloHandler({
     outboxRepo,
