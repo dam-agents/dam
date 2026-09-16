@@ -25,6 +25,7 @@ import {
   type ScheduleFormValues,
 } from "../../schedules/forms/schedule-form-schema.js";
 import {
+  keepsDeclaredCron,
   kitScheduleFormValues,
   kitScheduleModified,
   overrideFromForm,
@@ -61,7 +62,7 @@ export function KitScheduleCard({
   const serialised = JSON.stringify(values);
 
   useEffect(() => {
-    const patch = overrideFromForm(values, enabled);
+    const patch = overrideFromForm(schedule, values, enabled);
     if (patch) onChange(patch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serialised, enabled]);
@@ -70,6 +71,7 @@ export function KitScheduleCard({
   const quietHoursError =
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
   const modified = kitScheduleModified(schedule, values, enabled);
+  const keepsCron = keepsDeclaredCron(schedule, values);
 
   return (
     <li
@@ -112,7 +114,15 @@ export function KitScheduleCard({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {body ? rruleToText(body) : "—"}
+            {"cron" in schedule && keepsCron ? (
+              <>
+                Cron <code className="font-mono">{schedule.cron}</code>
+              </>
+            ) : body ? (
+              rruleToText(body)
+            ) : (
+              "—"
+            )}
           </p>
         </div>
         <Switch
@@ -160,6 +170,15 @@ export function KitScheduleCard({
             hidden={!open}
             className="divide-y divide-kit-rule border-t border-kit-rule"
           >
+            {"cron" in schedule && (
+              <p className="px-4 py-2 text-xs text-muted-foreground">
+                Declared as cron{" "}
+                <code className="font-mono">{schedule.cron}</code>
+                {keepsCron
+                  ? " — kept as declared until you change the recurrence below."
+                  : " — replaced by the recurrence below."}
+              </p>
+            )}
             <ScheduleRecurrenceFields
               layout="rows"
               control={control}

@@ -67,31 +67,82 @@ export function kitScheduleFormValues(
   };
 }
 
+const CADENCE_FIELDS = [
+  "kind",
+  "interval",
+  "time",
+  "days",
+  "customRRule",
+  "timezone",
+] as const satisfies readonly (keyof ScheduleFormValues)[];
+
+function cadenceOf(values: ScheduleFormValues): string {
+  return JSON.stringify(CADENCE_FIELDS.map((field) => values[field]));
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The form speaks only recurrence rules, so a kit
+ * schedule declared as cron starts from a stand-in cadence the form cannot
+ * show as cron. That stand-in must never reach the created schedule: the
+ * declared cron is kept until the user changes a cadence field, and only then
+ * does the form's rule replace it.
+ */
+export function cadenceEdited(
+  schedule: StarterKitSchedule,
+  values: ScheduleFormValues,
+): boolean {
+  return (
+    cadenceOf(values) !== cadenceOf(kitScheduleFormValues(schedule, undefined))
+  );
+}
+
+export function keepsDeclaredCron(
+  schedule: StarterKitSchedule,
+  values: ScheduleFormValues,
+): boolean {
+  return "cron" in schedule && !cadenceEdited(schedule, values);
+}
+
+export type KitScheduleFormOverride = Omit<
+  StarterKitScheduleOverride,
+  "name" | "timing"
+> & { timing?: { rrule: string; timezone: string } };
+
+export function overrideFromForm(
+  schedule: StarterKitSchedule,
+  values: ScheduleFormValues,
+  enabled: boolean,
+): KitScheduleFormOverride | null {
+  const { body, error } = buildRRuleParts(values);
+  if (error) return null;
+  return {
+    ...(keepsDeclaredCron(schedule, values)
+      ? {}
+      : { timing: { rrule: body, timezone: values.timezone } }),
+    sessionMode: values.sessionMode,
+    enabled,
+    quietHours: values.quietHours,
+  };
+}
+
+function sameRRule(a: string, b: string): boolean {
+  return JSON.stringify(detectPreset(a)) === JSON.stringify(detectPreset(b));
+}
+
 export function kitScheduleModified(
   schedule: StarterKitSchedule,
   values: ScheduleFormValues,
   enabled: boolean,
 ): boolean {
-  const original = overrideFromForm(
-    kitScheduleFormValues(schedule, undefined),
-    schedule.enabled,
-  );
+  const override = overrideFromForm(schedule, values, enabled);
+  if (!override) return false;
+  if (override.enabled !== schedule.enabled) return true;
+  if (override.sessionMode !== (schedule.sessionMode ?? "fresh")) return true;
+  if ((override.quietHours ?? []).length > 0) return true;
+  if (!override.timing) return false;
   return (
-    JSON.stringify(overrideFromForm(values, enabled)) !==
-    JSON.stringify(original)
+    "cron" in schedule ||
+    !sameRRule(override.timing.rrule, schedule.rrule) ||
+    override.timing.timezone !== schedule.timezone
   );
-}
-
-export function overrideFromForm(
-  values: ScheduleFormValues,
-  enabled: boolean,
-): Omit<StarterKitScheduleOverride, "name"> | null {
-  const { body, error } = buildRRuleParts(values);
-  if (error) return null;
-  return {
-    timing: { rrule: body, timezone: values.timezone },
-    sessionMode: values.sessionMode,
-    enabled,
-    quietHours: values.quietHours,
-  };
 }
