@@ -205,4 +205,29 @@ if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
 	fi
 fi
 
+# On the vm Backend the harness inherits a console that goes nowhere: stdout and
+# stderr are both /dev/null in the guest, so every diagnostic the runtime already
+# writes is discarded — the ACP and pod-service startup lines, the event-loop
+# stall monitor, and the cgroup memory-pressure warning that precedes an
+# out-of-memory restart. Nothing reads them and nothing can, which is why a
+# machine that dies is opaque afterwards. Point them at the storage disk, where
+# they outlive the machine and the agent itself can read them back.
+#
+# Intentional simplification: one file, truncated when it exceeds the cap, with
+# no rotation — a boot keeps whatever the cap allows rather than a fixed history.
+# A busy agent therefore loses its oldest lines; the upgrade path is logrotate,
+# which the image now has a directory for.
+if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ] && [ -d /workspace ]; then
+	runtime_log=/workspace/log/agent-runtime.log
+	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
+		if [ "$(wc -c <"$runtime_log")" -gt 33554432 ]; then
+			: >"$runtime_log"
+		fi
+		exec >>"$runtime_log" 2>&1
+		echo "agent-entrypoint: harness output captured here from $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	else
+		echo "agent-entrypoint: WARNING: could not open $runtime_log; harness output stays discarded" >&2
+	fi
+fi
+
 exec "$@"
