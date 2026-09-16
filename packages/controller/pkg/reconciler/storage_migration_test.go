@@ -97,21 +97,6 @@ func getAgentAnnotations(t *testing.T, m *StorageMigrationManager, name string) 
 	return obj.GetAnnotations()
 }
 
-// TEST_SCENARIO: a vm agent's workspace is a disk on the VM runner, not a PVC, and it has no pod for the barrier to wait on — the migration passes over it instead of forcing it down.
-func TestStorageMigrationSkipsVMBackend(t *testing.T) {
-	agent := agentCR()
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
-	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
-
-	m.Reconcile(context.Background())
-
-	ann := getAgentAnnotations(t, m, "my-agent")
-	assert.Empty(t, ann[annStorageMigration])
-	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
-	require.NoError(t, err)
-	assert.Empty(t, jobs.Items)
-}
-
 func TestStorageMigration_GatesRunningAgentDown(t *testing.T) {
 	agent := agentCR()
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -431,6 +416,21 @@ func TestStorageMigration_ConcurrencyCap(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 2, gated, "only Concurrency agents admitted per pass")
+}
+
+// TEST_SCENARIO: a vm agent's workspace is a disk on the VM runner, not a PVC, and it has no pod for the barrier to wait on — the migration passes over it instead of forcing it down.
+func TestStorageMigration_SkipsVMBackend(t *testing.T) {
+	agent := agentCR()
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration])
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
 }
 
 func renderedAgentSTS(name string) *appsv1.StatefulSet {
