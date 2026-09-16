@@ -103,18 +103,6 @@ export function SetupWorkbenchView() {
           </StateBlock>
         </SectionGroup>
 
-        <SectionGroup label="Name">
-          <StateBlock label="Empty">
-            <NameEmpty />
-          </StateBlock>
-          <StateBlock label="Filled (manual)">
-            <NameFilled />
-          </StateBlock>
-          <StateBlock label="With Starter Kit">
-            <NamePreset />
-          </StateBlock>
-        </SectionGroup>
-
         <SectionGroup label="Schedules">
           <StateBlock label="Empty">
             <ScheduleColumnEmpty />

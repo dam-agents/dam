@@ -38,6 +38,16 @@ export const connectionTemplates = [
     inputs: [],
   },
   {
+    id: "github-enterprise",
+    name: "GitHub Enterprise",
+    description: "Connect to GitHub Enterprise Server",
+    category: "app",
+    isCustom: false,
+    iconSlug: "github-enterprise",
+    authKind: "oauth",
+    inputs: [],
+  },
+  {
     id: "anthropic",
     name: "Anthropic",
     description: "Anthropic API for Claude models",

@@ -989,7 +989,6 @@ export function ChannelCard({
           <span className="text-sm font-medium text-foreground">
             {channel.label}
           </span>
-          {isFromPreset && <Badge variant="muted">Suggested</Badge>}
         </span>
         <span className="block text-sm text-muted-foreground">
           {channel.description}

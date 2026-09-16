@@ -402,6 +402,7 @@ function PresetScheduleCard({
               onChange={field.onChange}
               options={TIMEZONE_OPTIONS}
               placeholder="Select"
+              className="h-auto w-auto border-none bg-transparent px-0 text-right text-[14px] shadow-none"
             />
           )}
         />
