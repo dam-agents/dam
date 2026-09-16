@@ -1,4 +1,6 @@
 import { agentKindSchema } from "api-server-api";
+
+import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
   Agent,
@@ -74,11 +76,9 @@ export interface InfraAgent {
   gatewayPodNotReadyReason?: string;
 }
 
-const TERMINAL_MACHINE_REASONS = new Set([
-  "MachineBootFailed",
-  "MachineImageUnavailable",
-  "MachineEgressChanged",
-]);
+const TERMINAL_MACHINE_REASONS = new Set(
+  [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
+);
 
 export function computeAgentState(
   infra: InfraAgent,

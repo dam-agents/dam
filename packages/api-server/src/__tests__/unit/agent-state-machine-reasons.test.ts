@@ -28,6 +28,10 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a machine pinned to an address its gateway no longer has as an error", () => {
+    expect(computeAgentState(notReady("MachineEgressChanged"))).toBe("error");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

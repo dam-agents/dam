@@ -307,6 +307,10 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string,
 			"app.kubernetes.io/instance":  instanceLabel,
 		}}}
 	}
+	types := []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	if len(egress) > 0 {
+		types = append(types, networkingv1.PolicyTypeEgress)
+	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-vm-runner-%s-ingress", release, runnerSuffix(owner)),
@@ -315,7 +319,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
-			PolicyTypes: policyTypes(egress),
+			PolicyTypes: types,
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				From: []networkingv1.NetworkPolicyPeer{peer("apiserver"), peer("controller")},
 				Ports: []networkingv1.NetworkPolicyPort{
@@ -326,13 +330,6 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string,
 			Egress: runnerEgress(agentNS, egress, exceptCIDRs),
 		},
 	}
-}
-
-func policyTypes(egress []string) []networkingv1.PolicyType {
-	if len(egress) == 0 {
-		return []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	}
-	return []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.

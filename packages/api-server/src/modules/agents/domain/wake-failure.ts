@@ -22,7 +22,7 @@ export interface WakeConditionsSnapshot {
   gatewayPodNotReadyReason?: string;
 }
 
-const POD_FAILURE_REASONS = new Set([
+export const POD_FAILURE_REASONS = new Set([
   "OutOfMemory",
   "ImagePullFailure",
   "InvalidImageName",

@@ -309,7 +309,6 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	assert.Contains(t, h.calls(), "-I "+archive)
 }
 
-// TEST_SCENARIO: a machine directory holds the sockets and lock of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk and the root overlay, before smolvm boots it; when that boot dies at once the overlay is discarded and the start retried.
 // TEST_SCENARIO: an allowed caller reaches the guest — the published port carries real bytes from the machine's own loopback listener, which is what the api-server dialing a vm agent depends on.
 func TestAnAllowedSourceIsForwardedToTheGuest(t *testing.T) {
 	h := newHarness(t)
@@ -329,6 +328,7 @@ func TestAnAllowedSourceIsForwardedToTheGuest(t *testing.T) {
 	assert.Equal(t, 1, guest(), "exactly one connection was forwarded")
 }
 
+// TEST_SCENARIO: a machine directory holds the sockets and lock of a guest that died with the last pod: starting the machine stops it for recovery and removes them, keeping the storage disk and the root overlay, before smolvm boots it; when that boot dies at once the overlay is discarded and the start retried.
 func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("HOME", t.TempDir())
