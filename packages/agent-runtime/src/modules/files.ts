@@ -28,7 +28,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 const RESERVED = new Set([".triggers", ".initialized"]);
 
-const TEXT_BASED_DETECTIONS = new Set(["xml"]);
+const TEXT_BASED_DETECTIONS = new Set(["xml", "vtt", "vcf", "ics"]);
 
 function hasNullBytes(buf: Buffer): boolean {
   const len = Math.min(buf.length, 8192);
