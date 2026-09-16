@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type { AgentsService } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
 
 export interface OnboardingMarkerDeps {
   agents: Pick<AgentsService, "get">;
@@ -28,6 +29,7 @@ export function createOnboardingMarker(
       agentId,
       (deps.now ?? (() => new Date()))().toISOString(),
     );
+    emit({ type: EventType.AgentUpdated, agentId });
     securityLog("info", "starter_kit.onboarded", {
       category: "resource",
       actor: owner,
