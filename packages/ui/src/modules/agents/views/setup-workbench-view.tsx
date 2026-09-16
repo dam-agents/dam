@@ -821,7 +821,6 @@ function SkillsColumnEmpty() {
       <SkillsSetupSection
         presetSkills={[]}
         addedSources={sources}
-        onDismissPresetSkill={() => {}}
         onRemoveSource={(id) =>
           setSources((prev) => prev.filter((s) => s.id !== id))
         }
@@ -978,8 +977,6 @@ function SkillsColumnPreset({ pack }: { pack: Pack }) {
 
   const enabledCount = skillSlots.filter((s) => isOn(s.label)).length;
 
-  const [blockDismissed, setBlockDismissed] = useState(false);
-
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -998,7 +995,7 @@ function SkillsColumnPreset({ pack }: { pack: Pack }) {
           </Button>
         </div>
         <Inset className="flex flex-col gap-3">
-          {!blockDismissed && skillSlots.length > 0 && (
+          {skillSlots.length > 0 && (
             <Card className="overflow-hidden border-preset-border/50 bg-preset-light/50">
               <div className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -1016,15 +1013,6 @@ function SkillsColumnPreset({ pack }: { pack: Pack }) {
                     /skills
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-muted-foreground hover:bg-preset-border/50 hover:text-foreground"
-                  onClick={() => setBlockDismissed(true)}
-                  aria-label="Dismiss starter kit skills"
-                >
-                  <Close size={16} />
-                </Button>
               </div>
               {skillSlots.map((slot) => (
                 <div

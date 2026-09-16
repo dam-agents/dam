@@ -191,9 +191,6 @@ export function PackDetailSheet({
                       <p className="text-sm font-medium text-foreground">
                         2 CPU · 2 Gi
                       </p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        Default allocation — adjustable after setup
-                      </p>
                     </div>
                   </div>
                 </div>

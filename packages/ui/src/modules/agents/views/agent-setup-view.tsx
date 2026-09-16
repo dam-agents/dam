@@ -248,9 +248,6 @@ export function AgentSetupView() {
 
   const [browsePacksOpen, setBrowsePacksOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState<string | boolean>(false);
-  const [dismissedSkills, setDismissedSkills] = useState<Set<string>>(
-    new Set(),
-  );
   const [dismissedRecommended, setDismissedRecommended] = useState<Set<string>>(
     new Set(),
   );
@@ -290,11 +287,6 @@ export function AgentSetupView() {
       (s) => s.kind === "channel",
     );
   }, [pendingPack]);
-
-  const visibleSkills = useMemo(
-    () => skillSlots.filter((s) => !dismissedSkills.has(s.label)),
-    [skillSlots, dismissedSkills],
-  );
 
   const visibleRecommended = useMemo(
     () =>
@@ -392,7 +384,6 @@ export function AgentSetupView() {
             pack={pendingPack}
             onRemove={() => {
               setPendingPack(null);
-              setDismissedSkills(new Set());
               setDismissedRecommended(new Set());
               reset();
             }}
@@ -423,13 +414,11 @@ export function AgentSetupView() {
         onClose={() => setBrowsePacksOpen(false)}
         onSelect={(pack) => {
           setPendingPack(pack);
-          setDismissedSkills(new Set());
           setDismissedRecommended(new Set());
         }}
         onStartFromScratch={() => {
           setBrowsePacksOpen(false);
           setPendingPack(null);
-          setDismissedSkills(new Set());
           setDismissedRecommended(new Set());
           reset();
         }}
@@ -532,11 +521,8 @@ export function AgentSetupView() {
       </ConnectionsSetupSection>
 
       <SkillsSetupSection
-        presetSkills={visibleSkills}
+        presetSkills={skillSlots}
         addedSources={addedSkillSources}
-        onDismissPresetSkill={(label) =>
-          setDismissedSkills((prev) => new Set([...prev, label]))
-        }
         onRemoveSource={(id) =>
           setAddedSkillSources((prev) => prev.filter((s) => s.id !== id))
         }
@@ -778,13 +764,7 @@ export function ConnectedRecommendationCard({
   );
 }
 
-function SkillCard({
-  slot,
-  onDismiss,
-}: {
-  slot: PackSlot;
-  onDismiss: () => void;
-}) {
+function SkillCard({ slot }: { slot: PackSlot }) {
   return (
     <Card className="flex items-center gap-4 border-preset-border/50 bg-preset-light/50 p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
@@ -799,15 +779,6 @@ function SkillCard({
           {slot.description}
         </p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="shrink-0 text-muted-foreground hover:bg-preset-light/50 hover:text-foreground"
-        onClick={onDismiss}
-        aria-label={`Remove ${slot.label}`}
-      >
-        <Close size={16} />
-      </Button>
     </Card>
   );
 }
@@ -815,13 +786,11 @@ function SkillCard({
 export function SkillsSetupSection({
   presetSkills,
   addedSources,
-  onDismissPresetSkill,
   onRemoveSource,
   onOpenModal,
 }: {
   presetSkills: PackSlot[];
   addedSources: SkillSource[];
-  onDismissPresetSkill: (label: string) => void;
   onRemoveSource: (id: string) => void;
   onOpenModal: () => void;
 }) {
@@ -860,11 +829,7 @@ export function SkillsSetupSection({
       </div>
       <Inset className="flex flex-col gap-3">
         {presetSkills.map((slot) => (
-          <SkillCard
-            key={slot.label}
-            slot={slot}
-            onDismiss={() => onDismissPresetSkill(slot.label)}
-          />
+          <SkillCard key={slot.label} slot={slot} />
         ))}
         {addedSources.map((source) => (
           <Card key={source.id}>
