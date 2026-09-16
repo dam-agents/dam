@@ -24,6 +24,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
@@ -528,6 +529,31 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	delete(r.runners, owner)
 	r.runnerMu.Unlock()
 	slog.Info("removed the VM runner of an owner with no vm agents left", "owner", owner)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand.
+func (r *AgentReconciler) runnerNotReadyMessage(ctx context.Context, owner string) string {
+	const starting = "the owner's VM runner is still starting"
+	pods, err := r.client.CoreV1().Pods(r.config.ReleaseNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return starting
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		for _, c := range pod.Status.Conditions {
+			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" {
+				return "the owner's VM runner cannot be scheduled: " + c.Message
+			}
+		}
+		for _, cs := range pod.Status.ContainerStatuses {
+			if w := cs.State.Waiting; w != nil && w.Reason != "" && w.Reason != "ContainerCreating" {
+				return "the owner's VM runner is not starting: " + strings.TrimSpace(w.Reason+": "+w.Message)
+			}
+		}
+	}
+	return starting
 }
 
 func (r *AgentReconciler) runnerPodIP(ctx context.Context, owner string) (string, error) {

@@ -110,6 +110,48 @@ func runnerSecret() *corev1.Secret {
 	}
 }
 
+// TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
+func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	node, srv := newFakeNode(t)
+	_ = node
+	dep := readyRunnerDeployment()
+	dep.Status.ReadyReplicas = 0
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dep.Name + "-abc",
+			Namespace: "default",
+			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
+		},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+			Message: "0/15 nodes are available: 3 Insufficient devices.kubevirt.io/kvm",
+		}}},
+	}
+	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), pod)
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+	}}
+	r.runnerEndpoint = func(string) string { return srv.URL }
+	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	msg := ""
+	for _, c := range conds {
+		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
+			msg, _ = m["message"].(string)
+		}
+	}
+	assert.Contains(t, msg, "cannot be scheduled")
+	assert.Contains(t, msg, "Insufficient devices.kubevirt.io/kvm",
+		"the scheduler's own account reaches the agent, not just the generic starting message")
+}
+
 func readyRunnerDeployment() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
