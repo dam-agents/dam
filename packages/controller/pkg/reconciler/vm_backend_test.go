@@ -130,6 +130,19 @@ func TestTheHandWrittenEndpointSliceIsRemoved(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "the hand-written slice is gone, leaving only the one Kubernetes keeps")
 }
 
+// TEST_SCENARIO: the runner is kept away from Service and pod addresses, and the cluster's DNS is a Service — so resolving through it is exactly what an egress policy forbids, and a registry pull dies on the lookup. The node's resolver is what a pod confined like this has left.
+func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.DNSDefault, dep.Spec.Template.Spec.DNSPolicy,
+		"ClusterFirst would send every lookup to a Service address the runner's own egress policy drops")
+}
+
 // TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
