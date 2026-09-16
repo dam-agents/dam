@@ -548,41 +548,23 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 	assert.True(t, sawCIDR, "and the runner can still reach the registry, minus the cluster itself")
 }
 
-// TEST_SCENARIO: a runner built under an older naming scheme survives an upgrade; its agents have already moved to the new name, so it sits there holding a guest, a disk and a device grant with nothing that would ever collect it.
-func TestTheSweepRetiresARunnerFromAnOlderNaming(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.Reconcile(ctx, agent))
+// TEST_SCENARIO: an install names a narrow registry and, as the guidance says, subtracts the cluster's own ranges. Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so that pairing has to render as a policy the API server will actually accept.
+func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
+	rules := runnerEgress("test-agents",
+		[]string{"203.0.113.0/24", "0.0.0.0/0"},
+		[]string{"10.128.0.0/14", "172.30.0.0/16"})
 
-	stale := "platform-vm-runner-deadbeef"
-	for _, create := range []func() error{
-		func() error {
-			_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: stale, Namespace: "default",
-					Labels: map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
-				},
-				Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
-			}, metav1.CreateOptions{})
-			return err
-		},
-		func() error {
-			_, err := r.client.CoreV1().PersistentVolumeClaims("default").Create(ctx, &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{Name: stale, Namespace: "default"},
-			}, metav1.CreateOptions{})
-			return err
-		},
-	} {
-		require.NoError(t, create())
+	blocks := map[string][]string{}
+	for _, rule := range rules {
+		for _, to := range rule.To {
+			if to.IPBlock != nil {
+				blocks[to.IPBlock.CIDR] = to.IPBlock.Except
+			}
+		}
 	}
 
-	r.ReconcileOrphanMachines(ctx)
-
-	_, err := r.client.AppsV1().Deployments("default").Get(ctx, stale, metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "the old runner is retired")
-	_, err = r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, stale, metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "and its disk goes with it")
-	_, err = r.client.AppsV1().Deployments("default").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
-	require.NoError(t, err, "while the current one is untouched")
+	assert.Empty(t, blocks["203.0.113.0/24"],
+		"a registry block carries no cluster exception, because the API server would reject the policy")
+	assert.Equal(t, []string{"10.128.0.0/14", "172.30.0.0/16"}, blocks["0.0.0.0/0"],
+		"an open block carries them, which is where they do the work")
 }

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -335,6 +336,23 @@ func policyTypes(egress []string) []networkingv1.PolicyType {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+// UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
+func containedIn(cidr string, except []string) []string {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range except {
+		sub, err := netip.ParsePrefix(e)
+		if err != nil || sub.Bits() <= block.Bits() || !block.Contains(sub.Addr()) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
@@ -351,7 +369,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	}}
 	for _, cidr := range cidrs {
 		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: except}}},
+			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedIn(cidr, except)}}},
 		})
 	}
 	return rules
@@ -480,11 +498,6 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 		if owner == "" {
 			continue
 		}
-		if name := list.Items[i].Name; name != r.runnerName(owner) {
-			slog.Info("vm runner: retiring a runner from an older naming", "owner", owner, "deployment", name)
-			r.deleteRunnerNamed(ctx, name)
-			continue
-		}
 		client, err := r.runnerFor(ctx, owner)
 		if err != nil {
 			continue
@@ -495,12 +508,12 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner outlives the agents that made it, so it is torn down only once the sweep finds it holding no machine at all — at which point its disk holds nothing either.
-// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so one function removes the lot — reached either because its owner has no vm agents left, or because the name itself is from an older scheme and its agents have already moved on.
-func (r *AgentReconciler) deleteRunnerNamed(ctx context.Context, name string) {
-	ns := r.config.ReleaseNamespace
+// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot — reached only once the sweep has found the runner holding no machine at all, at which point its disk holds nothing either.
+func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
+	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
 	opts := metav1.DeleteOptions{}
 	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
-		slog.Warn("removing a VM runner: deployment", "deployment", name, "error", err)
+		slog.Warn("removing a VM runner: deployment", "owner", owner, "error", err)
 		return
 	}
 	for _, del := range []func() error{
@@ -512,13 +525,9 @@ func (r *AgentReconciler) deleteRunnerNamed(ctx context.Context, name string) {
 		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
 	} {
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
-			slog.Warn("removing a VM runner", "deployment", name, "error", err)
+			slog.Warn("removing a VM runner", "owner", owner, "error", err)
 		}
 	}
-}
-
-func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
-	r.deleteRunnerNamed(ctx, r.runnerName(owner))
 	r.runnerMu.Lock()
 	delete(r.runners, owner)
 	r.runnerMu.Unlock()
