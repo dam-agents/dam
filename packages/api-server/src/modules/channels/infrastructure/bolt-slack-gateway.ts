@@ -127,6 +127,21 @@ export function createBoltSlackGateway(
         }
       });
 
+      bolt.event("member_joined_channel", async ({ event, context }) => {
+        botUserId ??= context.botUserId ?? null;
+        if (!botUserId) await authTest();
+        const joined = event as {
+          user: string;
+          channel: string;
+          inviter?: string;
+        };
+        if (!botUserId || joined.user !== botUserId) return;
+        await handlers.onBotJoinedChannel({
+          channel: joined.channel,
+          inviter: joined.inviter,
+        });
+      });
+
       bolt.command(deps.commandName, async ({ command, ack }) => {
         await handlers.onCommand(
           {

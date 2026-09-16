@@ -84,6 +84,7 @@ import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
+  SlackBotJoinedChannelEvent,
   SlackChannelInfo,
   SlackChannelMessageEvent,
   SlackGateway,
@@ -1950,6 +1951,39 @@ export function createSlackWorker(
     return roster.map((entry) => `\`${entry.name}\``).join(", ");
   }
 
+  async function mintBindInvitation(
+    slackUserId: string,
+    channelId: string,
+  ): Promise<string> {
+    const roster = await resolveRoster(channelId);
+    const { state, codeVerifier, codeChallenge } = generatePkce();
+    await pendingOAuthFlows.set(state, {
+      slackUserId,
+      channelId,
+      codeVerifier,
+      intent: "bind",
+      createdAt: Date.now(),
+    });
+
+    const bindUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
+    const alreadyHere =
+      roster.length > 0
+        ? ` Already connected here: ${rosterNames(roster)} — a new agent joins them rather than replacing them.`
+        : "";
+    return isDirectMessageId(channelId)
+      ? `<${bindUrl}|Connect one of your agents to this DM>. You'll talk to it here privately, under the agent's own connected accounts and API tokens.${alreadyHere}`
+      : `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.${alreadyHere}`;
+  }
+
+  async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
+    if (!gateway || !event.inviter) return;
+    await gateway.postEphemeral({
+      channel: event.channel,
+      user: event.inviter,
+      text: await mintBindInvitation(event.inviter, event.channel),
+    });
+  }
+
   async function pickRosterAgent(
     channelId: string,
     nameArg: string,
@@ -2036,26 +2070,8 @@ export function createSlackWorker(
         await ack({ text: "Account unlinked." });
       })
       .with("bind", async () => {
-        const roster = await resolveRoster(command.channelId);
-
-        const { state, codeVerifier, codeChallenge } = generatePkce();
-        await pendingOAuthFlows.set(state, {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-          codeVerifier,
-          intent: "bind",
-          createdAt: Date.now(),
-        });
-
-        const bindUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
-        const alreadyHere =
-          roster.length > 0
-            ? ` Already connected here: ${rosterNames(roster)} — a new agent joins them rather than replacing them.`
-            : "";
         await ack({
-          text: isDirectMessageId(command.channelId)
-            ? `<${bindUrl}|Connect one of your agents to this DM>. You'll talk to it here privately, under the agent's own connected accounts and API tokens.${alreadyHere}`
-            : `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.${alreadyHere}`,
+          text: await mintBindInvitation(command.userId, command.channelId),
         });
       })
       .with("unbind", async () => {
@@ -2508,7 +2524,7 @@ export function createSlackWorker(
     if (event.channelType === "mpim") {
       return `No agent is connected to this group yet. Run \`/${brandShort} bind\` to connect one of your agents, then @-mention it here.`;
     }
-    return "No instance connected to this channel.";
+    return `No agent is connected to this channel yet. Run \`/${brandShort} bind\` to connect one of your agents, then @-mention it here.`;
   }
 
   function noDefaultAgentCopy(
@@ -3223,6 +3239,7 @@ export function createSlackWorker(
         onCommand: handleCommand,
         onMessage: handleChannelMessage,
         onDirectMessage: handleDirectMessage,
+        onBotJoinedChannel: handleBotJoinedChannel,
       });
       if (!connected) {
         gatewayFailed = true;

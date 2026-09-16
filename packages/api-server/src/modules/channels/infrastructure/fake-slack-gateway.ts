@@ -23,6 +23,10 @@ export interface FakeSlackGateway extends SlackGateway {
   fireMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireCommand(command: SlackSlashCommand): Promise<string>;
+  fireBotJoinedChannel(event: {
+    channel: string;
+    inviter?: string;
+  }): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[]): void;
@@ -299,6 +303,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     async fireMessage(event) {
       await requireHandlers().onMessage(event);
+    },
+
+    async fireBotJoinedChannel(event) {
+      await requireHandlers().onBotJoinedChannel(event);
     },
 
     async fireDirectMessage(event) {

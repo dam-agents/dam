@@ -71,7 +71,7 @@ is wrong are called out in the sub-issues that touch them.
 | 06 | [Session rows show their channel](./06-session-rows-channel.md) | Messenger logo, channel name, relative time. | 01 |
 | 07 | [Bind picker redesign](./07-bind-picker-redesign.md) | Search, sections, card rows, sticky action — both messengers. | 01 |
 | 08 | [Bind success redesign](./08-bind-success-redesign.md) | Simplified copy and the ambient toggle — both messengers. | 07 |
-| 09 | [Slack posts the bind link on join](./09-slack-on-join-bind-link.md) | The bot offers the link when it is invited. | — |
+| 09 | [x] [Slack posts the bind link on join](./09-slack-on-join-bind-link.md) | The bot offers the link when it is invited. | — |
 
 The order is linear. 01 comes first because 04, 05 and 06 all need it. 02 comes early because
 three later slices reach its modal.

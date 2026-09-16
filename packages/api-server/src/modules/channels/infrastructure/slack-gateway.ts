@@ -34,11 +34,17 @@ export type SlackChannelMessageEvent = SlackMentionEvent;
 
 export type SlackAck = (response: { text: string }) => Promise<void>;
 
+export interface SlackBotJoinedChannelEvent {
+  channel: string;
+  inviter?: string;
+}
+
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
+  onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
 }
 
 /**
