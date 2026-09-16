@@ -40,6 +40,7 @@ export interface AttentionRepository {
     itemId: string,
     at: Date,
   ): Promise<void>;
+  deleteSessions(agentId: string, sessionIds: readonly string[]): Promise<void>;
   deleteOlderThan(days: number): Promise<number>;
   listAgentIds(): Promise<string[]>;
   deleteForAgent(agentId: string): Promise<void>;
@@ -167,6 +168,27 @@ export function createAttentionRepository(db: Db): AttentionRepository {
           ],
           set: { dismissedAt: at, updatedAt: new Date() },
         });
+    },
+
+    async deleteSessions(agentId, sessionIds) {
+      if (sessionIds.length === 0) return;
+      await db.delete(attentionState).where(
+        and(
+          eq(attentionState.itemKind, "session"),
+          inArray(
+            attentionState.itemId,
+            sessionIds.map((sessionId) => `${agentId}:${sessionId}`),
+          ),
+        ),
+      );
+      await db
+        .delete(attentionRecords)
+        .where(
+          and(
+            eq(attentionRecords.agentId, agentId),
+            inArray(attentionRecords.sessionId, [...sessionIds]),
+          ),
+        );
     },
 
     async deleteOlderThan(days) {

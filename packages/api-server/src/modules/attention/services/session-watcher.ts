@@ -104,6 +104,17 @@ export function createSessionWatcher(deps: {
       entry.known.set(next.sessionId, next);
       wrote = true;
     }
+
+    const listed = new Set(sessions.map((session) => session.sessionId));
+    const gone = [...entry.known.keys()].filter(
+      (sessionId) => !listed.has(sessionId),
+    );
+    if (gone.length > 0) {
+      await deps.repo.deleteSessions(agentId, gone);
+      for (const sessionId of gone) entry.known.delete(sessionId);
+      wrote = true;
+    }
+
     if (!wrote) return;
     emit({
       type: EventType.AttentionChanged,
