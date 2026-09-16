@@ -31,6 +31,14 @@ interface Held {
    * capture after a hold, which is what makes a new lease holder re-read once.
    */
   known: Map<string, AttentionRecordRow> | null;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: One capture per agent at a time. A capture
+   * awaits a pod read, so two in flight can interleave and let the slower one
+   * delete rows the newer list already wrote. A trailing repeat replaces the
+   * overlap, so the last notice is still honored.
+   */
+  busy: boolean;
+  repeat: boolean;
 }
 
 function toDate(value: string | null | undefined): Date | null {
@@ -78,6 +86,23 @@ export function createSessionWatcher(deps: {
   async function capture(agentId: string): Promise<void> {
     const entry = held.get(agentId);
     if (!entry) return;
+    if (entry.busy) {
+      entry.repeat = true;
+      return;
+    }
+    entry.busy = true;
+    try {
+      await captureOnce(agentId, entry);
+    } finally {
+      entry.busy = false;
+    }
+    if (entry.repeat && held.get(agentId) === entry) {
+      entry.repeat = false;
+      await capture(agentId);
+    }
+  }
+
+  async function captureOnce(agentId: string, entry: Held): Promise<void> {
     let sessions: PodSession[];
     try {
       sessions = await entry.read();
@@ -152,6 +177,8 @@ export function createSessionWatcher(deps: {
       poll: null,
       debounce: null,
       known: null,
+      busy: false,
+      repeat: false,
     };
     held.set(agent.id, entry);
     if (live) {
