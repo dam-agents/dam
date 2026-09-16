@@ -106,7 +106,7 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
 
 3. Send a workspace admin `<urls.ui>/api/slack/install/start`. They complete Slack's consent screen while on the VPN, and the workspace's own bot token is stored in a Kubernetes Secret.
 
-Connecting a channel does not change: you still paste a conversation id. The platform works out which workspace it belongs to by asking each connected workspace whether it knows that conversation, and refuses rather than guessing if several do or none do. A single-workspace install never makes that call.
+Connecting a channel does not change: you still paste a conversation id. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
 
 The workspace that `slackBotToken` was issued for keeps working without any of this — it stays the fallback. Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
 

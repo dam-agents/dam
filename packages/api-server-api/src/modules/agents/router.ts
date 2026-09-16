@@ -195,9 +195,7 @@ export const agentsRouter = t.router({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              res.error.teamIds.length > 1
-                ? "More than one connected Slack workspace has a conversation with that id — connect the agent from inside the conversation instead, so the workspace is unambiguous"
-                : "No connected Slack workspace has that conversation — check the id, and invite the bot to the channel first if it is private",
+              "No connected Slack workspace can see that conversation — check the id, and invite the bot to the channel first if it is private",
           });
       }
     }),

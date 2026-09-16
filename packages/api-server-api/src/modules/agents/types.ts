@@ -99,7 +99,7 @@ export type UpgradeAgentResult =
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
   | { type: "ChannelAlreadyBound" }
-  | { type: "WorkspaceUnresolved"; teamIds: string[] };
+  | { type: "WorkspaceUnresolved" };
 
 export type ConnectSlackResult =
   | { ok: true; value: Agent }

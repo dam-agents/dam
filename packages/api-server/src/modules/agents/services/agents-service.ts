@@ -476,10 +476,7 @@ export function createAgentsService(deps: {
   };
   resolveSlackWorkspace?: (
     slackChannelId: string,
-  ) => Promise<
-    | { kind: "resolved"; teamId: string }
-    | { kind: "ambiguous"; teamIds: string[] }
-  >;
+  ) => Promise<{ kind: "resolved"; teamId: string } | { kind: "unknown" }>;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -551,10 +548,7 @@ export function createAgentsService(deps: {
       ? await deps.resolveSlackWorkspace(slackChannelId)
       : ({ kind: "resolved", teamId: "" } as const);
     if (workspace.kind !== "resolved") {
-      return err({
-        type: "WorkspaceUnresolved" as const,
-        teamIds: workspace.teamIds,
-      });
+      return err({ type: "WorkspaceUnresolved" as const });
     }
 
     const requestedAmbient = ambient === true;

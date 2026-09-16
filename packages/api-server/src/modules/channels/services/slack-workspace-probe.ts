@@ -3,26 +3,33 @@ import {
   type SlackWorkspace,
 } from "../infrastructure/slack-gateway.js";
 
+export type SlackConversationStanding = "member" | "known" | "unknown";
+
 export type SlackWorkspaceResolution =
   | { kind: "resolved"; teamId: SlackWorkspace }
-  | { kind: "ambiguous"; teamIds: SlackWorkspace[] };
+  | { kind: "unknown" };
 
 export interface SlackWorkspaceProbeDeps {
   listInstalledWorkspaces: () => Promise<SlackWorkspace[]>;
-  knowsConversation: (
+  standingIn: (
     slackChannelId: string,
     teamId: SlackWorkspace,
-  ) => Promise<boolean>;
+  ) => Promise<SlackConversationStanding>;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Which workspace a bare Slack conversation id
- * belongs to. A channel id is unique inside its workspace, not across them, so
- * once a second workspace is installed the id a person pastes into the UI or
- * passes to the CLI no longer says where it lives. Slack is asked rather than
- * the person: whichever installed workspace recognises the conversation owns
- * it. An id that several recognise, or none, is refused rather than guessed —
- * binding an Agent into the wrong workspace would lend it to strangers.
+ * belongs to. The person pasting the id was standing in a workspace when they
+ * copied it; the bind surface simply does not carry that, so Slack is asked
+ * instead of the person.
+ *
+ * Several connected workspaces answering yes is normal, not a conflict: an
+ * enterprise organization shares one channel into many of its workspaces, and
+ * each is looking at the same conversation, so either token posts to the same
+ * place. Membership is what separates them — a workspace the bot was invited
+ * to can post, one that merely sees the channel cannot — and among equals the
+ * original workspace wins so the answer is stable across binds. Only a
+ * conversation no connected workspace can see is refused.
  *
  * The install that predates multi-workspace support is the empty workspace,
  * and while it is the only one no call is made at all: a single-workspace
@@ -36,15 +43,18 @@ export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
       return { kind: "resolved", teamId: ORIGINAL_WORKSPACE };
     }
 
-    const found: SlackWorkspace[] = [];
+    const members: SlackWorkspace[] = [];
+    const seers: SlackWorkspace[] = [];
     for (const teamId of candidates) {
-      if (
-        await deps.knowsConversation(slackChannelId, teamId).catch(() => false)
-      )
-        found.push(teamId);
+      const standing = await deps
+        .standingIn(slackChannelId, teamId)
+        .catch((): SlackConversationStanding => "unknown");
+      if (standing === "member") members.push(teamId);
+      else if (standing === "known") seers.push(teamId);
     }
-    return found.length === 1
-      ? { kind: "resolved", teamId: found[0]! }
-      : { kind: "ambiguous", teamIds: found };
+    const chosen = members[0] ?? seers[0];
+    return chosen === undefined
+      ? { kind: "unknown" }
+      : { kind: "resolved", teamId: chosen };
   };
 }

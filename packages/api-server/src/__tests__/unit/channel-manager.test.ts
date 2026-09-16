@@ -8,7 +8,7 @@ function fakeSlackWorker(): SlackWorker {
   return {
     type: ChannelType.Slack,
     connect: vi.fn(async () => {}),
-    knowsConversation: vi.fn(async () => false),
+    standingIn: vi.fn(async () => "unknown" as const),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),

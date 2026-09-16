@@ -748,10 +748,8 @@ export async function bootstrap() {
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
     listInstalledWorkspaces: async () =>
       (await listSlackInstalls(db)()).map((i) => i.teamId),
-    knowsConversation: async (slackChannelId, teamId) =>
-      slackWorker
-        ? slackWorker.knowsConversation(slackChannelId, teamId)
-        : false,
+    standingIn: async (slackChannelId, teamId) =>
+      slackWorker ? slackWorker.standingIn(slackChannelId, teamId) : "unknown",
   });
 
   const telegramWorker =

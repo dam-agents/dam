@@ -75,10 +75,7 @@ export interface ApiServerDeps {
   slackInstalls: SlackInstallService;
   resolveSlackWorkspace: (
     slackChannelId: string,
-  ) => Promise<
-    | { kind: "resolved"; teamId: string }
-    | { kind: "ambiguous"; teamIds: string[] }
-  >;
+  ) => Promise<{ kind: "resolved"; teamId: string } | { kind: "unknown" }>;
   slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;
   slackBindFlows: SlackBindFlowStore;

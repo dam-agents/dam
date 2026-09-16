@@ -10,6 +10,7 @@ import {
   type SlackTurnRoster,
 } from "./slack-turn-copy.js";
 import { match, P } from "ts-pattern";
+import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
 import {
   ambientThreadKey,
   isAmbientThreadKey,
@@ -677,10 +678,10 @@ export interface ChannelRegistry {
 export interface SlackWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
-  knowsConversation(
+  standingIn(
     slackChannelId: string,
     teamId: SlackWorkspace,
-  ): Promise<boolean>;
+  ): Promise<SlackConversationStanding>;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
@@ -3323,10 +3324,15 @@ export function createSlackWorker(
       gateway = null;
     },
 
-    async knowsConversation(slackChannelId: string, teamId: SlackWorkspace) {
+    async standingIn(
+      slackChannelId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackConversationStanding> {
       const gw = await ensureGateway();
-      if (!gw) return false;
-      return (await gw.getConversationInfo(slackChannelId, teamId)) !== null;
+      if (!gw) return "unknown";
+      const info = await gw.getConversationInfo(slackChannelId, teamId);
+      if (!info) return "unknown";
+      return info.isMember ? "member" : "known";
     },
 
     async listConversations(instanceName: string) {
