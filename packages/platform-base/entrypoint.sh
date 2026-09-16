@@ -12,6 +12,22 @@
 # writable at build time (see Dockerfile).
 set -eu
 
+# openrc's service registry, kept on the machine's storage disk so a service an
+# agent installs outlives the throwaway overlay. Each step reports its own
+# failure: errexit is suppressed for the caller's `if`, so it cannot be relied
+# on here, and a half-written registry must not read as success.
+persist_openrc_registry() {
+	for reg in /etc/init.d /etc/runlevels; do
+		[ "$(stat -c %d "$reg")" = "$(stat -c %d /workspace)" ] && continue
+		mkdir -p "/workspace$reg" || return 1
+		# Image-owned scripts are copied over the store on every boot rather
+		# than seeded once: they are version-coupled to the openrc binaries,
+		# and a copy taken at first boot would outlive an openrc upgrade.
+		cp -a "$reg/." "/workspace$reg/" || return 1
+		mount --bind "/workspace$reg" "$reg" || return 1
+	done
+}
+
 # On the vm Backend the root filesystem is a throwaway overlay and only the
 # machine's storage disk at /workspace survives a stop, so every path the
 # controller declared persistent (PLATFORM_VM_PERSIST_PATHS) is bind-mounted
@@ -45,25 +61,23 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 	# keeps failing the probe. Linking it in is what makes this a machine that
 	# can host services. openrc's own state lives in /run, which every boot
 	# starts empty, and without it every openrc command fails.
+	#
+	# None of it is allowed to end the boot. The harness runs with or without a
+	# supervisor, so a storage disk that refuses a write costs the machine its
+	# services, never the agent — unlike the persisted paths above, which are
+	# the contract this guest exists to honor.
 	if [ "$(id -u)" = 0 ] && [ -x /usr/libexec/openrc-run ]; then
-		ln -sf /usr/libexec/openrc-run /usr/bin/openrc-run
-		mkdir -p /run/openrc
-		touch /run/openrc/softlevel
-		# A registered service has to outlive the throwaway overlay, so the
-		# service registry sits on the storage disk with the persisted paths.
-		# The image's own scripts are copied over it on every boot rather than
-		# seeded once: they are version-coupled to the binaries above, and a
-		# copy taken at first boot would outlive an openrc upgrade.
-		for reg in /etc/init.d /etc/runlevels; do
-			[ "$(stat -c %d "$reg")" = "$(stat -c %d /workspace)" ] && continue
-			mkdir -p "/workspace$reg"
-			cp -a "$reg/." "/workspace$reg/"
-			mount --bind "/workspace$reg" "$reg"
-		done
-		# Backgrounded: a wedged service would otherwise hold the boot past the
-		# runner's readiness window, and the machine would read as never ready.
-		# A service whose program was not persisted fails here and says so.
-		openrc default &
+		if ln -sf /usr/libexec/openrc-run /usr/bin/openrc-run &&
+			mkdir -p /run/openrc && touch /run/openrc/softlevel &&
+			persist_openrc_registry; then
+			# Backgrounded: a wedged service would otherwise hold the boot past
+			# the runner's readiness window and the machine would read as never
+			# ready. A service whose program was not persisted fails here and
+			# says so.
+			openrc default &
+		else
+			echo "agent-entrypoint: WARNING: no service supervisor; software that installs itself as a service will fail" >&2
+		fi
 	fi
 fi
 
