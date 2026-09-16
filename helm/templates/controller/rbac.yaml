@@ -104,21 +104,16 @@ rules:
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- if .Values.virtualization.enabled }}
-  # vm agents have no pod: the controller publishes each machine's published port on the runner pod as
-  # the agent Service's endpoint itself (see `virtualization` in values.yaml).
-  # The slice is owner-refed to the Agent, so K8s garbage-collects it.
+  # Delete only, and only to clear the endpoint slice an earlier release wrote
+  # by hand for a vm agent: Kubernetes maintains that Service's endpoints now,
+  # and two slices naming one Service are unioned. Creating one is what
+  # OpenShift's restricted endpoints admission refuses; removing one needs no
+  # such grant. Goes when the cleanup in vm_agent.go does.
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
-    verbs: ["get", "create", "update"]
-  # That endpoint is a cluster-network address, which OpenShift's restricted
-  # endpoints admission refuses unless the writer holds this subresource —
-  # the same grant its own endpointslice-controller carries. Without it the
-  # reconcile fails with "endpoint address <pod ip> is not allowed" and no vm
-  # agent is reachable. Inert on clusters without that admission plugin.
-  - apiGroups: ["discovery.k8s.io"]
-    resources: ["endpointslices/restricted"]
-    verbs: ["create"]
+    verbs: ["delete"]
 {{- end }}
+
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
   # claim one for a new agent (relabel), so create/update/patch are required

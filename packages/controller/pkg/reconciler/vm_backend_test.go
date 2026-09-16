@@ -16,11 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -110,6 +112,24 @@ func runnerSecret() *corev1.Secret {
 	}
 }
 
+// TEST_SCENARIO: a cluster that already ran a vm agent under the old mechanism has an endpoint slice the controller wrote by hand, under the agent's own name. Kubernetes maintains that Service's endpoints now and unions every slice naming it, so a leftover reading ready would take a share of the traffic toward an address its machine no longer answers on.
+func TestTheHandWrittenEndpointSliceIsRemoved(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	_, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Create(ctx, &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+		AddressType: discoveryv1.AddressTypeIPv4,
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	_, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the hand-written slice is gone, leaving only the one Kubernetes keeps")
+}
+
 // TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
@@ -135,7 +155,6 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 		ServiceAccountName: "platform-vm-runner",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
@@ -184,13 +203,12 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		ServiceAccountName: "platform-vm-runner",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	var requeued []time.Duration
 	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets a selector-less agent Service backed by the node's published port and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -218,15 +236,9 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Nil(t, svc.Spec.Selector)
-	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
-	eps, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10.42.0.9"}, eps.Endpoints[0].Addresses)
-	assert.Equal(t, int32(31000), *eps.Ports[0].Port)
-	assert.Equal(t, "my-agent", eps.Labels["kubernetes.io/service-name"])
-	require.NotNil(t, eps.Endpoints[0].Conditions.Ready)
-	assert.False(t, *eps.Endpoints[0].Conditions.Ready, "a machine that is still booting takes no traffic")
+	assert.Equal(t, vmRunnerSelector(testOwner), svc.Spec.Selector, "the agent Service selects the owner's runner")
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "a headless Service would hand back the pod address without remapping the port")
+	assert.Equal(t, intstr.FromInt(31000), svc.Spec.Ports[0].TargetPort, "the agent port maps onto the one this machine publishes on the runner")
 
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
@@ -237,9 +249,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	eps, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.True(t, *eps.Endpoints[0].Conditions.Ready, "a ready machine takes traffic — kube-proxy drops an endpoint that never turns ready")
 	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
 }
 
@@ -291,7 +300,6 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")
