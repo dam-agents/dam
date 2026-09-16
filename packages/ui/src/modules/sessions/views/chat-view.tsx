@@ -31,6 +31,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
+import { useNow } from "../../../hooks/use-now.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import {
   readPersistedNumber,
@@ -94,6 +95,7 @@ import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
+import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
@@ -109,6 +111,7 @@ import {
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
@@ -158,6 +161,12 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const now = useNow(60_000);
+  const runStarts = useStore((s) => s.runStarts);
+  const items = useMemo(
+    () => threadItems(messages, runStarts),
+    [messages, runStarts],
+  );
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -700,18 +709,26 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {messages.map((m, mi) => (
-                      <ChatMessage
-                        key={m.id}
-                        message={m}
-                        isLast={mi === messages.length - 1}
-                        hasPendingPermission={hasPendingPermission}
-                        onRetry={sendPrompt}
-                        onFileClick={openFileHandler}
-                        onDelete={deleteMessage}
-                        onLoadOlder={loadOlderKeepingScroll}
-                      />
-                    ))}
+                    {items.map((item) =>
+                      item.kind === "divider" ? (
+                        <ThreadDivider
+                          key={item.key}
+                          label={dividerLabel(item, now)}
+                        />
+                      ) : (
+                        <ChatMessage
+                          key={item.message.id}
+                          message={item.message}
+                          isLast={item.index === messages.length - 1}
+                          {...timeProps(item.message.at, now)}
+                          hasPendingPermission={hasPendingPermission}
+                          onRetry={sendPrompt}
+                          onFileClick={openFileHandler}
+                          onDelete={deleteMessage}
+                          onLoadOlder={loadOlderKeepingScroll}
+                        />
+                      ),
+                    )}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>

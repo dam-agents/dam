@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
+  buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
   platformUndeliveredPromptSchema,
   SessionType,
@@ -157,10 +158,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
-    onTurnStarted: ({ sessionId, channel }) => {
+    onTurnStarted: ({ sessionId, unattended }) => {
       deps.activeTurns.record(sessionId);
-      if (nonViewerChannels.has(channel) && isMachineSession(sessionId))
-        deps.sessionMetadata?.startRun(sessionId);
+      if (unattended === true) {
+        const at = deps.sessionMetadata?.startRun(sessionId);
+        if (at) announceRunStart(sessionId, at);
+      }
     },
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
@@ -179,8 +182,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         endedAt: new Date().toISOString(),
       });
     },
-    canStart: (sessionId) =>
-      hasEngagedChannel(sessionId) && !harnessColdSessions.has(sessionId),
+    canStart: ({ sessionId, unattended }) =>
+      (unattended === true || hasEngagedChannel(sessionId)) &&
+      !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
       deps.undeliveredPrompts.remember(
@@ -245,6 +249,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     supersededFor(sessionId) {
       return [...(supersededEchoes.get(sessionId) ?? [])];
+    },
+    runStartsOf(sessionId) {
+      return deps.sessionMetadata?.runStartsOf(sessionId) ?? [];
     },
     engage(channel, sessionId) {
       engage(channel, sessionId);
@@ -495,15 +502,26 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  function hasEngagedViewer(sessionId: string): boolean {
+  function* engagedViewersOf(sessionId: string): Generator<ClientChannel> {
     for (const [channel, sessions] of engagedSessions) {
       if (
         sessions.has(sessionId) &&
         channel.isOpen() &&
         !nonViewerChannels.has(channel)
       )
-        return true;
+        yield channel;
     }
+  }
+
+  function announceRunStart(sessionId: string, at: string): void {
+    const line = JSON.stringify(
+      buildPlatformRunStartedNotification({ sessionId, at }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
+  function hasEngagedViewer(sessionId: string): boolean {
+    for (const _ of engagedViewersOf(sessionId)) return true;
     return false;
   }
 
@@ -982,6 +1000,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           frame: rewritten,
           promptId,
           runPrompt: extractPromptSurface(frame) === "cli",
+          unattended:
+            nonViewerChannels.has(channel) && isMachineSession(promptSessionId),
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);

@@ -52,6 +52,39 @@ export function timeUntil(value: DateInput, now: Date = new Date()): string {
   return `in ${days} d`;
 }
 
+export function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+export function dayLabel(value: DateInput, now: Date = new Date()): string {
+  const d = toDate(value);
+  if (!d) return "—";
+  if (sameLocalDay(d, now)) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameLocalDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, {
+    ...(d.getFullYear() === now.getFullYear()
+      ? { weekday: "long" }
+      : { year: "numeric" }),
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function clockLabel(value: DateInput): string {
+  const d = toDate(value);
+  if (!d) return "—";
+  return d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function formatTimestamp(value: DateInput): string {
   return formatDateTime(value, {
     year: "numeric",

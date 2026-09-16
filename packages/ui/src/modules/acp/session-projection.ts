@@ -62,10 +62,14 @@ function parseUserText(text: string): MessagePart[] {
   return parts.length > 0 ? parts : [{ kind: "text", text }];
 }
 
-export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
+export function applyUpdate(
+  messages: Message[],
+  update: AcpUpdate,
+  at?: string,
+): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
-      return closeActiveAssistant(messages);
+      return closeActiveAssistant(messages, at);
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
@@ -79,19 +83,19 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
       return appendClippedMarker(messages, update.older);
 
     case "user_message_chunk":
-      return handleUserChunk(messages, update);
+      return handleUserChunk(messages, update, at);
 
     case "agent_message_chunk":
-      return handleAgentChunk(messages, update, "text");
+      return handleAgentChunk(messages, update, "text", at);
 
     case "agent_thought_chunk":
-      return handleAgentChunk(messages, update, "thought");
+      return handleAgentChunk(messages, update, "thought", at);
 
     case "tool_call":
-      return handleToolCall(messages, update);
+      return handleToolCall(messages, update, at);
 
     case "tool_call_update":
-      return handleToolCallUpdate(messages, update);
+      return handleToolCallUpdate(messages, update, at);
 
     default:
       return messages;
@@ -327,7 +331,11 @@ export function hasAgentContent(m: Message): boolean {
   return m.parts.some((p) => p.kind !== "verdict");
 }
 
-function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
+function handleUserChunk(
+  messages: Message[],
+  u: ContentChunk,
+  at?: string,
+): Message[] {
   const queued = u._meta?.queued === true;
   const mid = u.messageId ?? null;
 
@@ -343,32 +351,39 @@ function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
 
   if (parts === null) return queued ? messages : closeActiveAssistant(messages);
 
-  if (queued) return appendQueuedUser(messages, mid, parts);
+  if (queued) return appendQueuedUser(messages, mid, parts, at);
 
-  return appendOrExtendUser(closeActiveAssistant(messages), mid, parts);
+  return appendOrExtendUser(closeActiveAssistant(messages), mid, parts, at);
 }
 
 function handleAgentChunk(
   messages: Message[],
   u: ContentChunk,
   kind: "text" | "thought",
+  at?: string,
 ): Message[] {
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendToActive(messages, [{ kind, text: txt }]);
+    return appendToActive(messages, [{ kind, text: txt }], at);
   }
   if (u.content.type === "image") {
-    return appendToActive(messages, [
-      { kind: "image", data: u.content.data, mimeType: u.content.mimeType },
-    ]);
+    return appendToActive(
+      messages,
+      [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
+      at,
+    );
   }
   return messages;
 }
 
-function handleToolCall(messages: Message[], u: ToolCall): Message[] {
+function handleToolCall(
+  messages: Message[],
+  u: ToolCall,
+  at?: string,
+): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
-  if (existingIdx !== null) return patchToolChip(messages, existingIdx, u);
+  if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
@@ -376,16 +391,17 @@ function handleToolCall(messages: Message[], u: ToolCall): Message[] {
     status: u.status ?? "pending",
     content: mapToolContent(u.content),
   };
-  return appendToActive(messages, [chip]);
+  return appendToActive(messages, [chip], at);
 }
 
 function handleToolCallUpdate(
   messages: Message[],
   u: ToolCallUpdate,
+  at?: string,
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx === null) return messages;
-  return patchToolChip(messages, existingIdx, u);
+  return patchToolChip(messages, existingIdx, u, at);
 }
 
 function findToolIdx(
@@ -408,6 +424,7 @@ function patchToolChip(
   messages: Message[],
   idx: number,
   u: ToolCall | ToolCallUpdate,
+  at?: string,
 ): Message[] {
   const content = mapToolContent(u.content);
   return messages.map((m, i) =>
@@ -415,6 +432,7 @@ function patchToolChip(
       ? m
       : {
           ...m,
+          ...(at !== undefined && m.streaming && { at }),
           parts: m.parts.map((p) =>
             p.kind === "tool" && p.toolCallId === u.toolCallId
               ? {
@@ -451,6 +469,7 @@ function findActiveAssistant(messages: Message[]): ActiveTarget | null {
 function appendToActive(
   messages: Message[],
   newParts: MessagePart[],
+  at?: string,
 ): Message[] {
   const target = findActiveAssistant(messages);
   if (target === null) {
@@ -459,6 +478,7 @@ function appendToActive(
       role: "assistant",
       parts: mergeParts([], newParts),
       streaming: true,
+      ...(at !== undefined && { at }),
     };
     return [...messages, newMsg];
   }
@@ -466,6 +486,7 @@ function appendToActive(
     if (i !== target.idx) return m;
     return {
       ...m,
+      ...(at !== undefined && { at }),
       parts: mergeParts(m.parts, newParts),
       streaming: true,
       queued: target.promote ? false : m.queued,
@@ -491,12 +512,16 @@ function mergeParts(
   return merged;
 }
 
-function closeActiveAssistant(messages: Message[]): Message[] {
+function closeActiveAssistant(messages: Message[], at?: string): Message[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
       if (m.promptId !== undefined && m.parts.length === 0) continue;
-      return messages.map((x, j) => (j === i ? { ...x, streaming: false } : x));
+      return messages.map((x, j) =>
+        j === i
+          ? { ...x, ...(at !== undefined && { at }), streaming: false }
+          : x,
+      );
     }
   }
   return messages;
@@ -506,6 +531,7 @@ function appendOrExtendUser(
   messages: Message[],
   mid: string | null,
   parts: MessagePart[],
+  at?: string,
 ): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
@@ -520,6 +546,7 @@ function appendOrExtendUser(
     role: "user",
     parts,
     streaming: false,
+    ...(at !== undefined && { at }),
   };
   return [...messages, newMsg];
 }
@@ -528,6 +555,7 @@ function appendQueuedUser(
   messages: Message[],
   mid: string | null,
   parts: MessagePart[],
+  at?: string,
 ): Message[] {
   const n = messages.length;
   const tailAssistant = messages[n - 1];
@@ -548,6 +576,7 @@ function appendQueuedUser(
     role: "user",
     parts,
     streaming: false,
+    ...(at !== undefined && { at }),
   };
   const pending: Message = {
     id: crypto.randomUUID(),

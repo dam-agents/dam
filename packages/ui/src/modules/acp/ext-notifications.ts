@@ -1,18 +1,26 @@
 import {
+  platformFrameMetaSchema,
   platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
+  platformRunStartedParamsSchema,
   platformTurnEndedParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
 
-import type { AcpUpdate } from "./types.js";
+import type { AcpUpdate, FrameMeta } from "./types.js";
 
-export function replayForOf(meta: unknown): string | undefined {
-  if (typeof meta !== "object" || meta === null) return undefined;
+export function frameMetaOf(meta: unknown): FrameMeta {
+  if (typeof meta !== "object" || meta === null) return {};
   const platform = (meta as Record<string, unknown>).platform;
-  if (typeof platform !== "object" || platform === null) return undefined;
-  const replayFor = (platform as Record<string, unknown>).replayFor;
-  return typeof replayFor === "string" ? replayFor : undefined;
+  if (typeof platform !== "object" || platform === null) return {};
+  const { replayFor, at } = platform as Record<string, unknown>;
+  const parsedAt = platformFrameMetaSchema.shape.at.safeParse(at);
+  return {
+    ...(typeof replayFor === "string" ? { replayFor } : {}),
+    ...(parsedAt.success && parsedAt.data !== undefined
+      ? { at: parsedAt.data }
+      : {}),
+  };
 }
 
 function parseExtParams<T>(
@@ -31,14 +39,14 @@ function parseExtParams<T>(
 export interface RoutedExtUpdate {
   update: AcpUpdate;
   sessionId: string;
-  replayFor?: string;
+  frame: FrameMeta;
 }
 
 export function routeExtNotification(
   method: string,
   params: Record<string, unknown>,
 ): RoutedExtUpdate | null {
-  const replayFor = replayForOf(params._meta);
+  const frame = frameMetaOf(params._meta);
   switch (method) {
     case "platform/turnEnded": {
       const p = parseExtParams(method, platformTurnEndedParamsSchema, params);
@@ -46,7 +54,7 @@ export function routeExtNotification(
       return {
         update: { sessionUpdate: "platform_turn_ended", ...p },
         sessionId: p.sessionId,
-        replayFor,
+        frame,
       };
     }
     case "platform/promptAccepted": {
@@ -59,7 +67,7 @@ export function routeExtNotification(
       return {
         update: { sessionUpdate: "platform_prompt_accepted", ...p },
         sessionId: p.sessionId,
-        replayFor,
+        frame,
       };
     }
     case "platform/promptStarted": {
@@ -72,7 +80,16 @@ export function routeExtNotification(
       return {
         update: { sessionUpdate: "platform_prompt_started", ...p },
         sessionId: p.sessionId,
-        replayFor,
+        frame,
+      };
+    }
+    case "platform/runStarted": {
+      const p = parseExtParams(method, platformRunStartedParamsSchema, params);
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_run_started", ...p },
+        sessionId: p.sessionId,
+        frame,
       };
     }
     default:

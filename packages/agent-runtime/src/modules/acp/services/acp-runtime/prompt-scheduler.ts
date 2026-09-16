@@ -26,6 +26,7 @@ export interface PromptSubmission {
   frame: unknown;
   promptId: string | null;
   runPrompt?: boolean;
+  unattended?: boolean;
 }
 
 export interface PromptScheduler {
@@ -49,7 +50,7 @@ export interface PromptScheduler {
 
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
-  canStart: (sessionId: string) => boolean;
+  canStart: (entry: PromptSubmission) => boolean;
   onQueueDropped: (
     sessionId: string,
     dropped: PromptSubmission[],
@@ -79,11 +80,14 @@ export interface PromptSchedulerDeps {
  * A queued prompt starts only when its session can take one — a channel
  * engaged to read the answer, and the harness holding the session — so this
  * is the single place anything waits, whether it waits for the turn ahead or
- * for the session to be loaded back into the harness. The last
- * channel leaving parks the queue rather than dropping it, so a page reload
- * keeps its place; a client that engages again within the park window resumes
- * the queue, and only when that window passes with nobody back is the queue
- * dropped. Every route a queue can leave by — that window expiring, the
+ * for the session to be loaded back into the harness. An unattended prompt
+ * is the exception: a scheduled fire sent by a non-viewer channel has nobody
+ * reading it live and nobody coming back for it, so it waits for the harness
+ * alone, and a queue holding only such prompts is never parked. Otherwise the
+ * last channel leaving parks the queue rather than dropping it, so a page
+ * reload keeps its place; a client that engages again within the park window
+ * resumes the queue, and only when that window passes with nobody back is the
+ * queue dropped. Every route a queue can leave by — that window expiring, the
  * session being forgotten, the scheduler being cleared when the harness goes
  * down — announces it over onQueueDropped with the cause, so a queue cannot
  * be discarded anywhere without its prompts being written down first. Nothing
@@ -136,6 +140,7 @@ export function createPromptScheduler(
 
   function start(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
+    clearParkTimer(entry.sessionId);
     activeTurns.set(entry.sessionId, {
       outboundId: entry.outboundId,
       promptId: entry.promptId,
@@ -161,7 +166,7 @@ export function createPromptScheduler(
     const queue = queues.get(sessionId);
     const next = queue?.[0];
     if (queue === undefined || next === undefined) return;
-    if (!deps.canStart(sessionId)) return;
+    if (!deps.canStart(next)) return;
     if (!start(next)) return;
     queue.shift();
     if (queue.length === 0) queues.delete(sessionId);
@@ -188,7 +193,7 @@ export function createPromptScheduler(
   return {
     submit(submission) {
       const sessionId = submission.sessionId;
-      if (activeTurns.has(sessionId) || !deps.canStart(sessionId)) {
+      if (activeTurns.has(sessionId) || !deps.canStart(submission)) {
         const queue = queues.get(sessionId) ?? [];
         if (queue.length >= PROMPT_QUEUE_CAP) {
           refuse(submission);
@@ -259,8 +264,11 @@ export function createPromptScheduler(
     },
 
     onDetached(sessionId) {
-      if (!queues.has(sessionId)) return;
-      if (deps.canStart(sessionId)) return;
+      const queue = queues.get(sessionId) ?? [];
+      const head = queue[0];
+      if (head === undefined) return;
+      if (queue.every((entry) => entry.unattended === true)) return;
+      if (deps.canStart(head)) return;
       if (parkTimers.has(sessionId)) return;
       parkTimers.set(
         sessionId,

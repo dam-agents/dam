@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
+import type { MessageTime } from "../lib/thread-items.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -12,7 +14,9 @@ import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 
 export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
-interface Props {
+type Props = BaseProps & MessageTime;
+
+interface BaseProps {
   message: Message;
   isLast: boolean;
   hasPendingPermission: boolean;
@@ -77,6 +81,8 @@ function LoadOlderMarker({
 export const ChatMessage = memo(function ChatMessage({
   message,
   isLast,
+  timeLabel,
+  timeTitle,
   hasPendingPermission,
   onRetry,
   onFileClick,
@@ -115,9 +121,18 @@ export const ChatMessage = memo(function ChatMessage({
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-        {isAssistant ? "Agent" : "You"}
-      </span>
+      <div className="flex items-baseline gap-1.5 mb-0.5">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          {isAssistant ? "Agent" : "You"}
+        </span>
+        {timeLabel !== undefined && (
+          <Tooltip side="top" content={timeTitle}>
+            <span className="text-[11px] text-muted-foreground cursor-default">
+              {timeLabel}
+            </span>
+          </Tooltip>
+        )}
+      </div>
       {(!error || parts.length > 0 || undelivered) && (
         <div
           className={cn(
