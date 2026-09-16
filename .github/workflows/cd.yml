@@ -997,9 +997,9 @@ jobs:
     # Every list-components image has its producing job here, so a missing
     # <sha> tag below can only mean "reused unchanged", never a race with a
     # still-running build.
-    # !failure()/!cancelled(): merge-workloads skips on
-    # main pushes where everything they cover was reused — the implicit
-    # success() would skip all scans with them.
+    # !failure()/!cancelled(): merge-workloads skips on main pushes where
+    # everything it covers was reused — the implicit success() would skip
+    # all scans with it.
     if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
