@@ -1536,6 +1536,10 @@ starterKits:
     # Per-kit switch, the same one the workload templates had: a kit whose
     # image this install does not build or cannot pull is left out of the
     # rendered catalog and never reaches the UI. Missing entry = enabled.
+    # `image` points a kit that brings its own image at another ref for this
+    # install (values-local.yaml uses it to run the workload kits on the images
+    # the local cluster builds); it is swapped into the kit's `image.ref` at
+    # render and is refused for a kit without an image of its own.
     kits:
       llm-wiki: { enabled: true }
       plain-wiki: { enabled: true }

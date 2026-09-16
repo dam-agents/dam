@@ -3,7 +3,11 @@ The built-in starter kit catalog. Every file under helm/starter-kits/kits/<id>/
 becomes a data key (slashes folded to `__`) when the kit is enabled
 (`starterKits.builtin.kits.<id>.enabled`, default true); catalog.yaml is
 re-rendered to list only enabled kits, so a disabled kit never reaches the
-api-server. apiserver/app.yaml projects the keys back to their paths under
+api-server. A kit that brings its own image can be pointed at another one per
+install (`starterKits.builtin.kits.<id>.image`), which is how the local cluster
+runs a workload kit on the image it built itself — the ref is swapped into the
+kit's own `image.ref` at render, nothing else about the kit changes.
+apiserver/app.yaml projects the keys back to their paths under
 /etc/platform/starter-kits, where the api-server reads the `platform` catalog
 with the same reader every other catalog gets.
 */}}
@@ -31,8 +35,19 @@ data:
   {{- range $path, $bytes := .Files.Glob "starter-kits/kits/*/**" }}
   {{- $id := index (splitList "/" $path) 2 }}
   {{- if include "platform.starterKits.kitEnabled" (dict "root" $root "id" $id) }}
+  {{- $override := dig $id "image" "" ($root.Values.starterKits.builtin.kits | default dict) }}
+  {{- if and $override (hasSuffix "/kit.yaml" $path) }}
+  {{- $kit := $bytes | toString | fromYaml }}
+  {{- if not $kit.image }}
+  {{- fail (printf "starterKits.builtin.kits.%s.image: kit %s brings no image of its own, so there is nothing to override" $id $id) }}
+  {{- end }}
+  {{- $_ := set $kit.image "ref" $override }}
+  {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
+    {{- $kit | toYaml | nindent 4 }}
+  {{- else }}
   {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
     {{- $bytes | toString | nindent 4 }}
+  {{- end }}
   {{- end }}
   {{- end }}
 {{- end }}
