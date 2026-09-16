@@ -28,6 +28,7 @@ import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { useAgentsList } from "../../agents/api/queries.js";
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { slackSessionKind } from "../lib/session-category.js";
@@ -113,6 +114,10 @@ export function SessionRow({
       : "font-normal text-foreground";
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const agents = useAgentsList();
+  const onboardingPending =
+    s.onboarding === true &&
+    agents.find((a) => a.id === s.agentId)?.starterKitOnboarded === null;
   const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const channel =
@@ -144,7 +149,7 @@ export function SessionRow({
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
-          {s.onboarding && (
+          {onboardingPending && (
             <Badge variant="kit" size="sm" className="shrink-0">
               Onboarding
             </Badge>
