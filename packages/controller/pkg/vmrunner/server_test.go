@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -42,22 +43,24 @@ type harness struct {
 	state string
 }
 
-// TEST_OVERVIEW: the harness binds real ports, so it takes a pair the kernel says are free rather than the fixed range a second suite run — or the NodePort range the runner's own policy opens — would already be holding.
+// TEST_OVERVIEW: a machine needs two ports — the published one and the guest's at +loopbackOffset — so the harness holds both before claiming either, or a parallel test binary takes the second one. The base is drawn below the ephemeral range: an ephemeral port near the top of it has no room for its pair.
 func freePort(t *testing.T) int {
 	t.Helper()
-	for range 50 {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		port := ln.Addr().(*net.TCPAddr).Port
-		guest, guestErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+loopbackOffset))
-		require.NoError(t, ln.Close())
+	for range 200 {
+		base := 20000 + rand.IntN(20000)
+		published, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", base))
+		if err != nil {
+			continue
+		}
+		guest, guestErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", base+loopbackOffset))
+		require.NoError(t, published.Close())
 		if guestErr != nil {
 			continue
 		}
 		require.NoError(t, guest.Close())
-		return port
+		return base
 	}
-	t.Fatal("no ephemeral port whose loopback pair is also free")
+	t.Fatal("no free port pair for the harness")
 	return 0
 }
 
