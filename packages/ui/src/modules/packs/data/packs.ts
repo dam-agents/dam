@@ -28,6 +28,7 @@ export const INGREDIENT_KINDS = [
   "knowledge-base",
   "starter-repo",
   "artifact",
+  "file",
 ] as const;
 
 export type PackIngredientKind = (typeof INGREDIENT_KINDS)[number];
@@ -42,6 +43,7 @@ export const INGREDIENT_LABELS: Record<PackIngredientKind, string> = {
   "knowledge-base": "Knowledge base",
   "starter-repo": "Starter repo",
   artifact: "Artifact",
+  file: "File",
 };
 
 export interface PackSlot {
@@ -523,10 +525,16 @@ export const REAL_PACKS: Pack[] = [
           "Walks you through initial setup and repository configuration",
       },
       {
-        kind: "skill",
+        kind: "file",
         label: "CLAUDE.md",
         description:
           "Project instructions file that tells the agent how your repo works",
+      },
+      {
+        kind: "file",
+        label: "Onboarding.md",
+        description:
+          "Step-by-step guide that walks the agent through first-run setup",
       },
     ],
     required: [

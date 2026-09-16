@@ -20,6 +20,7 @@ export interface PacksSlice {
   initOnboarding: (agentId: string, pack: Pack) => void;
   completeOnboardingStep: (agentId: string, stepId: string) => void;
   dismissOnboarding: (agentId: string) => void;
+  packSkillsByAgent: Map<string, Set<string>>;
   realPacks: boolean;
   setRealPacks: (on: boolean) => void;
 }
@@ -53,16 +54,26 @@ export const createPacksSlice: StateCreator<
       return { createdFromPack: next };
     }),
   onboardingByAgent: new Map(),
+  packSkillsByAgent: new Map(),
   initOnboarding: (agentId, pack) =>
     set((s) => {
-      const next = new Map(s.onboardingByAgent);
-      next.set(agentId, {
+      const nextOnboarding = new Map(s.onboardingByAgent);
+      nextOnboarding.set(agentId, {
         packId: pack.id,
         packName: pack.name,
         steps: buildOnboardingSteps(pack),
         completed: false,
       });
-      return { onboardingByAgent: next };
+      const allSlots = [...pack.included, ...pack.required];
+      const skillNames = new Set(
+        allSlots.filter((sl) => sl.kind === "skill").map((sl) => sl.label),
+      );
+      const nextSkills = new Map(s.packSkillsByAgent);
+      if (skillNames.size > 0) nextSkills.set(agentId, skillNames);
+      return {
+        onboardingByAgent: nextOnboarding,
+        packSkillsByAgent: nextSkills,
+      };
     }),
   completeOnboardingStep: (agentId, stepId) =>
     set((s) => {

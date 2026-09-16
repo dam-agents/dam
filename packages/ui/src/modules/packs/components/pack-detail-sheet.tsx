@@ -6,7 +6,9 @@ import {
   Chat,
   Close,
   Code,
+  Document,
   Launch,
+  Meter,
   Notebook,
   PlayFilledAlt,
   Time,
@@ -57,10 +59,12 @@ export function PackDetailSheet({
   const allSlots = [...pack.included, ...pack.required];
   const frameworks = allSlots.filter((s) => s.kind === "framework");
   const skills = allSlots.filter((s) => s.kind === "skill");
+  const files = allSlots.filter((s) => s.kind === "file");
   const schedules = allSlots.filter((s) => s.kind === "schedule");
   const setupSlots = allSlots.filter(
     (s) =>
       s.kind !== "skill" &&
+      s.kind !== "file" &&
       s.kind !== "schedule" &&
       s.kind !== "framework" &&
       s.kind !== "harness",
@@ -108,6 +112,7 @@ export function PackDetailSheet({
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {(frameworks.length > 0 ||
               skills.length > 0 ||
+              files.length > 0 ||
               schedules.length > 0) && (
               <div className="mt-6">
                 <p className="mb-3 text-base font-semibold text-foreground">
@@ -136,6 +141,17 @@ export function PackDetailSheet({
                   </div>
                 )}
 
+                {files.length > 0 && (
+                  <div className="mb-4">
+                    <SectionLabel spaced>File system</SectionLabel>
+                    <div className="flex flex-col gap-2">
+                      {files.map((s) => (
+                        <FileRow key={s.label} slot={s} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {schedules.length > 0 && (
                   <div>
                     <SectionLabel spaced>Schedules</SectionLabel>
@@ -149,25 +165,40 @@ export function PackDetailSheet({
               </div>
             )}
 
-            {setupGroups.length > 0 && (
-              <div className="mt-6">
-                <p className="mb-3 text-base font-semibold text-foreground">
-                  You'll set up
-                </p>
-                <div className="flex flex-col gap-4">
-                  {setupGroups.map((group) => (
-                    <div key={group.kind}>
-                      <SectionLabel spaced>{group.label}</SectionLabel>
-                      <div className="flex flex-col gap-2">
-                        {group.slots.map((s) => (
-                          <SetupSlotRow key={`${s.kind}-${s.label}`} slot={s} />
-                        ))}
-                      </div>
+            <div className="mt-6">
+              <p className="mb-3 text-base font-semibold text-foreground">
+                You'll set up
+              </p>
+              <div className="flex flex-col gap-4">
+                {setupGroups.map((group) => (
+                  <div key={group.kind}>
+                    <SectionLabel spaced>{group.label}</SectionLabel>
+                    <div className="flex flex-col gap-2">
+                      {group.slots.map((s) => (
+                        <SetupSlotRow key={`${s.kind}-${s.label}`} slot={s} />
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                ))}
+
+                <div>
+                  <SectionLabel spaced>Compute</SectionLabel>
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+                    <IconTile>
+                      <Meter size={16} className="text-muted-foreground" />
+                    </IconTile>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        2 CPU · 2 Gi
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        Default allocation — adjustable after setup
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-4 md:px-7">
@@ -234,6 +265,24 @@ function SkillRow({ slot }: { slot: PackSlot }) {
   );
 }
 
+function FileRow({ slot }: { slot: PackSlot }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <IconTile>
+        <Document size={16} className="text-muted-foreground" />
+      </IconTile>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{slot.label}</p>
+        {slot.description && (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {slot.description}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ScheduleRow({ slot }: { slot: PackSlot }) {
   const rruleText = slot.demoValue?.startsWith("RRULE:")
     ? rruleToText(slot.demoValue)
@@ -276,6 +325,7 @@ const KIND_FALLBACK_ICONS: Partial<Record<PackIngredientKind, CarbonIconType>> =
     harness: Box,
     framework: Box,
     "starter-repo": Code,
+    file: Document,
   };
 
 function resolveIconSlug(slot: PackSlot): string | null {

@@ -46,6 +46,9 @@ export function SkillsSurface({
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const packSkillNames = useStore((s) =>
+    agentId ? s.packSkillsByAgent.get(agentId) : undefined,
+  );
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const staleModel = useStaleModel(agentId);
@@ -223,6 +226,7 @@ export function SkillsSurface({
                 readOnly={readOnly}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
+                packSkillNames={packSkillNames}
                 onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
                 onDownload={(skill) => void downloadStandalone(skill)}
                 onDelete={(skill, pub) =>

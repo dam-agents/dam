@@ -41,6 +41,7 @@ export function StandaloneSkillsGroup({
   readOnly,
   publishes,
   canPublish,
+  packSkillNames,
   onPublish,
   onDownload,
   onDelete,
@@ -52,6 +53,7 @@ export function StandaloneSkillsGroup({
   readOnly: boolean;
   publishes: SkillPublishRecord[];
   canPublish: boolean;
+  packSkillNames?: ReadonlySet<string>;
   onPublish: (skill: LocalSkill) => void;
   onDownload: (skill: LocalSkill) => void;
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
@@ -77,6 +79,7 @@ export function StandaloneSkillsGroup({
               divided={i > 0}
               readOnly={readOnly}
               canPublish={canPublish}
+              fromPack={packSkillNames?.has(skill.name)}
               onPublish={() => onPublish(skill)}
               onDownload={() => onDownload(skill)}
               onDelete={() => onDelete(skill, pub)}

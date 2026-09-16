@@ -1,7 +1,7 @@
 import {
   Add,
   Close,
-  Gift,
+  Cube,
   Launch,
   OverflowMenuHorizontal,
   TrashCan,
@@ -226,7 +226,7 @@ function PresetBarEmpty() {
     <Inset>
       <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
-          <Gift size={16} className="text-preset" />
+          <Cube size={16} className="text-preset" />
         </div>
         <p className="flex-1 text-sm text-foreground/70">
           Want a head start? Pick a starter kit to pre-fill harness, skills, and
@@ -257,7 +257,7 @@ function PresetBarPreset({ pack }: { pack: Pack }) {
     <Inset>
       <div className="flex items-center gap-3 rounded-lg border border-preset-border/50 bg-preset-light/50 px-4 py-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
-          <Gift size={16} className="text-preset" />
+          <Cube size={16} className="text-preset" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-preset">{pack.name}</p>

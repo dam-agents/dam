@@ -2,8 +2,8 @@ import {
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
+  Cube,
   Folders,
-  Gift,
   Help,
   Home,
   Settings,
@@ -48,7 +48,7 @@ export function IconRail({
   };
   const starterKits: Destination = {
     label: "Starter Kits",
-    icon: Gift,
+    icon: Cube,
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
