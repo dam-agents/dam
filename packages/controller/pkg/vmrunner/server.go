@@ -44,6 +44,9 @@ type health struct {
 	quietSince time.Time
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
+var cachedArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
+
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
 type Server struct {
@@ -402,7 +405,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 	var used int64
 	for _, e := range entries {
 		info, err := e.Info()
-		if err != nil || e.IsDir() {
+		if err != nil || e.IsDir() || !cachedArchive.MatchString(e.Name()) {
 			continue
 		}
 		used += info.Size()

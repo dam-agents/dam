@@ -659,6 +659,10 @@ func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
 		require.NoError(t, os.Chtimes(path, at, at))
 		return path
 	}
+	stranger := filepath.Join(dir, "not-ours\nforged.tar")
+	require.NoError(t, os.WriteFile(stranger, make([]byte, 1<<20), 0o644))
+	require.NoError(t, os.Chtimes(stranger, time.Now().Add(-9*time.Hour), time.Now().Add(-9*time.Hour)))
+
 	oldest := write("oldest.tar", 2*time.Hour)
 	newer := write("newer.tar", time.Hour)
 	keep := write("keep.tar", 0)
@@ -671,6 +675,8 @@ func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
 	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first")
 	assert.NoError(t, newerErr, "the newer one stays while the budget allows it")
 	assert.NoError(t, keepErr, "the archive just fetched is never the one evicted")
+	_, strangerErr := os.Stat(stranger)
+	assert.NoError(t, strangerErr, "a file this runner did not write is left alone, however old — the volume is shared, and its name never reaches a log line")
 }
 
 // TEST_SCENARIO: an operator's Secret reaches the guest on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs. The value is removed whatever shape the tool prints it in — quoted, behind a different flag, or in a Go-style argument list — because matching the one shape I happened to imagine is not a defence.
