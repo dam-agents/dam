@@ -70,16 +70,11 @@ import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
-import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
-import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
-import { useOpenOnboardingSession } from "../../starter-kits/hooks/use-open-onboarding-session.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -98,6 +93,7 @@ import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
   pushSessionPath,
@@ -235,20 +231,6 @@ export function ChatView() {
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
-  const templatesQuery = useTemplates();
-  useKnowledgeBaseGreeting({
-    agentId: selectedAgent,
-    active: view === "knowledge-base-chat",
-    idle: chatIdle,
-    harness: resolveAgentHarness(agentView?.templateId ?? null, templatesQuery),
-    sendPrompt,
-  });
-  useExperimentGreeting({
-    agentId: selectedAgent,
-    active: agentView !== null && isExperimentSandbox(agentView),
-    idle: chatIdle,
-    sendPrompt,
-  });
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -366,10 +348,10 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  useOpenOnboardingSession({
+  useOpenInitializationSession({
     agentId: selectedAgent,
     active:
-      view === "chat" && agentView !== null && agentView.starterKit !== null,
+      (view === "chat" || view === "knowledge-base-chat") && agentView !== null,
     idle: chatIdle,
     resumeSession,
   });

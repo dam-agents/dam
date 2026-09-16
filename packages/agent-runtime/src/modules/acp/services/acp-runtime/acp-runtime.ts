@@ -1209,7 +1209,7 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     ...(session.experimentId !== null && {
       experimentId: session.experimentId,
     }),
-    ...(session.onboarding === true && { onboarding: true }),
+    ...(session.initialization === true && { initialization: true }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),
     ...(session.runStartedAt !== null && {

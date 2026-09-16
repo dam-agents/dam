@@ -20,3 +20,5 @@ export function buildExperimentInstallCommand(): string {
     `cp -R "${STAGED_SKILLS_DIR}/${EXPERIMENT_SKILL_NAME}" "$HOME/.agents/skills/"`,
   ].join("; ");
 }
+
+export const EXPERIMENT_ONBOARD_COMMAND = "/experiment-onboard";

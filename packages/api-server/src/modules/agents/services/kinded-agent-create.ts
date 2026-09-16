@@ -2,7 +2,10 @@ import type { Agent, AgentCreateInput, AgentsService } from "api-server-api";
 
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import {
+  initializationEvent,
+  type RuntimeMutator,
+} from "../../runtime-delivery/index.js";
 
 const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -18,6 +21,7 @@ export interface KindedAgentCreateDeps {
 export interface KindedAgentCreateArgs {
   createInput: AgentCreateInput;
   installCommand: string;
+  initializationTask: string | null;
   eventIdPrefix: string;
   securityEvent: string;
 }
@@ -31,13 +35,17 @@ export async function createKindedAgent(
   const agent = await deps.agents.create(args.createInput);
 
   try {
+    const at = now();
     await deps.runtimeMutator.bump(agent.id, [
       {
-        id: `${args.eventIdPrefix}:${agent.id}:${now().getTime()}`,
+        id: `${args.eventIdPrefix}:${agent.id}:${at.getTime()}`,
         kind: "workspace-command",
         payload: { command: args.installCommand },
-        expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
+        expiresAt: new Date(at.getTime() + INSTALL_EVENT_TTL_MS),
       },
+      ...(args.initializationTask !== null
+        ? [initializationEvent(agent.id, args.initializationTask, at)]
+        : []),
     ]);
     await deps.runtimeMutator.enqueueAfterCommit(agent.id);
   } catch (err) {

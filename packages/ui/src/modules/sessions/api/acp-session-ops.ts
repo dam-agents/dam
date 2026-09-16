@@ -16,7 +16,7 @@ interface PlatformMeta {
   type?: string;
   scheduleId?: string;
   experimentId?: string;
-  onboarding?: boolean;
+  initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
   running?: boolean;
@@ -45,7 +45,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
     experimentId: p?.experimentId ?? null,
-    onboarding: p?.onboarding ?? null,
+    initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
@@ -119,7 +119,7 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
     experimentId: s.experimentId,
-    onboarding: s.onboarding ?? null,
+    initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,
     updatedAt: s.updatedAt,

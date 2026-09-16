@@ -3,18 +3,19 @@ import { useEffect, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { useAcpSessions } from "../../sessions/api/queries.js";
+import { useAcpSessions } from "../api/queries.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Opens the session the platform started for a kit
- * agent — its onboarding or intake turn — the first time its chat is shown,
- * for as long as that session is still the agent's most recent one. The
- * runtime opens it on its own when the agent wakes, so without this the user
- * lands on an empty composer with the conversation that needs them sitting in
- * the list; once they have moved on to another session it stays in the list.
- * Once per agent per page; the session list is the source of truth.
+ * UNIT_BOUNDARY_DESCRIPTION: Opens the session the platform started for an
+ * agent — a kit's briefing, a knowledge base's or an experiment's onboarding
+ * command — the first time its chat is shown, for as long as that session is
+ * still the agent's most recent one. The runtime opens it on its own when the
+ * agent wakes, so without this the user lands on an empty composer with the
+ * conversation that needs them sitting in the list; once they have moved on
+ * to another session it stays in the list. Once per agent per page; the
+ * session list is the source of truth.
  */
-export function useOpenOnboardingSession(opts: {
+export function useOpenInitializationSession(opts: {
   agentId: string | null;
   active: boolean;
   idle: boolean;
@@ -43,7 +44,7 @@ export function useOpenOnboardingSession(opts: {
     const newest = sessions[0];
     if (
       !newest ||
-      newest.onboarding !== true ||
+      newest.initialization !== true ||
       newest.type !== SessionType.Regular
     )
       return;

@@ -71,6 +71,7 @@ describe("createKindedAgent", () => {
         kind: "experiment",
       },
       installCommand: buildExperimentInstallCommand(),
+      initializationTask: "/experiment-onboard",
       eventIdPrefix: "experiment-install",
       securityEvent: "experiment_sandbox.create",
     });
@@ -89,6 +90,7 @@ describe("createKindedAgent", () => {
     const agent = await createKindedAgent(deps, {
       createInput: { name: "my-experiments", templateId: "claude-code" },
       installCommand: buildExperimentInstallCommand(),
+      initializationTask: "/experiment-onboard",
       eventIdPrefix: "experiment-install",
       securityEvent: "experiment_sandbox.create",
     });
@@ -97,7 +99,7 @@ describe("createKindedAgent", () => {
     expect(calls.bumped).toHaveLength(1);
     const { agentId, events } = calls.bumped[0]!;
     expect(agentId).toBe("agent-x1");
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     const event = events[0] as {
       id: string;
       kind: string;
@@ -113,6 +115,34 @@ describe("createKindedAgent", () => {
 
     expect(calls.enqueued).toEqual(["agent-x1"]);
     expect(calls.woken).toEqual(["agent-x1"]);
+  });
+
+  it("queues the initialization turn behind the install command in the same bump, or none when the caller has none", async () => {
+    const { deps, calls } = makeHarness();
+    await createKindedAgent(deps, {
+      createInput: { name: "my-experiments", templateId: "claude-code" },
+      installCommand: buildExperimentInstallCommand(),
+      initializationTask: "/experiment-onboard",
+      eventIdPrefix: "experiment-install",
+      securityEvent: "experiment_sandbox.create",
+    });
+    const { events } = calls.bumped[0]!;
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      id: `initialization:agent-x1:${new Date("2026-07-28T00:00:00Z").getTime()}`,
+      kind: "initialization",
+      payload: { task: "/experiment-onboard" },
+    });
+
+    const silent = makeHarness();
+    await createKindedAgent(silent.deps, {
+      createInput: { name: "my-experiments", templateId: "claude-code" },
+      installCommand: buildExperimentInstallCommand(),
+      initializationTask: null,
+      eventIdPrefix: "experiment-install",
+      securityEvent: "experiment_sandbox.create",
+    });
+    expect(silent.calls.bumped[0]!.events).toHaveLength(1);
   });
 
   it("deletes the fresh agent when the install enqueue fails", async () => {
@@ -131,6 +161,7 @@ describe("createKindedAgent", () => {
         {
           createInput: { name: "my-experiments", templateId: "claude-code" },
           installCommand: buildExperimentInstallCommand(),
+          initializationTask: "/experiment-onboard",
           eventIdPrefix: "experiment-install",
           securityEvent: "experiment_sandbox.create",
         },
@@ -163,6 +194,7 @@ describe("createKindedAgent", () => {
       {
         createInput: { name: "my-experiments", templateId: "claude-code" },
         installCommand: buildExperimentInstallCommand(),
+        initializationTask: "/experiment-onboard",
         eventIdPrefix: "experiment-install",
         securityEvent: "experiment_sandbox.create",
       },

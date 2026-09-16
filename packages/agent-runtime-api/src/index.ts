@@ -170,7 +170,7 @@ export type {
   EventOutcome,
   EventReportInput,
   ExperimentExecuteEventPayload,
-  OnboardingEventPayload,
+  InitializationEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
   WorkspaceCommandEventPayload,

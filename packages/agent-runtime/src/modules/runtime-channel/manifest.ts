@@ -129,7 +129,7 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "experiment-execute" },
     defaultOn: true,
   },
-  onboarding: { binding: { impl: "onboarding" }, defaultOn: true },
+  initialization: { binding: { impl: "initialization" }, defaultOn: true },
   "workspace-seed": { binding: { impl: "workspace-seed" }, defaultOn: true },
   "workspace-command": {
     binding: { impl: "workspace-command" },

@@ -1,4 +1,7 @@
-export { composeStarterKitsForOwner } from "./compose.js";
+export {
+  composeStarterKitsForOwner,
+  knowledgeBaseOnboardingCommand,
+} from "./compose.js";
 export {
   createStarterKitsRepository,
   type StarterKitsRepository,

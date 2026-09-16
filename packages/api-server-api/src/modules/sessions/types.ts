@@ -42,7 +42,7 @@ export interface SessionView {
   createdAt: string;
   scheduleId?: string | null;
   experimentId?: string | null;
-  onboarding?: boolean | null;
+  initialization?: boolean | null;
   title?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;

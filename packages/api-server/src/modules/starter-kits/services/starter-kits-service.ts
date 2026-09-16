@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { securityLog } from "../../../core/security-log.js";
 import type {
+  HarnessFamily,
   Agent,
   AgentCreateInput,
   AgentsService,
@@ -15,7 +16,7 @@ import type {
   StarterKitView,
 } from "api-server-api";
 import {
-  composeOnboardingPrompt,
+  kitInitializationTask,
   describeAccepts,
 } from "../domain/onboarding-prompt.js";
 import {
@@ -28,7 +29,11 @@ import type {
   StarterKitsRepository,
 } from "../infrastructure/kits-repository.js";
 import type { CreateKnowledgeBaseAgent } from "../../knowledge-bases/index.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import {
+  initializationEvent,
+  type RuntimeMutator,
+} from "../../runtime-delivery/index.js";
+import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 
 export interface StarterKitsServiceDeps {
@@ -45,13 +50,12 @@ export interface StarterKitsServiceDeps {
   >;
   skills: Pick<SkillsService, "applyEntries">;
   createKnowledgeBaseAgent: CreateKnowledgeBaseAgent;
+  readTemplateSpec: ReadTemplateSpec;
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   now?: () => Date;
 }
-
-const ONBOARDING_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function agentShape(
   resources: StarterKitResources | undefined,
@@ -179,6 +183,7 @@ export function createStarterKitsService(
     loaded: LoadedKit,
     version: string,
     holds: boolean,
+    harness: HarnessFamily | undefined,
   ): Promise<void> {
     const agentId = created.id;
     const agent = (await deps.agents.get(agentId)) ?? created;
@@ -186,30 +191,29 @@ export function createStarterKitsService(
       deps.schedules.list(agentId),
       deps.connections.getAgentConnections(agentId),
     ]);
-    const task = composeOnboardingPrompt({
-      kit: loaded.kit,
-      catalog: loaded.catalog,
-      version,
-      granted: await grantedTemplates(
-        agentConnections.connections.map((c) => c.connectionId),
-        "skip",
-      ),
-      schedules: schedules.map((s) => ({
-        name: s.name,
-        enabled: s.spec.enabled,
-      })),
-      boundChannels: agent.channels.map(() => "slack"),
-      familyTitles: await familyTitles(),
-      holds,
-    });
+    const task = kitInitializationTask(
+      {
+        kit: loaded.kit,
+        catalog: loaded.catalog,
+        version,
+        granted: await grantedTemplates(
+          agentConnections.connections.map((c) => c.connectionId),
+          "skip",
+        ),
+        schedules: schedules.map((s) => ({
+          name: s.name,
+          enabled: s.spec.enabled,
+        })),
+        boundChannels: agent.channels.map(() => "slack"),
+        familyTitles: await familyTitles(),
+        holds,
+      },
+      harness,
+    );
+    if (task === null) return;
     const at = (deps.now ?? (() => new Date()))();
     await deps.runtimeMutator.bump(agentId, [
-      {
-        id: `kit-onboarding:${agentId}:${at.getTime()}`,
-        kind: "onboarding",
-        payload: { task },
-        expiresAt: new Date(at.getTime() + ONBOARDING_EVENT_TTL_MS),
-      },
+      initializationEvent(agentId, task, at),
     ]);
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
@@ -265,6 +269,7 @@ export function createStarterKitsService(
         ? await deps.createKnowledgeBaseAgent(
             createInput,
             kit.knowledgeBase.template,
+            null,
           )
         : await deps.agents.create(createInput);
 
@@ -277,15 +282,18 @@ export function createStarterKitsService(
         );
         if (input.slackChannelId)
           await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
-        const onboards = kit.onboarding !== false;
-        const holds = onboards && seeded > 0;
+        const holds = kit.onboarding !== false && seeded > 0;
         if (!holds)
           await deps.markAgentOnboarded(
             agent.id,
             (deps.now ?? (() => new Date()))().toISOString(),
           );
-        if (onboards)
-          await enqueueOnboardingTurn(agent, loaded, version, holds);
+        const harness =
+          kit.image?.harness ??
+          (input.templateId
+            ? (await deps.readTemplateSpec(input.templateId))?.spec.harness
+            : undefined);
+        await enqueueOnboardingTurn(agent, loaded, version, holds, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch(() => {});
         throw err;

@@ -6,8 +6,8 @@ description: >-
   Lightweight, and works with no network beyond the model.
 category: knowledge
 icon: document
-# The knowledge-base template's own onboarding command greets on first open.
-onboarding: false
+# The template's bootstrap installs this command; the first session runs it.
+onboarding: { command: wiki-onboard }
 knowledgeBase:
   template: plain-wiki
 providers: [ibm-litellm, anthropic, openai]

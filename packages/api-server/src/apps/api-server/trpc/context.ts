@@ -19,7 +19,10 @@ import {
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
-import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
+import {
+  composeStarterKitsForOwner,
+  knowledgeBaseOnboardingCommand,
+} from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
@@ -178,6 +181,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         surface,
         agents,
         readTemplateSpec,
+        kitOnboardingCommand: knowledgeBaseOnboardingCommand(starterKitsRepo),
         runtimeMutator,
         wakeAgent: async (agentId) => {
           await agentsRepo.wakeIfHibernated(agentId);
@@ -252,6 +256,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connections,
       skills,
       createKnowledgeBaseAgent,
+      readTemplateSpec,
       wakeAgent: async (agentId) => {
         await agentsRepo.wakeIfHibernated(agentId);
       },

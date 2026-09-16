@@ -103,6 +103,10 @@ export const starterKitResourcesSchema = agentSizeSchema.extend({
   note: z.string().min(1).optional(),
 });
 
+const harnessCommandNameSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9:_-]*$/, "a command name without the leading slash");
+
 export const starterKitSchema = z.object({
   schemaVersion: z.literal("v1"),
   id: starterKitIdSchema,
@@ -122,7 +126,11 @@ export const starterKitSchema = z.object({
     .object({ url: z.url(), ref: z.string().min(1).optional() })
     .optional(),
   onboarding: z
-    .union([z.literal(false), z.object({ prompt: z.string().min(1) })])
+    .union([
+      z.literal(false),
+      z.object({ prompt: z.string().min(1) }),
+      z.object({ command: harnessCommandNameSchema }),
+    ])
     .optional(),
   connections: z.array(starterKitConnectionRequirementSchema).default([]),
   channels: z.array(starterKitChannelSchema).default([]),

@@ -116,7 +116,7 @@ export function SessionRow({
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
   const agents = useAgentsList();
   const onboardingPending =
-    s.onboarding === true &&
+    s.initialization === true &&
     agents.find((a) => a.id === s.agentId)?.starterKitOnboarded === null;
   const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;

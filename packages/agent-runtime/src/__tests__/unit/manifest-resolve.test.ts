@@ -26,8 +26,8 @@ describe("resolveDrivers", () => {
       "env",
       "experiment-execute",
       "file",
+      "initialization",
       "mcp-entry",
-      "onboarding",
       "schedule-reset",
       "skill-ref",
       "trigger",
@@ -94,7 +94,7 @@ describe("resolveDrivers", () => {
     expect(Object.keys(eventDrivers(r)).sort()).toEqual([
       "experiment-execute",
       "harness-config",
-      "onboarding",
+      "initialization",
       "schedule-reset",
       "trigger",
       "workspace-command",

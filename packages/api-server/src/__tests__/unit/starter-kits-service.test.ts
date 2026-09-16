@@ -7,6 +7,7 @@ import type {
   ConnectionView,
   Schedule,
   StarterKit,
+  TemplateSpec,
 } from "api-server-api";
 import { starterKitSchema } from "api-server-api";
 import { composeOnboardingPrompt } from "../../modules/starter-kits/domain/onboarding-prompt.js";
@@ -175,6 +176,16 @@ function makeHarness(
         };
       },
     },
+    readTemplateSpec: async (id) =>
+      id === "codex"
+        ? {
+            spec: {
+              image: "quay.io/example/codex",
+              harness: "codex",
+            } as TemplateSpec,
+            isOwned: false,
+          }
+        : null,
     wakeAgent: async (id) => {
       calls.woken.push(id);
     },
@@ -209,7 +220,7 @@ const APPLY = {
 function onboardingEvents(calls: { bumped: { events: BumpedEvent[] }[] }) {
   return calls.bumped
     .flatMap((b) => b.events)
-    .filter((e) => e.kind === "onboarding");
+    .filter((e) => e.kind === "initialization");
 }
 
 async function onboardingTaskAfterApply(h: ReturnType<typeof makeHarness>) {
@@ -492,6 +503,7 @@ describe("starter kits: apply", () => {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
       },
       wakeAgent: async () => {},
+      readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       runtimeMutator: {
         bump: async () => 1,
@@ -606,6 +618,7 @@ describe("starter kits: apply", () => {
         },
       },
       wakeAgent: async () => {},
+      readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       runtimeMutator: {
         bump: async () => 1,
@@ -655,7 +668,7 @@ describe("starter kits: onboarding turn", () => {
 
     const events = onboardingEvents(calls);
     expect(events).toHaveLength(1);
-    expect(events[0]!.id).toMatch(/^kit-onboarding:agent-1:\d+$/);
+    expect(events[0]!.id).toMatch(/^initialization:agent-1:\d+$/);
     expect(calls.bumped[0]!.agentId).toBe("agent-1");
     expect(calls.enqueued).toEqual(["agent-1"]);
     expect(calls.woken).toEqual(["agent-1"]);
@@ -703,6 +716,7 @@ describe("starter kits: onboarding turn", () => {
         applyEntries: async () => ({ applied: [], skipped: [] }) as never,
       },
       wakeAgent: async () => {},
+      readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       runtimeMutator: {
         bump: async () => {
@@ -789,6 +803,30 @@ describe("starter kits: onboarding turn", () => {
     expect(prompt).toContain("Values only the user can supply");
     expect(prompt).not.toContain("mark_onboarding_complete");
     expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
+  });
+
+  it("a kit that names a command opens its first session on it, spelled for the harness", async () => {
+    const named = kit({
+      schedules: [],
+      seed: undefined,
+      onboarding: { command: "wiki-onboard" },
+    });
+    const codex = makeHarness({ ...LOADED, kit: named });
+    await codex.service.apply({ ...APPLY, templateId: "codex" });
+    expect(
+      onboardingEvents(codex.calls).map(
+        (e) => (e.payload as { task: string }).task,
+      ),
+    ).toEqual(["/prompts:wiki-onboard"]);
+
+    const plain = makeHarness({ ...LOADED, kit: named });
+    await plain.service.apply(APPLY);
+    expect(
+      onboardingEvents(plain.calls).map(
+        (e) => (e.payload as { task: string }).task,
+      ),
+    ).toEqual(["/wiki-onboard"]);
+    expect(plain.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
   });
 
   it("refuses to mark an agent that came from no kit, and is idempotent", async () => {

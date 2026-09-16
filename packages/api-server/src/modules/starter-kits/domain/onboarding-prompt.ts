@@ -1,4 +1,5 @@
-import type { StarterKit } from "api-server-api";
+import type { HarnessFamily, StarterKit } from "api-server-api";
+import { spellHarnessCommand } from "../../templates/index.js";
 import type { GrantedTemplate } from "./requirements.js";
 import { satisfiesRequirement } from "./requirements.js";
 
@@ -73,8 +74,9 @@ function defaultInstruction(kit: StarterKit): string {
 export function composeOnboardingPrompt(facts: OnboardingFacts): string {
   const { kit } = facts;
   const instruction =
-    (kit.onboarding ? kit.onboarding.prompt : undefined) ??
-    defaultInstruction(kit);
+    (kit.onboarding && "prompt" in kit.onboarding
+      ? kit.onboarding.prompt
+      : undefined) ?? defaultInstruction(kit);
   const holds = facts.holds ?? facts.schedules.length > 0;
   return [
     `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
@@ -96,4 +98,22 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
         ]
       : []),
   ].join("\n");
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a kit agent's initialization session opens
+ * with, as the kit's `onboarding` field decides: nothing when it opted out, a
+ * harness command spelled for the agent's harness when it names one, and the
+ * platform-composed briefing otherwise — with the kit's own prompt in place of
+ * the default instruction when it gives one.
+ */
+export function kitInitializationTask(
+  facts: OnboardingFacts,
+  harness: HarnessFamily | undefined,
+): string | null {
+  const { onboarding } = facts.kit;
+  if (onboarding === false) return null;
+  if (onboarding && "command" in onboarding)
+    return spellHarnessCommand(onboarding.command, harness);
+  return composeOnboardingPrompt(facts);
 }

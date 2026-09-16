@@ -1,4 +1,8 @@
-import type { AgentsService, KnowledgeBasesService } from "api-server-api";
+import type {
+  AgentsService,
+  KnowledgeBasesService,
+  KnowledgeBaseTemplateId,
+} from "api-server-api";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 import {
@@ -12,6 +16,9 @@ export function composeKnowledgeBasesForOwner(opts: {
   surface: string;
   agents: AgentsService;
   readTemplateSpec: ReadTemplateSpec;
+  kitOnboardingCommand: (
+    kbTemplateId: KnowledgeBaseTemplateId,
+  ) => Promise<string | undefined>;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
 }): {

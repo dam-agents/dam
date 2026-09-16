@@ -33,7 +33,10 @@ function templateSpec(harness?: HarnessFamily): TemplateSpec {
   };
 }
 
-function makeHarness(templates: Record<string, TemplateSpec> = {}) {
+function makeHarness(
+  templates: Record<string, TemplateSpec> = {},
+  kitCommand: string | null = "wiki-onboard",
+) {
   const calls = {
     createInputs: [] as AgentCreateInput[],
     bumped: [] as { agentId: string; events: unknown[] }[],
@@ -63,6 +66,7 @@ function makeHarness(templates: Record<string, TemplateSpec> = {}) {
       const spec = templates[id];
       return spec ? { spec, isOwned: false } : null;
     },
+    kitOnboardingCommand: async () => kitCommand ?? undefined,
     runtimeMutator,
     wakeAgent: async (agentId) => {
       calls.woken.push(agentId);
@@ -106,7 +110,7 @@ describe("knowledge-bases service", () => {
     expect(calls.bumped).toHaveLength(1);
     const { agentId, events } = calls.bumped[0]!;
     expect(agentId).toBe("agent-kb1");
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({ kind: "workspace-command" });
     const command = (events[0] as { payload: { command: string } }).payload
       .command;
@@ -115,6 +119,44 @@ describe("knowledge-bases service", () => {
 
     expect(calls.enqueued).toEqual(["agent-kb1"]);
     expect(calls.woken).toEqual(["agent-kb1"]);
+  });
+
+  it("queues the kit's onboarding command as the initialization turn, spelled for the harness", async () => {
+    const { service, calls } = makeHarness({
+      codex: templateSpec("codex"),
+      mock: templateSpec(),
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "codex",
+      kbTemplateId: "llm-wiki",
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "mock",
+      kbTemplateId: "plain-wiki",
+    });
+    const second = calls.bumped.map(
+      ({ events }) => events[1] as { kind: string; payload: { task: string } },
+    );
+    expect(second.map((e) => e.kind)).toEqual([
+      "initialization",
+      "initialization",
+    ]);
+    expect(second.map((e) => e.payload.task)).toEqual([
+      "/prompts:wiki-onboard",
+      "/wiki-onboard",
+    ]);
+  });
+
+  it("opens idle when no kit declares an onboarding command for the template", async () => {
+    const { service, calls } = makeHarness(CLAUDE_TEMPLATES, null);
+    await service.create({
+      name: "my-kb",
+      templateId: "claude-code",
+      kbTemplateId: "llm-wiki",
+    });
+    expect(calls.bumped[0]!.events).toHaveLength(1);
   });
 
   // TEST_SCENARIO: the chosen template's harness family reaches the llm-wiki

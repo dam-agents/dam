@@ -1,12 +1,12 @@
-// TEST_OVERVIEW: the onboarding event opens the new agent's first chat session
-// TEST_OVERVIEW: with the platform-composed prompt, typed as a regular session so
+// TEST_OVERVIEW: the initialization event opens the new agent's first chat session
+// TEST_OVERVIEW: with the turn the platform composed at create, typed as a regular session so
 // TEST_OVERVIEW: the user sees it in the default list and can answer it; the
 // TEST_OVERVIEW: plugin handles no other kind.
 import { SessionMode, SessionType } from "api-server-api";
 import type { EventContext } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
-import { createOnboardingPlugin } from "../../modules/runtime-channel/drivers/onboarding-plugin.js";
+import { createInitializationPlugin } from "../../modules/runtime-channel/drivers/initialization-plugin.js";
 
 const ctx: EventContext = {
   eventId: "evt-1:1",
@@ -26,12 +26,12 @@ function fakeDriver() {
   return { driver, calls };
 }
 
-describe("onboarding plugin", () => {
+describe("initialization plugin", () => {
   it("starts a fresh regular chat session with the composed prompt", async () => {
     const { driver, calls } = fakeDriver();
-    const handler = createOnboardingPlugin({ driver }).bindEvent!(
-      "onboarding",
-      { impl: "onboarding" },
+    const handler = createInitializationPlugin({ driver }).bindEvent!(
+      "initialization",
+      { impl: "initialization" },
     );
     await handler({ task: "You were created from a kit." }, ctx);
     expect(calls).toEqual([
@@ -40,7 +40,7 @@ describe("onboarding plugin", () => {
         platformMeta: {
           type: SessionType.Regular,
           mode: SessionMode.Chat,
-          onboarding: true,
+          initialization: true,
         },
       },
     ]);
@@ -49,8 +49,8 @@ describe("onboarding plugin", () => {
   it("refuses to bind any other kind", () => {
     const { driver } = fakeDriver();
     expect(() =>
-      createOnboardingPlugin({ driver }).bindEvent!("trigger", {
-        impl: "onboarding",
+      createInitializationPlugin({ driver }).bindEvent!("trigger", {
+        impl: "initialization",
       }),
     ).toThrow(/does not handle event kind "trigger"/);
   });
