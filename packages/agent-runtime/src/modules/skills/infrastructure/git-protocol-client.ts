@@ -66,6 +66,7 @@ export function createGitProtocolClient(): GitProtocolClient {
       const git = (...args: string[]) => runProc("git", ["-C", dest, ...args]);
       try {
         await fs.mkdir(dest, { recursive: true });
+        await ensureSafeDirectory(dest);
         const hasGit = await fs.stat(join(dest, ".git")).then(
           () => true,
           () => false,
@@ -194,6 +195,24 @@ export function createGitProtocolClient(): GitProtocolClient {
       }
     },
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A seed's destination may be a directory the agent
+ * user does not own — the home directory is the volume's mount root, owned by
+ * root — and git refuses to treat such a directory as a repository. Listing it
+ * as a safe directory in the agent's global gitconfig lets the seed proceed
+ * and lets every later git command the agent runs there work the same way.
+ */
+async function ensureSafeDirectory(dest: string): Promise<void> {
+  const listed = await runCapture("git", [
+    "config",
+    "--global",
+    "--get-all",
+    "safe.directory",
+  ]).catch(() => "");
+  if (listed.split("\n").includes(dest)) return;
+  await runProc("git", ["config", "--global", "--add", "safe.directory", dest]);
 }
 
 async function runProc(cmd: string, args: string[]): Promise<void> {
