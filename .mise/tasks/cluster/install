@@ -514,9 +514,9 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
-    --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
+    --version 1.1.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
     --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
-    --set clickhouse-operator.manager.image.tag=v0.0.1 \
+    --set clickhouse-operator.manager.image.tag=v0.0.7 \
     --set mongodb-operator.registry.operator=quay.io/dam-agents \
     --set mongodb-operator.operator.watchNamespace=default
   kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
