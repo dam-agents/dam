@@ -40,13 +40,11 @@ function fakeSlackWorker(): SlackWorker {
     declineTurn: vi.fn(async () => ({ ok: true as const })),
     handOffTurn: vi.fn(async () => ({ ok: true as const, agent: "other" })),
     describeUsers: vi.fn(async () => ({ users: [] })),
-    supportsUserLookup: vi.fn(async () => true),
     describeMessageReactions: vi.fn(async () => ({
       reactions: [],
       conversationId: "C1",
       messageTs: "1.1",
     })),
-    supportsMessageReactions: vi.fn(async () => true),
   };
 }
 

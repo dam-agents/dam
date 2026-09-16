@@ -103,12 +103,10 @@ interface Worker {
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  supportsUserLookup?(): Promise<boolean>;
   describeMessageReactions?(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  supportsMessageReactions?(): Promise<boolean>;
 }
 
 export interface ChannelManager {
@@ -152,13 +150,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  supportsUserLookup(): Promise<boolean>;
   describeMessageReactions(
     instanceName: string,
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  supportsMessageReactions(): Promise<boolean>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -170,9 +166,7 @@ export const channelRpcRequestSchema = z.object({
     "declineTurn",
     "handOffTurn",
     "describeUsers",
-    "supportsUserLookup",
     "describeMessageReactions",
-    "supportsMessageReactions",
   ]),
   args: z.array(z.unknown()),
 });
@@ -187,9 +181,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   declineTurn: forInstance,
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
-  supportsUserLookup: z.tuple([]),
   describeMessageReactions: forInstance.rest(z.unknown()),
-  supportsMessageReactions: z.tuple([]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -228,7 +220,6 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ users: z.array(channelUserSchema) }),
     z.object({ error: z.string() }),
   ]),
-  supportsUserLookup: z.boolean(),
   describeMessageReactions: z.union([
     z.object({
       reactions: z.array(
@@ -243,7 +234,6 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
-  supportsMessageReactions: z.boolean(),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -450,14 +440,6 @@ export function createChannelManager(deps: {
         });
       return worker.describeUsers(instanceName, userIds);
     },
-    supportsUserLookup: async () => {
-      const capable = workers.filter((w) => w.describeUsers);
-      if (capable.length === 0) return true;
-      const results = await Promise.all(
-        capable.map((w) => w.supportsUserLookup?.() ?? Promise.resolve(true)),
-      );
-      return results.some(Boolean);
-    },
     describeMessageReactions: (
       instanceName: string,
       channelType: ChannelType,
@@ -469,16 +451,6 @@ export function createChannelManager(deps: {
           error: `message reactions not supported on ${channelType}`,
         });
       return worker.describeMessageReactions(instanceName, query);
-    },
-    supportsMessageReactions: async () => {
-      const capable = workers.filter((w) => w.describeMessageReactions);
-      if (capable.length === 0) return true;
-      const results = await Promise.all(
-        capable.map(
-          (w) => w.supportsMessageReactions?.() ?? Promise.resolve(true),
-        ),
-      );
-      return results.some(Boolean);
     },
   } as const;
 
@@ -626,14 +598,6 @@ export function createChannelManager(deps: {
       );
     },
 
-    supportsUserLookup() {
-      return dispatch(
-        "supportsUserLookup",
-        [],
-        localHandlers.supportsUserLookup,
-      ).catch(() => true);
-    },
-
     describeMessageReactions(instanceName, channelType, query) {
       return dispatchResult(
         "describeMessageReactions",
@@ -645,14 +609,6 @@ export function createChannelManager(deps: {
             query,
           ),
       );
-    },
-
-    supportsMessageReactions() {
-      return dispatch(
-        "supportsMessageReactions",
-        [],
-        localHandlers.supportsMessageReactions,
-      ).catch(() => true);
     },
   };
 }

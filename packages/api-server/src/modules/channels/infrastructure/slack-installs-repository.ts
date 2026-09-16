@@ -19,7 +19,7 @@ function toInstall(row: typeof slackInstalls.$inferSelect): SlackInstall {
     secretPath: row.secretPath,
     secretField: row.secretField,
     installedBy: row.installedBy,
-    credentialState: row.credentialState === "rejected" ? "rejected" : "active",
+    credentialState: row.credentialState,
   };
 }
 

@@ -176,81 +176,51 @@ describe("slack message reactions", () => {
   });
 });
 
-describe("slack supportsMessageReactions", () => {
-  it("is true when the scope is unknown (no probe has run yet)", async () => {
-    const h = harness({ boundChannelId: BOUND });
-    await h.worker.connect().catch(() => {});
-
-    expect(await h.worker.supportsMessageReactions()).toBe(true);
-  });
-
-  it("is true once reactions:read is confirmed granted", async () => {
-    const h = harness({ boundChannelId: BOUND });
-    h.gw.setGrantedScopes(["chat:write", "reactions:read"]);
-    await h.worker.connect().catch(() => {});
-
-    expect(await h.worker.supportsMessageReactions()).toBe(true);
-  });
-
-  it("stays registered when reactions:read is missing, and says so per call", async () => {
+describe("missing optional scopes never fail the gate", () => {
+  /**
+   * TEST_SCENARIO: Both optional scopes are withheld. The tools stay registered
+   * and each says which scope its workspace withheld, so an agent learns why it
+   * cannot see something instead of meeting a tool that fails for no stated
+   * reason.
+   */
+  it("both scopes withheld: each tool reports the scope it is missing", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.connect().catch(() => {});
 
-    expect(await h.worker.supportsMessageReactions()).toBe(true);
     expect(await h.describeReactions({ messageTs: "1700000000.0001" })).toEqual(
       { error: expect.stringContaining("reactions:read") },
     );
   });
 
-  it("fails open when the bot is not running", async () => {
-    const h = harness({ boundChannelId: BOUND, gatewayDown: true });
-
-    expect(await h.worker.supportsMessageReactions()).toBe(true);
-  });
-});
-
-describe("missing optional scopes never fail the gate", () => {
-  it("both scopes withheld: both stay registered, neither rejects", async () => {
-    const h = harness({ boundChannelId: BOUND });
-    h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
-    await h.worker.connect().catch(() => {});
-
-    await expect(
-      Promise.all([
-        h.worker.supportsUserLookup(),
-        h.worker.supportsMessageReactions(),
-      ]),
-    ).resolves.toEqual([true, true]);
-  });
-
-  it("a probe that throws is unknown, not missing — both fail open", async () => {
+  /**
+   * TEST_SCENARIO: The scope probe itself fails — rate limited, or the bot is
+   * briefly unreachable. An unanswered check is unknown, never missing, so the
+   * capability keeps working; treating a hiccup as a withheld scope would hide
+   * a capability the workspace actually granted.
+   */
+  it("a probe that throws is unknown, not missing — the tool still answers", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.getGrantedScopes = async () => {
       throw new Error("ratelimited");
     };
     await h.worker.connect().catch(() => {});
 
-    await expect(
-      Promise.all([
-        h.worker.supportsUserLookup(),
-        h.worker.supportsMessageReactions(),
-      ]),
-    ).resolves.toEqual([true, true]);
+    const result = await h.describeReactions({ messageTs: "1700000000.0001" });
+    expect(result).not.toEqual({
+      error: expect.stringContaining("reactions:read"),
+    });
   });
 
+  /**
+   * TEST_SCENARIO: A withheld scope must not take anything else down with it.
+   * The manager keeps serving the binding it always did.
+   */
   it("the aggregate keeps working through the channel manager with both withheld", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.connect().catch(() => {});
     const manager = createChannelManager({ slackWorker: h.worker });
-
-    await expect(
-      Promise.all([
-        manager.supportsUserLookup(),
-        manager.supportsMessageReactions(),
-      ]),
-    ).resolves.toEqual([true, true]);
 
     expect(
       await manager.listConversations("agent-1", ChannelType.Slack),

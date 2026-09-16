@@ -192,6 +192,7 @@ import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infra
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
+import { createXactLock } from "./core/xact-lock.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
@@ -662,6 +663,7 @@ export async function bootstrap() {
     upsert: upsertSlackInstall(db),
     setState: setSlackCredentialState(db),
     secrets: secretStores.default(),
+    installLock: createXactLock(db),
     envBotToken: config.slackBotToken,
   });
 

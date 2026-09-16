@@ -105,8 +105,6 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
-  supportsUserLookup: boolean;
-  supportsMessageReactions: boolean;
 }
 
 export function createMcpSession(
@@ -265,7 +263,7 @@ export function createMcpSession(
     },
   );
 
-  if (deps.supportsUserLookup) {
+  {
     server.tool(
       "describe_channel_users",
       "Look up who a channel's user ids belong to. People reach you as bare ids (Slack `U…`) — in the speaker labels on shared-channel messages, in conversation history, and in mentions inside message text — and this is how you turn those ids into people. Returns { users: [{ id, username, realName, displayName, title, pronouns, email, timezone, statusText, isBot, ... }] }; a field is absent when the person left it unset or the workspace withholds it, and an id that cannot be resolved comes back with an `error` while the rest of the batch still resolves. Look someone up before addressing them by name, attributing work to them, or reasoning about their local time. Slack only.",
@@ -314,7 +312,7 @@ export function createMcpSession(
     );
   }
 
-  if (deps.supportsMessageReactions) {
+  {
     server.tool(
       "describe_message_reactions",
       "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
@@ -911,12 +909,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
-      await Promise.all([
-        deps.channelManager.supportsUserLookup(),
-        deps.channelManager.supportsMessageReactions(),
-        deps.carriesInspectorRole(verified.owner),
-      ]);
+    const ownerIsInspector = await deps.carriesInspectorRole(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -934,8 +927,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       agentTelemetry: deps.agentTelemetry,
-      supportsUserLookup,
-      supportsMessageReactions,
     });
     await session.server.connect(session.transport);
 

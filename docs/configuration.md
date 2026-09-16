@@ -104,7 +104,10 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
      --set=apiServer.slackClientSecret=...
    ```
 
-3. Send a workspace admin `<urls.ui>/api/slack/install/start`. They complete Slack's consent screen while on the VPN, and the workspace's own bot token is stored in a Kubernetes Secret.
+3. Grant yourself the `keycloak.installerRole` realm role, then `GET /api/slack/install/start` as an authenticated operator. It answers with a `slack.com` consent URL — connecting a workspace is install-wide, so only an operator may start one.
+4. Send that URL to an admin of the workspace you are adding. They approve it **while on the VPN**, because Slack redirects their browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. The admin needs no platform account.
+
+Leaving `keycloak.installerRole` empty disables the install surface entirely — the workspace `slackBotToken` was issued for keeps working either way.
 
 Connecting a channel does not change: you still paste a conversation id. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
 

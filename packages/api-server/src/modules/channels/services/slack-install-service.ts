@@ -1,5 +1,6 @@
 import type { SecretRef } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
+import type { XactLock } from "../../../core/xact-lock.js";
 import {
   ORIGINAL_WORKSPACE,
   type SlackTokenResolver,
@@ -33,6 +34,7 @@ export interface SlackInstallServiceDeps {
   }) => Promise<void>;
   setState: (teamId: string, state: SlackCredentialState) => Promise<void>;
   secrets: SecretStore;
+  installLock: XactLock;
   envBotToken: string | null;
   now?: () => number;
 }
@@ -83,25 +85,27 @@ export function createSlackInstallService(
     },
 
     async record(install: SlackInstallRecord): Promise<void> {
-      const meta = { owner: SECRET_OWNER, purpose: SECRET_PURPOSE };
-      const existing = await deps.find(install.teamId);
-      const ref: SecretRef = existing
-        ? {
-            storeId: deps.secrets.storeId,
-            path: existing.secretPath,
-            field: existing.secretField,
-          }
-        : { ...deps.secrets.mintRef(meta), field: SECRET_FIELD };
+      await deps.installLock(`slack-install:${install.teamId}`, async () => {
+        const meta = { owner: SECRET_OWNER, purpose: SECRET_PURPOSE };
+        const existing = await deps.find(install.teamId);
+        const ref: SecretRef = existing
+          ? {
+              storeId: deps.secrets.storeId,
+              path: existing.secretPath,
+              field: existing.secretField,
+            }
+          : { ...deps.secrets.mintRef(meta), field: SECRET_FIELD };
 
-      await deps.secrets.put(ref, { [ref.field]: install.botToken }, meta);
-      await deps.upsert({
-        teamId: install.teamId,
-        teamName: install.teamName,
-        secretPath: ref.path,
-        secretField: ref.field,
-        installedBy: install.installedBy,
+        await deps.secrets.put(ref, { [ref.field]: install.botToken }, meta);
+        await deps.upsert({
+          teamId: install.teamId,
+          teamName: install.teamName,
+          secretPath: ref.path,
+          secretField: ref.field,
+          installedBy: install.installedBy,
+        });
+        tokens.delete(install.teamId);
       });
-      tokens.delete(install.teamId);
     },
 
     async markRejected(teamId: string): Promise<void> {

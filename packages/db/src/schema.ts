@@ -65,13 +65,20 @@ export const identityLinks = pgTable(
   (table) => [primaryKey({ columns: [table.provider, table.externalUserId] })],
 );
 
+export const slackCredentialStateEnum = pgEnum("slack_credential_state", [
+  "active",
+  "rejected",
+]);
+
 export const slackInstalls = pgTable("slack_installs", {
   teamId: text("team_id").primaryKey(),
   teamName: text("team_name"),
   secretPath: text("secret_path").notNull(),
   secretField: text("secret_field").notNull(),
   installedBy: text("installed_by"),
-  credentialState: text("credential_state").notNull().default("active"),
+  credentialState: slackCredentialStateEnum("credential_state")
+    .notNull()
+    .default("active"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

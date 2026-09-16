@@ -711,12 +711,10 @@ export interface SlackWorker {
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  supportsUserLookup(): Promise<boolean>;
   describeMessageReactions(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  supportsMessageReactions(): Promise<boolean>;
 }
 
 export interface SlackOAuthPending {
@@ -3775,10 +3773,6 @@ export function createSlackWorker(
       return { users };
     },
 
-    async supportsUserLookup() {
-      return true;
-    },
-
     async describeMessageReactions(
       instanceName: string,
       query: ReactionsQuery,
@@ -3830,10 +3824,6 @@ export function createSlackWorker(
       } catch (err) {
         return { error: formatError(err) };
       }
-    },
-
-    async supportsMessageReactions() {
-      return true;
     },
   };
 }
