@@ -9,6 +9,8 @@ import {
   type ChannelConfig,
   type ContributionKind,
   type DriverFailure,
+  type WorkspaceFailure,
+  type WorkspaceMutationKind,
   type BindTelegramChatResult,
   type BindSlackChannelResult,
   type ConnectSlackResult,
@@ -60,6 +62,7 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  workspaceFailures: WorkspaceFailure[];
   features: RuntimeFeatures;
   unsupportedKinds: ContributionKind[];
 }
@@ -75,6 +78,10 @@ export interface ContributionsProgressPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
   progress(agentId: string): Promise<ContributionsProgress>;
+  retryWorkspaceMutation(
+    agentId: string,
+    kind: WorkspaceMutationKind,
+  ): Promise<boolean>;
 }
 
 export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
@@ -494,6 +501,7 @@ export function createAgentsService(deps: {
         settled: true,
         failures: [],
         preparingWorkspace: false,
+        workspaceFailures: [],
         features: runtimeFeaturesOf(null),
         unsupportedKinds: [],
       };
@@ -527,6 +535,7 @@ export function createAgentsService(deps: {
       templateUpdate,
       status.features,
       status.unsupportedKinds,
+      status.workspaceFailures,
     );
   }
 
@@ -612,6 +621,7 @@ export function createAgentsService(deps: {
         await templateUpdateFor(infra),
         status.features,
         status.unsupportedKinds,
+        status.workspaceFailures,
       ),
     );
   };
@@ -672,6 +682,7 @@ export function createAgentsService(deps: {
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
+          status?.workspaceFailures ?? [],
         );
       });
     },
@@ -849,6 +860,7 @@ export function createAgentsService(deps: {
         undefined,
         runtimeFeaturesOf(null),
         [],
+        [],
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1024,6 +1036,35 @@ export function createAgentsService(deps: {
       });
       emit({ type: EventType.AgentWoken, agentId: id });
       return project(infra);
+    },
+
+    async retryWorkspace(id, kind) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.retryWorkspace" },
+        });
+        return null;
+      }
+      const infra = await deps.repo.get(id);
+      if (!infra) return null;
+      if (!(await deps.contributionsProgress.retryWorkspaceMutation(id, kind)))
+        return null;
+      await deps.repo.wakeIfHibernated(id);
+      securityLog("info", "agent.workspace_retry", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+        detail: { kind },
+      });
+      return project((await deps.repo.get(id)) ?? infra);
     },
 
     async stop(id) {

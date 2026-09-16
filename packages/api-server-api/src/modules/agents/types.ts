@@ -45,6 +45,14 @@ export interface TemplateUpdate {
   toImage: string;
 }
 
+export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
+
+export interface WorkspaceFailure {
+  kind: WorkspaceMutationKind;
+  error: string;
+  settled: boolean;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -60,6 +68,7 @@ export interface Agent {
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
+  workspaceFailures: WorkspaceFailure[];
   channels: ChannelConfig[];
   kind?: AgentKind;
   kbTemplateId?: string;
@@ -155,6 +164,10 @@ export interface AgentsService {
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;
   stop: (id: string) => Promise<Agent | null>;
+  retryWorkspace: (
+    id: string,
+    kind: WorkspaceMutationKind,
+  ) => Promise<Agent | null>;
   pause: (id: string) => Promise<Agent | null>;
   upgrade: (
     id: string,

@@ -39,7 +39,6 @@ describe("buildKnowledgeBaseCreateInput", () => {
       name: "my kb",
       templateId: "codex",
       kbTemplateId: "plain-wiki",
-      egressPreset: "trusted",
       connectionIds: ["conn-a", "conn-p"],
     });
   });

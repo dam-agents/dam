@@ -3,6 +3,7 @@ import { agentKindSchema } from "api-server-api";
 import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
+  WorkspaceFailure,
   Agent,
   AgentKind,
   AgentSpec,
@@ -225,6 +226,7 @@ export function assembleAgent(
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
+  workspaceFailures: WorkspaceFailure[],
 ): Agent {
   return {
     id: infra.id,
@@ -244,6 +246,7 @@ export function assembleAgent(
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,
     unsupportedContributionKinds,
+    workspaceFailures,
     channels,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,

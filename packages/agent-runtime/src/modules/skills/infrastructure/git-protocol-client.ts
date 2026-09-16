@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import { join } from "node:path";
 import type { Result, SkillsDomainError } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
@@ -17,6 +18,11 @@ export interface GitProtocolClient {
     url: string,
     sha: string,
     dest: string,
+  ) => Promise<Result<void, SkillsDomainError>>;
+  fetchInto: (
+    url: string,
+    dest: string,
+    ref?: string,
   ) => Promise<Result<void, SkillsDomainError>>;
   lastTouchingSha: (
     repoDir: string,
@@ -37,6 +43,61 @@ export function createGitProtocolClient(): GitProtocolClient {
           ...(ref ? ["--branch", ref] : []),
           url,
           dest,
+        ]);
+        return ok(undefined);
+      } catch (e) {
+        return err({
+          kind: "SourceFetchFailed",
+          source: url,
+          detail: (e as Error).message,
+        });
+      }
+    },
+    async fetchInto(url, dest, ref) {
+      const isSha = ref !== undefined && /^[0-9a-f]{40}$/i.test(ref);
+      try {
+        await fs.mkdir(dest, { recursive: true });
+        const hasGit = await fs.stat(join(dest, ".git")).then(
+          () => true,
+          () => false,
+        );
+        if (!hasGit) await runProc("git", ["init", "--quiet", dest]);
+        try {
+          await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
+        } catch {
+          await runProc("git", [
+            "-C",
+            dest,
+            "remote",
+            "set-url",
+            "origin",
+            url,
+          ]);
+        }
+        try {
+          await runProc("git", [
+            "-C",
+            dest,
+            "fetch",
+            "--quiet",
+            "--depth",
+            isSha ? "1" : "50",
+            "origin",
+            ref ?? "HEAD",
+          ]);
+        } catch (e) {
+          if (!isSha) throw e;
+          await runProc("git", ["-C", dest, "fetch", "--quiet", "origin"]);
+          await runProc("git", ["-C", dest, "checkout", "--quiet", ref]);
+          return ok(undefined);
+        }
+        await runProc("git", [
+          "-C",
+          dest,
+          "checkout",
+          "--quiet",
+          ...(ref !== undefined && !isSha ? ["-B", ref] : []),
+          "FETCH_HEAD",
         ]);
         return ok(undefined);
       } catch (e) {

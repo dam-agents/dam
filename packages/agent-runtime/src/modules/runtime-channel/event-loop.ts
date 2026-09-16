@@ -1,12 +1,28 @@
 import type { Event } from "agent-runtime-api";
+import { isWorkspaceMutationEventKind } from "agent-runtime-api";
+
 import type { EventDispatcher } from "./event-dispatcher.js";
 import type { StateStore } from "./state-store.js";
 
+export type WorkspaceFailureReport = (
+  event: Event,
+  message: string,
+) => Promise<void>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Runs an apply's events in order and settles the
+ * ones that ran. A failed event stays unsettled for the outbox to redeliver;
+ * a failed workspace mutation additionally halts the events queued behind it
+ * — they depend on the workspace it was shaping, so an initialization session
+ * must not open on a seed or install that has not happened — and is reported
+ * with its reason, so the failure is shown rather than found in a pod log.
+ */
 export async function processEvents(
   events: Event[],
   dispatcher: EventDispatcher,
   stateStore: StateStore,
   log: (msg: string) => void,
+  reportWorkspaceFailure?: WorkspaceFailureReport,
 ): Promise<string[]> {
   const now = Date.now();
   const settled: string[] = [];
@@ -23,14 +39,12 @@ export async function processEvents(
       settled.push(e.id);
       continue;
     }
-
     const expiresMs = Date.parse(e.expiresAt);
     if (Number.isFinite(expiresMs) && expiresMs <= now) {
       log(`[runtime] event ${e.id} expired locally; skipping`);
       settled.push(e.id);
       continue;
     }
-
     try {
       await dispatcher.invoke(e.kind, e.payload, e.id);
       const current = stateStore.read();
@@ -40,9 +54,15 @@ export async function processEvents(
       });
       settled.push(e.id);
     } catch (err) {
-      log(
-        `[runtime] event ${e.id} (${e.kind}) failed: ${(err as Error).message}`,
-      );
+      const message = (err as Error).message;
+      log(`[runtime] event ${e.id} (${e.kind}) failed: ${message}`);
+      if (isWorkspaceMutationEventKind(e.kind)) {
+        await reportWorkspaceFailure?.(e, message);
+        log(
+          `[runtime] holding the events behind ${e.id} until the workspace mutation settles`,
+        );
+        break;
+      }
     }
   }
   return settled;

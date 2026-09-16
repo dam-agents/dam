@@ -125,6 +125,8 @@ export {
   contributionKind,
   event,
   eventKind,
+  isWorkspaceMutationEventKind,
+  workspaceMutationEventKinds,
   capabilities,
   runtimeFeaturesOf,
   type RuntimeFeatures,

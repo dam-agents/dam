@@ -21,6 +21,18 @@ export const eventKind = z.enum([
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
+export const workspaceMutationEventKinds = [
+  "workspace-seed",
+  "workspace-command",
+] as const satisfies readonly EventKind[];
+export type WorkspaceMutationEventKind =
+  (typeof workspaceMutationEventKinds)[number];
+export function isWorkspaceMutationEventKind(
+  kind: string,
+): kind is WorkspaceMutationEventKind {
+  return (workspaceMutationEventKinds as readonly string[]).includes(kind);
+}
+
 export const mergeMode = z.enum([
   "overwrite",
   "section-marker",

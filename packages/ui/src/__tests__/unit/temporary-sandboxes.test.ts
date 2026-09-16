@@ -25,6 +25,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   state: "running",
   contributionFailures: [],
   unsupportedContributionKinds: [],
+  workspaceFailures: [],
   channels: [],
   spawnedBy: null,
   ...overrides,

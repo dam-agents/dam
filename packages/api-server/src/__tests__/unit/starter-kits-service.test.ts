@@ -58,6 +58,7 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
     overBudget: false,
     contributionFailures: [],
     unsupportedContributionKinds: [],
+    workspaceFailures: [],
     features: { liveUpdates: false },
     channels: [],
     ...extra,
@@ -344,7 +345,8 @@ describe("starter kits: apply", () => {
     expect(h.calls.created[0]).toMatchObject({
       gitRepo: { url: "https://github.com/acme/code-guardian", ref: "v1.4.0" },
     });
-    expect(prompt).toContain("checked out in your work directory");
+    expect(prompt).toContain("queued its checkout");
+    expect(prompt).toContain("say so and stop");
     expect(prompt).not.toContain("Clone it");
 
     const seedless = makeHarness({ ...LOADED, kit: kit({ seed: undefined }) });
@@ -772,7 +774,7 @@ describe("starter kits: onboarding turn", () => {
       '"Code reviewer" starter kit (platform/code-reviewer@abc123)',
     );
     expect(prompt).toContain(
-      "https://github.com/acme/code-guardian at v1.4.0 — checked out in your work directory",
+      "https://github.com/acme/code-guardian at v1.4.0 — the platform queued its checkout",
     );
     expect(prompt).toContain(
       "Connection (required, connected): github-app or github-pat",

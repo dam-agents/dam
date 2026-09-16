@@ -19,3 +19,12 @@ export function ContributionFailuresBadge({
     </Badge>
   );
 }
+
+export function agentFailures(
+  agent: Pick<AgentView, "contributionFailures" | "workspaceFailures">,
+): AgentView["contributionFailures"] {
+  return [
+    ...agent.contributionFailures,
+    ...agent.workspaceFailures.map((f) => ({ kind: f.kind, message: f.error })),
+  ];
+}

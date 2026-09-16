@@ -22,6 +22,7 @@ import {
   agentStopInputSchema,
   agentUpgradeInputSchema,
   agentWakeInputSchema,
+  agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
 import type { Agent } from "./types.js";
 
@@ -51,6 +52,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     podTerminationReason: agent.podTerminationReason,
     contributionFailures: agent.contributionFailures,
     unsupportedContributionKinds: agent.unsupportedContributionKinds,
+    workspaceFailures: agent.workspaceFailures,
     channels: agent.channels,
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,
@@ -137,6 +139,14 @@ export const agentsRouter = t.router({
     .input(agentStopInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.stop(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toAgentView(agent);
+    }),
+
+  retryWorkspace: manageAgentsProcedure
+    .input(agentRetryWorkspaceInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.retryWorkspace(input.id, input.kind);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),

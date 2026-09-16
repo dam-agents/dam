@@ -21,7 +21,10 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import {
+  agentFailures,
+  ContributionFailuresBadge,
+} from "./contribution-failures-badge.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
@@ -102,7 +105,7 @@ export function AgentRow({
             </Badge>
           )}
           <OnboardingTag agent={agent} />
-          <ContributionFailuresBadge failures={agent.contributionFailures} />
+          <ContributionFailuresBadge failures={agentFailures(agent)} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">

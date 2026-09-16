@@ -447,6 +447,7 @@ export async function bootstrap() {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
     progress: runtimeDelivery.contributionsProgress,
+    retryWorkspaceMutation: runtimeDelivery.retryWorkspaceMutation,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 

@@ -15,6 +15,7 @@ function fakeAgent(id: string): Agent {
     overBudget: false,
     contributionFailures: [],
     unsupportedContributionKinds: [],
+    workspaceFailures: [],
     features: { liveUpdates: false },
     channels: [],
     kind: "experiment",

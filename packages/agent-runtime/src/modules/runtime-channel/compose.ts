@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { eventKind } from "agent-runtime-api";
 import type {
+  EventReportInput,
   ContributionKind,
   HarnessConfigService,
   Plugin,
@@ -99,6 +100,10 @@ export async function composeRuntimeChannel(
     agentId: opts.agentId,
   });
 
+  const reporter = {
+    report: (input: EventReportInput) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
   registry.register(
@@ -107,10 +112,7 @@ export async function composeRuntimeChannel(
       stateStore: triggerStateStore,
       runPrecheck: createPrecheckRunner({ workDir: opts.workDir }),
       log,
-      reporter: {
-        report: (input) =>
-          harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
-      },
+      reporter,
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -160,6 +162,7 @@ export async function composeRuntimeChannel(
     dispatcher,
     eventDispatcher,
     stateStore,
+    reporter,
     readHarnessConfig: async () =>
       harnessConfigPlugin.supported
         ? await harnessConfigPlugin.readCurrent()
