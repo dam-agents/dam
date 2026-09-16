@@ -45,11 +45,20 @@ type harness struct {
 // TEST_OVERVIEW: the harness binds real ports, so it takes a pair the kernel says are free rather than the fixed range a second suite run — or the NodePort range the runner's own policy opens — would already be holding.
 func freePort(t *testing.T) int {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := ln.Addr().(*net.TCPAddr).Port
-	require.NoError(t, ln.Close())
-	return port
+	for range 50 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		port := ln.Addr().(*net.TCPAddr).Port
+		guest, guestErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+loopbackOffset))
+		require.NoError(t, ln.Close())
+		if guestErr != nil {
+			continue
+		}
+		require.NoError(t, guest.Close())
+		return port
+	}
+	t.Fatal("no ephemeral port whose loopback pair is also free")
+	return 0
 }
 
 // TEST_OVERVIEW: stands in for a guest listening on its loopback port, so a test can tell "the runner refused this source" apart from "nothing was listening" — the two look identical from the client end.
@@ -274,7 +283,10 @@ func TestPortsAreUniqueAndDeleteWaitsForInFlightWork(t *testing.T) {
 	_, err = c.Ensure(t.Context(), "agent-c", spec(true))
 	require.NoError(t, err)
 	time.Sleep(50 * time.Millisecond)
+	blocked := time.Now()
 	require.NoError(t, c.Delete(t.Context(), "agent-c"))
+	assert.Greater(t, time.Since(blocked), 200*time.Millisecond,
+		"the delete waited out the in-flight start rather than racing it")
 	assert.True(t, strings.HasSuffix(h.calls(), "machine start -n agent-c\nmachine delete -n agent-c -f\n"), h.calls())
 }
 
@@ -456,7 +468,7 @@ func TestAMachineIDCannotEscapeTheStateDir(t *testing.T) {
 // TEST_SCENARIO: a caller puts an image reference carrying a dot segment or a newline; it is refused, so it can neither name an archive outside the runner's image directory nor forge a line in the runner's log.
 func TestAnImageReferenceIsRefusedWhenItCouldEscapeAPathOrALogLine(t *testing.T) {
 	h := newHarness(t)
-	for _, image := range []string{"../../etc/passwd", "repo/img:tag\nfake log line", "repo/img:tag with spaces"} {
+	for _, image := range []string{"../../etc/passwd", "repo/../../etc/passwd", "repo/img:tag\nfake log line", "repo/img:tag with spaces"} {
 		body := `{"running":true,"image":"` + strings.ReplaceAll(image, "\n", `\n`) + `","cpus":1,"memoryMiB":512,"storageGiB":5}`
 		req, _ := http.NewRequest(http.MethodPut, h.srv.URL+"/machines/agent-1", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer secret")
