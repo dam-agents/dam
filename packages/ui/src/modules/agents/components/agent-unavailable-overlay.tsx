@@ -24,7 +24,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "The agent pod is starting up." },
+  starting: { description: "The agent is starting up." },
   preparing_workspace: {
     description: "Setting up the workspace. This finishes shortly.",
   },
@@ -95,10 +95,13 @@ export function AgentUnavailableOverlay({
 
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
+  const budget = agent.overBudgetMessage;
   const description =
     state === "error" && agent.error
       ? agent.error
-      : OVERLAY_COPY[state].description;
+      : state === "over_budget" && budget
+        ? `${budget[0].toUpperCase()}${budget.slice(1)}.`
+        : OVERLAY_COPY[state].description;
 
   const waiting = state === "starting" || state === "preparing_workspace";
 

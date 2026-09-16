@@ -720,7 +720,7 @@ export function createAgentsService(deps: {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "this template runs as a full VM, which is not enabled on this install (virtualization.enabled)",
+            "this template runs as its own microVM, which is not enabled on this install (virtualization.enabled)",
         });
       }
       const templateEnv = seedTelemetryIdentity(
