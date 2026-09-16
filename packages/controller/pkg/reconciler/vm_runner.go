@@ -495,12 +495,12 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner outlives the agents that made it, so it is torn down only once the sweep finds it holding no machine at all — at which point its disk holds nothing either.
-// UNIT_BOUNDARY_DESCRIPTION: a runner's name encodes its owner, so changing how that name is built strands the old one — still holding a guest, a disk and a device grant — with nothing that would ever collect it. Its agents have already moved to the new name, so the old disk holds nothing they can reach.
+// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so one function removes the lot — reached either because its owner has no vm agents left, or because the name itself is from an older scheme and its agents have already moved on.
 func (r *AgentReconciler) deleteRunnerNamed(ctx context.Context, name string) {
 	ns := r.config.ReleaseNamespace
 	opts := metav1.DeleteOptions{}
 	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
-		slog.Warn("retiring a stale VM runner: deployment", "deployment", name, "error", err)
+		slog.Warn("removing a VM runner: deployment", "deployment", name, "error", err)
 		return
 	}
 	for _, del := range []func() error{
@@ -512,30 +512,13 @@ func (r *AgentReconciler) deleteRunnerNamed(ctx context.Context, name string) {
 		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
 	} {
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
-			slog.Warn("retiring a stale VM runner", "deployment", name, "error", err)
+			slog.Warn("removing a VM runner", "deployment", name, "error", err)
 		}
 	}
 }
 
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
-	opts := metav1.DeleteOptions{}
-	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
-		slog.Warn("removing idle VM runner: deployment", "owner", owner, "error", err)
-		return
-	}
-	for _, del := range []func() error{
-		func() error { return r.client.CoreV1().Services(ns).Delete(ctx, name, opts) },
-		func() error {
-			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)
-		},
-		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
-		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },
-	} {
-		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
-			slog.Warn("removing idle VM runner", "owner", owner, "error", err)
-		}
-	}
+	r.deleteRunnerNamed(ctx, r.runnerName(owner))
 	r.runnerMu.Lock()
 	delete(r.runners, owner)
 	r.runnerMu.Unlock()
