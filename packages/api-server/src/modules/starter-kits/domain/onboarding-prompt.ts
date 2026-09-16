@@ -71,9 +71,11 @@ function definitionLine(kit: StarterKit): string {
 }
 
 function defaultInstruction(kit: StarterKit): string {
-  return kit.seed
-    ? "Then follow ONBOARDING.md at the root of your work directory."
-    : "Ask the user for the values above, then start the work they describe.";
+  if (!kit.seed)
+    return "Ask the user for the values above, then start the work they describe.";
+  const root =
+    kit.seed.into === "home" ? "your home directory" : "your work directory";
+  return `Then follow ONBOARDING.md at the root of ${root}.`;
 }
 
 export function composeOnboardingPrompt(facts: OnboardingFacts): string {
