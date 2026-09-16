@@ -24,9 +24,9 @@ import {
 } from "../../budgets/lib/slots.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { kbTemplate } from "../../knowledge-bases/lib/kb-templates.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
-import { KitKnowledgeBaseNote } from "../components/kit-knowledge-base-note.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
@@ -202,6 +202,9 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
   }, [kit.resources, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
+  const kbTemplateOfKit = kit.knowledgeBase
+    ? kbTemplate(kit.knowledgeBase.template)
+    : undefined;
 
   const close = () => setView("starter-kits");
 
@@ -242,10 +245,28 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
           </DialogHeader>
 
           <DialogBody>
-            <KitKnowledgeBaseNote kit={kit} className="mb-4 text-sm" />
             <h2 className="mb-3 text-base font-semibold text-foreground">
               Included
             </h2>
+            {kbTemplateOfKit && (
+              <Section label="Knowledge base">
+                <Row
+                  title={`${kbTemplateOfKit.name} knowledge base skills`}
+                  detail="Installed at create by the platform's knowledge base template, so they are not listed under Skills."
+                  trailing={
+                    <a
+                      href={kbTemplateOfKit.repoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open the ${kbTemplateOfKit.name} repository`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  }
+                />
+              </Section>
+            )}
 
             {skillCount > 0 && (
               <Section label="Skills">
