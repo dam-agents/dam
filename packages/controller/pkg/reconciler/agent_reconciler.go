@@ -40,8 +40,6 @@ type AgentReconciler struct {
 	busyProbe       func(ctx context.Context, agentName string) bool
 	runnerMu        sync.Mutex
 	runners         map[string]runnerConn
-	runnerOwnerOnce sync.Once
-	runnerOwner     *metav1.OwnerReference
 	runnerEndpoint  func(owner string) string
 	runnerIP        func(owner string) (string, error)
 	requeue         func(name string, after time.Duration)

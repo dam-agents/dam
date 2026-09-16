@@ -410,6 +410,30 @@ func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
 	assert.Empty(t, refusal)
 }
 
+// TEST_SCENARIO: switching virtualization off and on deletes the runner ServiceAccount and renders a new one, which carries a new UID. A controller that resolved the owner once would keep stamping the dead UID, and every object it wrote would be collected the instant it appeared — a runner that never shows up and never explains why.
+func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	sas := r.client.CoreV1().ServiceAccounts("test-agents")
+	_, err := sas.Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "uid-before"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.Equal(t, types.UID("uid-before"), r.runnerOwnerRef(ctx)[0].UID)
+
+	require.NoError(t, sas.Delete(ctx, "platform-vm-runner", metav1.DeleteOptions{}))
+	_, err = sas.Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "uid-after"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	refs := r.runnerOwnerRef(ctx)
+	require.Len(t, refs, 1)
+	assert.Equal(t, types.UID("uid-after"), refs[0].UID,
+		"a stale UID here is collected by the garbage collector the moment a runner object is written")
+}
+
 // TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM and its disk.
 func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	ctx := context.Background()

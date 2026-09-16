@@ -51,26 +51,21 @@ func runnerSuffix(owner string) string {
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
 // UNIT_BOUNDARY_DESCRIPTION: runners are per owner, so no single Agent can own them — one agent's deletion would collect a runner still holding another's disk. They are owned instead by the ServiceAccount the chart renders for them, which sits in the same namespace (an owner reference may not cross one) and is removed by uninstall, by rollback and by turning virtualization off — so the runners, their disks and their credentials go with it.
+// UNIT_BOUNDARY_DESCRIPTION: the reference is resolved on every call rather than cached for the process: a ServiceAccount that is deleted and recreated — switching virtualization off and on does exactly that — comes back with a new UID, and objects stamped with the old one are collected the moment they are written, which reads as a runner that silently never appears.
 func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerReference {
-	r.runnerOwnerOnce.Do(func() {
-		name := r.config.VM.Runner.ServiceAccountName
-		if name == "" {
-			slog.Warn("vm runner: no runner ServiceAccount configured, runners will outlive the release")
-			return
-		}
-		sa, err := r.client.CoreV1().ServiceAccounts(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			slog.Warn("vm runner: no owner reference, runners will outlive the release", "serviceaccount", name, "error", err)
-			return
-		}
-		r.runnerOwner = &metav1.OwnerReference{
-			APIVersion: "v1", Kind: "ServiceAccount", Name: sa.Name, UID: sa.UID,
-		}
-	})
-	if r.runnerOwner == nil {
+	name := r.config.VM.Runner.ServiceAccountName
+	if name == "" {
+		slog.Warn("vm runner: no runner ServiceAccount configured, runners will outlive the release")
 		return nil
 	}
-	return []metav1.OwnerReference{*r.runnerOwner}
+	sa, err := r.client.CoreV1().ServiceAccounts(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		slog.Warn("vm runner: no owner reference, runners will outlive the release", "serviceaccount", name, "error", err)
+		return nil
+	}
+	return []metav1.OwnerReference{{
+		APIVersion: "v1", Kind: "ServiceAccount", Name: sa.Name, UID: sa.UID,
+	}}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Secret, PVC and Service are created once and never re-applied, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
