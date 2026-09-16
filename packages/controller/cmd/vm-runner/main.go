@@ -64,7 +64,7 @@ func main() {
 		}
 	}
 	if err := srv.Start(); err != nil {
-		slog.Error("republishing machines", "error", err)
+		slog.Error("reading the machines already in the state dir", "error", err)
 		os.Exit(1)
 	}
 	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "tls", *tlsCert != "")

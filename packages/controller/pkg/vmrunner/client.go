@@ -51,12 +51,12 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("vm runner: %w", err)
+		return nil, fmt.Errorf("VM runner: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("vm runner: list: %s: %s", resp.Status, bytes.TrimSpace(raw))
+		return nil, fmt.Errorf("VM runner: list: %s: %s", resp.Status, bytes.TrimSpace(raw))
 	}
 	var ids []string
 	return ids, json.Unmarshal(raw, &ids)

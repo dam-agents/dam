@@ -653,6 +653,7 @@ func failureReason(err error) string {
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: admission asks smolvm for every other machine's state, one fork each, on every PUT — a runner holding n machines pays n subprocesses per admitted machine. That is fine for the handful an owner runs; past that, keep the applied sizes in the server and read them here instead of asking smolvm.
 func (s *Server) roomFor(id string, spec MachineSpec) error {
 	limit := s.MemoryMiB
 	if limit == 0 {
