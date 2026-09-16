@@ -80,11 +80,15 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
-      name: "MachineOutOfCapacity → agent-pod-failed (the runner had no room)",
-      snapshot: { ...base, agentPodNotReadyReason: "MachineOutOfCapacity" },
+      name: "over-budget carries its message — the runner's refusal arrives this way, and it is not a budget problem",
+      snapshot: {
+        ...base,
+        overBudget: true,
+        overBudgetMessage: "the VM runner has 512 MiB for machines",
+      },
       expected: {
-        kind: "agent-pod-failed",
-        terminationReason: "MachineOutOfCapacity",
+        kind: "over-budget",
+        message: "the VM runner has 512 MiB for machines",
       },
     },
     {

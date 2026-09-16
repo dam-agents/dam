@@ -10,6 +10,8 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "Try again; if this keeps happening, contact an admin."
       );
     case "over-budget":
+      if (c.message)
+        return `This agent can't start right now: ${c.message} Start it again once there is room.`;
       return (
         "This agent can't start right now: its owner is at their compute " +
         "budget. Ask the owner to free room and start it again."
@@ -32,12 +34,6 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           return (
             "This agent failed to start: its image isn't available to the " +
             "VM runner. Check the agent's page or contact its owner."
-          );
-        case "MachineOutOfCapacity":
-          return (
-            "This agent can't start: the VM runner has no room left. Stop " +
-            "another VM agent, or ask an admin for more capacity, then " +
-            "start it again."
           );
         case "MachineEgressChanged":
           return (
