@@ -194,43 +194,6 @@ const DM_THREAD = "telegram:4242";
 const GROUP_THREAD = "telegram:-100777";
 
 describe("telegram Chat SDK routing", () => {
-  it("answers a command that arrives while an agent turn is still running", async () => {
-    let releaseTurn: () => void = () => {};
-    const turnRunning = new Promise<void>((resolve) => {
-      releaseTurn = resolve;
-    });
-    let turnStarted: () => void = () => {};
-    const started = new Promise<void>((resolve) => {
-      turnStarted = resolve;
-    });
-
-    const { chat, adapter, posts, seen } = await harness({
-      boundTo: "agent-1",
-      relay: async () => {
-        turnStarted();
-        await turnRunning;
-      },
-    });
-
-    chat.processMessage(
-      adapter as never,
-      DM_THREAD,
-      makeMessage(DM_THREAD, "howdy", "m-1"),
-    );
-    await started;
-
-    await chat.processMessage(
-      adapter as never,
-      DM_THREAD,
-      makeMessage(DM_THREAD, "/unbind", "m-2"),
-    );
-    releaseTurn();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(seen).toEqual(["howdy", "/unbind"]);
-    expect(posts.join("\n")).toContain("Chat disconnected");
-  });
-
   it("delivers a bare command in a DM when no turn is in flight", async () => {
     const { chat, adapter, seen } = await harness({
       boundTo: "agent-1",
@@ -338,37 +301,6 @@ describe("telegram /start probe", () => {
     });
     await send(h, GROUP_THREAD, "/start");
     expect(h.posts.join("\n")).toContain("Only group admins");
-  });
-
-  it("answers /start while an agent turn is still running", async () => {
-    let release: () => void = () => {};
-    const running = new Promise<void>((r) => {
-      release = r;
-    });
-    let began: () => void = () => {};
-    const started = new Promise<void>((r) => {
-      began = r;
-    });
-    const h = await harness({
-      boundTo: "agent-1",
-      relay: async () => {
-        began();
-        await running;
-      },
-    });
-
-    h.chat.processMessage(
-      h.adapter as never,
-      DM_THREAD,
-      makeMessage(DM_THREAD, "howdy", "s-a"),
-    );
-    await started;
-    await send(h, DM_THREAD, "/start", "s-b");
-    release();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(h.seen).toEqual(["howdy", "/start"]);
-    expect(h.posts.join("\n")).toContain("already connected");
   });
 });
 

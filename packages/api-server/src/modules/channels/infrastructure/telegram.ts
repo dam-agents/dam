@@ -209,13 +209,10 @@ function isCommand(
   if (!text.startsWith(`${command}@`)) return false;
   const addressed = text.slice(command.length + 1).split(/\s+/)[0] ?? "";
   return (
-    botUsername === null ||
+    botUsername !== null &&
     addressed.toLowerCase() === botUsername.toLowerCase()
   );
 }
-
-const QUEUED_MESSAGE_TTL_MS = 60 * 60_000;
-const MAX_QUEUED_MESSAGES = 50;
 
 export const COMMAND_PATTERN = /^\/(?:bind|unbind|start)(?:@\S+)?(?:\s|$)/;
 
@@ -387,11 +384,6 @@ export function createTelegramChat(deps: {
     userName: "platform",
     adapters: { telegram: deps.adapter },
     state: deps.state,
-    concurrency: {
-      strategy: "queue",
-      maxQueueSize: MAX_QUEUED_MESSAGES,
-      queueEntryTtlMs: QUEUED_MESSAGE_TTL_MS,
-    },
     ...(deps.logLevel ? { logger: deps.logLevel } : {}),
   });
 
