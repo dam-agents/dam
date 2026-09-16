@@ -6,9 +6,12 @@ import type { AttentionRecordRow } from "../../modules/attention/domain/types.js
 import type { AttentionRepository } from "../../modules/attention/infrastructure/attention-repository.js";
 import { createSessionWatcher } from "../../modules/attention/services/session-watcher.js";
 
-// TEST_OVERVIEW: the lease-elected watcher's write path — one capture per agent
-// at a time, a row removed when the agent stops listing its session, and a
-// failed pass retried instead of waiting for a notice that may never come.
+/*
+ * TEST_OVERVIEW: the lease-elected watcher's write path — one capture per
+ * agent at a time, a row removed when the agent stops listing its session,
+ * and a failed pass retried instead of waiting for a notice that may never
+ * come.
+ */
 
 const CAPTURE_RETRY_MS = 15_000;
 const CAPTURE_DEBOUNCE_MS = 250;
@@ -161,10 +164,13 @@ describe("createSessionWatcher", () => {
     vi.useRealTimers();
   });
 
-  // TEST_SCENARIO: two notices arrive while a pod read is still in flight. A
-  // second capture must not start beside the first — two in flight can
-  // interleave and let the slower one delete rows the newer list already wrote
-  // — but the last notice must still be honored once the first pass ends.
+  /*
+   * TEST_SCENARIO: two notices arrive while a pod read is still in flight. A
+   * second capture must not start beside the first — two in flight can
+   * interleave and let the slower one delete rows the newer list already
+   * wrote — but the last notice must still be honored once the first pass
+   * ends.
+   */
   it("runs one capture per agent at a time and honors the last notice", async () => {
     const h = harness();
     h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")]);
@@ -187,9 +193,12 @@ describe("createSessionWatcher", () => {
     h.watcher.stop();
   });
 
-  // TEST_SCENARIO: the agent stops listing a session. The record is a
-  // notification ledger, not a session store, so a session the agent no longer
-  // lists must lose its row rather than linger as a card nothing stands behind.
+  /*
+   * TEST_SCENARIO: the agent stops listing a session. The record is a
+   * notification ledger, not a session store, so a session the agent no
+   * longer lists must lose its row rather than linger as a card nothing
+   * stands behind.
+   */
   it("removes the row for a session the agent no longer lists", async () => {
     const h = harness();
     h.setSessions([
@@ -210,9 +219,12 @@ describe("createSessionWatcher", () => {
     h.watcher.stop();
   });
 
-  // TEST_SCENARIO: a write fails mid-pass. A watched agent is captured only
-  // when its session list changes, so without a retry the removal waits for a
-  // notice that a quiet agent never sends, and the stale card stays on the feed.
+  /*
+   * TEST_SCENARIO: a write fails mid-pass. A watched agent is captured only
+   * when its session list changes, so without a retry the removal waits for
+   * a notice that a quiet agent never sends, and the stale card stays on the
+   * feed.
+   */
   it("retries a capture the database refused", async () => {
     const h = harness();
     h.setSessions([
