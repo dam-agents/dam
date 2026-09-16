@@ -13,6 +13,7 @@ import {
   ConnectionsSetupSection,
   NameSection,
   ProviderSection,
+  useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
@@ -36,6 +37,11 @@ export function KnowledgeBaseSetupView() {
     { kbTemplateId: DEFAULT_KB_TEMPLATE_ID },
     RETURN_PATH,
   );
+  const { openCatalog, catalogNode } = useSetupConnectionCatalog({
+    connectionIds: form.connectionIds,
+    onToggle: toggleConnection,
+    oauthReturnView: RETURN_PATH,
+  });
   const createKnowledgeBase = useCreateKnowledgeBase();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
 
@@ -122,7 +128,7 @@ export function KnowledgeBaseSetupView() {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
-        oauthReturnView={RETURN_PATH}
+        onOpenCatalog={openCatalog}
       />
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
@@ -131,7 +137,9 @@ export function KnowledgeBaseSetupView() {
       <SetupChannelsSection
         value={form.channels}
         onChange={(channels) => update({ channels })}
+        onGoToConnections={openCatalog}
       />
+      {catalogNode}
     </SetupPageShell>
   );
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
@@ -23,6 +24,7 @@ export function ConnectionsSection({
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
 
   const grantedIds = useMemo(
     () =>
@@ -60,6 +62,10 @@ export function ConnectionsSection({
       />
       {catalogOpen && (
         <ConnectionCatalogModal
+          onGoToChannels={() => {
+            setCatalogOpen(false);
+            navigateToSandboxHome(agentId, "channels");
+          }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
           oauthReturnView={oauthReturnView}

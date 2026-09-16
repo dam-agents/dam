@@ -7,11 +7,13 @@ import { ConnectionIcon } from "../../../connections/components/connection-icon.
 export function ChannelCard({
   iconSlug,
   title,
+  titleAccessory,
   headerRight,
   children,
 }: {
   iconSlug: string;
   title: string;
+  titleAccessory?: ReactNode;
   headerRight?: ReactNode;
   children: ReactNode;
 }) {
@@ -19,6 +21,7 @@ export function ChannelCard({
     <PanelCard
       testId={`channel-card-${iconSlug}`}
       title={title}
+      titleAccessory={titleAccessory}
       headerRight={headerRight}
       icon={
         <ConnectionIcon

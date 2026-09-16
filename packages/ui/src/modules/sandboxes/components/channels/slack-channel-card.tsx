@@ -1,6 +1,7 @@
 import { Add, OverflowMenuHorizontal } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { SlackChannelExplainer } from "@/components/channel-connection-explainer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +25,22 @@ type ModalTarget = SlackChannel | "new" | null;
 export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   return (
-    <ChannelCard iconSlug="slack" title="Slack">
+    <ChannelCard
+      iconSlug="slack"
+      title="Slack"
+      titleAccessory={
+        <SlackChannelExplainer
+          onGoToConnections={
+            agent
+              ? () => navigateToSandboxHome(agent.id, "connections")
+              : undefined
+          }
+        />
+      }
+    >
       <div className="flex flex-col items-start gap-3 px-4 py-4">
         {agent && slackChannels.length > 0 ? (
           <div className="flex w-full flex-col gap-2">

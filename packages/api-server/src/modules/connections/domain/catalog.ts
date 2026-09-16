@@ -412,7 +412,7 @@ const SLACK_SCOPES = [
 function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "slack",
-    name: "Slack",
+    name: "Slack Account",
     category: "app",
     isCustom: false,
     description:

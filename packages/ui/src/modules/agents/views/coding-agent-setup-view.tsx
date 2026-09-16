@@ -15,6 +15,7 @@ import {
   LifecycleSetupSection,
   NameSection,
   ProviderSection,
+  useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -36,6 +37,11 @@ export function CodingAgentSetupView() {
     {},
     RETURN_PATH,
   );
+  const { openCatalog, catalogNode } = useSetupConnectionCatalog({
+    connectionIds: form.connectionIds,
+    onToggle: toggleConnection,
+    oauthReturnView: RETURN_PATH,
+  });
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
 
@@ -136,7 +142,7 @@ export function CodingAgentSetupView() {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
-        oauthReturnView={RETURN_PATH}
+        onOpenCatalog={openCatalog}
       />
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
@@ -152,7 +158,9 @@ export function CodingAgentSetupView() {
       <SetupChannelsSection
         value={form.channels}
         onChange={(channels) => update({ channels })}
+        onGoToConnections={openCatalog}
       />
+      {catalogNode}
     </SetupPageShell>
   );
 }

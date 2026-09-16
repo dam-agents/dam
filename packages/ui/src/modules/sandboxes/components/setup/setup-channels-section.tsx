@@ -1,3 +1,6 @@
+import type { ReactNode } from "react";
+
+import { SlackChannelExplainer } from "@/components/channel-connection-explainer";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -37,9 +40,11 @@ const ROWS: MessengerRow[] = [
 export function SetupChannelsSection({
   value,
   onChange,
+  onGoToConnections,
 }: {
   value: SetupChannelSelection;
   onChange: (next: SetupChannelSelection) => void;
+  onGoToConnections?: () => void;
 }) {
   const available = useAgents().data?.availableChannels ?? {};
   const offered = ROWS.filter((row) => available[row.key]);
@@ -62,6 +67,13 @@ export function SetupChannelsSection({
               onCheckedChange={(checked) =>
                 onChange({ ...value, [row.key]: checked })
               }
+              explainer={
+                row.key === "slack" ? (
+                  <SlackChannelExplainer
+                    onGoToConnections={onGoToConnections}
+                  />
+                ) : null
+              }
             />
           ))}
         </div>
@@ -74,10 +86,12 @@ function MessengerCheckboxRow({
   row,
   checked,
   onCheckedChange,
+  explainer,
 }: {
   row: MessengerRow;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  explainer?: ReactNode;
 }) {
   return (
     <label
@@ -95,6 +109,7 @@ function MessengerCheckboxRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-sm font-medium">
           {row.label}
+          {explainer}
         </span>
         <span className="mt-0.5 block text-sm text-muted-foreground">
           {row.description}

@@ -36,12 +36,14 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  onGoToChannels?: () => void;
 }
 
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  onGoToChannels,
 }: Props) {
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -129,6 +131,7 @@ export function ConnectionCatalogModal({
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
+                  onGoToChannels={onGoToChannels}
                 />
               ))}
             </div>
