@@ -1,5 +1,5 @@
 import type { AgentView } from "../../../types.js";
-import { useOperableState } from "./sandbox-wake-to-edit.js";
+import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { SkillsSurface } from "./skills/skills-surface.js";
 
 export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
