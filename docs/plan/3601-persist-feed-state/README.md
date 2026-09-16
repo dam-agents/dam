@@ -120,7 +120,7 @@ an approval resolves rather than re-activating. Unread stays the rule it is toda
 | 04 | ✅ Home reads one query | Home reads the record; hibernated agents appear; the owner-wide pod subscription is deleted | 03 |
 | 05 | ✅ Dismissals that follow the user | Dismiss mutation and the UI switch off local storage, sessions and approvals | 04 |
 | 06 | ✅ Unread for terminal sessions | Stamp activity on detached PTY output; drop the terminal exclusions | 05 |
-| 07 | Document it | New architecture page, index entry, platform-topology and persistence updates | 06 |
+| 07 | ✅ Document it | New architecture page, index entry, platform-topology and persistence updates | 06 |
 
 ## Conventions & glossary
 
