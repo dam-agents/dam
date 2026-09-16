@@ -42,7 +42,7 @@ function slackSteps(brandName: string, brandShort: string): BindStep[] {
   ];
 }
 
-function telegramSteps(brandShort: string): BindStep[] {
+function telegramSteps(): BindStep[] {
   return [
     {
       title: "Add the bot to your chat",
@@ -51,7 +51,7 @@ function telegramSteps(brandShort: string): BindStep[] {
     {
       title: "Send the bind command there",
       body: "In that chat, send:",
-      command: `/${brandShort} bind`,
+      command: "/bind",
       note: "In a group, only admins can run this.",
     },
     {
@@ -122,7 +122,7 @@ function MessengerInstructions({ messenger }: { messenger: BindMessenger }) {
   const steps =
     messenger === "slack"
       ? slackSteps(brand.name, brand.short)
-      : telegramSteps(brand.short);
+      : telegramSteps();
 
   return (
     <ol className="flex flex-col gap-5">
