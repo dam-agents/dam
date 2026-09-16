@@ -24,7 +24,9 @@ describe("podTerminationReason", () => {
   });
 
   it("stays unset for a machine that is merely booting", () => {
-    const infra = parseInfraAgent(agentWith("MachineNotReady", "machine is creating"));
+    const infra = parseInfraAgent(
+      agentWith("MachineNotReady", "machine is creating"),
+    );
     expect(infra.podTerminationReason).toBeUndefined();
   });
 
@@ -32,7 +34,9 @@ describe("podTerminationReason", () => {
     const infra = parseInfraAgent(
       agentWith("MachineBootFailed", "smolvm machine start: exit status 1"),
     );
-    expect(infra.podTerminationReason).toBe("smolvm machine start: exit status 1");
+    expect(infra.podTerminationReason).toBe(
+      "smolvm machine start: exit status 1",
+    );
   });
 
   it("still reports a container agent that was OOM-killed", () => {
