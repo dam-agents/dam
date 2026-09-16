@@ -16,8 +16,8 @@ const (
 	// Agent gen 5: l7Hosts added to AgentSpec — per-agent L7 promotion
 	// replaces the owner-scoped allow-only marker Secrets (#2865).
 	// Agent gen 6: backend added to AgentSpec — discriminated union selecting
-	// the isolation substrate (container | vm); vm reconciles a KubeVirt
-	// VirtualMachine instead of the agent StatefulSet.
+	// the isolation substrate (container | vm); vm runs the agent as a
+	// microVM on its owner's VM runner instead of in the agent StatefulSet.
 	// Agent gen 7: telemetryAttributionId added to AgentSpec — the trusted
 	// telemetry attribution override the gateway stamps for Invocation targets
 	// so their spend credits the root Driver (#3041).
