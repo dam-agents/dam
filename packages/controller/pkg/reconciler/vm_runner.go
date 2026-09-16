@@ -429,6 +429,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
+					// UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service, and this pod is deliberately kept away from Service and pod addresses — so with an egress policy in force it cannot resolve anything through it, and a registry pull fails on the lookup rather than the fetch. The node's own resolver is reachable and is what a pod confined like this one has left. It costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it.
+					DNSPolicy:                    corev1.DNSDefault,
 					ServiceAccountName:           spec.ServiceAccountName,
 					AutomountServiceAccountToken: ptrBool(false),
 					NodeSelector:                 spec.NodeSelector,
