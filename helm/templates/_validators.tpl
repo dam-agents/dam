@@ -115,7 +115,7 @@ mounted there. Rather than silently preferring one, say so.
 {{- define "platform.validate.oneBackingForTheRunnerImages" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
-{{- if and $v.imageCache.enabled $v.runner.imageArchiveHostPath -}}
+{{- if and ($v.imageCache | default dict).enabled $v.runner.imageArchiveHostPath -}}
 {{- fail "virtualization.imageCache.enabled and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the shared cache, or keep the host path and turn the cache off." -}}
 {{- end -}}
 {{- end -}}

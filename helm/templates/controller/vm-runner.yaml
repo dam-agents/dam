@@ -54,7 +54,8 @@ subjects:
     name: {{ $name }}
     namespace: {{ .Values.agentNamespace }}
 {{- end }}
-{{- if .Values.virtualization.imageCache.enabled }}
+{{- $cache := .Values.virtualization.imageCache | default dict }}
+{{- if $cache.enabled }}
 ---
 {{- /*
 One volume for every runner: a machine may reach only its gateway, so the guest
@@ -73,11 +74,11 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  {{- with .Values.virtualization.imageCache.storageClass }}
+  {{- with $cache.storageClass }}
   storageClassName: {{ . | quote }}
   {{- end }}
   resources:
     requests:
-      storage: {{ .Values.virtualization.imageCache.size | quote }}
+      storage: {{ $cache.size | default "50Gi" | quote }}
 {{- end }}
 {{- end }}
