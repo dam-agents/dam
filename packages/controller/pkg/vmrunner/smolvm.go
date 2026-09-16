@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,7 +51,7 @@ func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int,
 	for _, c := range spec.AllowCIDRs {
 		args = append(args, "--allow-cidr", c)
 	}
-	return r.run(append(args, envArgs(spec.Env)...)...)
+	return r.run(envValues(spec.Env), append(args, envArgs(spec.Env)...)...)
 }
 
 func (r *Smolvm) Update(id string, spec MachineSpec, applied *MachineSpec) error {
@@ -67,26 +66,26 @@ func (r *Smolvm) Update(id string, spec MachineSpec, applied *MachineSpec) error
 			}
 		}
 	}
-	return r.run(append(args, envArgs(spec.Env)...)...)
+	return r.run(envValues(spec.Env), append(args, envArgs(spec.Env)...)...)
 }
 
-func (r *Smolvm) Stop(id string) error   { return r.run("machine", "stop", "-n", id) }
-func (r *Smolvm) Delete(id string) error { return r.run("machine", "delete", "-n", id, "-f") }
+func (r *Smolvm) Stop(id string) error   { return r.run(nil, "machine", "stop", "-n", id) }
+func (r *Smolvm) Delete(id string) error { return r.run(nil, "machine", "delete", "-n", id, "-f") }
 
 func (r *Smolvm) Start(id string) error {
 	dir := r.vmDir(id)
 	if dir != "" {
-		_ = r.run("machine", "stop", "-n", id)
+		_ = r.run(nil, "machine", "stop", "-n", id)
 		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
 	}
-	err := r.run("machine", "start", "-n", id)
+	err := r.run(nil, "machine", "start", "-n", id)
 	if err != nil && dir != "" && strings.Contains(err.Error(), "boot process exited") {
 		for _, f := range []string{"overlay.qcow2", "overlay.formatted"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
-		err = r.run("machine", "start", "-n", id)
+		err = r.run(nil, "machine", "start", "-n", id)
 	}
 	if err != nil {
 		for _, pid := range orphanPIDs("/proc", dir) {
@@ -124,13 +123,6 @@ func orphanPIDs(procRoot, vmDir string) []int {
 	return pids
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches a guest as `-e KEY=VALUE` on this command line, and a failure carries the command's own output into the Agent's status and the platform's logs — so a tool that echoes its invocation would publish those values.
-var envValue = regexp.MustCompile(`(-e\s+[A-Za-z_][A-Za-z0-9_]*=)\S+`)
-
-func redactEnv(out string) string {
-	return envValue.ReplaceAllString(out, "${1}***")
-}
-
 func envArgs(env map[string]string) []string {
 	keys := make([]string, 0, len(env))
 	for k := range env {
@@ -144,12 +136,34 @@ func envArgs(env map[string]string) []string {
 	return args
 }
 
-func (r *Smolvm) run(args ...string) error {
+// UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches a guest on this command line, and a failure carries the command's own output into the Agent's status and the platform's logs — so a tool that echoes its invocation would publish those values, in whatever shape it happens to print them.
+func (r *Smolvm) run(secrets []string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, r.Bin, args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, redactEnv(strings.TrimSpace(string(out))))
+		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, redact(strings.TrimSpace(string(out)), secrets))
 	}
 	return nil
+}
+
+func redact(out string, secrets []string) string {
+	var pairs []string
+	for _, v := range secrets {
+		if len(v) > 3 {
+			pairs = append(pairs, v, "***")
+		}
+	}
+	if pairs == nil {
+		return out
+	}
+	return strings.NewReplacer(pairs...).Replace(out)
+}
+
+func envValues(env map[string]string) []string {
+	out := make([]string, 0, len(env))
+	for _, v := range env {
+		out = append(out, v)
+	}
+	return out
 }

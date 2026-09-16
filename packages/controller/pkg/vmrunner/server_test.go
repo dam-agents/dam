@@ -601,14 +601,21 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.NotContains(t, h.calls(), "--allow-cidr 10.0.0.2/32", "and never re-created with the new one behind the user's back")
 }
 
-// TEST_SCENARIO: an operator's Secret reaches the guest as `-e KEY=VALUE` on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs — so a tool that echoes its own invocation would publish those values to anyone who can read either.
-func TestSecretValuesAreRedactedFromCommandOutput(t *testing.T) {
-	echoed := "failed to start machine\n" +
-		"  invocation: machine create -n m1 -e ANTHROPIC_API_KEY=sk-live-abc123 -e HOME=/home/agent\n"
+// TEST_SCENARIO: an operator's Secret reaches the guest on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs. The value is removed whatever shape the tool prints it in — quoted, behind a different flag, or in a Go-style argument list — because matching the one shape I happened to imagine is not a defence.
+func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
+	secret := "sk-live-abc123"
+	for _, shape := range []string{
+		"invocation: machine create -n m1 -e TOKEN=" + secret,
+		"invocation: machine create -n m1 -e TOKEN='" + secret + " and more'",
+		"invocation: machine create --env TOKEN=" + secret,
+		`args: ["-e","TOKEN=` + secret + `"]`,
+		"failed to set " + secret + " in the guest",
+	} {
+		got := redact(shape, []string{secret, "/home/agent"})
+		assert.NotContains(t, got, secret, "shape %q", shape)
+		assert.Contains(t, got, "***")
+	}
 
-	got := redactEnv(echoed)
-
-	assert.NotContains(t, got, "sk-live-abc123", "the value never reaches a log or a status")
-	assert.Contains(t, got, "-e ANTHROPIC_API_KEY=***", "the name stays, so the failure is still diagnosable")
-	assert.Contains(t, got, "failed to start machine", "and the rest of the output is untouched")
+	assert.Equal(t, "nothing to hide", redact("nothing to hide", nil), "output is untouched when there is no secret")
+	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
 }

@@ -22,7 +22,8 @@ type Client struct {
 // UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — it forks the smolvm CLI per call — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
-	transport := &http.Transport{DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 3 * time.Second}).DialContext
 	if caPEM != "" {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(caPEM)) {

@@ -42,10 +42,10 @@ type runnerConn struct {
 	token  string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: this suffix is the whole of a runner's identity — it names the Secret, the disk and the Service — so two owners colliding here would silently share one runner's credentials and machines. 128 bits keeps that beyond reach; the name budget has room.
+// UNIT_BOUNDARY_DESCRIPTION: this suffix is the whole of a runner's identity — it names the Secret, the disk and the Service — so two owners colliding here would silently share one runner's credentials and machines. 64 bits puts that out of reach while leaving a Service name, capped at 63 characters, 36 for the release's own.
 func runnerSuffix(owner string) string {
 	sum := sha256.Sum256([]byte(owner))
-	return hex.EncodeToString(sum[:16])
+	return hex.EncodeToString(sum[:8])
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
