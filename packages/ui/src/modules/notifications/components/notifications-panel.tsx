@@ -243,9 +243,6 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   );
 
   const handleDismiss = useCallback((item: NotificationItem) => {
-    if (item.type === "unread") {
-      setSessionSeen(item.agentId, item.session.sessionId);
-    }
     setDismissingIds((prev) => new Set(prev).add(item.id));
     setTimeout(() => {
       setDismissingIds((prev) => {

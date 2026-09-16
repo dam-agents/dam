@@ -410,94 +410,107 @@ export const handlers = [
 
   // Agent-specific tRPC mutations (POST)
   http.post(/\/api\/agents\/[^/]+\/trpc\/.*/, async ({ request }) => {
-    const url = new URL(request.url);
-    const procedurePath = url.pathname.replace(
-      /^\/api\/agents\/[^/]+\/trpc\//,
-      "",
-    );
-    const procedures = procedurePath.split(",");
-
-    let body: any = null;
     try {
-      body = await request.json();
-    } catch {
-      /* no body */
-    }
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace(
+        /^\/api\/agents\/[^/]+\/trpc\//,
+        "",
+      );
+      const procedures = procedurePath.split(",");
 
-    const results = procedures.map((proc, idx) => {
-      console.info(`[MSW] Mock agent mutation: ${proc}`);
-      if (
-        proc === "approvals.approveOnce" ||
-        proc === "approvals.approvePermanent" ||
-        proc === "approvals.approveHost" ||
-        proc === "approvals.denyForever" ||
-        proc === "approvals.dismiss"
-      ) {
-        const input = body?.[String(idx)]?.json ?? body?.json ?? body;
-        const id = input?.approvalId ?? input?.id;
-        if (id) resolvedApprovalIds.add(id);
-        return { result: { data: { ok: true } } };
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
       }
-      return { result: { data: null } };
-    });
 
-    return HttpResponse.json(results);
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock agent mutation: ${proc}`);
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] Agent POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
+    }
   }),
 
   // tRPC batch mutations (POST)
   http.post("/api/trpc/*", async ({ request }) => {
-    const url = new URL(request.url);
-    const procedurePath = url.pathname.replace("/api/trpc/", "");
-    const procedures = procedurePath.split(",");
-
-    let body: any = null;
     try {
-      body = await request.json();
-    } catch {
-      /* no body */
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace("/api/trpc/", "");
+      const procedures = procedurePath.split(",");
+
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
+      }
+
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock mutation: ${proc}`);
+        if (proc === "agents.create") {
+          mockEmpty = false;
+          return { result: { data: agents[0] } };
+        }
+        if (proc === "agents.upgrade") {
+          return { result: { data: { ...agents[1], templateUpdate: null } } };
+        }
+        if (proc === "experiments.createSandbox") {
+          mockEmpty = false;
+          return {
+            result: {
+              data: agents.find((a) => a.kind === "experiment") ?? agents[0],
+            },
+          };
+        }
+        if (proc === "knowledgeBases.create") {
+          mockEmpty = false;
+          return {
+            result: {
+              data:
+                agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
+            },
+          };
+        }
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
     }
-
-    const results = procedures.map((proc, idx) => {
-      console.info(`[MSW] Mock mutation: ${proc}`);
-      if (proc === "agents.create") {
-        mockEmpty = false;
-        return { result: { data: agents[0] } };
-      }
-      if (proc === "agents.upgrade") {
-        return { result: { data: { ...agents[1], templateUpdate: null } } };
-      }
-      if (proc === "experiments.createSandbox") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "experiment") ?? agents[0],
-          },
-        };
-      }
-      if (proc === "knowledgeBases.create") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
-          },
-        };
-      }
-      if (
-        proc === "approvals.approveOnce" ||
-        proc === "approvals.approvePermanent" ||
-        proc === "approvals.approveHost" ||
-        proc === "approvals.denyForever" ||
-        proc === "approvals.dismiss"
-      ) {
-        const input = body?.[String(idx)]?.json ?? body?.json ?? body;
-        const id = input?.approvalId ?? input?.id;
-        if (id) resolvedApprovalIds.add(id);
-        return { result: { data: { ok: true } } };
-      }
-      return { result: { data: null } };
-    });
-
-    return HttpResponse.json(results);
   }),
 
   // Brand endpoint
