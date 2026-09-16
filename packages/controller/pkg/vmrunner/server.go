@@ -27,7 +27,7 @@ const (
 	unhealthyRestart = 10 * time.Minute
 )
 
-var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+var machineID = regexp.MustCompile(`^[^/]+$`)
 
 type failure struct{ message, reason string }
 

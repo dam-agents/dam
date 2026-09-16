@@ -585,13 +585,11 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 
 	for _, action := range r.client.(*fake.Clientset).Actions() {
-		var ss *appsv1.StatefulSet
-		switch a := action.(type) {
-		case k8stesting.CreateAction:
-			ss, _ = a.GetObject().(*appsv1.StatefulSet)
-		case k8stesting.UpdateAction:
-			ss, _ = a.GetObject().(*appsv1.StatefulSet)
+		written, ok := action.(k8stesting.CreateAction)
+		if !ok {
+			continue
 		}
+		ss, _ := written.GetObject().(*appsv1.StatefulSet)
 		if ss == nil || ss.Name != GatewayName("my-agent") || ss.Spec.Replicas == nil {
 			continue
 		}
