@@ -10,6 +10,10 @@ import {
   createMetricsService,
   createSessionTypeSpend,
 } from "../../../modules/metrics/index.js";
+import {
+  createDisabledTelemetryService,
+  createTelemetryService,
+} from "../../../modules/telemetry/index.js";
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
@@ -60,6 +64,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     schedulesBoot,
     listRegisteredAgentIds,
     metricsReader,
+    telemetryReader,
     sessionDirectory,
     terms,
     e2e,
@@ -320,6 +325,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           }),
         })
       : createDisabledMetricsService();
+    const telemetry = telemetryReader
+      ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
+      : createDisabledTelemetryService();
 
     return {
       templates,
@@ -347,6 +355,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       liveEvents,
       podSessions,
       metrics,
+      telemetry,
       terms,
       usage: composeUsageForOwner(user.sub),
       e2e,

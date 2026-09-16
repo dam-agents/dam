@@ -72,6 +72,7 @@ import { ExperimentDockPanel } from "../../experiments/components/experiment-doc
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -79,6 +80,9 @@ import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
+import { useTurns } from "../../telemetry/api/queries.js";
+import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
+import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
@@ -277,6 +281,15 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const sessionTurns = useTurns(
+    telemetryEnabled ? selectedAgent : null,
+    telemetryEnabled ? sessionId : null,
+    24,
+  );
+  const turnRows =
+    sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
+  const turnForMessage = matchTurnsToReplies(turnRows, messages);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -726,18 +739,33 @@ export function ChatView() {
                           label={dividerLabel(item, now)}
                         />
                       ) : (
-                        <ChatMessage
-                          key={item.message.id}
-                          message={item.message}
-                          isLast={item.index === messages.length - 1}
-                          {...timeProps(item.message.at, now)}
-                          hasPendingPermission={hasPendingPermission}
-                          onRetry={sendPrompt}
-                          onFileClick={openFileHandler}
-                          onDelete={deleteMessage}
-                          onLoadOlder={loadOlderKeepingScroll}
-                        />
+                        <div key={item.message.id}>
+                          <ChatMessage
+                            message={item.message}
+                            isLast={item.index === messages.length - 1}
+                            {...timeProps(item.message.at, now)}
+                            hasPendingPermission={hasPendingPermission}
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onDelete={deleteMessage}
+                            onLoadOlder={loadOlderKeepingScroll}
+                          />
+                          {selectedAgent &&
+                            sessionId &&
+                            turnForMessage.get(item.message.id) && (
+                              <TurnTelemetry
+                                agentId={selectedAgent}
+                                sessionId={sessionId}
+                                turn={turnForMessage.get(item.message.id)!}
+                              />
+                            )}
+                        </div>
                       ),
+                    )}
+                    {telemetryEnabled && sessionTurns.isError && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        Telemetry for this session could not be read.
+                      </p>
                     )}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>

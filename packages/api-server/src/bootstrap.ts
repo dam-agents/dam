@@ -95,6 +95,10 @@ import {
   listUsageAgentIds,
 } from "./modules/usage/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
+import {
+  composeTelemetryReader,
+  createTelemetryRoutes,
+} from "./modules/telemetry/index.js";
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
   composeMetricsReader,
@@ -576,6 +580,7 @@ export async function bootstrap() {
     graceDays: config.caseStudiesTombstoneGraceDays,
   });
   const metricsReader = composeMetricsReader(config);
+  const telemetryReader = composeTelemetryReader(config);
 
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
@@ -1161,10 +1166,19 @@ export async function bootstrap() {
         .get(agentId)
         .then((r) => r?.runtimeCapabilities ?? null),
     schedulesBoot,
+    mountTelemetryRoutes: (app) =>
+      app.route(
+        "/",
+        createTelemetryRoutes({
+          reader: telemetryReader,
+          listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+        }),
+      ),
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
     metricsReader,
+    telemetryReader,
     sessionDirectory,
     terms: termsService,
     isTermsAccepted,
