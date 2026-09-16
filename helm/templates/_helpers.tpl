@@ -540,14 +540,17 @@ API Server ServiceAccount name
 OpenShift grants `use` on a built-in SCC through an auto-generated ClusterRole
 named system:openshift:scc:<scc>. The VM runner identity and the KVM device
 plugin both bind one the same way.
-Args: dict "root" $ "name" <ServiceAccount> "component" <label> "scc" <scc>.
+Args: dict "root" $ "name" <ServiceAccount> "component" <label> "scc" <scc>,
+and optionally "namespace" when the identity does not live in the release
+namespace (the VM runner's sits beside the runners it owns).
 */}}
 {{- define "platform.sccRoleBinding" -}}
+{{- $ns := .namespace | default .root.Release.Namespace -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ .name }}-scc
-  namespace: {{ .root.Release.Namespace }}
+  namespace: {{ $ns }}
   labels:
     {{- include "platform.labels" .root | nindent 4 }}
     app.kubernetes.io/component: {{ .component }}
@@ -558,5 +561,5 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ .name }}
-    namespace: {{ .root.Release.Namespace }}
+    namespace: {{ $ns }}
 {{- end }}

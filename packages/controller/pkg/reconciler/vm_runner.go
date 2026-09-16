@@ -50,16 +50,21 @@ func runnerSuffix(owner string) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
+// UNIT_BOUNDARY_DESCRIPTION: runners are per owner, so no single Agent can own them — one agent's deletion would collect a runner still holding another's disk. They are owned instead by the ServiceAccount the chart renders for them, which sits in the same namespace (an owner reference may not cross one) and is removed by uninstall, by rollback and by turning virtualization off — so the runners, their disks and their credentials go with it.
 func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerReference {
 	r.runnerOwnerOnce.Do(func() {
-		name := r.config.ReleaseName + "-controller"
-		dep, err := r.client.AppsV1().Deployments(r.config.ReleaseNamespace).Get(ctx, name, metav1.GetOptions{})
+		name := r.config.VM.Runner.ServiceAccountName
+		if name == "" {
+			slog.Warn("vm runner: no runner ServiceAccount configured, runners will outlive the release")
+			return
+		}
+		sa, err := r.client.CoreV1().ServiceAccounts(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			slog.Warn("vm runner: no owner reference, runners will outlive the release", "deployment", name, "error", err)
+			slog.Warn("vm runner: no owner reference, runners will outlive the release", "serviceaccount", name, "error", err)
 			return
 		}
 		r.runnerOwner = &metav1.OwnerReference{
-			APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID,
+			APIVersion: "v1", Kind: "ServiceAccount", Name: sa.Name, UID: sa.UID,
 		}
 	})
 	if r.runnerOwner == nil {
@@ -86,7 +91,7 @@ func (r *AgentReconciler) runnerName(owner string) string {
 }
 
 func (r *AgentReconciler) runnerHost(owner string) string {
-	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.ReleaseNamespace)
+	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.Namespace)
 }
 
 func vmRunnerSelector(owner string) map[string]string {
@@ -107,7 +112,7 @@ func vmRunnerLabels(owner, release string) map[string]string {
 // UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their credentials, renders their objects, and hands the caller a client once the pod reports ready.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmrunner.Client, bool, error) {
 	name := r.runnerName(owner)
-	ns := r.config.ReleaseNamespace
+	ns := r.config.Namespace
 
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
@@ -119,7 +124,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.Namespace, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
 	np.OwnerReferences = r.runnerOwnerRef(ctx)
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
@@ -166,7 +171,7 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 }
 
 func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) (string, string, error) {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
+	name, ns := r.runnerName(owner), r.config.Namespace
 	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
 		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
@@ -240,7 +245,7 @@ func selfSignedCert(names ...string) (string, string, error) {
 }
 
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
+	name, ns := r.runnerName(owner), r.config.Namespace
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
 		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
 			_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
@@ -271,7 +276,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 }
 
 func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
+	name, ns := r.runnerName(owner), r.config.Namespace
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
 		Spec: corev1.ServiceSpec{
@@ -296,16 +301,19 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	first := intstr.FromInt(31000)
 	last := int32(31099)
 	peer := func(component string) networkingv1.NetworkPolicyPeer {
-		return networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-			"app.kubernetes.io/component": component,
-			"app.kubernetes.io/instance":  instanceLabel,
-		}}}
+		return networkingv1.NetworkPolicyPeer{
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": releaseNS}},
+			PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/component": component,
+				"app.kubernetes.io/instance":  instanceLabel,
+			}},
+		}
 	}
 	types := []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	if len(egress) > 0 {
@@ -327,7 +335,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, agentNS string,
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}},
-			Egress: runnerEgress(agentNS, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, egress, exceptCIDRs),
 		},
 	}
 }
@@ -373,7 +381,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 }
 
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
+	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
 	podLabels := map[string]string{"istio.io/dataplane-mode": "none"}
@@ -483,7 +491,7 @@ type runnerRef struct {
 }
 
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
-	list, err := r.client.AppsV1().Deployments(r.config.ReleaseNamespace).List(ctx, metav1.ListOptions{
+	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent,
 	})
 	if err != nil {
@@ -507,7 +515,7 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 // UNIT_BOUNDARY_DESCRIPTION: a runner outlives the agents that made it, so it is torn down only once the sweep finds it holding no machine at all — at which point its disk holds nothing either.
 // UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot — reached only once the sweep has found the runner holding no machine at all, at which point its disk holds nothing either.
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
-	name, ns := r.runnerName(owner), r.config.ReleaseNamespace
+	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
 	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
 		slog.Warn("removing a VM runner: deployment", "owner", owner, "error", err)
@@ -534,7 +542,7 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 // UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand.
 func (r *AgentReconciler) runnerNotReadyMessage(ctx context.Context, owner string) string {
 	const starting = "the owner's VM runner is still starting"
-	pods, err := r.client.CoreV1().Pods(r.config.ReleaseNamespace).List(ctx, metav1.ListOptions{
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
 	})
 	if err != nil || len(pods.Items) == 0 {

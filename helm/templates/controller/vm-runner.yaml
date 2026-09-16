@@ -6,19 +6,25 @@ mints each runner's credentials itself. What the chart owns is the identity
 every runner runs as, and the SCC that identity needs on OpenShift; the pod
 shape those runners get is `virtualization.runner` in values.yaml, handed to
 the controller as AGENT_VM.
+
+This identity also owns them. A runner belongs to an owner rather than to any
+one Agent, so no Agent can own it; an owner reference may not cross a
+namespace, so the ServiceAccount is rendered beside the runners in the agent
+namespace. Removing it — uninstall, rollback, or virtualization.enabled going
+false — collects every runner, disk and credential with it.
 */}}
 {{- $name := printf "%s-vm-runner" (include "platform.fullname" .) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $name }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: vm-runner
 {{- with .Values.virtualization.runner.scc }}
 ---
-{{ include "platform.sccRoleBinding" (dict "root" $ "name" $name "component" "vm-runner" "scc" .) }}
+{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner" "scc" .) }}
 {{- end }}
 {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 ---
@@ -35,7 +41,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ $name }}-anyuid-cap-net
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: vm-runner
@@ -46,6 +52,6 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ $name }}
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ .Values.agentNamespace }}
 {{- end }}
 {{- end }}
