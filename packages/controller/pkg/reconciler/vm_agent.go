@@ -22,6 +22,8 @@ const (
 	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
 	vmReadinessPoll   = 3 * time.Second
 	vmHealthPoll      = time.Minute
+
+	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
@@ -59,6 +61,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	env["IS_SANDBOX"] = "1"
+	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
+	env["no_proxy"] = env["NO_PROXY"]
 
 	var persist []string
 	storageGiB := 0

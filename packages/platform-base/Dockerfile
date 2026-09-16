@@ -97,6 +97,40 @@ RUN dnf install \
     &&\
     rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
+# A process supervisor for the vm Backend. k3s and anything else installed the
+# distro way refuses to install without one: its installer looks for systemd,
+# then for /sbin/openrc-run, and gives up. The image's init is catatonit and
+# openrc is not packaged for this distro, so it is built here.
+#
+# openrc-run is staged under libexec rather than left on PATH, because that one
+# path is the probe every such installer makes. Only a machine's boot links it
+# in, so a container agent — which cannot supervise anything — keeps failing
+# that probe immediately instead of installing a service it can never start.
+#
+# The stock runlevels are emptied because a guest is already booted by the time
+# openrc exists: its boot services would re-wipe /tmp (where the agent's cache
+# lives) and re-link /var out from under a running userspace. openrc is here to
+# supervise what the agent registers, nothing else. The scripts stay in
+# /etc/init.d for anything that asks for them by name.
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS openrc
+USER root
+ARG OPENRC_VERSION=0.64
+ARG OPENRC_SHA256=f52dd53d6bd798476f8f0b74c5722afa1a59e408a4ec49c1333e5a152a25440d
+RUN set -eu; \
+    dnf install -y -q --setopt=install_weak_deps=0 meson ninja-build gcc pkgconf-pkg-config libcap-devel tar gzip; \
+    curl -sSLo /tmp/openrc.tar.gz "https://github.com/OpenRC/openrc/archive/refs/tags/${OPENRC_VERSION}.tar.gz"; \
+    echo "${OPENRC_SHA256}  /tmp/openrc.tar.gz" | sha256sum -c -; \
+    tar -xf /tmp/openrc.tar.gz -C /tmp; \
+    cd "/tmp/openrc-${OPENRC_VERSION}"; \
+    meson setup build -Dprefix=/usr -Dsysconfdir=/etc -Dbindir=/usr/bin -Dsbindir=/usr/bin \
+    -Daudit=disabled -Dselinux=disabled \
+    -Dpam=false -Dsysvinit=false -Dbash-completions=false -Dzsh-completions=false -Dnewnet=false; \
+    ninja -C build; \
+    DESTDIR=/out ninja -C build install; \
+    mv /out/usr/bin/openrc-run /out/usr/libexec/openrc-run; \
+    find /out/etc/runlevels -mindepth 2 -delete; \
+    rm -rf /out/usr/include
+
 FROM base AS builder
 
 COPY package.json ./
@@ -152,6 +186,7 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
+COPY --from=openrc /out/ /
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base --chown=65532:0 /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
