@@ -98,6 +98,7 @@ import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
@@ -236,18 +237,14 @@ export function ChatView() {
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
 
-  const sendArtifactPrompt = useCallback(
-    (prompt: string) => {
-      const current = useStore.getState();
-      if (
-        current.selectedAgent !== selectedAgent ||
-        current.sessionId !== sessionId
-      )
-        return Promise.resolve();
-      return sendPrompt(prompt);
-    },
-    [selectedAgent, sessionId, sendPrompt],
-  );
+  const sendArtifactPrompt = useChatArtifactPrompt({
+    agentId: selectedAgent,
+    sessionId,
+    sessionMode,
+    agentOperable,
+    loadingSession,
+    sendPrompt,
+  });
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { restart } = useRestartAgent();
@@ -838,14 +835,7 @@ export function ChatView() {
                 <DockedArtifactPanel
                   key={openArtifactId}
                   agentId={selectedAgent}
-                  onSendPrompt={
-                    sessionMode === SessionMode.Chat &&
-                    sessionId &&
-                    agentOperable &&
-                    !loadingSession
-                      ? sendArtifactPrompt
-                      : undefined
-                  }
+                  onSendPrompt={sendArtifactPrompt}
                 />
               ) : dockedExperiment ? (
                 <ExperimentDockPanel

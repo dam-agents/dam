@@ -78,7 +78,8 @@ normal chat path. Replies, queued turns and delivery errors appear in chat; the
 page receives no separate answer. Publishing an updated artifact uses the normal
 version flow.
 
-Callbacks are available only in the chat's docked preview, including fullscreen.
+Callbacks are available only in the chat's docked preview, including fullscreen,
+and work in a newly started conversation without reloading the page.
 Library previews and historical versions cannot send prompts, and disabling the
 feature disconnects the callback. There is no permanent Session binding: the
 currently open conversation is the destination. Interactive pages cannot be shared,
