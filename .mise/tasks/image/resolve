@@ -18,7 +18,6 @@
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
-#   mise run image:resolve -- list-slow-builds           -> the workloads (chart-pinned by source sha)
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
@@ -50,10 +49,6 @@ AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
-# claude-code derivatives outside the agents matrix. Like the agents, their
-# chart tag is pinned by source sha (pin-tags) and main pushes reuse the
-# unchanged ones.
-SLOW_BUILDS="$WORKLOADS"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -143,7 +138,7 @@ gha_outputs() {
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak $AGENTS $SLOW_BUILDS; do
+  src="$(for a in platform-base keycloak $AGENTS $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
@@ -213,9 +208,8 @@ case "${1:-}" in
   gha-outputs)    gha_outputs ;;
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
-  list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $SLOW_BUILDS ;;
+  list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac
