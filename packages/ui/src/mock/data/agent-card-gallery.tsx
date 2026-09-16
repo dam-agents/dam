@@ -1,404 +1,483 @@
-import { Time } from "@carbon/icons-react";
-import type { ApprovalView } from "api-server-api";
-import { useMemo } from "react";
+import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
+import type { LibraryArtifact } from "api-server-api";
+import { useState } from "react";
 
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AgentRow } from "../../modules/agents/components/agent-row.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
-import { ComputeWidget } from "../../modules/home/components/compute-widget.js";
-import { FeedApprovalCard } from "../../modules/home/components/feed-approval-card.js";
-import { FeedCard } from "../../modules/home/components/feed-card.js";
-import { SpendWidget } from "../../modules/home/components/spend-widget.js";
+import { ArtifactPreviewDialog } from "../../modules/artifacts/components/artifact-preview-dialog.js";
+import { NotificationRow } from "../../modules/home/components/notification-row.js";
 import { PACKS } from "../../modules/packs/data/packs.js";
 import { useStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
+import {
+  allFixtureAgents,
+  bareAgent,
+  demoPackAgent,
+  errorAgent,
+  experimentAgent,
+  fixtureSchedules,
+  fullAgent,
+  hibernatedUnknownSkills,
+  knowledgeBaseAgent,
+  neverHibernatesButHibernated,
+  neverHibernatesOverBudget,
+  packSkippedAgent,
+  singularAgent,
+  temporaryDriverAgent,
+} from "./agent-card-fixtures.js";
 import { agents } from "./agents.js";
-import { schedules } from "./schedules.js";
-
-function agentScheduleCount(agentId: string): number {
-  return schedules.filter((s) => s.agentId === agentId && s.enabled).length;
-}
-
-interface CardDemoProps {
-  title: string;
-  note: string;
-  agent: AgentView;
-  isDemo?: boolean;
-  temporaryDraw?: { count: number; cpuMilli: number; memoryMi: number };
-}
-
-function CardDemo({
-  title,
-  note,
-  agent,
-  isDemo,
-  temporaryDraw,
-}: CardDemoProps) {
-  const display = resolveAgentDisplay(agent, new Set(), new Set());
-  const noop = () => {};
-
-  return (
-    <div>
-      <div className="mb-2">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{note}</p>
-      </div>
-      <AgentRow
-        agent={agent}
-        display={display}
-        temporaryDraw={temporaryDraw}
-        deletePending={false}
-        isDemo={isDemo}
-        onSelect={noop}
-        onConfigure={noop}
-        configureLabel="Configure agent"
-        onWake={noop}
-        onRestart={noop}
-        onPause={noop}
-        onStop={noop}
-        onDelete={noop}
-        scheduleCount={agentScheduleCount(agent.id) || undefined}
-      />
-    </div>
-  );
-}
 
 const running = agents.find((a) => a.state === "running")!;
-const hibernated = agents.find((a) => a.state === "hibernated");
-const error = agents.find((a) => a.state === "error");
-const overBudget = agents.find((a) => a.overBudget);
-const alwaysOn = agents.find(
-  (a) => a.hibernationTimeoutMin === 0 && a.state === "running",
-);
-const alwaysOnIdle = agents.find(
-  (a) => a.hibernationTimeoutMin === 0 && a.state !== "running",
-);
-const bare = agents.find(
-  (a) =>
-    a.channels.length === 0 &&
-    a.contributionFailures.length === 0 &&
-    !a.overBudget &&
-    a.state === "running" &&
-    a.id !== running.id,
-);
-const withSlack = agents.find((a) =>
-  a.channels.some((c) => c.type === "slack"),
-);
 
-const onboardingAgent = bare ?? running;
 const onboardingPack = PACKS.find((p) => p.id === "docs-maintainer")!;
-if (onboardingPack && onboardingAgent) {
+if (onboardingPack && bareAgent) {
   const store = useStore.getState();
-  if (!store.onboardingByAgent.has(onboardingAgent.id)) {
-    store.initOnboarding(onboardingAgent.id, onboardingPack);
+  if (!store.onboardingByAgent.has(bareAgent.id)) {
+    store.initOnboarding(bareAgent.id, onboardingPack);
     store.completeOnboardingStep(
-      onboardingAgent.id,
+      bareAgent.id,
       `connect-${onboardingPack.required[0]?.label}`,
     );
   }
 }
 
-function SectionHeader({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
+function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="border-t border-border pt-6">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <p className="text-sm text-muted-foreground">{description}</p>
+    <div className="border-t border-border pt-8">
+      <p className="text-xl uppercase tracking-wide text-purple-600 dark:text-purple-400">
+        {title}
+      </p>
     </div>
   );
 }
 
-function WidgetSection() {
-  const runningAgents = useMemo(
-    () => agents.filter((a) => a.state === "running"),
-    [],
-  );
-  const workingAgentIds = useMemo(
-    () =>
-      new Set(
-        agents
-          .filter((a) => a.state === "running" && a.size?.cpu)
-          .map((a) => a.id),
-      ),
-    [],
-  );
-
+function StateLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <div className="mb-4">
-        <p className="text-sm font-semibold text-foreground">
-          Compute + Spend Widgets
-        </p>
-        <p className="text-sm text-muted-foreground">
-          These sit above the agent list on the home page.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <ComputeWidget
-          runningAgents={runningAgents}
-          workingAgentIds={workingAgentIds}
-        />
-        <SpendWidget />
-      </div>
-    </div>
+    <p className="text-[15px] font-medium text-purple-600/60 dark:text-purple-400/60">
+      {children}
+    </p>
   );
 }
 
 const noop = () => {};
 
-function mockApproval(overrides: Partial<ApprovalView>): ApprovalView {
-  return {
-    id: `approval-${Math.random().toString(36).slice(2, 8)}`,
-    type: "ext_authz",
-    agentId: running.id,
-    sessionId: "session-001",
-    payload: {
-      kind: "ext_authz",
-      host: "api.openai.com",
-      method: "POST",
-      path: "/v1/chat/completions",
-    },
-    createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-    expiresAt: new Date(Date.now() + 55 * 60_000).toISOString(),
-    resolvedAt: null,
-    verdict: null,
-    status: "pending",
-    ...overrides,
-  };
+function ChannelLogo({ src, alt }: { src: string; alt: string }) {
+  return <img src={src} alt={alt} className="size-4" />;
 }
 
-function FeedCardSection() {
+const mockArtifacts: Record<string, LibraryArtifact> = {
+  "art-coverage": {
+    id: "art-coverage",
+    title: "Test Coverage Report",
+    slug: "coverage-report-v2.4",
+    kind: "html",
+    contentType: "text/html",
+    fileName: "coverage-report-v2.4.html",
+    sizeBytes: 48_200,
+    version: 3,
+    folderId: null,
+    agentId: running.id,
+    visibility: "private",
+    expiresAt: null,
+    viewCount: 12,
+    shareUrl: null,
+    createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+  },
+  "art-bundle": {
+    id: "art-bundle",
+    title: "Release Bundle",
+    slug: "release-v2.4-rc1",
+    kind: "binary",
+    contentType: "application/zip",
+    fileName: "release-v2.4-rc1-artifacts-linux-amd64.zip",
+    sizeBytes: 15_400_000,
+    version: 1,
+    folderId: null,
+    agentId: running.id,
+    visibility: "private",
+    expiresAt: null,
+    viewCount: 3,
+    shareUrl: null,
+    createdAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+  },
+  "art-adr": {
+    id: "art-adr",
+    title: "Architecture Decision Record",
+    slug: "adr-017-event-sourcing",
+    kind: "markdown",
+    contentType: "text/markdown",
+    fileName: "adr-017-event-sourcing.md",
+    sizeBytes: 8_900,
+    version: 2,
+    folderId: null,
+    agentId: running.id,
+    visibility: "public",
+    expiresAt: null,
+    viewCount: 47,
+    shareUrl: "https://example.com/share/adr-017",
+    createdAt: new Date(Date.now() - 24 * 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+  },
+};
+
+function NotificationRowSection() {
+  const [previewArtifact, setPreviewArtifact] =
+    useState<LibraryArtifact | null>(null);
+
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader
-        title="Feed Cards (Session)"
-        description="These show sessions in the notification drawer. Hover for dismiss button + open arrow."
-      />
+      <SectionHeader title="Agent (Chat)" />
 
-      <div className="flex flex-col gap-4">
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            1. In-progress — working dots animate
-          </p>
-          <FeedCard
-            icon={null}
-            agentName="Campaign Hero Agent"
-            title="Generating spring campaign hero images"
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Working</StateLabel>
+          <NotificationRow
+            channelIcon={<EdgeDevice size={16} />}
+            channelKind="agent"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="12 min ago"
             working
-            onOpen={noop}
           />
         </div>
 
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            2. Unread — blue dot, dismiss on hover, open arrow
-          </p>
-          <FeedCard
-            icon={null}
-            agentName="Retouching Pipeline"
-            title="Product photography batch — 48 images processed"
+        <div className="flex flex-col gap-3">
+          <StateLabel>Unread</StateLabel>
+          <NotificationRow
+            channelIcon={<EdgeDevice size={16} />}
+            channelKind="agent"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="30 min ago"
             unread
-            onOpen={noop}
-            onDismiss={noop}
           />
         </div>
 
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            3. Scheduled — clock icon instead of dot
-          </p>
-          <FeedCard
-            icon={<Time size={16} className="shrink-0" />}
-            agentName="Daily Report Agent"
-            title="Generate daily performance dashboard"
-            meta="Scheduled 8:00 AM"
-            onOpen={noop}
+        <div className="flex flex-col gap-3">
+          <StateLabel>Unread + Artifact</StateLabel>
+          <NotificationRow
+            channelIcon={<EdgeDevice size={16} />}
+            channelKind="agent"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="30 min ago"
+            unread
+            artifact={{ name: "artifact-name.html" }}
+            onArtifactClick={() =>
+              setPreviewArtifact(mockArtifacts["art-bundle"]!)
+            }
           />
         </div>
 
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            4. Read session — no indicators, just open arrow
-          </p>
-          <FeedCard
-            icon={null}
-            agentName="Packaging Layout Agent"
-            title="Cereal box dieline v3 complete"
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read</StateLabel>
+          <NotificationRow
+            channelIcon={<EdgeDevice size={16} />}
+            channelKind="agent"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
             meta="2 hours ago"
-            onOpen={noop}
+            read
           />
         </div>
 
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            5. With children slot (extensible)
-          </p>
-          <FeedCard
-            icon={null}
-            agentName="Brand Guidelines Agent"
-            title="Updating color palette documentation"
-            meta="5 min ago"
-            working
-            onOpen={noop}
-          >
-            <div className="mt-2 flex items-center gap-2 rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
-              <span className="font-mono text-sm text-muted-foreground">
-                brand-colors-v4.pdf
-              </span>
-            </div>
-          </FeedCard>
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read + Artifact</StateLabel>
+          <NotificationRow
+            channelIcon={<EdgeDevice size={16} />}
+            channelKind="agent"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="45 min ago"
+            read
+            artifact={{ name: "artifact-name.html" }}
+            onArtifactClick={() =>
+              setPreviewArtifact(mockArtifacts["art-coverage"]!)
+            }
+          />
         </div>
       </div>
+
+      <SectionHeader title="Slack" />
+
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Working</StateLabel>
+          <NotificationRow
+            channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
+            channelKind="slack"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
+            meta="4 min ago"
+            working
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Unread</StateLabel>
+          <NotificationRow
+            channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
+            channelKind="slack"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
+            meta="1 hour ago"
+            unread
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read + Artifact</StateLabel>
+          <NotificationRow
+            channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
+            channelKind="slack"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
+            meta="2 hours ago"
+            read
+            artifact={{ name: "artifact-name.html" }}
+            onArtifactClick={() =>
+              setPreviewArtifact(mockArtifacts["art-adr"]!)
+            }
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read</StateLabel>
+          <NotificationRow
+            channelIcon={<ChannelLogo src="/icons/slack.svg" alt="Slack" />}
+            channelKind="slack"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor with long title to demonstrate truncation"
+            channel="code-review"
+            meta="1 hour ago"
+            read
+          />
+        </div>
+      </div>
+
+      <SectionHeader title="Schedule" />
+
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Unread</StateLabel>
+          <NotificationRow
+            channelIcon={<Time size={16} />}
+            channelKind="schedule"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="Scheduled 8:00 AM"
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Unread + Artifact</StateLabel>
+          <NotificationRow
+            channelIcon={<Time size={16} />}
+            channelKind="schedule"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="Scheduled 8:00 AM"
+            artifact={{ name: "artifact-name.html" }}
+            onArtifactClick={noop}
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read</StateLabel>
+          <NotificationRow
+            channelIcon={<Time size={16} />}
+            channelKind="schedule"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="6 hours ago"
+            read
+          />
+        </div>
+      </div>
+
+      <SectionHeader title="Telegram" />
+
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Read</StateLabel>
+          <NotificationRow
+            channelIcon={
+              <ChannelLogo src="/icons/telegram.svg" alt="Telegram" />
+            }
+            channelKind="telegram"
+            agentName="Code Review Agent"
+            action="Review PR #487 session history refactor"
+            meta="2 hours ago"
+            read
+          />
+        </div>
+      </div>
+
+      <SectionHeader title="Approvals" />
+
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <StateLabel>Pending (needs you)</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="2 min ago"
+            unread
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Allowed</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="15 min ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-success/10 px-2.5 py-1 text-sm font-medium text-success">
+                Allowed
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Allowed permanently</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="1 hour ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-success/10 px-2.5 py-1 text-sm font-medium text-success">
+                Allowed permanently
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Denied</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="30 min ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-destructive/10 px-2.5 py-1 text-sm font-medium text-destructive">
+                Denied
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <StateLabel>Denied permanently</StateLabel>
+          <NotificationRow
+            channelIcon={<Warning size={16} />}
+            channelKind="approval"
+            agentName="Code Review Agent"
+            action="wants to run npm publish --access public"
+            meta="2 hours ago"
+            read
+          >
+            <div className="mt-2">
+              <span className="inline-flex items-center rounded-md bg-destructive/10 px-2.5 py-1 text-sm font-medium text-destructive">
+                Denied permanently
+              </span>
+            </div>
+          </NotificationRow>
+        </div>
+      </div>
+
+      {previewArtifact && (
+        <ArtifactPreviewDialog
+          artifact={previewArtifact}
+          onClose={() => setPreviewArtifact(null)}
+        />
+      )}
     </div>
   );
 }
 
-function FeedApprovalCardSection() {
-  const pendingToolApproval = mockApproval({
-    id: "gallery-tool-pending",
-    type: "acp_native",
-    payload: {
-      kind: "acp_native",
-      toolName: "bash",
-      args: { command: "npm run build" },
-    },
-    status: "pending",
-  });
+function CardDemo({
+  agent,
+  label,
+  isDemo,
+}: {
+  agent: AgentView;
+  label: string;
+  isDemo?: boolean;
+}) {
+  const display = resolveAgentDisplay(agent, new Set(), new Set());
+  const scheduleCount = fixtureSchedules.filter(
+    (s) => s.agentId === agent.id,
+  ).length;
+  return (
+    <div className="flex flex-col gap-3">
+      <StateLabel>{label}</StateLabel>
+      <AgentRow
+        agent={agent}
+        display={display}
+        deletePending={false}
+        isDemo={isDemo}
+        onSelect={noop}
+        onConfigure={noop}
+        configureLabel="Configure"
+        onWake={noop}
+        onRestart={noop}
+        onPause={noop}
+        onStop={noop}
+        onDelete={noop}
+        scheduleCount={scheduleCount}
+      />
+    </div>
+  );
+}
 
-  const pendingNetworkApproval = mockApproval({
-    id: "gallery-network-pending",
-    type: "ext_authz",
-    payload: {
-      kind: "ext_authz",
-      host: "api.openai.com",
-      method: "POST",
-      path: "/v1/chat/completions",
-    },
-    status: "pending",
-  });
-
-  const pendingNetworkApproval2 = mockApproval({
-    id: "gallery-network-pending-2",
-    type: "ext_authz",
-    payload: {
-      kind: "ext_authz",
-      host: "registry.npmjs.org",
-      method: "GET",
-      path: "/lodash",
-    },
-    status: "pending",
-  });
-
-  const expiredApproval = mockApproval({
-    id: "gallery-expired",
-    type: "ext_authz",
-    payload: {
-      kind: "ext_authz",
-      host: "api.stripe.com",
-      method: "POST",
-      path: "/v1/charges",
-    },
-    status: "expired",
-    expiresAt: new Date(Date.now() - 10 * 60_000).toISOString(),
-  });
-
+function AgentCardSection() {
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader
-        title="Feed Cards (Approval)"
-        description="These show pending approvals. Allow/Deny buttons + overflow menu with permanent actions."
-      />
+      <SectionHeader title="Agent Cards" />
 
-      <div className="flex flex-col gap-4">
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            1. Tool approval — pending (Allow + overflow menu)
-          </p>
-          <FeedApprovalCard
-            approval={pendingToolApproval}
-            agentName="Campaign Hero Agent"
-            meta="5 min ago"
-            onDismiss={noop}
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            2. Network approval — pending (Allow + overflow with host-level
-            actions)
-          </p>
-          <FeedApprovalCard
-            approval={pendingNetworkApproval}
-            agentName="Retouching Pipeline"
-            meta="2 min ago"
-            onDismiss={noop}
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            3. Network approval — another host
-          </p>
-          <FeedApprovalCard
-            approval={pendingNetworkApproval2}
-            agentName="Packaging Layout Agent"
-            meta="8 min ago"
-            onDismiss={noop}
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            4. Resolved — Allowed (green label replaces buttons)
-          </p>
-          <FeedApprovalCard
-            approval={pendingToolApproval}
-            agentName="Campaign Hero Agent"
-            meta="15 min ago"
-            onDismiss={noop}
-            resolvedLabel="Allowed"
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            5. Resolved — Denied (red label replaces buttons)
-          </p>
-          <FeedApprovalCard
-            approval={pendingNetworkApproval}
-            agentName="Retouching Pipeline"
-            meta="20 min ago"
-            onDismiss={noop}
-            resolvedLabel="Denied permanently"
-          />
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            6. Expired — shows note about original request
-          </p>
-          <FeedApprovalCard
-            approval={expiredApproval}
-            agentName="Daily Report Agent"
-            meta="1 hour ago"
-            onDismiss={noop}
-          />
-        </div>
+      <div className="flex flex-col gap-8">
+        <CardDemo agent={fullAgent} label="§5-1 Full card — always-on, slack, schedules" />
+        <CardDemo agent={bareAgent} label="§5-2 Bare card — nothing attached (+ Onboarding 1/3 tag)" />
+        <CardDemo agent={singularAgent} label="§5-3 One-of-each — singular forms" />
+        <CardDemo agent={hibernatedUnknownSkills} label="§5-4 Hibernated, unknown skills" />
+        <CardDemo agent={neverHibernatesButHibernated} label="§5-5a Never-hibernates but stopped" />
+        <CardDemo agent={neverHibernatesOverBudget} label="§5-5b Never-hibernates, over budget" />
+        <CardDemo agent={knowledgeBaseAgent} label="§5-6 Knowledge base" />
+        <CardDemo agent={experimentAgent} label="§5-7 Experiment" />
+        <CardDemo agent={packSkippedAgent} label="§5-8 Pack applied, partly skipped" />
+        <CardDemo agent={errorAgent} label="§5-9 Error state" />
+        <CardDemo agent={temporaryDriverAgent} label="§5-10 Temporary-agent driver" />
+        <CardDemo agent={demoPackAgent} label="§5-11 Demo pack agent" isDemo />
       </div>
     </div>
   );
 }
 
 export function AgentCardGallery() {
-  document.title = "Card Gallery — Design Review";
+  document.title = "Card Gallery";
   return (
     <div>
       <PageHeader
@@ -407,102 +486,8 @@ export function AgentCardGallery() {
       />
 
       <div className="flex flex-col gap-8">
-        {/* Feed cards first — these are what we're reviewing for the notifications redesign */}
-        <FeedCardSection />
-        <FeedApprovalCardSection />
-
-        {/* Widgets */}
-        <WidgetSection />
-
-        {/* Agent row cards below */}
-        <SectionHeader
-          title="Agent Row Cards"
-          description="These are the agent list items on the home page."
-        />
-
-        <CardDemo
-          title="1. Running agent"
-          note="Standard running state with schedules."
-          agent={running}
-        />
-
-        {bare && (
-          <CardDemo
-            title="2. Bare card"
-            note="Nothing attached. The metadata row should be absent."
-            agent={bare}
-          />
-        )}
-
-        {withSlack && (
-          <CardDemo
-            title="3. Slack channels"
-            note="Agent with Slack channel badges."
-            agent={withSlack}
-          />
-        )}
-
-        {hibernated && (
-          <CardDemo
-            title="4. Hibernated"
-            note="Common real case: agent is hibernated."
-            agent={hibernated}
-          />
-        )}
-
-        {alwaysOn && (
-          <CardDemo
-            title="5a. Always-on (working)"
-            note="'Always on' tag in metadata row — Working badge."
-            agent={alwaysOn}
-          />
-        )}
-
-        {alwaysOnIdle && (
-          <CardDemo
-            title="5b. Always-on (idle)"
-            note="'Always on' tag in metadata row — Idle badge."
-            agent={alwaysOnIdle}
-          />
-        )}
-
-        {error && (
-          <CardDemo
-            title="6. Error state"
-            note="Error badge, contribution failures if any."
-            agent={error}
-          />
-        )}
-
-        {overBudget && (
-          <CardDemo
-            title="7. Over budget"
-            note="Over budget badge."
-            agent={overBudget}
-          />
-        )}
-
-        <CardDemo
-          title="8. Demo agent"
-          note="Demo tag shown next to agent name."
-          agent={running}
-          isDemo
-        />
-
-        <CardDemo
-          title="9. Temporary agents"
-          note="Bottom line showing temporary agents running."
-          agent={running}
-          temporaryDraw={{ count: 3, cpuMilli: 6000, memoryMi: 6144 }}
-        />
-
-        {onboardingAgent && (
-          <CardDemo
-            title="10. Onboarding (from starter kit)"
-            note="'Setup' tag next to name — hover to see onboarding checklist."
-            agent={onboardingAgent}
-          />
-        )}
+        <NotificationRowSection />
+        <AgentCardSection />
       </div>
     </div>
   );
