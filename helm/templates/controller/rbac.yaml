@@ -110,6 +110,14 @@ rules:
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
     verbs: ["get", "create", "update"]
+  # That endpoint is a cluster-network address, which OpenShift's restricted
+  # endpoints admission refuses unless the writer holds this subresource —
+  # the same grant its own endpointslice-controller carries. Without it the
+  # reconcile fails with "endpoint address <pod ip> is not allowed" and no vm
+  # agent is reachable. Inert on clusters without that admission plugin.
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices/restricted"]
+    verbs: ["create"]
 {{- end }}
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
