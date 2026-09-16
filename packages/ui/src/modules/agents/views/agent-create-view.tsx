@@ -65,7 +65,6 @@ import {
 } from "../../starter-kits/lib/setup.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
-import { SkillSourcesSetupSection } from "../components/skill-sources-setup-section.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -552,14 +551,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           }
         />
       )}
-      {kit ? (
-        <>
-          <KitSkillsSection kit={kit} />
-          <SkillSourcesSetupSection standalone={false} />
-        </>
-      ) : (
-        <SkillSourcesSetupSection standalone />
-      )}
+      {kit && <KitSkillsSection kit={kit} />}
       {connectTarget && (
         <ConnectionCatalogModal
           initialProviderId={connectTarget.providerId}
