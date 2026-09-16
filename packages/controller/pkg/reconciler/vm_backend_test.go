@@ -584,8 +584,6 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
-	// The end state is zero either way; what matters is that it was never
-	// written as one, which is what schedules and kills a pod every retry.
 	for _, action := range r.client.(*fake.Clientset).Actions() {
 		var ss *appsv1.StatefulSet
 		switch a := action.(type) {
