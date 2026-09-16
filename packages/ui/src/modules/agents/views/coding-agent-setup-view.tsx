@@ -8,6 +8,7 @@ import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/c
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
+import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -17,6 +18,7 @@ import {
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import { recordBindIntent } from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
@@ -74,6 +76,10 @@ export function CodingAgentSetupView() {
     try {
       const agent = await createAgent.mutateAsync(
         buildCodingAgentSetupInput(draft),
+      );
+      recordBindIntent(
+        agent.id,
+        (["slack", "telegram"] as const).filter((m) => form.channels[m]),
       );
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
@@ -142,6 +148,10 @@ export function CodingAgentSetupView() {
         sizeMi={
           selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
         }
+      />
+      <SetupChannelsSection
+        value={form.channels}
+        onChange={(channels) => update({ channels })}
       />
     </SetupPageShell>
   );

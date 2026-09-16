@@ -22,6 +22,12 @@ export const setupFormSchema = z.object({
     .nullable()
     .default(null)
     .catch(null),
+  channels: z
+    .object({
+      slack: z.boolean().default(false),
+      telegram: z.boolean().default(false),
+    })
+    .default({ slack: false, telegram: false }),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 

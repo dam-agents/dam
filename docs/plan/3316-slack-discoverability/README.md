@@ -64,7 +64,7 @@ is wrong are called out in the sub-issues that touch them.
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 | [x] [Slack channel name resolution](./01-channel-name-resolution.md) | Backend. Resolve a Slack conversation id to its name, for bindings and sessions alike. | — |
-| 02 | [Bind walkthrough modal and setup Channels section](./02-bind-modal-setup-section.md) | The shared bind modal and the Channels section on the three setup views. | — |
+| 02 | [x] [Bind walkthrough modal and setup Channels section](./02-bind-modal-setup-section.md) | The shared bind modal and the Channels section on the three setup views. | — |
 | 03 | [Channel vs connection explainer](./03-channel-vs-connection-explainer.md) | Accessible popover, the "Slack Account" rename, three placements, two cross-links. | 02 |
 | 04 | [Channel visibility on the agent list and chat launcher](./04-channel-visibility-list-launcher.md) | Row chips, overflow entries, launcher tiles. | 01, 02 |
 | 05 | [Agent Channels section](./05-agent-channels-section.md) | Names instead of ids; Telegram rows reach parity. | 01, 03 |

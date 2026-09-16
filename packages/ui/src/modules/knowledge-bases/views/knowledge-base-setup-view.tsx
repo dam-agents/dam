@@ -7,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
+import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -16,6 +17,7 @@ import {
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import { recordBindIntent } from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { ConnectedKnowledgeBasesSetup } from "../components/connected-knowledge-bases-setup.js";
@@ -62,6 +64,10 @@ export function KnowledgeBaseSetupView() {
     try {
       const agent = await createKnowledgeBase.mutateAsync(
         buildKnowledgeBaseCreateInput(draft),
+      );
+      recordBindIntent(
+        agent.id,
+        (["slack", "telegram"] as const).filter((m) => form.channels[m]),
       );
       reset();
       openKnowledgeBase(agent.id);
@@ -121,6 +127,10 @@ export function KnowledgeBaseSetupView() {
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
+      />
+      <SetupChannelsSection
+        value={form.channels}
+        onChange={(channels) => update({ channels })}
       />
     </SetupPageShell>
   );
