@@ -108,7 +108,8 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	name := r.runnerName(owner)
 	ns := r.config.ReleaseNamespace
 
-	if _, _, err := r.ensureRunnerSecret(ctx, owner); err != nil {
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerPVC(ctx, owner); err != nil {
@@ -123,10 +124,6 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 		return nil, false, err
 	}
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
-		return nil, false, err
-	}
-	client, err := r.runnerFor(ctx, owner)
-	if err != nil {
 		return nil, false, err
 	}
 	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
@@ -282,15 +279,17 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 			Ports:     []corev1.ServicePort{{Name: "machine-api", Port: vmRunnerPort, TargetPort: intstr.FromInt(vmRunnerPort)}},
 		},
 	}
-	if err := r.applyService(ctx, svc); err != nil {
+	cli := r.client.CoreV1().Services(ns)
+	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, svc, metav1.CreateOptions{})
 		return err
 	}
-	existing, err := r.client.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 	return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-		_, err := r.client.CoreV1().Services(ns).Update(ctx, existing, metav1.UpdateOptions{})
+		_, err := cli.Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
 }
