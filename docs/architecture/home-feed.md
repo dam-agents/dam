@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-09-15
+Last verified: 2026-09-16
 
 Home answers one question: what has happened since you last looked, and what still needs you. It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 
