@@ -45,8 +45,10 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
     });
   });
 
+  let firstSecretPath = "";
+
   await test.step("a second workspace completes its install", async () => {
-    await api.e2e.slackConnectWorkspace.mutate({
+    const result = await api.e2e.slackConnectWorkspace.mutate({
       teamId: secondTeamId,
       teamName: "Second Workspace",
       botToken: "xoxb-e2e-second-workspace",
@@ -54,6 +56,8 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
         { id: channelInSecond, name: "second-home", botIsMember: true },
       ],
     });
+    firstSecretPath = result.secretPath;
+    expect(firstSecretPath).not.toEqual("");
   });
 
   await test.step("binding finds the workspace from the conversation id alone", async () => {
@@ -90,6 +94,37 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
 
     const record = await outboundFor(api, channelInSecond);
     expect(record).toMatchObject({ teamId: secondTeamId });
+  });
+
+  await test.step("re-authorizing rewrites the same secret and serves the new token", async () => {
+    const again = await api.e2e.slackConnectWorkspace.mutate({
+      teamId: secondTeamId,
+      teamName: "Second Workspace",
+      botToken: "xoxb-e2e-second-workspace-rotated",
+      channels: [
+        { id: channelInSecond, name: "second-home", botIsMember: true },
+      ],
+    });
+    expect(again.secretPath).toEqual(firstSecretPath);
+
+    await api.e2e.slackResetOutbound.mutate();
+    await api.e2e.slackFireMention.mutate({
+      user: strangerSlackUserId,
+      channel: channelInSecond,
+      ts,
+      text: "hello after re-authorizing",
+      teamId: secondTeamId,
+    });
+    await expect
+      .poll(() => outboundFor(api, channelInSecond).then(Boolean), {
+        timeout: 180_000,
+        intervals: [5_000],
+        message: "no reply landed after re-authorizing",
+      })
+      .toBe(true);
+    expect(await outboundFor(api, channelInSecond)).toMatchObject({
+      teamId: secondTeamId,
+    });
   });
 
   await test.step("the binding made before it still answers under the operator's token", async () => {

@@ -10,6 +10,7 @@ import type {
   slackFireCommandInputSchema,
   slackFireCommandResultSchema,
   slackConnectWorkspaceInputSchema,
+  slackConnectWorkspaceResultSchema,
   slackFireMentionInputSchema,
   slackOutboundRecordSchema,
   slackReadOutboundResultSchema,
@@ -35,6 +36,9 @@ export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
 
 export type SlackConnectWorkspaceInput = z.infer<
   typeof slackConnectWorkspaceInputSchema
+>;
+export type SlackConnectWorkspaceResult = z.infer<
+  typeof slackConnectWorkspaceResultSchema
 >;
 export type SlackFireMentionInput = z.infer<typeof slackFireMentionInputSchema>;
 export type SlackFireMessageInput = SlackFireMentionInput;
@@ -69,5 +73,5 @@ export interface E2eService {
   slackResetOutbound(): Promise<ResetResult>;
   slackConnectWorkspace(
     input: SlackConnectWorkspaceInput,
-  ): Promise<ResetResult>;
+  ): Promise<SlackConnectWorkspaceResult>;
 }

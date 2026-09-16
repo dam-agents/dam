@@ -133,6 +133,10 @@ export const slackConnectWorkspaceInputSchema = z
   })
   .strict();
 
+export const slackConnectWorkspaceResultSchema = z
+  .object({ ok: z.literal(true), secretPath: z.string() })
+  .strict();
+
 export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({

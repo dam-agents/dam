@@ -41,7 +41,7 @@ export interface SlackInstallServiceDeps {
 
 export interface SlackInstallService {
   resolveBotToken: SlackTokenResolver;
-  record: (install: SlackInstallRecord) => Promise<void>;
+  record: (install: SlackInstallRecord) => Promise<string>;
   markRejected: (teamId: string) => Promise<void>;
 }
 
@@ -84,8 +84,8 @@ export function createSlackInstallService(
       return resolving;
     },
 
-    async record(install: SlackInstallRecord): Promise<void> {
-      await deps.installLock(`slack-install:${install.teamId}`, async () => {
+    async record(install: SlackInstallRecord): Promise<string> {
+      return deps.installLock(`slack-install:${install.teamId}`, async () => {
         const meta = { owner: SECRET_OWNER, purpose: SECRET_PURPOSE };
         const existing = await deps.find(install.teamId);
         const ref: SecretRef = existing
@@ -105,6 +105,7 @@ export function createSlackInstallService(
           installedBy: install.installedBy,
         });
         tokens.delete(install.teamId);
+        return ref.path;
       });
     },
 

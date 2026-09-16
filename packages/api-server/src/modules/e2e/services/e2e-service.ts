@@ -17,7 +17,7 @@ export interface SlackInstallE2eControl {
     teamName: string | null;
     botToken: string;
     installedBy: string | null;
-  }): Promise<void>;
+  }): Promise<string>;
 }
 
 export interface SlackE2eControl {
@@ -109,14 +109,14 @@ export function createE2eService(deps: {
           message: "slack install control is not available on this deployment",
         });
       }
-      await deps.slackInstalls.record({
+      const secretPath = await deps.slackInstalls.record({
         teamId: input.teamId,
         teamName: input.teamName ?? null,
         botToken: input.botToken,
         installedBy: null,
       });
       slack.setChannels(input.channels, input.teamId);
-      return { ok: true };
+      return { ok: true, secretPath };
     },
   };
 }
