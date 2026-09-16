@@ -15,6 +15,12 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
+    id: "interactive-artifacts",
+    label: "Interactive artifacts",
+    description:
+      "Lets buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
+  },
+  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
@@ -24,19 +30,13 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "vm-sandboxes",
     label: "VM sandboxes",
     description:
-      "Reveals images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container, in the coding agent’s image list.",
+      "Reveals images that boot as their own microVM instead of a container, in the coding agent’s image list.",
   },
   {
     id: "session-costs",
     label: "Session costs",
     description:
       "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
-  },
-  {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Lets a private HTML page ask the agent that published it to do something, with the answer landing back in the page. An interactive page can never be shared.",
   },
 ];
 

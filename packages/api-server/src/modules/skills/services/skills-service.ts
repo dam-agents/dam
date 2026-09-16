@@ -21,6 +21,8 @@ import type {
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
+import { canonicalSourceLocation } from "agent-runtime-api";
+import type { SourceLocation } from "agent-runtime-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
 import type {
   ContributionsProgress,
@@ -115,6 +117,18 @@ function enrichSources(sources: SkillSource[]): SkillSource[] {
   );
 }
 
+function templateSourceLocation(seed: {
+  gitUrl: string;
+  path?: string;
+}): SourceLocation {
+  return (
+    canonicalSourceLocation(seed.gitUrl, seed.path) ?? {
+      gitUrl: seed.gitUrl,
+      ...(seed.path !== undefined ? { path: seed.path } : {}),
+    }
+  );
+}
+
 async function loadTemplateSources(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -125,13 +139,15 @@ async function loadTemplateSources(
   if (!agent?.templateId) return [];
   const template = await deps.templatesRepo.get(agent.templateId);
   if (!template?.spec.skillSources?.length) return [];
-  return template.spec.skillSources.map((seed) => ({
-    id: templateSourceId(template.id, seed.gitUrl),
-    name: seed.name,
-    gitUrl: seed.gitUrl,
-    ...(seed.path !== undefined ? { path: seed.path } : {}),
-    fromTemplate: { templateId: template.id, templateName: template.name },
-  }));
+  return template.spec.skillSources.map((seed) => {
+    const location = templateSourceLocation(seed);
+    return {
+      id: templateSourceId(template.id, location.gitUrl),
+      name: seed.name,
+      ...location,
+      fromTemplate: { templateId: template.id, templateName: template.name },
+    };
+  });
 }
 
 async function resolveTemplateSource(
@@ -144,14 +160,15 @@ async function resolveTemplateSource(
   const template = await deps.templatesRepo.get(templateId);
   if (!template?.spec.skillSources?.length) return null;
   const seed = template.spec.skillSources.find((s) =>
-    templateSourceId(templateId, s.gitUrl).endsWith(`:${hash}`),
+    templateSourceId(templateId, templateSourceLocation(s).gitUrl).endsWith(
+      `:${hash}`,
+    ),
   );
   if (!seed) return null;
   return {
     id,
     name: seed.name,
-    gitUrl: seed.gitUrl,
-    ...(seed.path !== undefined ? { path: seed.path } : {}),
+    ...templateSourceLocation(seed),
     fromTemplate: { templateId: template.id, templateName: template.name },
   };
 }

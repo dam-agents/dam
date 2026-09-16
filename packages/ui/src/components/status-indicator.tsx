@@ -1,3 +1,5 @@
+import { Power } from "@carbon/icons-react";
+
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
@@ -35,6 +37,26 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   over_budget: "bg-warning",
 };
 
-export function StatusBadge({ state }: { state: AgentDisplayState }) {
-  return <Badge variant={stateVariant[state]}>{stateLabel[state]}</Badge>;
+export function StatusBadge({
+  state,
+  working,
+  alwaysOn,
+}: {
+  state: AgentDisplayState;
+  working?: boolean;
+  alwaysOn?: boolean;
+}) {
+  const splitRunning = state === "running" && working !== undefined;
+  const label = splitRunning
+    ? working
+      ? "Working"
+      : "Idle"
+    : stateLabel[state];
+  const variant = splitRunning && !working ? "accent" : stateVariant[state];
+  return (
+    <Badge variant={variant} className="gap-1">
+      {alwaysOn && <Power size={12} aria-label="Always on" />}
+      {label}
+    </Badge>
+  );
 }

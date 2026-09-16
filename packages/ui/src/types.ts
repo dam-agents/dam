@@ -78,6 +78,7 @@ export interface Message {
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;
+  at?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
@@ -163,10 +164,19 @@ export interface Schedule {
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;
+  precheck: string | null;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: "user" | "agent";
-  status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
+  status: {
+    lastRun?: string;
+    nextRun?: string;
+    lastResult?: string;
+    lastDeclinedAt?: string;
+    declinedCount?: number;
+    lastPrecheckError?: string;
+    precheckFailedCount?: number;
+  } | null;
 }
 
 export type {

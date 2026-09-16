@@ -125,7 +125,6 @@ const BUILTIN_DRIVERS: Record<
   },
   trigger: { binding: { impl: "trigger" }, defaultOn: true },
   "schedule-reset": { binding: { impl: "trigger" }, defaultOn: true },
-  "artifact-request": { binding: { impl: "trigger" }, defaultOn: true },
   "experiment-execute": {
     binding: { impl: "experiment-execute" },
     defaultOn: true,

@@ -35,7 +35,6 @@ const titleSchema = z
   .min(1, "title is required")
   .max(ARTIFACT_TITLE_MAX_LENGTH);
 const fileNameSchema = z.string().trim().min(1).max(255);
-
 const expiresInHoursSchema = z
   .number()
   .int()
@@ -150,73 +149,4 @@ export const artifactTouchListInputSchema = z.object({
   agentId: z.string().min(1),
   sessionIds: z.array(z.string().min(1)).min(1).max(50),
   limit: z.number().int().positive().max(200).optional(),
-});
-
-export const artifactRequestStateSchema = z.enum([
-  "pending",
-  "delivered",
-  "answered",
-  "failed",
-]);
-
-export const artifactRequestFailureReasonSchema = z.enum([
-  "agent_deleted",
-  "session_deleted",
-  "not_bound",
-  "wake_failed",
-  "over_budget",
-  "rate_limited",
-  "busy",
-  "cancelled",
-  "expired",
-]);
-
-export const artifactRequestRefusalSchema = z.object({
-  reason: artifactRequestFailureReasonSchema,
-});
-
-export const ARTIFACT_REQUEST_ACTION_MAX_LENGTH = 200;
-
-export const ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES = 16 * 1024;
-
-const artifactRequestPayloadSchema = z
-  .record(z.string(), z.unknown())
-  .refine(
-    (payload) =>
-      new TextEncoder().encode(JSON.stringify(payload)).length <=
-      ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES,
-    { message: `payload exceeds ${ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES} bytes` },
-  );
-
-export const artifactRequestCreateInputSchema = z.object({
-  artifactId: z.string().min(1),
-  action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
-  payload: artifactRequestPayloadSchema.optional(),
-  sessionId: z.string().min(1).max(200).optional(),
-});
-
-export const artifactRequestIdInputSchema = z.object({
-  requestId: z.string().min(1),
-});
-
-export const ARTIFACT_BRIDGE_CONNECT_TYPE = "artifact.connect";
-export const ARTIFACT_BRIDGE_REQUEST_TYPE = "artifact.request";
-export const ARTIFACT_BRIDGE_STATE_TYPE = "artifact.state";
-export const ARTIFACT_BRIDGE_ANSWER_TYPE = "artifact.answer";
-export const ARTIFACT_BRIDGE_FAILED_TYPE = "artifact.failed";
-
-export const ARTIFACT_BRIDGE_REF_MAX_LENGTH = 200;
-
-export const artifactRequestProgressSchema = z.enum([
-  "sent",
-  "waking",
-  "queued",
-  "running",
-]);
-
-export const pageArtifactRequestSchema = z.object({
-  type: z.literal(ARTIFACT_BRIDGE_REQUEST_TYPE),
-  ref: z.string().min(1).max(ARTIFACT_BRIDGE_REF_MAX_LENGTH),
-  action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
-  payload: artifactRequestPayloadSchema.optional(),
 });

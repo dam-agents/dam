@@ -3,6 +3,7 @@ import {
   Code,
   Download,
   Edit,
+  Launch,
   Maximize,
   Save,
   Share,
@@ -28,14 +29,12 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
-import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
-import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
-import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -82,6 +81,7 @@ export function ArtifactPreviewDialog({
     initialEdit,
   });
   const wantSource = !renderable || showSource || editor.editing;
+  const startSession = useStartArtifactSession(artifact);
 
   const { confirmDiscard } = editor;
   const asking = useRef(false);
@@ -96,11 +96,6 @@ export function ArtifactPreviewDialog({
     }
   }, [confirmDiscard, onClose]);
   const dismiss = useCallback(() => void requestClose(), [requestClose]);
-  const {
-    bridge,
-    status: requestStatus,
-    dismissFailure,
-  } = useArtifactBridge(version === head ? artifact : null);
 
   return (
     <>
@@ -185,12 +180,6 @@ export function ArtifactPreviewDialog({
             )}
           </div>
 
-          <ArtifactRequestStatusBar
-            status={requestStatus}
-            onDismissFailure={dismissFailure}
-            className="mb-2 rounded border border-border"
-          />
-
           {!wantSource ? (
             <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
               {!preview.isLoading && !preview.data ? (
@@ -205,7 +194,6 @@ export function ArtifactPreviewDialog({
                     title={artifact.title}
                     className="h-full w-full"
                     postData={experimentFeedPost}
-                    bridge={fullscreen ? undefined : bridge}
                   />
                 )
               )}
@@ -229,9 +217,6 @@ export function ArtifactPreviewDialog({
             <Share size={16} />
             Share
           </Button>
-          {!editor.editing && (
-            <ArtifactSessionButton artifact={artifact} onOpened={dismiss} />
-          )}
           <Button
             variant="outline"
             onClick={() => void downloadArtifact(artifact.id)}
@@ -239,6 +224,12 @@ export function ArtifactPreviewDialog({
             <Download size={16} />
             Download
           </Button>
+          {startSession.available && version === head && !editor.editing && (
+            <Button onClick={() => void startSession.start()}>
+              <Launch size={16} />
+              Start a new session
+            </Button>
+          )}
         </DialogFooter>
       </Modal>
 
@@ -257,7 +248,6 @@ export function ArtifactPreviewDialog({
             title={artifact.title}
             className="h-full w-full rounded border border-border bg-white"
             deferMs={0}
-            bridge={bridge}
           />
         </FullscreenPreviewDialog>
       )}

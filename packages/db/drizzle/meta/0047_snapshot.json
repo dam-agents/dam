@@ -1,5 +1,5 @@
 {
-  "id": "8e84580f-09ce-4ccf-b124-31d62af74fcc",
+  "id": "aa828684-03a6-4c1c-9af2-26ddd839188d",
   "prevId": "25c78722-c030-40bf-b56c-2c8f0bd6b222",
   "version": "7",
   "dialect": "postgresql",
@@ -2419,13 +2419,6 @@
           "notNull": true,
           "default": "'private'"
         },
-        "interactive": {
-          "name": "interactive",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -2770,6 +2763,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2974,6 +2973,32 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "last_declined_at": {
+          "name": "last_declined_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "declined_count": {
+          "name": "declined_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_precheck_error": {
+          "name": "last_precheck_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "precheck_failed_count": {
+          "name": "precheck_failed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

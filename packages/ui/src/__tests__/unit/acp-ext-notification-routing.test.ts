@@ -32,7 +32,7 @@ describe("routeExtNotification", () => {
     expect(routed).toEqual({
       update: { sessionUpdate: "platform_turn_ended", sessionId: "sess-1" },
       sessionId: "sess-1",
-      replayFor: "load-token-7",
+      frame: { replayFor: "load-token-7" },
     });
   });
 
@@ -48,7 +48,7 @@ describe("routeExtNotification", () => {
     expect(routed).toEqual({
       update: { sessionUpdate: "platform_turn_ended", sessionId: "sess-1" },
       sessionId: "sess-1",
-      replayFor: undefined,
+      frame: {},
     });
   });
 
@@ -70,7 +70,7 @@ describe("routeExtNotification", () => {
       promptId: "p-1",
       queued: true,
     });
-    expect(accepted?.replayFor).toBe("load-token-7");
+    expect(accepted?.frame).toEqual({ replayFor: "load-token-7" });
 
     const started = routeExtNotification("platform/promptStarted", {
       sessionId: "sess-1",

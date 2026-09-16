@@ -120,11 +120,15 @@ export type {
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
+export type { EventReportInput, EventOutcome } from "agent-runtime-api";
 
 export {
   scheduleSpecSchema,
   scheduleStatusSchema,
   scheduleResetSessionInputSchema,
+  precheckVerdictSchema,
+  precheckSchema,
+  PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
@@ -138,6 +142,7 @@ export type {
   ScheduleCreateRRuleInput,
   ScheduleUpdateRRuleInput,
   SchedulesService,
+  PrecheckVerdict,
 } from "./modules/schedules/types.js";
 export type {
   ExperimentStatus,
@@ -229,16 +234,12 @@ export type {
   ArtifactLibraryService,
   ArtifactTouch,
   ArtifactTouchService,
-  ArtifactRequest,
-  ArtifactRequestCreateInput,
-  ArtifactRequestFailureReason,
-  ArtifactRequestReceipt,
-  ArtifactRequestState,
-  ArtifactRequestsService,
-  ArtifactRequestProgress,
-  ArtifactBridgeReply,
-  PageArtifactRequest,
 } from "./modules/artifact-library/types.js";
+export {
+  ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptSchema,
+} from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
@@ -251,19 +252,6 @@ export {
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
   VIEWER_ALLOWLIST_MAX,
-  ARTIFACT_REQUEST_ACTION_MAX_LENGTH,
-  ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES,
-  artifactRequestFailureReasonSchema,
-  artifactRequestRefusalSchema,
-  artifactRequestStateSchema,
-  artifactRequestProgressSchema,
-  pageArtifactRequestSchema,
-  ARTIFACT_BRIDGE_CONNECT_TYPE,
-  ARTIFACT_BRIDGE_REQUEST_TYPE,
-  ARTIFACT_BRIDGE_STATE_TYPE,
-  ARTIFACT_BRIDGE_ANSWER_TYPE,
-  ARTIFACT_BRIDGE_FAILED_TYPE,
-  ARTIFACT_BRIDGE_REF_MAX_LENGTH,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
@@ -352,13 +340,18 @@ export {
   CASE_STUDY_SCHEDULE_TASK,
 } from "./modules/case-studies/constants.js";
 
-export { usageSummaryInputSchema } from "./modules/metrics/schemas.js";
+export {
+  agentMetricsInputSchema,
+  agentTelemetryInputSchema,
+} from "./modules/metrics/schemas.js";
 export {
   METRICS_MAX_SINCE_HOURS,
   METRICS_MAX_LIMIT,
   METRICS_DEFAULT_LIMIT,
-  USAGE_SUMMARY_MAX_DAYS,
-  USAGE_SUMMARY_DEFAULT_DAYS,
+  AGENT_TELEMETRY_MAX_DAYS,
+  AGENT_TELEMETRY_DEFAULT_DAYS,
+  AGENT_TELEMETRY_MAX_LIMIT,
+  AGENT_TELEMETRY_DEFAULT_LIMIT,
 } from "./modules/metrics/constants.js";
 
 export type {
@@ -490,9 +483,11 @@ export type {
   SkillUninstallInput,
 } from "./modules/skills/types.js";
 export {
+  INVALID_GIT_URL_MESSAGE,
   localSkillSchema,
   MAX_SKILL_BATCH_ENTRIES,
   scanFailureSchema,
+  skillCreateSourceFieldsSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillInstallInputSchema,
@@ -613,9 +608,14 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformRunStartsMetaSchema,
+  platformRunStartedNotificationSchema,
+  platformRunStartedParamsSchema,
+  buildPlatformRunStartedNotification,
   platformRunResultSchema,
   platformRunResultResponseSchema,
   platformClippedReplayMetaSchema,
+  platformFrameMetaSchema,
   platformReplayTurnMetaSchema,
   promptBlockSchema,
   platformUndeliveredPromptSchema,
@@ -633,9 +633,12 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformRunStartedNotification,
+  PlatformRunStartedParams,
   PlatformRunResult,
   PlatformRunResultResponse,
   PlatformClippedReplayMeta,
+  PlatformFrameMeta,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,

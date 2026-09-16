@@ -261,7 +261,10 @@ describe("acp-runtime: joining mid-conversation", () => {
     const ended = {
       jsonrpc: "2.0",
       method: "platform/turnEnded",
-      params: { sessionId: SESSION, stopReason: "end_turn" },
+      params: expect.objectContaining({
+        sessionId: SESSION,
+        stopReason: "end_turn",
+      }),
     };
     expect(alice.saw("platform/turnEnded")).toEqual([ended]);
     expect(bob.saw("platform/turnEnded")).toEqual([ended]);

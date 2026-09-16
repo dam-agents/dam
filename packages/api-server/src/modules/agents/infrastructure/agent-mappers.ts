@@ -1,4 +1,6 @@
 import { agentKindSchema } from "api-server-api";
+
+import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
   Agent,
@@ -74,6 +76,10 @@ export interface InfraAgent {
   gatewayPodNotReadyReason?: string;
 }
 
+const TERMINAL_MACHINE_REASONS = new Set(
+  [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
+);
+
 export function computeAgentState(
   infra: InfraAgent,
   preparingWorkspace = false,
@@ -85,6 +91,11 @@ export function computeAgentState(
   if (infra.overBudget) return "over_budget";
   if (infra.agentPodReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
+  if (
+    infra.agentPodNotReadyReason &&
+    TERMINAL_MACHINE_REASONS.has(infra.agentPodNotReadyReason)
+  )
+    return "error";
   return "starting";
 }
 
@@ -105,7 +116,8 @@ function readyCondition(obj: KubeObject) {
 function agentPodTerminationMessage(obj: KubeObject): string | undefined {
   const status = (obj.status ?? {}) as AgentStatusObject;
   const c = status.conditions?.find((c) => c.type === "AgentPodReady");
-  return c?.status === "False" && c.message ? c.message : undefined;
+  if (c?.status !== "False" || !c.message) return undefined;
+  return c.reason && POD_FAILURE_REASONS.has(c.reason) ? c.message : undefined;
 }
 
 function agentPodRestarts(obj: KubeObject): number {

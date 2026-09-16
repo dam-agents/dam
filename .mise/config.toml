@@ -16,6 +16,7 @@ auto = true
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 "go:sigs.k8s.io/crdify" = "latest"
 "npm:json-schema-to-typescript" = "latest"
+crane = "latest"
 fd = "latest"
 gh = "latest"
 go = "1.26"

@@ -28,6 +28,7 @@ import { UpdateAvailableAction } from "./update-available-action.js";
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
+  working?: boolean;
   subtitle: string;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
@@ -49,6 +50,7 @@ interface Props {
 export function AgentRow({
   agent,
   display,
+  working,
   subtitle,
   temporaryDraw,
   deletePending,
@@ -123,7 +125,11 @@ export function AgentRow({
               }
             : {})}
         >
-          <StatusBadge state={display.state} />
+          <StatusBadge
+            state={display.state}
+            working={working}
+            alwaysOn={agent.hibernationTimeoutMin === 0}
+          />
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>

@@ -32,7 +32,7 @@ export async function processEvents(
     }
 
     try {
-      await dispatcher.invoke(e.kind, e.payload);
+      await dispatcher.invoke(e.kind, e.payload, e.id);
       const current = stateStore.read();
       stateStore.write({
         ...current,

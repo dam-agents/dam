@@ -18,7 +18,6 @@
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
-#   mise run image:resolve -- list-slow-builds           -> workloads + claude-code-vm (chart-pinned by source sha)
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
@@ -27,7 +26,7 @@
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule: publish all),
-# RESOLVE_REUSE_AGENTS=1 exempts agents, workloads and the VM from
+# RESOLVE_REUSE_AGENTS=1 exempts agents and workloads from
 # RESOLVE_NO_REUSE (CI main: they rebuild only when their effective source moved
 # — the published chart pins their source-sha tags, so an unchanged one keeps
 # last deploy's tag).
@@ -50,10 +49,6 @@ AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
-# claude-code derivatives outside the agents matrix. Like the agents, their
-# chart tag is pinned by source sha (pin-tags) and main pushes reuse the
-# unchanged ones; the VM containerDisk is built by build.sh, not buildx.
-SLOW_BUILDS="$WORKLOADS claude-code-vm"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -61,7 +56,8 @@ own_paths() {
   if is_workload "$1"; then echo "packages/agents/$1"; return; fi
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
-    claude-code|codex|pi-agent|bob|k-search|claude-code-vm) echo "packages/agents/$1" ;;
+    claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
+    vm-runner) echo "packages/controller" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
@@ -76,9 +72,8 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    platform-base|keycloak) echo "" ;;
+    platform-base|keycloak|vm-runner) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
-    claude-code-vm) echo "claude-code" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -125,7 +120,7 @@ build_or_reuse() {
   docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
-# Agents, workloads and the VM honour RESOLVE_REUSE_AGENTS despite
+# Agents and workloads honour RESOLVE_REUSE_AGENTS despite
 # RESOLVE_NO_REUSE (see header); platform-base and keycloak keep the caller's mode.
 resolve_derived() {
   ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
@@ -138,12 +133,12 @@ tag_for() {
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src vm
+  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak $AGENTS $SLOW_BUILDS; do
+  src="$(for a in platform-base keycloak $AGENTS $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
@@ -163,14 +158,8 @@ gha_outputs() {
     done
   fi
   workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  # Unlike workloads the VM does build on PRs — but only when its effective
-  # source moved (plain resolve; PRs never set RESOLVE_NO_REUSE). Its qcow2 is
-  # never byte-reproducible (bootc-image-builder draws fs UUIDs from
-  # crypto/rand), so skipping unchanged builds is the only way an unchanged
-  # VM keeps its digest.
-  if [ "$(resolve_derived claude-code-vm | cut -d' ' -f1)" = BUILD ]; then vm=true; else vm=false; fi
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_vm=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$vm" "$cc_tag" "$src"
+  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
+    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
 }
 
 self_check() {
@@ -182,9 +171,6 @@ self_check() {
   chk "$(base_of gepa)" claude-code
   chk "$(base_of skydiscover)" claude-code
   chk "$(base_of claude-code)" platform-base
-  chk "$(base_of claude-code-vm)" claude-code
-  has "$(effective_paths claude-code-vm)" packages/agents/claude-code
-  has "$(effective_paths claude-code-vm)" packages/agents/claude-code-vm
   chk "$(base_of platform-base)" ""
   chk "$(base_of keycloak)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
@@ -206,10 +192,8 @@ self_check() {
   has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover"]'
   has "$out" 'archs=["amd64","arm64"]'
-  has "$out" 'claude_code_vm=true'
   has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"platform-base":"'
-  has "$out" '"claude-code-vm":"'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
@@ -224,9 +208,8 @@ case "${1:-}" in
   gha-outputs)    gha_outputs ;;
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
-  list-slow-builds) echo $SLOW_BUILDS ;;
-  list-components) echo api-server ui controller platform-base keycloak $AGENTS $SLOW_BUILDS ;;
+  list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-slow-builds|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac

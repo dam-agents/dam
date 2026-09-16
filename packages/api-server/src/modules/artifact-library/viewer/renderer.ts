@@ -101,7 +101,7 @@ export function renderWrapper(input: WrapperInput): string {
   ${versionNav}
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
 </body>
 </html>`;
 }
@@ -110,7 +110,7 @@ export function renderHtmlInner(content: string, interactive = false): string {
   const shim = interactive ? ARTIFACT_BRIDGE_SHIM : "";
   const base = /<base[\s>]/i.test(content) ? "" : `<base target="_blank">`;
   const prelude = `${shim}${base}`;
-  if (prelude === "") return content;
+  if (!prelude) return content;
   const headMatch = content.match(/<head[^>]*>/i);
   if (headMatch && headMatch.index !== undefined) {
     const at = headMatch.index + headMatch[0].length;
@@ -293,8 +293,7 @@ export function renderTextKindInner(
   source: string,
   opts: { title: string; fileName: string; interactive?: boolean },
 ): string {
-  if (kind === "html")
-    return renderHtmlInner(source, opts.interactive === true);
+  if (kind === "html") return renderHtmlInner(source, opts.interactive);
   if (kind === "jsx") return renderJsxInner(source, opts.title);
   if (kind === "markdown") return renderMarkdownInner(source, opts.title);
   return renderCodeInner(source, opts.fileName, opts.title);

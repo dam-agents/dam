@@ -32,17 +32,13 @@ function replica() {
     composeSkills: () => ({}),
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),
-    artifactRequestsServiceFor: () => ({}),
-    featuresServiceFor: () => ({
-      flags: async () => ({ "interactive-artifacts": false }),
-    }),
     invocationsServiceFor: () => ({}),
     experimentsServiceFor: () => ({}),
     carriesInspectorRole: async () => false,
     caseStudySubmissions: {},
     caseStudyInspection: {},
     agentImage: async () => null,
-    usageSummary: {},
+    agentTelemetry: {},
   } as unknown as MountMcpDeps);
   return app;
 }

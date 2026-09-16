@@ -91,8 +91,18 @@ export {
   STAGED_SKILLS_DIR,
   dedupeByName,
 } from "./modules/skills/source-roots.js";
+export {
+  canonicalSourceLocation,
+  normalizeGitUrl,
+  parseGithubRepo,
+} from "./modules/skills/git-url.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
+export type {
+  GithubRepo,
+  NormalizedGitUrl,
+  SourceLocation,
+} from "./modules/skills/git-url.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
 export type {
   HarnessConfigCurrent,
@@ -131,9 +141,9 @@ export {
   mcpEntryContribution,
   skillRefContribution,
   triggerEvent,
+  eventOutcome,
+  eventReportInput,
   triggerEventPayload,
-  artifactRequestEvent,
-  artifactRequestEventPayload,
   experimentExecuteEvent,
   experimentExecuteEventPayload,
   harnessConfigEvent,
@@ -157,7 +167,8 @@ export type {
   MergeMode,
   FileFormat,
   TriggerEventPayload,
-  ArtifactRequestEventPayload,
+  EventOutcome,
+  EventReportInput,
   ExperimentExecuteEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
@@ -175,6 +186,7 @@ export {
   PLUGIN_PROTOCOL_VERSION,
   type DispatchContext,
   type DriverBinding,
+  type EventContext,
   type EventHandler,
   type KindHandler,
   type Plugin,

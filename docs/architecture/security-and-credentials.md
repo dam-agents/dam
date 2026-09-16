@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-09
+Last verified: 2026-09-15
 
 ## Overview
 
@@ -73,14 +73,13 @@ The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
-- **Per-pair agent egress NetworkPolicy** (controller-rendered,
-  `<id>-agent-egress`) is the sole gate on the agent → paired gateway
-  hop. The agent pod opts out of ambient mesh, so the kernel sees real
+- **Per-pair agent egress NetworkPolicy** is the sole gate on the
+  agent → paired gateway hop. The agent pod opts out of ambient mesh, so the kernel sees real
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
-- **Agent ingress NetworkPolicy** (chart-rendered,
-  `agent-ingress-platform-only`) admits ingress to the agent port only
+- **vm Backend.** Its gates live with the per-owner [VM runner](platform-topology.md#vm-runner).
+- **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
   busy-probe). agent-runtime serves unauthenticated on the assumption
   that this kernel gate is the auth boundary; kubelet probes are
@@ -408,25 +407,28 @@ must be treated as high-value. The statement audit is best-effort, not enforced
 
 The controller renders a per-Agent `Envoy bootstrap ConfigMap` and a
 cert-manager `Certificate` whose Secret holds the leaf TLS material the
-gateway pod uses to terminate the agent's egress TLS. The leaf is
-issued by a chart-managed `platform-mitm-ca-issuer` ClusterIssuer; the CA
-cert is mounted into the agent at `/etc/platform/ca/ca.crt` (single-key
-projection, `tls.key` stays in the gateway pod) so the agent's TLS
-clients trust Envoy's intercept cert.
+gateway uses to terminate agent egress TLS. The leaf is
+issued by a chart-managed MITM CA whose certificate is mounted into the
+agent — public half only, the key never leaves the gateway pod — so the
+agent's TLS clients trust Envoy's intercept cert.
 
 On the wire:
 
-1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`. The
-   per-Agent gateway Service routes the connection to the paired
-   gateway pod; every egress arrives there as HTTP CONNECT.
+1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the
+   per-Agent gateway Service routes to the paired gateway pod. TLS
+   egress arrives as HTTP CONNECT, plain HTTP in absolute form,
+   forwarded without interception.
 2. Envoy's outer listener (bound on `0.0.0.0`, reach gated by
-   NetworkPolicy) terminates the CONNECT and routes the inner stream
-   into an internal listener that reads SNI.
+   NetworkPolicy) stamps the trusted attribution header on every
+   request it forwards, or strips it where no telemetry backend is
+   configured; either way the agent cannot supply its own (see
+   [observability](observability.md)). CONNECT it terminates, routing
+   the inner stream into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the
    credential injector(s) to add the configured header(s) (or rewrite
    `?<param>=<value>` into the URL — see below), then forward to a
    per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
-   SNI + SAN-bound TLS validation). The agent's inner `Host` header has
+   SNI, SAN-bound TLS validation). The agent's inner `Host` header has
    no influence on the upstream destination — the route-confusion
    exfiltration path is structurally closed. Allow-only chains
    (path-rule promoted, no
@@ -435,17 +437,12 @@ On the wire:
 4. The default chain (SNI miss) does TCP passthrough — the request reaches
    the upstream unchanged.
 
-Hosts the api-server has issued a credential for surface as L7 chains (SNI
-match, header injection); hosts with no credential surface as L4
-passthrough chains.
-
 **L7 promotion.** An egress rule that narrows a host by path, method, or
 port is invisible to the L4 catch-all (it sees only SNI), so the rule's
 host must be *promoted* onto a TLS-terminating chain to be enforceable
 over HTTPS. The promotion signal is the Agent resource's `l7Hosts` spec
-list. It is per-agent intent, exactly like connection grants: promoting a
-host on one agent re-renders and rolls only that agent's gateway, never a
-sibling's. Promoted hosts get an uncredentialed L7 chain (gate sees
+list — per-agent intent, exactly like connection grants: promoting a host
+on one agent rolls only that agent's gateway, never a sibling's. Promoted hosts get an uncredentialed L7 chain (gate sees
 method/path; nothing is injected) and extend the leaf certificate's SAN
 list.
 
@@ -465,6 +462,12 @@ transaction with the rule write, so a per-agent periodic reconcile
 re-derives it from the rules — converging a host whose patch failed, or
 whose api-server died between the rule commit and the patch, without
 operator action.
+
+A chain whose host is the telemetry collector's is dropped, logged as a
+warning — the collector's own stamping chain claims that server name, and
+two claiming one is a fatal Envoy config. That host keeps neither
+credential injection nor L7 gating (see
+[observability](observability.md)).
 
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against
@@ -598,8 +601,8 @@ the gate because its driver no longer resolves.
 Binding a conversation surface — a Slack channel/DM or a Telegram
 chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
-relays to the main agent pod and runs under the Agent's own
-credential set, gated by the owner's egress rules exactly like any
+relays to the main agent pod ([channel-turns](channel-turns.md)) and runs under the Agent's own
+credential set, gated by the owner's egress rules like any
 other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
 Agent's workspace: an attachment sent in the conversation is written
 there for the agent to open, so a speaker with no platform
@@ -628,9 +631,9 @@ on opposite sides of the credential boundary, so the threat models
 differ:
 
 - **`platform-migration` ServiceAccount** in the agent namespace — the
-  identity of the one-time storage-migration copy Job, and the only
-  workload on the platform that runs as **uid 0**. The Job needs root
-  solely for the target side of the copy (owning a freshly provisioned
+  identity of the one-time storage-migration copy Job, one of three
+  that run as **uid 0** (VM runner, KVM device plugin). It needs root
+  only for the target side of the copy (owning a freshly provisioned
   volume root, restoring exact file ownership); every read of the agent's
   data drops to the agent's own uid, so a root-squashing source share
   never sees uid 0. The SA carries no role bindings and its token is

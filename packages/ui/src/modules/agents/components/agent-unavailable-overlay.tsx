@@ -1,11 +1,13 @@
-import { Asleep, Play, Renew, Warning } from "@carbon/icons-react";
+import { Asleep, Play, Power, Renew, Warning } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useUpdateAgent } from "../api/mutations.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import type {
@@ -22,7 +24,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "The agent pod is starting up." },
+  starting: { description: "The agent is starting up." },
   preparing_workspace: {
     description: "Setting up the workspace. This finishes shortly.",
   },
@@ -62,7 +64,9 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <h2 className="text-lg font-bold text-foreground">{name}</h2>
+        <h2 className="text-5xl font-normal tracking-tight text-foreground">
+          {name}
+        </h2>
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
@@ -75,8 +79,10 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <div className="flex flex-col items-center gap-2">
-          <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+        <div className="flex flex-col items-center gap-4">
+          <h2 className="text-5xl font-normal tracking-tight text-foreground">
+            {agent.name}
+          </h2>
           <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-sm text-muted-foreground">
@@ -89,20 +95,30 @@ export function AgentUnavailableOverlay({
 
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
+  const budget = agent.overBudgetMessage;
   const description =
     state === "error" && agent.error
       ? agent.error
-      : OVERLAY_COPY[state].description;
+      : state === "over_budget" && budget
+        ? `${budget[0].toUpperCase()}${budget.slice(1)}.`
+        : OVERLAY_COPY[state].description;
+
+  const waiting = state === "starting" || state === "preparing_workspace";
 
   return (
-    <OverlayFrame onBack={onBack}>
+    <OverlayFrame
+      onBack={onBack}
+      footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
+    >
       {Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />
       )}
-      <div className="flex flex-col items-center gap-2">
-        <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+      <div className="flex flex-col items-center gap-4">
+        <h2 className="text-5xl font-normal tracking-tight text-foreground">
+          {agent.name}
+        </h2>
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
@@ -124,5 +140,31 @@ export function AgentUnavailableOverlay({
         </Button>
       )}
     </OverlayFrame>
+  );
+}
+
+function SkipTheWait({ agent }: { agent: AgentView }) {
+  const updateAgent = useUpdateAgent();
+  const showConfirm = useStore((s) => s.showConfirm);
+  if (agent.hibernationTimeoutMin === 0) return null;
+
+  const keepAlwaysOn = async () => {
+    const ok = await showConfirm(
+      "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
+      "Keep always on",
+      { icon: Power, confirmLabel: "Keep always on" },
+    );
+    if (ok) updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 });
+  };
+
+  return (
+    <Button
+      variant="outline"
+      disabled={updateAgent.isPending}
+      onClick={() => void keepAlwaysOn()}
+      data-testid="skip-the-wait"
+    >
+      <Power size={14} /> Skip the wait — keep always-on
+    </Button>
   );
 }

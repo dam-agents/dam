@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Add, WarningAlt } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
@@ -12,7 +12,10 @@ import { useToggleSchedule } from "../../schedules/api/mutations.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import { useScheduleEditGuard } from "../../schedules/hooks/use-schedule-edit-guard.js";
-import { scheduleCadenceText } from "../../schedules/lib/schedule-format.js";
+import {
+  precheckAlert,
+  scheduleCadenceText,
+} from "../../schedules/lib/schedule-format.js";
 import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SCHEDULES = 5;
@@ -26,6 +29,7 @@ interface RowProps {
 
 function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
   const toggle = useToggleSchedule();
+  const alert = precheckAlert(schedule);
   return (
     <div
       className={cn(
@@ -40,9 +44,21 @@ function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
         className="min-w-0 flex-1 text-left"
       >
         <p className="truncate text-sm text-foreground">{schedule.name}</p>
-        <p className="truncate text-sm text-muted-foreground">
-          {agentName} · {scheduleCadenceText(schedule)}
-        </p>
+        {alert ? (
+          <p
+            className={cn(
+              "flex items-center gap-1 truncate text-sm",
+              alert.urgent ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            <WarningAlt size={14} className="shrink-0" />
+            {alert.text}
+          </p>
+        ) : (
+          <p className="truncate text-sm text-muted-foreground">
+            {agentName} · {scheduleCadenceText(schedule)}
+          </p>
+        )}
       </button>
       <Switch
         checked={schedule.enabled}
@@ -68,7 +84,13 @@ export function SchedulesWidget() {
   if (isPending || agentsPending) return <WidgetSkeleton rows={3} />;
 
   const live = new Set(agents.map((a) => a.id));
-  const schedules = (data ?? []).filter((s) => live.has(s.agentId));
+  const schedules = (data ?? [])
+    .filter((s) => live.has(s.agentId))
+    .sort(
+      (a, b) =>
+        Number(precheckAlert(b)?.urgent ?? false) -
+        Number(precheckAlert(a)?.urgent ?? false),
+    );
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;
 

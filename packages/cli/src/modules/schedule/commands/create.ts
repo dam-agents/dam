@@ -34,6 +34,7 @@ interface CreateOpts {
   weekdays?: string;
   timezone?: string;
   quietWindow: string[];
+  precheck?: string;
   sessionMode?: "fresh" | "continuous";
   server?: string;
   json?: boolean;
@@ -72,6 +73,10 @@ export function buildCreateCommand(deps: {
         "--session-mode <mode>",
         "session strategy each tick (default: fresh)",
       ).choices(["fresh", "continuous"]),
+    )
+    .option(
+      "--precheck <command>",
+      "shell command run in the workspace before each fire; exit 0 runs, exit 1 skips this occurrence, any other exit means the check broke and the task runs anyway",
     )
     .option(
       "--server <url>",
@@ -136,6 +141,7 @@ export function buildCreateCommand(deps: {
         quietHours,
         task: opts.task,
         ...(opts.sessionMode ? { sessionMode: opts.sessionMode } : {}),
+        ...(opts.precheck ? { precheck: opts.precheck } : {}),
       });
       if (!result.ok) {
         if (result.error.kind === "invalid-input") {

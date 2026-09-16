@@ -16,8 +16,8 @@ const (
 	// Agent gen 5: l7Hosts added to AgentSpec — per-agent L7 promotion
 	// replaces the owner-scoped allow-only marker Secrets (#2865).
 	// Agent gen 6: backend added to AgentSpec — discriminated union selecting
-	// the isolation substrate (container | vm); vm reconciles a KubeVirt
-	// VirtualMachine instead of the agent StatefulSet.
+	// the isolation substrate (container | vm); vm runs the agent as a
+	// microVM on its owner's VM runner instead of in the agent StatefulSet.
 	// Agent gen 7: telemetryAttributionId added to AgentSpec — the trusted
 	// telemetry attribution override the gateway stamps for Invocation targets
 	// so their spend credits the root Driver (#3041).
@@ -27,7 +27,11 @@ const (
 	// Agent gen 9: storageClass added to AgentSpec — a per-agent pin for the
 	// class its workspace volumes provision on and the destination its
 	// storage migration targets; empty inherits the install-wide class.
-	AgentSchemaGeneration = 9
+	// Agent gen 10: the vm backend no longer rejects secretRef — the
+	// controller reads the Secret and folds its keys into the machine's env.
+	// Agent gen 11: the vm backend now rejects nodeSelector too — it places a
+	// pod, and a vm agent's machine is placed with its owner's VM runner.
+	AgentSchemaGeneration = 11
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

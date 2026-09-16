@@ -101,10 +101,10 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
 2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
-3. Connect a chat: add the bot to a chat (or message it directly) and send `/platform bind` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
+3. Connect a chat: add the bot to a chat (or message it directly) and send `/bind` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
 
-**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/platform unbind` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
+**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/unbind` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
 
 ## Development mode
 
@@ -115,3 +115,7 @@ mise run //packages/ui:run             # start UI dev server
 ```
 
 Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
+
+### vm-backend agents (VM runner)
+
+Templates with `backend.type: vm` run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC. Turn it on with `virtualization.enabled=true`, which then requires two more values or the install refuses to render: `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, and `virtualization.runner.egressCidrs`, the only kernel gate behind a guest's own egress allowlist (say `[0.0.0.0/0]` with the cluster's ranges in `egressExceptCidrs` to leave it unconfined out loud). The devices reach the pod only as device-plugin resources — `virtualization.devicePlugin.enabled=true` ships a DaemonSet that advertises them on any node with `/dev/kvm`, and without it the pod asks for KubeVirt's `devices.kubevirt.io/kvm` and `/tun` instead. Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [platform-topology](architecture/platform-topology.md#vm-runner). Locally, `mise run cluster:install -- --set=virtualization.enabled=true` creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and stages the agent image archives on the node for the runners to mount, since there is no registry. Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it.

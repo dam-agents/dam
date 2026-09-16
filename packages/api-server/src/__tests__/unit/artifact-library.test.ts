@@ -133,7 +133,6 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     version: 1,
     visibility: "public",
     interactive: false,
-    sessionId: null,
     expiresAt: null,
     viewCount: 0,
     createdAt: new Date(),
@@ -154,7 +153,6 @@ function fakeRepo(
     insertArtifact: notImplemented,
     attributeVersion: () => Promise.resolve(true),
     listTouches: () => Promise.resolve([]),
-    pinSession: notImplemented,
     getArtifact: (id, owner) =>
       Promise.resolve(
         artifacts.find((a) => a.id === id && a.owner === owner) ?? null,
@@ -829,18 +827,6 @@ describe("library service — interactive is settled at create", () => {
     await expect(
       service.update("a1", { content: "<!DOCTYPE html><html>v2</html>" }),
     ).resolves.toMatchObject({ interactive: true, version: 2 });
-  });
-
-  // TEST_SCENARIO: A page asks in the conversation it is first asked from, and nothing is bound until that first ask.
-  it("starts with no bound conversation", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Interview",
-        content: "<!DOCTYPE html><html></html>",
-        interactive: true,
-      }),
-    ).resolves.toMatchObject({ sessionId: null });
   });
 });
 

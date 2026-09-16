@@ -47,7 +47,6 @@ import { emit, EventType } from "../../../events.js";
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
-const INTERACTIVE_KINDS = new Set<ArtifactKind>(["html"]);
 
 export interface ArtifactAgentDownloadTicket {
   url: string;
@@ -133,7 +132,6 @@ export function toLibraryArtifact(
     agentId: row.agentId,
     visibility: row.visibility,
     interactive: row.interactive,
-    sessionId: row.sessionId,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
@@ -377,7 +375,7 @@ export function createArtifactLibraryService(
       const fileName = input.fileName ?? defaultFileName(input.title, kind);
       const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
       const interactive = input.interactive === true;
-      if (interactive && !INTERACTIVE_KINDS.has(kind)) {
+      if (interactive && kind !== "html") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `an interactive artifact must be a page that runs — a ${kind} artifact cannot ask its agent`,
@@ -416,7 +414,6 @@ export function createArtifactLibraryService(
           version: 1,
           visibility: input.visibility ?? "private",
           interactive,
-          sessionId: null,
           expiresAt: expiresAtFrom(input.expiresInHours),
           sourcePath: input.sourcePath ?? null,
         },

@@ -31,6 +31,7 @@ export interface SessionsSlice {
   sessionId: string | null;
   sessionMode: SessionMode | null;
   messages: Message[];
+  runStarts: string[];
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -45,9 +46,12 @@ export interface SessionsSlice {
   setTerminalPaused: (paused: boolean) => void;
   setSessionsSectionOpen: (open: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+  setRunStarts: (list: string[]) => void;
+  addRunStart: (at: string) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
+  appendNewSessionDraft: (agentId: string, text: string) => void;
   clearDraft: (key: string) => void;
   migrateDraft: (fromKey: string, toKey: string) => void;
   consumeDroppedAttachments: (key: string) => void;
@@ -103,6 +107,7 @@ export const createSessionsSlice: StateCreator<
 
   return {
     sessionId: null,
+    runStarts: [],
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -128,6 +133,11 @@ export const createSessionsSlice: StateCreator<
       set((s) => ({
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
+    setRunStarts: (list) => set({ runStarts: list }),
+    addRunStart: (at) =>
+      set((s) =>
+        s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
+      ),
     setSessionError: (e) => set({ sessionError: e }),
     toggleSessionFilter: (category) =>
       set((s) => ({
@@ -145,6 +155,16 @@ export const createSessionsSlice: StateCreator<
         if (empty && !(key in drafts)) return false;
         if (empty) delete drafts[key];
         else drafts[key] = next;
+        return true;
+      }),
+    appendNewSessionDraft: (agentId, text) =>
+      updateDrafts((drafts) => {
+        const key = draftKey(agentId, null);
+        const current = drafts[key] ?? EMPTY_DRAFT;
+        drafts[key] = {
+          ...current,
+          text: current.text.length > 0 ? `${current.text}\n\n${text}` : text,
+        };
         return true;
       }),
     clearDraft: (key) =>
@@ -197,6 +217,7 @@ export const createSessionsSlice: StateCreator<
         sessionId: null,
         sessionMode: null,
         messages: [],
+        runStarts: [],
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,

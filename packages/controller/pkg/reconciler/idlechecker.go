@@ -24,7 +24,13 @@ type IdleChecker struct {
 	client    kubernetes.Interface
 	dynamic   dynamic.Interface
 	config    *config.Config
+	halt      MachineHalt
 	busyProbe func(ctx context.Context, agentName string) bool
+}
+
+func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
+	c.halt = halt
+	return c
 }
 
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
@@ -99,7 +105,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, name, isVMBackend(agent)); err != nil {
+		if err := c.hibernate(ctx, ownerOf(agent), name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -195,17 +201,12 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	return !status.Idle
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, name string, vmBackend bool) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name, vmBackend)
+func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
-func isVMBackend(agent *unstructured.Unstructured) bool {
-	t, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
-	return t == "vm"
-}
-
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
-	if err := scaleAgentPairToZero(ctx, kube, dyn, namespace, name, vmBackend); err != nil {
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
+	if err := scaleAgentPairToZero(ctx, kube, halt, owner, namespace, name); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
@@ -217,9 +218,9 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
-	if vmBackend {
-		if err := haltAgentVMs(ctx, dyn, namespace, name); err != nil {
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
+	if halt != nil {
+		if err := halt(ctx, owner, name); err != nil {
 			return err
 		}
 	}
@@ -249,4 +250,11 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dy
 		}
 	}
 	return nil
+}
+
+type MachineHalt func(ctx context.Context, owner, name string) error
+
+func ownerOf(agent *unstructured.Unstructured) string {
+	labels := agent.GetLabels()
+	return labels[envoyOwnerLabel]
 }

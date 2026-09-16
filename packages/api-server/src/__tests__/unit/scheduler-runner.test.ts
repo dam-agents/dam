@@ -4,6 +4,9 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type { AgentActivityStamp } from "../../modules/agents/index.js";
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import type { ScheduleStatusPatch } from "../../modules/schedules/domain/status-transitions.js";
 import {
   events$,
   ofType,
@@ -13,8 +16,18 @@ import {
 
 const AGENT_ID = "agent-1";
 const SCHEDULE_ID = "sched-1";
+const WAKE_STAMP = "2026-06-12T10:30:00.000Z";
 
-function makeSchedule(storedNextRun?: string, cron = "0 * * * *"): Schedule {
+function makeSchedule(
+  storedNextRun?: string,
+  cron = "0 * * * *",
+  precheck?: string,
+  lastRun?: string,
+): Schedule {
+  const status = {
+    ...(storedNextRun ? { nextRun: storedNextRun } : {}),
+    ...(lastRun ? { lastRun } : {}),
+  };
   return {
     id: SCHEDULE_ID,
     agentId: AGENT_ID,
@@ -26,8 +39,9 @@ function makeSchedule(storedNextRun?: string, cron = "0 * * * *"): Schedule {
       task: "do the thing",
       enabled: true,
       createdBy: "user",
+      ...(precheck ? { precheck } : {}),
     },
-    ...(storedNextRun ? { status: { nextRun: storedNextRun } } : {}),
+    ...(Object.keys(status).length > 0 ? { status } : {}),
   };
 }
 
@@ -35,6 +49,8 @@ function makeDeps(opts?: {
   wakeError?: Error;
   storedNextRun?: string;
   cron?: string;
+  precheck?: string;
+  lastRun?: string;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -42,11 +58,20 @@ function makeDeps(opts?: {
   const ensured: Date[] = [];
   const events: string[] = [];
   const expiries: Date[] = [];
+  const payloads: Record<string, unknown>[] = [];
+  const patches: ScheduleStatusPatch[] = [];
+  const restored: { previous: string | null; written: string }[] = [];
+  const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
   const repo = {
     async getById(id: string) {
       return id === SCHEDULE_ID
-        ? makeSchedule(opts?.storedNextRun, opts?.cron)
+        ? makeSchedule(
+            opts?.storedNextRun,
+            opts?.cron,
+            opts?.precheck,
+            opts?.lastRun,
+          )
         : null;
     },
     async getOwnerById() {
@@ -56,6 +81,9 @@ function makeDeps(opts?: {
       fires.push({ result, nextRun });
     },
     async setNextRun() {},
+    async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
+      patches.push(patch);
+    },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
     },
@@ -78,6 +106,7 @@ function makeDeps(opts?: {
       for (const e of evts) {
         events.push(e.id);
         expiries.push(e.expiresAt);
+        payloads.push(e.payload as Record<string, unknown>);
       }
       return 1;
     },
@@ -93,12 +122,28 @@ function makeDeps(opts?: {
     wakeAgent: async (agentId) => {
       calls.push(`wake:${agentId}`);
       if (opts?.wakeError) throw opts.wakeError;
+      return { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP };
     },
+    restoreActivity: async (_agentId, stamp) => {
+      restored.push(stamp);
+    },
+    activityStamps: stamps,
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
 
-  return { runner, calls, fires, enqueued, ensured, events, expiries };
+  return {
+    runner,
+    calls,
+    fires,
+    enqueued,
+    ensured,
+    events,
+    expiries,
+    payloads,
+    patches,
+    restored,
+  };
 }
 
 describe("scheduler-runner fire", () => {
@@ -261,5 +306,95 @@ describe("scheduler-runner fire", () => {
 
     expect(ensured).toHaveLength(1);
     expect(ensured[0]!.toISOString()).toBe(stored);
+  });
+});
+
+describe("scheduler-runner precheck", () => {
+  // TEST_SCENARIO: the pod decides the verdict, so the fire's payload must carry everything the Precheck will ask for.
+  it("carries the precheck, the occurrence and the last run into the fire payload", async () => {
+    const { runner, payloads } = makeDeps({
+      precheck:
+        "git fetch -q && git log --oneline HEAD..origin/main | grep -q .",
+      lastRun: "2026-06-12T09:00:00.000Z",
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(payloads[0]).toMatchObject({
+      precheck:
+        "git fetch -q && git log --oneline HEAD..origin/main | grep -q .",
+      fireAt: "2026-06-12T10:30:00.000Z",
+      lastRunAt: "2026-06-12T09:00:00.000Z",
+    });
+  });
+
+  // TEST_SCENARIO: a Declined Fire already woke the Agent, so leaving the poke's stamp standing would hold a frequent Precheck's Agent awake forever.
+  it("a declined report restores the activity stamp the poke wrote", async () => {
+    const { runner, patches, restored } = makeDeps({
+      precheck: "test -f /tmp/ready",
+    });
+    const fireAt = new Date("2026-06-12T10:30:00Z");
+
+    await runner.buildFireHandler()(SCHEDULE_ID, fireAt);
+    await runner.reportFire({
+      scheduleId: SCHEDULE_ID,
+      eventId: `${SCHEDULE_ID}:${fireAt.getTime()}`,
+      ranPrecheck: "test -f /tmp/ready",
+      outcome: "declined",
+    });
+
+    expect(patches).toHaveLength(1);
+    expect(restored).toEqual([
+      { previous: "2026-06-12T09:00:00.000Z", written: WAKE_STAMP },
+    ]);
+  });
+
+  // TEST_SCENARIO: claiming a run at send time would make a Schedule that declines every occurrence read like one that succeeds.
+  it("a prechecked fire arms the next occurrence without claiming a run", async () => {
+    const { runner, fires, enqueued } = makeDeps({ precheck: "true" });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(fires).toHaveLength(0);
+    expect(enqueued).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the runner hands the verdict to the transition rather than deciding the columns itself.
+  it("records a broken precheck's run through the status transition", async () => {
+    const { runner, patches } = makeDeps({ precheck: "true" });
+
+    await runner.reportFire({
+      scheduleId: SCHEDULE_ID,
+      eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "true",
+      outcome: "failed",
+      detail: "precheck exited 127",
+    });
+
+    expect(patches[0]).toMatchObject({
+      lastFiredAt: new Date("2026-06-12T10:30:00Z"),
+      lastPrecheckError: "precheck exited 127",
+      precheckFailedCount: { kind: "increment" },
+    });
+  });
+
+  // TEST_SCENARIO: the check runs detached for minutes, so an owner can swap the command while one is in flight — and the old command's verdict must not be written against the new one, nor wipe what the new one already recorded.
+  it("drops a verdict that describes a precheck the schedule no longer runs", async () => {
+    const { runner, patches } = makeDeps({ precheck: "new.sh" });
+
+    await runner.reportFire({
+      scheduleId: SCHEDULE_ID,
+      eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "old.sh",
+      outcome: "declined",
+    });
+
+    expect(patches).toHaveLength(0);
   });
 });

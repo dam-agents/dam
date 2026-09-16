@@ -21,7 +21,6 @@ const artifact = (id: string, folderId: string | null): LibraryArtifact => ({
   agentId: null,
   visibility: "private",
   interactive: false,
-  sessionId: null,
   viewers: [],
   expiresAt: null,
   viewCount: 0,

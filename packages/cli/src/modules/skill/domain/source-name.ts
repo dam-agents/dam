@@ -1,12 +1,7 @@
+import { normalizeGitUrl } from "agent-runtime-api";
+
 export function deriveSourceName(gitUrl: string): string {
-  let pathname: string;
-  try {
-    pathname = new URL(gitUrl).pathname;
-  } catch {
-    return "";
-  }
-  return pathname
-    .replace(/^\//, "")
-    .replace(/\/$/, "")
-    .replace(/\.git$/, "");
+  const normalized = normalizeGitUrl(gitUrl);
+  if (!normalized) return "";
+  return new URL(normalized.gitUrl).pathname.replace(/^\//, "");
 }

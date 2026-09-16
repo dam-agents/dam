@@ -13,8 +13,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  precheckSchema,
   quietWindowSchema,
-  type FeaturesService,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -27,14 +27,8 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
-import {
-  registerArtifactLibraryTools,
-  registerArtifactRequestTools,
-} from "../../modules/artifact-library/mcp-tools.js";
-import type {
-  ArtifactLibraryServiceImpl,
-  ArtifactRequestsServiceImpl,
-} from "../../modules/artifact-library/index.js";
+import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
   type KbShareAgentOps,
@@ -45,8 +39,8 @@ import {
   type CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import {
-  registerUsageSummaryTool,
-  type AgentUsageSummaryService,
+  registerAgentTelemetryTools,
+  type AgentTelemetryService,
 } from "../../modules/metrics/index.js";
 
 function resolveWorkspacePath(input: string): string {
@@ -103,8 +97,6 @@ export interface McpSessionDeps {
   skills: SkillsService;
   schedules: SchedulesService;
   artifactLibrary: ArtifactLibraryServiceImpl;
-  artifactRequests: ArtifactRequestsServiceImpl;
-  interactiveArtifacts: boolean;
   invocations: InvocationsService;
   experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
@@ -112,7 +104,7 @@ export interface McpSessionDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -677,8 +669,22 @@ export function createMcpSession(
         .describe(
           "continuous = resume prior session each tick; fresh = new session per run (default)",
         ),
+      precheck: precheckSchema
+        .optional()
+        .describe(
+          "Optional shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+        ),
     },
-    async ({ name, cron, rrule, timezone, quietHours, task, sessionMode }) => {
+    async ({
+      name,
+      cron,
+      rrule,
+      timezone,
+      quietHours,
+      task,
+      sessionMode,
+      precheck,
+    }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
           "pass exactly one of `cron` (legacy, UTC) or `rrule` (with `timezone`).",
@@ -704,11 +710,12 @@ export function createMcpSession(
                   quietHours,
                   task,
                   sessionMode,
+                  precheck,
                 },
                 "agent",
               )
             : await schedules.createCron(
-                { name, agentId, cron: cron!, task, sessionMode },
+                { name, agentId, cron: cron!, task, sessionMode, precheck },
                 "agent",
               );
         return {
@@ -810,7 +817,6 @@ export function createMcpSession(
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
-    interactiveArtifacts: deps.interactiveArtifacts,
     attachToExperiment: (artifactId, experimentId) =>
       deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
@@ -831,17 +837,10 @@ export function createMcpSession(
     },
   });
 
-  registerUsageSummaryTool(server, {
+  registerAgentTelemetryTools(server, {
     agentId,
-    usageSummary: deps.usageSummary,
+    agentTelemetry: deps.agentTelemetry,
   });
-
-  if (deps.interactiveArtifacts) {
-    registerArtifactRequestTools(server, {
-      artifactRequests: deps.artifactRequests,
-      agentId,
-    });
-  }
 
   server.tool(
     "report_result",
@@ -879,8 +878,6 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  artifactRequestsServiceFor: (owner: string) => ArtifactRequestsServiceImpl;
-  featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
@@ -889,7 +886,7 @@ export interface MountMcpDeps {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -912,28 +909,20 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
-    const artifactRequests = deps.artifactRequestsServiceFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [
-      supportsUserLookup,
-      supportsMessageReactions,
-      ownerIsInspector,
-      flags,
-    ] = await Promise.all([
-      deps.channelManager.supportsUserLookup(),
-      deps.channelManager.supportsMessageReactions(),
-      deps.carriesInspectorRole(verified.owner),
-      deps.featuresServiceFor(verified.owner).flags(),
-    ]);
+    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
+      await Promise.all([
+        deps.channelManager.supportsUserLookup(),
+        deps.channelManager.supportsMessageReactions(),
+        deps.carriesInspectorRole(verified.owner),
+      ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
       schedules,
       artifactLibrary,
-      artifactRequests,
-      interactiveArtifacts: flags["interactive-artifacts"],
       invocations,
       experiments,
       kbShares:
@@ -944,7 +933,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudySubmissions: deps.caseStudySubmissions,
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
-      usageSummary: deps.usageSummary,
+      agentTelemetry: deps.agentTelemetry,
       supportsUserLookup,
       supportsMessageReactions,
     });

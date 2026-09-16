@@ -1,9 +1,6 @@
 import type { AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
-import type {
-  ArtifactLibraryService,
-  ArtifactRequestsService,
-} from "./modules/artifact-library/types.js";
+import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type { BudgetsService } from "./modules/budgets/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
@@ -55,7 +52,6 @@ export interface ApiContext {
   kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;
   caseStudies: CaseStudiesService;
-  artifactRequests: ArtifactRequestsService;
   features: FeaturesService;
   files: FilesService;
   harnessConfig: HarnessConfigService;

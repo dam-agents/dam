@@ -10,7 +10,6 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
-import type { AcpClientFactory } from "../../core/acp-client.js";
 import type { PeriodicJobs } from "../../core/periodic-jobs.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
@@ -95,7 +94,6 @@ export interface ApiServerDeps {
   artifacts: ArtifactService;
   liveEvents: LiveEventsService;
   podSessions: PodSessionsService;
-  makeAcpClient: AcpClientFactory;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

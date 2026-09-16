@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
+import type { TriggerEventPayload } from "agent-runtime-api";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
@@ -97,8 +98,8 @@ import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postg
 import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
 import {
   composeMetricsReader,
-  createAgentUsageSummary,
-  createUnavailableAgentUsageSummary,
+  createAgentTelemetry,
+  createUnavailableAgentTelemetry,
 } from "./modules/metrics/index.js";
 import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
@@ -177,7 +178,6 @@ import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
-  composeArtifactRequestExpirySweeper,
 } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -678,12 +678,14 @@ export async function bootstrap() {
       ? () => fakeSlackGateway
       : undefined;
 
-  const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
+  const acpTurnWatch = {
+    stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
+  };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
       instanceName,
-      turnCeilingMs: acpTurnCeilingMs,
+      turnWatch: acpTurnWatch,
     });
 
   const slackWorker = slackGatewayFactory
@@ -742,8 +744,8 @@ export async function bootstrap() {
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
           uiBaseUrl: config.uiBaseUrl,
-          brandShort: config.brand.short,
           brandName: config.brand.name,
+          logLevel: config.logLevel,
           attendance: turnAttendance,
           settleMs: DEFAULT_SETTLE_MS,
         })
@@ -844,10 +846,27 @@ export async function bootstrap() {
     db,
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    wakeAgent: async (agentId) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    },
+    wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    restoreActivity: (agentId, stamp) =>
+      agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
+    redis: sharedRedis,
   });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const { scheduleId, precheck } =
+        event.payload as Partial<TriggerEventPayload>;
+      if (!scheduleId || !precheck) return;
+      await schedulesBoot.runner.reportFire({
+        scheduleId,
+        eventId: input.eventId,
+        ranPrecheck: precheck,
+        outcome: input.outcome,
+        ...(input.detail ? { detail: input.detail } : {}),
+      });
+    },
+  );
+
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
       db,
@@ -1019,14 +1038,6 @@ export async function bootstrap() {
     artifactExpirySweeper.tick(),
   );
 
-  const artifactRequestExpirySweeper = composeArtifactRequestExpirySweeper({
-    db,
-    batchSize: 200,
-  });
-  await periodicJobs.register("artifact-request-expiry-sweep", 60_000, () =>
-    artifactRequestExpirySweeper.tick(),
-  );
-
   const prStateResolver = composePrStateResolver({
     db,
     agents: agentsRepo,
@@ -1161,7 +1172,6 @@ export async function bootstrap() {
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
     podSessions: liveEventsModule.podSessions,
-    makeAcpClient,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -1195,11 +1205,10 @@ export async function bootstrap() {
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
     carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
-    usageSummary: metricsReader
-      ? createAgentUsageSummary({ reader: metricsReader })
-      : createUnavailableAgentUsageSummary(),
+    agentTelemetry: metricsReader
+      ? createAgentTelemetry({ reader: metricsReader })
+      : createUnavailableAgentTelemetry(),
     wakeAgent: wakeAgentFor,
-    makeAcpClient,
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,

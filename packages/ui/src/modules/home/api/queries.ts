@@ -1,9 +1,13 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
-import { useAgents, useAgentsList } from "../../agents/api/queries.js";
+import {
+  useAgentLacksLiveUpdates,
+  useAgents,
+  useAgentsList,
+} from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
 import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
@@ -19,6 +23,33 @@ export const homeKeys = {
   sessions: (agentId: string) =>
     [...acpSessionsKeys.agentLists(agentId), "home"] as const,
 };
+
+function agentSessionsQuery(agentId: string, compat: boolean) {
+  return {
+    queryKey: homeKeys.sessions(agentId),
+    queryFn: () => listAgentSessionsOverAcp(agentId),
+    staleTime: SESSIONS_STALE_MS,
+    retry: false,
+    refetchInterval: (query: { state: { status: string } }) =>
+      compat
+        ? SESSIONS_COMPAT_POLL_MS
+        : query.state.status === "error"
+          ? SESSIONS_ERROR_RETRY_MS
+          : false,
+  };
+}
+
+export function useAgentWorking(
+  agentId: string,
+  enabled: boolean,
+): boolean | undefined {
+  const compat = useAgentLacksLiveUpdates(agentId);
+  const { data } = useQuery({
+    ...agentSessionsQuery(agentId, compat),
+    enabled,
+  });
+  return data?.some((session) => session.running);
+}
 
 export interface ArtifactTouched {
   artifactId: string;
@@ -76,6 +107,8 @@ export function useFeedArtifacts(items: readonly FeedItem[]): SessionArtifacts {
 export interface Feed {
   items: FeedItem[];
   workingAgentIds: ReadonlySet<string>;
+  /** UNIT_BOUNDARY_DESCRIPTION: absent while an agent's sessions are unread. */
+  workingByAgent: ReadonlyMap<string, boolean>;
   agents: readonly AgentView[];
   runningAgents: readonly AgentView[];
   hasAgents: boolean;
@@ -96,20 +129,11 @@ export function useFeed(): Feed {
   );
 
   const sessions = useQueries({
-    queries: runningAgents.map((agent) => ({
-      queryKey: homeKeys.sessions(agent.id),
-      queryFn: () => listAgentSessionsOverAcp(agent.id),
-      staleTime: SESSIONS_STALE_MS,
-      retry: false,
-      refetchInterval: (query: { state: { status: string } }) =>
-        !agent.features.liveUpdates
-          ? SESSIONS_COMPAT_POLL_MS
-          : query.state.status === "error"
-            ? SESSIONS_ERROR_RETRY_MS
-            : false,
-    })),
+    queries: runningAgents.map((agent) =>
+      agentSessionsQuery(agent.id, !agent.features.liveUpdates),
+    ),
     combine: (results) => ({
-      byAgent: results.map((result) => result.data ?? []),
+      byAgent: results.map((result) => result.data),
       pending: results.some((result) => result.isPending),
       failed: results.filter((result) => result.isError).length,
     }),
@@ -123,10 +147,19 @@ export function useFeed(): Feed {
     })),
   });
 
+  const workingAgentIds = new Set(
+    items.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
+  );
+
   return {
     items,
-    workingAgentIds: new Set(
-      items.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
+    workingAgentIds,
+    workingByAgent: new Map(
+      runningAgents.flatMap((agent, index) =>
+        sessions.byAgent[index]
+          ? [[agent.id, workingAgentIds.has(agent.id)] as const]
+          : [],
+      ),
     ),
     agents,
     runningAgents,

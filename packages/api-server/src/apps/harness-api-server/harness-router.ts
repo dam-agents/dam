@@ -4,7 +4,6 @@ import type {
   ConnectionsService,
   ExperimentsService,
   KbPublishGate,
-  FeaturesService,
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
@@ -21,16 +20,13 @@ import type { ArtifactTouchService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
-import type {
-  ArtifactLibraryServiceImpl,
-  ArtifactRequestsServiceImpl,
-} from "../../modules/artifact-library/index.js";
+import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
-import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
+import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
@@ -39,8 +35,6 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  artifactRequestsServiceFor: (owner: string) => ArtifactRequestsServiceImpl;
-  featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
@@ -50,7 +44,7 @@ export function createHarnessRouter(deps: {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   templates: TemplatesService;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
@@ -66,8 +60,6 @@ export function createHarnessRouter(deps: {
     composeSkills: deps.composeSkills,
     schedulesServiceFor: deps.schedulesServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
-    artifactRequestsServiceFor: deps.artifactRequestsServiceFor,
-    featuresServiceFor: deps.featuresServiceFor,
     invocationsServiceFor: deps.invocationsServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
     kbShareOpsFor: deps.kbShareOpsFor,
@@ -76,7 +68,7 @@ export function createHarnessRouter(deps: {
     caseStudyInspection: deps.caseStudyInspection,
     carriesInspectorRole: deps.carriesInspectorRole,
     agentImage: deps.agentImage,
-    usageSummary: deps.usageSummary,
+    agentTelemetry: deps.agentTelemetry,
   });
   mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {

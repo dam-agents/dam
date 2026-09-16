@@ -1,7 +1,4 @@
-import type {
-  ArtifactRequestFailureReason,
-  EntryPointChoice,
-} from "api-server-api";
+import type { EntryPointChoice } from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -35,12 +32,12 @@ export enum EventType {
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
+  SchedulePrecheckReported = "SchedulePrecheckReported",
   HarnessConfigChanged = "HarnessConfigChanged",
   ArtifactCreated = "ArtifactCreated",
   ArtifactUpdated = "ArtifactUpdated",
   ArtifactDeleted = "ArtifactDeleted",
   ArtifactFolderChanged = "ArtifactFolderChanged",
-  ArtifactRequestSettled = "ArtifactRequestSettled",
   ExperimentChanged = "ExperimentChanged",
   ArtifactPublished = "ArtifactPublished",
   ArtifactShared = "ArtifactShared",
@@ -216,6 +213,13 @@ export type ScheduleUpdated = {
   ownerSub: string;
 };
 
+export type SchedulePrecheckReported = {
+  type: EventType.SchedulePrecheckReported;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
 export type ScheduleDeleted = {
   type: EventType.ScheduleDeleted;
   scheduleId: string;
@@ -258,20 +262,6 @@ export type ArtifactFolderChanged = {
   type: EventType.ArtifactFolderChanged;
   folderId: string;
   ownerSub: string;
-};
-
-export type ArtifactRequestSettled = {
-  type: EventType.ArtifactRequestSettled;
-  requestId: string;
-  artifactId: string;
-  agentId: string;
-  ownerSub: string;
-  seq: number;
-  action: string;
-  state: "answered" | "failed";
-  failureReason?: ArtifactRequestFailureReason;
-  actorSub?: string;
-  surface?: string;
 };
 
 export type ExperimentChanged = {
@@ -419,6 +409,7 @@ export type DomainEvent =
   | SlackDisconnected
   | ChannelTurnRelayed
   | ScheduleFired
+  | SchedulePrecheckReported
   | ConnectionCreated
   | ConnectionRemoved
   | FilesImported
@@ -438,7 +429,6 @@ export type DomainEvent =
   | ArtifactUpdated
   | ArtifactDeleted
   | ArtifactFolderChanged
-  | ArtifactRequestSettled
   | ExperimentChanged
   | SessionTurnRelayed
   | AgentRelayAttached

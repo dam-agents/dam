@@ -428,6 +428,7 @@ export const runtimeEvents = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),
     error: text("error"),
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
   },
   (table) => [
     index("runtime_events_agent_pending_idx")
@@ -451,6 +452,10 @@ export const schedules = pgTable(
     nextRun: timestamp("next_run", { withTimezone: true }),
     lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
     lastFiredResult: text("last_fired_result"),
+    lastDeclinedAt: timestamp("last_declined_at", { withTimezone: true }),
+    declinedCount: integer("declined_count").notNull().default(0),
+    lastPrecheckError: text("last_precheck_error"),
+    precheckFailedCount: integer("precheck_failed_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -620,7 +625,6 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
-    sessionId: text("session_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -713,41 +717,6 @@ export const libraryArtifactViewers = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.artifactId, table.email] })],
-);
-
-export const artifactRequests = pgTable(
-  "artifact_requests",
-  {
-    id: text("id").primaryKey(),
-    owner: text("owner").notNull(),
-    artifactId: text("artifact_id")
-      .notNull()
-      .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
-    agentId: text("agent_id").notNull(),
-    seq: integer("seq").notNull(),
-    action: text("action").notNull(),
-    payload: jsonb("payload").notNull(),
-    state: text("state").notNull().default("pending"),
-    result: jsonb("result"),
-    failureReason: text("failure_reason"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
-  },
-  (table) => [
-    index("artifact_requests_artifact_created_idx").on(
-      table.artifactId,
-      table.createdAt,
-    ),
-    uniqueIndex("artifact_requests_artifact_seq_unique_idx").on(
-      table.artifactId,
-      table.seq,
-    ),
-    uniqueIndex("artifact_requests_in_flight_unique_idx")
-      .on(table.artifactId)
-      .where(sql`${table.state} in ('pending', 'delivered')`),
-  ],
 );
 
 export const invocations = pgTable(

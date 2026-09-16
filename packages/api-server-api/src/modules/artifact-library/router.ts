@@ -10,8 +10,6 @@ import {
   artifactCreateInputSchema,
   artifactIdInputSchema,
   artifactListInputSchema,
-  artifactRequestCreateInputSchema,
-  artifactRequestIdInputSchema,
   artifactSharingInputSchema,
   artifactTouchListInputSchema,
   artifactUpdateInputSchema,
@@ -20,24 +18,6 @@ import {
   folderIdInputSchema,
   folderUpdateInputSchema,
 } from "./schemas.js";
-
-const requestsRouter = t.router({
-  create: manageAgentsProcedure
-    .input(artifactRequestCreateInputSchema)
-    .mutation(({ ctx, input }) => ctx.artifactRequests.create(input)),
-
-  get: readAgentProcedure
-    .input(artifactRequestIdInputSchema)
-    .query(async ({ ctx, input }) => {
-      const request = await ctx.artifactRequests.get(input.requestId);
-      if (!request) throw new TRPCError({ code: "NOT_FOUND" });
-      return request;
-    }),
-
-  cancel: manageAgentsProcedure
-    .input(artifactRequestIdInputSchema)
-    .mutation(({ ctx, input }) => ctx.artifactRequests.cancel(input.requestId)),
-});
 
 export const artifactLibraryRouter = t.router({
   touches: readAgentProcedure
@@ -131,6 +111,4 @@ export const artifactLibraryRouter = t.router({
   folderShareUrl: readAgentProcedure
     .input(folderIdInputSchema)
     .query(({ ctx, input }) => ctx.artifactLibrary.folderShareUrl(input.id)),
-
-  requests: requestsRouter,
 });

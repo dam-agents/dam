@@ -506,9 +506,14 @@ API Server ServiceAccount name
   value: "1000"
 {{- end }}
 
-{{/* Bob Shell reads none of the standard OTEL_* env for its own telemetry — it
-     builds a tracer from BOB_TELEMETRY_* alone and posts OTLP/HTTP JSON to
-     {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log records.
+{{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP
+     JSON to {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log
+     records. Since 2.0.3 it also reads OTEL_EXPORTER_OTLP_{ENDPOINT,TRACES_ENDPOINT,
+     HEADERS,PROTOCOL}: when an endpoint is set it ignores BOB_TELEMETRY_PROVIDER
+     and exports to that endpoint and to IBM's own at once, and it accepts only
+     http/json — the Claude Code rail's http/protobuf fails its env parse, which
+     drops the whole rail and sends the export to IBM. So a Bob image belongs on
+     this rail, never on the Claude Code one.
      Three of these are load-bearing rather than cosmetic:
        - the LF key pair is validated even though the collector ignores it, and
          a failed parse silently falls back to Bob's own IBM endpoint;
@@ -529,4 +534,32 @@ API Server ServiceAccount name
   value: "unused"
 - name: BOB_TELEMETRY_LF_SECRET_KEY
   value: "unused"
+{{- end }}
+
+{{/*
+OpenShift grants `use` on a built-in SCC through an auto-generated ClusterRole
+named system:openshift:scc:<scc>. The VM runner identity and the KVM device
+plugin both bind one the same way.
+Args: dict "root" $ "name" <ServiceAccount> "component" <label> "scc" <scc>,
+and optionally "namespace" when the identity does not live in the release
+namespace (the VM runner's sits beside the runners it owns).
+*/}}
+{{- define "platform.sccRoleBinding" -}}
+{{- $ns := .namespace | default .root.Release.Namespace -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}-scc
+  namespace: {{ $ns }}
+  labels:
+    {{- include "platform.labels" .root | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:{{ .scc }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .name }}
+    namespace: {{ $ns }}
 {{- end }}

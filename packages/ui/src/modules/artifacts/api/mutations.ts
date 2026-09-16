@@ -138,10 +138,3 @@ export function useDeleteFolder() {
     },
   });
 }
-
-export function useCreateArtifactRequest() {
-  return useMutation({
-    ...trpc.artifactLibrary.requests.create.mutationOptions(),
-    meta: { suppressErrorToast: true },
-  });
-}

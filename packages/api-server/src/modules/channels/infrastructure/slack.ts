@@ -48,10 +48,17 @@ import type {
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
+  AcpSessionLoadError,
+  AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
+import {
+  turnFailureReasonToken,
+  turnFailureUserCopy,
+} from "./turn-failure-copy.js";
+import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -745,6 +752,44 @@ async function resolveOutboundTarget(
 
 export const TURN_LINGER_MS = 60 * 60_000;
 
+const MAY_STILL_RUN_REASONS = new Set([
+  "acp-error",
+  "relay-lost",
+  "turn-stalled",
+]);
+
+function mayLeaveHarnessRunning(
+  ghostTurn: boolean,
+  failureReason: string | undefined,
+): boolean {
+  return (
+    ghostTurn ||
+    (failureReason !== undefined && MAY_STILL_RUN_REASONS.has(failureReason))
+  );
+}
+
+export function undeliveredNudge(
+  threadTs: string,
+  opts: { sawFailure: boolean },
+): string {
+  return [
+    "<turn-undelivered>",
+    opts.sawFailure
+      ? "Your previous turn in this Slack thread ended without a reply being posted, and the person was already told the turn had gone wrong — so they are waiting on an answer, knowing only that something failed."
+      : "Your previous turn in this Slack thread ended without a reply being posted — the person waiting in the thread never saw an answer.",
+    `Post your result now with the reply tool (threadTs="${threadTs}").`,
+    ...(opts.sawFailure
+      ? []
+      : [
+          "Write it as the answer they are waiting for, not as a correction: " +
+            "do not mention this notice and do not apologise for the delay — " +
+            "the only thing they ever see is what you post.",
+        ]),
+    "If silence was deliberate, call no_reply_needed instead.",
+    "</turn-undelivered>",
+  ].join("\n");
+}
+
 const USER_CACHE_TTL_MS = 10 * 60_000;
 
 const userLookupSemaphore = createSemaphore(5);
@@ -930,6 +975,24 @@ export function createSlackWorker(
     }
   }
 
+  const watchedTurnRefs = new Map<string, Set<TurnRef>>();
+
+  function holdWatchedRefs(instanceName: string, refs: TurnRef[]) {
+    let held = watchedTurnRefs.get(instanceName);
+    if (!held) {
+      held = new Set();
+      watchedTurnRefs.set(instanceName, held);
+    }
+    for (const ref of refs) held.add(ref);
+  }
+
+  function releaseWatchedRefs(instanceName: string, refs: TurnRef[]) {
+    const held = watchedTurnRefs.get(instanceName);
+    if (!held) return;
+    for (const ref of refs) held.delete(ref);
+    if (held.size === 0) watchedTurnRefs.delete(instanceName);
+  }
+
   function lingeringFor(instanceName: string): TurnRef[] {
     const lingering = lingeringTurns.get(instanceName);
     if (!lingering) return [];
@@ -977,6 +1040,9 @@ export function createSlackWorker(
     const lingering = lingeringFor(instanceName);
     for (let i = lingering.length - 1; i >= 0; i--) {
       if (match(lingering[i]!)) return lingering[i];
+    }
+    for (const ref of watchedTurnRefs.get(instanceName) ?? []) {
+      if (match(ref)) return ref;
     }
     return undefined;
   }
@@ -1167,6 +1233,21 @@ export function createSlackWorker(
 
   const sessionTurnLocks = new Map<string, Promise<void>>();
 
+  const turnRecovery = createTurnRecovery({
+    turnStatus: (agentId, sessionId) =>
+      makeAcpClient(agentId).turnStatus(sessionId),
+    podGone: async (agentId) => {
+      const agent = await agents().get(agentId);
+      return (
+        agent === null ||
+        agent.state === "hibernated" ||
+        agent.state === "hibernating" ||
+        agent.state === "over_budget" ||
+        agent.state === "error"
+      );
+    },
+  });
+
   async function withSessionTurnLock<T>(
     instanceName: string,
     threadKey: string,
@@ -1184,6 +1265,71 @@ export function createSlackWorker(
       if (sessionTurnLocks.get(key) === tail) sessionTurnLocks.delete(key);
     });
     return run;
+  }
+
+  async function runUndeliveredNudge(args: {
+    instanceName: string;
+    sessionId: string;
+    threadKey: string;
+    threadTs: string;
+    verdictRefs: TurnRef[];
+    anchorRef: TurnRef;
+    isDelivered: () => boolean;
+    isCancelled: () => boolean;
+    sawFailure: boolean;
+    externalActorId?: string;
+  }): Promise<void> {
+    const { instanceName, sessionId, threadKey, threadTs } = args;
+    const disposition = () =>
+      args.verdictRefs
+        .map((ref) =>
+          [
+            ref.posted === true,
+            ref.declined === true,
+            ref.handedOff === true,
+            ref.replyText?.length ?? 0,
+          ].join(":"),
+        )
+        .join(" ");
+    let answered: boolean | undefined;
+    try {
+      await withSessionTurnLock(instanceName, threadKey, async () => {
+        if (args.isDelivered() || args.isCancelled()) return;
+        await agents().ensureReady(instanceName);
+        if (args.isDelivered() || args.isCancelled()) return;
+        const before = disposition();
+        beginTurn(instanceName, args.anchorRef);
+        try {
+          await makeAcpClient(instanceName).sendPrompt(
+            undeliveredNudge(threadTs, { sawFailure: args.sawFailure }),
+            { resumeSessionId: sessionId },
+          );
+        } finally {
+          endTurn(instanceName, args.anchorRef);
+          answered = disposition() !== before;
+          if (!answered) {
+            getLogger().info(
+              { agentId: instanceName, sessionId, threadTs },
+              "slack.turn.recovery_unanswered: the agent was nudged but still posted nothing",
+            );
+          }
+        }
+      });
+    } finally {
+      if (answered !== undefined) {
+        emit({
+          type: EventType.ChannelTurnRelayed,
+          channel: "slack",
+          agentId: instanceName,
+          actorSub: null,
+          ...(args.externalActorId
+            ? { externalActorId: args.externalActorId }
+            : {}),
+          outcome: answered ? "success" : "failure",
+          reason: "recovery-nudge",
+        });
+      }
+    }
   }
 
   async function runSessionTurn(args: {
@@ -1232,7 +1378,8 @@ export function createSlackWorker(
             resumeSessionId: existing.sessionId,
             ...sendOpts,
           });
-        } catch {
+        } catch (err) {
+          if (!(err instanceof AcpSessionLoadError)) throw err;
           args.onGhostTurn?.();
           return send(await args.buildFreshPrompt(), {
             platformMeta,
@@ -1264,6 +1411,7 @@ export function createSlackWorker(
     roster?: RosterEntry[];
     ambiguousName?: string | null;
     forwardedFrom?: string;
+    siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
   }) {
     if (!gateway) return;
@@ -1288,6 +1436,7 @@ export function createSlackWorker(
         ? ctx.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
         : lastMessage.text) + droppedNote;
 
+    const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
       threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
@@ -1298,6 +1447,46 @@ export function createSlackWorker(
       hasThread: ctx.hasThread,
       hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
     }));
+
+    const verdictRefs = () => [...turnRefs, ...(ctx.siblingRefs?.() ?? [])];
+    const deliveredBy = (refs: TurnRef[], end: WatchedTurnEnd) =>
+      end === "interrupted"
+        ? refs.some((ref) => ref.declined || ref.handedOff)
+        : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+    const turnSessionId = () =>
+      turnRefs.find((ref) => ref.sessionId !== undefined)?.sessionId;
+    const watchTurn = (
+      sessionId: string,
+      refs: TurnRef[],
+      sawFailure: boolean,
+      endedAs?: WatchedTurnEnd,
+    ) => {
+      holdWatchedRefs(instanceName, refs);
+      turnRecovery.watch(
+        {
+          instanceName,
+          sessionId,
+          isDelivered: (end) => deliveredBy(refs, end),
+          onDone: () => releaseWatchedRefs(instanceName, refs),
+          recover: (end, isCancelled) =>
+            runUndeliveredNudge({
+              isCancelled,
+              instanceName,
+              sessionId,
+              threadKey,
+              threadTs: ctx.threadTs,
+              verdictRefs: refs,
+              anchorRef: turnRefs.at(-1)!,
+              isDelivered: () => deliveredBy(refs, end),
+              sawFailure,
+              ...(ctx.externalActorId
+                ? { externalActorId: ctx.externalActorId }
+                : {}),
+            }),
+        },
+        ...(endedAs !== undefined ? [{ endedAs }] : []),
+      );
+    };
 
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
@@ -1406,6 +1595,7 @@ export function createSlackWorker(
         onImagesDropped,
         onUpdate: presenter.onUpdate,
         onSession: (sessionId) => {
+          seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
           ctx.onSession?.(sessionId);
         },
@@ -1413,15 +1603,17 @@ export function createSlackWorker(
           ghostTurn = true;
         },
       });
-      outcome = "success";
     };
 
+    let failurePosted = false;
     const postFailure = async (err: unknown) => {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
         : isAgentWakeTimeoutError(err)
           ? wakeFailureReasonToken(err.failure)
-          : "acp-error";
+          : err instanceof AcpTurnAbandonedError
+            ? turnFailureReasonToken(err)
+            : "acp-error";
       getLogger().warn(
         {
           agentId: instanceName,
@@ -1430,16 +1622,21 @@ export function createSlackWorker(
         },
         "slack.turn.failed",
       );
+      if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
+        return;
       const text = isAgentStoppedError(err)
         ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
           ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
-          : `Error: ${formatError(err)}.${renderTurnFiles(ctx)}`;
+          : err instanceof AcpTurnAbandonedError
+            ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
+            : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
       await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,
         text,
       });
+      failurePosted = true;
     };
 
     try {
@@ -1455,18 +1652,29 @@ export function createSlackWorker(
               "minutes. It'll answer as soon as it's up.",
           }),
       });
+      outcome = "success";
     } catch (err) {
       await postFailure(err);
+      const sessionId = turnSessionId();
+      if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
+        watchTurn(sessionId, verdictRefs(), failurePosted);
+      }
     } finally {
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
-          harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+          harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
       }
+      if (outcome === "success") {
+        for (const sid of seenSessionIds)
+          turnRecovery.dismiss(instanceName, sid);
+      }
+      const settledRefs = verdictRefs();
+      const nudgeSessionId = turnSessionId();
       if (
         failureReason === undefined &&
         !ghostTurn &&
-        !turnRefs.some((ref) => ref.posted || ref.declined)
+        !deliveredBy(settledRefs, "clean")
       ) {
         getLogger().warn(
           {
@@ -1478,6 +1686,8 @@ export function createSlackWorker(
           "slack.turn.unanswered: the agent finished an addressed turn without " +
             "posting a reply or a reaction",
         );
+        if (nudgeSessionId !== undefined)
+          watchTurn(nudgeSessionId, settledRefs, false, "clean");
       }
       await presenter.clearStatus();
       emit({
@@ -2408,6 +2618,7 @@ export function createSlackWorker(
           ambient: latest.turn.ambient,
           roster: latest.turn.roster,
           ambiguousName: latest.turn.ambiguousName,
+          siblingRefs: () => steeredRefs,
           onSession,
         });
       },
@@ -2520,6 +2731,7 @@ export function createSlackWorker(
     roster?: RosterEntry[];
     ambiguousName?: string | null;
     forwardedFrom?: string;
+    siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
   }) {
     if (!gateway) return;
@@ -2575,6 +2787,7 @@ export function createSlackWorker(
       roster: args.roster,
       ambiguousName: args.ambiguousName,
       forwardedFrom: args.forwardedFrom,
+      ...(args.siblingRefs ? { siblingRefs: args.siblingRefs } : {}),
       ...(args.onSession ? { onSession: args.onSession } : {}),
     });
   }
@@ -2600,6 +2813,7 @@ export function createSlackWorker(
     const gw = gateway;
 
     const multi = args.messages.length > 1;
+    const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
       channel: args.channel,
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
@@ -2707,6 +2921,7 @@ export function createSlackWorker(
             { guidance, deliver: deliverFiles },
           ),
         onSession: (sessionId) => {
+          seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
         },
         onGhostTurn: () => {
@@ -2725,7 +2940,9 @@ export function createSlackWorker(
         ? "agent-stopped"
         : isAgentWakeTimeoutError(err)
           ? wakeFailureReasonToken(err.failure)
-          : "acp-error";
+          : err instanceof AcpTurnAbandonedError
+            ? turnFailureReasonToken(err)
+            : "acp-error";
       getLogger().warn(
         {
           agentId: args.instanceName,
@@ -2737,8 +2954,12 @@ export function createSlackWorker(
     } finally {
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {
-          harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+          harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
         });
+      }
+      if (outcome === "success") {
+        for (const sid of seenSessionIds)
+          turnRecovery.dismiss(args.instanceName, sid);
       }
       emit({
         type: EventType.ChannelTurnRelayed,
@@ -2997,6 +3218,7 @@ export function createSlackWorker(
 
     async stopAll() {
       serving = false;
+      turnRecovery.stop();
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;
       gatewayFailed = false;

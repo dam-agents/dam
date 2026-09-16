@@ -13,7 +13,6 @@ export type ContributionKind = z.infer<typeof contributionKind>;
 export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
-  "artifact-request",
   "workspace-seed",
   "workspace-command",
   "experiment-execute",
@@ -118,6 +117,9 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   mcpServers: z.array(z.unknown()).optional(),
+  precheck: z.string().min(1).optional(),
+  fireAt: z.string().datetime({ offset: true }).optional(),
+  lastRunAt: z.string().datetime({ offset: true }).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
 
@@ -128,6 +130,16 @@ export const triggerEvent = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   payload: triggerEventPayload,
 });
+
+export const eventOutcome = z.enum(["ok", "declined", "failed"]);
+export type EventOutcome = z.infer<typeof eventOutcome>;
+
+export const eventReportInput = z.object({
+  eventId: z.string().min(1),
+  outcome: eventOutcome,
+  detail: z.string().max(2_000).optional(),
+});
+export type EventReportInput = z.infer<typeof eventReportInput>;
 
 export const scheduleResetEventPayload = z.object({
   scheduleId: z.string().min(1),
@@ -142,24 +154,6 @@ export const scheduleResetEvent = z.object({
   version: z.number().int().nonnegative(),
   expiresAt: z.string().datetime({ offset: true }),
   payload: scheduleResetEventPayload,
-});
-
-export const artifactRequestEventPayload = z.object({
-  requestId: z.string().min(1),
-  artifactId: z.string().min(1),
-  task: z.string().min(1),
-  sessionId: z.string().min(1),
-});
-export type ArtifactRequestEventPayload = z.infer<
-  typeof artifactRequestEventPayload
->;
-
-export const artifactRequestEvent = z.object({
-  id: z.string().min(1),
-  kind: z.literal("artifact-request"),
-  version: z.number().int().nonnegative(),
-  expiresAt: z.string().datetime({ offset: true }),
-  payload: artifactRequestEventPayload,
 });
 
 export const workspaceSeedEventPayload = z.object({
@@ -230,7 +224,6 @@ export const harnessConfigEvent = z.object({
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
-  artifactRequestEvent,
   workspaceSeedEvent,
   workspaceCommandEvent,
   experimentExecuteEvent,

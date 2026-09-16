@@ -2,8 +2,6 @@ import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
 
-const PROMPT_HANDOFF_GRACE_MS = 60_000;
-
 export interface TriggerSessionDriver {
   start(opts: {
     task: string;
@@ -21,27 +19,6 @@ export function createTriggerSessionDriver(deps: {
       const caller = createInProcessCaller((channel) =>
         deps.acpRuntime.attach(channel, { viewer: false }),
       );
-
-      let closed = false;
-      let graceTimer: ReturnType<typeof setTimeout> | undefined;
-
-      function closeChannel(): void {
-        if (closed) return;
-        closed = true;
-        if (graceTimer) clearTimeout(graceTimer);
-        caller.close();
-      }
-
-      function submitPrompt(sessionId: string): void {
-        graceTimer = setTimeout(closeChannel, PROMPT_HANDOFF_GRACE_MS);
-        graceTimer.unref?.();
-        void caller
-          .request("session/prompt", {
-            sessionId,
-            prompt: [{ type: "text", text: task }],
-          })
-          .then(closeChannel, closeChannel);
-      }
 
       try {
         await caller.request("initialize", {
@@ -74,12 +51,14 @@ export function createTriggerSessionDriver(deps: {
           sessionId = res.sessionId;
         }
 
-        submitPrompt(sessionId);
+        caller.notify("session/prompt", {
+          sessionId,
+          prompt: [{ type: "text", text: task }],
+        });
 
         return { sessionId };
-      } catch (err) {
-        closeChannel();
-        throw err;
+      } finally {
+        caller.close();
       }
     },
   };

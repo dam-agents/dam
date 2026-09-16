@@ -17,7 +17,10 @@ const sessionMetaEntrySchema = z.object({
   runStartedAt: z.string().optional(),
   runTotalMs: z.number().optional(),
   runCount: z.number().optional(),
+  runStarts: z.array(z.string()).optional(),
 });
+
+const RUN_STARTS_CAP = 500;
 
 const sessionMetadataStateSchema = z
   .object({
@@ -42,8 +45,9 @@ export interface SessionMetadataStore {
   set(sessionId: string, meta: PlatformSessionMeta): void;
   recordActivity(sessionId: string): void;
   recordSeen(sessionId: string): void;
-  startRun(sessionId: string): void;
+  startRun(sessionId: string): string | null;
   finishRun(sessionId: string): void;
+  runStartsOf(sessionId: string): string[];
   all(): Record<string, SessionMetaEntry>;
   tombstone(sessionId: string): void;
   isTombstoned(sessionId: string): boolean;
@@ -123,14 +127,22 @@ export function createSessionMetadataStore(
     startRun(sessionId) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
-      if (!existing || existing.runStartedAt) return;
+      if (!existing || existing.runStartedAt) return null;
+      const stamp = now();
       store.write({
         tombstones,
         sessions: {
           ...sessions,
-          [sessionId]: { ...existing, runStartedAt: now() },
+          [sessionId]: {
+            ...existing,
+            runStartedAt: stamp,
+            runStarts: [...(existing.runStarts ?? []), stamp].slice(
+              -RUN_STARTS_CAP,
+            ),
+          },
         },
       });
+      return stamp;
     },
     finishRun(sessionId) {
       const { sessions, tombstones } = store.read();
@@ -150,6 +162,9 @@ export function createSessionMetadataStore(
           },
         },
       });
+    },
+    runStartsOf(sessionId) {
+      return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
     },
     all() {
       return store.read().sessions;

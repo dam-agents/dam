@@ -44,6 +44,7 @@ import {
   progressOf,
   type ContributionsProgress,
 } from "./domain/outbox-progress.js";
+import type { EventOutcomeHandler } from "./services/hello-handler.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -63,6 +64,7 @@ export interface RuntimeDeliveryComposition {
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
   contributionsProgress(agentId: string): Promise<ContributionsProgress>;
+  registerEventOutcomeHandler(kind: string, handler: EventOutcomeHandler): void;
 }
 
 export interface ContributionsStatus {
@@ -126,6 +128,8 @@ export function composeRuntimeDelivery(
     log,
   });
 
+  const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
+
   const hello = createHelloHandler({
     outboxRepo,
     agentsRuntimeRepo,
@@ -133,6 +137,7 @@ export function composeRuntimeDelivery(
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
+    eventOutcomeHandler: (kind) => eventOutcomeHandlers.get(kind),
     log,
   });
 
@@ -143,6 +148,9 @@ export function composeRuntimeDelivery(
   });
 
   return {
+    registerEventOutcomeHandler: (kind, handler) => {
+      eventOutcomeHandlers.set(kind, handler);
+    },
     outboxRepo,
     agentsRuntimeRepo,
     queue,

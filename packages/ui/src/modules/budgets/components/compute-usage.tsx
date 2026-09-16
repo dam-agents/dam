@@ -6,10 +6,13 @@ import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import { COMPUTE_REQUEST_URL } from "../../../constants.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
+import { formatCores, formatGi } from "../lib/format.js";
 import {
+  BYTES_PER_MI,
   type ComputeCellState,
   type ComputeSegment,
   computeView,
@@ -27,8 +30,8 @@ const STATE_DOT: Record<HeldState, string> = {
 };
 
 const STATE_LABEL: Record<HeldState, string> = {
-  running: "running",
-  awake: "awake",
+  running: "Working",
+  awake: "Idle",
 };
 
 function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
@@ -37,17 +40,48 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
   return `${segment.agentName} · ${formatSizeLabel(
     { cpuMilli: segment.cpuMilli, memoryMi: segment.memoryMi },
     unit,
-  )}`;
+  )}${segment.alwaysOn ? ", always on" : ""}`;
+}
+
+function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-foreground">
+        <span className="font-semibold">{segment.agentName}</span> (
+        {formatCores(segment.cpuMilli)} CPU ·{" "}
+        {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
+      </p>
+      {segment.alwaysOn && (
+        <>
+          <p className="text-muted-foreground">
+            Always on — holds compute even while idle.
+          </p>
+          <button
+            type="button"
+            className="self-end text-accent hover:underline"
+            onClick={() =>
+              segment.agentId && navigateToSandboxHome(segment.agentId, "setup")
+            }
+          >
+            Manage
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 interface Props {
   agents: readonly AgentView[];
   workingAgentIds: ReadonlySet<string>;
+  compact?: boolean;
 }
 
-export function ComputeUsage({ agents, workingAgentIds }: Props) {
+export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
   const unit = slotUnitOf(budget);
@@ -61,7 +95,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
     <>
       <div className="mb-3 flex items-center justify-between text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
-          Compute resources
+          Compute allocated
           <Tooltip
             content="What your running agents reserve, not what they are using. Stop or pause an agent to free up compute."
             side="bottom"
@@ -69,41 +103,62 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
             <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
-        <span className="tabular-nums text-foreground">
-          {view.usedSlots}/{view.ceilingSlots} slots
-        </span>
+        <a
+          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
+          {...externalLinkProps}
+          className="shrink-0 text-muted-foreground/60 hover:underline"
+        >
+          Request more
+        </a>
       </div>
+      {!compact && (
+        <div className="mb-3">
+          <p className="text-2xl font-semibold tabular-nums text-foreground">
+            {view.usedSlots}/{view.ceilingSlots}
+          </p>
+          <p className="text-sm text-muted-foreground">Slots</p>
+        </div>
+      )}
       <div className="mb-3">
         <SlotBar
           segments={view.segments}
           totalSlots={view.totalSlots}
           label={(segment) => segmentLabel(segment, unit)}
+          content={(segment) => <HeldSegmentCard segment={segment} />}
+          onActivate={(segment) => {
+            if (segment.agentId)
+              navigateToSandboxHome(segment.agentId, "setup");
+          }}
           ariaLabel="Usage slots"
         />
       </div>
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-          {view.groups.length === 0 && "No agent is holding compute."}
+      {view.groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No agent is holding compute.
+        </p>
+      ) : (
+        <div className="divide-y divide-border border-t border-border text-sm text-muted-foreground">
           {view.groups.map((group) => (
-            <span key={group.state} className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-block size-2 shrink-0 rounded-sm",
-                  STATE_DOT[group.state],
-                )}
-              />
-              {group.agents} {STATE_LABEL[group.state]}
-            </span>
+            <div
+              key={group.state}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "inline-block size-2 shrink-0 rounded-full",
+                    STATE_DOT[group.state],
+                  )}
+                />
+                {STATE_LABEL[group.state]}
+              </span>
+              <span>
+                {group.agents} {group.agents === 1 ? "agent" : "agents"}
+              </span>
+            </div>
           ))}
-        </span>
-        <a
-          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
-          {...externalLinkProps}
-          className="shrink-0 text-accent hover:underline"
-        >
-          Request more budget
-        </a>
-      </div>
+        </div>
+      )}
     </>
   );
 }

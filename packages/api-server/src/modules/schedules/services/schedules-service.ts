@@ -64,6 +64,7 @@ export function createSchedulesService(deps: {
         enabled: true,
         createdBy,
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        ...(input.precheck ? { precheck: input.precheck } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -88,6 +89,7 @@ export function createSchedulesService(deps: {
         detail: {
           createdBy,
           type: "cron",
+          precheck: Boolean(input.precheck),
           cron: input.cron,
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
@@ -114,6 +116,7 @@ export function createSchedulesService(deps: {
           ? { quietHours: input.quietHours }
           : {}),
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        ...(input.precheck ? { precheck: input.precheck } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -138,6 +141,7 @@ export function createSchedulesService(deps: {
         detail: {
           createdBy,
           type: "rrule",
+          precheck: Boolean(input.precheck),
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
       });
@@ -162,8 +166,12 @@ export function createSchedulesService(deps: {
       };
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
       else delete spec.sessionMode;
+      if (input.precheck) spec.precheck = input.precheck;
+      else if (input.precheck !== undefined) delete spec.precheck;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
+      if (updated && spec.precheck !== current.spec.precheck)
+        await deps.repo.clearPrecheckStatus(input.id);
       if (updated) {
         await deps.runner.sync(updated.id);
         emit({

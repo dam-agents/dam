@@ -72,6 +72,31 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
+      name: "MachineBootFailed → agent-pod-failed (a vm agent's guest never came up)",
+      snapshot: { ...base, agentPodNotReadyReason: "MachineBootFailed" },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineBootFailed",
+      },
+    },
+    {
+      name: "over-budget carries its message — the runner's refusal arrives this way, and it is not a budget problem",
+      snapshot: {
+        ...base,
+        overBudget: true,
+        overBudgetMessage: "the VM runner has 512 MiB for machines",
+      },
+      expected: {
+        kind: "over-budget",
+        message: "the VM runner has 512 MiB for machines",
+      },
+    },
+    {
+      name: "MachineNotReady → progressing (a machine that is still booting)",
+      snapshot: { ...base, agentPodNotReadyReason: "MachineNotReady" },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
       name: "plain PodNotReady → progressing (slow pull, attach, probes)",
       snapshot: { ...base, agentPodNotReadyReason: "PodNotReady" },
       expected: { kind: "agent-pod-not-ready" },

@@ -1,6 +1,5 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
-import { artifactRequestRefusalSchema } from "./modules/artifact-library/schemas.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
 import { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
@@ -9,19 +8,6 @@ function extractScanFailure(cause: unknown): unknown {
   if (!cause || typeof cause !== "object" || !("scanFailure" in cause)) return;
   const parsed = scanFailureSchema.safeParse(
     (cause as { scanFailure: unknown }).scanFailure,
-  );
-  return parsed.success ? parsed.data : undefined;
-}
-
-function extractArtifactRequestRefusal(cause: unknown): unknown {
-  if (
-    !cause ||
-    typeof cause !== "object" ||
-    !("artifactRequestRefusal" in cause)
-  )
-    return;
-  const parsed = artifactRequestRefusalSchema.safeParse(
-    (cause as { artifactRequestRefusal: unknown }).artifactRequestRefusal,
   );
   return parsed.success ? parsed.data : undefined;
 }
@@ -73,7 +59,6 @@ const REDACTED_MESSAGES: Partial<Record<TRPCError["code"], string>> = {
 const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
-    const artifactRequestRefusal = extractArtifactRequestRefusal(error.cause);
     return {
       ...shape,
       message: REDACTED_MESSAGES[error.code] ?? shape.message,
@@ -81,7 +66,6 @@ const tBase = initTRPC.context<ApiContext>().create({
         ...shape.data,
         stack: undefined,
         ...(scanFailure ? { scanFailure } : {}),
-        ...(artifactRequestRefusal ? { artifactRequestRefusal } : {}),
         ...(isTermsStaleCause(error.cause)
           ? { termsStale: true as const }
           : {}),

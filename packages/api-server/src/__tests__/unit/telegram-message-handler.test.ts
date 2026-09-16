@@ -2,6 +2,8 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
+  COMMAND_PATTERN,
+  TELEGRAM_COMMANDS,
   createTelegramMessageHandler,
   type ThreadLike,
 } from "../../modules/channels/infrastructure/telegram.js";
@@ -65,7 +67,7 @@ function harness(opts?: {
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
-    brandShort: "dam",
+    botUsername: () => "krodo_bot",
     relay,
   });
 
@@ -87,28 +89,26 @@ const author = (userId = "tg-7") => ({
 });
 
 describe("telegram message handler", () => {
-  it("denies `/dam bind` from a non-admin in a group", async () => {
+  it("denies `/bind` from a non-admin in a group", async () => {
     const h = harness({ isAdmin: false });
     const thread = makeThread();
-    await h.handle(thread, { text: "/dam bind", author: author() }, true);
-    expect(thread.posts.join("\n")).toContain(
-      "Only group admins can `/dam bind`.",
-    );
+    await h.handle(thread, { text: "/bind", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("Only group admins can `/bind`.");
     expect(h.pendingOAuthFlowsMap.size).toBe(0);
   });
 
   it("tells an already-bound chat to unbind first", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
-    await h.handle(thread, { text: "/dam bind", author: author() }, true);
-    expect(thread.posts.join("\n")).toContain("`/dam unbind` first");
+    await h.handle(thread, { text: "/bind", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("`/unbind` first");
     expect(h.pendingOAuthFlowsMap.size).toBe(0);
   });
 
   it("mints a pending OAuth flow (no agent, with chat title) and posts the link", async () => {
     const h = harness();
     const thread = makeThread({ isDM: true });
-    await h.handle(thread, { text: "/dam bind", author: author() }, true);
+    await h.handle(thread, { text: "/bind", author: author() }, true);
 
     expect(h.pendingOAuthFlowsMap.size).toBe(1);
     const pending = [...h.pendingOAuthFlowsMap.values()][0]!;
@@ -123,27 +123,24 @@ describe("telegram message handler", () => {
     expect(posted).toContain("https://kc.example");
   });
 
-  it("unbinds on `/dam unbind` from a bound chat", async () => {
+  it("unbinds on `/unbind` from a bound chat", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
-    await h.handle(thread, { text: "/dam unbind", author: author() }, true);
+    await h.handle(thread, { text: "/unbind", author: author() }, true);
     expect(h.unbind).toHaveBeenCalledWith("chat-42");
     expect(thread.posts.join("\n")).toContain("Chat disconnected");
   });
 
-  it("shows usage for a bare `/dam` (or `/dam@bot`) with no subcommand", async () => {
-    const h = harness();
-    for (const isDM of [true, false]) {
-      for (const text of ["/dam", "/dam@dam_bot", "/dam help"]) {
-        const thread = makeThread({ isDM });
-        await h.handle(thread, { text, author: author() }, true);
-        const posted = thread.posts.join("\n");
-        expect(posted).toContain("/dam bind");
-        expect(posted).toContain("/dam unbind");
-      }
+  it("treats `/start` and an `@bot` suffix as the bind command", async () => {
+    for (const text of ["/start", "/bind@krodo_bot", "/start deep-link"]) {
+      const h = harness();
+      const thread = makeThread({ isDM: true });
+      await h.handle(thread, { text, author: author() }, true);
+      expect(h.pendingOAuthFlowsMap.size).toBe(1);
+      expect(thread.posts.join("\n")).toContain(
+        "Connect this chat to one of your agents",
+      );
     }
-    expect(h.pendingOAuthFlowsMap.size).toBe(0);
-    expect(h.unbind).not.toHaveBeenCalled();
   });
 
   it("no longer treats `/login` or `/logout` as commands", async () => {
@@ -196,7 +193,7 @@ describe("telegram message handler", () => {
 
   it("treats /start (bare or deep-linked) as bind intent", async () => {
     const h = harness();
-    for (const text of ["/start", "/start login", "/start@dam_bot login"]) {
+    for (const text of ["/start", "/start login", "/start@krodo_bot login"]) {
       const dm = makeThread({ isDM: true });
       await h.handle(dm, { text, author: author() }, true);
       expect(dm.posts.join("\n")).toContain(
@@ -215,5 +212,29 @@ describe("telegram message handler", () => {
       true,
     );
     expect(h.relay).not.toHaveBeenCalled();
+  });
+
+  it("handles every command it advertises in the Telegram menu", async () => {
+    for (const { command } of TELEGRAM_COMMANDS) {
+      const h = harness({ boundTo: "agent-1" });
+      const thread = makeThread({ isDM: true });
+      await h.handle(thread, { text: `/${command}`, author: author() }, true);
+      expect(COMMAND_PATTERN.test(`/${command}`)).toBe(true);
+      expect(h.relay).not.toHaveBeenCalled();
+      expect(thread.posts.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("ignores a command addressed to a different bot", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    const thread = makeThread({ isDM: true });
+    await h.handle(
+      thread,
+      { text: "/unbind@some_other_bot", author: author() },
+      true,
+    );
+    expect(h.unbind).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+    expect(h.relay).toHaveBeenCalled();
   });
 });

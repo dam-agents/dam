@@ -16,12 +16,7 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import {
-  composeArtifactLibraryForOwner,
-  composeArtifactRequestsForOwner,
-  type ArtifactLibraryServiceImpl,
-} from "../../modules/artifact-library/index.js";
-import { composeFeaturesForOwner } from "../../modules/features/index.js";
+import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import {
   composeInvocationsForOwner,
@@ -52,8 +47,7 @@ import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
-import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
-import type { AcpClientFactory } from "../../core/acp-client.js";
+import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -72,10 +66,9 @@ export interface HarnessApiServerAppDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
-  usageSummary: AgentUsageSummaryService;
+  agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
-  makeAcpClient: AcpClientFactory;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -95,10 +88,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
-    usageSummary,
+    agentTelemetry,
     wakeAgent,
     runtimeProgress,
-    makeAcpClient,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -162,16 +154,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-
-  const artifactRequestsServiceFor = (owner: string) =>
-    composeArtifactRequestsForOwner({
-      db,
-      runtimeMutator,
-      ensureAgentReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
-      listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),
-      owner,
-      surface: "mcp",
-    }).artifactRequests;
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -233,9 +215,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agents: agentsServiceFor(owner),
       }).experiments,
     artifactLibraryFor,
-    artifactRequestsServiceFor,
-    featuresServiceFor: (owner) =>
-      composeFeaturesForOwner({ db, owner, surface: "mcp" }).features,
     invocationsServiceFor,
     connectionsServiceFor,
     kbShareOpsFor,
@@ -250,7 +229,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudyInspection,
     carriesInspectorRole,
     agentImage: createAgentImageReader(k8sClient),
-    usageSummary,
+    agentTelemetry,
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({
