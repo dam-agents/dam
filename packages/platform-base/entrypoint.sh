@@ -19,6 +19,8 @@ set -eu
 # which is what lets a plain agent image do this; a container never sets the
 # variable and skips it.
 if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
+	# sshd would otherwise drop an `agent` login to uid 65532, into a home the
+	# root-run harness owns: nothing writable, none of the injected environment.
 	if [ "$(id -u)" = 0 ]; then
 		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 	fi
