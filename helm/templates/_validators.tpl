@@ -79,7 +79,7 @@ an install has to say, rather than inherit an open pod by omission.
 {{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- if not .Values.virtualization.runner.egressCidrs -}}
-{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs. It is the only kernel gate behind a guest's own egress allowlist, which smolvm enforces inside the process an escaped guest would already own: without it such a guest reaches the platform's datastores and every other owner's gateway. Name where the runner may go (it pulls agent images, so it needs its registry) and subtract the cluster's own pod and Service ranges with egressExceptCidrs. To deliberately leave it unconfined, say so: egressCidrs: [\"0.0.0.0/0\"] with no exceptions." -}}
+{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs — the only kernel gate behind a guest's own egress allowlist. See virtualization.runner.egressCidrs in values.yaml for what to set; to leave the runner unconfined, say so out loud with [0.0.0.0/0] and no exceptions." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

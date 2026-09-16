@@ -220,11 +220,19 @@ virtualization:
     # allows everything and confines nothing — pair it with the cluster's own
     # ranges in egressExceptCidrs, or name the registry directly:
     #   egressCidrs: ["0.0.0.0/0"]
-    #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16"]   # pods, services
+    #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"]
+    # pods, Services, and link-local — the node's metadata endpoint lives there
+    # on every cloud and is the classic way out of a sandbox with credentials.
+    # On OpenShift the internal registry is a Service address, so excepting the
+    # Service range blocks pulls from it: name that registry in egressCidrs, or
+    # stage images on the node instead.
     egressCidrs: []
-    # Subtracted from every entry above. This is what actually keeps an escaped
-    # guest away from the platform's datastores and other owners' gateways,
-    # which are reached by pod and Service addresses.
+    # Subtracted from the entries above that contain them — Kubernetes rejects
+    # a policy whose exception falls outside its own block, so a narrow entry
+    # simply keeps none. This is what actually keeps an escaped guest away from
+    # the platform's datastores, which are reached by pod and Service
+    # addresses. It does not separate one owner's gateways from another's:
+    # gateway pods carry no owner label, so the rule admits them as a class.
     egressExceptCidrs: []
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
