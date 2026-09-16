@@ -1603,6 +1603,7 @@ export function createSlackWorker(
       });
     };
 
+    let failurePosted = false;
     const postFailure = async (err: unknown) => {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
@@ -1633,6 +1634,7 @@ export function createSlackWorker(
         threadTs: ctx.threadTs,
         text,
       });
+      failurePosted = true;
     };
 
     try {
@@ -1653,7 +1655,7 @@ export function createSlackWorker(
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
-        watchTurn(sessionId, verdictRefs(), true);
+        watchTurn(sessionId, verdictRefs(), failurePosted);
       }
     } finally {
       for (const ref of turnRefs) {

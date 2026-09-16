@@ -48,6 +48,7 @@ function harness(opts: {
   attendance?: ChannelTurnAttendance;
   agentName?: string;
   wakePatienceMs?: number;
+  turnStatus?: AcpClient["turnStatus"];
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -56,7 +57,7 @@ function harness(opts: {
     listSessions: opts.listSessions ?? (async () => []),
     sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
     triggerSession: () => Promise.reject(new Error("unused")),
-    turnStatus: async () => "unknown" as const,
+    turnStatus: opts.turnStatus ?? (async () => "unknown" as const),
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
@@ -1116,6 +1117,47 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(afterFailure).toContain("already told the turn had gone wrong");
     expect(afterFailure).not.toContain("do not apologise for the delay");
     expect(afterFailure).toContain("no_reply_needed");
+  });
+
+  /**
+   * TEST_SCENARIO: the failure notice is only true when failure copy was
+   * actually posted, and an interrupted turn that managed a partial post is
+   * exactly where those two come apart: the relay stays quiet because the
+   * thread already carries the agent's own message, while the verdict still
+   * counts the turn undelivered because a partial is not an answer. Telling
+   * that agent the person was shown an error would have it write around a
+   * message nobody ever saw.
+   */
+  it("does not claim failure copy the person was never shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const h: ReturnType<typeof harness> = harness({
+        sendPrompt: async (prompt, opts) => {
+          opts.onSession?.("sess-1");
+          seen.push(String(prompt));
+          if (String(prompt).includes("<turn-undelivered>")) return "posted";
+          await h.worker.reply("agent-1", { text: "half an answer" });
+          throw new AcpTurnAbandonedError(
+            "connection-lost",
+            "ACP connection lost (agent unreachable)",
+          );
+        },
+        turnStatus: async () => "interrupted" as const,
+      });
+      await h.mention();
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+
+      const nudge = seen.find((p) => p.includes("<turn-undelivered>"));
+      expect(nudge).toBeDefined();
+      expect(nudge).not.toContain("already told the turn had gone wrong");
+
+      const msgs = h.records().filter((r) => r.kind === "message");
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]).toMatchObject({ text: "half an answer" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

@@ -160,16 +160,16 @@ export function createTurnRecovery(deps: {
     watch(turn, opts) {
       const key = keyOf(turn.instanceName, turn.sessionId);
       drop(key);
+      if (opts?.endedAs !== undefined) {
+        void finish(key, turn, opts.endedAs);
+        return;
+      }
       const state: WatchState = {
         turn,
         gen: nextGen++,
         deadline: Date.now() + RECOVERY_WINDOW_MS,
       };
       watches.set(key, state);
-      if (opts?.endedAs !== undefined) {
-        void finish(key, turn, opts.endedAs);
-        return;
-      }
       schedule(key, turn, state);
     },
 
