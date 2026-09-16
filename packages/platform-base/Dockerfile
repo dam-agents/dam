@@ -207,7 +207,12 @@ RUN set -eu; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
-RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
+# /etc/logrotate.d is empty but not optional: a service installer writes its
+# rotation config straight into it, and this base ships no logrotate at all, so
+# the directory is missing. k3s does that write with a bare `tee` under `set -e`
+# and dies there — after installing its binary and service file, before enabling
+# them — so the whole install fails on a log config nothing here even reads.
+RUN mkdir -p /home/agent /etc/logrotate.d /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
     chown 65532 /app &&\
     chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
     ldconfig &&\

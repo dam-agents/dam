@@ -67,7 +67,7 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 	# services, never the agent — unlike the persisted paths above, which are
 	# the contract this guest exists to honor.
 	if [ "$(id -u)" = 0 ] && [ -x /usr/libexec/openrc-run ]; then
-		if ln -sf /usr/libexec/openrc-run /usr/bin/openrc-run &&
+		if ln -sf /usr/libexec/openrc-run /sbin/openrc-run &&
 			mkdir -p /run/openrc && touch /run/openrc/softlevel &&
 			persist_openrc_registry; then
 			# Backgrounded: a wedged service would otherwise hold the boot past
@@ -76,6 +76,11 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 			# says so.
 			openrc default &
 		else
+			# The link goes with it. A machine that kept it would answer the
+			# probe an installer makes while having no supervisor behind it,
+			# which is the late, confusing failure the staged path exists to
+			# prevent.
+			rm -f /sbin/openrc-run
 			echo "agent-entrypoint: WARNING: no service supervisor; software that installs itself as a service will fail" >&2
 		fi
 	fi
