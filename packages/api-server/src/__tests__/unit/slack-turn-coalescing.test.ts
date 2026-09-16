@@ -202,6 +202,32 @@ describe("slack addressed turns — coalescing", () => {
   });
 
   /**
+   * TEST_SCENARIO: a steered message joins the running turn as a turn ref of
+   * its own, minted outside the batch the turn started with. An agent that
+   * answers that message has answered the turn, so the delivery verdict must
+   * see that ref too — judging on the starting batch alone reads the turn as
+   * silent and sends the person the same answer a second time.
+   */
+  it("counts a reply to a steered message as the turn being answered", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+    h.hold();
+
+    void h.fire("100.1", "how do we deploy?", "T1");
+    await h.waitFor(() => h.prompts.length === 1);
+
+    void h.fire("100.2", "specifically the migration", "T1");
+    await h.waitFor(() => h.steered.length === 1);
+
+    await h.worker.reply("agent-1", { text: "answered", threadTs: "T1" });
+
+    h.releaseAll();
+    await h.waitFor(() => false);
+
+    expect(h.nudges).toHaveLength(0);
+  });
+
+  /**
    * TEST_SCENARIO: Two people addressing the agent about different things are
    * two conversations, not one thought — merging them would answer one person
    * under the other's message, so they stay separate turns.

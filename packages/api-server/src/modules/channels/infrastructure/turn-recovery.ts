@@ -16,7 +16,7 @@ export interface WatchedTurn {
 }
 
 export interface TurnRecovery {
-  watch(turn: WatchedTurn): void;
+  watch(turn: WatchedTurn, opts?: { endedAs?: WatchedTurnEnd }): void;
   dismiss(instanceName: string, sessionId: string): void;
   stop(): void;
 }
@@ -53,7 +53,12 @@ interface WatchState {
  * caller's bookkeeping neither outlives the watch nor dies before the work
  * it guards (a reply landing while the recovery wakes the pod must still be
  * markable). Per-turn single-shot: a recovery that itself fails is logged
- * and given up, never retried into a loop.
+ * and given up, never retried into a loop. A caller that already knows how
+ * the turn ended — a relay that watched it through to a clean finish, and
+ * saw nothing delivered — registers it with that verdict instead: the poll
+ * is skipped and the recovery is judged at once, on the same predicate,
+ * single-shot rule and logging as a polled one, so the two ways a turn can
+ * go undelivered have one owner rather than two.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -122,8 +127,18 @@ export function createTurnRecovery(deps: {
       return;
     }
 
-    const end: WatchedTurnEnd =
-      verdict === "interrupted" ? "interrupted" : "clean";
+    await finish(
+      key,
+      turn,
+      verdict === "interrupted" ? "interrupted" : "clean",
+    );
+  }
+
+  async function finish(
+    key: string,
+    turn: WatchedTurn,
+    end: WatchedTurnEnd,
+  ): Promise<void> {
     remove(key);
     try {
       if (!turn.isDelivered(end)) await turn.recover(end);
@@ -142,7 +157,7 @@ export function createTurnRecovery(deps: {
   }
 
   return {
-    watch(turn) {
+    watch(turn, opts) {
       const key = keyOf(turn.instanceName, turn.sessionId);
       drop(key);
       const state: WatchState = {
@@ -151,6 +166,10 @@ export function createTurnRecovery(deps: {
         deadline: Date.now() + RECOVERY_WINDOW_MS,
       };
       watches.set(key, state);
+      if (opts?.endedAs !== undefined) {
+        void finish(key, turn, opts.endedAs);
+        return;
+      }
       schedule(key, turn, state);
     },
 

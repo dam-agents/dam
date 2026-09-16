@@ -5,6 +5,7 @@ import { slackThreadKey, type AgentsService } from "api-server-api";
 import {
   createSlackWorker,
   TURN_LINGER_MS,
+  undeliveredNudge,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
@@ -118,7 +119,15 @@ function harness(opts: {
     records: () => gw.readOutbound(),
     turnEvents: () =>
       events.filter(
-        (e): e is ChannelTurnRelayed => e.type === EventType.ChannelTurnRelayed,
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason !== "recovery-nudge",
+      ),
+    nudgeEvents: () =>
+      events.filter(
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason === "recovery-nudge",
       ),
   };
 }
@@ -1087,6 +1096,26 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(nudge).toBeDefined();
     expect(nudge).toContain("do not apologise for the delay");
     expect(nudge).toContain("no_reply_needed");
+  });
+
+  /**
+   * TEST_SCENARIO: the same notice serves two very different situations. A
+   * turn whose relay was abandoned already posted failure copy into the
+   * thread, so the person did see something go wrong — telling that agent
+   * not to acknowledge the delay would have it answer as though nothing had
+   * happened, contradicting what stands on screen above its own post. A
+   * cleanly-ended turn posted no such copy, so there the silence really is
+   * total and the apology really is noise.
+   */
+  it("matches the notice to whether the person was shown a failure", () => {
+    const quiet = undeliveredNudge("1.1", { sawFailure: false });
+    expect(quiet).toContain("never saw an answer");
+    expect(quiet).toContain("do not apologise for the delay");
+
+    const afterFailure = undeliveredNudge("1.1", { sawFailure: true });
+    expect(afterFailure).toContain("already told the turn had gone wrong");
+    expect(afterFailure).not.toContain("do not apologise for the delay");
+    expect(afterFailure).toContain("no_reply_needed");
   });
 
   /**
