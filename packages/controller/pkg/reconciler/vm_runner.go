@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net"
 	"net/netip"
 	"strings"
 	"time"
@@ -375,6 +374,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	return rules
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm would chown each machine's data dir to run the VMM under an unprivileged uid, and the runner cannot: the chart's SCC drops every capability but NET_ADMIN, so that chown fails and no machine starts. SMOLVM_VM_UID_DROP=off leaves the VMM as uid 0 inside a container that is itself the boundary — no capabilities, no privilege escalation, seccomp and SELinux — rather than widening the SCC to admit CHOWN.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -441,6 +441,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--allow-from=%s", strings.Join(spec.IngressCIDRs, ",")),
 						},
 						Env: []corev1.EnvVar{{
+							Name: "SMOLVM_VM_UID_DROP", Value: "off",
+						}, {
 							Name: "RUNNER_MEMORY_MIB",
 							ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{
 								ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
@@ -557,19 +559,4 @@ func (r *AgentReconciler) runnerNotReadyMessage(ctx context.Context, owner strin
 		}
 	}
 	return starting
-}
-
-func (r *AgentReconciler) runnerPodIP(ctx context.Context, owner string) (string, error) {
-	if r.runnerIP != nil {
-		return r.runnerIP(owner)
-	}
-	host := r.runnerHost(owner)
-	addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
-	if err != nil {
-		return "", fmt.Errorf("resolving VM runner %s: %w", host, err)
-	}
-	if len(addrs) == 0 {
-		return "", fmt.Errorf("resolving VM runner %s: no address", host)
-	}
-	return addrs[0].String(), nil
 }
