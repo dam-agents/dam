@@ -75,6 +75,14 @@ virtualization:
     # No registry in the lima cluster: cluster:install drops the agent image
     # archives here and every runner mounts them read-only.
     imageArchiveHostPath: /var/lib/platform-vm-images
+    # Images come from the node, not a registry, so the runner needs nothing
+    # outside the cluster — and the exclusions keep it out of the cluster too.
+    # DNS and the paired gateways are admitted by selector regardless.
+    egressCidrs:
+      - 0.0.0.0/0
+    egressExceptCidrs:
+      - 10.42.0.0/16
+      - 10.43.0.0/16
   devicePlugin:
     enabled: true
 

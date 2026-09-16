@@ -11,6 +11,7 @@ add it to the include list in `platform.validate`.
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
+{{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- end -}}
@@ -65,6 +66,20 @@ first evicted — taking every machine with it.
 {{- $r := .Values.virtualization.runner.resources | default dict -}}
 {{- if not (dig "limits" "memory" "" $r) -}}
 {{- fail "virtualization.enabled=true requires virtualization.runner.resources.limits.memory. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A machine's egress allowlist is enforced by smolvm inside the very process an
+escaped guest would own. The runner's own NetworkPolicy is the only gate behind
+it, and it cannot default to closed because the runner pulls agent images — so
+an install has to say, rather than inherit an open pod by omission.
+*/}}
+{{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- if not .Values.virtualization.runner.egressCidrs -}}
+{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs. It is the only kernel gate behind a guest's own egress allowlist, which smolvm enforces inside the process an escaped guest would already own: without it such a guest reaches the platform's datastores and every other owner's gateway. Name where the runner may go (it pulls agent images, so it needs its registry) and subtract the cluster's own pod and Service ranges with egressExceptCidrs. To deliberately leave it unconfined, say so: egressCidrs: [\"0.0.0.0/0\"] with no exceptions." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

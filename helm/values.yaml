@@ -214,6 +214,8 @@ virtualization:
     # other owner's gateway. Set this and the runner is confined to DNS, the
     # paired gateways, and these CIDRs. It cannot default to closed because
     # the runner also pulls agent images, so the registry has to be named:
+    # REQUIRED when virtualization.enabled — the install fails without it,
+    # because an unstated choice here means an unconfined runner.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
     # allows everything and confines nothing — pair it with the cluster's own
     # ranges in egressExceptCidrs, or name the registry directly:
