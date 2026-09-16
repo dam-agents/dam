@@ -40,6 +40,12 @@ export interface AttentionRepository {
     itemId: string,
     at: Date,
   ): Promise<void>;
+  ownedSessionKeys(ownerSub: string): Promise<Set<string>>;
+  setDismissals(
+    userSub: string,
+    entries: readonly { kind: AttentionItemKind; itemId: string }[],
+    at: Date,
+  ): Promise<void>;
   deleteSessions(agentId: string, sessionIds: readonly string[]): Promise<void>;
   deleteOlderThan(days: number): Promise<number>;
   listAgentIds(): Promise<string[]>;
@@ -99,8 +105,23 @@ export function createAttentionRepository(db: Db): AttentionRepository {
       const rows = await db
         .select()
         .from(attentionRecords)
-        .where(eq(attentionRecords.ownerSub, ownerSub))
-        .orderBy(desc(attentionRecords.activityAt))
+        .where(
+          and(
+            eq(attentionRecords.ownerSub, ownerSub),
+            sql`not exists (select 1 from ${attentionState}
+              where ${attentionState.userSub} = ${ownerSub}
+                and ${attentionState.itemKind} = 'session'
+                and ${attentionState.itemId} =
+                  ${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}
+                and ${attentionState.dismissedAt} >=
+                  coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt}))`,
+          ),
+        )
+        .orderBy(
+          desc(
+            sql`coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt})`,
+          ),
+        )
         .limit(limit);
       return rows.map(toRecord);
     },
@@ -167,6 +188,40 @@ export function createAttentionRepository(db: Db): AttentionRepository {
             attentionState.itemId,
           ],
           set: { dismissedAt: at, updatedAt: new Date() },
+        });
+    },
+
+    async ownedSessionKeys(ownerSub) {
+      const rows = await db
+        .select({
+          agentId: attentionRecords.agentId,
+          sessionId: attentionRecords.sessionId,
+        })
+        .from(attentionRecords)
+        .where(eq(attentionRecords.ownerSub, ownerSub));
+      return new Set(rows.map((r) => `${r.agentId}:${r.sessionId}`));
+    },
+
+    async setDismissals(userSub, entries, at) {
+      if (entries.length === 0) return;
+      await db
+        .insert(attentionState)
+        .values(
+          entries.map((entry) => ({
+            userSub,
+            itemKind: entry.kind,
+            itemId: entry.itemId,
+            dismissedAt: at,
+            updatedAt: at,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [
+            attentionState.userSub,
+            attentionState.itemKind,
+            attentionState.itemId,
+          ],
+          set: { dismissedAt: at, updatedAt: at },
         });
     },
 

@@ -93,6 +93,8 @@ export function createSessionWatcher(deps: {
     entry.busy = true;
     try {
       await captureOnce(agentId, entry);
+    } catch (error) {
+      deps.log(`capture failed for ${agentId}: ${(error as Error).message}`);
     } finally {
       entry.busy = false;
     }
@@ -112,40 +114,44 @@ export function createSessionWatcher(deps: {
     }
     if (held.get(agentId) !== entry) return;
 
-    entry.known ??= new Map(
-      (await deps.repo.listForAgent(agentId)).map((row) => [
-        row.sessionId,
-        row,
-      ]),
-    );
-    if (held.get(agentId) !== entry) return;
-
     let wrote = false;
-    for (const session of sessions) {
-      const next = toRow(agentId, entry.ownerSub, session);
-      const current = entry.known.get(next.sessionId);
-      if (current && sameRecord(current, next)) continue;
-      await deps.repo.upsertRecord(next);
-      entry.known.set(next.sessionId, next);
-      wrote = true;
-    }
+    try {
+      entry.known ??= new Map(
+        (await deps.repo.listForAgent(agentId)).map((row) => [
+          row.sessionId,
+          row,
+        ]),
+      );
+      if (held.get(agentId) !== entry) return;
 
-    const listed = new Set(sessions.map((session) => session.sessionId));
-    const gone = [...entry.known.keys()].filter(
-      (sessionId) => !listed.has(sessionId),
-    );
-    if (gone.length > 0) {
-      await deps.repo.deleteSessions(agentId, gone);
-      for (const sessionId of gone) entry.known.delete(sessionId);
-      wrote = true;
-    }
+      for (const session of sessions) {
+        const next = toRow(agentId, entry.ownerSub, session);
+        const current = entry.known.get(next.sessionId);
+        if (current && sameRecord(current, next)) continue;
+        await deps.repo.upsertRecord(next);
+        entry.known.set(next.sessionId, next);
+        wrote = true;
+      }
 
-    if (!wrote) return;
-    emit({
-      type: EventType.AttentionChanged,
-      ownerSub: entry.ownerSub,
-      agentId,
-    });
+      const listed = new Set(sessions.map((session) => session.sessionId));
+      const gone = [...entry.known.keys()].filter(
+        (sessionId) => !listed.has(sessionId),
+      );
+      if (gone.length > 0) {
+        await deps.repo.deleteSessions(agentId, gone);
+        for (const sessionId of gone) entry.known.delete(sessionId);
+        wrote = true;
+      }
+    } catch (error) {
+      deps.log(`capture failed for ${agentId}: ${(error as Error).message}`);
+    } finally {
+      if (wrote)
+        emit({
+          type: EventType.AttentionChanged,
+          ownerSub: entry.ownerSub,
+          agentId,
+        });
+    }
   }
 
   function scheduleCapture(agentId: string): void {

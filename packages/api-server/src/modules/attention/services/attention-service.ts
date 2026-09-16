@@ -33,20 +33,6 @@ export function createAttentionService(deps: {
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
 }): AttentionService {
-  const ownsItem = async ({
-    kind,
-    id,
-  }: AttentionDismissal): Promise<boolean> => {
-    if (kind === "approval") return deps.ownsApproval(id);
-    const separator = id.indexOf(":");
-    if (separator <= 0) return false;
-    const record = await deps.repo.getRecord(
-      id.slice(0, separator),
-      id.slice(separator + 1),
-    );
-    return record?.ownerSub === deps.ownerSub;
-  };
-
   return {
     async listForOwner(): Promise<AttentionList> {
       const [records, dismissals] = await Promise.all([
@@ -65,10 +51,29 @@ export function createAttentionService(deps: {
 
     async dismiss({ items }) {
       const at = new Date();
-      for (const item of items) {
-        if (!(await ownsItem(item))) continue;
-        await deps.repo.setDismissal(deps.ownerSub, item.kind, item.id, at);
-      }
+      const sessions = items.filter((item) => item.kind === "session");
+      const owned =
+        sessions.length > 0
+          ? await deps.repo.ownedSessionKeys(deps.ownerSub)
+          : new Set<string>();
+
+      const approvals = await Promise.all(
+        items
+          .filter((item) => item.kind === "approval")
+          .map(async (item) => ({
+            item,
+            owned: await deps.ownsApproval(item.id),
+          })),
+      );
+
+      await deps.repo.setDismissals(
+        deps.ownerSub,
+        [
+          ...sessions.filter((item) => owned.has(item.id)),
+          ...approvals.filter((a) => a.owned).map((a) => a.item),
+        ].map((item) => ({ kind: item.kind, itemId: item.id })),
+        at,
+      );
     },
   };
 }

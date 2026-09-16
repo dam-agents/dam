@@ -6,7 +6,8 @@ function laterThanSeen(
   activityAt: string | null | undefined,
   seenAt: string | null | undefined,
 ): boolean {
-  if (!activityAt || !seenAt) return false;
+  if (!activityAt) return false;
+  if (!seenAt) return true;
   return Date.parse(activityAt) > Date.parse(seenAt);
 }
 
