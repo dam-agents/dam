@@ -116,6 +116,23 @@ export const slackFireCommandResultSchema = z
   .object({ ack: z.string() })
   .strict();
 
+export const slackConnectWorkspaceInputSchema = z
+  .object({
+    teamId: z.string().min(1),
+    teamName: z.string().optional(),
+    botToken: z.string().min(1),
+    channels: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1),
+          botIsMember: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({

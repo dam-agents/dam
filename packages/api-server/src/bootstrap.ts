@@ -511,6 +511,13 @@ export async function bootstrap() {
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
+    ...(fakeSlackGateway
+      ? {
+          slackInstalls: {
+            record: (install) => slackInstalls.record(install),
+          },
+        }
+      : {}),
   });
 
   const publicAgentPage = composePublicAgentPage({

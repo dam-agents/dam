@@ -109,7 +109,7 @@ Slack hands the bot token over by copy-paste for the app's own workspace only. E
 
 Leaving `keycloak.installerRole` empty disables the install surface entirely — the workspace `slackBotToken` was issued for keeps working either way.
 
-Connecting a channel does not change: you still paste a conversation id. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
+Connecting a channel does not change: you still paste a conversation id. One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out. Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
 
 The workspace that `slackBotToken` was issued for keeps working without any of this — it stays the fallback. Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
 
