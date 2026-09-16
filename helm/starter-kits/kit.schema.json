@@ -151,6 +151,18 @@
         "ref": {
           "type": "string",
           "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "into": {
+          "default": "work",
+          "type": "string",
+          "enum": [
+            "work",
+            "home"
+          ]
         }
       },
       "required": [

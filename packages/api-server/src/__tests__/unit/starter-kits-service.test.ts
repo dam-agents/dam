@@ -343,7 +343,11 @@ describe("starter kits: apply", () => {
     const h = makeHarness(LOADED);
     const prompt = await onboardingTaskAfterApply(h);
     expect(h.calls.created[0]).toMatchObject({
-      gitRepo: { url: "https://github.com/acme/code-guardian", ref: "v1.4.0" },
+      gitRepo: {
+        url: "https://github.com/acme/code-guardian",
+        branch: "v1.4.0",
+        into: "work",
+      },
     });
     expect(prompt).toContain("queued its checkout");
     expect(prompt).toContain("say so and stop");
@@ -352,6 +356,32 @@ describe("starter kits: apply", () => {
     const seedless = makeHarness({ ...LOADED, kit: kit({ seed: undefined }) });
     await seedless.service.apply(APPLY);
     expect(seedless.calls.created[0]).not.toHaveProperty("gitRepo");
+  });
+
+  it("seeds a definition that wants the home directory there, on its branch at the resolved commit", async () => {
+    const sha = "c".repeat(40);
+    const h = makeHarness({
+      ...LOADED,
+      kit: kit({
+        seed: {
+          url: "https://github.com/acme/code-guardian",
+          ref: "main",
+          commit: sha,
+          into: "home",
+        },
+      }),
+    });
+    const prompt = await onboardingTaskAfterApply(h);
+    expect(h.calls.created[0]).toMatchObject({
+      gitRepo: {
+        url: "https://github.com/acme/code-guardian",
+        branch: "main",
+        commit: sha,
+        into: "home",
+      },
+    });
+    expect(prompt).toContain("on branch main at " + sha);
+    expect(prompt).toContain("into your home directory ($HOME)");
   });
 
   it("leaves out the schedules the user chose to skip", async () => {
@@ -774,7 +804,7 @@ describe("starter kits: onboarding turn", () => {
       '"Code reviewer" starter kit (platform/code-reviewer@abc123)',
     );
     expect(prompt).toContain(
-      "https://github.com/acme/code-guardian at v1.4.0 — the platform queued its checkout",
+      "https://github.com/acme/code-guardian on branch v1.4.0 — the platform queued its checkout into your work directory",
     );
     expect(prompt).toContain(
       "Connection (required, connected): github-app or github-pat",

@@ -166,7 +166,8 @@ kits:
     await refresh.run();
 
     const loaded = await repo.get("platform", "a");
-    expect(loaded?.kit.seed?.ref).toBe(SEED_SHA);
+    expect(loaded?.kit.seed?.commit).toBe(SEED_SHA);
+    expect(loaded?.kit.seed?.ref).toBe("main");
   });
 
   it("drops a kit that fails validation and keeps the rest", async () => {

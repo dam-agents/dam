@@ -81,7 +81,13 @@ export const agentCreateInputSchema = z
     egressPreset: egressPresetSchema.optional(),
     hibernationTimeoutMin: z.number().int().min(0).optional(),
     gitRepo: z
-      .object({ url: z.url(), ref: z.string().min(1).optional() })
+      .object({
+        url: z.url(),
+        ref: z.string().min(1).optional(),
+        commit: z.string().min(1).optional(),
+        branch: z.string().min(1).optional(),
+        into: z.enum(["work", "home"]).optional(),
+      })
       .optional(),
     connectionIds: z.array(z.string()).optional(),
     size: agentSizeSchema.optional(),

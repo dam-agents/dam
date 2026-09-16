@@ -172,6 +172,9 @@ export const scheduleResetEvent = z.object({
 export const workspaceSeedEventPayload = z.object({
   url: z.string().min(1),
   ref: z.string().min(1).optional(),
+  commit: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
+  into: z.enum(["work", "home"]).optional(),
 });
 export type WorkspaceSeedEventPayload = z.infer<
   typeof workspaceSeedEventPayload

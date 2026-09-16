@@ -132,7 +132,15 @@ export const starterKitSchema = z.object({
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   providers: providerListSchema.min(1).optional(),
   seed: z
-    .object({ url: z.url(), ref: z.string().min(1).optional() })
+    .object({
+      url: z.url(),
+      ref: z.string().min(1).optional(),
+      commit: z
+        .string()
+        .regex(/^[0-9a-f]{40}$/i)
+        .optional(),
+      into: z.enum(["work", "home"]).default("work"),
+    })
     .optional(),
   onboarding: z
     .union([

@@ -36,7 +36,12 @@ function setup(clone: CloneFn, fetchInto: FetchIntoFn) {
     fetchInto,
     log: () => {},
   }).bindEvent!("workspace-seed", { impl: "workspace-seed" });
-  return { seed: (payload: unknown) => seed(payload, ctx), workDir, stateDir };
+  return {
+    seed: (payload: unknown) => seed(payload, ctx),
+    workDir,
+    stateDir,
+    home: root,
+  };
 }
 
 describe("workspace-seed plugin", () => {
@@ -55,7 +60,11 @@ describe("workspace-seed plugin", () => {
     const fetchInto = okFetch();
     const { seed, workDir } = setup(clone, fetchInto);
     await seed({ url: URL, ref: SHA });
-    expect(fetchInto).toHaveBeenCalledWith(URL, workDir, SHA);
+    expect(fetchInto).toHaveBeenCalledWith(URL, workDir, {
+      ref: SHA,
+      commit: undefined,
+      branch: undefined,
+    });
     expect(clone).not.toHaveBeenCalled();
   });
 
@@ -87,7 +96,25 @@ describe("workspace-seed plugin", () => {
     writeFileSync(join(stateDir, "seed.started"), "started");
     mkdirSync(join(workDir, ".git"), { recursive: true });
     await seed({ url: URL, ref: "develop" });
-    expect(fetchInto).toHaveBeenCalledWith(URL, workDir, "develop");
+    expect(fetchInto).toHaveBeenCalledWith(URL, workDir, {
+      ref: "develop",
+      commit: undefined,
+      branch: undefined,
+    });
+    expect(clone).not.toHaveBeenCalled();
+  });
+
+  it("seeds the agent's home in place, on the branch pinned to the commit", async () => {
+    const clone = okClone();
+    const fetchInto = okFetch();
+    const { seed, home } = setup(clone, fetchInto);
+    writeFileSync(join(home, ".gitconfig"), "[user]");
+    await seed({ url: URL, branch: "main", commit: SHA, into: "home" });
+    expect(fetchInto).toHaveBeenCalledWith(URL, home, {
+      ref: undefined,
+      commit: SHA,
+      branch: "main",
+    });
     expect(clone).not.toHaveBeenCalled();
   });
 

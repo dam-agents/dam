@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { securityLog } from "../../../core/security-log.js";
 import type {
+  StarterKit,
   HarnessFamily,
   Agent,
   AgentCreateInput,
@@ -57,6 +58,22 @@ export interface StarterKitsServiceDeps {
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   now?: () => Date;
+}
+
+const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+function seedGitRepo(
+  seed: NonNullable<StarterKit["seed"]>,
+): NonNullable<AgentCreateInput["gitRepo"]> {
+  const declaredCommit =
+    seed.ref && COMMIT_SHA.test(seed.ref) ? seed.ref : undefined;
+  const commit = seed.commit ?? declaredCommit;
+  return {
+    url: seed.url,
+    into: seed.into,
+    ...(commit ? { commit } : {}),
+    ...(seed.ref && !declaredCommit ? { branch: seed.ref } : {}),
+  };
 }
 
 function agentShape(
@@ -268,14 +285,7 @@ export function createStarterKitsService(
         ...(kit.knowledgeBase
           ? { kind: "knowledge-base", kbTemplateId: kit.knowledgeBase.template }
           : {}),
-        ...(kit.seed
-          ? {
-              gitRepo: {
-                url: kit.seed.url,
-                ...(kit.seed.ref ? { ref: kit.seed.ref } : {}),
-              },
-            }
-          : {}),
+        ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),

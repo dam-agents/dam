@@ -12,7 +12,10 @@ import type {
   WorkspaceSeedEventPayload,
 } from "agent-runtime-api";
 
-import { createGitProtocolClient } from "../../skills/infrastructure/git-protocol-client.js";
+import {
+  createGitProtocolClient,
+  type SeedTarget,
+} from "../../skills/infrastructure/git-protocol-client.js";
 
 const IMPL_NAME = "workspace-seed";
 const DONE_SENTINEL = "seed.done";
@@ -28,18 +31,22 @@ export type CloneFn = (
 export type FetchIntoFn = (
   url: string,
   dest: string,
-  ref?: string,
+  target: SeedTarget,
 ) => Promise<Result<void, SkillsDomainError>>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Seeds the work directory from a repository
- * exactly once. Completion is a sentinel in the plugin's state dir — a `.git`
- * alone proves nothing, since a failed attempt or the agent's own clone leaves
- * one too. A first attempt at a branch or tag is a shallow clone; a commit sha
- * (what a starter kit's seed resolves to), or any retry over an attempt this
- * plugin started, is fetched in place — never by removing the directory,
- * which is the harness's cwd. A `.git` it did not start is someone else's
- * work and is refused, so the failure is reported rather than papered over.
+ * UNIT_BOUNDARY_DESCRIPTION: Seeds a directory from a repository exactly
+ * once — the work directory, or the agent's home when the seed says so (a
+ * definition that wants to be `$HOME`, with `work/` as its data directory).
+ * Completion is a sentinel in the plugin's state dir — a `.git` alone proves
+ * nothing, since a failed attempt or the agent's own clone leaves one too. A
+ * plain ref into an empty work directory is a shallow clone; everything else
+ * — a pinned commit, a branch to stay on, the home directory, a retry over an
+ * attempt this plugin started — is fetched in place: init, fetch, hard-reset
+ * of tracked paths, checkout of the branch. Never by removing the directory,
+ * which is the harness's cwd or home. A `.git` it did not start is someone
+ * else's work and is refused, so the failure is reported rather than papered
+ * over.
  */
 export function createWorkspaceSeedPlugin(deps: {
   workDir: string;
@@ -53,53 +60,58 @@ export function createWorkspaceSeedPlugin(deps: {
       createGitProtocolClient().cloneShallow(url, dest, 50, ref));
   const fetchInto: FetchIntoFn =
     deps.fetchInto ??
-    ((url, dest, ref) => createGitProtocolClient().fetchInto(url, dest, ref));
+    ((url, dest, target) =>
+      createGitProtocolClient().fetchInto(url, dest, target));
 
   const seed = async (
-    { url, ref }: WorkspaceSeedEventPayload,
+    { url, ref, commit, branch, into }: WorkspaceSeedEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
-    const at = ref ? ` (${ref})` : "";
+    const dest = into === "home" ? ctx.agentHome : deps.workDir;
+    const at = [branch, commit ?? ref].filter(Boolean).join(" @ ");
+    const label = at ? `${url} (${at})` : url;
     const done = join(ctx.pluginStateDir, DONE_SENTINEL);
     const started = join(ctx.pluginStateDir, STARTED_SENTINEL);
     if (existsSync(done)) {
-      deps.log(`[workspace-seed] ${deps.workDir} already seeded, skipping`);
+      deps.log(`[workspace-seed] ${dest} already seeded, skipping`);
       return;
     }
-    const hasGit = existsSync(join(deps.workDir, ".git"));
+    const hasGit = existsSync(join(dest, ".git"));
     const ours = existsSync(started);
     if (hasGit && !ours) {
       throw new Error(
-        `refusing to seed ${deps.workDir}: it already holds a repository the platform did not seed`,
+        `refusing to seed ${dest}: it already holds a repository the platform did not seed`,
       );
     }
+    const intoHome = into === "home";
     if (
+      !intoHome &&
       !hasGit &&
-      existsSync(deps.workDir) &&
-      readdirSync(deps.workDir).length > 0
+      existsSync(dest) &&
+      readdirSync(dest).length > 0
     ) {
-      throw new Error(
-        `refusing to seed a non-empty work directory: ${deps.workDir}`,
-      );
+      throw new Error(`refusing to seed a non-empty work directory: ${dest}`);
     }
     await mkdir(ctx.pluginStateDir, { recursive: true });
     await writeFile(started, `${new Date().toISOString()}\n`, { flag: "a" });
-    const inPlace = hasGit || (ref !== undefined && COMMIT_SHA.test(ref));
+    const plainRef =
+      commit === undefined &&
+      branch === undefined &&
+      !COMMIT_SHA.test(ref ?? "");
+    const inPlace = intoHome || hasGit || !plainRef;
     deps.log(
-      `[workspace-seed] ${inPlace ? "fetching" : "cloning"} ${url}${at} into ${deps.workDir}`,
+      `[workspace-seed] ${inPlace ? "fetching" : "cloning"} ${label} into ${dest}`,
     );
     const res = inPlace
-      ? await fetchInto(url, deps.workDir, ref)
-      : await clone(url, deps.workDir, ref);
+      ? await fetchInto(url, dest, { ref, commit, branch })
+      : await clone(url, dest, ref);
     if (!res.ok) {
       const e = res.error;
       const detail = "detail" in e ? `: ${e.detail}` : "";
-      throw new Error(
-        `workspace seed of ${url}${at} failed (${e.kind})${detail}`,
-      );
+      throw new Error(`workspace seed of ${label} failed (${e.kind})${detail}`);
     }
     await writeFile(done, `${new Date().toISOString()}\n`, { flag: "a" });
-    deps.log(`[workspace-seed] seeded ${deps.workDir} from ${url}${at}`);
+    deps.log(`[workspace-seed] seeded ${dest} from ${label}`);
   };
 
   return {

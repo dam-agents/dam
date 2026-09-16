@@ -7,6 +7,12 @@ import { describeFailure, runOnce } from "../../../core/run-once.js";
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
+export interface SeedTarget {
+  ref?: string;
+  commit?: string;
+  branch?: string;
+}
+
 export interface GitProtocolClient {
   cloneShallow: (
     url: string,
@@ -22,7 +28,7 @@ export interface GitProtocolClient {
   fetchInto: (
     url: string,
     dest: string,
-    ref?: string,
+    target: SeedTarget,
   ) => Promise<Result<void, SkillsDomainError>>;
   lastTouchingSha: (
     repoDir: string,
@@ -53,8 +59,11 @@ export function createGitProtocolClient(): GitProtocolClient {
         });
       }
     },
-    async fetchInto(url, dest, ref) {
-      const isSha = ref !== undefined && /^[0-9a-f]{40}$/i.test(ref);
+    async fetchInto(url, dest, target) {
+      const { ref, commit, branch } = target;
+      const isSha = (v: string | undefined) =>
+        v !== undefined && /^[0-9a-f]{40}$/i.test(v);
+      const git = (...args: string[]) => runProc("git", ["-C", dest, ...args]);
       try {
         await fs.mkdir(dest, { recursive: true });
         const hasGit = await fs.stat(join(dest, ".git")).then(
@@ -63,42 +72,68 @@ export function createGitProtocolClient(): GitProtocolClient {
         );
         if (!hasGit) await runProc("git", ["init", "--quiet", dest]);
         try {
-          await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
+          await git("remote", "add", "origin", url);
         } catch {
-          await runProc("git", [
-            "-C",
-            dest,
-            "remote",
-            "set-url",
-            "origin",
-            url,
-          ]);
+          await git("remote", "set-url", "origin", url);
         }
+        if (branch) {
+          let onBranch = true;
+          try {
+            await git(
+              "fetch",
+              "--quiet",
+              "--depth",
+              "50",
+              "origin",
+              `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+            );
+          } catch (e) {
+            if (!commit) throw e;
+            onBranch = false;
+          }
+          if (onBranch) {
+            const want = commit ?? `refs/remotes/origin/${branch}`;
+            if (commit) {
+              const present = await git("cat-file", "-e", `${commit}^{commit}`)
+                .then(() => true)
+                .catch(() => false);
+              if (!present)
+                await git("fetch", "--quiet", "--depth", "1", "origin", commit);
+            }
+            await git("reset", "--hard", "--quiet", want);
+            await git("checkout", "--quiet", "-B", branch, want);
+            await git(
+              "branch",
+              "--quiet",
+              "-u",
+              `origin/${branch}`,
+              branch,
+            ).catch(() => undefined);
+            return ok(undefined);
+          }
+        }
+        const want = commit ?? ref ?? "HEAD";
         try {
-          await runProc("git", [
-            "-C",
-            dest,
+          await git(
             "fetch",
             "--quiet",
             "--depth",
-            isSha ? "1" : "50",
+            isSha(want) ? "1" : "50",
             "origin",
-            ref ?? "HEAD",
-          ]);
+            want,
+          );
         } catch (e) {
-          if (!isSha) throw e;
-          await runProc("git", ["-C", dest, "fetch", "--quiet", "origin"]);
-          await runProc("git", ["-C", dest, "checkout", "--quiet", ref]);
+          if (!isSha(want)) throw e;
+          await git("fetch", "--quiet", "origin");
+          await git("checkout", "--quiet", "--force", want);
           return ok(undefined);
         }
-        await runProc("git", [
-          "-C",
-          dest,
-          "checkout",
-          "--quiet",
-          ...(ref !== undefined && !isSha ? ["-B", ref] : []),
-          "FETCH_HEAD",
-        ]);
+        if (ref && !commit && !isSha(ref)) {
+          await git("reset", "--hard", "--quiet", "FETCH_HEAD");
+          await git("checkout", "--quiet", "-B", ref, "FETCH_HEAD");
+        } else {
+          await git("checkout", "--quiet", "--force", "FETCH_HEAD");
+        }
         return ok(undefined);
       } catch (e) {
         return err({

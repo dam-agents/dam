@@ -131,8 +131,8 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     }
 
     const pinnedKit =
-      kit.seed && seedRef
-        ? { ...kit, seed: { ...kit.seed, ref: seedRef } }
+      kit.seed && seedRef && /^[0-9a-f]{40}$/i.test(seedRef)
+        ? { ...kit, seed: { ...kit.seed, commit: seedRef } }
         : kit;
 
     return {

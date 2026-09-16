@@ -61,8 +61,13 @@ function parameterLines(kit: StarterKit): string[] {
 
 function definitionLine(kit: StarterKit): string {
   if (!kit.seed) return "This kit ships no definition repository.";
-  const at = kit.seed.ref ? ` at ${kit.seed.ref}` : "";
-  return `Definition repository: ${kit.seed.url}${at} — the platform queued its checkout into your work directory before this session. If the work directory is empty or holds something else, that checkout failed and the user can see the error: say so and stop. Do not clone, fetch or delete anything yourself.`;
+  const where =
+    kit.seed.into === "home"
+      ? "your home directory ($HOME)"
+      : "your work directory";
+  const branch = kit.seed.ref ? ` on branch ${kit.seed.ref}` : "";
+  const at = kit.seed.commit ? ` at ${kit.seed.commit}` : "";
+  return `Definition repository: ${kit.seed.url}${branch}${at} — the platform queued its checkout into ${where} before this session. If that directory holds no checkout of it, the seed failed and the user can see the error: say so and stop. Do not clone, fetch or delete anything yourself.`;
 }
 
 function defaultInstruction(kit: StarterKit): string {

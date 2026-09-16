@@ -342,9 +342,15 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
               <Section label="Definition">
                 <Row
                   title={kit.seed.url.replace("https://github.com/", "")}
-                  detail={`Cloned by the agent during onboarding${
-                    kit.seed.ref ? ` at ${shortKitVersion(kit.seed.ref)}` : ""
-                  }`}
+                  detail={`Seeded into ${
+                    kit.seed.into === "home"
+                      ? "the agent's home directory"
+                      : "the work directory"
+                  }${kit.seed.ref ? ` on ${kit.seed.ref}` : ""}${
+                    kit.seed.commit
+                      ? ` at ${shortKitVersion(kit.seed.commit)}`
+                      : ""
+                  } before the first session`}
                   trailing={
                     <a
                       href={kit.seed.url}
