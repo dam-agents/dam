@@ -59,9 +59,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: a second worker would only queue for the same tokens, since the limiter is shared and the API server was never the thing saying no.
 	if restCfg.QPS == 0 {
-		restCfg.QPS = 50
-		restCfg.Burst = 100
+		restCfg.QPS = 200
+		restCfg.Burst = 400
 	}
 	slog.Info("kube client rate limits", "qps", restCfg.QPS, "burst", restCfg.Burst)
 
