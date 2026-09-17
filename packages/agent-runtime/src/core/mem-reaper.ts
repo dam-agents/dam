@@ -19,6 +19,21 @@ export function readCgroupBytes(v2: string, v1: string): number | null {
   return null;
 }
 
+export function readMeminfoBytes(
+  key: string,
+  path = "/proc/meminfo",
+): number | null {
+  try {
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      if (line.startsWith(`${key}:`)) {
+        const kb = Number.parseInt(line.slice(key.length + 1), 10);
+        if (Number.isFinite(kb)) return kb * 1024;
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export function readProcTable(): ProcEntry[] {
   const entries: ProcEntry[] = [];
   let names: string[];
@@ -110,6 +125,50 @@ function readReclaimableBytes(): number | null {
   ]);
 }
 
+interface MemSample {
+  used: number;
+  limit: number;
+  text: string;
+}
+
+function cgroupUsage(limit: number): MemSample | null {
+  const cur = readCgroupBytes(
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+  );
+  if (cur === null) return null;
+  const reclaimable = readReclaimableBytes();
+  if (reclaimable === null) return null;
+  const used = Math.max(0, cur - reclaimable);
+  return {
+    used,
+    limit,
+    text: `cgroup ${mib(used)}(+${mib(reclaimable)} cache)/${mib(limit)}MB`,
+  };
+}
+
+function machineUsage(): MemSample | null {
+  const total = readMeminfoBytes("MemTotal");
+  const available = readMeminfoBytes("MemAvailable");
+  if (total === null || available === null || total <= 0) return null;
+  const used = Math.max(0, total - available);
+  return { used, limit: total, text: `machine ${mib(used)}/${mib(total)}MB` };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Watches memory pressure and sacrifices a tool
+ * process before the kernel kills something the agent cannot recover from.
+ * Where the ceiling lives depends on how the agent runs. A container is capped
+ * by its cgroup, and usage there counts page cache the kernel will hand back
+ * under pressure, so the cache is subtracted before comparing. A machine on the
+ * vm Backend has no cgroup limit at all — the kernel creates none on a cgroup2
+ * root, and the hypervisor is the only ceiling — so the machine's own memory is
+ * the limit. There the kernel's own MemAvailable estimate is the headroom
+ * signal: it already discounts reclaimable cache, which a plain total-minus-free
+ * would count as used and reap on an idle guest. Both numbers are re-read every
+ * cycle rather than fixed at start, because a balloon device can take memory
+ * back from a running guest.
+ */
 export function startMemReaper(opts: {
   thresholdFraction: number;
   log: (msg: string) => void;
@@ -119,22 +178,23 @@ export function startMemReaper(opts: {
     "/sys/fs/cgroup/memory.max",
     "/sys/fs/cgroup/memory/memory.limit_in_bytes",
   );
-  if (cgMax === null || !Number.isFinite(cgMax) || cgMax >= 1e15) {
-    opts.log("no readable cgroup memory limit; reaper disabled");
+  const cgLimit =
+    cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15 ? cgMax : null;
+  if (cgLimit === null && readMeminfoBytes("MemAvailable") === null) {
+    opts.log("no readable memory limit; reaper disabled");
     return;
   }
+  opts.log(
+    cgLimit === null
+      ? "no cgroup limit; watching the machine's own memory"
+      : `watching the cgroup limit (${mib(cgLimit)}MB)`,
+  );
   setInterval(() => {
     try {
-      const cur = readCgroupBytes(
-        "/sys/fs/cgroup/memory.current",
-        "/sys/fs/cgroup/memory/memory.usage_in_bytes",
-      );
-      if (cur === null) return;
-      const reclaimable = readReclaimableBytes();
-      if (reclaimable === null) return;
-      const unreclaimable = Math.max(0, cur - reclaimable);
-      if (unreclaimable / cgMax < opts.thresholdFraction) return;
-      const usage = `cgroup ${mib(unreclaimable)}(+${mib(reclaimable)} cache)/${mib(cgMax)}MB`;
+      const sample = cgLimit === null ? machineUsage() : cgroupUsage(cgLimit);
+      if (sample === null) return;
+      if (sample.used / sample.limit < opts.thresholdFraction) return;
+      const usage = sample.text;
       const victim = pickVictim(readProcTable(), process.pid);
       if (victim === null) {
         opts.log(`at ${usage} with only protected processes; cannot reap`);
