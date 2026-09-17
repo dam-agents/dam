@@ -59,6 +59,7 @@ export function AgentBindPicker({
 
   const handleCreated = (agent: AgentView) => {
     markCreated(agent);
+    setPickedId(agent.id);
     onAgentCreated();
   };
 

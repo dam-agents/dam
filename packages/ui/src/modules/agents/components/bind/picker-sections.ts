@@ -33,7 +33,10 @@ export function pickerSections(
 }
 
 function byCreatedAtDesc(a: AgentView, b: AgentView): number {
-  return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+  const left = a.createdAt ?? "";
+  const right = b.createdAt ?? "";
+  if (left === right) return 0;
+  return left > right ? -1 : 1;
 }
 
 function byName(a: AgentView, b: AgentView): number {

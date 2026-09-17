@@ -1,8 +1,6 @@
 import { Code, Terminal } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { useAgents } from "../../agents/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
@@ -99,10 +97,7 @@ function LauncherTile({
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left",
-        "transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-      )}
+      className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
         {icon}

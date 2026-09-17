@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
-import { timeAgo } from "@/lib/format-time";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
@@ -159,7 +159,9 @@ export function SessionRow({
         </div>
         <span className="text-[11px] text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
-          {timeAgo(s.updatedAt ?? s.createdAt)}
+          <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
+            {timeAgo(s.updatedAt ?? s.createdAt)}
+          </span>
           {runTime && (
             <span data-testid="session-run-time">
               {" · "}

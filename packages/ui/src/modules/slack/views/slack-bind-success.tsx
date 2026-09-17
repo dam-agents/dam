@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { getBrand } from "../../../brand.js";
-import { useConnectSlack } from "../../agents/api/mutations.js";
+import { useSetSlackAmbient } from "../../agents/api/mutations.js";
 import { BindSuccessPage } from "../../agents/components/bind/bind-success-page.js";
 import { CommandChip } from "../../agents/components/bind/command-chip.js";
 import { AmbientModeCard } from "../../sandboxes/components/channels/ambient-mode-card.js";
@@ -20,14 +20,15 @@ export function SlackBindSuccess({
   channelTitle,
 }: Props) {
   const brand = getBrand();
-  const connectSlack = useConnectSlack();
+  const saveAmbient = useSetSlackAmbient();
   const [ambient, setAmbient] = useState(false);
 
   const handleAmbientChange = (next: boolean) => {
+    const previous = ambient;
     setAmbient(next);
-    connectSlack.mutate(
+    saveAmbient.mutate(
       { id: agentId, slackChannelId, ...(next ? { ambient: true } : {}) },
-      { onError: () => setAmbient(!next) },
+      { onError: () => setAmbient(previous) },
     );
   };
 
@@ -52,7 +53,11 @@ export function SlackBindSuccess({
         </CommandChip>
         .
       </p>
-      <AmbientModeCard checked={ambient} onChange={handleAmbientChange}>
+      <AmbientModeCard
+        checked={ambient}
+        onChange={handleAmbientChange}
+        disabled={saveAmbient.isPending}
+      >
         The agent reads along in the channel and may chime in without being
         mentioned when it can clearly help.
       </AmbientModeCard>
