@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createOutcomeDelivery } from "../../modules/satellites/services/outcome-delivery.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import type { JobRow } from "../../modules/satellites/domain/types.js";

@@ -45,7 +45,6 @@ interface Reported {
 function harness(items: WorkItem[]) {
   const reports: Reported[] = [];
   let handedOut = false;
-  const settled: Promise<void>[] = [];
   let resolveAll: () => void = () => {};
   const allReported = new Promise<void>((r) => {
     resolveAll = r;
@@ -72,7 +71,7 @@ function harness(items: WorkItem[]) {
     log: { line: () => {} },
     host: "test-host",
   });
-  return { worker, reports, allReported, settled };
+  return { worker, reports, allReported };
 }
 
 function runItem(sequence: number, cmd: string[]): WorkItem {
