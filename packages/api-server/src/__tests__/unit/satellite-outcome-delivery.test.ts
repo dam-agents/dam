@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createOutcomeDelivery } from "../../modules/satellites/services/outcome-delivery.js";
+import {
+  createOutcomeDelivery,
+  createOutcomeWakeRetry,
+} from "../../modules/satellites/services/outcome-delivery.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import type { JobRow } from "../../modules/satellites/domain/types.js";
 
@@ -31,6 +34,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     reason: null,
     cancelRequested: false,
     deliveredAt: null,
+    wokeAt: null,
     startedAt: new Date(),
     endedAt: new Date(),
     createdAt: new Date(),
@@ -46,6 +50,8 @@ function harness(claimed: JobRow[][]) {
     repo: {
       claimUndeliveredOutcomes: async () => claimed[call++] ?? [],
       agentsWithPendingOutcomes: async () => [],
+      markWoken: async () => {},
+      undeliveredFor: async () => [],
     } as never,
     bump: async (agentId, list) => {
       for (const e of list) events.push({ agentId, payload: e.payload });
@@ -124,7 +130,10 @@ describe("waking an agent with a finished job", () => {
   it("still records the turn when the agent cannot be woken", async () => {
     const events: unknown[] = [];
     const deliver = createOutcomeDelivery({
-      repo: { claimUndeliveredOutcomes: async () => [job()] } as never,
+      repo: {
+        claimUndeliveredOutcomes: async () => [job()],
+        markWoken: async () => {},
+      } as never,
       bump: async (_agentId, list) => {
         events.push(...list);
         return 1;
@@ -154,6 +163,7 @@ describe("reporting an outcome reaches the wake", () => {
         rows[0] = { ...rows[0]!, deliveredAt: new Date() };
         return undelivered;
       },
+      markWoken: async () => {},
       touch: async () => {},
     };
     const events: unknown[] = [];
@@ -187,5 +197,61 @@ describe("reporting an outcome reaches the wake", () => {
       events,
       "report must not consume the claim delivery needs",
     ).toHaveLength(1);
+  });
+});
+
+describe("an agent that could not be woken", () => {
+  it("stays findable by the retry, because the wake is recorded apart from the claim", async () => {
+    const woken: string[] = [];
+    const stamped: { satellite: string; sequence: number }[][] = [];
+    let wakeWorks = false;
+    const deliver = createOutcomeDelivery({
+      repo: {
+        claimUndeliveredOutcomes: async () => [job()],
+        markWoken: async (_agentId: string, refs: never[]) => {
+          stamped.push(refs);
+        },
+      } as never,
+      bump: async () => 1,
+      enqueue: async () => {},
+      wakeAgent: async (agentId) => {
+        if (!wakeWorks) throw new Error("over budget");
+        woken.push(agentId);
+      },
+      spillLog: async () => null,
+      log: () => {},
+    });
+
+    expect(await deliver("agent-1")).toBe(true);
+    expect(woken, "the agent was over budget").toEqual([]);
+    expect(
+      stamped,
+      "nothing may be stamped woken when no wake happened",
+    ).toEqual([]);
+
+    wakeWorks = true;
+    const retry = createOutcomeWakeRetry({
+      repo: {
+        agentsWithPendingOutcomes: async () => ["agent-1"],
+        undeliveredFor: async () => [{ satellite: "gpu-box", sequence: 7 }],
+        markWoken: async (_agentId: string, refs: never[]) => {
+          stamped.push(refs);
+        },
+      } as never,
+      bump: async () => 1,
+      enqueue: async () => {},
+      wakeAgent: async (agentId) => {
+        woken.push(agentId);
+      },
+      spillLog: async () => null,
+      log: () => {},
+    });
+
+    await retry();
+    expect(
+      woken,
+      "the hourly sweep must reach it once the budget frees",
+    ).toEqual(["agent-1"]);
+    expect(stamped[0]).toEqual([{ satellite: "gpu-box", sequence: 7 }]);
   });
 });

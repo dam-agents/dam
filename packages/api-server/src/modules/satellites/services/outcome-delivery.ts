@@ -93,17 +93,41 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
         );
       return false;
     }
-    await deps.wakeAgent(agentId).catch((err: unknown) => {
+    try {
+      await deps.wakeAgent(agentId);
+      await deps.repo.markWoken(
+        agentId,
+        claimed.map((job) => ({
+          satellite: job.satellite,
+          sequence: job.sequence,
+        })),
+      );
+    } catch (err) {
       deps.log(`[satellites] ${agentId} did not wake: ${String(err)}`);
-    });
+    }
     return true;
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Hourly retry for outcomes that have not reached
+ * their Agent. An Agent parked over budget cannot wake, so its turn waits in the
+ * outbox and nothing else would start it. A claimed outcome whose wake failed is
+ * retried here rather than announced again, so the Agent gets one turn late
+ * instead of a second event.
+ */
 export function createOutcomeWakeRetry(deps: OutcomeDeliveryDeps) {
   return async (): Promise<number> => {
     const agents = await deps.repo.agentsWithPendingOutcomes();
-    for (const agentId of agents) await deps.wakeAgent(agentId).catch(() => {});
+    for (const agentId of agents) {
+      const pending = await deps.repo.undeliveredFor(agentId);
+      try {
+        await deps.wakeAgent(agentId);
+      } catch {
+        continue;
+      }
+      await deps.repo.markWoken(agentId, pending);
+    }
     return agents.length;
   };
 }

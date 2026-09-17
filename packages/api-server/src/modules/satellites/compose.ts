@@ -25,6 +25,7 @@ export interface SatellitesComposition {
   sweepLeases: () => Promise<number>;
   serviceFor: (owner: string) => SatellitesService;
   onAgentDeleted: (agentId: string) => Promise<void>;
+  listAgentIds: () => Promise<string[]>;
   applyVerdict: (
     owner: string,
     satellite: string,
@@ -68,6 +69,7 @@ export function composeSatellitesModule(deps: {
         deliverOutcome: deps.deliverOutcome,
       }),
     onAgentDeleted: (agentId) => repo.revokeAgentGrants(agentId),
+    listAgentIds: () => repo.listGrantedAgentIds(),
     applyVerdict: async (owner, satellite, sequence, allowed) => {
       if (allowed) {
         await repo.release(owner, satellite, sequence);

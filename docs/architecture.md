@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-15
+Last verified: 2026-09-17
 
 ## System context
 
@@ -9,6 +9,7 @@ flowchart LR
   user[browser user]
   slack-user[Slack user]
   cli[dam CLI]
+  satellite[dam satellite worker]
   llm[LLM APIs]
   github[GitHub]
 
@@ -35,6 +36,7 @@ flowchart LR
   slack-user <-->|Slack API| api-server
 
   cli -->|tRPC + WS| api-server
+  satellite -->|polls for approved commands| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api

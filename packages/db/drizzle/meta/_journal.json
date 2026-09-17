@@ -365,6 +365,13 @@
       "when": 1789658116385,
       "tag": "0051_safe_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789673585240,
+      "tag": "0052_slow_alex_wilder",
+      "breakpoints": true
     }
   ]
 }

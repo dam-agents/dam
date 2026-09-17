@@ -1010,6 +1010,11 @@ export async function bootstrap() {
       cleanup: createConnectionGrantsCleanupHook(db),
     },
     {
+      name: "satellite-grants",
+      listAgentIds: () => satellitesBoot.listAgentIds(),
+      cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),

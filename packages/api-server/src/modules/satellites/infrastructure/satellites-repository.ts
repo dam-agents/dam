@@ -49,6 +49,7 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     reason: r.reason,
     cancelRequested: r.cancelRequested,
     deliveredAt: r.deliveredAt,
+    wokeAt: r.wokeAt,
     startedAt: r.startedAt,
     endedAt: r.endedAt,
     createdAt: r.createdAt,
@@ -189,11 +190,13 @@ export function createSatellitesRepository(db: Db) {
     },
 
     /**
-     * UNIT_BOUNDARY_DESCRIPTION: Counts the Satellite's live Jobs and inserts in
-     * one transaction. Counting outside it lets two starts that arrive together
-     * both read a count under the limit and both insert, which puts the machine
-     * over the concurrency its Manifest declared — and leaves a Job queued behind
-     * another, which is the backlog the design says cannot exist.
+     * UNIT_BOUNDARY_DESCRIPTION: Locks the Satellite's own row, then counts its
+     * live Jobs and inserts. The order is the point: a lock over the Job rows
+     * holds nothing when there are none, so two starts arriving together would
+     * both read a count of zero and both insert — one more Job than the Manifest
+     * declared, and one waiting behind another, which is the backlog the design
+     * says cannot exist. The Satellite row exists whether or not any Job does,
+     * so taking it first is what serializes the pair.
      */
     async insertJob(input: {
       owner: string;
@@ -207,6 +210,19 @@ export function createSatellitesRepository(db: Db) {
       patternMax: number | null;
     }): Promise<JobRow | { full: true; total: number; forPattern: number }> {
       return db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select({ next: satellites.nextSequence })
+          .from(satellites)
+          .where(
+            and(
+              eq(satellites.owner, input.owner),
+              eq(satellites.name, input.satellite),
+            ),
+          )
+          .for("update");
+        if (locked === undefined)
+          throw new Error(`satellite ${input.satellite} no longer exists`);
+
         const live = await tx
           .select({
             status: satelliteJobs.status,
@@ -219,8 +235,7 @@ export function createSatellitesRepository(db: Db) {
               eq(satelliteJobs.satellite, input.satellite),
               notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             ),
-          )
-          .for("update");
+          );
         const forPattern = live.filter(
           (row) => row.pattern === input.pattern,
         ).length;
@@ -230,7 +245,7 @@ export function createSatellitesRepository(db: Db) {
         )
           return { full: true as const, total: live.length, forPattern };
 
-        const [bumped] = await tx
+        await tx
           .update(satellites)
           .set({ nextSequence: sql`${satellites.nextSequence} + 1` })
           .where(
@@ -238,11 +253,8 @@ export function createSatellitesRepository(db: Db) {
               eq(satellites.owner, input.owner),
               eq(satellites.name, input.satellite),
             ),
-          )
-          .returning({ next: satellites.nextSequence });
-        if (bumped === undefined)
-          throw new Error(`satellite ${input.satellite} no longer exists`);
-        const sequence = bumped.next - 1;
+          );
+        const sequence = locked.next;
         const { maxConcurrent, patternMax, ...values } = input;
         void maxConcurrent;
         void patternMax;
@@ -483,6 +495,13 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Agents holding an outcome that has not reached
+     * them. Two states qualify: the outcome was never claimed, and the outcome
+     * was claimed but the Agent never woke — an Agent parked over budget cannot
+     * wake, and the turn waits in the outbox until something starts it. Reading
+     * only the unclaimed ones would leave exactly that Agent unserved.
+     */
     async agentsWithPendingOutcomes(): Promise<string[]> {
       const rows = await db
         .selectDistinct({ agentId: satelliteJobs.agentId })
@@ -490,10 +509,46 @@ export function createSatellitesRepository(db: Db) {
         .where(
           and(
             inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
-            sql`${satelliteJobs.deliveredAt} is null`,
+            sql`(${satelliteJobs.deliveredAt} is null or ${satelliteJobs.wokeAt} is null)`,
           ),
         );
       return rows.map((r) => r.agentId);
+    },
+
+    async undeliveredFor(
+      agentId: string,
+    ): Promise<{ satellite: string; sequence: number }[]> {
+      const rows = await db
+        .select({
+          satellite: satelliteJobs.satellite,
+          sequence: satelliteJobs.sequence,
+        })
+        .from(satelliteJobs)
+        .where(
+          and(
+            eq(satelliteJobs.agentId, agentId),
+            inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+            sql`${satelliteJobs.wokeAt} is null`,
+          ),
+        );
+      return rows;
+    },
+
+    async markWoken(
+      agentId: string,
+      refs: { satellite: string; sequence: number }[],
+    ): Promise<void> {
+      for (const ref of refs)
+        await db
+          .update(satelliteJobs)
+          .set({ wokeAt: new Date() })
+          .where(
+            and(
+              eq(satelliteJobs.agentId, agentId),
+              eq(satelliteJobs.satellite, ref.satellite),
+              eq(satelliteJobs.sequence, ref.sequence),
+            ),
+          );
     },
 
     async expiredLeases(now: Date): Promise<JobRow[]> {
@@ -509,6 +564,29 @@ export function createSatellitesRepository(db: Db) {
       return rows.map(toJob);
     },
 
+    async listGrantedAgentIds(): Promise<string[]> {
+      const grants = await db
+        .selectDistinct({ agentId: satelliteGrants.agentId })
+        .from(satelliteGrants);
+      const jobs = await db
+        .selectDistinct({ agentId: satelliteJobs.agentId })
+        .from(satelliteJobs);
+      return [
+        ...new Set([
+          ...grants.map((r) => r.agentId),
+          ...jobs.map((r) => r.agentId),
+        ]),
+      ];
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Clears what a deleted Agent leaves behind. Its
+     * grants go, and its Jobs that had not started are cancelled — a running one
+     * is left alone, because the command is already executing on a machine the
+     * platform cannot reach, and only dispatch was ever ours to stop. Its
+     * finished Jobs stay until the retention sweep, so the audit trail keeps
+     * what ran.
+     */
     async revokeAgentGrants(agentId: string): Promise<void> {
       await db
         .delete(satelliteGrants)
