@@ -768,3 +768,31 @@ func fakeCrane(log string) string {
 		"fi\n" +
 		"d=$(mktemp -d); echo rootfs > \"$d/hello\"; tar -cf - -C \"$d\" .\n"
 }
+
+// TEST_SCENARIO: an unpacked image is not a spare a machine consumes at create — it is the read-only lower layer every machine of that image keeps mounted for as long as it runs. Evicting one to make room therefore takes a running guest's filesystem away from it, and the machine does not fail at the moment of the deletion but the next time it reads a file it no longer has. The cache reads the machines' own stored specs to find which images are spoken for, and goes over its budget rather than free one of them.
+func TestTheImageCacheNeverEvictsAnImageAMachineIsRunning(t *testing.T) {
+	h := newHarness(t)
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(filepath.Join(t.TempDir(), "log"))), 0o755))
+	h.node.Crane = crane
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+
+	dir := filepath.Join(h.node.StateDir, "images")
+	booted := filepath.Join(dir, "quay.io_x_vm_1")
+	require.DirExists(t, booted, "the tree agent-a is running from")
+	old := time.Now().Add(-9 * time.Hour)
+	require.NoError(t, os.Chtimes(booted, old, old))
+
+	spare := filepath.Join(dir, "quay.io_x_other_2.tar")
+	require.NoError(t, os.WriteFile(spare, make([]byte, 1<<20), 0o644))
+
+	h.node.evictImages(dir, spare, 1)
+
+	assert.DirExists(t, booted,
+		"the oldest entry by far, and still the rootfs of a running machine — a full volume is the lesser harm")
+	_, spareErr := os.Stat(spare)
+	assert.NoError(t, spareErr, "and what was just fetched is never the one evicted either")
+}

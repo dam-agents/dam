@@ -16,10 +16,11 @@ seccomp (all from restricted-v2). The two real relaxations are:
     caps.add. NET_RAW is the init container's alone; NET_ADMIN is asked
     for by that container and by the VM runner, which needs it for the
     per-machine NAT. CHOWN + FOWNER + DAC_OVERRIDE are the VM runner's
-    alone: the last lets it manage machine directories that a release
-    which briefly gave each VMM its own uid chowned away from it, and
-    the first two are left from an image unpack the runner no longer
-    does.
+    alone, and all three are what unpacking an image faithfully costs:
+    tar restores each file's owner and mode and then keeps writing into
+    directories it has just given away or made read-only. DAC_OVERRIDE
+    also lets the runner manage machine directories that a release which
+    briefly gave each VMM its own uid chowned away from it.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only

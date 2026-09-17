@@ -352,12 +352,12 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	base := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+	base := s.cachePath(image)
 	launch, err := readLaunch(base)
 	if err != nil {
 		return err
 	}
-	cached := base
+	cached := ""
 	if launch == nil {
 		if _, archived := os.Stat(base + ".tar"); archived == nil {
 			cached = base + ".tar"
@@ -373,8 +373,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if launch != nil {
 		cached = filepath.Join(base, rootfsDir)
 	}
-	if _, err := os.Stat(cached); err == nil {
-		image = cached
+	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
+	if cached != "" {
+		if _, err := os.Stat(cached); err == nil {
+			image = cached
+		}
 	}
 	dir, err := s.machineDir(id)
 	if err != nil {
@@ -480,6 +483,9 @@ func (s *Server) claim(tmp, cached string) error {
 	if complete, readErr := readLaunch(cached); readErr == nil && complete != nil {
 		return nil
 	}
+	if s.imagesInUse()[cached] {
+		return fmt.Errorf("%s is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image", filepath.Base(cached))
+	}
 	if err := os.RemoveAll(cached); err != nil {
 		return err
 	}
@@ -545,10 +551,33 @@ func (s *Server) cacheBudget(dir string) int64 {
 	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
 }
 
+func (s *Server) cachePath(image string) string {
+	return filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an unpacked image is not a spare a machine consumes at create, it is the read-only lower layer every machine of that image keeps mounted for as long as it runs — so deleting one to make room takes the running guests' filesystem out from under them. Which images are spoken for is read from the machines themselves rather than tracked alongside them, because the runner is restarted and its memory is not: a spec on disk outlives the process that wrote it, and a machine whose image is missing from this set is a machine about to lose its rootfs.
+func (s *Server) imagesInUse() map[string]bool {
+	ids, err := s.machineIDs()
+	if err != nil {
+		return nil
+	}
+	inUse := map[string]bool{}
+	for _, id := range ids {
+		spec := s.readSpec(id)
+		if spec == nil || spec.Image == "" {
+			continue
+		}
+		base := s.cachePath(spec.Image)
+		inUse[base], inUse[base+".tar"] = true, true
+	}
+	return inUse
+}
+
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	if budget <= 0 {
 		return
 	}
+	inUse := s.imagesInUse()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -583,7 +612,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		if used <= budget {
 			return
 		}
-		if a.path == keep {
+		if a.path == keep || inUse[a.path] {
 			continue
 		}
 		if err := os.RemoveAll(a.path); err != nil {
@@ -591,6 +620,10 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		}
 		used -= a.size
 		slog.Info("image cache: evicted an image to stay inside the volume", "image", filepath.Base(a.path), "bytes", a.size)
+	}
+	if used > budget {
+		slog.Warn("image cache: over its share of the volume, and every image left is one a machine is running from",
+			"bytes", used, "budget", budget)
 	}
 }
 
