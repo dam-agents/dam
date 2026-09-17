@@ -125,7 +125,7 @@ function readReclaimableBytes(): number | null {
   ]);
 }
 
-interface MemSample {
+export interface MemSample {
   used: number;
   limit: number;
   text: string;
@@ -147,9 +147,9 @@ function cgroupUsage(limit: number): MemSample | null {
   };
 }
 
-function machineUsage(): MemSample | null {
-  const total = readMeminfoBytes("MemTotal");
-  const available = readMeminfoBytes("MemAvailable");
+export function machineUsage(meminfo = "/proc/meminfo"): MemSample | null {
+  const total = readMeminfoBytes("MemTotal", meminfo);
+  const available = readMeminfoBytes("MemAvailable", meminfo);
   if (total === null || available === null || total <= 0) return null;
   const used = Math.max(0, total - available);
   return { used, limit: total, text: `machine ${mib(used)}/${mib(total)}MB` };

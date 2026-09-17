@@ -1211,10 +1211,13 @@ controller:
       # spec need not spend the full window in a real wait.
       #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
-      # reaper: at the threshold fraction of the pod's memory limit (default
+      # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
-      # so the harness survives instead of the whole container being
-      # OOM-killed. Set `MEM_REAPER=off` to disable.
+      # so the harness survives instead of the whole agent being OOM-killed.
+      # The ceiling is the pod's cgroup limit for a container, and the machine's
+      # own memory on the vm Backend, which has no cgroup limit; a container
+      # without a limit is left unwatched rather than measured against the node
+      # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
 

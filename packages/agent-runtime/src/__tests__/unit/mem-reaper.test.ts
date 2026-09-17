@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  machineUsage,
   pickVictim,
   readMeminfoBytes,
   type ProcEntry,
@@ -90,11 +91,18 @@ describe("readMeminfoBytes", () => {
     expect(readMeminfoBytes("MemAvailable", meminfo)).toBe(1527552 * 1024);
   });
 
-  it("does not confuse MemFree with MemAvailable", () => {
-    const total = readMeminfoBytes("MemTotal", meminfo) ?? 0;
-    const available = readMeminfoBytes("MemAvailable", meminfo) ?? 0;
+  it("reads headroom from MemAvailable, not MemFree", () => {
+    const sample = machineUsage(meminfo);
+    const total = 2074964 * 1024;
+    expect(sample).not.toBeNull();
+    expect(sample?.limit).toBe(total);
+    // TEST_SCENARIO: these figures are a real guest's: 741 MB of the shortfall
+    // TEST_SCENARIO: between MemTotal and MemFree is reclaimable cache. Keyed on
+    // TEST_SCENARIO: MemFree the machine reads 92% used while idle, past the
+    // TEST_SCENARIO: 0.93 reaper threshold's shoulder; keyed on MemAvailable it
+    // TEST_SCENARIO: reads 26% and nothing is reaped.
+    expect((sample?.used ?? 0) / total).toBeCloseTo(0.264, 2);
     const free = readMeminfoBytes("MemFree", meminfo) ?? 0;
-    expect((total - available) / total).toBeLessThan(0.3);
     expect((total - free) / total).toBeGreaterThan(0.9);
   });
 
