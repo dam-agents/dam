@@ -10,8 +10,6 @@
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "5.5.0",
     "busboy": "^1.6.0",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
     "file-type": "^22.0.1",
     "js-yaml": "^4.1.0",
     "smol-toml": "^1.8.0",
