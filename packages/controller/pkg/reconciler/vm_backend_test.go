@@ -716,7 +716,7 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
-// TEST_SCENARIO: the runner unpacks a container image so every machine of that image shares one read-only tree, and restoring a rootfs faithfully means writing the ownership its files carry. Under a security policy that drops every capability, tar cannot: it fails first on chown and then, given only CHOWN, on setting a mode it no longer owns. Both capabilities are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it.
+// TEST_SCENARIO: DAC_OVERRIDE is what lets the runner go on managing machine directories that a release which briefly gave each VMM its own uid chowned away from it — uid 0 is permission-checked like anyone else on a directory it does not own, so without it every machine created while that was on becomes unmanageable. CHOWN and FOWNER were held for an image unpack the runner no longer performs and guard nothing today; they are asserted so that withdrawing them is a decision somebody makes rather than a line somebody deletes.
 func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -727,11 +727,11 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	require.NoError(t, err)
 	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
 	require.NotNil(t, caps)
-	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
-	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
-	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
 	assert.Contains(t, caps.Add, corev1.Capability("DAC_OVERRIDE"),
-		"and then writes on into the directory it just gave away, which bits alone forbid even to root")
+		"or a machine directory an earlier per-VM uid chowned away is one this runner can no longer manage")
+	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
+	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "left from an unpack the runner no longer does")
+	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "as is this")
 }
 
 // TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.
@@ -759,7 +759,7 @@ func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
 		"and once it answers it is only checked for health")
 }
 
-// TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches the shared unpacked image through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.
+// TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches what the runner shares with it through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once; machines booting from a per-machine archive failed to finish starting under the drop as well. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.
 func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)

@@ -174,9 +174,9 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, CHOWN + FOWNER so it can restore a container image's own
-    # ownership when it unpacks one for its machines to share, and
-    # DAC_OVERRIDE so that unpack can write into the read-only and
-    # foreign-owned directories such a rootfs contains.
+    # ownership for an image unpack the runner no longer does, and
+    # DAC_OVERRIDE so it can manage machine directories that a release
+    # which briefly gave each VMM its own uid chowned away from it.
     # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
