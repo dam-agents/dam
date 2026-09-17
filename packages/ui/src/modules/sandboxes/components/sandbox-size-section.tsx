@@ -6,8 +6,8 @@ import { Select } from "@/components/ui/select";
 import { HintTooltip } from "@/components/ui/tooltip";
 
 import { useBudgetReserved } from "../../budgets/api/queries.js";
-import { formatCores, formatGi } from "../../budgets/lib/format.js";
 import {
+  formatCpuMemory,
   formatSizeLabel,
   freeSlots,
   SIZE_MULTIPLIERS,
@@ -80,9 +80,7 @@ export function SandboxSizeSection({
         >
           {options.map((option) => (
             <option key={keyOf(option)} value={keyOf(option)}>
-              {unit
-                ? formatSizeLabel(option, unit)
-                : `${formatCores(option.cpuMilli)} CPU · ${formatGi(option.memoryMi * 1024 ** 2)} Gi`}
+              {unit ? formatSizeLabel(option, unit) : formatCpuMemory(option)}
             </option>
           ))}
         </Select>

@@ -1,14 +1,14 @@
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-
 import { getBrand } from "../../../brand.js";
-import { ListSkeleton } from "../../../components/list-skeleton.js";
 import type { AgentView } from "../../../types.js";
-import { BindAgentRow } from "../../agents/components/bind-agent-row.js";
-import { CreateAgentInline } from "../../agents/components/create-agent-inline.js";
-import { useInlineAgentCreate } from "../../agents/hooks/use-inline-agent-create.js";
+import {
+  AgentBindPicker,
+  type BindPickerCopy,
+} from "../../agents/components/bind/agent-bind-picker.js";
+import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
 import { useBindSlackChannel } from "../api/mutations.js";
+import { useSlackBindFlow } from "../api/queries.js";
 import {
   type BindErrorCopy,
   bindErrorCopy,
@@ -23,24 +23,12 @@ const callbackError = readCallbackErrorFromSearch(window.location.search);
 export function SlackBindView() {
   const brandShort = getBrand().short;
   const bind = useBindSlackChannel();
-  const {
-    isLoading,
-    displayedAgents,
-    justCreatedId,
-    creating,
-    openCreateForm,
-    markCreated,
-  } = useInlineAgentCreate();
+  const flow = useSlackBindFlow(flowId);
   const [error, setError] = useState<BindErrorCopy | null>(null);
   const [bound, setBound] = useState<{
     agentName: string;
     channelTitle: string | null;
   } | null>(null);
-
-  const handleCreated = (agent: AgentView) => {
-    markCreated(agent);
-    setError(null);
-  };
 
   if (callbackError) {
     return (
@@ -70,13 +58,6 @@ export function SlackBindView() {
   if (error?.terminal) {
     return <TerminalError copy={error} />;
   }
-  if (isLoading) {
-    return (
-      <Page title="Connect an agent to this channel">
-        <ListSkeleton rows={3} />
-      </Page>
-    );
-  }
 
   const pick = (agent: AgentView) => {
     setError(null);
@@ -93,48 +74,31 @@ export function SlackBindView() {
     );
   };
 
-  const hasAgents = displayedAgents.length > 0;
-
   return (
-    <Page title="Connect an agent to this channel">
-      <p className="text-sm text-muted-foreground">
-        {hasAgents
-          ? "Everyone in this Slack channel will be able to use the agent you pick. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn."
-          : "You don't own any agents yet. Create one to connect it — everyone in this Slack channel will then be able to use it, running under its own connected accounts and your acceptance of the Terms of Use."}
-      </p>
-      {error && (
-        <p className="text-sm text-red-600">
-          {error.title} — {error.hint}
-        </p>
-      )}
-      {hasAgents && (
-        <div className="flex flex-col gap-2">
-          {displayedAgents.map((agent) => (
-            <BindAgentRow
-              key={agent.id}
-              agent={agent}
-              highlighted={agent.id === justCreatedId}
-              disabled={bind.isPending}
-              pending={bind.isPending && bind.variables?.agentId === agent.id}
-              onPick={() => pick(agent)}
-            />
-          ))}
-        </div>
-      )}
-      {creating ? (
-        <CreateAgentInline onCreated={handleCreated} />
-      ) : hasAgents ? (
-        <Button
-          variant="link"
-          size="inline"
-          onClick={openCreateForm}
-          className="self-start text-sm text-muted-foreground hover:text-foreground"
-        >
-          + Create a new agent
-        </Button>
-      ) : null}
-    </Page>
+    <AgentBindPicker
+      copy={pickerCopy(flow.data?.name)}
+      error={error}
+      pending={bind.isPending}
+      onPick={pick}
+      onAgentCreated={() => setError(null)}
+    />
   );
+}
+
+function pickerCopy(channelName: string | undefined): BindPickerCopy {
+  return {
+    messenger: "slack",
+    title: channelName
+      ? `Pick an agent for #${channelName}`
+      : "Pick an agent for this channel",
+    subtitle:
+      "Choose which agent to add to this channel. You can add more agents to the same channel later.",
+    emptySubtitle:
+      "You don't own any agents yet. Create one to add it to this channel.",
+    consent:
+      "Everyone in the channel will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
+    action: "Add to channel",
+  };
 }
 
 function BindSuccess({
@@ -147,12 +111,13 @@ function BindSuccess({
   brandShort: string;
 }) {
   return (
-    <Page
+    <BindTerminalPage
+      messenger="slack"
       title={
         channelTitle ? `“${channelTitle}” is connected` : "Channel connected"
       }
     >
-      <p className="text-sm text-muted-foreground">
+      <p>
         This channel is now connected to <strong>{agentName}</strong>. Return to
         Slack — the bot has posted a confirmation. A channel can hold several
         agents: start a mention with an agent's name to reach that one, or
@@ -162,43 +127,14 @@ function BindSuccess({
         </code>{" "}
         there to disconnect this one.
       </p>
-      <DashboardButton label="Go to dashboard" />
-    </Page>
+    </BindTerminalPage>
   );
 }
 
 function TerminalError({ copy }: { copy: BindErrorCopy }) {
   return (
-    <Page title={copy.title}>
-      <p className="text-sm text-muted-foreground">{copy.hint}</p>
-      <DashboardButton label="Go to dashboard" />
-    </Page>
-  );
-}
-
-function DashboardButton({ label }: { label: string }) {
-  return (
-    <Button
-      type="button"
-      className="self-start"
-      onClick={() => window.location.assign("/")}
-    >
-      {label}
-    </Button>
-  );
-}
-
-function Page({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mx-auto w-full max-w-140 px-4 py-10 flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      {children}
-    </div>
+    <BindTerminalPage messenger="slack" title={copy.title}>
+      <p>{copy.hint}</p>
+    </BindTerminalPage>
   );
 }

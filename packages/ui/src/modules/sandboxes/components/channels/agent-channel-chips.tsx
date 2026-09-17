@@ -1,5 +1,7 @@
 import { ChannelType } from "api-server-api";
+import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../../types.js";
@@ -13,9 +15,11 @@ const SHOWN = 2;
 export function AgentChannelChips({
   agent,
   className,
+  children,
 }: {
   agent: AgentView;
   className?: string;
+  children?: ReactNode;
 }) {
   const slackNames = agent.channels
     .filter((c) => c.type === ChannelType.Slack)
@@ -25,13 +29,15 @@ export function AgentChannelChips({
     useTelegramChats(telegramReady ? agent.id : undefined).data?.chats ?? []
   ).map((chat) => chat.title);
 
-  if (slackNames.length === 0 && telegramNames.length === 0) return null;
+  if (slackNames.length === 0 && telegramNames.length === 0 && !children)
+    return null;
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <span className={cn("flex flex-wrap items-center gap-1.5", className)}>
       <MessengerChip iconSlug="slack" names={slackNames} />
       <MessengerChip iconSlug="telegram" names={telegramNames} />
-    </div>
+      {children}
+    </span>
   );
 }
 
@@ -46,8 +52,9 @@ function MessengerChip({
   const shown = names.slice(0, SHOWN);
   const hidden = names.length - shown.length;
   return (
-    <span
-      className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+    <Badge
+      variant="muted"
+      className="max-w-full gap-1.5"
       title={names.join(", ")}
     >
       <ConnectionIcon
@@ -60,6 +67,6 @@ function MessengerChip({
         {shown.join(", ")}
         {hidden > 0 && ` +${hidden}`}
       </span>
-    </span>
+    </Badge>
   );
 }
