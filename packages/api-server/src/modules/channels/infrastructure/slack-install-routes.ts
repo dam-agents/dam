@@ -197,10 +197,6 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
 
     const organization = deps.oauth.enterpriseId;
     if (organization && result.enterprise?.id !== organization) {
-      await deps.installs.recordRefusal({
-        teamId,
-        teamName: result.team?.name ?? null,
-      });
       const revokeError = await revokeToken(result.access_token);
       securityLog(revokeError ? "error" : "warn", "slack.install.denied", {
         category: "credential",

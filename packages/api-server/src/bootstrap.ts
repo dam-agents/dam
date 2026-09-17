@@ -49,7 +49,6 @@ import {
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
-import type { SlackGateway } from "./modules/channels/infrastructure/slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
@@ -671,7 +670,6 @@ export async function bootstrap() {
     "install:slack",
     SLACK_INSTALL_HANDOFF_TTL_MS,
   );
-  let slackGateway: SlackGateway | null = null;
   const slackInstalls = createSlackInstallService({
     find: findSlackInstall(db),
     upsert: upsertSlackInstall(db),
@@ -679,8 +677,6 @@ export async function bootstrap() {
     secrets: secretStores.default(),
     installLock: createXactLock(db),
     envBotToken: config.slackBotToken,
-    identifyWorkspace: async (botToken) =>
-      (await slackGateway?.identifyWorkspace(botToken)) ?? null,
   });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
@@ -711,14 +707,15 @@ export async function bootstrap() {
 
   const slackGatewayFactory = slackTokens
     ? () =>
-        (slackGateway = createBoltSlackGateway({
+        createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
+          setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
           appToken: slackTokens.appToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
-        }))
+        })
     : fakeSlackGateway
-      ? () => (slackGateway = fakeSlackGateway)
+      ? () => fakeSlackGateway
       : undefined;
 
   const acpTurnWatch = {
@@ -765,7 +762,9 @@ export async function bootstrap() {
 
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
     listInstalledWorkspaces: async () =>
-      (await listSlackInstalls(db)()).map((i) => i.teamId),
+      (await listSlackInstalls(db)())
+        .filter((i) => i.credentialState === "active")
+        .map((i) => i.teamId),
     standingIn: async (slackChannelId, teamId) =>
       slackWorker ? slackWorker.standingIn(slackChannelId, teamId) : "unknown",
   });

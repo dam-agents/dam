@@ -28,6 +28,7 @@ type ChatStopStreamArgs = Parameters<
 
 export interface BoltSlackGatewayDeps {
   resolveBotToken: SlackTokenResolver;
+  setOriginalWorkspace: (teamId: SlackWorkspace) => void;
   appToken: string;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
@@ -103,6 +104,27 @@ export function createBoltSlackGateway(
     })());
     await pending;
     return auth;
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Which workspace the operator's credential
+   * belongs to. Slack names that workspace on every event it sends, while the
+   * bindings made before this platform could connect a second workspace name it
+   * by the empty string, and both have to reach one credential. A workspace
+   * connected over OAuth needs none of this — Slack returns its id beside its
+   * token — so this is asked once, for the one credential that arrives without
+   * its workspace. It is asked before the socket opens, so no message is ever
+   * served while the answer is unknown, and a failure to learn it is a failure
+   * to start, which the worker already retries.
+   */
+  async function learnOriginalWorkspace(bolt: BoltApp): Promise<void> {
+    const envToken = await deps.resolveBotToken(ORIGINAL_WORKSPACE);
+    if (!envToken) throw new Error("no bot token for the original workspace");
+    const identity = await bolt.client.auth.test({ token: envToken });
+    if (typeof identity.team_id !== "string") {
+      throw new Error("Slack did not name the original workspace");
+    }
+    deps.setOriginalWorkspace(identity.team_id);
   }
 
   return {
@@ -208,6 +230,7 @@ export function createBoltSlackGateway(
 
       app = bolt;
       try {
+        await learnOriginalWorkspace(bolt);
         await bolt.start();
       } catch (err) {
         app = null;
@@ -616,16 +639,6 @@ export function createBoltSlackGateway(
     async getBotUserId(teamId: SlackWorkspace): Promise<string | null> {
       if (!app) return null;
       return (await testedAuthFor(teamId))?.botUserId ?? null;
-    },
-
-    async identifyWorkspace(botToken: string): Promise<string | null> {
-      if (!app) return null;
-      try {
-        const result = await app.client.auth.test({ token: botToken });
-        return typeof result.team_id === "string" ? result.team_id : null;
-      } catch {
-        return null;
-      }
     },
   };
 }

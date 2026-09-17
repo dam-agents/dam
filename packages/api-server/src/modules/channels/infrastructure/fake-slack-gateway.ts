@@ -377,10 +377,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return botUserId;
     },
 
-    async identifyWorkspace() {
-      return null;
-    },
-
     setGrantedScopes(scopes) {
       grantedScopes = scopes ? new Set(scopes) : null;
     },

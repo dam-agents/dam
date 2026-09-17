@@ -72,8 +72,8 @@ export const slackCredentialStateEnum = pgEnum("slack_credential_state", [
 export const slackInstalls = pgTable("slack_installs", {
   teamId: text("team_id").primaryKey(),
   teamName: text("team_name"),
-  secretPath: text("secret_path"),
-  secretField: text("secret_field"),
+  secretPath: text("secret_path").notNull(),
+  secretField: text("secret_field").notNull(),
   installedBy: text("installed_by"),
   credentialState: slackCredentialStateEnum("credential_state")
     .notNull()
