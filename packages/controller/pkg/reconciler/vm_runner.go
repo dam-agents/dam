@@ -375,6 +375,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm gives each machine its own unprivileged uid and runs that machine's VMM as it, so a guest that breaks out of its own VMM lands on a uid that owns nothing else — the runner holds one boundary per machine rather than one for all of them. Reaching that costs SETUID and SETGID: a uid-0 process whose capability set lacks them cannot call setuid at all, so without them the drop silently does not happen. It needs a data root unprivileged uids can traverse, which is why HOME is /var/lib/smolvm, and the chown of each machine's dir, which is the capability unpacking an image already holds.
+// UNIT_BOUNDARY_DESCRIPTION: unpacking an image writes a tree the image itself describes, and a faithful rootfs holds directories nobody may write into: this one hands 2,596 of them to an unprivileged uid and marks 11 more read-only, /usr/lib among them. Restoring that faithfully means writing into a directory after giving it away, which a uid-0 process cannot do on permission bits alone — root is excused from them only by DAC_OVERRIDE. Without it tar fails on the first such directory and on every entry beneath it, and the half-made tree it leaves behind cannot even be deleted, for the same reason it could not be filled.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
@@ -469,7 +470,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:       &root,
-							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "CHOWN", "FOWNER", "SETUID", "SETGID"}},
+							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "CHOWN", "FOWNER", "SETUID", "SETGID", "DAC_OVERRIDE"}},
 							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 						},
 						Resources:    resources,

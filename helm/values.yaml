@@ -174,9 +174,11 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, CHOWN + FOWNER so it can restore a container image's own
-    # ownership when it unpacks one for its machines to share, and SETUID +
+    # ownership when it unpacks one for its machines to share, SETUID +
     # SETGID so each machine's VMM runs under its own unprivileged uid
-    # rather than as root. Set this only where that
+    # rather than as root, and DAC_OVERRIDE so that unpack can write into
+    # the read-only and foreign-owned directories such a rootfs contains.
+    # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
@@ -301,7 +303,8 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and CHOWN + FOWNER + SETUID + SETGID which only
+    # allowedCapabilities, and CHOWN + FOWNER + SETUID + SETGID +
+    # DAC_OVERRIDE which only
     # the VM runner requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent

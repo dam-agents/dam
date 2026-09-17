@@ -378,6 +378,17 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	return s.Runtime.Start(id)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a failing tar reports every entry it could not write, which for a rootfs it may not write into at all is one line per file — 2.6 MB of them, observed. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server, so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches and unpacks the image again. Keeping the head of the output keeps the first failure, which is the one that explains the rest.
+const capturedOutput = 2000
+
+func firstLines(out string) string {
+	out = strings.TrimSpace(out)
+	if len(out) <= capturedOutput {
+		return out
+	}
+	return out[:capturedOutput] + "… (truncated)"
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner uses is fetched once for the cluster rather than once per machine. It is stored unpacked, not as an archive: smolvm mounts an unpacked rootfs as a read-only lower layer that every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. Unpacked under a unique temporary name and renamed, so runners racing on the same image all end up with a whole tree rather than half of one.
 func (s *Server) cacheImage(ref, rootfs string) error {
 	if err := os.MkdirAll(filepath.Dir(rootfs), 0o755); err != nil {
@@ -408,11 +419,11 @@ func (s *Server) cacheImage(ref, rootfs string) error {
 	if err := export.Run(); err != nil {
 		_ = unpack.Wait()
 		slog.Warn("image fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("exporting %s: %w: %s", ref, err, strings.TrimSpace(exportErr.String()))
+		return fmt.Errorf("exporting %s: %w: %s", ref, err, firstLines(exportErr.String()))
 	}
 	if err := unpack.Wait(); err != nil {
 		slog.Warn("image unpack failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("unpacking %s: %w: %s", ref, err, strings.TrimSpace(unpackErr.String()))
+		return fmt.Errorf("unpacking %s: %w: %s", ref, err, firstLines(unpackErr.String()))
 	}
 	slog.Info("image unpacked into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", dirSize(tmp))
 	if err := os.Rename(tmp, rootfs); err != nil {

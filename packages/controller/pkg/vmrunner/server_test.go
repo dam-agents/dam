@@ -728,3 +728,17 @@ func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T)
 	assert.Contains(t, h.calls(), "-I "+legacy,
 		"an archive left by an earlier release still boots rather than being refetched")
 }
+
+// TEST_SCENARIO: a tar that cannot write into the rootfs it is restoring reports every entry it failed on, which for a whole image is megabytes. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches and unpacks the image again. What is kept is the head, because the first failure is the one the rest follow from.
+func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
+	var flood strings.Builder
+	for i := 0; flood.Len() < 3_000_000; i++ {
+		fmt.Fprintf(&flood, "tar: usr/lib/entry-%d: Cannot mkdir: Permission denied\n", i)
+	}
+	kept := firstLines(flood.String())
+
+	assert.Less(t, len(kept), 32768/2, "what is kept leaves room for the rest of a condition message")
+	assert.Contains(t, kept, "usr/lib/entry-0:", "and it is the head, where the first failure is")
+	assert.Contains(t, kept, "truncated", "and it says that it is not the whole story")
+	assert.Equal(t, "boom", firstLines("  boom  "), "output that already fits is passed through, trimmed")
+}
