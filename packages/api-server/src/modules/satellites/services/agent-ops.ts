@@ -102,15 +102,10 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
     const { owner } = await resolve(agentId, name);
     const job = await deps.repo.getJob(owner, name, sequence);
     if (job === null || job.agentId !== agentId)
-      return {
-        ref: formatJobRef(name, sequence),
-        status: "interrupted",
-        exitCode: null,
-        output: null,
-        outputPath: null,
-        truncated: false,
-        reason: "no such job",
-      };
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `no job ${formatJobRef(name, sequence)} belongs to this agent`,
+      });
     if (isTerminal(job.status))
       await deps.repo.markDelivered(owner, name, sequence);
     return outcome(agentId, job);

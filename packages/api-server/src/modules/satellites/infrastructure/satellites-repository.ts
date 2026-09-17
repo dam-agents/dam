@@ -197,7 +197,9 @@ export function createSatellitesRepository(db: Db) {
             ),
           )
           .returning({ next: satellites.nextSequence });
-        const sequence = (bumped?.next ?? 1) - 1;
+        if (bumped === undefined)
+          throw new Error(`satellite ${input.satellite} no longer exists`);
+        const sequence = bumped.next - 1;
         const [row] = await tx
           .insert(satelliteJobs)
           .values({ ...input, sequence })

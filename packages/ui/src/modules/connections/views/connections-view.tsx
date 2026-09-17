@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { SatellitesSection } from "../../satellites/components/satellites-section.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionGroupCard } from "../components/connection-group-card.js";
@@ -15,7 +16,6 @@ import { ConnectionMaintenanceDialog } from "../components/connection-update-cre
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
-import { SatellitesSection } from "../../satellites/components/satellites-section.js";
 
 export function ConnectionsView() {
   const connectionsQ = useAppConnections({ fresh: true });

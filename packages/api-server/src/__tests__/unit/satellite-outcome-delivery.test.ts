@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createOutcomeDelivery } from "../../modules/satellites/services/outcome-delivery.js";
+import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import type { JobRow } from "../../modules/satellites/domain/types.js";
 
 /**
@@ -137,5 +138,54 @@ describe("waking an agent with a finished job", () => {
     });
     expect(await deliver("agent-1")).toBe(true);
     expect(events).toHaveLength(1);
+  });
+});
+
+describe("reporting an outcome reaches the wake", () => {
+  it("leaves the claim to delivery, so a reported job still wakes the agent", async () => {
+    const rows = [job({ status: "running", deliveredAt: null })];
+    const repo = {
+      settle: async () => {
+        rows[0] = { ...rows[0]!, status: "done" };
+        return rows[0]!;
+      },
+      claimUndeliveredOutcomes: async () => {
+        const undelivered = rows.filter((r) => r.deliveredAt === null);
+        rows[0] = { ...rows[0]!, deliveredAt: new Date() };
+        return undelivered;
+      },
+      touch: async () => {},
+    };
+    const events: unknown[] = [];
+    const deliver = createOutcomeDelivery({
+      repo: repo as never,
+      bump: async (_agentId, list) => {
+        events.push(...list);
+        return 1;
+      },
+      enqueue: async () => {},
+      wakeAgent: async () => {},
+      spillLog: async () => null,
+      log: () => {},
+    });
+
+    const workerOps = createSatelliteWorkerOps({
+      repo: repo as never,
+      maxConcurrentCeiling: 64,
+      deliverOutcome: async ({ agentId }) => {
+        await deliver(agentId);
+      },
+    });
+
+    await workerOps.report("alice", {
+      satellite: "gpu-box",
+      sequence: 7,
+      outcome: { status: "done", exitCode: 0, output: "ok", truncated: false },
+    });
+
+    expect(
+      events,
+      "report must not consume the claim delivery needs",
+    ).toHaveLength(1);
   });
 });

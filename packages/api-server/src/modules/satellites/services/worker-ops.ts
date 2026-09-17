@@ -117,12 +117,6 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
         patch,
       );
       if (settled === null) return;
-      const fresh = await deps.repo.markDelivered(
-        owner,
-        input.satellite,
-        input.sequence,
-      );
-      if (!fresh) return;
       await deps.deliverOutcome({
         owner,
         agentId: settled.agentId,
@@ -152,13 +146,12 @@ export function createLeaseSweep(deps: WorkerOpsDeps) {
         },
       );
       if (settled === null) continue;
-      if (await deps.repo.markDelivered(job.owner, job.satellite, job.sequence))
-        await deps.deliverOutcome({
-          owner: job.owner,
-          agentId: job.agentId,
-          satellite: job.satellite,
-          sequence: job.sequence,
-        });
+      await deps.deliverOutcome({
+        owner: job.owner,
+        agentId: job.agentId,
+        satellite: job.satellite,
+        sequence: job.sequence,
+      });
     }
     await deps.repo.purgeExpired(now());
     return expired.length;
