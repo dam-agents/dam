@@ -165,7 +165,7 @@ trust_cache_key() {
 # No CA file mounted means the gateway never intercepts this agent's traffic, so
 # every host returns its real public certificate, which the public CAs cover.
 if [ -s "$mitm_ca" ]; then
-	trust_t0=$(date +%s)
+	trust_t0=$(date +%s%N)
 	trust_source=/usr/share/pki/ca-trust-source/ca-bundle.trust.p11-kit
 	cache=/workspace/ca-trust
 	key=""
@@ -194,7 +194,7 @@ if [ -s "$mitm_ca" ]; then
 	if [ "$trusted" = no ]; then
 		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
 	else
-		echo "agent-entrypoint: platform CA trusted in $(($(date +%s) - trust_t0))s (from $trusted)"
+		echo "agent-entrypoint: platform CA trusted in $((($(date +%s%N) - trust_t0) / 1000000))ms (from $trusted)"
 	fi
 fi
 
