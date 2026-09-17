@@ -1228,7 +1228,10 @@ func TestRenderEnvoyBootstrap_GatewayStatsExcludePerWorkerSeries(t *testing.T) {
 		"server.memory_allocated",
 		"server.uptime",
 		"server.concurrency",
-		"server.watchdog_miss",
+		"main_thread.watchdog_miss",
+		"main_thread.watchdog_mega_miss",
+		"workers.watchdog_miss",
+		"workers.watchdog_mega_miss",
 	} {
 		assert.True(t, statAdmitted(patterns, name), "expected %q to be exported", name)
 	}
@@ -1239,8 +1242,7 @@ func TestRenderEnvoyBootstrap_GatewayStatsExcludePerWorkerSeries(t *testing.T) {
 		"listener.0.0.0.0_15001.worker_95.downstream_cx_length_ms",
 		"server.worker_0.watchdog_mega_miss",
 		"server.worker_95.watchdog_miss",
-		"main_thread.watchdog_miss",
-		"workers.watchdog_miss",
+		"server.watchdog_miss",
 		"filesystem.write_completed",
 		"runtime.load_success",
 	} {
