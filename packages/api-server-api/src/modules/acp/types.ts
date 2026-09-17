@@ -33,33 +33,6 @@ export function buildPlatformTurnEndedNotification(
   });
 }
 
-export const platformTurnTelemetryParamsSchema = z.object({
-  sessionId: z.string().min(1),
-  telemetryPromptId: z.string().min(1),
-});
-export type PlatformTurnTelemetryParams = z.infer<
-  typeof platformTurnTelemetryParamsSchema
->;
-
-export const platformTurnTelemetryNotificationSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  method: z.literal("platform/turnTelemetry"),
-  params: platformTurnTelemetryParamsSchema,
-});
-export type PlatformTurnTelemetryNotification = z.infer<
-  typeof platformTurnTelemetryNotificationSchema
->;
-
-export function buildPlatformTurnTelemetryNotification(
-  params: PlatformTurnTelemetryParams,
-): PlatformTurnTelemetryNotification {
-  return platformTurnTelemetryNotificationSchema.parse({
-    jsonrpc: "2.0",
-    method: "platform/turnTelemetry",
-    params,
-  });
-}
-
 export const platformFrameMetaSchema = z.object({
   at: z.string().datetime({ offset: true }).optional(),
   replayFor: z.string().min(1).optional(),

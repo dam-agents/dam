@@ -88,9 +88,6 @@ function applyUpdateOf(
         update.telemetryPromptId ?? telemetryPromptId,
       );
 
-    case "platform_turn_telemetry":
-      return stampLastUnkeyedReply(messages, update.telemetryPromptId);
-
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
@@ -560,34 +557,6 @@ function closeActiveAssistant(
         }
       : x,
   );
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the live follow-up for a prompt id the harness
- * reported after its turn had already closed, so turnEnded went out without it.
- * The turn that just ended is the last settled reply, and the one still missing
- * a name; a reload would re-derive the same join from the harness's history, so
- * this only has to catch the reply while the tab stays open.
- */
-function stampLastUnkeyedReply(
-  messages: Message[],
-  telemetryPromptId: string,
-): Message[] {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (
-      m.role === "assistant" &&
-      !m.notice &&
-      !m.streaming &&
-      !m.queued &&
-      m.telemetryPromptId === undefined
-    ) {
-      return messages.map((x, j) =>
-        j === i ? { ...x, telemetryPromptId } : x,
-      );
-    }
-  }
-  return messages;
 }
 
 /**

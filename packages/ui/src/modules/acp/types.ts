@@ -4,15 +4,11 @@ import type {
   PlatformPromptStartedParams,
   PlatformRunStartedParams,
   PlatformTurnEndedParams,
-  PlatformTurnTelemetryParams,
 } from "api-server-api";
 
 export type AcpUpdate =
   | SessionUpdate
   | ({ sessionUpdate: "platform_turn_ended" } & PlatformTurnEndedParams)
-  | ({
-      sessionUpdate: "platform_turn_telemetry";
-    } & PlatformTurnTelemetryParams)
   | ({
       sessionUpdate: "platform_prompt_accepted";
     } & PlatformPromptAcceptedParams)

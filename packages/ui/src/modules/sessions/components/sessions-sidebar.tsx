@@ -1,5 +1,5 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
-import { SessionMode } from "api-server-api";
+import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -172,7 +172,7 @@ export function SessionsSidebar({
                   agentId: selectedAgent,
                   sessionId: s.sessionId,
                   signal: "logs",
-                  sinceHours: 24 * 30,
+                  sinceHours: TELEMETRY_MAX_SINCE_HOURS,
                 }),
             }
           : {})}

@@ -4,7 +4,6 @@ import {
   platformPromptStartedParamsSchema,
   platformRunStartedParamsSchema,
   platformTurnEndedParamsSchema,
-  platformTurnTelemetryParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
 
@@ -60,19 +59,6 @@ export function routeExtNotification(
       if (!p) return null;
       return {
         update: { sessionUpdate: "platform_turn_ended", ...p },
-        sessionId: p.sessionId,
-        frame,
-      };
-    }
-    case "platform/turnTelemetry": {
-      const p = parseExtParams(
-        method,
-        platformTurnTelemetryParamsSchema,
-        params,
-      );
-      if (!p) return null;
-      return {
-        update: { sessionUpdate: "platform_turn_telemetry", ...p },
         sessionId: p.sessionId,
         frame,
       };

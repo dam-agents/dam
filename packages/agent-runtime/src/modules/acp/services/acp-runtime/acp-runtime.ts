@@ -5,7 +5,6 @@ import type { PodSession } from "agent-runtime-api";
 import {
   buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
-  buildPlatformTurnTelemetryNotification,
   platformUndeliveredPromptSchema,
   SessionType,
   type PlatformUndeliveredPrompt,
@@ -59,7 +58,6 @@ import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
-const LATE_TELEMETRY_GRACE_MS = 30 * 1000;
 
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
 
@@ -560,20 +558,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: send one line to the channels watching a session
-   * without writing it to the transcript. Used for the late telemetry-id
-   * follow-up, which is a live convenience only — a session load rebuilds the
-   * same attribution from the harness's own history, so replaying the follow-up
-   * would risk stamping the wrong reply on the way back.
-   */
-  function broadcastToSession(sessionId: string, line: string): void {
-    const out = rewriteAuthError(line);
-    for (const channel of engagedChannelsFor(sessionId)) {
-      if (channel.isOpen()) channel.send(out);
-    }
-  }
-
   function sendToChannel(c: ClientChannel, line: string): void {
     if (c.isOpen()) c.send(line);
   }
@@ -607,11 +591,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   const telemetryPromptIds = new Map<string, string>();
-  const turnEndedAt = new Map<string, number>();
 
   function tearDownSession(sessionId: string): void {
     telemetryPromptIds.delete(sessionId);
-    turnEndedAt.delete(sessionId);
     if (sessionCloseSupported && !harnessColdSessions.has(sessionId)) {
       lease.send({
         jsonrpc: "2.0",
@@ -757,10 +739,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const telemetryPromptId = turnEnded
             ? telemetryPromptIds.get(sid)
             : undefined;
-          if (turnEnded) {
-            telemetryPromptIds.delete(sid);
-            turnEndedAt.set(sid, Date.now());
-          }
+          if (turnEnded) telemetryPromptIds.delete(sid);
           transcript.append(
             sid,
             JSON.stringify(
@@ -1104,29 +1083,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(`reset session ${sessionId}`);
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: the harness names the running turn's telemetry
+     * from a stop hook, which the harness runs to completion before it returns
+     * the turn's result — so the report lands while the turn is still in flight
+     * and rides that turn's end-of-turn signal. A report the runtime cannot
+     * place on an in-flight turn carries no turn identity of its own, so it is
+     * dropped rather than guessed onto a bystander; the reply is keyed by
+     * position when the session is next loaded from the harness's own history.
+     */
     recordTelemetryPromptId(sessionId, telemetryPromptId) {
       if (promptScheduler.hasTurnInFlight(sessionId)) {
         telemetryPromptIds.set(sessionId, telemetryPromptId);
         return;
       }
-      const endedAt = turnEndedAt.get(sessionId);
-      if (
-        endedAt !== undefined &&
-        Date.now() - endedAt <= LATE_TELEMETRY_GRACE_MS
-      ) {
-        broadcastToSession(
-          sessionId,
-          JSON.stringify(
-            buildPlatformTurnTelemetryNotification({
-              sessionId,
-              telemetryPromptId,
-            }),
-          ),
-        );
-        return;
-      }
       deps.log?.(
-        `telemetry prompt id for ${sessionId} arrived with no turn to attribute it to`,
+        `telemetry prompt id for ${sessionId} arrived with no turn to attribute it to; the reply is keyed by position on the next session load instead`,
       );
     },
 

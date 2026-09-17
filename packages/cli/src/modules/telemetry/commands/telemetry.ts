@@ -1,4 +1,9 @@
 import { Command } from "commander";
+import {
+  TELEMETRY_DEFAULT_SINCE_HOURS,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
+
 import type { AgentService } from "../../agent/index.js";
 import { createAgentResolver } from "../../agent/index.js";
 import {
@@ -22,8 +27,8 @@ import type {
 } from "../infrastructure/export-client.js";
 import type { TelemetryService } from "../services/telemetry-service.js";
 
-const DEFAULT_SINCE_HOURS = 24;
-const EXPORT_SINCE_HOURS = 24 * 30;
+const DEFAULT_SINCE_HOURS = TELEMETRY_DEFAULT_SINCE_HOURS;
+const EXPORT_SINCE_HOURS = TELEMETRY_MAX_SINCE_HOURS;
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
@@ -91,9 +96,11 @@ export function buildTelemetryCommand(deps: Deps): Command {
         },
       ) => {
         const { host, agent } = await hostAndAgent(deps, ref, opts.server);
-        const sinceHours = opts.since
-          ? Number(opts.since)
-          : DEFAULT_SINCE_HOURS;
+        const parsedSince = opts.since ? Number(opts.since) : Number.NaN;
+        const sinceHours =
+          Number.isFinite(parsedSince) && parsedSince > 0
+            ? parsedSince
+            : DEFAULT_SINCE_HOURS;
 
         const result = await deps.createTelemetryService(host).turns({
           agentId: agent.id,

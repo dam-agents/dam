@@ -83,11 +83,11 @@ describe("acp-runtime: the harness's prompt id on turnEnded", () => {
 
   /**
    * TEST_SCENARIO: The hook can lose its race with the turn's end — the report
-   * lands just after the turn closed, so it missed turnEnded. Rather than drop
-   * it, the runtime tells the session's viewers the id in a live follow-up, so
-   * the reply that just settled is still joined to its telemetry.
+   * lands after the turn closed, when no turn is in flight. It carries no turn
+   * identity, so the runtime drops it rather than guess it onto a bystander;
+   * the reply is keyed by position on the next session load instead.
    */
-  it("should attribute a report that lands just after the turn ended", () => {
+  it("should drop a report that lands with no turn to attribute it to", () => {
     const world = createWorld();
 
     const alice = world.connect();
@@ -98,10 +98,6 @@ describe("acp-runtime: the harness's prompt id on turnEnded", () => {
     world.runtime.recordTelemetryPromptId(SESSION, "otel-late");
 
     expect(endedWith(alice)[0]).not.toHaveProperty("telemetryPromptId");
-    expect(
-      alice
-        .saw("platform/turnTelemetry")
-        .map((frame) => (frame as { params: unknown }).params),
-    ).toEqual([{ sessionId: SESSION, telemetryPromptId: "otel-late" }]);
+    expect(alice.saw("platform/turnTelemetry")).toEqual([]);
   });
 });

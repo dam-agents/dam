@@ -121,6 +121,7 @@ import { clearUndelivered } from "../lib/undelivered-store.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
+const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
 function PanelDivider({
   stack,
@@ -282,16 +283,29 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
-  const telemetryStreaming = useMemo(
-    () => messages.some((m) => m.role === "assistant" && m.streaming),
-    [messages],
-  );
+  const telemetryLive = useMemo(() => {
+    if (messages.some((m) => m.role === "assistant" && m.streaming))
+      return true;
+    let lastReplyAt = 0;
+    for (const m of messages) {
+      if (m.role === "assistant" && !m.notice && m.at !== undefined) {
+        lastReplyAt = Math.max(lastReplyAt, Date.parse(m.at) || 0);
+      }
+    }
+    return lastReplyAt > 0 && now.getTime() - lastReplyAt < TELEMETRY_SETTLE_MS;
+  }, [messages, now]);
   const sessionTurns = useTurns(
     telemetryEnabled ? selectedAgent : null,
     telemetryEnabled ? sessionId : null,
     TELEMETRY_MAX_SINCE_HOURS,
-    telemetryStreaming,
+    telemetryLive,
   );
+  const turnsUnavailable =
+    telemetryEnabled && sessionTurns.data?.available === false
+      ? sessionTurns.data.reason
+      : null;
+  const turnsTruncated =
+    sessionTurns.data?.available === true && sessionTurns.data.truncated;
   const turnForMessage = useMemo(() => {
     const rows =
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
@@ -772,6 +786,17 @@ export function ChatView() {
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-[11px] text-muted-foreground/70">
                         Telemetry for this session could not be read.
+                      </p>
+                    )}
+                    {turnsUnavailable && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        {turnsUnavailable}
+                      </p>
+                    )}
+                    {turnsTruncated && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        Older turns in this session are past the telemetry
+                        display cap and are not shown.
                       </p>
                     )}
                     {!statusLineInThread && <PermissionStatusLine />}
