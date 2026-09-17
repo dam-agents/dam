@@ -354,3 +354,29 @@ describe("the hourly sweep", () => {
     ).toEqual([]);
   });
 });
+
+describe("the sweep never wakes blindly", () => {
+  it("skips an agent whose outcome was released, leaving it to be announced", async () => {
+    const woken: string[] = [];
+    const retry = createOutcomeWakeRetry(
+      {
+        repo: {
+          agentsWithPendingOutcomes: async () => ["agent-1"],
+          undeliveredFor: async () => [],
+          markWoken: async () => {},
+        } as never,
+        bump: async () => 1,
+        enqueue: async () => {},
+        wakeAgent: async (agentId) => {
+          woken.push(agentId);
+        },
+        spillLog: async () => null,
+        log: () => {},
+      },
+      async () => false,
+    );
+
+    await retry();
+    expect(woken, "no turn exists, so a wake would find nothing").toEqual([]);
+  });
+});

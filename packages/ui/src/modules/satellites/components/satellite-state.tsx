@@ -11,19 +11,19 @@ import { cn } from "@/lib/utils";
  * than a second rounding of the same idea.
  */
 export function SatelliteState({ satellite }: { satellite: SatelliteView }) {
-  const tone = satellite.draining
-    ? "bg-amber-500"
-    : satellite.online
-      ? "bg-emerald-500"
-      : "bg-foreground/30";
+  const tone = !satellite.online
+    ? "bg-foreground/30"
+    : satellite.draining
+      ? "bg-amber-500"
+      : "bg-emerald-500";
 
-  const label = satellite.draining
-    ? "draining"
-    : satellite.online
-      ? "online"
-      : satellite.lastSeenAt === null
-        ? "never connected"
-        : `offline · last seen ${timeAgo(satellite.lastSeenAt)}`;
+  const label = !satellite.online
+    ? satellite.lastSeenAt === null
+      ? "never connected"
+      : `offline · last seen ${timeAgo(satellite.lastSeenAt)}`
+    : satellite.draining
+      ? "draining"
+      : "online";
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-foreground/70">

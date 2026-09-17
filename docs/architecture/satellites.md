@@ -99,9 +99,11 @@ It rides a runtime event of its own ([runtime delivery](runtime-delivery.md)), h
 Two rules keep it from becoming noise, and they are load-bearing because there is no opt-out:
 
 - **An outcome already delivered does not wake.** Whichever path reports it first claims it, so an Agent sitting in `wait` does not also get a turn about the same Job.
-- **Simultaneous finishes coalesce.** Delivery claims *every* undelivered outcome for the Agent in one atomic statement, so three Jobs ending together produce one turn. A claim whose wake cannot then be written is released, so the outcome is not lost to a failed enqueue.
+- **Simultaneous finishes coalesce.** Delivery claims *every* undelivered outcome for the Agent in one atomic statement, so three Jobs ending together produce one turn.
 
-An Agent parked over budget cannot wake; its outcome waits and an hourly sweep retries. Holding the pod awake for the Job's duration was rejected as the most expensive option available — hours of compute against the owner's budget to avoid one wake.
+A claim is released only when no turn was written at all. Once the event is committed it is durable and the outbox carries it, so releasing after a later failure would let the next claim announce the same Job a second time. The hourly sweep therefore does two different things: it *announces* an outcome nobody claimed, and it only *re-wakes* one that was claimed — waking for an unclaimed outcome would bring the Agent up with nothing to read.
+
+An Agent parked over budget cannot wake; its outcome waits and that hourly sweep retries. Holding the pod awake for the Job's duration was rejected as the most expensive option available — hours of compute against the owner's budget to avoid one wake.
 
 ## Approval
 
@@ -115,7 +117,7 @@ It reuses the approvals queue as a third type beside ext_authz and acp_native ([
 
 Anything an Agent can call is callable by a **prompt-injected** Agent. That is the whole exposure surface, and it is why the grammar cannot express an unbounded argument and why the concurrency limit is enforced in the same transaction that inserts. Every start, verdict and outcome is recorded on the Job row itself — the literal argv, the pattern it matched, the exit and the captured output — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself. The rows are the whole of it: they are purged with the retention sweep a week after the Job started, so a longer-lived trail would have to be added on purpose.
 
-A worker authenticates with an API key carrying a **serve scope and nothing else** — it may register a command surface, claim the work approved for it and report what came back, and can neither drive an Agent nor read a credential. That is what lets the long-lived key a machine outside the cluster must hold sit there without widening what its theft would cost.
+A worker authenticates with an API key carrying the **serve scope**, which grants exactly three things: registering a command surface, claiming the work approved for it, and reporting what came back. It confers no reach over Agents or credentials. Nothing stops an owner minting a key that holds *more* than that scope — the platform cannot tell which key a machine will be given — so the guidance is the narrow key, and what the platform guarantees is only that the scope itself buys nothing else. That is what keeps the long-lived key a machine outside the cluster must hold from being worth more than the machine.
 
 Revoking a grant, deleting a Satellite and deleting an Agent share one rule: **revocation stops dispatch and stops reads, never execution.** The command is already running on a machine Platform cannot reach. Queued Jobs are cancelled, running ones finish and are still recorded for the audit trail, and the Agent simply loses the tool.
 

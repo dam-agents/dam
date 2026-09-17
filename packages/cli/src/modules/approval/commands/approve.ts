@@ -64,7 +64,12 @@ export function buildApproveCommand(deps: {
         const service = deps.createApprovalService(host);
         const standing =
           !opts.once && (await takesStandingVerdict(service, id));
-        const result = await (opts.once || !standing
+        const once = opts.once === true || !standing;
+        if (opts.once !== true && !standing)
+          process.stderr.write(
+            "This approval takes only a one-time verdict; applying that.\n",
+          );
+        const result = await (once
           ? service.approveOnce(id)
           : opts.entireHost
             ? service.approveHost(id)
@@ -74,7 +79,7 @@ export function buildApproveCommand(deps: {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        printOutcomeAndExit(result.value, opts, {
+        printOutcomeAndExit({ ...opts, once }, result.value, {
           pastTense: "Approved",
           onceLine:
             "Approved this call only — the same request shape will re-prompt next time.",

@@ -193,3 +193,26 @@ run = "./x"
     expect(parsed.ok).toBe(false);
   });
 });
+
+describe("the manifest is checked against the contract before it is pushed", () => {
+  it("refuses a name the server would refuse, on the machine", () => {
+    const parsed = parseManifest(`
+name = "Not A Valid Name"
+[[command]]
+run = "./x"
+`);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toContain("name");
+  });
+
+  it("refuses a concurrency the server would refuse", () => {
+    const parsed = parseManifest(`
+name = "box"
+max_concurrent = 0
+[[command]]
+run = "./x"
+`);
+    expect(parsed.ok).toBe(false);
+  });
+});

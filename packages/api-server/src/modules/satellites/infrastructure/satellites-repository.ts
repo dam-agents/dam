@@ -516,6 +516,12 @@ export function createSatellitesRepository(db: Db) {
       return rows.map((r) => r.agentId);
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: The Jobs an Agent has been told about but not
+     * woken for. Claimed only: a released outcome has no turn written for it, so
+     * waking would bring the Agent up with nothing to read. That one is
+     * announced instead, which is the other half of the hourly sweep.
+     */
     async undeliveredFor(
       agentId: string,
     ): Promise<{ satellite: string; sequence: number }[]> {
@@ -529,6 +535,7 @@ export function createSatellitesRepository(db: Db) {
           and(
             eq(satelliteJobs.agentId, agentId),
             inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+            sql`${satelliteJobs.deliveredAt} is not null`,
             sql`${satelliteJobs.wokeAt} is null`,
           ),
         );

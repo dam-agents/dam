@@ -2,6 +2,7 @@ import { parse as parseToml } from "smol-toml";
 import {
   DEFAULT_MAX_CONCURRENT,
   parseCommandPattern,
+  satelliteManifestSchema,
   type ParsedPattern,
   type SatelliteManifest,
 } from "api-server-api";
@@ -107,26 +108,40 @@ export function parseManifest(text: string): ManifestResult {
     });
   }
 
+  const pushed = {
+    name,
+    description:
+      typeof root.description === "string" ? root.description : undefined,
+    maxConcurrent:
+      typeof root.max_concurrent === "number"
+        ? root.max_concurrent
+        : DEFAULT_MAX_CONCURRENT,
+    commands: commands.map((c) => ({
+      run: c.run,
+      ...(c.about !== undefined ? { about: c.about } : {}),
+      ...(c.approval !== undefined ? { approval: c.approval } : {}),
+      ...(c.maxConcurrent !== undefined
+        ? { maxConcurrent: c.maxConcurrent }
+        : {}),
+    })),
+  };
+
+  const validated = satelliteManifestSchema.safeParse(pushed);
+  if (!validated.success) {
+    const first = validated.error.issues[0];
+    return {
+      ok: false,
+      error:
+        first === undefined
+          ? "manifest is not valid"
+          : `${first.path.join(".") || "manifest"}: ${first.message}`,
+    };
+  }
+
   return {
     ok: true,
     value: {
-      pushed: {
-        name,
-        description:
-          typeof root.description === "string" ? root.description : undefined,
-        maxConcurrent:
-          typeof root.max_concurrent === "number"
-            ? root.max_concurrent
-            : DEFAULT_MAX_CONCURRENT,
-        commands: commands.map((c) => ({
-          run: c.run,
-          ...(c.about !== undefined ? { about: c.about } : {}),
-          ...(c.approval !== undefined ? { approval: c.approval } : {}),
-          ...(c.maxConcurrent !== undefined
-            ? { maxConcurrent: c.maxConcurrent }
-            : {}),
-        })),
-      },
+      pushed: validated.data,
       commands,
       cwd: typeof root.cwd === "string" ? root.cwd : undefined,
       timeoutMs: satelliteTimeout > 0 ? satelliteTimeout : undefined,

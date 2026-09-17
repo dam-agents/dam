@@ -26,6 +26,16 @@ export function SatelliteGrants({ satellite }: { satellite: SatelliteView }) {
       </div>
     );
 
+  if (agentsQ.isError)
+    return (
+      <div className="mt-3 border-t border-border pt-3">
+        <p className="text-xs text-danger">
+          Couldn&apos;t load your agents, so this satellite&apos;s reach is not
+          shown. Whatever was granted still holds.
+        </p>
+      </div>
+    );
+
   const agents = agentsQ.data?.list ?? [];
   if (agents.length === 0) return null;
 

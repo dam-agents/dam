@@ -47,7 +47,12 @@ export function buildDenyCommand(deps: {
         const service = deps.createApprovalService(host);
         const standing =
           !opts.once && (await takesStandingVerdict(service, id));
-        const result = await (opts.once || !standing
+        const once = opts.once === true || !standing;
+        if (opts.once !== true && !standing)
+          process.stderr.write(
+            "This approval takes only a one-time verdict; applying that.\n",
+          );
+        const result = await (once
           ? service.dismiss(id)
           : service.denyForever(id));
         if (!result.ok) {
@@ -55,7 +60,7 @@ export function buildDenyCommand(deps: {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        printOutcomeAndExit(result.value, opts, {
+        printOutcomeAndExit({ ...opts, once }, result.value, {
           pastTense: "Denied",
           onceLine: "Denied this call only — re-prompts next time.",
           expiredEffect: "future requests of this shape are blocked.",
