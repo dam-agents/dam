@@ -740,8 +740,27 @@ func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 	_, err = h.client().Ensure(t.Context(), "agent-b", s)
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
-	assert.Contains(t, h.calls(), "-I "+legacy,
-		"an archive an earlier release left still boots rather than being refetched")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_old_9", "rootfs"),
+		"an archive still on disk is upgraded rather than kept, or an install that already ran an image would never get the faster path for it")
+}
+
+// TEST_SCENARIO: upgrading an archive to a tree means fetching the image again, and a fetch can fail — a registry that is down, a tag that has been deleted. An archive already on disk would still have started that machine, so a failed upgrade falls back to it rather than failing the create: the point of keeping the archive is precisely the case where the fetch cannot be made.
+func TestAFailedUpgradeStillBootsTheArchiveOnDisk(t *testing.T) {
+	h := newHarness(t)
+	broken := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(broken, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	h.node.Crane = broken
+	kept := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar")
+	require.NoError(t, os.MkdirAll(filepath.Dir(kept), 0o755))
+	require.NoError(t, os.WriteFile(kept, []byte("tar"), 0o644))
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	st := h.settle(t, "agent-a")
+
+	assert.Equal(t, StateRunning, st.State, "the create is not failed by an upgrade that could not be made")
+	assert.Contains(t, h.calls(), "-I "+kept,
+		"and the archive on disk still starts the machine, which is the whole of what it is kept for")
 }
 
 // TEST_SCENARIO: a tool that fails per entry reports per entry, and for a whole image that reached megabytes when the runner still unpacked one itself. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches the image again. The cap belongs to the boundary rather than to whichever tool is behind it. What is kept is the head, because the first failure is the one the rest follow from.
