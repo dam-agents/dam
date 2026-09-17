@@ -358,16 +358,24 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return err
 	}
 	cached := ""
+	// UNIT_BOUNDARY_DESCRIPTION: an archive an earlier release cached still boots, but it boots the slow way — unpacked again into every machine's own disk, which is the thirty seconds and the gigabyte the shared tree exists to stop paying. Holding it would mean an install that already ran an image never gets the faster path for it, however long it keeps running that image, so the tree is built once and the archive kept only for the case that cannot: no crane to fetch with, or a fetch that failed while the archive on disk would still have started a machine.
 	if launch == nil {
-		if _, archived := os.Stat(base + ".tar"); archived == nil {
-			cached = base + ".tar"
-		} else if s.Crane != "" {
+		archived := false
+		if _, err := os.Stat(base + ".tar"); err == nil {
+			archived = true
+		}
+		if s.Crane != "" {
 			if err := s.cacheImage(image, base, id); err != nil {
+				if !archived {
+					return err
+				}
+				slog.Warn("image cache: keeping the archive after a failed unpack", "image", image, "error", err)
+			} else if launch, err = readLaunch(base); err != nil {
 				return err
 			}
-			if launch, err = readLaunch(base); err != nil {
-				return err
-			}
+		}
+		if launch == nil && archived {
+			cached = base + ".tar"
 		}
 	}
 	if launch != nil {
