@@ -11,13 +11,16 @@ seccomp (all from restricted-v2). The two real relaxations are:
   - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
     caps.add (only the init container actually requests them); CHOWN +
     FOWNER, which only the VM runner requests, to restore a container
-    image's own ownership when it unpacks one for its machines to share.
+    image's own ownership when it unpacks one for its machines to share;
+    SETUID + SETGID, also the VM runner's alone, so it can hand each
+    machine's VMM its own unprivileged uid instead of running them all
+    as root.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
-adds — NET_ADMIN for an agent's iptables init, CHOWN and FOWNER for the
-VM runner.
+adds — NET_ADMIN for an agent's iptables init, CHOWN, FOWNER, SETUID and
+SETGID for the VM runner.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -37,6 +40,8 @@ allowedCapabilities:
   - NET_RAW
   - CHOWN
   - FOWNER
+  - SETUID
+  - SETGID
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny

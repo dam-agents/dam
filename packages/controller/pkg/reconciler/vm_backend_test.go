@@ -756,3 +756,22 @@ func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
 	assert.Equal(t, vmHealthPoll, last(),
 		"and once it answers it is only checked for health")
 }
+
+// TEST_SCENARIO: each machine's VMM runs under its own unprivileged uid, so a guest that breaks out of the VMM confining it reaches a uid that owns no other machine. A uid-0 process may only call setuid and setgid when its capability set carries them, and a runner missing either does not fail — it goes on running every VMM as root, one boundary for all machines instead of one each. The capabilities are therefore asserted here rather than left to the silence of a drop that never happened.
+func TestEachMachinesVMMCanBeGivenItsOwnUID(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.Contains(t, caps.Add, corev1.Capability("SETUID"), "without it setuid fails and every VMM stays root")
+	assert.Contains(t, caps.Add, corev1.Capability("SETGID"), "and the matching group change fails the same way")
+
+	for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
+		assert.NotEqual(t, "SMOLVM_VM_UID_DROP", env.Name,
+			"and nothing turns the drop back off, which is how it was suppressed before the capabilities were held")
+	}}
