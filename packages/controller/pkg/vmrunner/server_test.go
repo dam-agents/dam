@@ -735,7 +735,7 @@ func TestARunnerNeverBootsAMachineFromAnUnpackedTree(t *testing.T) {
 		"an archive an earlier release left still boots rather than being refetched")
 }
 
-// TEST_SCENARIO: a tar that cannot write into the rootfs it is restoring reports every entry it failed on, which for a whole image is megabytes. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches and unpacks the image again. What is kept is the head, because the first failure is the one the rest follow from.
+// TEST_SCENARIO: a tool that fails per entry reports per entry, and for a whole image that reached megabytes when the runner still unpacked one itself. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches the image again. The cap belongs to the boundary rather than to whichever tool is behind it. What is kept is the head, because the first failure is the one the rest follow from.
 func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
 	var flood strings.Builder
 	for i := 0; flood.Len() < 3_000_000; i++ {

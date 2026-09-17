@@ -52,9 +52,9 @@ type cachedState struct {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
-var cachedRootfs = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$`)
+var legacyTree = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$`)
 
-var legacyArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
+var cachedArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
 
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
@@ -373,7 +373,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	return s.Runtime.Start(id)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a failing tar reports every entry it could not write, which for a rootfs it may not write into at all is one line per file — 2.6 MB of them, observed. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server, so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches and unpacks the image again. Keeping the head of the output keeps the first failure, which is the one that explains the rest.
+// UNIT_BOUNDARY_DESCRIPTION: a tool that fails per entry reports per entry, and for a whole image that ran to 2.6 MB when the runner still unpacked one itself. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server — so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches the image again. The cap belongs to the boundary rather than to the tool behind it, which is why it outlived the unpack that found it. Keeping the head keeps the first failure, which is the one that explains the rest.
 const capturedOutput = 2000
 
 func firstLines(out string) string {
@@ -462,9 +462,9 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		path := filepath.Join(dir, e.Name())
 		var size int64
 		switch {
-		case e.IsDir() && cachedRootfs.MatchString(e.Name()):
+		case e.IsDir() && legacyTree.MatchString(e.Name()):
 			size = dirSize(path)
-		case !e.IsDir() && legacyArchive.MatchString(e.Name()):
+		case !e.IsDir() && cachedArchive.MatchString(e.Name()):
 			size = info.Size()
 		default:
 			continue
