@@ -623,12 +623,12 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.Equal(t, before, h.calls())
 }
 
-// TEST_SCENARIO: a machine may reach only its gateway, so the guest cannot fetch its own image — the runner does, once, onto a volume every runner shares. A second machine on the same image must find the archive already there and not fetch again.
+// TEST_SCENARIO: a machine may reach only its gateway, so the guest cannot fetch its own image — the runner does, once, onto a volume every runner shares. A second machine on the same image must find the unpacked tree already there and not fetch again.
 func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 	h := newHarness(t)
 	fetches := filepath.Join(t.TempDir(), "fetches")
 	crane := filepath.Join(t.TempDir(), "crane")
-	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nhead -c 4096 /dev/zero > \"$3\"\n"), 0o755))
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nd=$(mktemp -d)\necho rootfs > \"$d/hello\"\ntar -cf - -C \"$d\" .\n"), 0o755))
 	h.node.Crane = crane
 
 	c := h.client()
@@ -642,9 +642,13 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 	pulled, err := os.ReadFile(fetches)
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(strings.Fields(strings.TrimSpace(string(pulled))))/3,
-		"the second machine boots from the archive the first left behind: %s", pulled)
-	assert.Contains(t, h.calls(), "-I "+filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar"),
-		"smolvm is handed the archive, never the registry reference")
+		"the second machine boots from the tree the first left behind: %s", pulled)
+	rootfs := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
+	assert.Contains(t, h.calls(), "-I "+rootfs,
+		"smolvm is handed the unpacked tree, never the registry reference")
+	unpacked, err := os.ReadFile(filepath.Join(rootfs, "hello"))
+	require.NoError(t, err, "the tree is unpacked, not left as an archive")
+	assert.Equal(t, "rootfs\n", string(unpacked))
 }
 
 // TEST_SCENARIO: every deploy adds an image under a fresh tag and nothing else prunes the shared volume, so without eviction it fills and then refuses every machine. The oldest archive goes first, and the one just fetched is never the victim.
@@ -696,4 +700,31 @@ func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 
 	assert.Equal(t, "nothing to hide", redact("nothing to hide", nil), "output is untouched when there is no secret")
 	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
+}
+
+// TEST_SCENARIO: an image is unpacked once and shared. smolvm mounts an unpacked tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — so the runner keeps the tree, and a runner that still holds an archive from an earlier release goes on booting from it rather than refetching.
+func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T) {
+	h := newHarness(t)
+	images := filepath.Join(h.node.StateDir, "images")
+	require.NoError(t, os.MkdirAll(filepath.Join(images, "quay.io_x_vm_1", "usr"), 0o755))
+
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	h.node.Crane = crane
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_vm_1"),
+		"the unpacked tree is used and no fetch is attempted, or the failing crane would have surfaced")
+
+	legacy := filepath.Join(images, "quay.io_x_old_9.tar")
+	require.NoError(t, os.WriteFile(legacy, []byte("tar"), 0o644))
+	s := spec(true)
+	s.Image = "quay.io/x/old:9"
+	_, err = h.client().Ensure(t.Context(), "agent-b", s)
+	require.NoError(t, err)
+	h.settle(t, "agent-b")
+	assert.Contains(t, h.calls(), "-I "+legacy,
+		"an archive left by an earlier release still boots rather than being refetched")
 }
