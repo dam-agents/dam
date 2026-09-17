@@ -32,6 +32,11 @@ const BROWSE_KITS: EntryPoint = {
   go: (nav) => nav.browseKits("all"),
 };
 
+const CREATE_AGENT_FROM_KITS: EntryPoint = {
+  ...BROWSE_KITS,
+  label: "Create agent",
+};
+
 const KNOWLEDGE_BASE_FROM_TEMPLATE: EntryPoint = {
   choice: "knowledge-base",
   label: "Start a knowledge base",
@@ -58,11 +63,15 @@ function useEnter(browseKits: (shelf: Filter) => void) {
   };
 }
 
+type Surface = "home" | "welcome" | "knowledge-bases";
+
 function entryPointsFor(
-  surface: "home" | "knowledge-bases",
+  surface: Surface,
   kitsEnabled: boolean,
   primary: "kits" | "agent",
 ): EntryPoint[] {
+  if (surface === "welcome")
+    return [kitsEnabled ? CREATE_AGENT_FROM_KITS : CREATE_AGENT];
   if (surface === "knowledge-bases")
     return [kitsEnabled ? KNOWLEDGE_BASE_FROM_KITS : KNOWLEDGE_BASE_ONLY];
   if (!kitsEnabled) return [CREATE_AGENT, KNOWLEDGE_BASE_FROM_TEMPLATE];
@@ -73,7 +82,8 @@ function entryPointsFor(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The ways into creating something, as buttons.
- * Home offers the catalog and a plain agent; the Knowledge Bases surface
+ * Home offers the catalog and a plain agent; the first-run welcome offers a
+ * single Create agent, which opens the catalog; the Knowledge Bases surface
  * offers only a knowledge base, which with kits on means the knowledge shelf
  * of the catalog. The catalog opens as the Browse Kits modal over the current
  * page — the same modal the setup page's Change button opens — and a pick
@@ -84,7 +94,7 @@ export function EntryPointButtons({
   surface,
   primary = "kits",
 }: {
-  surface: "home" | "knowledge-bases";
+  surface: Surface;
   primary?: "kits" | "agent";
 }) {
   const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
