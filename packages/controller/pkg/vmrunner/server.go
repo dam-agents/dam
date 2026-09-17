@@ -368,10 +368,17 @@ func (s *Server) cacheImage(ref, archive string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
 	defer cancel()
+	started := time.Now()
 	out, err := exec.CommandContext(ctx, s.Crane, "pull", ref, tmp.Name()).CombinedOutput()
 	if err != nil {
+		slog.Warn("image fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
 		return fmt.Errorf("pulling %s: %w: %s", ref, err, strings.TrimSpace(string(out)))
 	}
+	size := int64(0)
+	if fi, statErr := os.Stat(tmp.Name()); statErr == nil {
+		size = fi.Size()
+	}
+	slog.Info("image fetched into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", size)
 	if err := os.Rename(tmp.Name(), archive); err != nil {
 		return err
 	}
