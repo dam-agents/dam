@@ -126,8 +126,8 @@ export function IsolationSetupSection({
           <div>
             <p className="text-sm text-foreground">Run in a microVM</p>
             <p className="text-sm text-muted-foreground">
-              The image above, booted as a virtual machine with a kernel of its
-              own instead of sharing the node's.
+              The image above, booted as a machine of its own rather than as a
+              pod. Container engines and Kubernetes can run inside it.
             </p>
           </div>
         </div>
