@@ -257,7 +257,8 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		poll := vmHealthPoll
 		if !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
 			poll = vmReadinessPoll
-			if starting := time.Duration(st.StartingMs) * time.Millisecond; starting > 0 && starting < vmStartingWindow {
+			starting := time.Duration(st.StartingMs) * time.Millisecond
+			if st.State == vmrunner.StateCreating || st.State == vmrunner.StateStarting || (starting > 0 && starting < vmStartingWindow) {
 				poll = vmStartingPoll
 			}
 		}

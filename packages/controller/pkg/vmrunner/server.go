@@ -795,19 +795,22 @@ func (s *Server) status(id string) MachineStatus {
 	}
 	if pending != "" {
 		st.State = pending
-		return st
-	}
-	state, err := s.machineState(id)
-	if err != nil {
-		st.State = StateUnknown
-		if st.Message == "" {
-			st.Message = err.Error()
+	} else {
+		state, err := s.machineState(id)
+		if err != nil {
+			st.State = StateUnknown
+			if st.Message == "" {
+				st.Message = err.Error()
+			}
+			return st
 		}
-		return st
+		st.State = state
 	}
-	st.State = state
-	if st.State == StateRunning {
+	// UNIT_BOUNDARY_DESCRIPTION: a guest that answers its health check is up, whatever the operation that started it still has left to do — and the runtime's own start call lingers seconds past the moment the guest begins serving, which the platform used to spend telling a user their agent was not ready yet. Only a machine on its way up is read this way: a restart's old guest answers until the stop lands, and a machine being stopped answers until it dies, so neither may be called ready on the strength of an answer.
+	if st.State == StateRunning || st.State == StateCreating || st.State == StateStarting {
 		st.Ready = s.healthy(st.Port)
+	}
+	if st.State == StateRunning {
 		s.mu.Lock()
 		h := s.health[id]
 		if st.Ready {

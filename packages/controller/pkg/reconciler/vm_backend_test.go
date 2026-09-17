@@ -271,7 +271,8 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, []time.Duration{vmReadinessPoll}, *requeued)
+	assert.Equal(t, []time.Duration{vmStartingPoll}, *requeued,
+		"a machine whose creation is still in flight is watched closely — its guest can answer before that call returns")
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	markGatewayReady(t, r)
