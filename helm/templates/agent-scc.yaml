@@ -15,9 +15,7 @@ seccomp (all from restricted-v2). The two real relaxations are:
     for by that container and by the VM runner, which needs it for the
     per-machine NAT. CHOWN + FOWNER, which only the VM runner requests,
     restore a container image's own ownership when it unpacks one for
-    its machines to share; SETUID + SETGID, also the VM runner's alone,
-    let it hand each machine's VMM its own unprivileged uid instead of
-    running them all as root; DAC_OVERRIDE, likewise the runner's, so
+    its machines to share; and DAC_OVERRIDE, likewise the runner's, so
     that unpack can write into the read-only and foreign-owned
     directories a faithful rootfs contains.
 
@@ -25,7 +23,7 @@ Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init and for the VM runner,
-CHOWN, FOWNER, SETUID, SETGID and DAC_OVERRIDE for the runner alone.
+CHOWN, FOWNER and DAC_OVERRIDE for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -45,8 +43,6 @@ allowedCapabilities:
   - NET_RAW
   - CHOWN
   - FOWNER
-  - SETUID
-  - SETGID
   - DAC_OVERRIDE
 defaultAddCapabilities: null
 fsGroup:
