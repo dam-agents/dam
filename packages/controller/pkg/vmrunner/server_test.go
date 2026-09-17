@@ -428,6 +428,22 @@ func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(dir, "overlay.qcow2"))
 }
 
+// TEST_SCENARIO: the runtime expands its disk templates the first time a machine needs one, into a directory that a container throws away with the pod — so the expansion lands on whoever creates the next agent, measured at 24 s. Warming picks exactly the templates that are missing: one already expanded is left alone, so a warm pod does no work, and anything that is not a packed template is none of its business.
+func TestOnlyTheTemplatesThatAreMissingAreWarmed(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"storage-template.ext4.zst", "overlay-template.ext4.zst"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("packed"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "overlay-template.ext4"), []byte("already expanded"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "smolvm"), []byte("bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt.zst"), []byte("unrelated"), 0o644))
+
+	assert.Equal(t, []string{filepath.Join(dir, "storage-template.ext4.zst")}, templatesToWarm(dir))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "storage-template.ext4"), []byte("expanded"), 0o644))
+	assert.Empty(t, templatesToWarm(dir), "a pod whose templates are already expanded warms nothing")
+}
+
 // TEST_SCENARIO: a stop returns before its VMM does, and a start issued while that VMM still holds the disks is refused — which reads exactly like a machine that can never start, so the next attempt repeats it forever. The wait is what breaks that, and the machine that is genuinely stopped must not pay for it: both halves are asserted here, since a wait that always returned true would satisfy the second alone.
 func TestAStartWaitsForTheVMMTheStopLeftBehind(t *testing.T) {
 	proc := t.TempDir()

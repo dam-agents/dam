@@ -23,6 +23,8 @@ const (
 	slowOp = 2 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: long enough for a guest to checkpoint its journal and let go of its disks, short enough that a VMM which is never going to exit is taken down rather than waited on.
 	vmmExitWait = 10 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: expanding both templates takes seconds on a healthy pod; this is far enough above that to never cut one short, and it exists so a decompressor that hangs cannot hold the goroutine for the life of the runner.
+	warmTimeout = 5 * time.Minute
 )
 
 type Smolvm struct {
@@ -236,4 +238,46 @@ func envValues(env map[string]string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runtime ships its disk templates compressed and expands them the first time a machine needs one, into the directory it lives in — which in a container is the image's own filesystem and so is thrown away with the pod. Every roll of this pod therefore hands the expansion to whoever creates the next agent: measured at 24 s of a 25 s `machine start`, while a second create on the same pod costs half a second. Doing it here costs a pod nobody is waiting on the same seconds, and a user none. It reports which templates are missing rather than expanding them, so the decision can be tested without a compressor.
+func templatesToWarm(dir string) []string {
+	packed, _ := filepath.Glob(filepath.Join(dir, "*.ext4.zst"))
+	var missing []string
+	for _, p := range packed {
+		if _, err := os.Stat(strings.TrimSuffix(p, ".zst")); err != nil {
+			missing = append(missing, p)
+		}
+	}
+	return missing
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not the default when the decompressor writes to a named file, and without it a 20 GiB template of mostly holes is written out in full: measured on the runner image at 20 GiB on disk and 33 s, against 672 KiB and 4 s with it, for byte-identical output. The templates are holes almost end to end, so this is the difference between warming them and filling the pod's filesystem. Expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
+func (r *Smolvm) WarmTemplates() {
+	dir := filepath.Dir(r.Bin)
+	packedAll := templatesToWarm(dir)
+	if len(packedAll) == 0 {
+		// UNIT_BOUNDARY_DESCRIPTION: silence here would read the same whether the templates are already expanded or the directory holds none at all, and the second is a misconfiguration that only shows up later as a slow create.
+		slog.Info("no disk templates to warm", "dir", dir)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), warmTimeout)
+	defer cancel()
+	for _, packed := range packedAll {
+		target := strings.TrimSuffix(packed, ".zst")
+		tmp := target + ".warming"
+		started := time.Now()
+		if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "--sparse", "-o", tmp, packed).CombinedOutput(); err != nil {
+			slog.Warn("template warm-up failed; the first machine will expand it instead",
+				"template", packed, "error", err, "detail", firstLines(string(out)))
+			_ = os.Remove(tmp)
+			continue
+		}
+		if err := os.Rename(tmp, target); err != nil {
+			slog.Warn("template warm-up could not be put in place", "template", target, "error", err)
+			_ = os.Remove(tmp)
+			continue
+		}
+		slog.Info("template warmed", "template", target, "duration_ms", time.Since(started).Milliseconds())
+	}
 }
