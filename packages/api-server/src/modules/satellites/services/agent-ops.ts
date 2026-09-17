@@ -20,6 +20,8 @@ export interface AgentOpsDeps {
   requestApproval: (input: {
     agentId: string;
     owner: string;
+    satellite: string;
+    sequence: number;
     ref: string;
     cmd: string[];
   }) => Promise<string>;
@@ -154,7 +156,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       if (!verdict.ok)
         throw new TRPCError({ code: "BAD_REQUEST", message: verdict.reason });
 
-      const job = await deps.repo.insertJob({
+      const inserted = await deps.repo.insertJob({
         owner,
         satellite: name,
         agentId,
@@ -162,10 +164,28 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         pattern: verdict.pattern,
         status: verdict.status,
         expiresAt: new Date(at.getTime() + JOB_TTL_MS),
+        maxConcurrent: satellite.maxConcurrent,
+        patternMax: verdict.patternMax,
       });
+      if ("full" in inserted)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            inserted.total >= satellite.maxConcurrent
+              ? `${name} is running ${inserted.total} jobs (max ${satellite.maxConcurrent}) — wait for one to finish`
+              : `${verdict.pattern} already has ${inserted.forPattern} running (max ${verdict.patternMax}) — wait for one to finish`,
+        });
+      const job = inserted;
       const ref = formatJobRef(name, job.sequence);
       if (verdict.status === "pending-approval")
-        await deps.requestApproval({ agentId, owner, ref, cmd });
+        await deps.requestApproval({
+          agentId,
+          owner,
+          satellite: name,
+          sequence: job.sequence,
+          ref,
+          cmd,
+        });
       return {
         ref,
         satellite: name,

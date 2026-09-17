@@ -31,8 +31,10 @@ about = "Say something"
 run = "/bin/sleep ^[1-9]$"
 `;
 
-function manifest() {
-  const parsed = parseManifest(MANIFEST);
+function manifest(timeout?: string) {
+  const parsed = parseManifest(
+    timeout === undefined ? MANIFEST : `${MANIFEST}\ntimeout = "${timeout}"\n`,
+  );
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.value;
 }
@@ -42,7 +44,7 @@ interface Reported {
   outcome: Parameters<WorkerTransport["report"]>[0]["outcome"];
 }
 
-function harness(items: WorkItem[]) {
+function harness(items: WorkItem[], timeout?: string) {
   const reports: Reported[] = [];
   let handedOut = false;
   let resolveAll: () => void = () => {};
@@ -66,7 +68,7 @@ function harness(items: WorkItem[]) {
   };
 
   const worker = createWorker({
-    manifest: manifest(),
+    manifest: manifest(timeout),
     transport,
     log: { line: () => {} },
     host: "test-host",
@@ -116,6 +118,35 @@ describe("the satellite worker", () => {
     ]);
     expect(reports).toHaveLength(3);
     expect(reports.every((r) => r.outcome.status === "done")).toBe(true);
+  });
+});
+
+describe("a job that does not run to completion", () => {
+  it("reports a cancelled job as cancelled, not as a finished one that failed", async () => {
+    const { worker, reports, allReported } = harness([
+      runItem(1, ["/bin/sleep", "9"]),
+    ]);
+    const running = worker.start();
+    await new Promise((r) => setTimeout(r, 300));
+    worker.cancel(1);
+    await allReported;
+    await worker.drain();
+    await running;
+    expect(reports[0]?.outcome.status).toBe("cancelled");
+  });
+
+  it("reports a job killed at its timeout as interrupted, naming the timeout", async () => {
+    const { worker, reports, allReported } = harness(
+      [runItem(1, ["/bin/sleep", "9"])],
+      "1s",
+    );
+    const running = worker.start();
+    await allReported;
+    await worker.drain();
+    await running;
+    expect(reports[0]?.outcome.status).toBe("interrupted");
+    if (reports[0]?.outcome.status !== "interrupted") return;
+    expect(reports[0].outcome.reason).toContain("timeout");
   });
 });
 

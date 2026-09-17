@@ -83,6 +83,14 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       deps.log(
         `[satellites] could not enqueue the outcome wake for ${agentId}: ${String(err)}`,
       );
+      for (const satellite of new Set(claimed.map((job) => job.satellite)))
+        await deps.repo.releaseOutcomes(
+          claimed[0]!.owner,
+          satellite,
+          claimed
+            .filter((job) => job.satellite === satellite)
+            .map((job) => job.sequence),
+        );
       return false;
     }
     await deps.wakeAgent(agentId).catch((err: unknown) => {

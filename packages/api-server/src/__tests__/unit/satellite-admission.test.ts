@@ -7,6 +7,7 @@ import {
   OFFLINE_AFTER_MS,
 } from "../../modules/satellites/domain/admission.js";
 import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
+import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 
 /**
  * TEST_OVERVIEW: Admission — whether a start becomes a Job at all. It is
@@ -170,5 +171,38 @@ describe("online", () => {
         NOW,
       ),
     ).toBe(false);
+  });
+});
+
+describe("draining", () => {
+  it("is cleared by connect and drain alone, never by a heartbeat", async () => {
+    const calls: string[] = [];
+    const repo = {
+      get: async () => satellite({ draining: true }),
+      touch: async () => {
+        calls.push("touch");
+      },
+      setDraining: async (_o: string, _n: string, value: boolean) => {
+        calls.push(`setDraining:${value}`);
+      },
+      renewLeases: async () => {},
+      claimQueued: async () => [],
+      pendingCancellations: async () => [],
+    };
+    const ops = createSatelliteWorkerOps({
+      repo: repo as never,
+      maxConcurrentCeiling: 64,
+      deliverOutcome: async () => {},
+    });
+
+    await ops.heartbeat("alice", { satellite: "gpu-box", running: [] });
+    await ops.claim("alice", { satellite: "gpu-box", capacity: 4, waitMs: 0 });
+    expect(
+      calls.filter((c) => c.startsWith("setDraining")),
+      "a machine that is shutting down must not un-shut itself on its own beat",
+    ).toEqual([]);
+
+    await ops.drain("alice", "gpu-box");
+    expect(calls).toContain("setDraining:true");
   });
 });

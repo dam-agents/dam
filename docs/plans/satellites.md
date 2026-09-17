@@ -263,6 +263,16 @@ A pending Job surfaces **both** in the session (a synthetic permission frame, as
 
 Output streaming and progress notifications; file transfer in either direction; interactive stdin; several workers per Satellite; cross-user sharing; unbounded outcome retention.
 
+## Review fixes
+
+The first guardian pass found three promises with one hole each, and they are worth keeping as invariants rather than one-off fixes:
+
+- **A machine that is shutting down refuses new work.** `touch` writes only last-seen; the draining flag moves on connect and drain alone, so a heartbeat cannot un-shut a machine.
+- **A Job that is accepted really starts.** The live count and the insert share one transaction, so two starts arriving together cannot both read a count under the limit and both land.
+- **The owner hears every result.** Delivery follows *every* terminal settle — the worker's report, the lease sweep, a declined approval, a cancellation, a removal — and a claim whose wake cannot be written is released rather than lost.
+
+Alongside them: a regex token is compiled as `^(?:…)$`, because a top-level alternation otherwise escapes its own anchors (`^a$|^b$` matched `xb`); a cancelled or timed-out Job reports as cancelled or interrupted rather than as one that finished with exit 1; and the worker signals the process *group*, so a script's children die with it.
+
 ## Footprint
 
 New architecture page `docs/architecture/satellites.md`, plus edits to [cli](../architecture/cli.md) (the `satellite serve` verb and the parity exception), [security-and-credentials](../architecture/security-and-credentials.md) (the new scope and the approval gate kind), and [platform-topology](../architecture/platform-topology.md) (a second polled outbound surface).

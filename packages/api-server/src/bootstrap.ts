@@ -213,6 +213,7 @@ import {
   composeSatellitesModule,
   createOutcomeDelivery,
   createOutcomeWakeRetry,
+  createSatelliteApprovalRequester,
 } from "./modules/satellites/index.js";
 import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
@@ -433,25 +434,9 @@ export async function bootstrap() {
     ownerOf: (agentId) => agentsRepo.getOwner(agentId),
     isAgentOwnedBy: (agentId, ownerSub) =>
       agentsRepo.isOwnedBy(agentId, ownerSub),
-    requestApproval: async ({ agentId, owner, ref, cmd }) => {
-      const id = randomUUID();
-      await satellitesApprovals.insertPending({
-        id,
-        type: "satellite_job",
-        agentId,
-        ownerSub: owner,
-        sessionId: null,
-        payload: {
-          kind: "satellite_job",
-          satellite: ref.split("#")[0] ?? "",
-          sequence: Number(ref.split("#")[1] ?? 0),
-          ref,
-          cmd,
-        },
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      });
-      return id;
-    },
+    requestApproval: createSatelliteApprovalRequester({
+      approvals: satellitesApprovals,
+    }),
     spillLog: async (agentId, ref, output) => {
       try {
         return await createAgentWorkspaceFiles(

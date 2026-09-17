@@ -561,7 +561,10 @@ export {
   approvalListOptionsSchema,
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
-export { describeApprovalPayload } from "./modules/approvals/format.js";
+export {
+  acceptsPermanentVerdict,
+  describeApprovalPayload,
+} from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
@@ -740,6 +743,7 @@ export type {
 export {
   AGENT_SCOPES,
   ALL_SCOPES,
+  SATELLITE_SCOPES,
   API_KEY_PREFIX,
   CREDENTIAL_SCOPES,
 } from "./modules/api-keys/types.js";

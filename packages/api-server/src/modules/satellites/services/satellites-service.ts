@@ -13,6 +13,12 @@ export interface SatellitesServiceDeps {
   repo: SatellitesRepository;
   owner: string;
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
+  deliverOutcome: (input: {
+    owner: string;
+    agentId: string;
+    satellite: string;
+    sequence: number;
+  }) => Promise<void>;
   now?: () => Date;
 }
 
@@ -54,13 +60,23 @@ export function createSatellitesService(
 
     async remove(name: string): Promise<void> {
       await mustExist(name);
-      for (const job of await deps.repo.activeJobs(deps.owner, name))
-        if (job.status !== "running")
-          await deps.repo.settle(deps.owner, name, job.sequence, {
-            status: "cancelled",
-            reason: "satellite removed",
+      for (const job of await deps.repo.activeJobs(deps.owner, name)) {
+        if (job.status === "running") {
+          await deps.repo.requestCancel(deps.owner, name, job.sequence);
+          continue;
+        }
+        const settled = await deps.repo.settle(deps.owner, name, job.sequence, {
+          status: "cancelled",
+          reason: "satellite removed",
+        });
+        if (settled !== null)
+          await deps.deliverOutcome({
+            owner: deps.owner,
+            agentId: settled.agentId,
+            satellite: name,
+            sequence: job.sequence,
           });
-        else await deps.repo.requestCancel(deps.owner, name, job.sequence);
+      }
       await deps.repo.remove(deps.owner, name);
     },
 
@@ -99,12 +115,20 @@ export function createSatellitesService(
       if (job === null)
         throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
       if (isTerminal(job.status)) return;
-      if (job.status === "running")
+      if (job.status === "running") {
         await deps.repo.requestCancel(deps.owner, name, sequence);
-      else
-        await deps.repo.settle(deps.owner, name, sequence, {
-          status: "cancelled",
-          reason: "cancelled before it started",
+        return;
+      }
+      const settled = await deps.repo.settle(deps.owner, name, sequence, {
+        status: "cancelled",
+        reason: "cancelled before it started",
+      });
+      if (settled !== null)
+        await deps.deliverOutcome({
+          owner: deps.owner,
+          agentId: settled.agentId,
+          satellite: name,
+          sequence,
         });
     },
   };

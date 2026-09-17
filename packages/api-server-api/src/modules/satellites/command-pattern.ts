@@ -81,8 +81,10 @@ function isRegexToken(token: string): boolean {
 
 function parseToken(token: string): ParseResult<TokenElement> {
   if (isRegexToken(token)) {
+    const body = token.slice(1, -1);
+    let regex: RegExp;
     try {
-      new RegExp(token);
+      regex = new RegExp(`^(?:${body})$`);
     } catch (err) {
       return {
         ok: false,
@@ -94,7 +96,7 @@ function parseToken(token: string): ParseResult<TokenElement> {
       value: {
         kind: "token",
         source: token,
-        regex: new RegExp(token),
+        regex,
         open: true,
         openAtStart: false,
       },

@@ -148,6 +148,14 @@ describe("whole-argument regex", () => {
     expect(accepts(flag, ["./x", "--force"])).toBe(true);
   });
 
+  it("holds the anchors across a top-level alternation", () => {
+    const alternation = parse("./x ^a$|^b$");
+    expect(accepts(alternation, ["./x", "a"])).toBe(true);
+    expect(accepts(alternation, ["./x", "b"])).toBe(true);
+    expect(accepts(alternation, ["./x", "xb"])).toBe(false);
+    expect(accepts(alternation, ["./x", "ay"])).toBe(false);
+  });
+
   it("is still subject to the traversal rule", () => {
     const loose = parse("./read.sh ^[a-z./]+$");
     expect(accepts(loose, ["./read.sh", "./data/x"])).toBe(true);

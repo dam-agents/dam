@@ -65,6 +65,7 @@ export function composeSatellitesModule(deps: {
         repo,
         owner,
         isAgentOwnedBy: deps.isAgentOwnedBy,
+        deliverOutcome: deps.deliverOutcome,
       }),
     onAgentDeleted: (agentId) => repo.revokeAgentGrants(agentId),
     applyVerdict: async (owner, satellite, sequence, allowed) => {
@@ -72,10 +73,17 @@ export function composeSatellitesModule(deps: {
         await repo.release(owner, satellite, sequence);
         return;
       }
-      await repo.settle(owner, satellite, sequence, {
+      const settled = await repo.settle(owner, satellite, sequence, {
         status: "cancelled",
         reason: "your human declined this command",
       });
+      if (settled !== null)
+        await deps.deliverOutcome({
+          owner,
+          agentId: settled.agentId,
+          satellite,
+          sequence,
+        });
     },
   };
 }

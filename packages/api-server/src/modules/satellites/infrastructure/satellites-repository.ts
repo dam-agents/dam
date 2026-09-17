@@ -117,7 +117,18 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
-    async touch(owner: string, name: string, draining: boolean): Promise<void> {
+    async touch(owner: string, name: string): Promise<void> {
+      await db
+        .update(satellites)
+        .set({ lastSeenAt: new Date() })
+        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+    },
+
+    async setDraining(
+      owner: string,
+      name: string,
+      draining: boolean,
+    ): Promise<void> {
       await db
         .update(satellites)
         .set({ lastSeenAt: new Date(), draining })
@@ -177,6 +188,13 @@ export function createSatellitesRepository(db: Db) {
       return rows.map(toJob);
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Counts the Satellite's live Jobs and inserts in
+     * one transaction. Counting outside it lets two starts that arrive together
+     * both read a count under the limit and both insert, which puts the machine
+     * over the concurrency its Manifest declared — and leaves a Job queued behind
+     * another, which is the backlog the design says cannot exist.
+     */
     async insertJob(input: {
       owner: string;
       satellite: string;
@@ -185,8 +203,33 @@ export function createSatellitesRepository(db: Db) {
       pattern: string;
       status: JobStatus;
       expiresAt: Date;
-    }): Promise<JobRow> {
+      maxConcurrent: number;
+      patternMax: number | null;
+    }): Promise<JobRow | { full: true; total: number; forPattern: number }> {
       return db.transaction(async (tx) => {
+        const live = await tx
+          .select({
+            status: satelliteJobs.status,
+            pattern: satelliteJobs.pattern,
+          })
+          .from(satelliteJobs)
+          .where(
+            and(
+              eq(satelliteJobs.owner, input.owner),
+              eq(satelliteJobs.satellite, input.satellite),
+              notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+            ),
+          )
+          .for("update");
+        const forPattern = live.filter(
+          (row) => row.pattern === input.pattern,
+        ).length;
+        if (
+          live.length >= input.maxConcurrent ||
+          (input.patternMax !== null && forPattern >= input.patternMax)
+        )
+          return { full: true as const, total: live.length, forPattern };
+
         const [bumped] = await tx
           .update(satellites)
           .set({ nextSequence: sql`${satellites.nextSequence} + 1` })
@@ -200,9 +243,12 @@ export function createSatellitesRepository(db: Db) {
         if (bumped === undefined)
           throw new Error(`satellite ${input.satellite} no longer exists`);
         const sequence = bumped.next - 1;
+        const { maxConcurrent, patternMax, ...values } = input;
+        void maxConcurrent;
+        void patternMax;
         const [row] = await tx
           .insert(satelliteJobs)
-          .values({ ...input, sequence })
+          .values({ ...values, sequence })
           .returning();
         return toJob(row!);
       });
@@ -417,6 +463,24 @@ export function createSatellitesRepository(db: Db) {
         )
         .returning();
       return rows.map(toJob);
+    },
+
+    async releaseOutcomes(
+      owner: string,
+      satellite: string,
+      sequences: number[],
+    ): Promise<void> {
+      if (sequences.length === 0) return;
+      await db
+        .update(satelliteJobs)
+        .set({ deliveredAt: null })
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            inArray(satelliteJobs.sequence, sequences),
+          ),
+        );
     },
 
     async agentsWithPendingOutcomes(): Promise<string[]> {

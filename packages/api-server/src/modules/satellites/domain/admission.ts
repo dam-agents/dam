@@ -36,7 +36,7 @@ export function isOnline(satellite: SatelliteRow, now: Date): boolean {
 }
 
 export type Admission =
-  | { ok: true; pattern: string; status: JobStatus }
+  | { ok: true; pattern: string; status: JobStatus; patternMax: number | null }
   | { ok: false; reason: string };
 
 export interface ActiveCounts {
@@ -95,6 +95,7 @@ export function admit(
     ok: true,
     pattern: entry.command.run,
     status: entry.command.approval === "always" ? "pending-approval" : "queued",
+    patternMax: perCommand ?? null,
   };
 }
 

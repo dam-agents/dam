@@ -1,4 +1,4 @@
-import type { ApprovalPayload } from "./types.js";
+import type { ApprovalPayload, ApprovalType } from "./types.js";
 
 export function describeApprovalPayload(payload: ApprovalPayload): {
   title: string;
@@ -15,4 +15,15 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
   if (payload.kind === "satellite_job")
     return { title: payload.ref, subtitle: payload.cmd.join(" ") };
   return { title: payload.toolName ?? "tool call", subtitle: "" };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Says which approval types accept a standing verdict.
+ * A satellite job takes only the once verdicts — "allow forever" for a satellite
+ * is spelled by removing approval = always from the Manifest, on the user's own
+ * machine. The service refuses a permanent verdict on one, so the surfaces must
+ * not offer a button the service will refuse.
+ */
+export function acceptsPermanentVerdict(type: ApprovalType): boolean {
+  return type !== "satellite_job";
 }

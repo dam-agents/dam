@@ -6,6 +6,7 @@ import type {
   SatelliteJobPayload,
   EgressRuleSource,
 } from "api-server-api";
+import { acceptsPermanentVerdict } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
@@ -226,7 +227,7 @@ export function createApprovalsService(
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
-      if (row.type === "satellite_job") return NOT_ACTIONABLE;
+      if (!acceptsPermanentVerdict(row.type)) return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const rule = {
           host: row.payload.host,
@@ -326,7 +327,7 @@ export function createApprovalsService(
     async denyForever(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
-      if (row.type === "satellite_job") return NOT_ACTIONABLE;
+      if (!acceptsPermanentVerdict(row.type)) return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const rule = {
           host: row.payload.host,

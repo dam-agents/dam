@@ -55,7 +55,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       const deadline = now().getTime() + (input.waitMs ?? 0);
 
       for (;;) {
-        await deps.repo.touch(owner, input.satellite, false);
+        await deps.repo.touch(owner, input.satellite);
 
         const cancels = await deps.repo.pendingCancellations(
           owner,
@@ -88,7 +88,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async heartbeat(owner: string, input: HeartbeatInput): Promise<void> {
-      await deps.repo.touch(owner, input.satellite, false);
+      await deps.repo.touch(owner, input.satellite);
       await deps.repo.renewLeases(
         owner,
         input.satellite,
@@ -126,7 +126,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async drain(owner: string, satellite: string): Promise<void> {
-      await deps.repo.touch(owner, satellite, true);
+      await deps.repo.setDraining(owner, satellite, true);
     },
   };
 }
