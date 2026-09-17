@@ -24,21 +24,32 @@ export function startAgentWatch(
   let retryTimer: NodeJS.Timeout | null = null;
   let sweepTimer: NodeJS.Timeout | null = null;
   let seenSinceConnect: Set<string> | null = null;
-  const pending = new Map<string, NodeJS.Timeout>();
+  const pending = new Map<
+    string,
+    { timer: NodeJS.Timeout; trailing: boolean }
+  >();
   const fingerprints = new Map<
     string,
     { fingerprint: string; ownerSub: string }
   >();
 
+  // UNIT_BOUNDARY_DESCRIPTION: the debounce is what stops a burst of writes becoming a burst of refetches, and a starting agent is exactly such a burst — the controller rewrites its status about once a second while it boots. Delaying every hint by the window costs that agent's reader the whole of it at the one moment that matters, when the last of those writes is the one saying it is ready. So the first hint of a quiet agent goes out at once and the window suppresses what follows, which still collapses the burst but no longer holds back its beginning; a change arriving inside the window is published when it closes, so the last state is never the one left unsent.
   const publish = (agentId: string, ownerSub: string) => {
-    const existing = pending.get(agentId);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      pending.delete(agentId);
-      bus.publish(ownerSub, { topic: "agents", agentId });
-    }, debounceMs);
-    timer.unref();
-    pending.set(agentId, timer);
+    const waiting = pending.get(agentId);
+    if (waiting) {
+      waiting.trailing = true;
+      return;
+    }
+    bus.publish(ownerSub, { topic: "agents", agentId });
+    const entry: { timer: NodeJS.Timeout; trailing: boolean } = {
+      trailing: false,
+      timer: setTimeout(() => {
+        pending.delete(agentId);
+        if (entry.trailing) publish(agentId, ownerSub);
+      }, debounceMs),
+    };
+    entry.timer.unref();
+    pending.set(agentId, entry);
   };
 
   const onEvent = (
@@ -113,7 +124,7 @@ export function startAgentWatch(
       connection?.stop();
       if (retryTimer) clearTimeout(retryTimer);
       if (sweepTimer) clearTimeout(sweepTimer);
-      for (const timer of pending.values()) clearTimeout(timer);
+      for (const entry of pending.values()) clearTimeout(entry.timer);
       pending.clear();
     },
   };
