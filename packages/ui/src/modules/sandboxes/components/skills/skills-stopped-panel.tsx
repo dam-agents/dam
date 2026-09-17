@@ -1,14 +1,12 @@
-import { Information, Play } from "@carbon/icons-react";
 import type { ScanFailure, SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Spinner } from "@/components/ui/spinner";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { AgentStoppedCallout } from "../../../agents/components/agent-stopped-callout.js";
 import { SkillSourceList } from "./skills-source-list.js";
 
 const MAX_CHIPS = 8;
@@ -90,28 +88,10 @@ export function SkillsStoppedPanel({
   return (
     <div className="flex flex-col gap-8">
       {callout && <div className="-mb-4">{callout}</div>}
-      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted px-4 py-3 text-sm">
-        <Information
-          size={16}
-          className="mt-px shrink-0 text-muted-foreground"
-        />
-        <p className="min-w-0 flex-1">
-          <span className="font-semibold">This agent is stopped</span>{" "}
-          <span className="text-muted-foreground">
-            — its skills are read-only until it runs again. Start the agent to
-            change them.
-          </span>
-        </p>
-        <Button
-          size="sm"
-          disabled={comingUp}
-          onClick={onStart}
-          className="shrink-0"
-        >
-          {comingUp ? <Spinner size={13} /> : <Play size={14} />}
-          {comingUp ? "Starting…" : "Start agent"}
-        </Button>
-      </div>
+      <AgentStoppedCallout comingUp={comingUp} onStart={onStart}>
+        — its skills are read-only until it runs again. Start the agent to
+        change them.
+      </AgentStoppedCallout>
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">

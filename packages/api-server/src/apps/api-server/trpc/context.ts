@@ -107,6 +107,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
+      resolveSlackWorkspace: boot.resolveSlackWorkspace,
       agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,

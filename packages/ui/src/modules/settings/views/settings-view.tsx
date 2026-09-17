@@ -21,6 +21,8 @@ import {
 } from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
+import { useSlackInstallAvailability } from "../../slack/api/queries.js";
+import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { useAppVersion } from "../api/queries.js";
 import { ProvidersView } from "./providers-view.js";
 
@@ -58,14 +60,22 @@ export function SettingsView() {
   const { data: flags } = useFeatures();
   const showFeatures =
     isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
+  const slackInstall = useSlackInstallAvailability();
+  const showSlackWorkspaces = slackInstall.data === true;
   const tabs = [
     ...baseTabs,
+    ...(showSlackWorkspaces
+      ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
+      : []),
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
   ];
   const rawTab = useStore((s) => s.settingsTab);
-  const activeTab = rawTab === "features" && !showFeatures ? "account" : rawTab;
+  const hiddenTab =
+    (rawTab === "features" && !showFeatures) ||
+    (rawTab === "slack-workspaces" && !showSlackWorkspaces);
+  const activeTab = hiddenTab ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -211,6 +221,8 @@ export function SettingsView() {
             <UsageView />
           </div>
         )}
+
+        {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
 
         {activeTab === "features" && <FeaturesTab />}
       </div>

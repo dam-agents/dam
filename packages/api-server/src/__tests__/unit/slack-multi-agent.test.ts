@@ -104,7 +104,7 @@ function harness(
           ambient: spec.ambient === true,
           isDefault: spec.isDefault === true,
         })),
-      resolveSlackChannelsByInstance: async () => [CHANNEL],
+      resolveSlackChannelsByInstance: async () => [{ id: CHANNEL, teamId: "" }],
     } as never,
     async () => {},
     async () => {},

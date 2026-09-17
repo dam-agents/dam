@@ -60,7 +60,9 @@ function harness(boundChannelId = "C1") {
           isDefault: true,
         },
       ],
-      resolveSlackChannelsByInstance: async () => [boundChannelId],
+      resolveSlackChannelsByInstance: async () => [
+        { id: boundChannelId, teamId: "" },
+      ],
     } as never,
     async () => {},
     async () => {},

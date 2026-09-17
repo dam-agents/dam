@@ -13,6 +13,7 @@ import {
   resetResultSchema,
   slackFireCommandInputSchema,
   slackFireCommandResultSchema,
+  slackConnectWorkspaceInputSchema,
   slackFireMentionInputSchema,
   slackFireMessageInputSchema,
   slackReadOutboundResultSchema,
@@ -104,6 +105,12 @@ export const e2eRouter = t.router({
     .query(({ ctx }) => {
       gate(ctx);
       return ctx.e2e.slackReadOutbound();
+    }),
+
+  slackConnectWorkspace: t.procedure
+    .input(slackConnectWorkspaceInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.e2e.slackConnectWorkspace(input);
     }),
 
   slackResetOutbound: t.procedure

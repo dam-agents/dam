@@ -11,7 +11,20 @@ import type { AppRouter as MockAppRouter } from "mock-agent-api";
 import WS from "ws";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
+export interface SlackInstallE2eControl {
+  record(install: {
+    teamId: string;
+    teamName: string | null;
+    botToken: string;
+    installedBy: string | null;
+  }): Promise<string>;
+}
+
 export interface SlackE2eControl {
+  setChannels(
+    channels: { id: string; name: string; botIsMember: boolean }[],
+    teamId?: string,
+  ): void;
   fireMention(event: SlackFireMentionInput): Promise<void>;
   fireMessage(event: SlackFireMessageInput): Promise<void>;
   fireCommand(command: SlackFireCommandInput): Promise<string>;
@@ -22,6 +35,7 @@ export interface SlackE2eControl {
 export function createE2eService(deps: {
   namespace: string;
   slack?: SlackE2eControl;
+  slackInstalls?: SlackInstallE2eControl;
 }): E2eService {
   function requireSlack(): SlackE2eControl {
     if (!deps.slack) {
@@ -86,6 +100,23 @@ export function createE2eService(deps: {
     slackResetOutbound: async () => {
       requireSlack().resetOutbound();
       return { ok: true };
+    },
+    slackConnectWorkspace: async (input) => {
+      const slack = requireSlack();
+      if (!deps.slackInstalls) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "slack install control is not available on this deployment",
+        });
+      }
+      const secretPath = await deps.slackInstalls.record({
+        teamId: input.teamId,
+        teamName: input.teamName ?? null,
+        botToken: input.botToken,
+        installedBy: null,
+      });
+      slack.setChannels(input.channels, input.teamId);
+      return { ok: true, secretPath };
     },
   };
 }

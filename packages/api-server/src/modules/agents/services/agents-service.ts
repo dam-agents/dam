@@ -474,6 +474,13 @@ export function createAgentsService(deps: {
       slackChannelId: string,
     ) => Promise<boolean>;
   };
+  resolveSlackWorkspace: (
+    slackChannelId: string,
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "unknown" }
+    | { kind: "unreachable" }
+  >;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -541,6 +548,14 @@ export function createAgentsService(deps: {
       (b) => b.agentId === id,
     );
 
+    const workspace = await deps.resolveSlackWorkspace(slackChannelId);
+    if (workspace.kind === "unreachable") {
+      return err({ type: "WorkspaceUnreachable" as const });
+    }
+    if (workspace.kind !== "resolved") {
+      return err({ type: "WorkspaceUnresolved" as const });
+    }
+
     const requestedAmbient = ambient === true;
 
     const txResult = await deps.unitOfWork(async (tx) => {
@@ -548,6 +563,7 @@ export function createAgentsService(deps: {
         await deps.channelsTxRepo.upsertChannel(tx, id, {
           type: ChannelType.Slack,
           slackChannelId,
+          ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
         });
       } catch (e) {

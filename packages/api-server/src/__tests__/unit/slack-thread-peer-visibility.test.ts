@@ -123,7 +123,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
                 isDefault: false,
               },
             ],
-      resolveSlackChannelsByInstance: async () => [CHANNEL],
+      resolveSlackChannelsByInstance: async () => [{ id: CHANNEL, teamId: "" }],
     } as never,
     async () => {},
     async () => {},

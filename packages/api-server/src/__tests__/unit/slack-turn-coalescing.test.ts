@@ -82,7 +82,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
           isDefault: true,
         },
       ],
-      resolveSlackChannelsByInstance: async () => ["C1"],
+      resolveSlackChannelsByInstance: async () => [{ id: "C1", teamId: "" }],
     } as never,
     async () => {},
     async () => {},

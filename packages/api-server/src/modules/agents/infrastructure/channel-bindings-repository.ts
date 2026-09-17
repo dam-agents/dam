@@ -152,6 +152,7 @@ export function allChannelAgentIds(db: Db) {
 export interface SlackBindingRow {
   agentId: string;
   owner: string;
+  teamId: string;
   ambient: boolean;
   isDefault: boolean;
 }
@@ -168,6 +169,7 @@ export function findSlackBindingsByChannelId(db: Db) {
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
+        teamId: sql<string | null>`${channels.config}->>'teamId'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
         isDefault: sql<string | null>`${channels.config}->>'default'`,
         createdAt: channels.createdAt,
@@ -178,6 +180,7 @@ export function findSlackBindingsByChannelId(db: Db) {
     return rows.map((row) => ({
       agentId: row.agentId,
       owner: row.owner,
+      teamId: row.teamId ?? "",
       ambient: row.ambient === "true",
       isDefault: row.isDefault === "true",
     }));
@@ -289,8 +292,13 @@ export function setSlackChannelDefault(db: Db) {
   };
 }
 
+export interface SlackBoundConversation {
+  id: string;
+  teamId: string;
+}
+
 export function findSlackChannelsByAgent(db: Db) {
-  return async (agentId: string): Promise<string[]> => {
+  return async (agentId: string): Promise<SlackBoundConversation[]> => {
     const rows = await db
       .select({ config: channels.config })
       .from(channels)
@@ -302,8 +310,12 @@ export function findSlackChannelsByAgent(db: Db) {
       )
       .orderBy(sql`${channels.config}->>'slackChannelId'`);
     return rows
-      .map((r) => (r.config as { slackChannelId?: string }).slackChannelId)
-      .filter((id): id is string => !!id);
+      .map((r) => r.config as { slackChannelId?: string; teamId?: string })
+      .filter(
+        (c): c is { slackChannelId: string; teamId?: string } =>
+          !!c.slackChannelId,
+      )
+      .map((c) => ({ id: c.slackChannelId, teamId: c.teamId ?? "" }));
   };
 }
 

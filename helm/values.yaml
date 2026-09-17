@@ -174,10 +174,9 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, CHOWN + FOWNER so it can restore a container image's own
-    # ownership when it unpacks one for its machines to share, SETUID +
-    # SETGID so each machine's VMM runs under its own unprivileged uid
-    # rather than as root, and DAC_OVERRIDE so that unpack can write into
-    # the read-only and foreign-owned directories such a rootfs contains.
+    # ownership when it unpacks one for its machines to share, and
+    # DAC_OVERRIDE so that unpack can write into the read-only and
+    # foreign-owned directories such a rootfs contains.
     # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
@@ -303,8 +302,7 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and CHOWN + FOWNER + SETUID + SETGID +
-    # DAC_OVERRIDE which only
+    # allowedCapabilities, and CHOWN + FOWNER + DAC_OVERRIDE which only
     # the VM runner requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
@@ -574,6 +572,16 @@ keycloak:
   # upstream group to the `inspectors` group. Set to empty string to disable
   # usage-data access entirely (the endpoint will not be mounted).
   inspectorRole: "platform-inspector"
+  # -- Realm role required to connect another Slack workspace. Connecting a
+  # workspace is install-wide, not per-Agent, so it is an operator action
+  # rather than something any user may start. The chart auto-creates this role
+  # plus a `slack-installers` group mapped to it; grant access by adding users
+  # to the group via the Keycloak admin UI. Holders also see the Slack
+  # workspaces tab in Settings — it is hidden from everyone else. Leave empty
+  # to disable the install surface entirely (neither route is mounted) — the
+  # workspace the operator's `slackBotToken` was issued for keeps working
+  # either way.
+  slackInstallerRole: "platform-slack-installer"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -794,6 +802,26 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
+  # -- Slack app credentials (Basic Information -> App Credentials). Needed only
+  # to install the app into further workspaces: Slack hands the bot token over
+  # by copy-paste for the app's own workspace alone, and every other workspace
+  # must complete the OAuth exchange, which is what these sign. Leave empty to
+  # keep the install single-workspace — `slackBotToken` still serves it.
+  # The app must have public distribution activated and
+  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL. That
+  # URL is only ever fetched by the installing admin's browser, so it does not
+  # need to be reachable from the internet.
+  slackClientId: ""
+  slackClientSecret: ""
+  # -- Slack enterprise (organization) id that a connecting workspace must
+  # belong to, read from Slack's own install response. Empty means any
+  # workspace an operator invites may connect, which is what a standalone
+  # (non-Enterprise-Grid) app has to use — Slack reports no organization for
+  # those. Set it on an Enterprise Grid install: a Slack conversation id and a
+  # Slack user id each identify one thing only inside one organization, and two
+  # organizations connected at once would let a conversation reach the wrong
+  # Agent and a person inherit another person's platform identity.
+  slackEnterpriseId: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

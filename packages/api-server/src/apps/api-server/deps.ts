@@ -38,6 +38,8 @@ import type {
   TelegramOAuthPending,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { SlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
+import type { SlackInstallPending } from "../../modules/channels/infrastructure/slack-install-routes.js";
+import type { SlackInstallService } from "../../modules/channels/services/slack-install-service.js";
 import type { ConnectionsBootCompose } from "../../modules/connections/compose.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type { SchedulesBoot } from "../../modules/schedules/index.js";
@@ -68,6 +70,16 @@ export interface ApiServerDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: TtlStore<SlackOAuthPending>;
   pendingTelegramOAuthFlows: TtlStore<TelegramOAuthPending>;
+  pendingSlackInstalls: TtlStore<SlackInstallPending>;
+  slackInstalls: SlackInstallService;
+  resolveSlackWorkspace: (
+    slackChannelId: string,
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "unknown" }
+    | { kind: "unreachable" }
+  >;
+  slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;
   slackBindFlows: SlackBindFlowStore;
   seedSources: SkillSourceSeed[];

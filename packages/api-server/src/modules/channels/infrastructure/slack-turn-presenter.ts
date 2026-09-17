@@ -10,6 +10,7 @@ const WAKING = "is waking the agent — this can take a minute or two…";
 export interface TurnPresenterOpts {
   channel: string;
   threadTs: string;
+  teamId: string;
   instanceName: string;
   statusMinIntervalMs?: number;
   statusRefreshMs?: number;
@@ -36,7 +37,7 @@ export function createTurnPresenter(
   gw: SlackGateway,
   opts: TurnPresenterOpts,
 ): TurnPresenter {
-  const { channel, threadTs, instanceName } = opts;
+  const { channel, threadTs, teamId, instanceName } = opts;
   const statusMinIntervalMs = opts.statusMinIntervalMs ?? 1_000;
   const statusRefreshMs = opts.statusRefreshMs ?? 75_000;
 
@@ -49,7 +50,7 @@ export function createTurnPresenter(
 
   function sendStatus(status: string) {
     if (statusDisabled) return;
-    gw.setStatus({ channel, threadTs, status }).catch((err) => {
+    gw.setStatus({ channel, threadTs, teamId, status }).catch((err) => {
       statusDisabled = true;
       getLogger().debug(
         { agentId: instanceName, err: formatError(err) },
@@ -127,7 +128,7 @@ export function createTurnPresenter(
       if (statusDisabled || currentStatus === "") return;
       currentStatus = "";
       try {
-        await gw.setStatus({ channel, threadTs, status: "" });
+        await gw.setStatus({ channel, threadTs, teamId, status: "" });
       } catch (err) {
         getLogger().debug(
           { err: formatError(err) },

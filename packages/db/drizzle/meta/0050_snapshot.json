@@ -1,5 +1,5 @@
 {
-  "id": "2beafcd5-7c22-440a-bbd7-a022d7278d46",
+  "id": "59fc0b81-ee67-499f-bfff-678009cde846",
   "prevId": "1456eda5-3b2b-48d4-8b26-2536354427a5",
   "version": "7",
   "dialect": "postgresql",
@@ -1059,213 +1059,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.attention_records": {
-      "name": "attention_records",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_sub": {
-          "name": "owner_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "schedule_id": {
-          "name": "schedule_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "experiment_id": {
-          "name": "experiment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "activity_at": {
-          "name": "activity_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seen_at": {
-          "name": "seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "working": {
-          "name": "working",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "captured_at": {
-          "name": "captured_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "attention_records_owner_activity_idx": {
-          "name": "attention_records_owner_activity_idx",
-          "columns": [
-            {
-              "expression": "owner_sub",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "activity_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "attention_records_activity_idx": {
-          "name": "attention_records_activity_idx",
-          "columns": [
-            {
-              "expression": "activity_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "attention_records_agent_id_session_id_pk": {
-          "name": "attention_records_agent_id_session_id_pk",
-          "columns": [
-            "agent_id",
-            "session_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.attention_state": {
-      "name": "attention_state",
-      "schema": "",
-      "columns": {
-        "user_sub": {
-          "name": "user_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_kind": {
-          "name": "item_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dismissed_at": {
-          "name": "dismissed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "attention_state_user_idx": {
-          "name": "attention_state_user_idx",
-          "columns": [
-            {
-              "expression": "user_sub",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "attention_state_user_sub_item_kind_item_id_pk": {
-          "name": "attention_state_user_sub_item_kind_item_id_pk",
-          "columns": [
-            "user_sub",
-            "item_kind",
-            "item_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.channels": {
       "name": "channels",
       "schema": "",
@@ -1334,6 +1127,12 @@
               "nulls": "last"
             },
             {
+              "expression": "coalesce(\"config\"->>'teamId', '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
               "expression": "(\"config\"->>'slackChannelId')",
               "asc": true,
               "isExpression": true,
@@ -1349,6 +1148,12 @@
         "channels_slack_default_agent_idx": {
           "name": "channels_slack_default_agent_idx",
           "columns": [
+            {
+              "expression": "coalesce(\"config\"->>'teamId', '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
             {
               "expression": "(\"config\"->>'slackChannelId')",
               "asc": true,
@@ -3443,6 +3248,71 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.slack_installs": {
+      "name": "slack_installs",
+      "schema": "",
+      "columns": {
+        "team_id": {
+          "name": "team_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "team_name": {
+          "name": "team_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "secret_path": {
+          "name": "secret_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_field": {
+          "name": "secret_field",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installed_by": {
+          "name": "installed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credential_state": {
+          "name": "credential_state",
+          "type": "slack_credential_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.telegram_conversations": {
       "name": "telegram_conversations",
       "schema": "",
@@ -3597,6 +3467,14 @@
       "values": [
         "success",
         "failure"
+      ]
+    },
+    "public.slack_credential_state": {
+      "name": "slack_credential_state",
+      "schema": "public",
+      "values": [
+        "active",
+        "rejected"
       ]
     }
   },
