@@ -163,7 +163,11 @@ function machineUsage(): MemSample | null {
  * under pressure, so the cache is subtracted before comparing. A machine on the
  * vm Backend has no cgroup limit at all — the kernel creates none on a cgroup2
  * root, and the hypervisor is the only ceiling — so the machine's own memory is
- * the limit. There the kernel's own MemAvailable estimate is the headroom
+ * the limit. That substitution is made only inside a machine, never merely
+ * because a cgroup limit is missing: an uncapped container reads its node's
+ * memory from /proc/meminfo, where a neighbour's usage would reap this agent's
+ * tool process for someone else's appetite. Such a container stays unwatched,
+ * as it is today. There the kernel's own MemAvailable estimate is the headroom
  * signal: it already discounts reclaimable cache, which a plain total-minus-free
  * would count as used and reap on an idle guest. Both numbers are re-read every
  * cycle rather than fixed at start, because a balloon device can take memory
@@ -180,7 +184,8 @@ export function startMemReaper(opts: {
   );
   const cgLimit =
     cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15 ? cgMax : null;
-  if (cgLimit === null && readMeminfoBytes("MemAvailable") === null) {
+  const inMachine = process.env.PLATFORM_VM_PERSIST_PATHS !== undefined;
+  if (cgLimit === null && !(inMachine && readMeminfoBytes("MemAvailable"))) {
     opts.log("no readable memory limit; reaper disabled");
     return;
   }
