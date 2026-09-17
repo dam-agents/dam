@@ -49,6 +49,7 @@ export interface TemplateUpdate {
 export interface Agent {
   id: string;
   name: string;
+  createdAt?: string;
   templateId?: string;
   templateUpdate?: TemplateUpdate;
   spec: AgentSpec;
@@ -172,6 +173,12 @@ export interface AgentsService {
     agentId: string,
     flowId: string,
   ) => Promise<BindSlackChannelResult>;
+  peekSlackBindFlow: (
+    flowId: string,
+  ) => Promise<{ slackChannelId: string; name?: string } | null>;
+  peekTelegramBindFlow: (
+    flowId: string,
+  ) => Promise<{ chatTitle: string | null } | null>;
   bindTelegramChat: (
     agentId: string,
     flowId: string,

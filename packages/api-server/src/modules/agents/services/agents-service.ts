@@ -1200,6 +1200,34 @@ export function createAgentsService(deps: {
       })(agentId, flowId);
     },
 
+    async peekSlackBindFlow(flowId) {
+      const binding = deps.slackBinding;
+      if (!binding) return null;
+      const flow = await binding.peekFlow(flowId);
+      if (!flow) return null;
+      if (flow.channelTitle)
+        return {
+          slackChannelId: flow.slackChannelId,
+          name: flow.channelTitle,
+        };
+      const names = await slackChannelNames([
+        [{ type: ChannelType.Slack, slackChannelId: flow.slackChannelId }],
+      ]);
+      const name = names[flow.slackChannelId];
+      return {
+        slackChannelId: flow.slackChannelId,
+        ...(name ? { name } : {}),
+      };
+    },
+
+    async peekTelegramBindFlow(flowId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return null;
+      const flow = await binding.peekFlow(flowId);
+      if (!flow) return null;
+      return { chatTitle: flow.chatTitle ?? null };
+    },
+
     async bindSlackChannel(agentId, flowId) {
       const binding = deps.slackBinding;
       if (!binding) return err({ type: "FlowInvalid" as const });

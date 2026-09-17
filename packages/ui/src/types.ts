@@ -121,6 +121,7 @@ export type AgentState =
 export interface AgentView {
   id: string;
   name: string;
+  createdAt?: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
   features: { liveUpdates: boolean };
