@@ -5,6 +5,11 @@ import {
   registryFilledCount,
 } from "../../sandboxes/components/registry-credential-section.js";
 import type { CreateAgentInput } from "../api/mutations.js";
+import {
+  type RepositoryDraft,
+  repositorySeed,
+  repositoryUrlError,
+} from "./repository-seed.js";
 
 export interface CreateAgentDraft {
   name: string;
@@ -35,7 +40,7 @@ export function buildCreateAgentInput(
   };
 }
 
-export interface CodingAgentSetupDraft {
+export interface CodingAgentSetupDraft extends RepositoryDraft {
   name: string;
   templateId: string | null;
   customImage: string;
@@ -67,7 +72,8 @@ export function isCodingAgentSetupComplete(
     (draft.hibernationTimeoutMin === null ||
       (Number.isInteger(draft.hibernationTimeoutMin) &&
         draft.hibernationTimeoutMin >= 0)) &&
-    !hasPartialRegistryCredential(draft)
+    !hasPartialRegistryCredential(draft) &&
+    repositoryUrlError(draft.repositoryUrl) === undefined
   );
 }
 
@@ -79,9 +85,11 @@ export function buildCodingAgentSetupInput(
   }
   const image = draft.customImage.trim();
   const credential = draft.registryCredential;
+  const gitRepo = repositorySeed(draft);
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
+    ...(gitRepo ? { gitRepo } : {}),
     ...(draft.hibernationTimeoutMin === null
       ? {}
       : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),

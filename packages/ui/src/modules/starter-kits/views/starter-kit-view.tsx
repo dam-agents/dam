@@ -339,7 +339,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
             )}
 
             {kit.seed && (
-              <Section label="Definition">
+              <Section label="Repository">
                 <Row
                   title={kit.seed.url.replace("https://github.com/", "")}
                   detail={`Seeded into ${
@@ -356,7 +356,7 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                       href={kit.seed.url}
                       target="_blank"
                       rel="noreferrer"
-                      aria-label="Open the definition repository"
+                      aria-label="Open the repository"
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <Launch size={16} />

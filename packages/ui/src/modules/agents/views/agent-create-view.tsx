@@ -45,7 +45,6 @@ import { KitChannelsSection } from "../../starter-kits/components/kit-channels-s
 import { KitKnowledgeBaseNote } from "../../starter-kits/components/kit-knowledge-base-note.js";
 import { KitRequirementsCard } from "../../starter-kits/components/kit-requirements-card.js";
 import { KitScheduleCard } from "../../starter-kits/components/kit-schedule-card.js";
-import { KitSeedNote } from "../../starter-kits/components/kit-seed-note.js";
 import { KitSkillsSection } from "../../starter-kits/components/kit-skills-section.js";
 import { kitBadges } from "../../starter-kits/lib/catalog-cards.js";
 import {
@@ -66,12 +65,14 @@ import {
 } from "../../starter-kits/lib/setup.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { RepositorySection } from "../components/repository-section.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
   hasPartialRegistryCredential,
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
+import { repositoryUrlError } from "../lib/repository-seed.js";
 
 export function StarterKitSetupView() {
   const catalog = useStore((s) => s.starterKitCatalog);
@@ -253,6 +254,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
+    repositoryUrl: form.repositoryUrl,
+    repositoryRef: form.repositoryRef,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
@@ -388,12 +391,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                   memory stay editable on the agent; disk is fixed at create.
                 </p>
               )}
-              {kit && (
-                <>
-                  <KitSeedNote kit={kit} className="mt-1.5 text-xs" />
-                  <KitKnowledgeBaseNote kit={kit} className="mt-1.5 text-xs" />
-                </>
-              )}
+              <KitKnowledgeBaseNote kit={kit} className="mt-1.5 text-xs" />
             </div>
             <Button
               variant="outline"
@@ -415,6 +413,21 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       )}
 
       <NameSection value={form.name} onChange={(name) => update({ name })} />
+
+      <RepositorySection
+        fixed={kit?.seed}
+        field={
+          kit
+            ? undefined
+            : {
+                url: form.repositoryUrl,
+                branch: form.repositoryRef,
+                error: repositoryUrlError(form.repositoryUrl),
+                onUrlChange: (repositoryUrl) => update({ repositoryUrl }),
+                onBranchChange: (repositoryRef) => update({ repositoryRef }),
+              }
+        }
+      />
 
       {!kit && (
         <ImageSection
