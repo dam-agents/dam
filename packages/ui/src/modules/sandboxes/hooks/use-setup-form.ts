@@ -18,8 +18,7 @@ export const setupFormSchema = z.object({
   templateId: z.string().nullable().default(null),
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
-  repositoryUrl: z.string().default(""),
-  repositoryRef: z.string().default(""),
+  skipSeed: z.boolean().default(false),
   hibernationTimeoutMin: z
     .number()
     .int()

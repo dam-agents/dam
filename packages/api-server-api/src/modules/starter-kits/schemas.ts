@@ -196,7 +196,5 @@ export const starterKitApplyInputSchema = z.object({
   slackChannelId: z.string().min(1).optional(),
   skipSchedules: z.array(z.string().min(1)).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
-  gitRepo: z
-    .object({ url: z.url(), ref: z.string().min(1).optional() })
-    .optional(),
+  skipSeed: z.boolean().optional(),
 });

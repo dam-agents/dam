@@ -17,7 +17,7 @@ import {
   isStarterKitSetupComplete,
   kitResourcesLine,
   kitScheduleCadence,
-  kitTakesRepository,
+  kitSeedRemovable,
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
@@ -44,12 +44,13 @@ const templates: TemplateIndex = new Map([
 
 const kit: Pick<
   StarterKitView,
-  "id" | "catalog" | "image" | "connections" | "seed"
+  "id" | "catalog" | "image" | "connections" | "seed" | "install"
 > = {
   id: "code-reviewer",
   catalog: "platform",
   image: undefined,
   seed: undefined,
+  install: undefined,
   connections: [
     { accepts: ["github-app", "github-pat"], required: true },
     { accepts: ["slack"], required: false },
@@ -70,8 +71,7 @@ const complete: StarterKitSetupDraft = {
   slackChannelId: " C123 ",
   skippedSchedules: [],
   scheduleOverrides: [],
-  repositoryUrl: "",
-  repositoryRef: "",
+  skipSeed: false,
 };
 
 describe("requirementStatuses", () => {
@@ -163,6 +163,7 @@ describe("buildStarterKitApplyInput", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
+      skipSeed: false,
       skipSchedules: ["benchmark"],
       scheduleOverrides: [],
     });
@@ -188,24 +189,11 @@ describe("buildStarterKitApplyInput", () => {
         templates,
       ),
     ).toThrow();
-    expect(
-      isStarterKitSetupComplete(
-        kit,
-        { ...complete, repositoryUrl: "acme/app" },
-        owned,
-        templates,
-      ),
-    ).toBe(false);
   });
 
-  // TEST_SCENARIO: the work directory is the user's to fill only while the kit's own repository does not occupy it.
-  test("passes the user's repository only when the kit leaves the work directory free", () => {
-    const named = {
-      ...complete,
-      repositoryUrl: " https://github.com/acme/app ",
-      repositoryRef: "release",
-    };
-    const definitionInHome = {
+  // TEST_SCENARIO: a kit whose install runs from its checkout keeps its repository whatever the draft says.
+  test("removes the kit's repository only when nothing in the kit runs from it", () => {
+    const seeded = {
       ...kit,
       seed: {
         url: "https://github.com/acme/code-guardian",
@@ -213,25 +201,21 @@ describe("buildStarterKitApplyInput", () => {
         into: "home" as const,
       },
     };
-    expect(kitTakesRepository(kit)).toBe(true);
-    expect(kitTakesRepository(definitionInHome)).toBe(true);
+    const removed = { ...complete, skipSeed: true };
+    expect(kitSeedRemovable(seeded)).toBe(true);
     expect(
-      buildStarterKitApplyInput(definitionInHome, named, owned, templates),
-    ).toMatchObject({
-      gitRepo: { url: "https://github.com/acme/app", ref: "release" },
-    });
+      buildStarterKitApplyInput(seeded, removed, owned, templates),
+    ).toMatchObject({ skipSeed: true });
 
-    const toolkitAsWorkspace = {
-      ...kit,
-      seed: { url: "https://github.com/acme/wiki", into: "work" as const },
+    const withInstall = {
+      ...seeded,
+      install: { command: "bash bootstrap.sh" },
     };
-    expect(kitTakesRepository(toolkitAsWorkspace)).toBe(false);
+    expect(kitSeedRemovable(withInstall)).toBe(false);
     expect(
-      buildStarterKitApplyInput(toolkitAsWorkspace, named, owned, templates),
-    ).not.toHaveProperty("gitRepo");
-    expect(
-      buildStarterKitApplyInput(kit, complete, owned, templates),
-    ).not.toHaveProperty("gitRepo");
+      buildStarterKitApplyInput(withInstall, removed, owned, templates),
+    ).toMatchObject({ skipSeed: false });
+    expect(kitSeedRemovable(kit)).toBe(false);
   });
 });
 

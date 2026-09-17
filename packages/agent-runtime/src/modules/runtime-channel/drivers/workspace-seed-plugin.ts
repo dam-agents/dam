@@ -38,8 +38,8 @@ export type FetchIntoFn = (
  * UNIT_BOUNDARY_DESCRIPTION: Seeds a directory from a repository exactly
  * once — the work directory, or the agent's home when the seed says so (a
  * definition that wants to be `$HOME`, with `work/` as its data directory).
- * The two are marked apart, so a kit's definition in the home and the
- * repository the user named in the work directory both land.
+ * The two are marked apart, so a seed into the home never counts as the
+ * work directory's, and each can land once.
  * Completion is a sentinel in the plugin's state dir — a `.git` alone proves
  * nothing, since a failed attempt or the agent's own clone leaves one too. A
  * plain ref into an empty work directory is a shallow clone; everything else

@@ -211,6 +211,7 @@ const APPLY = {
   connectionIds: ["c-gh"],
   skipSchedules: [] as string[],
   scheduleOverrides: [],
+  skipSeed: false,
 };
 
 function onboardingEvents(calls: { bumped: { events: BumpedEvent[] }[] }) {
@@ -367,57 +368,23 @@ describe("starter kits: apply", () => {
     expect(prompt).toContain("into your home directory ($HOME)");
   });
 
-  it("queues the repository the user named as a second seed when the kit's own goes to the home directory", async () => {
-    const { service, calls } = makeHarness({
-      ...LOADED,
-      kit: kit({
-        schedules: [],
-        seed: {
-          url: "https://github.com/acme/code-guardian",
-          ref: "main",
-          into: "home",
-        },
-      }),
-    });
-    await service.apply({
-      ...APPLY,
-      gitRepo: { url: "https://github.com/acme/app", ref: "release" },
-    });
-    expect(calls.created[0]).toMatchObject({
-      gitRepo: { url: "https://github.com/acme/code-guardian", into: "home" },
-    });
-    const [seed] = calls.bumped.flatMap((b) => b.events);
-    expect(seed).toMatchObject({
-      kind: "workspace-seed",
-      payload: { url: "https://github.com/acme/app", ref: "release" },
-    });
-    expect(seed!.id).toMatch(/^repository:agent-1:\d+$/);
+  it("removes the kit's repository when asked: no seed, and a briefing that ships none", async () => {
+    const h = makeHarness(LOADED);
+    await h.service.apply({ ...APPLY, skipSeed: true });
+    expect(h.calls.created[0]).not.toHaveProperty("gitRepo");
+    const [event] = onboardingEvents(h.calls);
+    const prompt = (event?.payload as { task: string }).task;
+    expect(prompt).toContain("This kit ships no definition repository.");
+    expect(prompt).not.toContain("ONBOARDING.md");
   });
 
-  it("seeds the repository the user named into the work directory of a seedless kit", async () => {
+  it("refuses to remove the repository of a kit whose install runs from it", async () => {
     const { service, calls } = makeHarness({
       ...LOADED,
-      kit: kit({ schedules: [], seed: undefined }),
+      kit: kit({ install: { command: "bash bootstrap.sh" } }),
     });
-    await service.apply({
-      ...APPLY,
-      gitRepo: { url: "https://github.com/acme/app" },
-    });
-    expect(calls.created[0]).not.toHaveProperty("gitRepo");
-    const [seed] = calls.bumped.flatMap((b) => b.events);
-    expect(seed).toMatchObject({
-      kind: "workspace-seed",
-      payload: { url: "https://github.com/acme/app" },
-    });
-  });
-
-  it("refuses a repository of the user's when the kit's own is the work directory", async () => {
-    const { service, calls } = makeHarness(LOADED);
     await expect(
-      service.apply({
-        ...APPLY,
-        gitRepo: { url: "https://github.com/acme/app" },
-      }),
+      service.apply({ ...APPLY, skipSeed: true }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(calls.created).toEqual([]);
   });

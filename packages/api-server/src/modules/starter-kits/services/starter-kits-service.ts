@@ -34,7 +34,6 @@ import {
   initializationEvent,
   type RuntimeMutator,
   workspaceCommandEvent,
-  workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
@@ -61,6 +60,12 @@ export interface StarterKitsServiceDeps {
 }
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+function withoutSeed(kit: StarterKit): StarterKit {
+  const rest = { ...kit };
+  delete rest.seed;
+  return rest;
+}
 
 function seedGitRepo(
   seed: NonNullable<StarterKit["seed"]>,
@@ -249,7 +254,16 @@ export function createStarterKitsService(
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const loaded = await requireKit(input.catalog, input.kitId);
+      const requested = await requireKit(input.catalog, input.kitId);
+      if (input.skipSeed && requested.kit.install)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "this kit's install runs from its repository, so the repository cannot be removed",
+        });
+      const loaded: LoadedKit = input.skipSeed
+        ? { ...requested, kit: withoutSeed(requested.kit) }
+        : requested;
       const { kit, version } = loaded;
 
       if (!kit.image && !input.templateId)
@@ -269,14 +283,6 @@ export function createStarterKitsService(
           message: `missing required connection: ${unmet
             .map((u) => describeAccepts(u.accepts, titles))
             .join("; ")}`,
-        });
-      }
-
-      if (input.gitRepo && kit.seed && kit.seed.into !== "home") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "this kit's own repository is the work directory; it takes no other",
         });
       }
 
@@ -305,23 +311,15 @@ export function createStarterKitsService(
       const agent = await deps.agents.create(createInput);
 
       try {
-        const queued = [
-          ...(input.gitRepo
-            ? [workspaceSeedEvent("repository", agent.id, input.gitRepo, now())]
-            : []),
-          ...(kit.install
-            ? [
-                workspaceCommandEvent(
-                  "kit-install",
-                  agent.id,
-                  kit.install.command,
-                  now(),
-                ),
-              ]
-            : []),
-        ];
-        if (queued.length > 0) {
-          await deps.runtimeMutator.bump(agent.id, queued);
+        if (kit.install) {
+          await deps.runtimeMutator.bump(agent.id, [
+            workspaceCommandEvent(
+              "kit-install",
+              agent.id,
+              kit.install.command,
+              now(),
+            ),
+          ]);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
         }
         const seeded = await seedSchedules(

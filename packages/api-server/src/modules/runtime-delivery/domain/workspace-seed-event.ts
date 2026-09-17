@@ -11,10 +11,9 @@ export type WorkspaceSeed = NonNullable<AgentCreateInput["gitRepo"]>;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A one-shot seed of the agent's work directory,
  * or its home when the seed says so, from a repository — a create's
- * `gitRepo`, a kit's own definition, or the repository the user adds to a
- * kit. Built here so every create path queues the same event shape; the
- * prefix names the path that queued it, so a kit's definition and the user's
- * repository queued in the same instant keep distinct keys.
+ * `gitRepo` or a kit's own definition. Built here so every create path
+ * queues the same event shape; the prefix names the path that queued it, so
+ * two seeds queued in the same instant keep distinct keys.
  */
 export function workspaceSeedEvent(
   idPrefix: string,

@@ -64,8 +64,6 @@ const setup: CodingAgentSetupDraft = {
   connectionIds: ["conn-granted"],
   registryCredential: EMPTY_REGISTRY_CREDENTIAL,
   hibernationTimeoutMin: 60,
-  repositoryUrl: "",
-  repositoryRef: "",
 };
 
 const fullCredential = {
@@ -109,24 +107,6 @@ describe("coding-agent setup completeness", () => {
     };
     expect(hasPartialRegistryCredential(partialCustom)).toBe(true);
     expect(isCodingAgentSetupComplete(partialCustom)).toBe(false);
-  });
-
-  it("accepts a blank or https repository and refuses anything else", () => {
-    expect(
-      isCodingAgentSetupComplete({
-        ...setup,
-        repositoryUrl: "https://github.com/acme/app",
-      }),
-    ).toBe(true);
-    expect(
-      isCodingAgentSetupComplete({
-        ...setup,
-        repositoryUrl: "git@github.com:acme/app.git",
-      }),
-    ).toBe(false);
-    expect(
-      isCodingAgentSetupComplete({ ...setup, repositoryUrl: "acme/app" }),
-    ).toBe(false);
   });
 });
 
@@ -172,25 +152,6 @@ describe("buildCodingAgentSetupInput", () => {
         registryCredential: fullCredential,
       }),
     ).not.toHaveProperty("registryCredential");
-  });
-
-  it("seeds the named repository into the workspace, on its branch when one is given", () => {
-    expect(
-      buildCodingAgentSetupInput({
-        ...setup,
-        repositoryUrl: " https://github.com/acme/app ",
-        repositoryRef: " release ",
-      }),
-    ).toMatchObject({
-      gitRepo: { url: "https://github.com/acme/app", ref: "release" },
-    });
-    expect(
-      buildCodingAgentSetupInput({
-        ...setup,
-        repositoryUrl: "https://github.com/acme/app",
-      }).gitRepo,
-    ).toEqual({ url: "https://github.com/acme/app" });
-    expect(buildCodingAgentSetupInput(setup)).not.toHaveProperty("gitRepo");
   });
 
   // TEST_SCENARIO: an untouched lifecycle choice must inherit the template's or the cluster's window, never the UI's own default.
