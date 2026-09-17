@@ -82,11 +82,7 @@ function applyUpdateOf(
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
-      return closeActiveAssistant(
-        messages,
-        at,
-        update.telemetryPromptId ?? telemetryPromptId,
-      );
+      return closeActiveAssistant(messages, at, telemetryPromptId);
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)

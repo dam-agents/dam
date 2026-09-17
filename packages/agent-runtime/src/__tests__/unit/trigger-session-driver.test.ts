@@ -31,7 +31,6 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       backgroundWork: [],
     }),
     resetSession: () => {},
-    recordTelemetryPromptId: () => {},
     refreshEnv: () => {},
     recycleForConfig: () => {},
     shutdown: () => {},

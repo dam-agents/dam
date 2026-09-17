@@ -603,14 +603,10 @@ const server = http.createServer((req, res) => {
             .end(JSON.stringify({ error: parsed.error.message }));
           return;
         }
-        const sessionId = decodeURIComponent(backgroundWorkMatch[1]!);
-        backgroundWork.report(sessionId, parsed.data.items);
-        if (parsed.data.telemetryPromptId !== undefined) {
-          acpRuntime.recordTelemetryPromptId(
-            sessionId,
-            parsed.data.telemetryPromptId,
-          );
-        }
+        backgroundWork.report(
+          decodeURIComponent(backgroundWorkMatch[1]!),
+          parsed.data.items,
+        );
         res.writeHead(204, CORS).end();
       })
       .catch((err: unknown) => {

@@ -8,7 +8,6 @@ export const platformTurnEndedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1).optional(),
   stopReason: z.string().min(1).optional(),
-  telemetryPromptId: z.string().min(1).optional(),
 });
 export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema

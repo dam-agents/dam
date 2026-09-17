@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-16
+Last verified: 2026-09-17
 
 ## Overview
 

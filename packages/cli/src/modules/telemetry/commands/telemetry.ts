@@ -30,6 +30,25 @@ import type { TelemetryService } from "../services/telemetry-service.js";
 const DEFAULT_SINCE_HOURS = TELEMETRY_DEFAULT_SINCE_HOURS;
 const EXPORT_SINCE_HOURS = TELEMETRY_MAX_SINCE_HOURS;
 
+class InvalidSinceError extends Error {}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: read the shared `--since` option once. An omitted
+ * value takes the command's default; a value that is not a positive number is
+ * refused here rather than reaching the wire as NaN, where the server would
+ * reject it with a less legible error.
+ */
+function sinceHoursOf(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const hours = Number(raw);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new InvalidSinceError(
+      `--since must be a positive number, got "${raw}"`,
+    );
+  }
+  return hours;
+}
+
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 
@@ -96,11 +115,13 @@ export function buildTelemetryCommand(deps: Deps): Command {
         },
       ) => {
         const { host, agent } = await hostAndAgent(deps, ref, opts.server);
-        const parsedSince = opts.since ? Number(opts.since) : Number.NaN;
-        const sinceHours =
-          Number.isFinite(parsedSince) && parsedSince > 0
-            ? parsedSince
-            : DEFAULT_SINCE_HOURS;
+        let sinceHours: number;
+        try {
+          sinceHours = sinceHoursOf(opts.since, DEFAULT_SINCE_HOURS);
+        } catch (err) {
+          process.stderr.write(`${(err as Error).message}\n`);
+          return process.exit(EXIT_BELOW_FLOOR);
+        }
 
         const result = await deps.createTelemetryService(host).turns({
           agentId: agent.id,
@@ -191,12 +212,19 @@ export function buildTelemetryCommand(deps: Deps): Command {
           return process.exit(EXIT_RUNTIME_FAILURE);
         }
         const { host, agent } = await hostAndAgent(deps, ref, opts.server);
+        let sinceHours: number;
+        try {
+          sinceHours = sinceHoursOf(opts.since, EXPORT_SINCE_HOURS);
+        } catch (err) {
+          process.stderr.write(`${(err as Error).message}\n`);
+          return process.exit(EXIT_BELOW_FLOOR);
+        }
 
         const outcome = await deps.createExportClient(host).run({
           agentId: agent.id,
           ...(opts.session === undefined ? {} : { sessionId: opts.session }),
           signal: opts.signal,
-          sinceHours: opts.since ? Number(opts.since) : EXPORT_SINCE_HOURS,
+          sinceHours,
         });
 
         if (outcome.kind === "failed") {

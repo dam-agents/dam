@@ -42,27 +42,6 @@ describe("the background-work report contract", () => {
     expect(registry.held()[0]!.items).toHaveLength(64);
   });
 
-  it("carries the harness's prompt id for the turn alongside the items", () => {
-    /**
-     * TEST_SCENARIO: the same hook payload names the id the harness stamps on
-     * this turn's telemetry; the report passes it through, clamped, and a
-     * report without one stays exactly what it was.
-     */
-    const withId = backgroundWorkReportSchema.safeParse({
-      items: [],
-      telemetryPromptId: "x".repeat(300),
-    });
-    expect(withId.success).toBe(true);
-    if (withId.success) expect(withId.data.telemetryPromptId).toHaveLength(128);
-
-    const without = backgroundWorkReportSchema.safeParse({ items: [] });
-    expect(without.success && without.data.telemetryPromptId).toBeUndefined();
-    expect(
-      backgroundWorkReportSchema.safeParse({ items: [], telemetryPromptId: "" })
-        .success,
-    ).toBe(false);
-  });
-
   it("accepts the empty report that releases a hold", () => {
     const parsed = backgroundWorkReportSchema.safeParse({ items: [] });
 

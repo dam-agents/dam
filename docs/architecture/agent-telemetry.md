@@ -175,17 +175,18 @@ in place to the exchange's own timeline. There is no separate panel and no list 
 cross-reference against the transcript: the transcript *is* the list, and a row of telemetry
 belongs to the message above it.
 
-A Turn is matched to its reply **by the prompt id**. The harness hands the runtime its id
-for the running turn from a hook, and the runtime names it on the end-of-turn notification
-([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), which is logged and
-replayed like the rest of the transcript; a history rebuilt from the harness's own
-transcript carries the id on each replayed frame instead. So a reply knows which Turn it
-belongs to, and the join is a lookup rather than a guess. A reply that never learned its id
-falls back to the prompt's time: the Turn belongs to the exchange whose prompt was the latest
-sent at or before the Turn began, with a few seconds' slack for a sender's own message, which
-keeps the browser's stamp until the session is reloaded. A keyed match is never displaced by
-a timed one, a reply still streaming shows nothing until it settles, and a reply with neither
-an id nor a time stays unlabelled rather than being lined up by position.
+A Turn is matched to its reply **by the prompt id**, which a reply learns when the Session is
+loaded: the history the harness replays stamps each reply with the prompt id of the message
+it answered, by position, so the join is authoritative once loaded. This is deliberately not
+attempted live off the harness's stop hook — that report names only its Session, never which
+Turn, so a report that outran its Turn would attach to the wrong reply; the runtime keeps the
+correlation to the load path, where position settles it. A reply still being watched live has
+not learned its id yet and falls back to the prompt's **time**: the Turn belongs to the
+exchange whose prompt was the latest sent at or before the Turn began, with a few seconds'
+slack for a sender's own message, which keeps the browser's stamp until the Session is
+reloaded. A keyed match is never displaced by a timed one, a reply still streaming shows
+nothing until it settles, and a reply with neither an id nor a time stays unlabelled rather
+than being lined up by position.
 
 Session-wide access stays off the conversation: the Session's own menu exports its telemetry
 as a file. The panel is revealed by an experimental feature ([features](features.md)); the

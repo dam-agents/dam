@@ -83,7 +83,6 @@ export interface AcpRuntime {
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
   resetSession(sessionId: string): void;
-  recordTelemetryPromptId(sessionId: string, telemetryPromptId: string): void;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
   shutdown(): void;
@@ -590,10 +589,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  const telemetryPromptIds = new Map<string, string>();
-
   function tearDownSession(sessionId: string): void {
-    telemetryPromptIds.delete(sessionId);
     if (sessionCloseSupported && !harnessColdSessions.has(sessionId)) {
       lease.send({
         jsonrpc: "2.0",
@@ -736,10 +732,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
-          const telemetryPromptId = turnEnded
-            ? telemetryPromptIds.get(sid)
-            : undefined;
-          if (turnEnded) telemetryPromptIds.delete(sid);
           transcript.append(
             sid,
             JSON.stringify(
@@ -747,7 +739,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 sessionId: sid,
                 ...(promptId !== null && { promptId }),
                 ...(stopReason !== null && { stopReason }),
-                ...(telemetryPromptId !== undefined && { telemetryPromptId }),
               }),
             ),
           );
@@ -1081,25 +1072,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     resetSession(sessionId) {
       tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
-    },
-
-    /**
-     * UNIT_BOUNDARY_DESCRIPTION: the harness names the running turn's telemetry
-     * from a stop hook, which the harness runs to completion before it returns
-     * the turn's result — so the report lands while the turn is still in flight
-     * and rides that turn's end-of-turn signal. A report the runtime cannot
-     * place on an in-flight turn carries no turn identity of its own, so it is
-     * dropped rather than guessed onto a bystander; the reply is keyed by
-     * position when the session is next loaded from the harness's own history.
-     */
-    recordTelemetryPromptId(sessionId, telemetryPromptId) {
-      if (promptScheduler.hasTurnInFlight(sessionId)) {
-        telemetryPromptIds.set(sessionId, telemetryPromptId);
-        return;
-      }
-      deps.log?.(
-        `telemetry prompt id for ${sessionId} arrived with no turn to attribute it to; the reply is keyed by position on the next session load instead`,
-      );
     },
 
     refreshEnv(opts) {
