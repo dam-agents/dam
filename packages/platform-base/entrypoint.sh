@@ -56,19 +56,26 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 	# whole boot is in the record rather than only the part after the harness
 	# starts.
 	#
-	# Each boot starts a fresh file and keeps one previous boot beside it, so a
-	# crash loop cannot erase the boot that explains it and the kept history is
-	# bounded. Intentional simplification: nothing bounds a *single* boot's file
-	# — an agent that logs without pause can still fill its disk, and the cap
-	# below only trims what a previous boot left. The upgrade path is logrotate,
-	# which the image now has a directory for, once something in the machine can
-	# run it periodically.
+	# Each boot starts a fresh file and moves the one before it aside, so the
+	# history is one boot deep: enough that a machine which died still explains
+	# itself on the boot after. An over-long previous boot keeps its last
+	# megabytes rather than being emptied — a failure shows at the end of a log,
+	# so the cap has to trim the start, never the whole file.
+	#
+	# Intentional simplification: nothing bounds a *single* boot's file while it
+	# is being written, so an agent that logs without pause can still fill its
+	# disk; only the boot after it trims. The upgrade path is logrotate, which
+	# the image now has a directory for, once something in a machine can run it
+	# periodically.
 	runtime_log=/workspace/log/agent-runtime.log
+	runtime_log_cap=33554432
 	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
-		if [ "$(wc -c <"$runtime_log")" -gt 33554432 ]; then
-			: >"$runtime_log"
-		fi
 		mv -f "$runtime_log" "$runtime_log.prev" 2>/dev/null || true
+		if [ "$(wc -c <"$runtime_log.prev" 2>/dev/null || echo 0)" -gt "$runtime_log_cap" ]; then
+			tail -c "$runtime_log_cap" "$runtime_log.prev" >"$runtime_log.trim" 2>/dev/null &&
+				mv -f "$runtime_log.trim" "$runtime_log.prev" ||
+				rm -f "$runtime_log.trim"
+		fi
 		exec >>"$runtime_log" 2>&1
 		echo "agent-entrypoint: boot log starts $(date -u +%Y-%m-%dT%H:%M:%SZ); the previous boot is beside it"
 	else
