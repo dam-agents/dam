@@ -48,6 +48,7 @@ import {
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import { emit, EventType } from "../../events.js";
+import { workspaceEvent } from "./domain/workspace-event.js";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {
@@ -194,14 +195,8 @@ export function composeRuntimeDelivery(
     async retryWorkspaceMutation(agentId, kind): Promise<boolean> {
       const latest = await outboxRepo.latestWorkspaceEvent(agentId, kind);
       if (!latest) return false;
-      const at = new Date();
       await runtimeMutator.bump(agentId, [
-        {
-          id: `${kind}:${agentId}:${at.getTime()}`,
-          kind,
-          payload: latest.payload,
-          expiresAt: new Date(at.getTime() + 30 * 24 * 60 * 60 * 1000),
-        },
+        workspaceEvent(kind, kind, agentId, latest.payload, new Date()),
       ]);
       await runtimeMutator.enqueueAfterCommit(agentId);
       return true;

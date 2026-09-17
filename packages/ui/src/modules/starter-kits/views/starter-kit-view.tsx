@@ -26,6 +26,7 @@ import { ConnectionIcon } from "../../connections/components/connection-icon.js"
 import { kbTemplate } from "../../knowledge-bases/lib/kb-templates.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
+import { CATEGORY_LABEL } from "../lib/catalog-cards.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
@@ -33,13 +34,6 @@ import {
   kitScheduleCadence,
   shortKitVersion,
 } from "../lib/setup.js";
-
-const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
-  knowledge: "Knowledge",
-  software: "Software",
-  productivity: "Productivity",
-  research: "Research",
-};
 
 type TemplateIndex = ReadonlyMap<string, ConnectionTemplateView>;
 

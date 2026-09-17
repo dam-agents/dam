@@ -229,7 +229,7 @@ export function createStarterKitsService(
           name: s.name,
           enabled: s.spec.enabled,
         })),
-        boundChannels: agent.channels.map(() => "slack"),
+        boundChannels: agent.channels.map((c) => c.type),
         familyTitles: await familyTitles(),
         holds,
       },
