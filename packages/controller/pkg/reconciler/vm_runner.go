@@ -374,7 +374,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	return rules
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm would chown each machine's data dir to run the VMM under an unprivileged uid, and the runner cannot: the chart's SCC drops every capability but NET_ADMIN, so that chown fails and no machine starts. SMOLVM_VM_UID_DROP=off leaves the VMM as uid 0 inside a container that is itself the boundary — no capabilities, no privilege escalation, seccomp and SELinux — rather than widening the SCC to admit CHOWN.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm would chown each machine's data dir to run the VMM under an unprivileged uid, and this runner does not let it: SMOLVM_VM_UID_DROP=off leaves the VMM as uid 0 inside a container that is itself the boundary — no privilege escalation, seccomp and SELinux. The capability that chown needs is now held, because unpacking an image faithfully needs the same one, so this is a choice rather than the constraint it used to be: dropping the VMM's uid is a separate change, to be made and tested on its own rather than arriving as a side effect of the image cache.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
@@ -471,7 +471,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:       &root,
-							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}},
+							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "CHOWN", "FOWNER"}},
 							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 						},
 						Resources:    resources,
