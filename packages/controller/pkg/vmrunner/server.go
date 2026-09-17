@@ -1,7 +1,6 @@
 package vmrunner
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -350,14 +349,10 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	cached := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
-	if _, err := os.Stat(cached); err != nil {
-		if _, legacy := os.Stat(cached + ".tar"); legacy == nil {
-			cached += ".tar"
-		} else if s.Crane != "" {
-			if err := s.cacheImage(image, cached); err != nil {
-				return err
-			}
+	cached := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)) + ".tar"
+	if _, err := os.Stat(cached); err != nil && s.Crane != "" {
+		if err := s.cacheImage(image, cached); err != nil {
+			return err
 		}
 	}
 	if _, err := os.Stat(cached); err == nil {
@@ -389,50 +384,35 @@ func firstLines(out string) string {
 	return out[:capturedOutput] + "… (truncated)"
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner uses is fetched once for the cluster rather than once per machine. It is stored unpacked, not as an archive: smolvm mounts an unpacked rootfs as a read-only lower layer that every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. Unpacked under a unique temporary name and renamed, so runners racing on the same image all end up with a whole tree rather than half of one.
-func (s *Server) cacheImage(ref, rootfs string) error {
-	if err := os.MkdirAll(filepath.Dir(rootfs), 0o755); err != nil {
+// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner uses is fetched once for the cluster rather than once per machine. It is stored as the image, not as the rootfs inside it: an image carries the ENTRYPOINT, CMD and env that say what a machine is supposed to run, and an unpacked tree carries only files. smolvm takes either, and given a bare tree it says so plainly — it boots to its own agent and waits for exec, so the guest comes up in 150 ms with the harness never started. Fetched under a unique temporary name and renamed, so runners racing on the same image all end up with a whole archive rather than half of one.
+func (s *Server) cacheImage(ref, archive string) error {
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(rootfs), ".unpack-*")
+	tmp, err := os.CreateTemp(filepath.Dir(archive), ".pull-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
+	_ = tmp.Close()
+	defer os.Remove(tmp.Name())
 
 	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
 	defer cancel()
 	started := time.Now()
-	export := exec.CommandContext(ctx, s.Crane, "export", ref, "-")
-	unpack := exec.CommandContext(ctx, "tar", "-x", "-C", tmp)
-	stream, err := export.StdoutPipe()
+	out, err := exec.CommandContext(ctx, s.Crane, "pull", ref, tmp.Name()).CombinedOutput()
 	if err != nil {
-		return err
-	}
-	unpack.Stdin = stream
-	var exportErr, unpackErr bytes.Buffer
-	export.Stderr = &exportErr
-	unpack.Stderr = &unpackErr
-	if err := unpack.Start(); err != nil {
-		return err
-	}
-	if err := export.Run(); err != nil {
-		_ = unpack.Wait()
 		slog.Warn("image fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("exporting %s: %w: %s", ref, err, firstLines(exportErr.String()))
+		return fmt.Errorf("pulling %s: %w: %s", ref, err, firstLines(string(out)))
 	}
-	if err := unpack.Wait(); err != nil {
-		slog.Warn("image unpack failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("unpacking %s: %w: %s", ref, err, firstLines(unpackErr.String()))
+	size := int64(0)
+	if info, err := os.Stat(tmp.Name()); err == nil {
+		size = info.Size()
 	}
-	slog.Info("image unpacked into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", dirSize(tmp))
-	if err := os.Rename(tmp, rootfs); err != nil {
-		if errors.Is(err, fs.ErrExist) || errors.Is(err, syscall.ENOTEMPTY) {
-			return nil
-		}
+	slog.Info("image fetched into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", size)
+	if err := os.Rename(tmp.Name(), archive); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(rootfs), rootfs, s.cacheBudget(filepath.Dir(rootfs)))
+	s.evictImages(filepath.Dir(archive), archive, s.cacheBudget(filepath.Dir(archive)))
 	return nil
 }
 

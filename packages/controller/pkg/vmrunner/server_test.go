@@ -628,7 +628,7 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 	h := newHarness(t)
 	fetches := filepath.Join(t.TempDir(), "fetches")
 	crane := filepath.Join(t.TempDir(), "crane")
-	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nd=$(mktemp -d)\necho rootfs > \"$d/hello\"\ntar -cf - -C \"$d\" .\n"), 0o755))
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\necho image > \"$3\"\n"), 0o755))
 	h.node.Crane = crane
 
 	c := h.client()
@@ -641,14 +641,16 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 
 	pulled, err := os.ReadFile(fetches)
 	require.NoError(t, err)
-	assert.Equal(t, 1, len(strings.Fields(strings.TrimSpace(string(pulled))))/3,
-		"the second machine boots from the tree the first left behind: %s", pulled)
-	rootfs := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
-	assert.Contains(t, h.calls(), "-I "+rootfs,
-		"smolvm is handed the unpacked tree, never the registry reference")
-	unpacked, err := os.ReadFile(filepath.Join(rootfs, "hello"))
-	require.NoError(t, err, "the tree is unpacked, not left as an archive")
-	assert.Equal(t, "rootfs\n", string(unpacked))
+	assert.Equal(t, 1, len(strings.Split(strings.TrimSpace(string(pulled)), "\n")),
+		"the second machine boots from the archive the first left behind: %s", pulled)
+	assert.True(t, strings.HasPrefix(strings.TrimSpace(string(pulled)), "pull "),
+		"the whole image is fetched, not exported: an export writes the rootfs without the entrypoint that says what to run, and smolvm handed one boots to its own agent and never starts the harness (got %q)", pulled)
+	archive := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar")
+	assert.Contains(t, h.calls(), "-I "+archive,
+		"smolvm is handed the fetched archive, never the registry reference")
+	fetched, err := os.ReadFile(archive)
+	require.NoError(t, err, "what the cache keeps is the image, not the rootfs inside it")
+	assert.Equal(t, "image\n", string(fetched))
 }
 
 // TEST_SCENARIO: every deploy adds an image under a fresh tag and nothing else prunes the shared volume, so without eviction it fills and then refuses every machine. The oldest archive goes first, and the one just fetched is never the victim.
@@ -702,21 +704,25 @@ func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
 }
 
-// TEST_SCENARIO: an image is unpacked once and shared. smolvm mounts an unpacked tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — so the runner keeps the tree, and a runner that still holds an archive from an earlier release goes on booting from it rather than refetching.
-func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T) {
+// TEST_SCENARIO: what the cache keeps has to be the image, not the rootfs inside it. An image carries the ENTRYPOINT that says what a machine runs; a tree of files carries none, and smolvm handed one boots to its own agent and waits for an exec that never comes — the guest is up in 150 ms with the harness never started, which reads as a machine that starts and an agent that never becomes ready. A tree left by the release that stored them is therefore not booted from, and the image is fetched again.
+func TestARunnerNeverBootsAMachineFromAnUnpackedTree(t *testing.T) {
 	h := newHarness(t)
 	images := filepath.Join(h.node.StateDir, "images")
-	require.NoError(t, os.MkdirAll(filepath.Join(images, "quay.io_x_vm_1", "usr"), 0o755))
+	tree := filepath.Join(images, "quay.io_x_vm_1")
+	require.NoError(t, os.MkdirAll(filepath.Join(tree, "usr"), 0o755))
 
+	fetches := filepath.Join(t.TempDir(), "fetches")
 	crane := filepath.Join(t.TempDir(), "crane")
-	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\necho image > \"$3\"\n"), 0o755))
 	h.node.Crane = crane
 
 	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	h.settle(t, "agent-a")
-	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_vm_1"),
-		"the unpacked tree is used and no fetch is attempted, or the failing crane would have surfaced")
+	assert.NotContains(t, h.calls(), "-I "+tree+" ",
+		"a tree names no entrypoint, so a machine booted from one would start and never run the harness")
+	assert.Contains(t, h.calls(), "-I "+tree+".tar", "the image is fetched instead")
+	assert.FileExists(t, fetches, "and fetched it is, rather than the tree being trusted")
 
 	legacy := filepath.Join(images, "quay.io_x_old_9.tar")
 	require.NoError(t, os.WriteFile(legacy, []byte("tar"), 0o644))
@@ -726,7 +732,7 @@ func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T)
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
 	assert.Contains(t, h.calls(), "-I "+legacy,
-		"an archive left by an earlier release still boots rather than being refetched")
+		"an archive an earlier release left still boots rather than being refetched")
 }
 
 // TEST_SCENARIO: a tar that cannot write into the rootfs it is restoring reports every entry it failed on, which for a whole image is megabytes. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches and unpacks the image again. What is kept is the head, because the first failure is the one the rest follow from.
