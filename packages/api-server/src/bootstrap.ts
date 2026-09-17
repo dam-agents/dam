@@ -207,7 +207,14 @@ import {
 } from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
+import { randomUUID } from "node:crypto";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import {
+  composeSatellitesModule,
+  createOutcomeDelivery,
+  createOutcomeWakeRetry,
+} from "./modules/satellites/index.js";
+import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -397,6 +404,9 @@ export async function bootstrap() {
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
 
+  let deliverSatelliteOutcome: (
+    agentId: string,
+  ) => Promise<boolean> = async () => false;
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -415,6 +425,73 @@ export async function bootstrap() {
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );
+
+  const satellitesApprovals = createApprovalsRepository(db);
+  const satellitesBoot = composeSatellitesModule({
+    db,
+    maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
+    ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    isAgentOwnedBy: (agentId, ownerSub) =>
+      agentsRepo.isOwnedBy(agentId, ownerSub),
+    requestApproval: async ({ agentId, owner, ref, cmd }) => {
+      const id = randomUUID();
+      await satellitesApprovals.insertPending({
+        id,
+        type: "satellite_job",
+        agentId,
+        ownerSub: owner,
+        sessionId: null,
+        payload: {
+          kind: "satellite_job",
+          satellite: ref.split("#")[0] ?? "",
+          sequence: Number(ref.split("#")[1] ?? 0),
+          ref,
+          cmd,
+        },
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+      return id;
+    },
+    spillLog: async (agentId, ref, output) => {
+      try {
+        return await createAgentWorkspaceFiles(
+          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+        ).write({
+          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+          bytes: Buffer.from(output, "utf8"),
+          contentType: "text/plain",
+        });
+      } catch {
+        return null;
+      }
+    },
+    deliverOutcome: async ({ agentId }) => {
+      await deliverSatelliteOutcome(agentId);
+    },
+  });
+
+  const outcomeDeliveryDeps = {
+    repo: satellitesBoot.repo,
+    bump: (
+      agentId: string,
+      events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
+    ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId: string) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    spillLog: satellitesBoot.spillLog,
+    log: (msg: string) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  };
+  deliverSatelliteOutcome = createOutcomeDelivery(outcomeDeliveryDeps);
+  await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
+    satellitesBoot.sweepLeases().then(() => undefined),
+  );
+  await periodicJobs.register("satellite-outcome-wake-retry", 3_600_000, () =>
+    createOutcomeWakeRetry(outcomeDeliveryDeps)().then(() => undefined),
+  );
+
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
@@ -1238,6 +1315,7 @@ export async function bootstrap() {
     reposService,
     userDirectory,
     apiKeysModule,
+    satellitesBoot,
     auth,
     jwksWarmup,
     surfaceAttribution,
@@ -1247,6 +1325,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    satellitesBoot,
     agentStateCache,
     config,
     api,

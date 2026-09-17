@@ -122,6 +122,8 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(50 * 1024 * 1024),
+  satelliteMaxConcurrentCeiling: z.coerce.number().int().positive().default(64),
+  satelliteWaitDeadlineMs: z.coerce.number().int().positive().default(300_000),
   objectStorageEndpoint: z.url().optional(),
   objectStorageAgentEndpoint: z.url().optional(),
   objectStoragePublicEndpoint: z.url().optional(),
@@ -269,6 +271,8 @@ export function loadConfig(): Config {
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
+    satelliteMaxConcurrentCeiling: process.env.SATELLITE_MAX_CONCURRENT_CEILING,
+    satelliteWaitDeadlineMs: process.env.SATELLITE_WAIT_DEADLINE_MS,
     objectStorageEndpoint: process.env.OBJECT_STORAGE_ENDPOINT,
     objectStorageAgentEndpoint:
       process.env.OBJECT_STORAGE_AGENT_ENDPOINT ??

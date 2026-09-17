@@ -15,6 +15,7 @@ import { ConnectionMaintenanceDialog } from "../components/connection-update-cre
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
+import { SatellitesSection } from "../../satellites/components/satellites-section.js";
 
 export function ConnectionsView() {
   const connectionsQ = useAppConnections({ fresh: true });
@@ -79,6 +80,8 @@ export function ConnectionsView() {
           </Inset>
         </>
       )}
+
+      <SatellitesSection />
 
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />

@@ -5,7 +5,12 @@ import type {
   scopeSchema,
 } from "./schemas.js";
 
-export { AGENT_SCOPES, ALL_SCOPES, CREDENTIAL_SCOPES } from "./schemas.js";
+export {
+  AGENT_SCOPES,
+  ALL_SCOPES,
+  CREDENTIAL_SCOPES,
+  SATELLITE_SCOPES,
+} from "./schemas.js";
 
 export type Scope = z.infer<typeof scopeSchema>;
 

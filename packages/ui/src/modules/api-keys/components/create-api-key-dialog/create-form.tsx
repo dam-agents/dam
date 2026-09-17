@@ -180,5 +180,7 @@ function scopeDescription(scope: Scope): string {
       return "List connections and secrets.";
     case "credentials:manage":
       return "Create, update, and delete connections and secrets.";
+    case "satellites:serve":
+      return "Run a satellite: claim approved commands for a machine outside the platform and report their outcomes. Cannot operate agents.";
   }
 }

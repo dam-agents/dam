@@ -1,0 +1,223 @@
+import { TRPCError } from "@trpc/server";
+import {
+  INLINE_OUTPUT_LIMIT,
+  formatJobRef,
+  type JobOutcome,
+  type JobStarted,
+  type SatelliteView,
+} from "api-server-api";
+import { admit, compileCommands, isOnline } from "../domain/admission.js";
+import { isTerminal, type JobRow, type SatelliteRow } from "../domain/types.js";
+import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
+
+export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const POLL_INTERVAL_MS = 500;
+
+export interface AgentOpsDeps {
+  repo: SatellitesRepository;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  requestApproval: (input: {
+    agentId: string;
+    owner: string;
+    ref: string;
+    cmd: string[];
+  }) => Promise<string>;
+  spillLog: (
+    agentId: string,
+    ref: string,
+    output: string,
+  ) => Promise<string | null>;
+  now?: () => Date;
+}
+
+function view(
+  satellite: SatelliteRow,
+  active: number,
+  now: Date,
+): SatelliteView {
+  return {
+    name: satellite.name,
+    description: satellite.description,
+    host: satellite.host,
+    online: isOnline(satellite, now),
+    draining: satellite.draining,
+    lastSeenAt: satellite.lastSeenAt?.toISOString() ?? null,
+    commands: satellite.commands,
+    maxConcurrent: satellite.maxConcurrent,
+    activeJobs: active,
+    grantedAgentIds: [],
+  };
+}
+
+export function createSatelliteAgentOps(deps: AgentOpsDeps) {
+  const now = deps.now ?? (() => new Date());
+
+  async function resolve(
+    agentId: string,
+    name: string,
+  ): Promise<{ owner: string; satellite: SatelliteRow }> {
+    const owner = await deps.ownerOf(agentId);
+    if (owner === null)
+      throw new TRPCError({ code: "NOT_FOUND", message: "unknown agent" });
+    const granted = await deps.repo.grantedNames(agentId);
+    if (!granted.some((g) => g.owner === owner && g.name === name))
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `this agent has no access to a satellite called "${name}"`,
+      });
+    const satellite = await deps.repo.get(owner, name);
+    if (satellite === null)
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `no satellite "${name}"`,
+      });
+    return { owner, satellite };
+  }
+
+  async function outcome(agentId: string, job: JobRow): Promise<JobOutcome> {
+    const ref = formatJobRef(job.satellite, job.sequence);
+    let output = job.output;
+    let outputPath: string | null = null;
+    if (output !== null && output.length > INLINE_OUTPUT_LIMIT) {
+      outputPath = await deps.spillLog(agentId, ref, output);
+      if (outputPath !== null) output = null;
+    }
+    return {
+      ref,
+      status: job.status,
+      exitCode: job.exitCode,
+      output,
+      outputPath,
+      truncated: job.truncated,
+      reason: job.reason,
+    };
+  }
+
+  async function read(
+    agentId: string,
+    name: string,
+    sequence: number,
+  ): Promise<JobOutcome> {
+    const { owner } = await resolve(agentId, name);
+    const job = await deps.repo.getJob(owner, name, sequence);
+    if (job === null || job.agentId !== agentId)
+      return {
+        ref: formatJobRef(name, sequence),
+        status: "interrupted",
+        exitCode: null,
+        output: null,
+        outputPath: null,
+        truncated: false,
+        reason: "no such job",
+      };
+    if (isTerminal(job.status))
+      await deps.repo.markDelivered(owner, name, sequence);
+    return outcome(agentId, job);
+  }
+
+  return {
+    async granted(agentId: string): Promise<SatelliteView[]> {
+      const at = now();
+      const names = await deps.repo.grantedNames(agentId);
+      const views: SatelliteView[] = [];
+      for (const { owner, name } of names) {
+        const satellite = await deps.repo.get(owner, name);
+        if (satellite === null) continue;
+        const active = await deps.repo.activeJobs(owner, name);
+        views.push(view(satellite, active.length, at));
+      }
+      return views;
+    },
+
+    async start(
+      agentId: string,
+      name: string,
+      cmd: string[],
+    ): Promise<JobStarted> {
+      const at = now();
+      const { owner, satellite } = await resolve(agentId, name);
+      const compiled = compileCommands(satellite.commands);
+      if (!compiled.ok)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `${name}'s command patterns do not parse: ${compiled.error}`,
+        });
+
+      const active = await deps.repo.activeJobs(owner, name);
+      const byPattern = new Map<string, number>();
+      for (const job of active)
+        byPattern.set(job.pattern, (byPattern.get(job.pattern) ?? 0) + 1);
+
+      const verdict = admit(
+        satellite,
+        compiled.commands,
+        cmd,
+        { total: active.length, byPattern },
+        at,
+      );
+      if (!verdict.ok)
+        throw new TRPCError({ code: "BAD_REQUEST", message: verdict.reason });
+
+      const job = await deps.repo.insertJob({
+        owner,
+        satellite: name,
+        agentId,
+        cmd,
+        pattern: verdict.pattern,
+        status: verdict.status,
+        expiresAt: new Date(at.getTime() + JOB_TTL_MS),
+      });
+      const ref = formatJobRef(name, job.sequence);
+      if (verdict.status === "pending-approval")
+        await deps.requestApproval({ agentId, owner, ref, cmd });
+      return {
+        ref,
+        satellite: name,
+        sequence: job.sequence,
+        status:
+          verdict.status === "pending-approval" ? "pending-approval" : "queued",
+      };
+    },
+
+    read,
+
+    async wait(
+      agentId: string,
+      name: string,
+      sequence: number,
+      deadlineMs: number,
+    ): Promise<JobOutcome> {
+      const deadline = now().getTime() + deadlineMs;
+      for (;;) {
+        const current = await read(agentId, name, sequence);
+        if (isTerminal(current.status)) return current;
+        if (now().getTime() >= deadline) return current;
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+    },
+
+    async cancel(
+      agentId: string,
+      name: string,
+      sequence: number,
+    ): Promise<JobOutcome> {
+      const { owner } = await resolve(agentId, name);
+      const job = await deps.repo.getJob(owner, name, sequence);
+      if (job === null || job.agentId !== agentId)
+        throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
+      if (isTerminal(job.status)) return outcome(agentId, job);
+      if (job.status === "running") {
+        await deps.repo.requestCancel(owner, name, sequence);
+        return outcome(agentId, { ...job, reason: "cancellation requested" });
+      }
+      const settled = await deps.repo.settle(owner, name, sequence, {
+        status: "cancelled",
+        reason: "cancelled before it started",
+      });
+      return outcome(agentId, settled ?? job);
+    },
+  };
+}
+
+export type SatelliteAgentOpsImpl = ReturnType<typeof createSatelliteAgentOps>;

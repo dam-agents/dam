@@ -1,0 +1,81 @@
+import type { Db } from "db";
+import type { SatellitesService } from "api-server-api";
+import {
+  createSatellitesRepository,
+  type SatellitesRepository,
+} from "./infrastructure/satellites-repository.js";
+import {
+  createSatelliteAgentOps,
+  type AgentOpsDeps,
+  type SatelliteAgentOpsImpl,
+} from "./services/agent-ops.js";
+import { createSatellitesService } from "./services/satellites-service.js";
+import {
+  createLeaseSweep,
+  createSatelliteWorkerOps,
+  type SatelliteWorkerOpsImpl,
+  type WorkerOpsDeps,
+} from "./services/worker-ops.js";
+
+export interface SatellitesComposition {
+  repo: SatellitesRepository;
+  spillLog: AgentOpsDeps["spillLog"];
+  agentOps: SatelliteAgentOpsImpl;
+  workerOps: SatelliteWorkerOpsImpl;
+  sweepLeases: () => Promise<number>;
+  serviceFor: (owner: string) => SatellitesService;
+  onAgentDeleted: (agentId: string) => Promise<void>;
+  applyVerdict: (
+    owner: string,
+    satellite: string,
+    sequence: number,
+    allowed: boolean,
+  ) => Promise<void>;
+}
+
+export function composeSatellitesModule(deps: {
+  db: Db;
+  maxConcurrentCeiling: number;
+  ownerOf: AgentOpsDeps["ownerOf"];
+  isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
+  requestApproval: AgentOpsDeps["requestApproval"];
+  spillLog: AgentOpsDeps["spillLog"];
+  deliverOutcome: WorkerOpsDeps["deliverOutcome"];
+}): SatellitesComposition {
+  const repo = createSatellitesRepository(deps.db);
+  const workerDeps: WorkerOpsDeps = {
+    repo,
+    maxConcurrentCeiling: deps.maxConcurrentCeiling,
+    deliverOutcome: deps.deliverOutcome,
+  };
+
+  return {
+    repo,
+    spillLog: deps.spillLog,
+    agentOps: createSatelliteAgentOps({
+      repo,
+      ownerOf: deps.ownerOf,
+      requestApproval: deps.requestApproval,
+      spillLog: deps.spillLog,
+    }),
+    workerOps: createSatelliteWorkerOps(workerDeps),
+    sweepLeases: createLeaseSweep(workerDeps),
+    serviceFor: (owner) =>
+      createSatellitesService({
+        repo,
+        owner,
+        isAgentOwnedBy: deps.isAgentOwnedBy,
+      }),
+    onAgentDeleted: (agentId) => repo.revokeAgentGrants(agentId),
+    applyVerdict: async (owner, satellite, sequence, allowed) => {
+      if (allowed) {
+        await repo.release(owner, satellite, sequence);
+        return;
+      }
+      await repo.settle(owner, satellite, sequence, {
+        status: "cancelled",
+        reason: "your human declined this command",
+      });
+    },
+  };
+}

@@ -48,6 +48,10 @@ export const manageCredentialsProcedure = t.procedure.use(
   requireScope("credentials:manage"),
 );
 
+export const serveSatellitesProcedure = t.procedure.use(
+  requireScope("satellites:serve"),
+);
+
 export const browserOnlyProcedure = t.procedure.use(({ ctx, next }) => {
   if (ctx.user.keyId !== undefined) {
     throw new TRPCError({

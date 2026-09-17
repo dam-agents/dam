@@ -3,6 +3,7 @@ import type { ApprovalsService } from "api-server-api";
 import { createApprovalsRepository } from "./infrastructure/approvals-repository.js";
 import {
   createApprovalsService,
+  type CreateApprovalsServiceDeps,
   type EgressRuleWriter,
   type WrapperFrameSender,
 } from "./services/approvals-service.js";
@@ -34,6 +35,7 @@ export interface ComposeApprovalsServiceDeps {
   egressRuleWriter: EgressRuleWriter;
   bus: RedisBus;
   wrapperFrameSender: WrapperFrameSender;
+  onSatelliteVerdict: CreateApprovalsServiceDeps["onSatelliteVerdict"];
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -47,6 +49,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
     agentBinding: deps.agentBinding,
+    onSatelliteVerdict: deps.onSatelliteVerdict,
   });
   return { service };
 }

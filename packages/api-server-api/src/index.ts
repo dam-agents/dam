@@ -538,6 +538,7 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  SatelliteJobPayload,
   ExtAuthzPayload,
   AcpNativePayload,
   AcpPermissionOption,
@@ -771,3 +772,51 @@ export {
   type KbPublishWorkCaps,
   type KbPublishWorkOrder,
 } from "./modules/kb-publish/harness.js";
+
+export {
+  MAX_ARG_LENGTH,
+  MAX_ARGV_LENGTH,
+  MAX_REPEAT,
+  matchCommand,
+  parseCommandPattern,
+} from "./modules/satellites/command-pattern.js";
+export type {
+  CommandMatch,
+  CommandRefusal,
+  ParsedPattern,
+  ParseResult,
+} from "./modules/satellites/command-pattern.js";
+
+export {
+  DEFAULT_MAX_CONCURRENT,
+  INLINE_OUTPUT_LIMIT,
+  SATELLITE_SCOPE,
+  claimInputSchema,
+  formatJobRef,
+  heartbeatInputSchema,
+  jobRefSchema,
+  jobStatusSchema,
+  reportInputSchema,
+  satelliteCommandSchema,
+  satelliteConnectInputSchema,
+  satelliteGrantInputSchema,
+  satelliteManifestSchema,
+  satelliteNameSchema,
+  startJobInputSchema,
+} from "./modules/satellites/schemas.js";
+export type {
+  ClaimInput,
+  HeartbeatInput,
+  JobOutcome,
+  JobStarted,
+  JobStatus,
+  JobView,
+  ReportInput,
+  SatelliteAgentOps,
+  SatelliteCommand,
+  SatelliteManifest,
+  SatelliteView,
+  SatelliteWorkerOps,
+  SatellitesService,
+  WorkItem,
+} from "./modules/satellites/types.js";

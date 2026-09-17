@@ -70,6 +70,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     reposService,
     connectionsBoot,
     apiKeysModule,
+    satellitesBoot,
     liveEvents,
     podSessions,
   } = boot;
@@ -263,6 +264,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       bus: redisBus,
       wrapperFrameSender,
+      onSatelliteVerdict: (payload, owner, allowed) =>
+        satellitesBoot.applyVerdict(
+          owner,
+          payload.satellite,
+          payload.sequence,
+          allowed,
+        ),
     });
     const files = composeFilesModule(
       api,
@@ -275,6 +283,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownerSub: user.sub,
       surface,
     });
+    const satellites = satellitesBoot.serviceFor(user.sub);
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
       ownerSub: user.sub,
@@ -356,6 +365,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       usage: composeUsageForOwner(user.sub),
       e2e,
       apiKeys,
+      satellites,
+      satelliteWorker: satellitesBoot.workerOps,
       budgets,
       user,
       e2eEnabled: config.e2eEnabled,

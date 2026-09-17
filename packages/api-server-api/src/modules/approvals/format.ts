@@ -12,5 +12,7 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
         : payload.path,
     };
   }
+  if (payload.kind === "satellite_job")
+    return { title: payload.ref, subtitle: payload.cmd.join(" ") };
   return { title: payload.toolName ?? "tool call", subtitle: "" };
 }

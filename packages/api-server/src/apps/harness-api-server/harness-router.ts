@@ -27,6 +27,7 @@ import type {
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
+import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
@@ -51,6 +52,8 @@ export function createHarnessRouter(deps: {
   runtimeHello: RuntimeDeliveryService;
   sessionDirectory: SessionDirectoryService;
   kbPublishGate: KbPublishGate;
+  satelliteOps: SatelliteAgentOpsImpl;
+  satelliteWaitDeadlineMs: number;
 }) {
   const app = new Hono();
 
@@ -69,6 +72,8 @@ export function createHarnessRouter(deps: {
     carriesInspectorRole: deps.carriesInspectorRole,
     agentImage: deps.agentImage,
     agentTelemetry: deps.agentTelemetry,
+    satelliteOps: deps.satelliteOps,
+    satelliteWaitDeadlineMs: deps.satelliteWaitDeadlineMs,
   });
   mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {
