@@ -23,6 +23,8 @@ const (
 	slowOp = 2 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: long enough for a guest to checkpoint its journal and let go of its disks, short enough that a VMM which is never going to exit is taken down rather than waited on.
 	vmmExitWait = 10 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: expanding both templates takes seconds on a healthy pod; this is far enough above that to never cut one short, and it exists so a decompressor that hangs cannot hold the goroutine for the life of the runner.
+	warmTimeout = 5 * time.Minute
 )
 
 type Smolvm struct {
@@ -252,11 +254,20 @@ func templatesToWarm(dir string) []string {
 
 // UNIT_BOUNDARY_DESCRIPTION: expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
 func (r *Smolvm) WarmTemplates() {
-	for _, packed := range templatesToWarm(filepath.Dir(r.Bin)) {
+	dir := filepath.Dir(r.Bin)
+	packedAll := templatesToWarm(dir)
+	if len(packedAll) == 0 {
+		// UNIT_BOUNDARY_DESCRIPTION: silence here would read the same whether the templates are already expanded or the directory holds none at all, and the second is a misconfiguration that only shows up later as a slow create.
+		slog.Info("no disk templates to warm", "dir", dir)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), warmTimeout)
+	defer cancel()
+	for _, packed := range packedAll {
 		target := strings.TrimSuffix(packed, ".zst")
 		tmp := target + ".warming"
 		started := time.Now()
-		if out, err := exec.Command("zstd", "-d", "-q", "-f", "-o", tmp, packed).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "-o", tmp, packed).CombinedOutput(); err != nil {
 			slog.Warn("template warm-up failed; the first machine will expand it instead",
 				"template", packed, "error", err, "detail", firstLines(string(out)))
 			_ = os.Remove(tmp)
