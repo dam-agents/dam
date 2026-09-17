@@ -30,6 +30,7 @@ const (
 	guestAgentPort   = 8080
 	loopbackOffset   = 1000
 	opTimeout        = 30 * time.Minute
+	stateTTL         = time.Second
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
 	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the archives may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the archive being written and for whatever the volume is shared with.
@@ -44,6 +45,11 @@ type failure struct{ message, reason string }
 type health struct {
 	everReady  bool
 	quietSince time.Time
+}
+
+type cachedState struct {
+	state string
+	at    time.Time
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
@@ -75,12 +81,15 @@ type Server struct {
 	drift      map[string]string
 	restarts   map[string]int32
 	health     map[string]health
+	lastState  map[string]cachedState
+	startedAt  map[string]time.Time
 }
 
 func (s *Server) Start() error {
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
+	s.lastState, s.startedAt = map[string]cachedState{}, map[string]time.Time{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -254,12 +263,13 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
-	state, err := s.Runtime.State(id)
+	state, err := s.machineState(id)
 	if err != nil {
 		return err
 	}
 	if !spec.Running {
 		if state == StateRunning {
+			defer s.forgetState(id)
 			return s.Runtime.Stop(id)
 		}
 		return nil
@@ -276,6 +286,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	applied := s.readSpec(id)
 	if applied != nil && egressChanged(*applied, spec) {
 		if state == StateRunning {
+			s.forgetState(id)
 			if err := s.Runtime.Stop(id); err != nil {
 				return err
 			}
@@ -308,15 +319,18 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			s.restarts[id]++
 			s.mu.Unlock()
 		}
+		s.forgetState(id)
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
 		}
 		state = StateStopped
 	}
 	if state == StateStopped {
+		s.forgetState(id)
 		if err := s.Runtime.Update(id, spec, applied); err != nil {
 			return err
 		}
+		s.markStarting(id)
 		if err := s.Runtime.Start(id); err != nil {
 			return err
 		}
@@ -353,12 +367,14 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if err != nil {
 		return err
 	}
+	s.forgetState(id)
 	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca")); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
+	s.markStarting(id)
 	return s.Runtime.Start(id)
 }
 
@@ -530,6 +546,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	delete(s.drift, id)
 	delete(s.restarts, id)
 	delete(s.health, id)
+	delete(s.lastState, id)
+	delete(s.startedAt, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -584,6 +602,37 @@ func (s *Server) spawn(id, op string, fn func() error) {
 	}()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: stamped each time this runner asks a machine to start, and reported as the age of that stamp. It is the clock the controller watches a starting machine by, because it moves for a wake as well as a create — a wake leaves the Ready condition False and changes only its reason, so that condition's own stamp cannot tell the two apart.
+func (s *Server) markStarting(id string) {
+	s.mu.Lock()
+	s.startedAt[id] = time.Now()
+	s.mu.Unlock()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: asking smolvm for a machine's state costs a process, and the controller asks on every readiness poll — often enough, while a machine starts, that the spawns cost more than the answer is worth. The answer barely moves at that rate, so a reading is reused for a moment. Only the state is reused: whether the guest answers is checked live every time, so a machine that dies is still noticed by the health check rather than waiting out this window.
+func (s *Server) forgetState(id string) {
+	s.mu.Lock()
+	delete(s.lastState, id)
+	s.mu.Unlock()
+}
+
+func (s *Server) machineState(id string) (string, error) {
+	s.mu.Lock()
+	cached, ok := s.lastState[id]
+	s.mu.Unlock()
+	if ok && time.Since(cached.at) < stateTTL {
+		return cached.state, nil
+	}
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		return state, err
+	}
+	s.mu.Lock()
+	s.lastState[id] = cachedState{state: state, at: time.Now()}
+	s.mu.Unlock()
+	return state, nil
+}
+
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
 	pending, drift, restarts := s.pending[id], s.drift[id], s.restarts[id]
@@ -594,6 +643,12 @@ func (s *Server) status(id string) MachineStatus {
 		lastErr = drift
 	}
 	st := MachineStatus{State: StateAbsent, Reason: reason, Restarts: restarts, Port: s.port(id), Message: lastErr}
+	s.mu.Lock()
+	startedAt := s.startedAt[id]
+	s.mu.Unlock()
+	if !startedAt.IsZero() {
+		st.StartingMs = time.Since(startedAt).Milliseconds()
+	}
 	if spec := s.readSpec(id); spec != nil {
 		st.CPUs, st.MemoryMiB = spec.CPUs, spec.MemoryMiB
 	}
@@ -601,7 +656,7 @@ func (s *Server) status(id string) MachineStatus {
 		st.State = pending
 		return st
 	}
-	state, err := s.Runtime.State(id)
+	state, err := s.machineState(id)
 	if err != nil {
 		st.State = StateUnknown
 		if st.Message == "" {

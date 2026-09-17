@@ -731,3 +731,28 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
 	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
 }
+
+// TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.
+func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, requeued := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	last := func() time.Duration { return (*requeued)[len(*requeued)-1] }
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}))
+	assert.Equal(t, vmStartingPoll, last(),
+		"a machine asked to start a moment ago is watched closely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false,
+			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}))
+	assert.Equal(t, vmReadinessPoll, last(),
+		"one still unready long afterwards is not about to be, and is watched loosely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}))
+	assert.Equal(t, vmHealthPoll, last(),
+		"and once it answers it is only checked for health")
+}
