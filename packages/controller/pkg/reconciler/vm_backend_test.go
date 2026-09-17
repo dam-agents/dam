@@ -715,3 +715,19 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	r.budgetMu.Unlock()
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
+
+// TEST_SCENARIO: the runner unpacks a container image so every machine of that image shares one read-only tree, and restoring a rootfs faithfully means writing the ownership its files carry. Under a security policy that drops every capability, tar cannot: it fails first on chown and then, given only CHOWN, on setting a mode it no longer owns. Both capabilities are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it.
+func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
+	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
+	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
+}

@@ -9,11 +9,15 @@ seccomp (all from restricted-v2). The two real relaxations are:
     because containerd doesn't promote capabilities.add into the
     ambient set, so non-root processes can't exercise NET_ADMIN.
   - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
-    caps.add (only the init container actually requests them).
+    caps.add (only the init container actually requests them); CHOWN +
+    FOWNER, which only the VM runner requests, to restore a container
+    image's own ownership when it unpacks one for its machines to share.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
-falls through to this one for pods that actually request NET_ADMIN.
+falls through to this one for pods that actually request a capability it
+adds — NET_ADMIN for an agent's iptables init, CHOWN and FOWNER for the
+VM runner.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -31,6 +35,8 @@ allowPrivilegedContainer: false
 allowedCapabilities:
   - NET_ADMIN
   - NET_RAW
+  - CHOWN
+  - FOWNER
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny
