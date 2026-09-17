@@ -819,13 +819,20 @@ jobs:
   # on the dev channel only — releases keep the strict gate.
   publish-dev:
     name: publish dev chart
-    needs: [changes, merge-images, appversion]
+    # The chart pins agent and workload image tags as well as platform ones, so
+    # publishing before those manifests are merged ships a chart whose tags do
+    # not resolve: an agent created in that window dies with MANIFEST_UNKNOWN
+    # until the merge lands. `skipped` is fine for both — it means nothing in
+    # that set changed, so the pinned tags are ones already published.
+    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' && !cancelled() &&
           needs.changes.result == 'success' &&
           needs.appversion.result == 'success' &&
-          needs.merge-images.result == 'success' }}
+          needs.merge-images.result == 'success' &&
+          (needs.merge-agents.result == 'success' || needs.merge-agents.result == 'skipped') &&
+          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
