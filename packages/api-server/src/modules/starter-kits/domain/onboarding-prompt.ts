@@ -90,7 +90,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     ...(holds
       ? [
           "",
-          "Before you ask the user anything, call the set_onboarding_checklist tool with the steps this onboarding will take — one per value only the user can supply, connection to verify, or first run — so they can watch progress in the platform. Tick each step with complete_onboarding_step the moment it is genuinely done, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
+          "Before you ask the user anything, call the set_onboarding_checklist tool with what you need FROM THE USER, so they can watch progress in the platform: one step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying a connection, writing files, registering schedules, checking the install — is not a step; do it without listing it. Three to six steps is typical. Tick each with complete_onboarding_step the moment the user has supplied it, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
           "Every schedule on this agent is HELD until you call the mark_onboarding_complete tool, so nothing fires against a half-configured agent. Call it once, when the configuration above is genuinely in place — not before. If the user leaves onboarding unfinished, leave it uncalled.",
         ]
       : []),

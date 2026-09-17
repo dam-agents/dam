@@ -9,6 +9,7 @@ export enum EventType {
   UserAuthenticated = "UserAuthenticated",
   AgentCreated = "AgentCreated",
   AgentUpdated = "AgentUpdated",
+  AgentOnboardingChanged = "AgentOnboardingChanged",
   AgentDeleted = "AgentDeleted",
   AgentRestarted = "AgentRestarted",
   AgentWoken = "AgentWoken",
@@ -71,6 +72,12 @@ export type AgentCreated = {
 export type AgentUpdated = {
   type: EventType.AgentUpdated;
   agentId: string;
+};
+
+export type AgentOnboardingChanged = {
+  type: EventType.AgentOnboardingChanged;
+  agentId: string;
+  ownerSub: string;
 };
 
 export type AgentDeleted = {
@@ -402,6 +409,7 @@ export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
   | AgentUpdated
+  | AgentOnboardingChanged
   | AgentDeleted
   | AgentRestarted
   | AgentWoken

@@ -12,6 +12,7 @@ import type { OnboardingChecklistRepository } from "../infrastructure/onboarding
 export interface OnboardingChecklistDeps {
   agents: Pick<AgentsService, "get">;
   repo: OnboardingChecklistRepository;
+  ownerSub: string;
 }
 
 export interface OnboardingChecklist {
@@ -61,7 +62,11 @@ export function createOnboardingChecklist(
   };
   const save = async (agentId: string, steps: OnboardingStep[]) => {
     await deps.repo.write(agentId, steps);
-    emit({ type: EventType.AgentUpdated, agentId });
+    emit({
+      type: EventType.AgentOnboardingChanged,
+      agentId,
+      ownerSub: deps.ownerSub,
+    });
     return steps;
   };
   return {

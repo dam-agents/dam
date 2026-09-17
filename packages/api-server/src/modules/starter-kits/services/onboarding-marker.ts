@@ -30,6 +30,7 @@ export function createOnboardingMarker(
       (deps.now ?? (() => new Date()))().toISOString(),
     );
     emit({ type: EventType.AgentUpdated, agentId });
+    emit({ type: EventType.AgentOnboardingChanged, agentId, ownerSub: owner });
     securityLog("info", "starter_kit.onboarded", {
       category: "resource",
       actor: owner,

@@ -653,7 +653,7 @@ export function createMcpSession(
     const checklist = deps.onboardingChecklist;
     server.tool(
       "set_onboarding_checklist",
-      "Declare the steps your onboarding will take, so the user can watch progress in the platform UI. Call it BEFORE asking the user anything, with one short step per value only they can supply, connection to verify, or first run. Call it again to add, rename or drop steps as the conversation evolves — the steps you keep stay ticked. An id is the stable handle you tick later (kebab-case); a label reads as a to-do line.",
+      "Declare what your onboarding needs FROM THE USER, so they can watch progress in the platform UI. Call it BEFORE asking them anything, with one short step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying connections, writing files, registering schedules — is never a step. Three to six steps is typical. Call it again to add, rename or drop steps as the conversation evolves — the steps you keep stay ticked. An id is the stable handle you tick later (kebab-case); a label reads as a to-do line addressed to the user.",
       {
         steps: z
           .array(
@@ -674,7 +674,7 @@ export function createMcpSession(
     );
     server.tool(
       "complete_onboarding_step",
-      "Tick one step of your onboarding checklist by id, the moment it is genuinely done — not when you start on it. Idempotent.",
+      "Tick one step of your onboarding checklist by id, the moment the user has supplied or done it — not when you start on it. Idempotent.",
       { id: z.string().min(1).max(64) },
       ({ id }) =>
         textTool(

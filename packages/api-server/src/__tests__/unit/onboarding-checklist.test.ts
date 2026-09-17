@@ -84,6 +84,7 @@ describe("onboarding checklist service", () => {
         starterKit: "platform/code-reviewer@abc",
       }),
       repo,
+      ownerSub: "owner-1",
     });
     await checklist.set("agent-1", [{ id: "github", label: "Connect GitHub" }]);
     const ticked = await checklist.complete("agent-1", "github");
@@ -97,6 +98,7 @@ describe("onboarding checklist service", () => {
     const plain = createOnboardingChecklist({
       agents: fakeAgents({ id: "agent-1" }),
       repo: fakeRepo().repo,
+      ownerSub: "owner-1",
     });
     await expect(
       plain.set("agent-1", [{ id: "a", label: "A" }]),
@@ -109,6 +111,7 @@ describe("onboarding checklist service", () => {
         starterKitOnboarded: "2026-09-17T08:00:00.000Z",
       }),
       repo: fakeRepo().repo,
+      ownerSub: "owner-1",
     });
     await expect(finished.complete("agent-1", "a")).rejects.toMatchObject({
       code: "BAD_REQUEST",
@@ -120,6 +123,7 @@ describe("onboarding checklist service", () => {
         starterKit: "platform/code-reviewer@abc",
       }),
       repo: fakeRepo(STEPS).repo,
+      ownerSub: "owner-1",
     });
     await expect(
       pending.set("agent-1", [

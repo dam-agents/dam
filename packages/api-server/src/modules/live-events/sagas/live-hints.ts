@@ -12,6 +12,7 @@ export function hintFor(
 ): { ownerSub: string; hint: PublishableLiveEvent } | null {
   switch (event.type) {
     case EventType.AgentCreated:
+    case EventType.AgentOnboardingChanged:
     case EventType.RuntimeHelloReceived:
     case EventType.WorkspaceMutationSettled:
     case EventType.ContributionGapChanged:

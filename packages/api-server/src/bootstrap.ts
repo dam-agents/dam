@@ -1277,11 +1277,13 @@ export async function bootstrap() {
         createOnboardingChecklist({
           agents: harnessAgentsServiceFor(owner),
           repo: onboardingChecklists,
+          ownerSub: owner,
         }).set(agentId, steps),
       complete: (agentId: string, owner: string, id: string) =>
         createOnboardingChecklist({
           agents: harnessAgentsServiceFor(owner),
           repo: onboardingChecklists,
+          ownerSub: owner,
         }).complete(agentId, id),
     },
   };
