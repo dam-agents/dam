@@ -2,11 +2,10 @@ import { Button } from "@/components/ui/button";
 
 import { useRetryWorkspace } from "../api/mutations.js";
 import { useAgentsList } from "../api/queries.js";
-
-const STEP_LABEL: Record<string, string> = {
-  "workspace-seed": "Seeding the workspace",
-  "workspace-command": "The install command",
-};
+import {
+  workspaceRetryNote,
+  workspaceStepLabel,
+} from "../lib/workspace-failure.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The chat's notice for a workspace step that
@@ -35,10 +34,10 @@ export function WorkspaceFailureNotice({
         >
           <span className="flex-1">
             <span className="font-medium">
-              {STEP_LABEL[failure.kind] ?? failure.kind} failed.
+              {workspaceStepLabel(failure.kind)} failed.
             </span>{" "}
             {failure.error}
-            {!failure.settled && " The platform is still retrying."}
+            {workspaceRetryNote(failure)}
           </span>
           {failure.settled && (
             <Button

@@ -134,7 +134,13 @@ export interface AgentView {
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
-  workspaceFailures: { kind: string; error: string; settled: boolean }[];
+  workspaceFailures: {
+    kind: string;
+    error: string;
+    settled: boolean;
+    attempts: number;
+    maxAttempts: number;
+  }[];
   channels: (
     | {
         type: "slack";

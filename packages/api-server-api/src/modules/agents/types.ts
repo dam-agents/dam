@@ -51,6 +51,8 @@ export interface WorkspaceFailure {
   kind: WorkspaceMutationKind;
   error: string;
   settled: boolean;
+  attempts: number;
+  maxAttempts: number;
 }
 
 export interface Agent {

@@ -443,6 +443,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           kind: runtimeEvents.kind,
           error: runtimeEvents.error,
           dispatchedAt: runtimeEvents.dispatchedAt,
+          attempts: runtimeEvents.attempts,
         })
         .from(runtimeEvents)
         .where(
@@ -456,6 +457,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         kind: WorkspaceMutationKind;
         error: string | null;
         dispatchedAt: Date | null;
+        attempts: number;
       }[];
       const seen = new Set<string>();
       for (const r of rows) {
@@ -468,6 +470,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           kind: r.kind,
           error: r.error,
           settled: r.dispatchedAt !== null,
+          attempts: r.attempts,
+          maxAttempts: DEFAULT_MAX_APPLY_ATTEMPTS,
         });
         out.set(r.agentId, list);
       }
