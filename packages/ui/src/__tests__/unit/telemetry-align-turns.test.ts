@@ -70,6 +70,18 @@ describe("matchTurnsToReplies by the harness prompt id", () => {
     expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
   });
 
+  it("matches a live keyed turn to its reply by time before a reload keys it", () => {
+    /**
+     * TEST_SCENARIO: the server keyed the turn by its prompt id, but the reply
+     * has not been reloaded so it carries no id yet. The turn that just ended
+     * live must still reach its reply by time, not wait for a reload.
+     */
+    const turns = [keyedTurn("p1", "2026-09-16T12:00:01.000Z")];
+    const messages = [prompt("2026-09-16T12:00:00.000Z"), reply("r1")];
+
+    expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
+  });
+
   it("holds a keyed reply's turn back while the reply still streams", () => {
     const turns = [keyedTurn("p1", "2026-09-16T12:00:01.000Z")];
     const messages = [

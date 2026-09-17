@@ -62,11 +62,15 @@ export function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a turn belongs to the reply that carries its
- * prompt id. Failing that, and only for an exchange with no id of its own, it
- * belongs to the exchange whose prompt it followed — the latest prompt sent at
- * or before the turn began. A turn that followed no prompt yet recorded, or
- * whose reply is still streaming, waits rather than attaching to the previous
- * reply and moving later. A keyed match is never displaced by a timed one.
+ * prompt id. A turn no keyed reply has claimed — a turn that just ended live,
+ * before the load that would key its reply — falls back to the reply whose
+ * prompt it followed: the latest prompt sent at or before the turn began. That
+ * owning exchange is chosen over every exchange, keyed or not, so a keyed reply
+ * still streaming is recognised as the owner and the turn waits for it rather
+ * than sliding onto the earlier reply. The timed match is taken only when the
+ * owner carries no id of its own, or the very id this turn was keyed by, so a
+ * keyed match is never displaced and a reply keyed to another turn is left
+ * alone.
  */
 export function matchTurnsToReplies(
   turns: readonly TurnSummary[],
@@ -90,17 +94,16 @@ export function matchTurnsToReplies(
     claimed.add(turn.turnId);
   }
 
-  const anchored = exchanges.filter(
-    (e): e is Exchange & { promptAt: number } =>
-      e.key === null && e.promptAt !== null,
+  const timed = exchanges.filter(
+    (e): e is Exchange & { promptAt: number } => e.promptAt !== null,
   );
-  if (anchored.length === 0) return matched;
+  if (timed.length === 0) return matched;
 
   for (const turn of turns) {
-    if (turn.promptId !== null || claimed.has(turn.turnId)) continue;
+    if (claimed.has(turn.turnId)) continue;
     const startedAt = ms(turn.startedAt);
     if (startedAt === null) continue;
-    const owner = anchored.reduce<(Exchange & { promptAt: number }) | null>(
+    const owner = timed.reduce<(Exchange & { promptAt: number }) | null>(
       (best, e) =>
         e.promptAt <= startedAt + PROMPT_ORDER_SLACK_MS &&
         (best === null || e.promptAt > best.promptAt)
@@ -108,7 +111,9 @@ export function matchTurnsToReplies(
           : best,
       null,
     );
-    if (owner !== null && !owner.pending) matched.set(owner.replyId, turn);
+    if (owner === null || owner.pending) continue;
+    if (owner.key !== null && owner.key !== turn.promptId) continue;
+    matched.set(owner.replyId, turn);
   }
   return matched;
 }

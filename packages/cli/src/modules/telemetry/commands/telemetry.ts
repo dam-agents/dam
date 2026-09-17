@@ -14,6 +14,7 @@ import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
@@ -120,7 +121,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
           sinceHours = sinceHoursOf(opts.since, DEFAULT_SINCE_HOURS);
         } catch (err) {
           process.stderr.write(`${(err as Error).message}\n`);
-          return process.exit(EXIT_BELOW_FLOOR);
+          return process.exit(EXIT_INVALID_INPUT);
         }
 
         const result = await deps.createTelemetryService(host).turns({
@@ -209,7 +210,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
       ) => {
         if (opts.signal !== "logs" && opts.signal !== "spans") {
           process.stderr.write("--signal must be 'logs' or 'spans'\n");
-          return process.exit(EXIT_RUNTIME_FAILURE);
+          return process.exit(EXIT_INVALID_INPUT);
         }
         const { host, agent } = await hostAndAgent(deps, ref, opts.server);
         let sinceHours: number;
@@ -217,7 +218,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
           sinceHours = sinceHoursOf(opts.since, EXPORT_SINCE_HOURS);
         } catch (err) {
           process.stderr.write(`${(err as Error).message}\n`);
-          return process.exit(EXIT_BELOW_FLOOR);
+          return process.exit(EXIT_INVALID_INPUT);
         }
 
         const outcome = await deps.createExportClient(host).run({
