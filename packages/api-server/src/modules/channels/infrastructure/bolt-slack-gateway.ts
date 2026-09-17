@@ -43,6 +43,18 @@ interface WorkspaceAuth {
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
 const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
+const DEAD_CREDENTIAL = new Set([
+  "invalid_auth",
+  "not_authed",
+  "account_inactive",
+  "token_revoked",
+  "token_expired",
+]);
+
+function slackRefusal(err: unknown): string | null {
+  const data = (err as { data?: { error?: unknown } } | null)?.data;
+  return typeof data?.error === "string" ? data.error : null;
+}
 
 function toSlackMessage(m: {
   ts?: string;
@@ -114,13 +126,29 @@ export function createBoltSlackGateway(
    * connected over OAuth needs none of this — Slack returns its id beside its
    * token — so this is asked once, for the one credential that arrives without
    * its workspace. It is asked before the socket opens, so no message is ever
-   * served while the answer is unknown, and a failure to learn it is a failure
-   * to start, which the worker already retries.
+   * served while the answer is unknown.
+   *
+   * Not getting an answer is two different states. When Slack answers that the
+   * credential is no good, that credential could not have served its workspace
+   * anyway, so it takes only that workspace out of service: the socket opens
+   * and every workspace holding an install row of its own is served as usual.
+   * When Slack does not answer at all, nothing has been learned about the
+   * credential, so this stays a failure to start and the worker retries it.
    */
   async function learnOriginalWorkspace(bolt: BoltApp): Promise<void> {
     const envToken = await deps.resolveBotToken(ORIGINAL_WORKSPACE);
     if (!envToken) throw new Error("no bot token for the original workspace");
-    const identity = await bolt.client.auth.test({ token: envToken });
+    let identity;
+    try {
+      identity = await bolt.client.auth.test({ token: envToken });
+    } catch (err) {
+      const refusal = slackRefusal(err);
+      if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
+      process.stderr.write(
+        `[slack] the operator's bot token is ${refusal}; its workspace stays unserved until the token is replaced\n`,
+      );
+      return;
+    }
     if (typeof identity.team_id !== "string") {
       throw new Error("Slack did not name the original workspace");
     }
