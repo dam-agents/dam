@@ -15,7 +15,9 @@ seccomp (all from restricted-v2). The two real relaxations are:
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
-falls through to this one for pods that actually request NET_ADMIN.
+falls through to this one for pods that actually request a capability it
+adds — NET_ADMIN for an agent's iptables init, CHOWN and FOWNER for the
+VM runner.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
