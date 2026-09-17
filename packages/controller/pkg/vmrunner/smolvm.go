@@ -17,7 +17,11 @@ import (
 	"time"
 )
 
-const slowStatus = time.Second
+const (
+	slowStatus = time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: a create is tens of milliseconds and a start is under a second, so this is far enough above both that a normal operation never trips it and an operator reading the log finds only the ones worth reading.
+	slowOp = 2 * time.Second
+)
 
 type Smolvm struct {
 	Bin string
@@ -182,7 +186,14 @@ func (r *Smolvm) runReporting(report bool, secrets []string, args ...string) err
 		}
 		return fmt.Errorf("smolvm %s: %w: %s", op, err, redact(strings.TrimSpace(string(out)), secrets))
 	}
-	slog.Info("machine operation", "op", op, "duration_ms", time.Since(started).Milliseconds())
+	elapsed := time.Since(started)
+	slog.Info("machine operation", "op", op, "duration_ms", elapsed.Milliseconds())
+	// UNIT_BOUNDARY_DESCRIPTION: a create that usually takes half a second sometimes takes twenty, and only when the platform is the one asking — by hand it never reproduces, so the evidence has to be collected at the moment it happens rather than afterwards. smolvm accounts for its own boot in phases (disks ready, config written, subprocess spawned, each with the milliseconds it took), so the runtime's account of a slow operation is kept where an operator will find it, and only then: the same text on every operation would bury the one that matters. It carries the command's output, so it is redacted like a failure's — an operator's Secret reaches a guest on that command line.
+	if elapsed > slowOp {
+		slog.Warn("machine operation was slow, with the runtime's own account of it",
+			"op", op, "duration_ms", elapsed.Milliseconds(),
+			"detail", firstLines(redact(string(out), secrets)))
+	}
 	return nil
 }
 
