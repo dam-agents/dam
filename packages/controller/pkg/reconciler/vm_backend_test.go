@@ -759,8 +759,8 @@ func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
 		"and once it answers it is only checked for health")
 }
 
-// TEST_SCENARIO: each machine's VMM runs under its own unprivileged uid, so a guest that breaks out of the VMM confining it reaches a uid that owns no other machine. A uid-0 process may only call setuid and setgid when its capability set carries them, and a runner missing either does not fail — it goes on running every VMM as root, one boundary for all machines instead of one each. The capabilities are therefore asserted here rather than left to the silence of a drop that never happened.
-func TestEachMachinesVMMCanBeGivenItsOwnUID(t *testing.T) {
+// TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches the shared unpacked image through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.
+func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
@@ -770,11 +770,16 @@ func TestEachMachinesVMMCanBeGivenItsOwnUID(t *testing.T) {
 	require.NoError(t, err)
 	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
 	require.NotNil(t, caps)
-	assert.Contains(t, caps.Add, corev1.Capability("SETUID"), "without it setuid fails and every VMM stays root")
-	assert.Contains(t, caps.Add, corev1.Capability("SETGID"), "and the matching group change fails the same way")
+	assert.NotContains(t, caps.Add, corev1.Capability("SETUID"),
+		"the runner cannot change uid, so smolvm cannot drop a VMM's even if something asked it to")
+	assert.NotContains(t, caps.Add, corev1.Capability("SETGID"), "nor the group that goes with it")
 
+	var drop string
 	for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
-		assert.NotEqual(t, "SMOLVM_VM_UID_DROP", env.Name,
-			"and nothing turns the drop back off, which is how it was suppressed before the capabilities were held")
+		if env.Name == "SMOLVM_VM_UID_DROP" {
+			drop = env.Value
+		}
 	}
+	assert.Equal(t, "off", drop,
+		"and the drop is refused in as many words, because a VMM that took one could not read the shared image")
 }
