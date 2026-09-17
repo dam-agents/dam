@@ -22,6 +22,20 @@ interface Props {
 }
 
 export function ShareDialog({ artifact, onClose }: Props) {
+  if (!artifact.interactive)
+    return <SharingControls artifact={artifact} onClose={onClose} />;
+  return (
+    <Modal>
+      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
+      <DialogBody>
+        Interactive pages stay private because their buttons can send prompts to
+        your agent. Ask the agent for a static copy to share.
+      </DialogBody>
+    </Modal>
+  );
+}
+
+function SharingControls({ artifact, onClose }: Props) {
   const { form, shareUrl, needsPublicConfirm, submit, isPending } =
     useShareForm(artifact, onClose);
   const [draftEmail, setDraftEmail] = useState("");

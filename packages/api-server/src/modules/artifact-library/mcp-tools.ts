@@ -81,6 +81,12 @@ export function registerArtifactLibraryTools(
         .describe("Auto-detected from file name / content when omitted."),
       folder_id: z.string().optional(),
       visibility: z.enum(["private", "public"]).optional(),
+      interactive: z
+        .boolean()
+        .optional()
+        .describe(
+          "Opt-in HTML prompt buttons. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
+        ),
       expires_in_hours: z
         .number()
         .int()
@@ -113,6 +119,7 @@ export function registerArtifactLibraryTools(
       type,
       folder_id,
       visibility,
+      interactive,
       expires_in_hours,
       source_path,
       experiment_id,
@@ -127,6 +134,7 @@ export function registerArtifactLibraryTools(
             kind: type,
             folderId: folder_id,
             visibility,
+            interactive,
             expiresInHours: expires_in_hours ?? null,
             sourcePath: source_path,
           },

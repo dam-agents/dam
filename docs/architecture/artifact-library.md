@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-10
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -67,6 +67,33 @@ onto platform rails: content bytes live in the S3-compatible object store
 surface is the per-agent platform MCP server, and by-link serving happens on
 two dedicated hosts — a **share host** for the pages and a **content host** for
 the framed artifact itself.
+
+## Interactive pages
+
+An HTML artifact can be declared **interactive** at creation and stays private.
+With the interactive-artifacts feature enabled, a button in its latest version
+can send a prompt into an existing open chat with its publishing Agent. The app
+checks the sending frame and the preview's agent before submitting through the
+normal chat path. If the Agent is unavailable, the conversation is missing or
+loading, the Session is a terminal, or the user has switched conversations, the
+app refuses the prompt and shows a notification explaining how to try again.
+Accepted prompts use the normal chat reporting for replies, queued turns and
+delivery errors; the page receives no separate answer. Publishing an updated
+artifact uses the normal version flow.
+
+The renderer injects a platform-owned prompt API without changing the stored
+HTML. It sends requests to the host over `window.postMessage`; the in-app
+sandbox retains an opaque origin and receives no app credentials. The host
+validates both the message payload and the sending window against its preview
+frame: the injected API is an authoring convenience, not an authorization gate.
+
+Callbacks are available only in the chat's docked preview, including fullscreen,
+and work in a newly started conversation without reloading the page.
+Library previews and historical versions cannot send prompts, and disabling the
+feature disconnects the callback. There is no permanent Session binding: the
+currently open conversation is the destination. Interactive pages cannot be shared,
+including with named viewers; that restriction is enforced with the sharing write.
+Retention remains available, and a separate static copy can be shared.
 
 ## Sharing model
 
@@ -207,9 +234,7 @@ trade-off for now rather than an oversight: origin isolation is real, but
 the event loop and DB pool are shared with the control plane. The viewer
 keeps its dependency surface minimal (metadata reads, blob reads) exactly
 so it can move into its own deployment when sustained public traffic
-warrants it; it lives in the api-server today because the planned
-agent-calling bridge for interactive artifacts needs the relay machinery
-that already lives there.
+warrants it. Interactive callbacks use the existing chat relay in the app.
 
 ## Publishing and download paths
 
