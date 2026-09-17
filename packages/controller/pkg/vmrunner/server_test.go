@@ -687,7 +687,7 @@ func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
 	_, oldestErr := os.Stat(oldest)
 	_, newerErr := os.Stat(newer)
 	_, keepErr := os.Stat(keep)
-	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first")
+	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first, none of these being one a machine is running from")
 	assert.NoError(t, newerErr, "the newer one stays while the budget allows it")
 	assert.NoError(t, keepErr, "the archive just fetched is never the one evicted")
 	_, strangerErr := os.Stat(stranger)
@@ -795,4 +795,27 @@ func TestTheImageCacheNeverEvictsAnImageAMachineIsRunning(t *testing.T) {
 		"the oldest entry by far, and still the rootfs of a running machine — a full volume is the lesser harm")
 	_, spareErr := os.Stat(spare)
 	assert.NoError(t, spareErr, "and what was just fetched is never the one evicted either")
+}
+
+// TEST_SCENARIO: a runner restart takes its machines with it but not their specs, so the controller asks for each one again and the runner creates it afresh — with that machine's own spec already on disk naming the image it is about to unpack. The guard that keeps an in-use image from being replaced must not read that as somebody else's claim, or a runner would come back unable to recreate exactly the machines it just lost, and only for images whose cache entry predates the launch record.
+func TestARestartedRunnerCanRecreateTheMachineThatOwnsTheImage(t *testing.T) {
+	h := newHarness(t)
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(filepath.Join(t.TempDir(), "log"))), 0o755))
+	h.node.Crane = crane
+
+	s := spec(true)
+	require.NoError(t, os.MkdirAll(filepath.Join(h.node.StateDir, "machines", "agent-a"), 0o755))
+	require.NoError(t, h.node.writeSpec("agent-a", s), "the spec a restart leaves behind")
+	stale := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
+	require.NoError(t, os.MkdirAll(filepath.Join(stale, "usr"), 0o755), "and a tree from the release that stored no launch")
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", s)
+	require.NoError(t, err)
+	st := h.settle(t, "agent-a")
+
+	assert.Equal(t, StateRunning, st.State,
+		"the machine is recreated: its own spec is not another machine's claim on the image")
+	assert.FileExists(t, filepath.Join(stale, launchFile),
+		"and the tree it could not have booted is replaced by one that says what to run")
 }
