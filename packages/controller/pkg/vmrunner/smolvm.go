@@ -237,3 +237,36 @@ func envValues(env map[string]string) []string {
 	}
 	return out
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the runtime ships its disk templates compressed and expands them the first time a machine needs one, into the directory it lives in — which in a container is the image's own filesystem and so is thrown away with the pod. Every roll of this pod therefore hands the expansion to whoever creates the next agent: measured at 24 s of a 25 s `machine start`, while a second create on the same pod costs half a second. Doing it here costs a pod nobody is waiting on the same seconds, and a user none. It reports which templates are missing rather than expanding them, so the decision can be tested without a compressor.
+func templatesToWarm(dir string) []string {
+	packed, _ := filepath.Glob(filepath.Join(dir, "*.ext4.zst"))
+	var missing []string
+	for _, p := range packed {
+		if _, err := os.Stat(strings.TrimSuffix(p, ".zst")); err != nil {
+			missing = append(missing, p)
+		}
+	}
+	return missing
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
+func (r *Smolvm) WarmTemplates() {
+	for _, packed := range templatesToWarm(filepath.Dir(r.Bin)) {
+		target := strings.TrimSuffix(packed, ".zst")
+		tmp := target + ".warming"
+		started := time.Now()
+		if out, err := exec.Command("zstd", "-d", "-q", "-f", "-o", tmp, packed).CombinedOutput(); err != nil {
+			slog.Warn("template warm-up failed; the first machine will expand it instead",
+				"template", packed, "error", err, "detail", firstLines(string(out)))
+			_ = os.Remove(tmp)
+			continue
+		}
+		if err := os.Rename(tmp, target); err != nil {
+			slog.Warn("template warm-up could not be put in place", "template", target, "error", err)
+			_ = os.Remove(tmp)
+			continue
+		}
+		slog.Info("template warmed", "template", target, "duration_ms", time.Since(started).Milliseconds())
+	}
+}
