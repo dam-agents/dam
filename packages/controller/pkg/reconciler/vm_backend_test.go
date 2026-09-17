@@ -774,4 +774,5 @@ func TestEachMachinesVMMCanBeGivenItsOwnUID(t *testing.T) {
 	for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
 		assert.NotEqual(t, "SMOLVM_VM_UID_DROP", env.Name,
 			"and nothing turns the drop back off, which is how it was suppressed before the capabilities were held")
-	}}
+	}
+}
