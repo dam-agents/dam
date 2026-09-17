@@ -131,6 +131,55 @@ RUN set -eu; \
     find /out/etc/runlevels -mindepth 2 -delete; \
     rm -rf /out/usr/include
 
+# Docker and k3s, for agents that build images or run a cluster inside their own
+# machine. Neither is installable the distro way here: this base ships no
+# package manager at all, and the builder variant's single repo carries neither
+# docker, moby-engine, containerd nor k3s (it has crun, iptables-nft and
+# fuse-overlayfs, and that is the lot). So both come from upstream, pinned and
+# checksummed, the way crane does for the VM runner.
+#
+# They cost about 267 MB unpacked on every agent image — docker's bundle is
+# 201 MB of it — which every agent pays whether or not it ever runs a
+# container. That is the trade for not making a user wait minutes to install
+# them at the moment they are wanted.
+#
+# The two do not share a containerd: docker's bundle brings its own (1.7.28)
+# and k3s embeds another. Pointing dockerd at k3s's socket would save ~65 MB
+# and couple docker to a running cluster; it is not attempted here.
+#
+# Neither daemon is started, and neither will work on its defaults inside a
+# machine: a guest's rootfs is an overlay, and overlayfs refuses an overlay as
+# an upperdir, so both want their data on the ext4 storage disk
+# (`dockerd --data-root`, `k3s server --data-dir`). Baking that path in would
+# break container agents, which have no such disk.
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS containers
+USER root
+ARG TARGETARCH
+ARG DOCKER_VERSION=28.5.2
+# The release tag carries a `+` that has to reach the URL percent-encoded.
+ARG K3S_VERSION=v1.34.1%2Bk3s1
+RUN set -eu; \
+    dnf install -y -q --setopt=install_weak_deps=0 tar gzip; \
+    case "${TARGETARCH}" in \
+    amd64) darch=x86_64 \
+    dsha=ea90cfd12e1eeb12aa1c971741adb8bd4ed88e2a574eaac13f5029a1dbc6300d \
+    k3sbin=k3s \
+    ksha=ec8958fe1363a32d50e028b5e3411c04b0dbd0316fab33524e8094352b78f6a3 ;; \
+    arm64) darch=aarch64 \
+    dsha=9e4f82996ab790724094475ebed33a736434bfe5d45231b676fef22ffb80044d \
+    k3sbin=k3s-arm64 \
+    ksha=3888e0f28e16be4de619d652a5a3e4816ae85878a38f914b1830bff3ef7483ff ;; \
+    *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSLo /tmp/docker.tgz "https://download.docker.com/linux/static/stable/${darch}/docker-${DOCKER_VERSION}.tgz"; \
+    echo "${dsha}  /tmp/docker.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/docker.tgz -C /tmp; \
+    install -d /out/usr/local/bin; \
+    install -m 0755 /tmp/docker/* /out/usr/local/bin/; \
+    curl -fsSLo /out/usr/local/bin/k3s "https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/${k3sbin}"; \
+    echo "${ksha}  /out/usr/local/bin/k3s" | sha256sum -c -; \
+    chmod 0755 /out/usr/local/bin/k3s
+
 FROM base AS builder
 
 COPY package.json ./
@@ -187,6 +236,7 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
 COPY --from=openrc /out/ /
+COPY --from=containers /out/usr/local/bin/ /usr/local/bin/
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base --chown=65532:0 /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
