@@ -354,7 +354,10 @@ export function executeSlackBind(deps: {
       });
     }
 
-    return ok({ channelTitle: flow.channelTitle ?? null });
+    return ok({
+      slackChannelId: flow.slackChannelId,
+      channelTitle: flow.channelTitle ?? null,
+    });
   };
 }
 

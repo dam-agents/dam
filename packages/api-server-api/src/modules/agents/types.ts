@@ -111,7 +111,7 @@ export type BindSlackChannelError =
   | { type: "ChannelAlreadyBound" };
 
 export type BindSlackChannelResult =
-  | { ok: true; value: { channelTitle: string | null } }
+  | { ok: true; value: { slackChannelId: string; channelTitle: string | null } }
   | { ok: false; error: BindSlackChannelError };
 
 export type BindTelegramChatError =

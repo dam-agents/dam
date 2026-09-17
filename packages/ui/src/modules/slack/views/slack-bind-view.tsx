@@ -16,6 +16,7 @@ import {
   readCallbackErrorFromSearch,
   readFlowIdFromSearch,
 } from "../lib/bind-flow.js";
+import { SlackBindSuccess } from "./slack-bind-success.js";
 
 const flowId = readFlowIdFromSearch(window.location.search);
 const callbackError = readCallbackErrorFromSearch(window.location.search);
@@ -26,7 +27,9 @@ export function SlackBindView() {
   const flow = useSlackBindFlow(flowId);
   const [error, setError] = useState<BindErrorCopy | null>(null);
   const [bound, setBound] = useState<{
+    agentId: string;
     agentName: string;
+    slackChannelId: string;
     channelTitle: string | null;
   } | null>(null);
 
@@ -47,13 +50,7 @@ export function SlackBindView() {
     );
   }
   if (bound) {
-    return (
-      <BindSuccess
-        agentName={bound.agentName}
-        channelTitle={bound.channelTitle}
-        brandShort={brandShort}
-      />
-    );
+    return <SlackBindSuccess {...bound} />;
   }
   if (error?.terminal) {
     return <TerminalError copy={error} />;
@@ -65,7 +62,12 @@ export function SlackBindView() {
       { agentId: agent.id, flowId },
       {
         onSuccess: (res) =>
-          setBound({ agentName: agent.name, channelTitle: res.channelTitle }),
+          setBound({
+            agentId: agent.id,
+            agentName: agent.name,
+            slackChannelId: res.slackChannelId,
+            channelTitle: flow.data?.name ?? res.channelTitle,
+          }),
         onError: (e) => {
           const code = (e as { data?: { code?: string } }).data?.code;
           setError(bindErrorCopy(code, brandShort));
@@ -99,36 +101,6 @@ function pickerCopy(channelName: string | undefined): BindPickerCopy {
       "Everyone in the channel will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to channel",
   };
-}
-
-function BindSuccess({
-  agentName,
-  channelTitle,
-  brandShort,
-}: {
-  agentName: string;
-  channelTitle: string | null;
-  brandShort: string;
-}) {
-  return (
-    <BindTerminalPage
-      messenger="slack"
-      title={
-        channelTitle ? `“${channelTitle}” is connected` : "Channel connected"
-      }
-    >
-      <p>
-        This channel is now connected to <strong>{agentName}</strong>. Return to
-        Slack — the bot has posted a confirmation. A channel can hold several
-        agents: start a mention with an agent's name to reach that one, or
-        mention the bot with no name to reach the channel's default agent. Run{" "}
-        <code>
-          /{brandShort} unbind {agentName}
-        </code>{" "}
-        there to disconnect this one.
-      </p>
-    </BindTerminalPage>
-  );
 }
 
 function TerminalError({ copy }: { copy: BindErrorCopy }) {

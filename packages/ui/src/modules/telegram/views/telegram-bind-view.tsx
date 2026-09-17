@@ -7,7 +7,7 @@ import {
 } from "../../agents/components/bind/agent-bind-picker.js";
 import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
 import { useBindTelegramChat } from "../api/mutations.js";
-import { useTelegramBindFlow, useTelegramBot } from "../api/queries.js";
+import { useTelegramBindFlow } from "../api/queries.js";
 import {
   type BindErrorCopy,
   bindErrorCopy,
@@ -15,6 +15,7 @@ import {
   readCallbackErrorFromSearch,
   readFlowIdFromSearch,
 } from "../lib/bind-flow.js";
+import { TelegramBindSuccess } from "./telegram-bind-success.js";
 
 const flowId = readFlowIdFromSearch(window.location.search);
 const callbackError = readCallbackErrorFromSearch(window.location.search);
@@ -44,7 +45,10 @@ export function TelegramBindView() {
   }
   if (bound) {
     return (
-      <BindSuccess agentName={bound.agentName} chatTitle={bound.chatTitle} />
+      <TelegramBindSuccess
+        agentName={bound.agentName}
+        chatTitle={bound.chatTitle}
+      />
     );
   }
   if (error?.terminal) {
@@ -57,7 +61,10 @@ export function TelegramBindView() {
       { agentId: agent.id, flowId },
       {
         onSuccess: (res) =>
-          setBound({ agentName: agent.name, chatTitle: res.chatTitle }),
+          setBound({
+            agentName: agent.name,
+            chatTitle: flow.data?.chatTitle ?? res.chatTitle,
+          }),
         onError: (e) => {
           const code = (e as { data?: { code?: string } }).data?.code;
           setError(bindErrorCopy(code));
@@ -89,36 +96,6 @@ function pickerCopy(chatTitle: string | null): BindPickerCopy {
       "Everyone in the chat will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to chat",
   };
-}
-
-function BindSuccess({
-  agentName,
-  chatTitle,
-}: {
-  agentName: string;
-  chatTitle: string | null;
-}) {
-  const bot = useTelegramBot();
-  return (
-    <BindTerminalPage
-      messenger="telegram"
-      title={chatTitle ? `“${chatTitle}” is connected` : "Chat connected"}
-    >
-      <p>
-        The chat is now connected to <strong>{agentName}</strong>. Return to
-        Telegram — the bot has posted a confirmation in your chat. Send{" "}
-        <code>/unbind</code> there to disconnect.
-      </p>
-      {bot.data?.username && (
-        <a
-          className="underline text-foreground"
-          href={`https://t.me/${bot.data.username}`}
-        >
-          Open @{bot.data.username} in Telegram
-        </a>
-      )}
-    </BindTerminalPage>
-  );
 }
 
 function TerminalError({ copy }: { copy: BindErrorCopy }) {

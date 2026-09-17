@@ -62,7 +62,10 @@ describe("slack bind flow", () => {
   it("binds shared (ambient off), consumes the flow, posts a plain confirmation, returns the title", async () => {
     const h = await harness();
     const res = await h.run("agent-1", h.flowId);
-    expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
+    expect(res).toEqual({
+      ok: true,
+      value: { slackChannelId: "C-1", channelTitle: "general" },
+    });
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
     expect(await h.store.peek(h.flowId)).toBe(null);
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
@@ -104,7 +107,7 @@ describe("slack bind flow", () => {
     const h = await harness({ boundTo: "agent-2" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: true,
-      value: { channelTitle: "general" },
+      value: { slackChannelId: "C-1", channelTitle: "general" },
     });
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
@@ -138,7 +141,7 @@ describe("slack bind flow", () => {
     const h = await harness({ postError: "bot not running" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: true,
-      value: { channelTitle: "general" },
+      value: { slackChannelId: "C-1", channelTitle: "general" },
     });
   });
 });
