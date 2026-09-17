@@ -44,6 +44,36 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 		echo "agent-entrypoint: /workspace is not the machine's storage disk; refusing to boot without persistence" >&2
 		exit 1
 	fi
+
+	# A machine's console goes nowhere — stdout and stderr are both /dev/null in
+	# the guest — so everything written from here on is discarded before anything
+	# can read it: the rest of this boot, and then every diagnostic the harness
+	# writes, including the event-loop stall monitor and the cgroup
+	# memory-pressure warning that precedes an out-of-memory restart. That is
+	# why a machine that dies is opaque afterwards. Point both streams at the
+	# storage disk, where they outlive the machine and the agent can read back
+	# the boot that killed it. This sits as early as the disk allows, so the
+	# whole boot is in the record rather than only the part after the harness
+	# starts.
+	#
+	# Each boot starts a fresh file and keeps one previous boot beside it, so a
+	# crash loop cannot erase the boot that explains it and the kept history is
+	# bounded. Intentional simplification: nothing bounds a *single* boot's file
+	# — an agent that logs without pause can still fill its disk, and the cap
+	# below only trims what a previous boot left. The upgrade path is logrotate,
+	# which the image now has a directory for, once something in the machine can
+	# run it periodically.
+	runtime_log=/workspace/log/agent-runtime.log
+	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
+		if [ "$(wc -c <"$runtime_log")" -gt 33554432 ]; then
+			: >"$runtime_log"
+		fi
+		mv -f "$runtime_log" "$runtime_log.prev" 2>/dev/null || true
+		exec >>"$runtime_log" 2>&1
+		echo "agent-entrypoint: boot log starts $(date -u +%Y-%m-%dT%H:%M:%SZ); the previous boot is beside it"
+	else
+		echo "agent-entrypoint: WARNING: could not open $runtime_log; this machine's output stays discarded" >&2
+	fi
 	for path in $(printf '%s' "$PLATFORM_VM_PERSIST_PATHS" | tr ',' ' '); do
 		store="/workspace$path"
 		if [ ! -d "$store" ]; then
@@ -202,31 +232,6 @@ if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
 		printf '<settings><proxies>%s%s</proxies></settings>\n' "$(_m2_proxy http)" "$(_m2_proxy https)" \
 			> "$home/.m2/settings.xml"; } 2>/dev/null; then
 		echo "agent-entrypoint: WARNING: could not write ~/.m2/settings.xml; Maven fetches may bypass the gateway" >&2
-	fi
-fi
-
-# On the vm Backend the harness inherits a console that goes nowhere: stdout and
-# stderr are both /dev/null in the guest, so every diagnostic the runtime already
-# writes is discarded — the ACP and pod-service startup lines, the event-loop
-# stall monitor, and the cgroup memory-pressure warning that precedes an
-# out-of-memory restart. Nothing reads them and nothing can, which is why a
-# machine that dies is opaque afterwards. Point them at the storage disk, where
-# they outlive the machine and the agent itself can read them back.
-#
-# Intentional simplification: one file, truncated when it exceeds the cap, with
-# no rotation — a boot keeps whatever the cap allows rather than a fixed history.
-# A busy agent therefore loses its oldest lines; the upgrade path is logrotate,
-# which the image now has a directory for.
-if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ] && [ -d /workspace ]; then
-	runtime_log=/workspace/log/agent-runtime.log
-	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
-		if [ "$(wc -c <"$runtime_log")" -gt 33554432 ]; then
-			: >"$runtime_log"
-		fi
-		exec >>"$runtime_log" 2>&1
-		echo "agent-entrypoint: harness output captured here from $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	else
-		echo "agent-entrypoint: WARNING: could not open $runtime_log; harness output stays discarded" >&2
 	fi
 fi
 
