@@ -731,3 +731,33 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
 	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
 }
+
+// TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine that has just been asked to start is watched closely; one that has been unready far longer is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally.
+func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
+	justAsked := &apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(time.Now())},
+	}
+	assert.Less(t, notReadyFor(justAsked), vmStartingWindow,
+		"a machine created a moment ago is inside the window a start plausibly takes")
+
+	longStuck := &apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(time.Now().Add(-time.Hour))},
+		Status: apiv1.AgentStatus{Conditions: []metav1.Condition{{
+			Type:               apiv1.ConditionReady,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+		}}},
+	}
+	assert.Greater(t, notReadyFor(longStuck), vmStartingWindow,
+		"the clock is the condition's own transition, so a long-unready agent is not watched closely")
+
+	justFlipped := &apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(time.Now().Add(-time.Hour))},
+		Status: apiv1.AgentStatus{Conditions: []metav1.Condition{{
+			Type:               apiv1.ConditionReady,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now()),
+		}}},
+	}
+	assert.Less(t, notReadyFor(justFlipped), vmStartingWindow,
+		"an old agent woken from hibernation is watched closely again, which is the case this exists for")}
