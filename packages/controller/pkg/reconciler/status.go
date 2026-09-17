@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"unicode/utf8"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -45,6 +46,33 @@ func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, na
 	})
 }
 
+// maxConditionMessageBytes is the Kubernetes API limit on a
+// metav1.Condition.Message. Exceeding it makes UpdateStatus reject the whole
+// object as invalid, which wedges reconcile until the agent is reaped.
+const maxConditionMessageBytes = 32768
+
+// truncateConditionMessage keeps a condition message within the Kubernetes
+// limit. Long messages are usually a wrapped error chain whose actionable
+// cause is at the tail, so it preserves both the head and the tail around an
+// elision marker, and cuts on rune boundaries to keep the result valid UTF-8.
+func truncateConditionMessage(message string) string {
+	if len(message) <= maxConditionMessageBytes {
+		return message
+	}
+	const marker = "…[truncated]…"
+	budget := maxConditionMessageBytes - len(marker)
+	head := budget / 2
+	tail := budget - head
+	for head > 0 && !utf8.RuneStart(message[head]) {
+		head--
+	}
+	tailStart := len(message) - tail
+	for tailStart < len(message) && !utf8.RuneStart(message[tailStart]) {
+		tailStart++
+	}
+	return message[:head] + marker + message[tailStart:]
+}
+
 func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReason, falseReason, message string, generation int64) {
 	status := metav1.ConditionFalse
 	reason := falseReason
@@ -56,7 +84,7 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 		Type:               condType,
 		Status:             status,
 		Reason:             reason,
-		Message:            message,
+		Message:            truncateConditionMessage(message),
 		ObservedGeneration: generation,
 	})
 }
