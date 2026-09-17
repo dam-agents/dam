@@ -15,7 +15,7 @@ import type {
 import {
   createGitProtocolClient,
   type SeedTarget,
-} from "../../skills/infrastructure/git-protocol-client.js";
+} from "../../git/protocol-client.js";
 
 const IMPL_NAME = "workspace-seed";
 const DONE_SENTINEL = "seed.done";

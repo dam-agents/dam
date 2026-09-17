@@ -1,7 +1,7 @@
 import type { SkillsService } from "agent-runtime-api";
 import { makeSkillPaths, type SkillPath } from "./domain/skill-path.js";
 import { createGitHubRestClient } from "./infrastructure/github-rest-client.js";
-import { createGitProtocolClient } from "./infrastructure/git-protocol-client.js";
+import { createGitProtocolClient } from "../git/protocol-client.js";
 import {
   createLocalSkillRepository,
   type LocalSkillRepository,

@@ -1,5 +1,8 @@
-import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
-import { describeFailure, runOnce } from "../core/run-once.js";
+import {
+  mergedSpawnEnv,
+  type RuntimeEnvReader,
+} from "../../core/runtime-env.js";
+import { describeFailure, runOnce } from "../../core/run-once.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;

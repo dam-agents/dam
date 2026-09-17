@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Result, SkillsDomainError } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
-import { describeFailure, runOnce } from "../../../core/run-once.js";
+import { describeFailure, runOnce } from "../../core/run-once.js";
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
