@@ -139,11 +139,14 @@ func buildEnvoyBootstrap(p bootstrapParams) ev {
 			ev{
 				"name": "envoy.stat_sinks.open_telemetry",
 				"typed_config": ev{
-					"@type":        "type.googleapis.com/envoy.extensions.stat_sinks.open_telemetry.v3.SinkConfig",
-					"grpc_service": otlpGRPCService(),
+					"@type":              "type.googleapis.com/envoy.extensions.stat_sinks.open_telemetry.v3.SinkConfig",
+					"grpc_service":       otlpGRPCService(),
+					"resource_detectors": otelEnvironmentResourceDetectors(),
 				},
 			},
 		}
+		doc["stats_config"] = gatewayStatsConfig()
+		doc["stats_flush_interval"] = gatewayStatsFlushInterval
 	}
 	return doc
 }
@@ -729,14 +732,9 @@ func dnsCacheConfig() ev {
 
 func otelTracing(p bootstrapParams, maxPathTagLength int) ev {
 	tracerTC := ev{
-		"@type":        "type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig",
-		"service_name": p.OTel.ServiceName,
-		"resource_detectors": []any{
-			ev{
-				"name":         "envoy.tracers.opentelemetry.resource_detectors.environment",
-				"typed_config": ev{"@type": "type.googleapis.com/envoy.extensions.tracers.opentelemetry.resource_detectors.v3.EnvironmentResourceDetectorConfig"},
-			},
-		},
+		"@type":              "type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig",
+		"service_name":       p.OTel.ServiceName,
+		"resource_detectors": otelEnvironmentResourceDetectors(),
 	}
 	if p.OTel.GRPC {
 		tracerTC["grpc_service"] = otlpGRPCService()
@@ -748,6 +746,45 @@ func otelTracing(p bootstrapParams, maxPathTagLength int) ev {
 		"max_path_tag_length": maxPathTagLength,
 		"random_sampling":     ev{"value": p.OTel.SamplingPercent},
 		"provider":            ev{"name": "envoy.tracers.opentelemetry", "typed_config": tracerTC},
+	}
+}
+
+func otelEnvironmentResourceDetectors() []any {
+	return []any{
+		ev{
+			"name":         "envoy.tracers.opentelemetry.resource_detectors.environment",
+			"typed_config": ev{"@type": "type.googleapis.com/envoy.extensions.tracers.opentelemetry.resource_detectors.v3.EnvironmentResourceDetectorConfig"},
+		},
+	}
+}
+
+const gatewayStatsFlushInterval = "60s"
+
+func gatewayStatsConfig() ev {
+	return ev{
+		"stats_matcher": ev{
+			"inclusion_list": ev{"patterns": []any{
+				ev{"prefix": "http."},
+				ev{"prefix": "tcp."},
+				ev{"prefix": "cluster."},
+				ev{"prefix": "ext_authz."},
+				ev{"prefix": "dns_cache."},
+				ev{"prefix": "access_logs."},
+				ev{"exact": "server.live"},
+				ev{"exact": "server.state"},
+				ev{"exact": "server.uptime"},
+				ev{"exact": "server.concurrency"},
+				ev{"exact": "server.memory_allocated"},
+				ev{"exact": "server.memory_heap_size"},
+				ev{"exact": "server.memory_physical_size"},
+				ev{"exact": "server.total_connections"},
+				ev{"exact": "server.watchdog_miss"},
+				ev{"exact": "server.watchdog_mega_miss"},
+				ev{"exact": "server.days_until_first_cert_expiring"},
+				ev{"exact": "listener_manager.total_listeners_active"},
+				ev{"exact": "listener_manager.listener_create_failure"},
+			}},
+		},
 	}
 }
 
