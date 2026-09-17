@@ -16,11 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -105,16 +107,102 @@ const testOwner = "owner-1"
 // UNIT_BOUNDARY_DESCRIPTION: the controller creates an owner's runner itself, so the tests hand it one already reporting a ready pod — the creating path is the same code with an empty cluster.
 func runnerSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner), Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner), Namespace: "test-agents"},
 		Data:       map[string][]byte{"token": []byte("node-token")},
 	}
+}
+
+// TEST_SCENARIO: a cluster that already ran a vm agent under the old mechanism has an endpoint slice the controller wrote by hand, under the agent's own name. Kubernetes maintains that Service's endpoints now and unions every slice naming it, so a leftover reading ready would take a share of the traffic toward an address its machine no longer answers on.
+func TestTheHandWrittenEndpointSliceIsRemoved(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	_, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Create(ctx, &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+		AddressType: discoveryv1.AddressTypeIPv4,
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	_, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the hand-written slice is gone, leaving only the one Kubernetes keeps")
+}
+
+// TEST_SCENARIO: the runner is kept away from Service and pod addresses, and the cluster's DNS is a Service — so resolving through it is exactly what an egress policy forbids, and a registry pull dies on the lookup. The node's resolver is what a pod confined like this has left.
+func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.DNSDefault, dep.Spec.Template.Spec.DNSPolicy,
+		"ClusterFirst would send every lookup to a Service address the runner's own egress policy drops")
+}
+
+// TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
+func TestAnInstallCanAskForClusterResolution(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.DNSPolicy = "ClusterFirst"
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.DNSClusterFirst, dep.Spec.Template.Spec.DNSPolicy)
+}
+
+// TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
+func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	node, srv := newFakeNode(t)
+	_ = node
+	dep := readyRunnerDeployment()
+	dep.Status.ReadyReplicas = 0
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dep.Name + "-abc",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
+		},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+			Message: "0/15 nodes are available: 3 Insufficient devices.kubevirt.io/kvm",
+		}}},
+	}
+	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), pod)
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+		ServiceAccountName: "platform-vm-runner",
+	}}
+	r.runnerEndpoint = func(string) string { return srv.URL }
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	msg := ""
+	for _, c := range conds {
+		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
+			msg, _ = m["message"].(string)
+		}
+	}
+	assert.Contains(t, msg, "cannot be scheduled")
+	assert.Contains(t, msg, "Insufficient devices.kubevirt.io/kvm",
+		"the scheduler's own account reaches the agent, not just the generic starting message")
 }
 
 func readyRunnerDeployment() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "platform-vm-runner-" + runnerSuffix(testOwner),
-			Namespace: "default",
+			Namespace: "test-agents",
 			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
 		},
 		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
@@ -138,15 +226,15 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+		ServiceAccountName: "platform-vm-runner",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	var requeued []time.Duration
 	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets a selector-less agent Service backed by the node's published port and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -163,6 +251,8 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)
 	assert.Equal(t, "http://10.96.42.42:10000", spec.Env["HTTPS_PROXY"])
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
+	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
+	assert.Equal(t, spec.Env["NO_PROXY"], spec.Env["no_proxy"], "clients reading either casing see the same list")
 	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
@@ -174,15 +264,9 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Nil(t, svc.Spec.Selector)
-	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
-	eps, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10.42.0.9"}, eps.Endpoints[0].Addresses)
-	assert.Equal(t, int32(31000), *eps.Ports[0].Port)
-	assert.Equal(t, "my-agent", eps.Labels["kubernetes.io/service-name"])
-	require.NotNil(t, eps.Endpoints[0].Conditions.Ready)
-	assert.False(t, *eps.Endpoints[0].Conditions.Ready, "a machine that is still booting takes no traffic")
+	assert.Equal(t, vmRunnerSelector(testOwner), svc.Spec.Selector, "the agent Service selects the owner's runner")
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "a headless Service would hand back the pod address without remapping the port")
+	assert.Equal(t, intstr.FromInt(31000), svc.Spec.Ports[0].TargetPort, "the agent port maps onto the one this machine publishes on the runner")
 
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
@@ -193,9 +277,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	markGatewayReady(t, r)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	eps, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.True(t, *eps.Endpoints[0].Conditions.Ready, "a ready machine takes traffic — kube-proxy drops an endpoint that never turns ready")
 	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
 }
 
@@ -247,7 +328,6 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	r.runnerIP = func(string) (string, error) { return "10.42.0.9", nil }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet issued")
@@ -277,30 +357,30 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
 	assert.NotEqual(t, a, b, "one runner per owner")
 	for _, name := range []string{a, b} {
-		dep, err := r.client.AppsV1().Deployments("default").Get(ctx, name, metav1.GetOptions{})
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, name, metav1.GetOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, int32(1), *dep.Spec.Replicas)
-		pvc, err := r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, name, metav1.GetOptions{})
+		pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, "100Gi", pvc.Spec.Resources.Requests.Storage().String())
-		_, err = r.client.CoreV1().Services("default").Get(ctx, name, metav1.GetOptions{})
+		_, err = r.client.CoreV1().Services("test-agents").Get(ctx, name, metav1.GetOptions{})
 		require.NoError(t, err)
-		np, err := r.client.NetworkingV1().NetworkPolicies("default").Get(ctx, name+"-ingress", metav1.GetOptions{})
+		np, err := r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, name+"-ingress", metav1.GetOptions{})
 		require.NoError(t, err)
 		assert.Len(t, np.Spec.Ingress[0].From, 2, "only the api-server and the controller may dial a runner")
 	}
 
-	secretA, err := r.client.CoreV1().Secrets("default").Get(ctx, a, metav1.GetOptions{})
+	secretA, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, a, metav1.GetOptions{})
 	require.NoError(t, err)
-	secretB, err := r.client.CoreV1().Secrets("default").Get(ctx, b, metav1.GetOptions{})
+	secretB, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.NotEqual(t, secretA.Data["token"], secretB.Data["token"], "a runner's token is its own")
 	assert.NotEmpty(t, secretA.Data["tls.crt"])
 
 	r.deleteRunner(ctx, "owner-a")
-	_, err = r.client.AppsV1().Deployments("default").Get(ctx, a, metav1.GetOptions{})
+	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, a, metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
-	_, err = r.client.AppsV1().Deployments("default").Get(ctx, b, metav1.GetOptions{})
+	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err, "and the other owner's runner is untouched")
 }
 
@@ -326,9 +406,21 @@ func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
 }
 
+// TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.
+func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", nil, nil)
+
+	require.Len(t, np.Spec.Ingress, 1)
+	require.NotEmpty(t, np.Spec.Ingress[0].From)
+	for _, from := range np.Spec.Ingress[0].From {
+		require.NotNil(t, from.NamespaceSelector, "a bare pod selector would only match the runner's own namespace")
+		assert.Equal(t, "release-ns", from.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	}
+}
+
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "default", "test-agents", nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", nil, nil)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -354,40 +446,64 @@ func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
 	assert.Empty(t, refusal)
 }
 
-// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the controller's own Deployment, so the cluster collects them all; a single object missing the reference strands a running VM and its disk.
-func TestRunnerObjectsAreOwnedByTheController(t *testing.T) {
+// TEST_SCENARIO: switching virtualization off and on deletes the runner ServiceAccount and renders a new one, which carries a new UID. A controller that resolved the owner once would keep stamping the dead UID, and every object it wrote would be collected the instant it appeared — a runner that never shows up and never explains why.
+func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-controller", Namespace: "default", UID: "controller-uid"},
+	sas := r.client.CoreV1().ServiceAccounts("test-agents")
+	_, err := sas.Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "uid-before"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.Equal(t, types.UID("uid-before"), r.runnerOwnerRef(ctx)[0].UID)
+
+	require.NoError(t, sas.Delete(ctx, "platform-vm-runner", metav1.DeleteOptions{}))
+	_, err = sas.Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "uid-after"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	refs := r.runnerOwnerRef(ctx)
+	require.Len(t, refs, 1)
+	assert.Equal(t, types.UID("uid-after"), refs[0].UID,
+		"a stale UID here is collected by the garbage collector the moment a runner object is written")
+}
+
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM and its disk.
+func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	_, err := r.client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "runner-sa-uid"},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
 	name := r.runnerName(testOwner)
-	require.NoError(t, r.client.CoreV1().Secrets("default").Delete(ctx, name, metav1.DeleteOptions{}))
+	require.NoError(t, r.client.CoreV1().Secrets("test-agents").Delete(ctx, name, metav1.DeleteOptions{}))
 
 	require.ErrorContains(t, r.Reconcile(ctx, agent), "VM runner", "the fresh token is rejected by the fake runner, which happens after every object below exists")
 
 	owners := map[string][]metav1.OwnerReference{}
-	sec, err := r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["secret"] = sec.OwnerReferences
-	pvc, err := r.client.CoreV1().PersistentVolumeClaims("default").Get(ctx, name, metav1.GetOptions{})
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["pvc"] = pvc.OwnerReferences
-	svc, err := r.client.CoreV1().Services("default").Get(ctx, name, metav1.GetOptions{})
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["service"] = svc.OwnerReferences
-	np, err := r.client.NetworkingV1().NetworkPolicies("default").Get(ctx, name+"-ingress", metav1.GetOptions{})
+	np, err := r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, name+"-ingress", metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["networkpolicy"] = np.OwnerReferences
-	dep, err := r.client.AppsV1().Deployments("default").Get(ctx, name, metav1.GetOptions{})
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["deployment"] = dep.OwnerReferences
 
 	for kind, refs := range owners {
 		require.Len(t, refs, 1, "%s carries no owner, so it would outlive the release", kind)
-		assert.Equal(t, types.UID("controller-uid"), refs[0].UID, "%s is owned by the controller", kind)
+		assert.Equal(t, types.UID("runner-sa-uid"), refs[0].UID, "%s is owned by the controller", kind)
 	}
 }
 
@@ -407,7 +523,7 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 
 	r.ReconcileOrphanMachines(ctx)
 
-	_, err = r.client.CoreV1().PersistentVolumeClaims("default").
+	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").
 		Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
@@ -417,22 +533,22 @@ func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	_, err := r.client.AppsV1().Deployments("default").Create(ctx, &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-controller", Namespace: "default", UID: "controller-uid"},
+	_, err := r.client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "runner-sa-uid"},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	name := r.runnerName(testOwner)
-	sec, err := r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	require.Empty(t, sec.OwnerReferences, "the harness seeds it the way an older controller left it")
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
-	sec, err = r.client.CoreV1().Secrets("default").Get(ctx, name, metav1.GetOptions{})
+	sec, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	require.Len(t, sec.OwnerReferences, 1, "the existing Secret is adopted")
-	assert.Equal(t, types.UID("controller-uid"), sec.OwnerReferences[0].UID)
+	assert.Equal(t, types.UID("runner-sa-uid"), sec.OwnerReferences[0].UID)
 }
 
 // TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status carries the runner's own explanation of what to free.
@@ -521,12 +637,12 @@ func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 
 // TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
 func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
-	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", nil, nil)
+	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", nil, nil)
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
 		"with nowhere named, the runner still pulls images and the policy only admits callers")
 	assert.Empty(t, open.Spec.Egress)
 
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "default", "test-agents", []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
 	require.Len(t, confined.Spec.Egress, 3, "DNS, the paired gateways, and what the install named")
 
@@ -598,4 +714,67 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	_, queued := r.parkedRetry["my-agent"]
 	r.budgetMu.Unlock()
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
+}
+
+// TEST_SCENARIO: the runner unpacks a container image so every machine of that image shares one read-only tree, and restoring a rootfs faithfully means writing the ownership its files carry. Under a security policy that drops every capability, tar cannot: it fails first on chown and then, given only CHOWN, on setting a mode it no longer owns. Both capabilities are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it.
+func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
+	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
+	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
+	assert.Contains(t, caps.Add, corev1.Capability("DAC_OVERRIDE"),
+		"and then writes on into the directory it just gave away, which bits alone forbid even to root")
+}
+
+// TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.
+func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, requeued := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	last := func() time.Duration { return (*requeued)[len(*requeued)-1] }
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}))
+	assert.Equal(t, vmStartingPoll, last(),
+		"a machine asked to start a moment ago is watched closely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false,
+			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}))
+	assert.Equal(t, vmReadinessPoll, last(),
+		"one still unready long afterwards is not about to be, and is watched loosely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}))
+	assert.Equal(t, vmHealthPoll, last(),
+		"and once it answers it is only checked for health")
+}
+
+// TEST_SCENARIO: each machine's VMM runs under its own unprivileged uid, so a guest that breaks out of the VMM confining it reaches a uid that owns no other machine. A uid-0 process may only call setuid and setgid when its capability set carries them, and a runner missing either does not fail — it goes on running every VMM as root, one boundary for all machines instead of one each. The capabilities are therefore asserted here rather than left to the silence of a drop that never happened.
+func TestEachMachinesVMMCanBeGivenItsOwnUID(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.Contains(t, caps.Add, corev1.Capability("SETUID"), "without it setuid fails and every VMM stays root")
+	assert.Contains(t, caps.Add, corev1.Capability("SETGID"), "and the matching group change fails the same way")
+
+	for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
+		assert.NotEqual(t, "SMOLVM_VM_UID_DROP", env.Name,
+			"and nothing turns the drop back off, which is how it was suppressed before the capabilities were held")
+	}
 }

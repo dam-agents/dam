@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
@@ -22,7 +21,22 @@ import (
 const (
 	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
 	vmReadinessPoll   = 3 * time.Second
-	vmHealthPoll      = time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how closely a machine is watched while it
+	// UNIT_BOUNDARY_DESCRIPTION: starts, and for how long. The window runs
+	// UNIT_BOUNDARY_DESCRIPTION: from the moment the runner asked the machine
+	// UNIT_BOUNDARY_DESCRIPTION: to start, which it reports, and not from the
+	// UNIT_BOUNDARY_DESCRIPTION: Ready condition's own transition: a wake
+	// UNIT_BOUNDARY_DESCRIPTION: leaves that condition False and changes only
+	// UNIT_BOUNDARY_DESCRIPTION: its reason, so the stamp does not move, and a
+	// UNIT_BOUNDARY_DESCRIPTION: woken agent would be watched no more closely
+	// UNIT_BOUNDARY_DESCRIPTION: than one stuck for hours — which is the case
+	// UNIT_BOUNDARY_DESCRIPTION: this exists for.
+	vmStartingPoll   = 500 * time.Millisecond
+	vmStartingWindow = 20 * time.Second
+
+	vmHealthPoll = time.Minute
+
+	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
@@ -38,7 +52,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		return vmrunner.MachineStatus{Message: "the owner's VM runner is still starting"}, nil
+		return vmrunner.MachineStatus{Message: r.runnerNotReadyMessage(ctx, owner)}, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
@@ -60,6 +74,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	env["IS_SANDBOX"] = "1"
+	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
+	env["no_proxy"] = env["NO_PROXY"]
 
 	var persist []string
 	storageGiB := 0
@@ -102,22 +118,43 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, err
 	}
 
-	svc := BuildAgentService(name, r.config, ownerRef)
-	svc.Spec.Selector = nil
-	svc.Spec.ClusterIP = ""
-	if err := r.applyService(ctx, svc); err != nil {
-		return st, fmt.Errorf("applying agent service: %w", err)
-	}
 	if st.Port > 0 {
-		ip, err := r.runnerPodIP(ctx, owner)
-		if err != nil {
-			return st, err
+		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
+			return st, fmt.Errorf("applying agent service: %w", err)
 		}
-		if err := r.applyEndpointSlice(ctx, buildVMEndpointSlice(name, r.config.Namespace, ip, int32(st.Port), st.Ready, ownerRef)); err != nil {
-			return st, fmt.Errorf("applying agent endpoint slice: %w", err)
-		}
+		r.dropSupersededEndpointSlice(ctx, name)
 	}
 	return st, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an earlier release wrote this Service's endpoint by hand, under the agent's own name. Kubernetes now keeps one of its own for the same Service, and two slices naming one Service are unioned — so a leftover that once read ready, pointing at an address its machine no longer answers on, would take a share of the traffic and nothing would repair it. Delete is enough: the generated slice carries a suffixed name, so only the hand-written one matches. Remove this once no cluster has reconciled a vm agent under the old mechanism.
+func (r *AgentReconciler) dropSupersededEndpointSlice(ctx context.Context, name string) {
+	err := r.client.DiscoveryV1().EndpointSlices(r.config.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		slog.Warn("removing the endpoint slice an earlier release wrote by hand", "agent", name, "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
+func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner string, port int, ownerRef metav1.OwnerReference) error {
+	desired := BuildAgentService(name, r.config, ownerRef)
+	desired.Spec.ClusterIP = ""
+	desired.Spec.Selector = vmRunnerSelector(owner)
+	desired.Spec.Ports[0].TargetPort = intstr.FromInt(port)
+
+	cli := r.client.CoreV1().Services(r.config.Namespace)
+	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	existing.Spec.Selector = desired.Spec.Selector
+	existing.Spec.Ports = desired.Spec.Ports
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
+	return err
 }
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
@@ -211,40 +248,6 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	return nil
 }
 
-func buildVMEndpointSlice(name, namespace, address string, port int32, ready bool, ownerRef metav1.OwnerReference) *discoveryv1.EndpointSlice {
-	portName, tcp := "acp", corev1.ProtocolTCP
-	return &discoveryv1.EndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				LabelAgent: name, LabelPair: name, LabelRole: RoleAgent,
-				discoveryv1.LabelServiceName: name,
-				discoveryv1.LabelManagedBy:   "platform-controller",
-			},
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-		AddressType: discoveryv1.AddressTypeIPv4,
-		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{address}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}}},
-		Ports:       []discoveryv1.EndpointPort{{Name: &portName, Port: &port, Protocol: &tcp}},
-	}
-}
-
-func (r *AgentReconciler) applyEndpointSlice(ctx context.Context, desired *discoveryv1.EndpointSlice) error {
-	cli := r.client.DiscoveryV1().EndpointSlices(desired.Namespace)
-	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	desired.ResourceVersion = existing.ResourceVersion
-	_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
-}
-
 func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {
 	msg := st.Message
 	if !st.Ready && msg == "" {
@@ -254,6 +257,9 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		poll := vmHealthPoll
 		if !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
 			poll = vmReadinessPoll
+			if starting := time.Duration(st.StartingMs) * time.Millisecond; starting > 0 && starting < vmStartingWindow {
+				poll = vmStartingPoll
+			}
 		}
 		r.requeue(agent.Name, poll)
 	}

@@ -5,6 +5,7 @@ import { slackThreadKey, type AgentsService } from "api-server-api";
 import {
   createSlackWorker,
   TURN_LINGER_MS,
+  undeliveredNudge,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
@@ -47,6 +48,7 @@ function harness(opts: {
   attendance?: ChannelTurnAttendance;
   agentName?: string;
   wakePatienceMs?: number;
+  turnStatus?: AcpClient["turnStatus"];
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -55,7 +57,7 @@ function harness(opts: {
     listSessions: opts.listSessions ?? (async () => []),
     sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
     triggerSession: () => Promise.reject(new Error("unused")),
-    turnStatus: async () => "unknown" as const,
+    turnStatus: opts.turnStatus ?? (async () => "unknown" as const),
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
@@ -118,7 +120,15 @@ function harness(opts: {
     records: () => gw.readOutbound(),
     turnEvents: () =>
       events.filter(
-        (e): e is ChannelTurnRelayed => e.type === EventType.ChannelTurnRelayed,
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason !== "recovery-nudge",
+      ),
+    nudgeEvents: () =>
+      events.filter(
+        (e): e is ChannelTurnRelayed =>
+          e.type === EventType.ChannelTurnRelayed &&
+          e.reason === "recovery-nudge",
       ),
   };
 }
@@ -1035,6 +1045,160 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(
       lines.filter((l) => l.includes("slack.turn.unanswered")),
     ).toHaveLength(0);
+  });
+
+  /**
+   * TEST_SCENARIO: the silence bug itself. The turn ends cleanly, the agent
+   * wrote its answer as plain text, and nothing reached Slack. The worker
+   * resumes the session with the undelivered notice, and the answer the
+   * person was waiting for lands in the thread on that second pass.
+   */
+  it("nudges a completed turn that posted nothing, and the late reply lands", async () => {
+    let turns = 0;
+    const h: ReturnType<typeof harness> = harness({
+      sendPrompt: async (prompt, opts) => {
+        opts.onSession?.("sess-1");
+        turns += 1;
+        if (String(prompt).includes("<turn-undelivered>")) {
+          await h.worker.reply("agent-1", { text: "the late answer" });
+          return "posted";
+        }
+        return "prose, never delivered";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(turns).toBe(2);
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ text: "the late answer" });
+  });
+
+  /**
+   * TEST_SCENARIO: the nudge must not talk about itself. A person who never
+   * saw a failure should read the late post as the answer, so the notice
+   * tells the agent to drop the apology and names no_reply_needed as the way
+   * out for a turn that truly needed no answer.
+   */
+  it("tells the nudged agent not to mention the notice, and how to stay silent", async () => {
+    const seen: string[] = [];
+    const h = harness({
+      sendPrompt: async (prompt, opts) => {
+        opts.onSession?.("sess-1");
+        seen.push(String(prompt));
+        return "prose, never delivered";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    const nudge = seen.find((p) => p.includes("<turn-undelivered>"));
+    expect(nudge).toBeDefined();
+    expect(nudge).toContain("do not apologise for the delay");
+    expect(nudge).toContain("no_reply_needed");
+  });
+
+  /**
+   * TEST_SCENARIO: the same notice serves two very different situations. A
+   * turn whose relay was abandoned already posted failure copy into the
+   * thread, so the person did see something go wrong — telling that agent
+   * not to acknowledge the delay would have it answer as though nothing had
+   * happened, contradicting what stands on screen above its own post. A
+   * cleanly-ended turn posted no such copy, so there the silence really is
+   * total and the apology really is noise.
+   */
+  it("matches the notice to whether the person was shown a failure", () => {
+    const quiet = undeliveredNudge("1.1", { sawFailure: false });
+    expect(quiet).toContain("never saw an answer");
+    expect(quiet).toContain("do not apologise for the delay");
+
+    const afterFailure = undeliveredNudge("1.1", { sawFailure: true });
+    expect(afterFailure).toContain("already told the turn had gone wrong");
+    expect(afterFailure).not.toContain("do not apologise for the delay");
+    expect(afterFailure).toContain("no_reply_needed");
+  });
+
+  /**
+   * TEST_SCENARIO: the failure notice is only true when failure copy was
+   * actually posted, and an interrupted turn that managed a partial post is
+   * exactly where those two come apart: the relay stays quiet because the
+   * thread already carries the agent's own message, while the verdict still
+   * counts the turn undelivered because a partial is not an answer. Telling
+   * that agent the person was shown an error would have it write around a
+   * message nobody ever saw.
+   */
+  it("does not claim failure copy the person was never shown", async () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const h: ReturnType<typeof harness> = harness({
+        sendPrompt: async (prompt, opts) => {
+          opts.onSession?.("sess-1");
+          seen.push(String(prompt));
+          if (String(prompt).includes("<turn-undelivered>")) return "posted";
+          await h.worker.reply("agent-1", { text: "half an answer" });
+          throw new AcpTurnAbandonedError(
+            "connection-lost",
+            "ACP connection lost (agent unreachable)",
+          );
+        },
+        turnStatus: async () => "interrupted" as const,
+      });
+      await h.mention();
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+
+      const nudge = seen.find((p) => p.includes("<turn-undelivered>"));
+      expect(nudge).toBeDefined();
+      expect(nudge).not.toContain("already told the turn had gone wrong");
+
+      const msgs = h.records().filter((r) => r.kind === "message");
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]).toMatchObject({ text: "half an answer" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: the nudge is single-shot. An agent that stays silent
+   * through the nudge must not be nudged for the nudge, which would loop a
+   * quiet turn forever and keep the pod awake.
+   */
+  it("nudges once and gives up when the agent stays silent through it", async () => {
+    let turns = 0;
+    const h = harness({
+      sendPrompt: async (_prompt, opts) => {
+        opts.onSession?.("sess-1");
+        turns += 1;
+        return "still nothing";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(turns).toBe(2);
+    expect(h.records().some((r) => r.kind === "message")).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: a turn that answered is already delivered, so resuming it
+   * with the notice would make the agent post a second time.
+   */
+  it("never nudges a turn that already replied", async () => {
+    let turns = 0;
+    const h: ReturnType<typeof harness> = harness({
+      sendPrompt: async (_prompt, opts) => {
+        opts.onSession?.("sess-1");
+        turns += 1;
+        await h.worker.reply("agent-1", { text: "answered" });
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(turns).toBe(1);
   });
 
   /**

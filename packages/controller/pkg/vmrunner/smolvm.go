@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"time"
 )
 
+const slowStatus = time.Second
+
 type Smolvm struct {
 	Bin string
 }
@@ -23,7 +26,11 @@ type Smolvm struct {
 func (r *Smolvm) State(id string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, "machine", "status", "-n", id, "--json").Output()
+	if elapsed := time.Since(started); elapsed > slowStatus {
+		slog.Warn("machine status is slow to answer", "machine", id, "duration_ms", elapsed.Milliseconds())
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && bytes.Contains(exit.Stderr, []byte("not found")) {
@@ -75,7 +82,7 @@ func (r *Smolvm) Delete(id string) error { return r.run(nil, "machine", "delete"
 func (r *Smolvm) Start(id string) error {
 	dir := r.vmDir(id)
 	if dir != "" {
-		_ = r.run(nil, "machine", "stop", "-n", id)
+		_ = r.runReporting(false, nil, "machine", "stop", "-n", id)
 		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
@@ -138,12 +145,22 @@ func envArgs(env map[string]string) []string {
 
 // UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches a guest on this command line, and a failure carries the command's own output into the Agent's status and the platform's logs — so a tool that echoes its invocation would publish those values, in whatever shape it happens to print them.
 func (r *Smolvm) run(secrets []string, args ...string) error {
+	return r.runReporting(true, secrets, args...)
+}
+
+func (r *Smolvm) runReporting(report bool, secrets []string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
+	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, args...).CombinedOutput()
+	op := strings.Join(args[:2], " ")
 	if err != nil {
-		return fmt.Errorf("smolvm %s: %w: %s", strings.Join(args[:2], " "), err, redact(strings.TrimSpace(string(out)), secrets))
+		if report {
+			slog.Warn("machine operation failed", "op", op, "duration_ms", time.Since(started).Milliseconds())
+		}
+		return fmt.Errorf("smolvm %s: %w: %s", op, err, redact(strings.TrimSpace(string(out)), secrets))
 	}
+	slog.Info("machine operation", "op", op, "duration_ms", time.Since(started).Milliseconds())
 	return nil
 }
 

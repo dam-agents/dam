@@ -20,6 +20,7 @@ const artifact = (id: string, folderId: string | null): LibraryArtifact => ({
   folderId,
   agentId: null,
   visibility: "private",
+  interactive: false,
   viewers: [],
   expiresAt: null,
   viewCount: 0,

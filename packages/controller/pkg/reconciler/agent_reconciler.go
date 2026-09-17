@@ -33,18 +33,15 @@ type AgentReconciler struct {
 	dynamic dynamic.Interface
 	config  *config.Config
 
-	budgetMu        sync.Mutex
-	ownerLocks      map[string]*sync.Mutex
-	deniedWakes     map[string]string
-	parkedRetry     map[string]struct{}
-	busyProbe       func(ctx context.Context, agentName string) bool
-	runnerMu        sync.Mutex
-	runners         map[string]runnerConn
-	runnerOwnerOnce sync.Once
-	runnerOwner     *metav1.OwnerReference
-	runnerEndpoint  func(owner string) string
-	runnerIP        func(owner string) (string, error)
-	requeue         func(name string, after time.Duration)
+	budgetMu       sync.Mutex
+	ownerLocks     map[string]*sync.Mutex
+	deniedWakes    map[string]string
+	parkedRetry    map[string]struct{}
+	busyProbe      func(ctx context.Context, agentName string) bool
+	runnerMu       sync.Mutex
+	runners        map[string]runnerConn
+	runnerEndpoint func(owner string) string
+	requeue        func(name string, after time.Duration)
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {

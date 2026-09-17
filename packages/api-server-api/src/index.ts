@@ -231,6 +231,11 @@ export type {
   ArtifactTouchService,
 } from "./modules/artifact-library/types.js";
 export {
+  ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptSchema,
+} from "./modules/artifact-library/prompt.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,

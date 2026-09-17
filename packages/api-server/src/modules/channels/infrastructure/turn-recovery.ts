@@ -11,12 +11,12 @@ export interface WatchedTurn {
   instanceName: string;
   sessionId: string;
   isDelivered: (end: WatchedTurnEnd) => boolean;
-  recover: (end: WatchedTurnEnd) => Promise<void>;
+  recover: (end: WatchedTurnEnd, isCancelled: () => boolean) => Promise<void>;
   onDone?: () => void;
 }
 
 export interface TurnRecovery {
-  watch(turn: WatchedTurn): void;
+  watch(turn: WatchedTurn, opts?: { endedAs?: WatchedTurnEnd }): void;
   dismiss(instanceName: string, sessionId: string): void;
   stop(): void;
 }
@@ -26,6 +26,8 @@ interface WatchState {
   gen: number;
   timer?: ReturnType<typeof setTimeout>;
   deadline: number;
+  recovering?: boolean;
+  cancelled?: boolean;
 }
 
 /**
@@ -53,7 +55,16 @@ interface WatchState {
  * caller's bookkeeping neither outlives the watch nor dies before the work
  * it guards (a reply landing while the recovery wakes the pod must still be
  * markable). Per-turn single-shot: a recovery that itself fails is logged
- * and given up, never retried into a loop.
+ * and given up, never retried into a loop. A caller that already knows how
+ * the turn ended — a relay that watched it through to a clean finish, and
+ * saw nothing delivered — registers it with that verdict instead: the poll
+ * is skipped and the recovery is judged at once, on the same predicate,
+ * single-shot rule and logging as a polled one, so the two ways a turn can
+ * go undelivered have one owner rather than two. A recovery stays in the
+ * registry for as long as it runs, because the session it is recovering can
+ * be busy with a turn from another queue: a dismissal or a shutdown must
+ * still reach it, and it stands down rather than answering a person who has
+ * been answered since.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -73,12 +84,14 @@ export function createTurnRecovery(deps: {
     const state = watches.get(key);
     if (state === undefined) return undefined;
     if (state.timer !== undefined) clearTimeout(state.timer);
-    watches.delete(key);
+    state.cancelled = true;
+    if (state.recovering !== true) watches.delete(key);
     return state;
   }
 
   function drop(key: string): void {
-    remove(key)?.turn.onDone?.();
+    const state = remove(key);
+    if (state !== undefined && state.recovering !== true) state.turn.onDone?.();
   }
 
   function schedule(key: string, turn: WatchedTurn, state: WatchState): void {
@@ -122,11 +135,31 @@ export function createTurnRecovery(deps: {
       return;
     }
 
-    const end: WatchedTurnEnd =
-      verdict === "interrupted" ? "interrupted" : "clean";
-    remove(key);
+    await finish(
+      key,
+      turn,
+      verdict === "interrupted" ? "interrupted" : "clean",
+      gen,
+    );
+  }
+
+  async function finish(
+    key: string,
+    turn: WatchedTurn,
+    end: WatchedTurnEnd,
+    gen: number,
+  ): Promise<void> {
+    const state = watches.get(key);
+    if (state === undefined || state.gen !== gen || state.recovering === true)
+      return;
+    state.recovering = true;
+    if (state.timer !== undefined) {
+      clearTimeout(state.timer);
+      state.timer = undefined;
+    }
     try {
-      if (!turn.isDelivered(end)) await turn.recover(end);
+      if (state.cancelled !== true && !turn.isDelivered(end))
+        await turn.recover(end, () => state.cancelled === true);
     } catch (err) {
       getLogger().info(
         {
@@ -137,12 +170,13 @@ export function createTurnRecovery(deps: {
         "slack.turn.recovery_failed: the delivery nudge could not run",
       );
     } finally {
+      if (watches.get(key) === state) watches.delete(key);
       turn.onDone?.();
     }
   }
 
   return {
-    watch(turn) {
+    watch(turn, opts) {
       const key = keyOf(turn.instanceName, turn.sessionId);
       drop(key);
       const state: WatchState = {
@@ -151,6 +185,10 @@ export function createTurnRecovery(deps: {
         deadline: Date.now() + RECOVERY_WINDOW_MS,
       };
       watches.set(key, state);
+      if (opts?.endedAs !== undefined) {
+        void finish(key, turn, opts.endedAs, state.gen);
+        return;
+      }
       schedule(key, turn, state);
     },
 

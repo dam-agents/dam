@@ -72,6 +72,7 @@ export const artifactCreateInputSchema = z
     contentType: z.string().trim().min(1).max(200).optional(),
     folderId: z.string().min(1).optional(),
     visibility: artifactCreateVisibilitySchema.optional(),
+    interactive: z.boolean().optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
     sourcePath: sourcePathSchema.optional(),
     agentId: z.string().min(1).optional(),

@@ -13,7 +13,9 @@ directory is persistent; the rest of the filesystem is reset on pod restart.
 - `jq` — JSON processor
 - `python` — Python 3.12
 - `uv` / `uvx` — Python package and environment manager; prefer `uv venv`,
-  `uv pip`, `uv run`, and `uvx <tool>` for Python work
+  `uv pip`, `uv run`, and `uvx <tool>` for Python work. `pip` and
+  `python -m pip` forward to `uv pip`; pip-only subcommands (`download`,
+  `config`, `cache`, `hash`) are unavailable.
 - `gws` — Google Workspace CLI
 - `curl`, `tar`, `gzip` — standard fetching and archiving utilities
 

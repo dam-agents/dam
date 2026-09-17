@@ -3,6 +3,7 @@ import {
   Code,
   Download,
   Edit,
+  Launch,
   Maximize,
   Save,
   Share,
@@ -14,6 +15,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
   useArtifact,
@@ -22,6 +24,8 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
+import { canSendArtifactPrompt } from "../lib/artifact-prompt.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -32,7 +36,12 @@ import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
 
-export function DockedArtifactPanel() {
+interface Props {
+  agentId: string | null;
+  onSendPrompt?: (prompt: string) => Promise<void>;
+}
+
+export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const openArtifactEdit = useStore((s) => s.openArtifactEdit);
@@ -44,6 +53,10 @@ export function DockedArtifactPanel() {
     isError: artifactError,
     refetch: refetchArtifact,
   } = useArtifact(openArtifactId);
+  const enabled =
+    useFeatures(artifact?.interactive === true).data?.[
+      "interactive-artifacts"
+    ] ?? false;
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [showSource, setShowSource] = useState(false);
@@ -89,6 +102,7 @@ export function DockedArtifactPanel() {
     shownVersion,
   );
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
+  const startSession = useStartArtifactSession(artifact);
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
 
@@ -101,6 +115,11 @@ export function DockedArtifactPanel() {
         className="h-full w-full bg-white"
         deferMs={0}
         postData={feedPostForShown}
+        onSendPrompt={
+          canSendArtifactPrompt(artifact, enabled, agentId, shownVersion)
+            ? onSendPrompt
+            : undefined
+        }
       />
     ) : null;
   const frameFallback = (
@@ -196,6 +215,17 @@ export function DockedArtifactPanel() {
                 onClick={() => void downloadArtifact(artifact.id)}
               >
                 <Download size={14} />
+              </Button>
+            )}
+            {startSession.available && shownVersion === latest && (
+              <Button
+                variant="outline"
+                size="icon-xs"
+                aria-label="Start a new session"
+                tooltip="Start a new session"
+                onClick={() => void startSession.start()}
+              >
+                <Launch size={14} />
               </Button>
             )}
             {frameShowing && (

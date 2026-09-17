@@ -28,6 +28,8 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 const RESERVED = new Set([".triggers", ".initialized"]);
 
+const TEXT_BASED_DETECTIONS = new Set(["xml", "vtt", "vcf", "ics"]);
+
 function hasNullBytes(buf: Buffer): boolean {
   const len = Math.min(buf.length, 8192);
   for (let i = 0; i < len; i++) if (buf[i] === 0) return true;
@@ -138,7 +140,7 @@ export function createFilesService(workingDir: string): FilesService {
         const buf = await fh.readFile();
         const mtimeMs = s.mtimeMs;
         const type = await fileTypeFromBuffer(buf);
-        if (type) {
+        if (type && !TEXT_BASED_DETECTIONS.has(type.ext)) {
           return ok({
             path: rel,
             content: buf.toString("base64"),

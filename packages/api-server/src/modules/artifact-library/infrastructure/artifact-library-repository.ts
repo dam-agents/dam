@@ -36,6 +36,7 @@ export interface ArtifactRow {
   sizeBytes: number;
   version: number;
   visibility: ArtifactVisibility;
+  interactive: boolean;
   expiresAt: Date | null;
   viewCount: number;
   createdAt: Date;
@@ -203,6 +204,7 @@ export function createArtifactLibraryRepository(
     visibility: sql`${artifactsTable.visibility}`.mapWith((value) =>
       artifactVisibilitySchema.parse(value),
     ),
+    interactive: artifactsTable.interactive,
     expiresAt: artifactsTable.expiresAt,
     viewCount: artifactsTable.viewCount,
     createdAt: artifactsTable.createdAt,

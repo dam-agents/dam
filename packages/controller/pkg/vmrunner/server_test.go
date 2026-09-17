@@ -623,6 +623,66 @@ func TestAMachineIsStoppedWhenItsGatewayAddressChanges(t *testing.T) {
 	assert.Equal(t, before, h.calls())
 }
 
+// TEST_SCENARIO: a machine may reach only its gateway, so the guest cannot fetch its own image — the runner does, once, onto a volume every runner shares. A second machine on the same image must find the unpacked tree already there and not fetch again.
+func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
+	h := newHarness(t)
+	fetches := filepath.Join(t.TempDir(), "fetches")
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nd=$(mktemp -d)\necho rootfs > \"$d/hello\"\ntar -cf - -C \"$d\" .\n"), 0o755))
+	h.node.Crane = crane
+
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	_, err = c.Ensure(t.Context(), "agent-b", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-b")
+
+	pulled, err := os.ReadFile(fetches)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(strings.Fields(strings.TrimSpace(string(pulled))))/3,
+		"the second machine boots from the tree the first left behind: %s", pulled)
+	rootfs := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
+	assert.Contains(t, h.calls(), "-I "+rootfs,
+		"smolvm is handed the unpacked tree, never the registry reference")
+	unpacked, err := os.ReadFile(filepath.Join(rootfs, "hello"))
+	require.NoError(t, err, "the tree is unpacked, not left as an archive")
+	assert.Equal(t, "rootfs\n", string(unpacked))
+}
+
+// TEST_SCENARIO: every deploy adds an image under a fresh tag and nothing else prunes the shared volume, so without eviction it fills and then refuses every machine. The oldest archive goes first, and the one just fetched is never the victim.
+func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
+	h := newHarness(t)
+	dir := filepath.Join(h.node.StateDir, "images")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	write := func(name string, age time.Duration) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, make([]byte, 1<<20), 0o644))
+		at := time.Now().Add(-age)
+		require.NoError(t, os.Chtimes(path, at, at))
+		return path
+	}
+	stranger := filepath.Join(dir, "not-ours\nforged.tar")
+	require.NoError(t, os.WriteFile(stranger, make([]byte, 1<<20), 0o644))
+	require.NoError(t, os.Chtimes(stranger, time.Now().Add(-9*time.Hour), time.Now().Add(-9*time.Hour)))
+
+	oldest := write("oldest.tar", 2*time.Hour)
+	newer := write("newer.tar", time.Hour)
+	keep := write("keep.tar", 0)
+
+	h.node.evictImages(dir, keep, 2<<20+1<<19)
+
+	_, oldestErr := os.Stat(oldest)
+	_, newerErr := os.Stat(newer)
+	_, keepErr := os.Stat(keep)
+	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first")
+	assert.NoError(t, newerErr, "the newer one stays while the budget allows it")
+	assert.NoError(t, keepErr, "the archive just fetched is never the one evicted")
+	_, strangerErr := os.Stat(stranger)
+	assert.NoError(t, strangerErr, "a file this runner did not write is left alone, however old — the volume is shared, and its name never reaches a log line")
+}
+
 // TEST_SCENARIO: an operator's Secret reaches the guest on the smolvm command line, and a failed call carries that command's output into the Agent's status and the platform's logs. The value is removed whatever shape the tool prints it in — quoted, behind a different flag, or in a Go-style argument list — because matching the one shape I happened to imagine is not a defence.
 func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 	secret := "sk-live-abc123"
@@ -640,4 +700,45 @@ func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 
 	assert.Equal(t, "nothing to hide", redact("nothing to hide", nil), "output is untouched when there is no secret")
 	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
+}
+
+// TEST_SCENARIO: an image is unpacked once and shared. smolvm mounts an unpacked tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — so the runner keeps the tree, and a runner that still holds an archive from an earlier release goes on booting from it rather than refetching.
+func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T) {
+	h := newHarness(t)
+	images := filepath.Join(h.node.StateDir, "images")
+	require.NoError(t, os.MkdirAll(filepath.Join(images, "quay.io_x_vm_1", "usr"), 0o755))
+
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	h.node.Crane = crane
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_vm_1"),
+		"the unpacked tree is used and no fetch is attempted, or the failing crane would have surfaced")
+
+	legacy := filepath.Join(images, "quay.io_x_old_9.tar")
+	require.NoError(t, os.WriteFile(legacy, []byte("tar"), 0o644))
+	s := spec(true)
+	s.Image = "quay.io/x/old:9"
+	_, err = h.client().Ensure(t.Context(), "agent-b", s)
+	require.NoError(t, err)
+	h.settle(t, "agent-b")
+	assert.Contains(t, h.calls(), "-I "+legacy,
+		"an archive left by an earlier release still boots rather than being refetched")
+}
+
+// TEST_SCENARIO: a tar that cannot write into the rootfs it is restoring reports every entry it failed on, which for a whole image is megabytes. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches and unpacks the image again. What is kept is the head, because the first failure is the one the rest follow from.
+func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
+	var flood strings.Builder
+	for i := 0; flood.Len() < 3_000_000; i++ {
+		fmt.Fprintf(&flood, "tar: usr/lib/entry-%d: Cannot mkdir: Permission denied\n", i)
+	}
+	kept := firstLines(flood.String())
+
+	assert.Less(t, len(kept), 32768/2, "what is kept leaves room for the rest of a condition message")
+	assert.Contains(t, kept, "usr/lib/entry-0:", "and it is the head, where the first failure is")
+	assert.Contains(t, kept, "truncated", "and it says that it is not the whole story")
+	assert.Equal(t, "boom", firstLines("  boom  "), "output that already fits is passed through, trimmed")
 }

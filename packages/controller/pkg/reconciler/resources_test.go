@@ -356,6 +356,9 @@ func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)
 	assert.False(t, *ss.Spec.Template.Spec.ShareProcessNamespace)
+	require.NotNil(t, ss.Spec.Template.Spec.EnableServiceLinks)
+	assert.False(t, *ss.Spec.Template.Spec.EnableServiceLinks,
+		"service links would inject one env var set per sibling agent gateway Service, leaking their names and cluster IPs into every sandbox")
 }
 
 func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {

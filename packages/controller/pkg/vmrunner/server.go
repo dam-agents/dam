@@ -1,22 +1,28 @@
 package vmrunner
 
 import (
+	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -24,7 +30,11 @@ const (
 	guestAgentPort   = 8080
 	loopbackOffset   = 1000
 	opTimeout        = 30 * time.Minute
+	stateTTL         = time.Second
 	unhealthyRestart = 10 * time.Minute
+	pullTimeout      = 20 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the archives may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the archive being written and for whatever the volume is shared with.
+	cacheBudgetPercent = 80
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -37,6 +47,16 @@ type health struct {
 	quietSince time.Time
 }
 
+type cachedState struct {
+	state string
+	at    time.Time
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
+var cachedRootfs = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$`)
+
+var legacyArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
+
 var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 
 type Server struct {
@@ -48,6 +68,7 @@ type Server struct {
 	MemoryMiB  int
 	ReserveMiB int
 	AllowFrom  []*net.IPNet
+	Crane      string
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -60,12 +81,15 @@ type Server struct {
 	drift      map[string]string
 	restarts   map[string]int32
 	health     map[string]health
+	lastState  map[string]cachedState
+	startedAt  map[string]time.Time
 }
 
 func (s *Server) Start() error {
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
+	s.lastState, s.startedAt = map[string]cachedState{}, map[string]time.Time{}
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -239,12 +263,13 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
-	state, err := s.Runtime.State(id)
+	state, err := s.machineState(id)
 	if err != nil {
 		return err
 	}
 	if !spec.Running {
 		if state == StateRunning {
+			defer s.forgetState(id)
 			return s.Runtime.Stop(id)
 		}
 		return nil
@@ -261,6 +286,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	applied := s.readSpec(id)
 	if applied != nil && egressChanged(*applied, spec) {
 		if state == StateRunning {
+			s.forgetState(id)
 			if err := s.Runtime.Stop(id); err != nil {
 				return err
 			}
@@ -293,15 +319,18 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			s.restarts[id]++
 			s.mu.Unlock()
 		}
+		s.forgetState(id)
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
 		}
 		state = StateStopped
 	}
 	if state == StateStopped {
+		s.forgetState(id)
 		if err := s.Runtime.Update(id, spec, applied); err != nil {
 			return err
 		}
+		s.markStarting(id)
 		if err := s.Runtime.Start(id); err != nil {
 			return err
 		}
@@ -321,21 +350,162 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	archive := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)+".tar")
-	if _, err := os.Stat(archive); err == nil {
-		image = archive
+	cached := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+	if _, err := os.Stat(cached); err != nil {
+		if _, legacy := os.Stat(cached + ".tar"); legacy == nil {
+			cached += ".tar"
+		} else if s.Crane != "" {
+			if err := s.cacheImage(image, cached); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := os.Stat(cached); err == nil {
+		image = cached
 	}
 	dir, err := s.machineDir(id)
 	if err != nil {
 		return err
 	}
+	s.forgetState(id)
 	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca")); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
+	s.markStarting(id)
 	return s.Runtime.Start(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a failing tar reports every entry it could not write, which for a rootfs it may not write into at all is one line per file — 2.6 MB of them, observed. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server, so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches and unpacks the image again. Keeping the head of the output keeps the first failure, which is the one that explains the rest.
+const capturedOutput = 2000
+
+func firstLines(out string) string {
+	out = strings.TrimSpace(out)
+	if len(out) <= capturedOutput {
+		return out
+	}
+	return out[:capturedOutput] + "… (truncated)"
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner uses is fetched once for the cluster rather than once per machine. It is stored unpacked, not as an archive: smolvm mounts an unpacked rootfs as a read-only lower layer that every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. Unpacked under a unique temporary name and renamed, so runners racing on the same image all end up with a whole tree rather than half of one.
+func (s *Server) cacheImage(ref, rootfs string) error {
+	if err := os.MkdirAll(filepath.Dir(rootfs), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(rootfs), ".unpack-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	defer cancel()
+	started := time.Now()
+	export := exec.CommandContext(ctx, s.Crane, "export", ref, "-")
+	unpack := exec.CommandContext(ctx, "tar", "-x", "-C", tmp)
+	stream, err := export.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	unpack.Stdin = stream
+	var exportErr, unpackErr bytes.Buffer
+	export.Stderr = &exportErr
+	unpack.Stderr = &unpackErr
+	if err := unpack.Start(); err != nil {
+		return err
+	}
+	if err := export.Run(); err != nil {
+		_ = unpack.Wait()
+		slog.Warn("image fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
+		return fmt.Errorf("exporting %s: %w: %s", ref, err, firstLines(exportErr.String()))
+	}
+	if err := unpack.Wait(); err != nil {
+		slog.Warn("image unpack failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
+		return fmt.Errorf("unpacking %s: %w: %s", ref, err, firstLines(unpackErr.String()))
+	}
+	slog.Info("image unpacked into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", dirSize(tmp))
+	if err := os.Rename(tmp, rootfs); err != nil {
+		if errors.Is(err, fs.ErrExist) || errors.Is(err, syscall.ENOTEMPTY) {
+			return nil
+		}
+		return err
+	}
+	s.evictImages(filepath.Dir(rootfs), rootfs, s.cacheBudget(filepath.Dir(rootfs)))
+	return nil
+}
+
+func dirSize(path string) int64 {
+	var total int64
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, statErr := d.Info(); statErr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
+func (s *Server) cacheBudget(dir string) int64 {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return 0
+	}
+	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
+}
+
+func (s *Server) evictImages(dir, keep string, budget int64) {
+	if budget <= 0 {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type archive struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	var all []archive
+	var used int64
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		var size int64
+		switch {
+		case e.IsDir() && cachedRootfs.MatchString(e.Name()):
+			size = dirSize(path)
+		case !e.IsDir() && legacyArchive.MatchString(e.Name()):
+			size = info.Size()
+		default:
+			continue
+		}
+		used += size
+		all = append(all, archive{path, size, info.ModTime()})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
+	for _, a := range all {
+		if used <= budget {
+			return
+		}
+		if a.path == keep {
+			continue
+		}
+		if err := os.RemoveAll(a.path); err != nil {
+			continue
+		}
+		used -= a.size
+		slog.Info("image cache: evicted an image to stay inside the volume", "image", filepath.Base(a.path), "bytes", a.size)
+	}
 }
 
 func (s *Server) writeCA(id, ca string) error {
@@ -387,6 +557,8 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	delete(s.drift, id)
 	delete(s.restarts, id)
 	delete(s.health, id)
+	delete(s.lastState, id)
+	delete(s.startedAt, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -441,6 +613,37 @@ func (s *Server) spawn(id, op string, fn func() error) {
 	}()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: stamped each time this runner asks a machine to start, and reported as the age of that stamp. It is the clock the controller watches a starting machine by, because it moves for a wake as well as a create — a wake leaves the Ready condition False and changes only its reason, so that condition's own stamp cannot tell the two apart.
+func (s *Server) markStarting(id string) {
+	s.mu.Lock()
+	s.startedAt[id] = time.Now()
+	s.mu.Unlock()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: asking smolvm for a machine's state costs a process, and the controller asks on every readiness poll — often enough, while a machine starts, that the spawns cost more than the answer is worth. The answer barely moves at that rate, so a reading is reused for a moment. Only the state is reused: whether the guest answers is checked live every time, so a machine that dies is still noticed by the health check rather than waiting out this window.
+func (s *Server) forgetState(id string) {
+	s.mu.Lock()
+	delete(s.lastState, id)
+	s.mu.Unlock()
+}
+
+func (s *Server) machineState(id string) (string, error) {
+	s.mu.Lock()
+	cached, ok := s.lastState[id]
+	s.mu.Unlock()
+	if ok && time.Since(cached.at) < stateTTL {
+		return cached.state, nil
+	}
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		return state, err
+	}
+	s.mu.Lock()
+	s.lastState[id] = cachedState{state: state, at: time.Now()}
+	s.mu.Unlock()
+	return state, nil
+}
+
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
 	pending, drift, restarts := s.pending[id], s.drift[id], s.restarts[id]
@@ -451,6 +654,12 @@ func (s *Server) status(id string) MachineStatus {
 		lastErr = drift
 	}
 	st := MachineStatus{State: StateAbsent, Reason: reason, Restarts: restarts, Port: s.port(id), Message: lastErr}
+	s.mu.Lock()
+	startedAt := s.startedAt[id]
+	s.mu.Unlock()
+	if !startedAt.IsZero() {
+		st.StartingMs = time.Since(startedAt).Milliseconds()
+	}
 	if spec := s.readSpec(id); spec != nil {
 		st.CPUs, st.MemoryMiB = spec.CPUs, spec.MemoryMiB
 	}
@@ -458,7 +667,7 @@ func (s *Server) status(id string) MachineStatus {
 		st.State = pending
 		return st
 	}
-	state, err := s.Runtime.State(id)
+	state, err := s.machineState(id)
 	if err != nil {
 		st.State = StateUnknown
 		if st.Message == "" {

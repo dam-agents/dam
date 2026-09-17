@@ -348,8 +348,15 @@
     {
       "idx": 49,
       "version": "7",
-      "when": 1789543976559,
-      "tag": "0049_demonic_starfox",
+      "when": 1789552412266,
+      "tag": "0049_interactive_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789637786385,
+      "tag": "0050_cool_cyclops",
       "breakpoints": true
     }
   ]

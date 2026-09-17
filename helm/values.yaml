@@ -171,8 +171,14 @@ virtualization:
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
-    # is on, the chart binds its own SCC, which grants exactly the uid 0 and
-    # NET_ADMIN the runner needs and nothing else. Set this only where that
+    # is on, the chart binds its own SCC, which grants exactly what the
+    # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
+    # NAT, CHOWN + FOWNER so it can restore a container image's own
+    # ownership when it unpacks one for its machines to share, SETUID +
+    # SETGID so each machine's VMM runs under its own unprivileged uid
+    # rather than as root, and DAC_OVERRIDE so that unpack can write into
+    # the read-only and foreign-owned directories such a rootfs contains.
+    # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
@@ -202,6 +208,15 @@ virtualization:
     # cluster with no registry (local dev) gives runners their agent image;
     # empty means runners pull from the registry as usual.
     imageArchiveHostPath: ""
+    # How the runner resolves the registry it fetches agent images from.
+    # `Default` is the node's resolver: the right answer whenever
+    # egressExceptCidrs confines this pod away from Service and pod addresses,
+    # because the cluster's DNS is a Service backed by pods in exactly those
+    # ranges — every lookup through it times out, and a pull dies on the name
+    # rather than the fetch. `ClusterFirst` is for an install whose registry
+    # lives inside the cluster and whose excepts leave that range reachable;
+    # it resolves Service names and loses nothing, since nothing is blocked.
+    dnsPolicy: Default
     # Extra sources the runner itself admits on machines' published ports,
     # on top of the NetworkPolicy that limits them to the api-server and the
     # controller; empty means the policy is the only gate.
@@ -223,8 +238,9 @@ virtualization:
     # pods, Services, and link-local — the node's metadata endpoint lives there
     # on every cloud and is the classic way out of a sandbox with credentials.
     # On OpenShift the internal registry is a Service address, so excepting the
-    # Service range blocks pulls from it: name that registry in egressCidrs, or
-    # stage images on the node instead.
+    # Service range blocks pulls from it: name that registry in egressCidrs and
+    # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
+    # below so the runner can resolve it — or stage images on the node instead.
     egressCidrs: []
     # Subtracted from the entries above that contain them — Kubernetes rejects
     # a policy whose exception falls outside its own block, so a narrow entry
@@ -238,6 +254,18 @@ virtualization:
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
+  # One volume every runner mounts, holding the agent images as archives. A
+  # machine may reach only its gateway, so the guest cannot pull its own image;
+  # the runner fetches it here on a miss, and every other owner then boots that
+  # image without touching the registry. Needs a ReadWriteMany class — on ODF
+  # that is `ocs-storagecluster-cephfs`. Without it each runner falls back to
+  # its own disk, which means one pull per owner for the same few images.
+  # The runner keeps the archives inside a share of this volume, evicting the
+  # least recently written first, so a tag per deploy does not fill it.
+  imageCache:
+    enabled: false
+    storageClass: ""
+    size: 50Gi
   devicePlugin:
     enabled: false
     image:
@@ -275,7 +303,12 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities. Renders a cluster-scoped SCC + RoleBinding to
+    # allowedCapabilities, and CHOWN + FOWNER + SETUID + SETGID +
+    # DAC_OVERRIDE which only
+    # the VM runner requests. No agent workload can take them: agent containers are
+    # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
+    # controller refuses a configuration without that block, and an agent
+    # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
     # all SAs in `agentNamespace`. Default ON — required for
     # `iptablesInit`, harmless otherwise (OpenShift admission still
     # prefers more restrictive SCCs when the pod doesn't request the
@@ -434,7 +467,9 @@ clickstack:
   collector:
     annotations: {}
     podAnnotations: {}
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
+    # Mirror of otel/opentelemetry-collector-contrib. Registered in
+    # .mise/tasks/image/mirror, which CI runs on every main push.
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.160.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -453,11 +488,9 @@ clickstack:
         memory: 1Gi
 
   # --- forwarded to the clickstack subchart ---
-  # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
-  #   hyperdx:2.27.0                 <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
-  #   clickhouse-server:25.7-alpine  <- clickhouse/clickhouse-server:25.7-alpine
-  #   clickhouse-keeper:25.7-alpine  <- clickhouse/clickhouse-keeper:25.7-alpine
-  #   busybox:1.37.0                 <- busybox
+  # Third-party images pinned to the quay.io/dam-agents mirror. Their upstreams
+  # are registered in .mise/tasks/image/mirror, which CI runs on every main push
+  # — bump a tag here and add the matching line there.
   # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
 
   otel-collector:
@@ -896,9 +929,18 @@ apiServer:
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
-    # Container registries
+    # Container registries. The registry host alone never pulls: Docker Hub
+    # first hands out an anonymous token from auth.docker.io, then 307s the
+    # blob off to whichever CDN serves the caller's region. ghcr.io redirects
+    # its blobs the same way. registry.k8s.io is deliberately absent: it fans
+    # blobs out to regional mirrors this literal-hostname list cannot express.
     - quay.io
     - registry-1.docker.io
+    - auth.docker.io
+    - production.cloudfront.docker.com
+    - production.cloudflare.docker.com
+    - ghcr.io
+    - pkg-containers.githubusercontent.com
     # Go modules
     - proxy.golang.org
     - sum.golang.org
@@ -917,6 +959,9 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
+    # k3s: the installer resolves a channel, then downloads from GitHub above
+    - get.k3s.io
+    - update.k3s.io
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -1177,10 +1222,13 @@ controller:
       # spec need not spend the full window in a real wait.
       #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
-      # reaper: at the threshold fraction of the pod's memory limit (default
+      # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
-      # so the harness survives instead of the whole container being
-      # OOM-killed. Set `MEM_REAPER=off` to disable.
+      # so the harness survives instead of the whole agent being OOM-killed.
+      # The ceiling is the pod's cgroup limit for a container, and the machine's
+      # own memory on the vm Backend, which has no cgroup limit; a container
+      # without a limit is left unwatched rather than measured against the node
+      # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
 
