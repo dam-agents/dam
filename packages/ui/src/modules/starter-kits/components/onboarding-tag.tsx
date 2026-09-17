@@ -6,35 +6,28 @@ import {
 } from "@/components/ui/hover-card";
 
 import type { AgentView } from "../../../types.js";
-import {
-  onboardingBadge,
-  parseStarterKitRef,
-} from "../../agents/utils/agent-kind.js";
-import { useFeatures } from "../../features/api/queries.js";
-import { useStarterKits } from "../api/queries.js";
+import { onboardingBadge } from "../../agents/utils/agent-kind.js";
+import { useKitName } from "../hooks/use-kit-name.js";
+import { OnboardingChecklistCard } from "./onboarding-checklist-card.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The kit-purple Onboarding tag on an agent row,
- * for a kit agent that has not yet marked its onboarding complete. Hovering
- * names the kit and says the agent's schedules are held until it finishes.
- * The platform records only pending or done, so there is no checklist and no
- * progress fraction here.
+ * for a kit agent that has not yet marked its onboarding complete. Once the
+ * agent has set its checklist the tag carries the fraction done, and hovering
+ * opens the ticked list; before that it names the kit and says the agent's
+ * schedules are held until it finishes.
  */
 export function OnboardingTag({
   agent,
 }: {
-  agent: Pick<AgentView, "starterKit" | "starterKitOnboarded">;
+  agent: Pick<
+    AgentView,
+    "starterKit" | "starterKitOnboarded" | "onboardingSteps"
+  >;
 }) {
   const badge = onboardingBadge(agent);
-  const kitsEnabled = useFeatures().data?.["starter-kits"] ?? false;
-  const kits = useStarterKits(kitsEnabled && badge !== null);
+  const kitName = useKitName(agent.starterKit, badge !== null);
   if (!badge) return null;
-
-  const ref = agent.starterKit ? parseStarterKitRef(agent.starterKit) : null;
-  const kit = ref
-    ? kits.data?.find((k) => k.catalog === ref.catalog && k.id === ref.kit)
-    : undefined;
-  const kitName = kit?.name ?? ref?.kit ?? "Starter kit";
 
   return (
     <HoverCard openDelay={150} closeDelay={200}>
@@ -48,11 +41,10 @@ export function OnboardingTag({
         </Badge>
       </HoverCardTrigger>
       <HoverCardContent side="bottom" align="start" className="w-72">
-        <p className="text-sm font-semibold text-foreground">{kitName} setup</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          The agent&apos;s onboarding session walks you through this. Its
-          schedules are held until it marks onboarding complete.
-        </p>
+        <OnboardingChecklistCard
+          title={`${kitName} setup`}
+          steps={agent.onboardingSteps}
+        />
       </HoverCardContent>
     </HoverCard>
   );

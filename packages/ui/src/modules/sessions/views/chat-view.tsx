@@ -79,6 +79,7 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -730,6 +731,10 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
+                <OnboardingBar
+                  key={selectedAgent ?? "none"}
+                  agentId={selectedAgent}
+                />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

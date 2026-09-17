@@ -27,6 +27,19 @@ describe("starterKitBadge", () => {
 });
 
 describe("onboardingBadge", () => {
+  test("carries the fraction done once the agent has set its checklist", () => {
+    expect(
+      onboardingBadge({
+        starterKit: "platform/code-reviewer@abc123",
+        starterKitOnboarded: null,
+        onboardingSteps: [
+          { id: "github", label: "Connect GitHub", done: true },
+          { id: "first-run", label: "Run the first review", done: false },
+        ],
+      })?.label,
+    ).toBe("Onboarding 1/2");
+  });
+
   test("shows while a kit agent has not marked onboarding complete", () => {
     const badge = onboardingBadge({
       starterKit: "platform/code-reviewer@abc123",

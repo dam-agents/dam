@@ -104,6 +104,12 @@ export interface TemplateView {
   size?: { cpu?: string; memory?: string };
 }
 
+export interface OnboardingStep {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
 export type AgentState =
   | "starting"
   | "preparing_workspace"
@@ -153,6 +159,7 @@ export interface AgentView {
   kbTemplateId: string | null;
   starterKit: string | null;
   starterKitOnboarded: string | null;
+  onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
   kind?: AgentKind;
 }

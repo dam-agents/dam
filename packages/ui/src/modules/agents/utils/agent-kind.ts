@@ -59,12 +59,25 @@ export function starterKitBadge(
   };
 }
 
+export function onboardingProgress(
+  steps: readonly { done: boolean }[] | undefined,
+): { done: number; total: number } | null {
+  if (!steps || steps.length === 0) return null;
+  return { done: steps.filter((s) => s.done).length, total: steps.length };
+}
+
 export function onboardingBadge(
-  agent: Pick<AgentView, "starterKit" | "starterKitOnboarded">,
+  agent: Pick<
+    AgentView,
+    "starterKit" | "starterKitOnboarded" | "onboardingSteps"
+  >,
 ): (AgentKindBadge & { title: string }) | null {
   if (!agent.starterKit || agent.starterKitOnboarded) return null;
+  const progress = onboardingProgress(agent.onboardingSteps);
   return {
-    label: "Onboarding",
+    label: progress
+      ? `Onboarding ${progress.done}/${progress.total}`
+      : "Onboarding",
     variant: "kit",
     title:
       "Still being set up. Its schedules are held until the agent marks onboarding complete.",
