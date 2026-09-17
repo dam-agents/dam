@@ -22,7 +22,7 @@ export function useChatArtifactPrompt({
   sendPrompt,
 }: Options) {
   const sendArtifactPrompt = useCallback(
-    (prompt: string) => {
+    async (prompt: string) => {
       const current = useStore.getState();
       const isChat = match(sessionMode)
         .with(null, () => true)
@@ -30,15 +30,20 @@ export function useChatArtifactPrompt({
         .with(SessionMode.Terminal, () => false)
         .exhaustive(() => false);
 
-      if (
-        !isChat ||
-        !sessionId ||
-        !agentOperable ||
-        loadingSession ||
-        current.selectedAgent !== agentId ||
-        current.sessionId !== sessionId
-      )
-        return Promise.resolve();
+      if (!isChat || !sessionId)
+        throw new Error("Open a chat before using this artifact's buttons.");
+      if (current.selectedAgent !== agentId || current.sessionId !== sessionId)
+        throw new Error(
+          "The conversation changed. Try again from the artifact's chat.",
+        );
+      if (!agentOperable)
+        throw new Error(
+          "The agent is unavailable. Try again when it is ready for chat.",
+        );
+      if (loadingSession)
+        throw new Error(
+          "Wait for the conversation to finish loading, then try again.",
+        );
       return sendPrompt(prompt);
     },
     [

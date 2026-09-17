@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Interactive artifacts send prompts into the user's open chat, including a newly started conversation without a refresh. Prompts must not reach a terminal, an unavailable chat, or a conversation the user has left.
+// TEST_OVERVIEW: Interactive artifacts send prompts into the user's open chat, including a newly started conversation without a refresh. Refused prompts must report why they cannot reach a terminal, an unavailable chat, or a conversation the user has left.
 
 import { SessionMode } from "api-server-api";
 import { createElement } from "react";
@@ -78,7 +78,9 @@ describe("using an interactive artifact in chat", () => {
       sessionMode: SessionMode.Terminal,
     });
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "Open a chat before using this artifact's buttons.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });
@@ -90,7 +92,9 @@ describe("using an interactive artifact in chat", () => {
       sessionId: null,
     });
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "Open a chat before using this artifact's buttons.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });
@@ -102,7 +106,9 @@ describe("using an interactive artifact in chat", () => {
       agentOperable: false,
     });
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "The agent is unavailable. Try again when it is ready for chat.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });
@@ -114,7 +120,9 @@ describe("using an interactive artifact in chat", () => {
       loadingSession: true,
     });
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "Wait for the conversation to finish loading, then try again.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });
@@ -124,7 +132,9 @@ describe("using an interactive artifact in chat", () => {
     const sendArtifactPrompt = renderPromptCallback(options);
     current.selectedAgent = "another-agent";
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "The conversation changed. Try again from the artifact's chat.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });
@@ -134,7 +144,9 @@ describe("using an interactive artifact in chat", () => {
     const sendArtifactPrompt = renderPromptCallback(options);
     current.sessionId = "another-session";
 
-    await sendArtifactPrompt("Tell me a joke");
+    await expect(sendArtifactPrompt("Tell me a joke")).rejects.toThrow(
+      "The conversation changed. Try again from the artifact's chat.",
+    );
 
     expect(sendPrompt).not.toHaveBeenCalled();
   });

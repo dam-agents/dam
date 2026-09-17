@@ -12,10 +12,13 @@ export function useArtifactPrompt(
     const receive = (event: MessageEvent) => {
       const prompt = readArtifactPrompt(event, frame.current?.contentWindow);
       if (prompt === null) return;
-      void onSendPrompt(prompt).catch(() => {
+      void onSendPrompt(prompt).catch((error: unknown) => {
         emitToast({
           kind: "error",
-          message: "Couldn't send the artifact's prompt.",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Couldn't send the artifact's prompt.",
         });
       });
     };

@@ -74,9 +74,12 @@ An HTML artifact can be declared **interactive** at creation and stays private.
 With the interactive-artifacts feature enabled, a button in its latest version
 can send a prompt into an existing open chat with its publishing Agent. The app
 checks the sending frame and the preview's agent before submitting through the
-normal chat path. Replies, queued turns and delivery errors appear in chat; the
-page receives no separate answer. Publishing an updated artifact uses the normal
-version flow.
+normal chat path. If the Agent is unavailable, the conversation is missing or
+loading, the Session is a terminal, or the user has switched conversations, the
+app refuses the prompt and shows a notification explaining how to try again.
+Accepted prompts use the normal chat reporting for replies, queued turns and
+delivery errors; the page receives no separate answer. Publishing an updated
+artifact uses the normal version flow.
 
 The renderer injects a platform-owned prompt API without changing the stored
 HTML. It sends requests to the host over `window.postMessage`; the in-app
