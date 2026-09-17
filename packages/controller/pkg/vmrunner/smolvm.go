@@ -252,7 +252,7 @@ func templatesToWarm(dir string) []string {
 	return missing
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
+// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not the default when the decompressor writes to a named file, and without it a 20 GiB template of mostly holes is written out in full: measured on the runner image at 20 GiB on disk and 33 s, against 672 KiB and 4 s with it, for byte-identical output. The templates are holes almost end to end, so this is the difference between warming them and filling the pod's filesystem. Expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
 func (r *Smolvm) WarmTemplates() {
 	dir := filepath.Dir(r.Bin)
 	packedAll := templatesToWarm(dir)
@@ -267,7 +267,7 @@ func (r *Smolvm) WarmTemplates() {
 		target := strings.TrimSuffix(packed, ".zst")
 		tmp := target + ".warming"
 		started := time.Now()
-		if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "-o", tmp, packed).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "--sparse", "-o", tmp, packed).CombinedOutput(); err != nil {
 			slog.Warn("template warm-up failed; the first machine will expand it instead",
 				"template", packed, "error", err, "detail", firstLines(string(out)))
 			_ = os.Remove(tmp)
