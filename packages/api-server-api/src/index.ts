@@ -794,7 +794,6 @@ export type {
 export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
-  SATELLITE_SCOPE,
   claimInputSchema,
   formatJobRef,
   heartbeatInputSchema,

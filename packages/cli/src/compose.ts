@@ -12,7 +12,7 @@ import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
-import { composeSatelliteModule } from "./modules/satellite/compose.js";
+import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";

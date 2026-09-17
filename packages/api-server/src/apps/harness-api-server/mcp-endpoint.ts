@@ -42,7 +42,10 @@ import {
   registerAgentTelemetryTools,
   type AgentTelemetryService,
 } from "../../modules/metrics/index.js";
-import { registerSatelliteTools } from "../../modules/satellites/index.js";
+import {
+  DEFAULT_SATELLITE_WAIT_MS,
+  registerSatelliteTools,
+} from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 function resolveWorkspacePath(input: string): string {
@@ -948,7 +951,8 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           ? {
               ops: deps.satelliteOps,
               granted: grantedSatellites,
-              waitDeadlineMs: deps.satelliteWaitDeadlineMs ?? 300_000,
+              waitDeadlineMs:
+                deps.satelliteWaitDeadlineMs ?? DEFAULT_SATELLITE_WAIT_MS,
             }
           : null,
     });

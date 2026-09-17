@@ -2,53 +2,40 @@ import { TrashCan } from "@carbon/icons-react";
 import type { SatelliteView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 
-import { useAgentsList } from "../../agents/api/queries.js";
-import {
-  useGrantSatellite,
-  useRemoveSatellite,
-  useRevokeSatellite,
-} from "../api/mutations.js";
+import { useStore } from "../../../store.js";
+import { useRemoveSatellite } from "../api/mutations.js";
+import { SatelliteGrants } from "./satellite-grants.js";
+import { SatelliteState } from "./satellite-state.js";
 
-function relativeAge(iso: string | null): string {
-  if (iso === null) return "never connected";
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+function subtitle(satellite: SatelliteView): string {
+  const parts = [
+    satellite.description,
+    satellite.host,
+    satellite.activeJobs > 0 ? `${satellite.activeJobs} running` : null,
+  ].filter((part): part is string => part !== null && part !== "");
+  return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
-function StateDot({ satellite }: { satellite: SatelliteView }) {
-  const tone = satellite.draining
-    ? "bg-amber-500"
-    : satellite.online
-      ? "bg-emerald-500"
-      : "bg-foreground/30";
-  const label = satellite.draining
-    ? "draining"
-    : satellite.online
-      ? "online"
-      : `offline · last seen ${relativeAge(satellite.lastSeenAt)}`;
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-foreground/70">
-      <span className={`size-2 rounded-full ${tone}`} aria-hidden />
-      {label}
-    </span>
-  );
-}
-
-interface Props {
-  satellite: SatelliteView;
-}
-
-export function SatelliteCard({ satellite }: Props) {
-  const agents = useAgentsList();
-  const grant = useGrantSatellite();
-  const revoke = useRevokeSatellite();
+export function SatelliteCard({ satellite }: { satellite: SatelliteView }) {
   const remove = useRemoveSatellite();
-  const granted = new Set(satellite.grantedAgentIds);
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  const onRemove = async (): Promise<void> => {
+    const confirmed = await showConfirm(
+      <>
+        Remove satellite{" "}
+        <strong className="text-foreground">
+          &quot;{satellite.name}&quot;
+        </strong>
+        ? Commands already running on the machine are not stopped — only the
+        platform stops sending it work.
+      </>,
+      "Remove satellite",
+      { kind: "destructive" },
+    );
+    if (confirmed) remove.mutate(satellite.name);
+  };
 
   return (
     <div
@@ -61,25 +48,17 @@ export function SatelliteCard({ satellite }: Props) {
             <span className="truncate text-sm font-medium">
               {satellite.name}
             </span>
-            <StateDot satellite={satellite} />
+            <SatelliteState satellite={satellite} />
           </div>
           <p className="mt-0.5 truncate text-xs text-foreground/60">
-            {satellite.description ?? satellite.host ?? "—"}
-            {satellite.activeJobs > 0 && ` · ${satellite.activeJobs} running`}
+            {subtitle(satellite)}
           </p>
         </div>
         <Button
           variant="ghost"
           size="sm"
           disabled={remove.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `Remove ${satellite.name}? Commands already running on the machine are not stopped.`,
-              )
-            )
-              remove.mutate(satellite.name);
-          }}
+          onClick={() => void onRemove()}
           aria-label={`Remove ${satellite.name}`}
         >
           <TrashCan size={16} />
@@ -87,8 +66,8 @@ export function SatelliteCard({ satellite }: Props) {
       </div>
 
       <ul className="mt-3 space-y-1">
-        {satellite.commands.map((command) => (
-          <li key={command.run} className="text-xs">
+        {satellite.commands.map((command, index) => (
+          <li key={`${index}-${command.run}`} className="text-xs">
             <code className="text-foreground/80">{command.run}</code>
             {command.approval === "always" && (
               <span className="ml-2 text-foreground/50">needs approval</span>
@@ -96,39 +75,12 @@ export function SatelliteCard({ satellite }: Props) {
           </li>
         ))}
       </ul>
+      <p className="mt-2 text-xs text-foreground/50">
+        These commands are what the machine reported. The platform stores them,
+        it does not verify them.
+      </p>
 
-      {agents.length > 0 && (
-        <div className="mt-3 border-t border-border pt-3">
-          <p className="mb-1.5 text-xs text-foreground/60">
-            Agents that can reach it
-          </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {agents.map((agent) => (
-              <label
-                key={agent.id}
-                className="flex items-center gap-1.5 text-xs"
-              >
-                <Checkbox
-                  checked={granted.has(agent.id)}
-                  disabled={grant.isPending || revoke.isPending}
-                  onCheckedChange={(next) => {
-                    const input = {
-                      satellite: satellite.name,
-                      agentId: agent.id,
-                    };
-                    if (next === true) grant.mutate(input);
-                    else revoke.mutate(input);
-                  }}
-                />
-                {agent.name ?? agent.id}
-              </label>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-foreground/50">
-            A change takes effect when the agent's harness next starts.
-          </p>
-        </div>
-      )}
+      <SatelliteGrants satellite={satellite} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { parse as parseToml } from "smol-toml";
 import {
+  DEFAULT_MAX_CONCURRENT,
   parseCommandPattern,
   type ParsedPattern,
   type SatelliteManifest,
@@ -114,7 +115,9 @@ export function parseManifest(text: string): ManifestResult {
         description:
           typeof root.description === "string" ? root.description : undefined,
         maxConcurrent:
-          typeof root.max_concurrent === "number" ? root.max_concurrent : 16,
+          typeof root.max_concurrent === "number"
+            ? root.max_concurrent
+            : DEFAULT_MAX_CONCURRENT,
         commands: commands.map((c) => ({
           run: c.run,
           ...(c.about !== undefined ? { about: c.about } : {}),

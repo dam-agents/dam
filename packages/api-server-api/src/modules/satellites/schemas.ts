@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const SATELLITE_SCOPE = "satellites:serve" as const;
-
 export const DEFAULT_MAX_CONCURRENT = 16;
 export const INLINE_OUTPUT_LIMIT = 4096;
 

@@ -1,6 +1,5 @@
 import {
   AGENT_SCOPES,
-  ALL_SCOPES,
   CREDENTIAL_SCOPES,
   SATELLITE_SCOPES,
   type Scope,
@@ -21,20 +20,16 @@ import {
 import { useCreateApiKey } from "../../api/mutations.js";
 import { AgentBindingField, type BindingMode } from "./agent-binding-field.js";
 
-const NAMED_GROUPS: { label: string; scopes: readonly Scope[] }[] = [
+const SCOPE_GROUPS = [
   { label: "Agents", scopes: AGENT_SCOPES },
   { label: "Credentials", scopes: CREDENTIAL_SCOPES },
   { label: "Satellites", scopes: SATELLITE_SCOPES },
-];
+] as const;
 
-const ungrouped = ALL_SCOPES.filter(
-  (scope) => !NAMED_GROUPS.some((group) => group.scopes.includes(scope)),
-);
-
-const SCOPE_GROUPS =
-  ungrouped.length > 0
-    ? [...NAMED_GROUPS, { label: "Other", scopes: ungrouped }]
-    : NAMED_GROUPS;
+type GroupedScope = (typeof SCOPE_GROUPS)[number]["scopes"][number];
+type UngroupedScope = Exclude<Scope, GroupedScope>;
+const _everyScopeHasAGroup: UngroupedScope[] = [];
+void _everyScopeHasAGroup;
 
 const hasAgentScope = (scopes: Set<Scope>): boolean =>
   AGENT_SCOPES.some((s) => scopes.has(s));

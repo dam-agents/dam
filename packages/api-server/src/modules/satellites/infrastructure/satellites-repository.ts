@@ -2,6 +2,7 @@ import type { Db } from "db";
 import {
   and,
   asc,
+  or,
   eq,
   inArray,
   lt,
@@ -538,17 +539,23 @@ export function createSatellitesRepository(db: Db) {
       agentId: string,
       refs: { satellite: string; sequence: number }[],
     ): Promise<void> {
-      for (const ref of refs)
-        await db
-          .update(satelliteJobs)
-          .set({ wokeAt: new Date() })
-          .where(
-            and(
-              eq(satelliteJobs.agentId, agentId),
-              eq(satelliteJobs.satellite, ref.satellite),
-              eq(satelliteJobs.sequence, ref.sequence),
+      if (refs.length === 0) return;
+      await db
+        .update(satelliteJobs)
+        .set({ wokeAt: new Date() })
+        .where(
+          and(
+            eq(satelliteJobs.agentId, agentId),
+            or(
+              ...refs.map((ref) =>
+                and(
+                  eq(satelliteJobs.satellite, ref.satellite),
+                  eq(satelliteJobs.sequence, ref.sequence),
+                ),
+              ),
             ),
-          );
+          ),
+        );
     },
 
     async expiredLeases(now: Date): Promise<JobRow[]> {

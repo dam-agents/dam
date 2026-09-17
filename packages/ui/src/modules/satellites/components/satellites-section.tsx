@@ -1,13 +1,35 @@
+import { Callout } from "@/components/ui/callout";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useSatellites } from "../api/queries.js";
 import { SatelliteCard } from "./satellite-card.js";
 
 export function SatellitesSection() {
   const satellitesQ = useSatellites();
+
+  if (satellitesQ.isPending)
+    return (
+      <div className="mt-8">
+        <SectionLabel spaced>Satellites</SectionLabel>
+        <ListSkeleton />
+      </div>
+    );
+
+  if (satellitesQ.isError)
+    return (
+      <div className="mt-8">
+        <SectionLabel spaced>Satellites</SectionLabel>
+        <Callout tone="danger">
+          Couldn&apos;t load satellites. Any that are connected keep running —
+          this is the list, not the machines.
+        </Callout>
+      </div>
+    );
+
   const satellites = satellitesQ.data ?? [];
-  if (satellitesQ.isPending || satellites.length === 0) return null;
+  if (satellites.length === 0) return null;
 
   return (
     <div className="mt-8">

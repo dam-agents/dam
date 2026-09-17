@@ -207,7 +207,6 @@ import {
 } from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { randomUUID } from "node:crypto";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeSatellitesModule,

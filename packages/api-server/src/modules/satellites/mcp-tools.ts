@@ -11,6 +11,8 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * more reliably than a large anyOf, and the server matches every start against
  * the stored Snapshot anyway, so the description informs but never decides.
  */
+export const DEFAULT_SATELLITE_WAIT_MS = 300_000;
+
 interface ToolContent {
   content: { type: "text"; text: string }[];
   isError?: boolean;
