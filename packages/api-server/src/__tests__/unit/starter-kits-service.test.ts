@@ -368,6 +368,61 @@ describe("starter kits: apply", () => {
     expect(prompt).toContain("into your home directory ($HOME)");
   });
 
+  it("queues the repository the user named as a second seed when the kit's own goes to the home directory", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({
+        schedules: [],
+        seed: {
+          url: "https://github.com/acme/code-guardian",
+          ref: "main",
+          into: "home",
+        },
+      }),
+    });
+    await service.apply({
+      ...APPLY,
+      gitRepo: { url: "https://github.com/acme/app", ref: "release" },
+    });
+    expect(calls.created[0]).toMatchObject({
+      gitRepo: { url: "https://github.com/acme/code-guardian", into: "home" },
+    });
+    const [seed] = calls.bumped.flatMap((b) => b.events);
+    expect(seed).toMatchObject({
+      kind: "workspace-seed",
+      payload: { url: "https://github.com/acme/app", ref: "release" },
+    });
+    expect(seed!.id).toMatch(/^repository:agent-1:\d+$/);
+  });
+
+  it("seeds the repository the user named into the work directory of a seedless kit", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({ schedules: [], seed: undefined }),
+    });
+    await service.apply({
+      ...APPLY,
+      gitRepo: { url: "https://github.com/acme/app" },
+    });
+    expect(calls.created[0]).not.toHaveProperty("gitRepo");
+    const [seed] = calls.bumped.flatMap((b) => b.events);
+    expect(seed).toMatchObject({
+      kind: "workspace-seed",
+      payload: { url: "https://github.com/acme/app" },
+    });
+  });
+
+  it("refuses a repository of the user's when the kit's own is the work directory", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await expect(
+      service.apply({
+        ...APPLY,
+        gitRepo: { url: "https://github.com/acme/app" },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(calls.created).toEqual([]);
+  });
+
   it("leaves out the schedules the user chose to skip", async () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply({

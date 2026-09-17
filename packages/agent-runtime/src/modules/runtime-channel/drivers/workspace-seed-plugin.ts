@@ -38,6 +38,8 @@ export type FetchIntoFn = (
  * UNIT_BOUNDARY_DESCRIPTION: Seeds a directory from a repository exactly
  * once — the work directory, or the agent's home when the seed says so (a
  * definition that wants to be `$HOME`, with `work/` as its data directory).
+ * The two are marked apart, so a kit's definition in the home and the
+ * repository the user named in the work directory both land.
  * Completion is a sentinel in the plugin's state dir — a `.git` alone proves
  * nothing, since a failed attempt or the agent's own clone leaves one too. A
  * plain ref into an empty work directory is a shallow clone; everything else
@@ -70,8 +72,10 @@ export function createWorkspaceSeedPlugin(deps: {
     const dest = into === "home" ? ctx.agentHome : deps.workDir;
     const at = [branch, commit ?? ref].filter(Boolean).join(" @ ");
     const label = at ? `${url} (${at})` : url;
-    const done = join(ctx.pluginStateDir, DONE_SENTINEL);
-    const started = join(ctx.pluginStateDir, STARTED_SENTINEL);
+    const marker = (name: string) =>
+      join(ctx.pluginStateDir, into === "home" ? `home-${name}` : name);
+    const done = marker(DONE_SENTINEL);
+    const started = marker(STARTED_SENTINEL);
     if (existsSync(done)) {
       deps.log(`[workspace-seed] ${dest} already seeded, skipping`);
       return;

@@ -51,7 +51,10 @@ import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import {
+  type RuntimeMutator,
+  workspaceSeedEvent,
+} from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -837,12 +840,12 @@ export function createAgentsService(deps: {
         infra.id,
         input.gitRepo
           ? [
-              {
-                id: `workspace-seed:${infra.id}:${Date.now()}`,
-                kind: "workspace-seed",
-                payload: input.gitRepo,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-              },
+              workspaceSeedEvent(
+                "workspace-seed",
+                infra.id,
+                input.gitRepo,
+                new Date(),
+              ),
             ]
           : [],
       );

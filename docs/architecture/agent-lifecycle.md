@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-15
+Last verified: 2026-09-17
 
 ## Overview
 
@@ -56,7 +56,7 @@ sequenceDiagram
 
 ### Create
 
-Creation is per-purpose: each kind in the GUI has its own setup form; the hidden experiment surface creates over the API. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and dispatches to the owning module rather than the plain agent create, which guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A [starter kit](starter-kits.md) apply is a third entry: the plain create with the kit's grants and a kit-version annotation, followed by the kit's schedules and channel binding, compensated by delete on failure. A new agent takes its template's size — or, for a starter kit that declares one, the kit's — and the trusted egress preset, both editable on the agent afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
+Creation is per-purpose: each kind in the GUI has its own setup form; the hidden experiment surface creates over the API. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and dispatches to the owning module rather than the plain agent create, which guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A [starter kit](starter-kits.md) apply is a third entry: the plain create with the kit's grants and a kit-version annotation, followed by the kit's schedules and channel binding, compensated by delete on failure. A new agent takes its template's size — or, for a starter kit that declares one, the kit's — and the trusted egress preset, both editable on the agent afterwards. A create may also name a repository to seed into the work directory before the first session (`gitRepo`: URL and, optionally, the branch to stay on); it rides the runtime channel as a `workspace-seed` event ([runtime delivery](runtime-delivery.md#event)) rather than the pod spec, so the pod starts the same way with or without it. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate. On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the workspace is the machine's disk on the owner's [VM runner](platform-topology.md#vm-runner), and the agent Service is selector-less.
 

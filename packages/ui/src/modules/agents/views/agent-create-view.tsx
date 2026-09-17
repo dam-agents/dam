@@ -56,6 +56,7 @@ import {
   isStarterKitSetupComplete,
   kitConnectionIds,
   kitResourcesLine,
+  kitTakesRepository,
   ownAgentLine,
   preselectedGrants,
   providerPolicyForKit,
@@ -192,6 +193,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     slackChannelId: form.slackChannelId,
     skippedSchedules: form.skippedSchedules,
     scheduleOverrides: form.scheduleOverrides,
+    repositoryUrl: form.repositoryUrl,
+    repositoryRef: form.repositoryRef,
   };
   const owned = connections.data ?? [];
   const kitOwnedConnectionIds = useMemo(
@@ -417,7 +420,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       <RepositorySection
         fixed={kit?.seed}
         field={
-          kit
+          kit && !kitTakesRepository(kit)
             ? undefined
             : {
                 url: form.repositoryUrl,

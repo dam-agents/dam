@@ -34,6 +34,7 @@ import {
   initializationEvent,
   type RuntimeMutator,
   workspaceCommandEvent,
+  workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
@@ -271,6 +272,14 @@ export function createStarterKitsService(
         });
       }
 
+      if (input.gitRepo && kit.seed && kit.seed.into !== "home") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "this kit's own repository is the work directory; it takes no other",
+        });
+      }
+
       const harness =
         kit.image?.harness ??
         (input.templateId
@@ -296,15 +305,23 @@ export function createStarterKitsService(
       const agent = await deps.agents.create(createInput);
 
       try {
-        if (kit.install) {
-          await deps.runtimeMutator.bump(agent.id, [
-            workspaceCommandEvent(
-              "kit-install",
-              agent.id,
-              kit.install.command,
-              now(),
-            ),
-          ]);
+        const queued = [
+          ...(input.gitRepo
+            ? [workspaceSeedEvent("repository", agent.id, input.gitRepo, now())]
+            : []),
+          ...(kit.install
+            ? [
+                workspaceCommandEvent(
+                  "kit-install",
+                  agent.id,
+                  kit.install.command,
+                  now(),
+                ),
+              ]
+            : []),
+        ];
+        if (queued.length > 0) {
+          await deps.runtimeMutator.bump(agent.id, queued);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
         }
         const seeded = await seedSchedules(

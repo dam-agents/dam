@@ -17,6 +17,7 @@ import {
   isStarterKitSetupComplete,
   kitResourcesLine,
   kitScheduleCadence,
+  kitTakesRepository,
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
@@ -41,10 +42,14 @@ const templates: TemplateIndex = new Map([
   ["ibm-litellm", { id: "ibm-litellm", name: "IBM LiteLLM" }],
 ]);
 
-const kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections"> = {
+const kit: Pick<
+  StarterKitView,
+  "id" | "catalog" | "image" | "connections" | "seed"
+> = {
   id: "code-reviewer",
   catalog: "platform",
   image: undefined,
+  seed: undefined,
   connections: [
     { accepts: ["github-app", "github-pat"], required: true },
     { accepts: ["slack"], required: false },
@@ -65,6 +70,8 @@ const complete: StarterKitSetupDraft = {
   slackChannelId: " C123 ",
   skippedSchedules: [],
   scheduleOverrides: [],
+  repositoryUrl: "",
+  repositoryRef: "",
 };
 
 describe("requirementStatuses", () => {
@@ -181,6 +188,50 @@ describe("buildStarterKitApplyInput", () => {
         templates,
       ),
     ).toThrow();
+    expect(
+      isStarterKitSetupComplete(
+        kit,
+        { ...complete, repositoryUrl: "acme/app" },
+        owned,
+        templates,
+      ),
+    ).toBe(false);
+  });
+
+  // TEST_SCENARIO: the work directory is the user's to fill only while the kit's own repository does not occupy it.
+  test("passes the user's repository only when the kit leaves the work directory free", () => {
+    const named = {
+      ...complete,
+      repositoryUrl: " https://github.com/acme/app ",
+      repositoryRef: "release",
+    };
+    const definitionInHome = {
+      ...kit,
+      seed: {
+        url: "https://github.com/acme/code-guardian",
+        ref: "main",
+        into: "home" as const,
+      },
+    };
+    expect(kitTakesRepository(kit)).toBe(true);
+    expect(kitTakesRepository(definitionInHome)).toBe(true);
+    expect(
+      buildStarterKitApplyInput(definitionInHome, named, owned, templates),
+    ).toMatchObject({
+      gitRepo: { url: "https://github.com/acme/app", ref: "release" },
+    });
+
+    const toolkitAsWorkspace = {
+      ...kit,
+      seed: { url: "https://github.com/acme/wiki", into: "work" as const },
+    };
+    expect(kitTakesRepository(toolkitAsWorkspace)).toBe(false);
+    expect(
+      buildStarterKitApplyInput(toolkitAsWorkspace, named, owned, templates),
+    ).not.toHaveProperty("gitRepo");
+    expect(
+      buildStarterKitApplyInput(kit, complete, owned, templates),
+    ).not.toHaveProperty("gitRepo");
   });
 });
 

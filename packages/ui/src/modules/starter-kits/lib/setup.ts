@@ -11,10 +11,15 @@ import {
   type StarterKitView,
 } from "api-server-api";
 
+import {
+  type RepositoryDraft,
+  repositorySeed,
+  repositoryUrlError,
+} from "../../agents/lib/repository-seed.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 
-export interface StarterKitSetupDraft {
+export interface StarterKitSetupDraft extends RepositoryDraft {
   name: string;
   templateId: string | null;
   providerRef: ProviderRef | null;
@@ -22,6 +27,16 @@ export interface StarterKitSetupDraft {
   slackChannelId: string;
   skippedSchedules: string[];
   scheduleOverrides: StarterKitScheduleOverride[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a kit's setup takes a repository of the
+ * user's for the work directory: yes when the kit seeds nothing there — no
+ * seed, or a definition that goes to the agent's home — and no when the
+ * kit's own repository is the workspace, as the wiki toolkits are.
+ */
+export function kitTakesRepository(kit: Pick<StarterKitView, "seed">): boolean {
+  return kit.seed === undefined || kit.seed.into === "home";
 }
 
 export interface GrantedConnection {
@@ -93,13 +108,17 @@ export function isStarterKitSetupComplete(
   if (draft.name.trim().length === 0) return false;
   if (!kit.image && draft.templateId === null) return false;
   if (draft.providerRef === null) return false;
+  if (repositoryUrlError(draft.repositoryUrl) !== undefined) return false;
   return requirementStatuses(kit, draft, owned, templates).every(
     (s) => s.satisfied || !s.requirement.required,
   );
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections">,
+  kit: Pick<
+    StarterKitView,
+    "id" | "catalog" | "image" | "connections" | "seed"
+  >,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -110,6 +129,7 @@ export function buildStarterKitApplyInput(
     );
   }
   const slackChannelId = draft.slackChannelId.trim();
+  const gitRepo = kitTakesRepository(kit) ? repositorySeed(draft) : null;
   return {
     catalog: kit.catalog,
     kitId: kit.id,
@@ -117,6 +137,7 @@ export function buildStarterKitApplyInput(
     connectionIds: draftConnectionIds(draft),
     ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
+    ...(gitRepo ? { gitRepo } : {}),
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(
       (o) => !draft.skippedSchedules.includes(o.name),
