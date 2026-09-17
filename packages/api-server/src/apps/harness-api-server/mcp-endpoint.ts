@@ -105,8 +105,6 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
-  supportsUserLookup: boolean;
-  supportsMessageReactions: boolean;
 }
 
 export function createMcpSession(
@@ -265,121 +263,117 @@ export function createMcpSession(
     },
   );
 
-  if (deps.supportsUserLookup) {
-    server.tool(
-      "describe_channel_users",
-      "Look up who a channel's user ids belong to. People reach you as bare ids (Slack `U…`) — in the speaker labels on shared-channel messages, in conversation history, and in mentions inside message text — and this is how you turn those ids into people. Returns { users: [{ id, username, realName, displayName, title, pronouns, email, timezone, statusText, isBot, ... }] }; a field is absent when the person left it unset or the workspace withholds it, and an id that cannot be resolved comes back with an `error` while the rest of the batch still resolves. Look someone up before addressing them by name, attributing work to them, or reasoning about their local time. Slack only.",
-      {
-        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-        userIds: z
-          .array(z.string().min(1))
-          .min(1)
-          .max(20)
-          .describe(
-            'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
-          ),
-      },
-      async ({ channel, userIds }) => {
-        const result = await deps.channelManager.describeUsers(
-          agentId,
-          channel,
-          userIds,
-        );
-        const audit = {
-          category: "channel",
-          actor: agentId,
-          actorKind: "agent",
-          surface: channel,
-          agentId,
-        } as const;
-        if ("error" in result) {
-          securityLog("warn", "channel.user_lookup", {
-            ...audit,
-            result: "failure",
-            reason: result.error,
-            detail: { requested: userIds.length },
-          });
-          return errorResult(result.error);
-        }
-        securityLog("info", "channel.user_lookup", {
+  server.tool(
+    "describe_channel_users",
+    "Look up who a channel's user ids belong to. People reach you as bare ids (Slack `U…`) — in the speaker labels on shared-channel messages, in conversation history, and in mentions inside message text — and this is how you turn those ids into people. Returns { users: [{ id, username, realName, displayName, title, pronouns, email, timezone, statusText, isBot, ... }] }; a field is absent when the person left it unset or the workspace withholds it, and an id that cannot be resolved comes back with an `error` while the rest of the batch still resolves. Look someone up before addressing them by name, attributing work to them, or reasoning about their local time. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      userIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(20)
+        .describe(
+          'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
+        ),
+    },
+    async ({ channel, userIds }) => {
+      const result = await deps.channelManager.describeUsers(
+        agentId,
+        channel,
+        userIds,
+      );
+      const audit = {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: channel,
+        agentId,
+      } as const;
+      if ("error" in result) {
+        securityLog("warn", "channel.user_lookup", {
           ...audit,
-          result: "success",
-          detail: {
-            userIds: result.users.map((u) => u.id),
-            resolved: result.users.filter((u) => !u.error).length,
-          },
+          result: "failure",
+          reason: result.error,
+          detail: { requested: userIds.length },
         });
-        return textResult(JSON.stringify({ users: result.users }));
-      },
-    );
-  }
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.user_lookup", {
+        ...audit,
+        result: "success",
+        detail: {
+          userIds: result.users.map((u) => u.id),
+          resolved: result.users.filter((u) => !u.error).length,
+        },
+      });
+      return textResult(JSON.stringify({ users: result.users }));
+    },
+  );
 
-  if (deps.supportsMessageReactions) {
-    server.tool(
-      "describe_message_reactions",
-      "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
-      {
-        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-        chatId: z
-          .string()
-          .optional()
-          .describe(
-            "Chat containing the message: an id from describe_channel. Omit for the agent's bound channel.",
-          ),
-        messageTs: z
-          .string()
-          .optional()
-          .describe(
-            "Message to inspect. Omit for the message you're currently answering.",
-          ),
-      },
-      async ({ channel, chatId, messageTs }) => {
-        const result = await deps.channelManager.describeMessageReactions(
-          agentId,
-          channel,
-          { conversationId: chatId, messageTs },
-        );
-        const audit = {
-          category: "channel",
-          actor: agentId,
-          actorKind: "agent",
-          surface: channel,
-          agentId,
-        } as const;
-        if ("error" in result) {
-          securityLog("warn", "channel.reaction_lookup", {
-            ...audit,
-            result: "failure",
-            reason: result.error,
-            detail: {
-              ...(chatId ? { conversationId: chatId } : {}),
-              ...(messageTs ? { messageTs } : {}),
-            },
-          });
-          return errorResult(result.error);
-        }
-        securityLog("info", "channel.reaction_lookup", {
+  server.tool(
+    "describe_message_reactions",
+    "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Chat containing the message: an id from describe_channel. Omit for the agent's bound channel.",
+        ),
+      messageTs: z
+        .string()
+        .optional()
+        .describe(
+          "Message to inspect. Omit for the message you're currently answering.",
+        ),
+    },
+    async ({ channel, chatId, messageTs }) => {
+      const result = await deps.channelManager.describeMessageReactions(
+        agentId,
+        channel,
+        { conversationId: chatId, messageTs },
+      );
+      const audit = {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: channel,
+        agentId,
+      } as const;
+      if ("error" in result) {
+        securityLog("warn", "channel.reaction_lookup", {
           ...audit,
-          result: "success",
+          result: "failure",
+          reason: result.error,
           detail: {
-            conversationId: result.conversationId,
-            messageTs: result.messageTs,
-            reactions: result.reactions.map((r) => ({
-              name: r.name,
-              count: r.count,
-            })),
+            ...(chatId ? { conversationId: chatId } : {}),
+            ...(messageTs ? { messageTs } : {}),
           },
         });
-        return textResult(
-          JSON.stringify({
-            reactions: result.reactions,
-            conversationId: result.conversationId,
-            messageTs: result.messageTs,
-          }),
-        );
-      },
-    );
-  }
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.reaction_lookup", {
+        ...audit,
+        result: "success",
+        detail: {
+          conversationId: result.conversationId,
+          messageTs: result.messageTs,
+          reactions: result.reactions.map((r) => ({
+            name: r.name,
+            count: r.count,
+          })),
+        },
+      });
+      return textResult(
+        JSON.stringify({
+          reactions: result.reactions,
+          conversationId: result.conversationId,
+          messageTs: result.messageTs,
+        }),
+      );
+    },
+  );
 
   server.tool(
     "reply",
@@ -911,12 +905,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
-      await Promise.all([
-        deps.channelManager.supportsUserLookup(),
-        deps.channelManager.supportsMessageReactions(),
-        deps.carriesInspectorRole(verified.owner),
-      ]);
+    const ownerIsInspector = await deps.carriesInspectorRole(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -934,8 +923,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       agentTelemetry: deps.agentTelemetry,
-      supportsUserLookup,
-      supportsMessageReactions,
     });
     await session.server.connect(session.transport);
 

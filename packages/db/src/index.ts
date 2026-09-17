@@ -9,6 +9,7 @@ export { runMigrations } from "./migrate.js";
 export {
   channels,
   identityLinks,
+  slackInstalls,
   telegramConversations,
   skillSources,
   skillSets,

@@ -75,6 +75,15 @@ import {
   type TelegramOAuthPending,
 } from "./modules/channels/infrastructure/telegram-flows.js";
 import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
+import type { SlackInstallPending } from "./modules/channels/infrastructure/slack-install-routes.js";
+import {
+  findSlackInstall,
+  listSlackInstalls,
+  setSlackCredentialState,
+  upsertSlackInstall,
+} from "./modules/channels/infrastructure/slack-installs-repository.js";
+import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
+import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -183,6 +192,7 @@ import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infra
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
+import { createXactLock } from "./core/xact-lock.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
@@ -416,6 +426,7 @@ export async function bootstrap() {
   secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
+  const SLACK_INSTALL_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
@@ -501,6 +512,13 @@ export async function bootstrap() {
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
+    ...(fakeSlackGateway
+      ? {
+          slackInstalls: {
+            record: (install) => slackInstalls.record(install),
+          },
+        }
+      : {}),
   });
 
   const publicAgentPage = composePublicAgentPage({
@@ -595,6 +613,8 @@ export async function bootstrap() {
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
     api,
+    resolveSlackWorkspace: (slackChannelId) =>
+      resolveSlackWorkspace(slackChannelId),
     agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -640,7 +660,24 @@ export async function bootstrap() {
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
+  const slackInstallCallbackUrl =
+    config.slackInstallCallbackUrl ??
+    `${config.uiBaseUrl}/api/slack/install/callback`;
   const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
+
+  const pendingSlackInstalls = createRedisTtlStore<SlackInstallPending>(
+    sharedRedis,
+    "install:slack",
+    SLACK_INSTALL_HANDOFF_TTL_MS,
+  );
+  const slackInstalls = createSlackInstallService({
+    find: findSlackInstall(db),
+    upsert: upsertSlackInstall(db),
+    setState: setSlackCredentialState(db),
+    secrets: secretStores.default(),
+    installLock: createXactLock(db),
+    envBotToken: config.slackBotToken,
+  });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
     ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
@@ -655,6 +692,7 @@ export async function bootstrap() {
       return rows.map((row) => ({
         instanceName: row.agentId,
         owner: row.owner,
+        teamId: row.teamId,
         ambient: row.ambient,
         isDefault: row.isDefault,
       }));
@@ -670,9 +708,12 @@ export async function bootstrap() {
   const slackGatewayFactory = slackTokens
     ? () =>
         createBoltSlackGateway({
-          botToken: slackTokens.botToken,
+          resolveBotToken: slackInstalls.resolveBotToken,
+          setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
+          envBotToken: slackTokens.botToken,
           appToken: slackTokens.appToken,
           commandName: `/${config.brand.short}`,
+          onCredentialRejected: slackInstalls.markRejected,
         })
     : fakeSlackGateway
       ? () => fakeSlackGateway
@@ -719,6 +760,15 @@ export async function bootstrap() {
         DEFAULT_SETTLE_MS,
       )
     : undefined;
+
+  const resolveSlackWorkspace = createSlackWorkspaceProbe({
+    listInstalledWorkspaces: async () =>
+      (await listSlackInstalls(db)())
+        .filter((i) => i.credentialState === "active")
+        .map((i) => i.teamId),
+    standingIn: async (slackChannelId, teamId) =>
+      slackWorker ? slackWorker.standingIn(slackChannelId, teamId) : "unknown",
+  });
 
   const telegramWorker =
     config.telegramBotToken && chatSdkState
@@ -1072,6 +1122,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       api,
+      resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -1144,6 +1195,10 @@ export async function bootstrap() {
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
+    pendingSlackInstalls,
+    slackInstalls,
+    resolveSlackWorkspace,
+    slackInstallCallbackUrl,
     telegramBindFlows,
     slackBindFlows,
     seedSources,

@@ -1,4 +1,5 @@
 export interface RosterEntry {
+  teamId: string;
   instanceName: string;
   name: string;
   owner: string;

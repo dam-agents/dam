@@ -9,6 +9,8 @@ import type {
   setScriptInputSchema,
   slackFireCommandInputSchema,
   slackFireCommandResultSchema,
+  slackConnectWorkspaceInputSchema,
+  slackConnectWorkspaceResultSchema,
   slackFireMentionInputSchema,
   slackOutboundRecordSchema,
   slackReadOutboundResultSchema,
@@ -32,6 +34,12 @@ export type SpawnInvocationInput = Omit<
 >;
 export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
 
+export type SlackConnectWorkspaceInput = z.infer<
+  typeof slackConnectWorkspaceInputSchema
+>;
+export type SlackConnectWorkspaceResult = z.infer<
+  typeof slackConnectWorkspaceResultSchema
+>;
 export type SlackFireMentionInput = z.infer<typeof slackFireMentionInputSchema>;
 export type SlackFireMessageInput = SlackFireMentionInput;
 export type SlackFireCommandInput = z.infer<typeof slackFireCommandInputSchema>;
@@ -63,4 +71,7 @@ export interface E2eService {
   ): Promise<SlackFireCommandResult>;
   slackReadOutbound(): Promise<SlackReadOutboundResult>;
   slackResetOutbound(): Promise<ResetResult>;
+  slackConnectWorkspace(
+    input: SlackConnectWorkspaceInput,
+  ): Promise<SlackConnectWorkspaceResult>;
 }

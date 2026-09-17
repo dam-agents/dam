@@ -19,6 +19,7 @@ function entry(
   opts: { isDefault?: boolean; instanceName?: string } = {},
 ): RosterEntry {
   return {
+    teamId: "",
     instanceName: opts.instanceName ?? `agent-${name}`,
     name,
     owner: "owner-sub",
