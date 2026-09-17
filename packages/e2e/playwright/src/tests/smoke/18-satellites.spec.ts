@@ -31,7 +31,7 @@ const MANIFEST = {
   maxConcurrent: 4,
   commands: [
     { run: "/bin/echo (hello|goodbye)", about: "Say something" },
-    { run: "/bin/sleep <seconds:1-9>", approval: "always" as const },
+    { run: "/bin/sleep ^[1-9]$", approval: "always" as const },
   ],
 };
 
@@ -110,7 +110,7 @@ test.describe("satellites", () => {
         manifest: {
           ...MANIFEST,
           name: `${SATELLITE}-bad`,
-          commands: [{ run: "<anything>" }],
+          commands: [{ run: "*" }],
         },
       }),
     ).rejects.toThrow();

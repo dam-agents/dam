@@ -7,16 +7,19 @@ import {
 
 /**
  * TEST_OVERVIEW: The Command Pattern grammar, which decides what a Satellite is
- * allowed to run. A pattern is a usage line: literals match exactly, (a|b) is a
- * closed set, [x] is optional, (x)... repeats, and <name:format> is a value the
- * caller supplies. The grammar has no free-form string form, so a pattern can
- * only ever describe a finite set of commands — that is the security property,
- * and the specs here pin the ways it could leak: a pattern whose first token is
- * not a literal (the caller would choose the program), a captured value that
- * starts with a dash and would read as an extra flag, a path glob that would
- * admit a .. segment and escape its directory, an unanchored regex, and an
- * argument or argv longer than the caps. Refusals must also teach: they name the
- * pattern that came closest and where the match broke.
+ * allowed to run. A pattern is a usage line built from seven forms: literals,
+ * (a|b) for a closed set, [x] for optional, (x)... for repeats, * for one
+ * filename-like argument, ** for a path-like one, and ^…$ for a regex covering
+ * a whole argument. There are no named placeholders and no sub-part regexes, so
+ * the only way to constrain part of an argument is a regex over all of it.
+ *
+ * The specs pin the ways a pattern could leak: a first token that is not a
+ * literal, so the caller would choose the program; a matched value that begins
+ * with a dash and would read as an extra flag; a value carrying a .. segment
+ * that would climb out of the directory the pattern named; a regex that is not
+ * anchored over the whole argument; and arguments or argv beyond the caps.
+ * Refusals must teach — they name the pattern that came closest and where the
+ * match broke.
  */
 
 function parse(...runs: string[]): ParsedPattern[] {
@@ -33,31 +36,26 @@ function accepts(patterns: ParsedPattern[], argv: string[]): boolean {
 
 describe("command pattern parsing", () => {
   it("refuses a pattern whose program the caller chooses", () => {
-    for (const run of ["<cmd>", "(ls|rm)", "[./x]"]) {
+    for (const run of ["*", "**", "(ls|rm)", "[./x]", "^.*$"]) {
       const result = parseCommandPattern(run);
       expect(result.ok, run).toBe(false);
     }
   });
 
-  it("refuses formats that are not one of the four shapes", () => {
-    const result = parseCommandPattern("./x <a:whatever>");
-    expect(result.ok).toBe(false);
+  it("refuses a regex that does not cover the whole argument", () => {
+    expect(parseCommandPattern("./x --limit=^[0-9]+$").ok).toBe(false);
+    expect(parseCommandPattern("./x ^--limit=[0-9]+$").ok).toBe(true);
   });
 
-  it("refuses an unanchored regex format", () => {
-    expect(parseCommandPattern("./x <a:^v[0-9]+>").ok).toBe(false);
-    expect(parseCommandPattern("./x <a:^v[0-9]+$>").ok).toBe(true);
-  });
-
-  it("refuses unbalanced groups", () => {
-    expect(parseCommandPattern("./x [-n <n:0+>").ok).toBe(false);
+  it("refuses an unbalanced group", () => {
+    expect(parseCommandPattern("./x [-n *").ok).toBe(false);
     expect(parseCommandPattern("./x (a|b").ok).toBe(false);
   });
 });
 
 describe("literals and alternation", () => {
   const patterns = parse(
-    "./process.sh (sales.db|events.db) [-n <count:1-9999>]",
+    "./process.sh (sales.db|events.db) [-n *]",
     "git -C /srv/repo (pull|status)",
   );
 
@@ -81,24 +79,12 @@ describe("literals and alternation", () => {
     );
     expect(accepts(patterns, ["./process.sh"])).toBe(false);
   });
-
-  it("refuses an int outside its range", () => {
-    expect(accepts(patterns, ["./process.sh", "sales.db", "-n", "9999"])).toBe(
-      true,
-    );
-    expect(accepts(patterns, ["./process.sh", "sales.db", "-n", "10000"])).toBe(
-      false,
-    );
-    expect(accepts(patterns, ["./process.sh", "sales.db", "-n", "0"])).toBe(
-      false,
-    );
-  });
 });
 
 describe("the leading-dash rule", () => {
-  const patterns = parse("./x <name>", "./y -- <name>");
+  const patterns = parse("./x *", "./y -- *");
 
-  it("refuses a captured value that would read as a flag", () => {
+  it("refuses a matched value that would read as a flag", () => {
     expect(accepts(patterns, ["./x", "ok"])).toBe(true);
     expect(accepts(patterns, ["./x", "-rf"])).toBe(false);
     expect(accepts(patterns, ["./x", "--force"])).toBe(false);
@@ -109,34 +95,68 @@ describe("the leading-dash rule", () => {
   });
 
   it("constrains the value, not the token", () => {
-    const composite = parse("./z [--limit=<n:1-100>]");
+    const composite = parse("./z [--limit=*]");
     expect(accepts(composite, ["./z", "--limit=50"])).toBe(true);
-    expect(accepts(composite, ["./z", "--limit=500"])).toBe(false);
   });
 });
 
-describe("path formats", () => {
-  const patterns = parse("./train.sh <dataset:./data/**/*.db>");
+describe("stars", () => {
+  const single = parse("./train.sh ./data/*.db");
+  const double = parse("./train.sh ./data/**/*.db");
 
-  it("accepts paths inside the glob", () => {
-    expect(accepts(patterns, ["./train.sh", "./data/a.db"])).toBe(true);
-    expect(accepts(patterns, ["./train.sh", "./data/x/y/b.db"])).toBe(true);
+  it("keeps a single star inside one path segment", () => {
+    expect(accepts(single, ["./train.sh", "./data/a.db"])).toBe(true);
+    expect(accepts(single, ["./train.sh", "./data/x/b.db"])).toBe(false);
   });
 
-  it("refuses paths outside it", () => {
-    expect(accepts(patterns, ["./train.sh", "./other/a.db"])).toBe(false);
-    expect(accepts(patterns, ["./train.sh", "./data/a.txt"])).toBe(false);
+  it("lets a double star span segments, including none", () => {
+    expect(accepts(double, ["./train.sh", "./data/a.db"])).toBe(true);
+    expect(accepts(double, ["./train.sh", "./data/x/y/b.db"])).toBe(true);
   });
 
-  it("refuses traversal that the glob would otherwise admit", () => {
-    expect(
-      accepts(patterns, ["./train.sh", "./data/../../etc/shadow.db"]),
-    ).toBe(false);
+  it("still holds the literal parts around a star", () => {
+    expect(accepts(double, ["./train.sh", "./other/a.db"])).toBe(false);
+    expect(accepts(double, ["./train.sh", "./data/a.txt"])).toBe(false);
+  });
+
+  it("refuses traversal that a star would otherwise admit", () => {
+    expect(accepts(double, ["./train.sh", "./data/../../etc/shadow.db"])).toBe(
+      false,
+    );
+  });
+});
+
+describe("whole-argument regex", () => {
+  const patterns = parse(
+    "./tag.sh ^v[0-9]+$",
+    "./limit.sh ^--limit=[1-9][0-9]?$",
+  );
+
+  it("matches the argument end to end", () => {
+    expect(accepts(patterns, ["./tag.sh", "v12"])).toBe(true);
+    expect(accepts(patterns, ["./tag.sh", "v12x"])).toBe(false);
+    expect(accepts(patterns, ["./tag.sh", "xv12"])).toBe(false);
+  });
+
+  it("is how a flag's value is constrained, now that regexes are whole-argument", () => {
+    expect(accepts(patterns, ["./limit.sh", "--limit=50"])).toBe(true);
+    expect(accepts(patterns, ["./limit.sh", "--limit=500"])).toBe(false);
+  });
+
+  it("may name a leading dash itself, because the author spelled the whole argument", () => {
+    const flag = parse("./x ^--force$");
+    expect(accepts(flag, ["./x", "--force"])).toBe(true);
+  });
+
+  it("is still subject to the traversal rule", () => {
+    const loose = parse("./read.sh ^[a-z./]+$");
+    expect(accepts(loose, ["./read.sh", "./data/x"])).toBe(true);
+    expect(accepts(loose, ["./read.sh", "../etc/passwd"])).toBe(false);
   });
 });
 
 describe("repetition", () => {
-  const patterns = parse("./tag.sh (<tag:^v[0-9]+$>)...");
+  const patterns = parse("./tag.sh (^v[0-9]+$)...");
 
   it("accepts one or more", () => {
     expect(accepts(patterns, ["./tag.sh", "v1"])).toBe(true);
@@ -155,17 +175,13 @@ describe("repetition", () => {
 });
 
 describe("refusals teach", () => {
-  const patterns = parse(
-    "./process.sh (sales.db|events.db) [-n <count:1-9999>]",
-  );
+  const patterns = parse("./process.sh (sales.db|events.db) [-n *]");
 
   it("names the closest pattern and where the match broke", () => {
     const result = matchCommand(patterns, ["./process.sh", "secrets.db"]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.closest).toBe(
-      "./process.sh (sales.db|events.db) [-n <count:1-9999>]",
-    );
+    expect(result.closest).toBe("./process.sh (sales.db|events.db) [-n *]");
     expect(result.reason).toContain("secrets.db");
   });
 
@@ -179,7 +195,7 @@ describe("refusals teach", () => {
 });
 
 describe("size caps", () => {
-  const patterns = parse("./x (<a>)...");
+  const patterns = parse("./x (*)...");
 
   it("refuses an over-long argument", () => {
     expect(accepts(patterns, ["./x", "a".repeat(5000)])).toBe(false);

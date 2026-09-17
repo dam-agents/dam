@@ -28,7 +28,7 @@ run = "/bin/echo (hello|goodbye)"
 about = "Say something"
 
 [[command]]
-run = "/bin/sleep <seconds:1-9>"
+run = "/bin/sleep ^[1-9]$"
 `;
 
 function manifest() {
@@ -126,7 +126,7 @@ name = "box"
 cwd = "/srv"
 timeout = "6h"
 [[command]]
-run = "./x <n:1-5>"
+run = "./x ^[1-5]$"
 cwd = "/tmp"
 timeout = "30m"
 approval = "always"
@@ -137,7 +137,7 @@ approval = "always"
     expect(parsed.value.timeoutMs).toBe(6 * 3_600_000);
     expect(parsed.value.commands[0]?.timeoutMs).toBe(30 * 60_000);
     expect(parsed.value.pushed.commands[0]).toEqual({
-      run: "./x <n:1-5>",
+      run: "./x ^[1-5]$",
       approval: "always",
     });
     expect(JSON.stringify(parsed.value.pushed)).not.toContain("/srv");
@@ -147,7 +147,7 @@ approval = "always"
     const parsed = parseManifest(`
 name = "box"
 [[command]]
-run = "<anything>"
+run = "*"
 `);
     expect(parsed.ok).toBe(false);
   });

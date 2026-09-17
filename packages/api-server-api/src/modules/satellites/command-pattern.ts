@@ -6,22 +6,12 @@ export type ParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
 
-interface Placeholder {
-  identifier: string;
-  format: PlaceholderFormat;
-}
-
-type PlaceholderFormat =
-  | { kind: "default" }
-  | { kind: "path"; glob: string }
-  | { kind: "int"; min: number; max: number | null }
-  | { kind: "regex"; source: string };
-
 interface TokenElement {
   kind: "token";
   source: string;
   regex: RegExp;
-  placeholders: Placeholder[];
+  open: boolean;
+  openAtStart: boolean;
 }
 
 interface GroupElement {
@@ -39,82 +29,12 @@ export interface ParsedPattern {
   dashDashAt: number;
 }
 
-const DEFAULT_VALUE = "[A-Za-z0-9._-]+";
+const SEGMENT = "[A-Za-z0-9._-]+";
+const STAR = "[A-Za-z0-9._-]*";
+const DOUBLE_STAR = "[A-Za-z0-9._\\-/]*";
 
 function escapeLiteral(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function globToRegex(glob: string): string {
-  let out = "";
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i]!;
-    if (ch === "*") {
-      if (glob[i + 1] === "*") {
-        if (glob[i + 2] === "/") {
-          out += "(?:[^/]*/)*";
-          i += 2;
-        } else {
-          out += ".*";
-          i++;
-        }
-      } else out += "[^/]*";
-    } else out += escapeLiteral(ch);
-  }
-  return out;
-}
-
-function parseFormat(spec: string): ParseResult<PlaceholderFormat> {
-  if (spec === "") return { ok: true, value: { kind: "default" } };
-  if (spec.startsWith("^")) {
-    if (!spec.endsWith("$"))
-      return {
-        ok: false,
-        error: `regex format must end with "$": <…:${spec}>`,
-      };
-    try {
-      new RegExp(spec);
-    } catch (err) {
-      return {
-        ok: false,
-        error: `invalid regex ${spec}: ${(err as Error).message}`,
-      };
-    }
-    return { ok: true, value: { kind: "regex", source: spec } };
-  }
-  if (spec.startsWith(".") || spec.startsWith("/"))
-    return { ok: true, value: { kind: "path", glob: spec } };
-  const open = /^(\d+)\+$/.exec(spec);
-  if (open)
-    return {
-      ok: true,
-      value: { kind: "int", min: Number(open[1]), max: null },
-    };
-  const range = /^(\d+)-(\d+)$/.exec(spec);
-  if (range) {
-    const min = Number(range[1]);
-    const max = Number(range[2]);
-    if (min > max)
-      return { ok: false, error: `int range is inverted: <…:${spec}>` };
-    return { ok: true, value: { kind: "int", min, max } };
-  }
-  return {
-    ok: false,
-    error: `unrecognized format "${spec}" — expected a path glob (./x, /x), an int range (0+, 1-50), or an anchored regex (^…$)`,
-  };
-}
-
-function formatToRegex(format: PlaceholderFormat): string {
-  switch (format.kind) {
-    case "default":
-      return DEFAULT_VALUE;
-    case "path":
-      return globToRegex(format.glob);
-    case "int":
-      return "\\d+";
-    case "regex":
-      return format.source.slice(1, -1);
-  }
 }
 
 function splitTokens(run: string): ParseResult<string[]> {
@@ -155,30 +75,54 @@ function splitAlternatives(body: string): string[] {
   return parts;
 }
 
+function isRegexToken(token: string): boolean {
+  return token.startsWith("^") && token.endsWith("$") && token.length > 1;
+}
+
 function parseToken(token: string): ParseResult<TokenElement> {
-  const placeholders: Placeholder[] = [];
+  if (isRegexToken(token)) {
+    try {
+      new RegExp(token);
+    } catch (err) {
+      return {
+        ok: false,
+        error: `invalid regex ${token}: ${(err as Error).message}`,
+      };
+    }
+    return {
+      ok: true,
+      value: {
+        kind: "token",
+        source: token,
+        regex: new RegExp(token),
+        open: true,
+        openAtStart: false,
+      },
+    };
+  }
+  if (token.includes("^") || token.includes("$"))
+    return {
+      ok: false,
+      error: `a regex must be the whole argument, anchored with ^ and $: "${token}"`,
+    };
+
   let pattern = "";
+  let wildcards = 0;
+  let openAtStart = false;
   let i = 0;
   while (i < token.length) {
     const ch = token[i]!;
-    if (ch === "<") {
-      const close = token.indexOf(">", i);
-      if (close === -1)
-        return { ok: false, error: `unclosed placeholder in "${token}"` };
-      const body = token.slice(i + 1, close);
-      const colon = body.indexOf(":");
-      const identifier = colon === -1 ? body : body.slice(0, colon);
-      const spec = colon === -1 ? "" : body.slice(colon + 1);
-      if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(identifier))
-        return {
-          ok: false,
-          error: `placeholder needs an identifier: "<${body}>"`,
-        };
-      const format = parseFormat(spec);
-      if (!format.ok) return format;
-      placeholders.push({ identifier, format: format.value });
-      pattern += `(${formatToRegex(format.value)})`;
-      i = close + 1;
+    if (ch === "*") {
+      const double = token[i + 1] === "*";
+      if (i === 0) openAtStart = true;
+      if (double && token[i + 2] === "/") {
+        pattern += `(?:${SEGMENT}/)*`;
+        i += 3;
+      } else {
+        pattern += double ? DOUBLE_STAR : STAR;
+        i += double ? 2 : 1;
+      }
+      wildcards++;
       continue;
     }
     if (ch === "(") {
@@ -186,7 +130,7 @@ function parseToken(token: string): ParseResult<TokenElement> {
       if (close === -1)
         return { ok: false, error: `unbalanced "(" in "${token}"` };
       const alternatives = splitAlternatives(token.slice(i + 1, close));
-      if (alternatives.some((a) => /\s/.test(a) || /[<>[\]]/.test(a)))
+      if (alternatives.some((a) => /[\s[\]*]/.test(a)))
         return {
           ok: false,
           error: `inline alternation may only hold plain literals: "${token}"`,
@@ -204,7 +148,8 @@ function parseToken(token: string): ParseResult<TokenElement> {
       kind: "token",
       source: token,
       regex: new RegExp(`^${pattern}$`),
-      placeholders,
+      open: wildcards > 0,
+      openAtStart,
     },
   };
 }
@@ -229,7 +174,7 @@ function parseElements(tokens: string[]): ParseResult<Element[]> {
     const optional = token.startsWith("[");
     const repeat = token.endsWith("...");
     const body = repeat ? token.slice(0, -3) : token;
-    if (optional || body.startsWith("(")) {
+    if (optional || (body.startsWith("(") && !isRegexToken(body))) {
       const close = matchingBracket(body, 0);
       if (close !== body.length - 1)
         return {
@@ -248,10 +193,7 @@ function parseElements(tokens: string[]): ParseResult<Element[]> {
       continue;
     }
     if (repeat)
-      return {
-        ok: false,
-        error: `"..." may only follow a group: "${token}"`,
-      };
+      return { ok: false, error: `"..." may only follow a group: "${token}"` };
     const parsed = parseToken(body);
     if (!parsed.ok) return parsed;
     elements.push(parsed.value);
@@ -265,7 +207,7 @@ export function parseCommandPattern(run: string): ParseResult<ParsedPattern> {
   if (tokens.value.length === 0)
     return { ok: false, error: "empty command pattern" };
   const first = tokens.value[0]!;
-  if (/[<>[\]()|]/.test(first))
+  if (/[*[\]()|^$]/.test(first))
     return {
       ok: false,
       error: `the first token must be a literal — "${first}" is not. A pattern that lets the caller choose the program is a shell, not an allowlist`,
@@ -282,29 +224,28 @@ export function parseCommandPattern(run: string): ParseResult<ParsedPattern> {
   };
 }
 
-function validateCapture(
-  value: string,
-  placeholder: Placeholder,
-  afterDashDash: boolean,
-): string | null {
-  if (!afterDashDash && value.startsWith("-"))
-    return `<${placeholder.identifier}> may not begin with "-" before a literal "--"`;
-  const format = placeholder.format;
-  if (format.kind === "path" && value.split("/").includes(".."))
-    return `<${placeholder.identifier}> may not contain a ".." segment`;
-  if (format.kind === "int") {
-    const n = Number(value);
-    if (n < format.min || (format.max !== null && n > format.max))
-      return `<${placeholder.identifier}> must be in ${format.min}-${format.max ?? "∞"}`;
-  }
-  return null;
-}
-
 interface MatchState {
   argv: string[];
   dashDashSeen: boolean[];
   furthest: number;
   failure: string | null;
+}
+
+function checkValue(
+  element: TokenElement,
+  arg: string,
+  state: MatchState,
+  at: number,
+): string | null {
+  if (
+    element.openAtStart &&
+    !(state.dashDashSeen[at] ?? false) &&
+    arg.startsWith("-")
+  )
+    return `"${arg}" may not begin with "-" before a literal "--"`;
+  if (arg.split("/").includes(".."))
+    return `"${arg}" may not contain a ".." segment`;
+  return null;
 }
 
 function matchToken(
@@ -314,18 +255,12 @@ function matchToken(
 ): boolean {
   const arg = state.argv[at];
   if (arg === undefined) return false;
-  const found = element.regex.exec(arg);
-  if (!found) return false;
-  for (let i = 0; i < element.placeholders.length; i++) {
-    const problem = validateCapture(
-      found[i + 1] ?? "",
-      element.placeholders[i]!,
-      state.dashDashSeen[at] ?? false,
-    );
-    if (problem) {
-      state.failure ??= problem;
-      return false;
-    }
+  if (!element.regex.test(arg)) return false;
+  if (!element.open) return true;
+  const problem = checkValue(element, arg, state, at);
+  if (problem !== null) {
+    state.failure ??= problem;
+    return false;
   }
   return true;
 }

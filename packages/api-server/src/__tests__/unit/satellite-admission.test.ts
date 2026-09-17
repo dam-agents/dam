@@ -23,8 +23,8 @@ import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
 const NOW = new Date("2026-09-17T12:00:00Z");
 
 const COMMANDS: SatelliteCommand[] = [
-  { run: "./process.sh (sales.db|events.db) [-n <count:1-9999>]" },
-  { run: "./train.sh <dataset:./data/**/*.db>", maxConcurrent: 1 },
+  { run: "./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]" },
+  { run: "./train.sh ./data/**/*.db", maxConcurrent: 1 },
   { run: "git -C /srv/repo (pull|status)", approval: "always" },
 ];
 
@@ -133,7 +133,7 @@ describe("admission", () => {
   it("refuses at a command's own limit while others still run", () => {
     const active = {
       total: 1,
-      byPattern: new Map([["./train.sh <dataset:./data/**/*.db>", 1]]),
+      byPattern: new Map([["./train.sh ./data/**/*.db", 1]]),
     };
     const exclusive = admit(
       satellite(),
@@ -155,7 +155,7 @@ describe("admission", () => {
   });
 
   it("refuses a manifest whose patterns do not parse", () => {
-    const broken = compileCommands([{ run: "<anything>" }]);
+    const broken = compileCommands([{ run: "*" }]);
     expect(broken.ok).toBe(false);
   });
 });

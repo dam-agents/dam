@@ -57,11 +57,11 @@ timeout = "6h"
 max_concurrent = 16                            # jobs at once; per-command override below
 
 [[command]]
-run = "./process.sh (sales.db|events.db) [-n <count:1-9999>]"
+run = "./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]"
 about = "Process a database"
 
 [[command]]
-run = "./train.sh <dataset:./data/**/*.db> [--epochs=<n:1-500>]"
+run = "./train.sh ./data/**/*.db [^--epochs=[1-9][0-9]{0,2}$]"
 about = "Train against a dataset"
 timeout = "12h"
 max_concurrent = 1                             # GPU-exclusive
@@ -80,30 +80,34 @@ approval = "always"
 | `literal` | matches exactly, nothing else |
 | `(a\|b\|c)` | one of a closed set |
 | `[…]` | optional |
-| `(…)...` | repeats, capped (default 16) |
-| `<identifier:format>` | a Placeholder — a constrained value |
+| `(…)...` | repeats, capped |
+| `*` | one filename-like argument, or part of one — no `/` |
+| `**` | one path-like argument, or part of one — `/` allowed |
+| `^…$` | a regex covering a **whole** argument |
 
-A token is a sequence of literal chunks and Placeholders, so `--limit=<n:1-100>`, `fixed-prefix-<thing>`, and `<name>.db` all parse. That covers `=`-joined flags, which would otherwise force authors into regex.
+Seven forms, no sub-syntax. There are no named placeholders: the names were never
+read by anything — not the matcher, not the model — and explaining what to pass is
+the `about` line's job, not the pattern's.
 
-### Placeholder formats
+A star may sit anywhere in a token, so `--limit=*` and `./data/**/*.db` both parse.
+A regex may not: it covers the whole argument or nothing. That reads like a
+restriction and is not one — the argument *is* the whole thing, so
+`^--limit=[1-9][0-9]?$` constrains a flag's value exactly, prefix included. It is
+also the escape hatch for a literal `*`, `(`, `|` or `[`, which are structural
+everywhere else: write the argument as a regex and escape it there.
 
-Recognized by shape, not by keyword.
+`**/` spans zero or more whole segments, so `./data/**/*.db` still matches
+`./data/a.db`. Integer ranges are gone; `^[1-9][0-9]{0,3}$` covers the cases that
+had them, at the cost of admitting a leading zero where a range would not.
 
-| Format | Shape | Example | Matches |
-|---|---|---|---|
-| *(none)* | — | `<name>` | `[A-Za-z0-9._-]+` |
-| path | starts `.` or `/` | `<db:./data/**/*.db>` | glob; `*` within a segment, `**` across |
-| int | `N+` or `N-M` | `<n:10-50>`, `<n:0+>` | digits in range |
-| regex | starts `^`, ends `$` | `<tag:^v[0-9]+$>` | full match |
-
-There is deliberately **no free-form string format, and no escape hatch to raw patterns.** That omission *is* the security property: a Command Pattern can only ever describe a finite set of possibilities, because the grammar cannot express an infinite one. A command matching no pattern is refused; the first fully-matching pattern wins and carries its annotations.
-
-Anchoring the regex form with `^`/`$` rather than delimiters keeps it unambiguous against paths and makes the full-match requirement visible in the syntax. The cost is no flags: an author wanting case-insensitivity writes the character classes out. A pattern with interior anchors parses fine and matches nothing; not worth policing.
+**`**` is the widest thing the grammar can say, and the easiest to reach for.**
+`./run.sh **` accepts `/etc/passwd`. `*` is the default reach; `**` is a deliberate
+widening, and nothing in the grammar can stop an author choosing it.
 
 ### Argument rules
 
-- **Leading dash.** A Placeholder's captured value may not begin with `-`, unless the Placeholder appears after a literal `--` token. The constraint is on the *value*, never the token — `--limit=<n:1-100>` is fine anywhere, because that dash is fixed text the model cannot influence. This protects only as far as the target script honors `--`, which the platform cannot verify and the docs must state rather than imply. Side effect: negative integers are unexpressible outside a post-`--` position.
-- **Traversal.** A value containing a `..` segment is rejected before globbing, with no normalization. Otherwise `./data/**/*.db` accepts `./data/../../etc/shadow.db` under ordinary glob semantics — a traversal escape straight out of the allowlist.
+- **Leading dash.** A matched argument may not begin with `-` where the caller chose its first character, unless it sits after a literal `--`. Both exceptions are cases where the author already pinned that character: `--limit=*` spells the dash itself, and a whole-argument regex has named every character the argument may hold. This protects only as far as the target script honors `--`, which the platform cannot verify and the docs must state rather than imply.
+- **Traversal.** A matched argument containing a `..` segment is rejected, with no normalization, whatever matched it. Otherwise `./data/**/*.db` accepts `./data/../../etc/shadow.db` — a traversal escape straight out of the allowlist. This rule has no exception: a regex can widen what an argument may say, never where it may point.
 - **Size.** Per-argument length and argv count are capped. A user-authored regex meeting model-supplied input is a ReDoS on exactly the machine this feature exists to protect; a length cap closes it for what it costs.
 
 ## Tool surface

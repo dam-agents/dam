@@ -64,8 +64,8 @@ function describeSatellites(satellites: SatelliteView[]): string {
 const GRAMMAR_NOTE = [
   "Each line below is a permitted command shape. Literals must match exactly;",
   "(a|b) is a closed choice; [x] is optional; (x)... repeats;",
-  "<name:format> is a value you supply, where the format is a path glob, an",
-  "integer range like 1-50, an anchored regex, or plain alphanumerics by default.",
+  "* stands for one filename-like argument or part of one, ** for a path-like one,",
+  "and ^…$ is a regex matching a whole argument.",
   "Anything not matching a line is refused — the refusal says which line came closest.",
 ].join(" ");
 
