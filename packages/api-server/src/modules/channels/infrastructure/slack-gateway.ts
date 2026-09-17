@@ -84,6 +84,8 @@ export interface SlackPostMessage {
   threadTs?: string;
   blocks?: SlackBlock[];
   replyBroadcast?: boolean;
+  unfurlLinks?: boolean;
+  unfurlMedia?: boolean;
 }
 
 export interface SlackPostEphemeral {

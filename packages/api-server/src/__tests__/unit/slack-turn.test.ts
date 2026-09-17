@@ -283,6 +283,29 @@ describe("slack reply / react tools", () => {
     });
   });
 
+  it("reply passes explicit unfurl controls through to Slack (#3499)", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    await h.worker.reply("agent-1", {
+      text: "no preview cards",
+      unfurlLinks: false,
+      unfurlMedia: false,
+    });
+    const msgs = h.records().filter((r) => r.kind === "message");
+
+    expect(msgs).toMatchObject([
+      {
+        channel: "C1",
+        text: "no preview cards",
+        unfurlLinks: false,
+        unfurlMedia: false,
+      },
+    ]);
+  });
+
   it("reply footers link at the session the turn ran on", async () => {
     const h = harness({
       sendPrompt: async (_prompt, opts) => {

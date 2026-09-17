@@ -124,6 +124,8 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
       text: z.string(),
       threadTs: z.string().optional(),
       replyBroadcast: z.boolean().optional(),
+      unfurlLinks: z.boolean().optional(),
+      unfurlMedia: z.boolean().optional(),
     })
     .strict(),
   z
