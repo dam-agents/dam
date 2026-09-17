@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,22 +31,27 @@ func TestResourceVersionChanged_NonObjectFailsOpen(t *testing.T) {
 	assert.True(t, resourceVersionChanged(agentObj("a", "100"), "not-an-object"))
 }
 
-func TestEnqueueStoreObjects_EnqueuesEveryAgentOnce(t *testing.T) {
+// TEST_SCENARIO: the sweep must still re-check every agent, but not by handing the worker all of them at once — a queue that deep is what an agent someone is waiting for ends up behind. The count in the queue right after the sweep is the whole point: every agent arrives, only not yet.
+func TestTheDriftSweepReachesEveryAgentWithoutFloodingTheQueue(t *testing.T) {
 	store := cache.NewStore(cache.MetaNamespaceKeyFunc)
-	require.NoError(t, store.Add(agentObj("agent-one", "1")))
-	require.NoError(t, store.Add(agentObj("agent-two", "2")))
+	for _, name := range []string{"agent-one", "agent-two", "agent-three", "agent-four"} {
+		require.NoError(t, store.Add(agentObj(name, "1")))
+	}
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
 
-	n := enqueueStoreObjects(store, queue)
+	n := spreadStoreObjects(store, queue, 200*time.Millisecond)
 
-	assert.Equal(t, 2, n)
-	assert.Equal(t, 2, queue.Len())
+	assert.Equal(t, 4, n)
+	assert.Equal(t, 1, queue.Len(), "the fleet was handed over at once instead of across the interval")
+
 	seen := map[string]bool{}
-	for range 2 {
-		name, _ := queue.Get()
-		seen[name] = true
-		queue.Done(name)
-	}
-	assert.True(t, seen["agent-one"] && seen["agent-two"])
+	require.Eventually(t, func() bool {
+		for queue.Len() > 0 {
+			name, _ := queue.Get()
+			seen[name] = true
+			queue.Done(name)
+		}
+		return len(seen) == 4
+	}, 5*time.Second, 10*time.Millisecond, "an agent was never re-checked at all")
 }
