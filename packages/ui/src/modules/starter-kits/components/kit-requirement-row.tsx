@@ -56,8 +56,6 @@ export function KitRequirementRow({
 }: Props) {
   const slug = iconSlugFor(requirement.accepts, templates);
   const title = describeAccepts(requirement.accepts, templateById);
-  const label =
-    requirement.accepts.length === 1 ? `Connect ${title}` : "Connect";
 
   return (
     <li
@@ -112,7 +110,7 @@ export function KitRequirementRow({
             onClick={() => onConnect(requirement.accepts)}
             data-testid={`starter-kit-connect-${requirement.accepts.join("-")}`}
           >
-            {label}
+            Connect
           </Button>
         )}
       </div>
