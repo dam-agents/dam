@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -837,4 +838,29 @@ func TestARestartedRunnerCanRecreateTheMachineThatOwnsTheImage(t *testing.T) {
 		"the machine is recreated: its own spec is not another machine's claim on the image")
 	assert.FileExists(t, filepath.Join(stale, launchFile),
 		"and the tree it could not have booted is replaced by one that says what to run")
+}
+
+// TEST_SCENARIO: a create that is normally tens of milliseconds has been seen taking twenty seconds, and only when the platform is the one asking — by hand it does not reproduce, so nothing can be learned after the fact. smolvm accounts for its own boot in phases, so a slow operation keeps that account in the runner's log where an operator will find it. A normal operation keeps nothing: the same text on every call would bury the one worth reading. The output is redacted like a failure's, because an operator's Secret reaches a guest on that command line.
+func TestASlowMachineOperationKeepsTheRuntimesAccountOfIt(t *testing.T) {
+	var logged bytes.Buffer
+	restore := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(restore) })
+
+	dir := t.TempDir()
+	slow := filepath.Join(dir, "slow")
+	require.NoError(t, os.WriteFile(slow,
+		[]byte("#!/bin/sh\nsleep 2.2\necho 'boot: disks ready elapsed_ms=19000'\necho 'seen s3cret-token'\n"), 0o755))
+	require.NoError(t, (&Smolvm{Bin: slow}).run([]string{"s3cret-token"}, "machine", "start", "-n", "agent-a"))
+
+	assert.Contains(t, logged.String(), "boot: disks ready",
+		"the runtime's own phase timings are what make an unreproducible stall readable")
+	assert.NotContains(t, logged.String(), "s3cret-token", "and a Secret on that command line is not published to reach them")
+
+	logged.Reset()
+	quick := filepath.Join(dir, "quick")
+	require.NoError(t, os.WriteFile(quick, []byte("#!/bin/sh\necho 'boot: disks ready elapsed_ms=19'\n"), 0o755))
+	require.NoError(t, (&Smolvm{Bin: quick}).run(nil, "machine", "start", "-n", "agent-b"))
+	assert.NotContains(t, logged.String(), "boot: disks ready",
+		"an operation that was not slow keeps nothing, or the slow one is lost among them")
 }

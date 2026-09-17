@@ -783,3 +783,21 @@ func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
 	assert.Equal(t, "off", drop,
 		"and the drop is refused in as many words, because a VMM that took one could not read the shared image")
 }
+
+// TEST_SCENARIO: smolvm accounts for its own boot in phases, but only when asked — and the runner is the only thing in a position to ask, since it is what spawns it. Without this the phase timings of a stall nobody can reproduce are never recorded at all. The format is asked for too: these lines land in the platform's own logs, where a line of terminal colour codes is a line nobody greps.
+func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "info", env["RUST_LOG"],
+		"or a slow boot reports no phases, and debug would bury them under every status call")
+	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
+}

@@ -458,6 +458,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
+							Name: "RUST_LOG", Value: "info",
+						}, {
+							Name: "SMOLVM_LOG_FORMAT", Value: "json",
+						}, {
 							Name: "RUNNER_MEMORY_MIB",
 							ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{
 								ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
