@@ -593,23 +593,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      {kit && kit.parameters.length > 0 && (
-        <section className="mb-8">
-          <SectionLabel spaced>Onboarding will ask you for</SectionLabel>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {kit.parameters.map((p) => (
-              <li key={p.name}>
-                {p.name}
-                <span className="text-muted-foreground">
-                  {" "}
-                  ({p.required ? "required" : "optional"})
-                  {p.note ? ` — ${p.note}` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
       {!kit && (
         <ConnectedKnowledgeBasesSetup
           connectionIds={form.connectionIds}

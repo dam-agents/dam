@@ -18,6 +18,3 @@ connections:
   - accepts: [modal]
     required: true
     note: Kernel evaluation runs on Modal cloud GPUs.
-parameters:
-  - name: kernel or benchmark to optimize
-    required: true

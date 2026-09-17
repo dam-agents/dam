@@ -2,6 +2,7 @@ import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
+import type { OnboardingStep } from "../starter-kits/types.js";
 import type {
   agentCreateInputSchema,
   agentKindSchema,
@@ -76,6 +77,7 @@ export interface Agent {
   kbTemplateId?: string;
   starterKit?: string;
   starterKitOnboarded?: string;
+  onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
 }
 

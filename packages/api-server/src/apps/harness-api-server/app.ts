@@ -8,6 +8,7 @@ import type {
 } from "api-server-api";
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
+import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
 import type { RuntimeProgressPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
@@ -70,6 +71,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   markOnboardingComplete: OnboardingMarker;
+  onboardingChecklist: OnboardingChecklistOps;
   runtimeProgress: RuntimeProgressPort;
 }
 
@@ -88,6 +90,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     markOnboardingComplete,
+    onboardingChecklist,
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
@@ -209,6 +212,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agentBinding: "*",
       }).schedules,
     markOnboardingComplete: markOnboardingComplete,
+    onboardingChecklist,
     experimentsServiceFor: (owner) =>
       composeExperimentsForOwner({
         db,

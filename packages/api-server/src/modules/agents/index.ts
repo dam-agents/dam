@@ -4,6 +4,7 @@ export type {
   PresetSeeder,
   ContributionsProgressPort,
   ContributionsProgress,
+  OnboardingChecklistReader,
   RuntimeProgressPort,
 } from "./services/agents-service.js";
 export {

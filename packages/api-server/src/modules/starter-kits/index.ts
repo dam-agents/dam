@@ -22,3 +22,12 @@ export {
   createOnboardingMarker,
   type OnboardingMarker,
 } from "./services/onboarding-marker.js";
+export {
+  createOnboardingChecklist,
+  type OnboardingChecklist,
+  type OnboardingChecklistOps,
+} from "./services/onboarding-checklist.js";
+export {
+  createOnboardingChecklistRepository,
+  type OnboardingChecklistRepository,
+} from "./infrastructure/onboarding-checklist-repository.js";

@@ -24,9 +24,3 @@ connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
 hibernationTimeoutMin: 0
-parameters:
-  - name: target repository
-    required: true
-  - name: campaign goal
-    required: true
-    note: What to optimize and how it is measured.

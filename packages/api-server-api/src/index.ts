@@ -192,8 +192,8 @@ export type {
   StarterKitCatalogEntry,
   StarterKitCategory,
   StarterKitConnectionRequirement,
+  OnboardingStep,
   StarterKitImage,
-  StarterKitParameter,
   StarterKitResources,
   StarterKitSchedule,
   StarterKitScheduleOverride,
@@ -202,6 +202,7 @@ export type {
   StarterKitsService,
 } from "./modules/starter-kits/types.js";
 export {
+  onboardingStepSchema,
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
   starterKitScheduleOverrideSchema,

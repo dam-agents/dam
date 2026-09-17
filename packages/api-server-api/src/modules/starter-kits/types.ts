@@ -9,8 +9,8 @@ import type {
   starterKitCatalogSchema,
   starterKitCategorySchema,
   starterKitConnectionRequirementSchema,
+  onboardingStepSchema,
   starterKitImageSchema,
-  starterKitParameterSchema,
   starterKitResourcesSchema,
   starterKitScheduleOverrideSchema,
   starterKitScheduleTimingSchema,
@@ -34,7 +34,7 @@ export type StarterKitScheduleTiming = z.infer<
   typeof starterKitScheduleTimingSchema
 >;
 export type StarterKitImage = z.infer<typeof starterKitImageSchema>;
-export type StarterKitParameter = z.infer<typeof starterKitParameterSchema>;
+export type OnboardingStep = z.infer<typeof onboardingStepSchema>;
 export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 export type StarterKitCatalogEntry = z.infer<

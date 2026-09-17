@@ -70,12 +70,6 @@ export const resolvedSkillSchema = z.object({
   description: z.string(),
 });
 
-export const starterKitParameterSchema = z.object({
-  name: z.string().min(1),
-  required: z.boolean().default(false),
-  note: z.string().optional(),
-});
-
 export const starterKitEnvVarSchema = z.object({
   name: z.string().min(1),
   value: z.string(),
@@ -152,7 +146,12 @@ export const starterKitSchema = z.object({
   bundledSkills: starterKitBundledSkillsSchema.optional(),
   env: z.array(starterKitEnvVarSchema).default([]),
   hibernationTimeoutMin: z.number().int().min(0).optional(),
-  parameters: z.array(starterKitParameterSchema).default([]),
+});
+
+export const onboardingStepSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+  done: z.boolean(),
 });
 
 export const starterKitCatalogEntrySchema = z.object({

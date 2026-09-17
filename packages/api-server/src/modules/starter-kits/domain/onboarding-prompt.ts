@@ -51,14 +51,6 @@ function channelLine(facts: OnboardingFacts): string {
   return `- Channels bound: ${facts.boundChannels.join(", ")}`;
 }
 
-function parameterLines(kit: StarterKit): string[] {
-  if (kit.parameters.length === 0) return ["(none)"];
-  return kit.parameters.map((p) => {
-    const note = p.note ? ` — ${p.note}` : "";
-    return `- ${p.name} (${p.required ? "required" : "optional"})${note}`;
-  });
-}
-
 function definitionLine(kit: StarterKit): string {
   if (!kit.seed) return "This kit ships no definition repository.";
   const where =
@@ -72,7 +64,7 @@ function definitionLine(kit: StarterKit): string {
 
 function defaultInstruction(kit: StarterKit): string {
   if (!kit.seed)
-    return "Ask the user for the values above, then start the work they describe.";
+    return "Ask the user what only they can tell you — what to work on, where, and how they want it done — then start the work they describe.";
   const root =
     kit.seed.into === "home" ? "your home directory" : "your work directory";
   return `Then follow ONBOARDING.md at the root of ${root}.`;
@@ -94,13 +86,11 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     ...scheduleLines(facts),
     channelLine(facts),
     "",
-    "Values only the user can supply:",
-    ...parameterLines(kit),
-    "",
     instruction,
     ...(holds
       ? [
           "",
+          "Before you ask the user anything, call the set_onboarding_checklist tool with the steps this onboarding will take — one per value only the user can supply, connection to verify, or first run — so they can watch progress in the platform. Tick each step with complete_onboarding_step the moment it is genuinely done, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
           "Every schedule on this agent is HELD until you call the mark_onboarding_complete tool, so nothing fires against a half-configured agent. Call it once, when the configuration above is genuinely in place — not before. If the user leaves onboarding unfinished, leave it uncalled.",
         ]
       : []),

@@ -4,6 +4,7 @@ import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
   WorkspaceFailure,
+  OnboardingStep,
   Agent,
   AgentKind,
   AgentSpec,
@@ -227,6 +228,7 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
+  onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
     id: infra.id,
@@ -252,6 +254,7 @@ export function assembleAgent(
     kbTemplateId: infra.kbTemplateId,
     starterKit: infra.starterKit,
     starterKitOnboarded: infra.starterKitOnboarded,
+    ...(onboardingSteps ? { onboardingSteps } : {}),
     features,
   };
 }

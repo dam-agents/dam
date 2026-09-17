@@ -10,6 +10,7 @@ import {
   type ContributionKind,
   type DriverFailure,
   type WorkspaceFailure,
+  type OnboardingStep,
   type WorkspaceMutationKind,
   type BindTelegramChatResult,
   type BindSlackChannelResult,
@@ -88,6 +89,10 @@ export interface ContributionsProgressPort {
 }
 
 export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
+
+export interface OnboardingChecklistReader {
+  readMany(agentIds: readonly string[]): Promise<Map<string, OnboardingStep[]>>;
+}
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
@@ -448,6 +453,7 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
+  onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -523,12 +529,14 @@ export function createAgentsService(deps: {
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, status, userEnv, templateUpdate] = await Promise.all([
-      deps.listChannelsByAgent(infra.id),
-      safeStatus(infra.id),
-      deps.agentEnvRepo.list(infra.id),
-      templateUpdateFor(infra),
-    ]);
+    const [channels, status, userEnv, templateUpdate, checklists] =
+      await Promise.all([
+        deps.listChannelsByAgent(infra.id),
+        safeStatus(infra.id),
+        deps.agentEnvRepo.list(infra.id),
+        templateUpdateFor(infra),
+        deps.onboardingChecklists.readMany([infra.id]),
+      ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
       channels,
@@ -539,6 +547,7 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
+      checklists.get(infra.id),
     );
   }
 
@@ -625,6 +634,7 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
+        (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
   };
@@ -651,11 +661,12 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap] = await Promise.all([
+      const [failuresMap, envMap, checklistMap] = await Promise.all([
         deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),
+        deps.onboardingChecklists.readMany([...infraIds]),
       ]);
 
       const templateIds = [
@@ -686,6 +697,7 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
+          checklistMap.get(infra.id),
         );
       });
     },

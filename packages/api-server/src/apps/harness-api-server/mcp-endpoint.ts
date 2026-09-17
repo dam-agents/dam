@@ -29,6 +29,8 @@ import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
+import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
+import type { OnboardingStep } from "api-server-api";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
@@ -92,12 +94,27 @@ export async function textTool<T>(
   }
 }
 
+function renderChecklist(steps: OnboardingStep[]): string {
+  const done = steps.filter((s) => s.done).length;
+  return [
+    `Onboarding checklist: ${done}/${steps.length} done`,
+    ...steps.map((s) => `${s.done ? "[x]" : "[ ]"} ${s.id}: ${s.label}`),
+  ].join("\n");
+}
+
 export interface McpSessionDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
   markOnboardingComplete: ((agentId: string) => Promise<void>) | null;
+  onboardingChecklist: {
+    set: (
+      agentId: string,
+      steps: { id: string; label: string }[],
+    ) => Promise<OnboardingStep[]>;
+    complete: (agentId: string, id: string) => Promise<OnboardingStep[]>;
+  } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
@@ -632,6 +649,42 @@ export function createMcpSession(
     );
   }
 
+  if (deps.onboardingChecklist) {
+    const checklist = deps.onboardingChecklist;
+    server.tool(
+      "set_onboarding_checklist",
+      "Declare the steps your onboarding will take, so the user can watch progress in the platform UI. Call it BEFORE asking the user anything, with one short step per value only they can supply, connection to verify, or first run. Call it again to add, rename or drop steps as the conversation evolves — the steps you keep stay ticked. An id is the stable handle you tick later (kebab-case); a label reads as a to-do line.",
+      {
+        steps: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(64),
+              label: z.string().min(1).max(120),
+            }),
+          )
+          .min(1)
+          .max(20),
+      },
+      ({ steps }) =>
+        textTool(
+          "Failed to set the onboarding checklist",
+          () => checklist.set(agentId, steps),
+          renderChecklist,
+        ),
+    );
+    server.tool(
+      "complete_onboarding_step",
+      "Tick one step of your onboarding checklist by id, the moment it is genuinely done — not when you start on it. Idempotent.",
+      { id: z.string().min(1).max(64) },
+      ({ id }) =>
+        textTool(
+          "Failed to complete the onboarding step",
+          () => checklist.complete(agentId, id),
+          renderChecklist,
+        ),
+    );
+  }
+
   server.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
@@ -900,6 +953,7 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
+  onboardingChecklist: OnboardingChecklistOps;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -947,6 +1001,14 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       schedules,
       markOnboardingComplete: verified.onboardingPending
         ? (id) => deps.markOnboardingComplete(id, verified.owner)
+        : null,
+      onboardingChecklist: verified.onboardingPending
+        ? {
+            set: (id, steps) =>
+              deps.onboardingChecklist.set(id, verified.owner, steps),
+            complete: (id, stepId) =>
+              deps.onboardingChecklist.complete(id, verified.owner, stepId),
+          }
         : null,
       artifactLibrary,
       invocations,

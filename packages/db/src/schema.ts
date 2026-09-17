@@ -270,6 +270,7 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
     skillsSnapshot: jsonb("skills_snapshot"),
+    onboardingChecklist: jsonb("onboarding_checklist"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );

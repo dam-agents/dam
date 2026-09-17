@@ -15,8 +15,3 @@ resources:
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
-parameters:
-  - name: target repository or problem definition
-    required: true
-  - name: optimization goal and how it is measured
-    required: true

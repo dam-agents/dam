@@ -16,6 +16,7 @@ import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentsRepository,
   ContributionsProgressPort,
+  OnboardingChecklistReader,
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -82,6 +83,7 @@ export interface ApiServerDeps {
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
+  onboardingChecklists: OnboardingChecklistReader;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;

@@ -434,26 +434,6 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                 />
               </Section>
             )}
-
-            {kit.parameters.length > 0 && (
-              <Section label="Onboarding will ask you for">
-                {kit.parameters.map((p) => (
-                  <Row
-                    key={p.name}
-                    title={p.name}
-                    detail={p.note}
-                    trailing={
-                      <Badge
-                        variant={p.required ? "template" : "muted"}
-                        size="sm"
-                      >
-                        {p.required ? "required" : "optional"}
-                      </Badge>
-                    }
-                  />
-                ))}
-              </Section>
-            )}
           </DialogBody>
 
           <DialogFooter divided className="justify-between">

@@ -141,6 +141,8 @@ import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
   createCatalogSourceFromLocator,
+  createOnboardingChecklist,
+  createOnboardingChecklistRepository,
   createOnboardingMarker,
   createCatalogRefresh,
   createGitRefResolver,
@@ -443,6 +445,7 @@ export async function bootstrap() {
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );
+  const onboardingChecklists = createOnboardingChecklistRepository(db);
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
@@ -646,6 +649,7 @@ export async function bootstrap() {
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
+    onboardingChecklists,
   });
 
   const identityLinkService = createIdentityLinkService({
@@ -1133,6 +1137,7 @@ export async function bootstrap() {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
+      onboardingChecklists,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -1202,6 +1207,7 @@ export async function bootstrap() {
     secretStores,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
+    onboardingChecklists,
     getAgentCapabilities: (agentId) =>
       runtimeDelivery.agentsRuntimeRepo
         .get(agentId)
@@ -1262,6 +1268,22 @@ export async function bootstrap() {
         markAgentOnboarded: (id, at) =>
           agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
       })(agentId, owner),
+    onboardingChecklist: {
+      set: (
+        agentId: string,
+        owner: string,
+        steps: readonly { id: string; label: string }[],
+      ) =>
+        createOnboardingChecklist({
+          agents: harnessAgentsServiceFor(owner),
+          repo: onboardingChecklists,
+        }).set(agentId, steps),
+      complete: (agentId: string, owner: string, id: string) =>
+        createOnboardingChecklist({
+          agents: harnessAgentsServiceFor(owner),
+          repo: onboardingChecklists,
+        }).complete(agentId, id),
+    },
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,

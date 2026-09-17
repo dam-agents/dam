@@ -19,8 +19,3 @@ seed:
 install:
   command: bash bootstrap.sh
 providers: [ibm-litellm, anthropic, openai]
-parameters:
-  - name: what the knowledge base should cover
-    required: true
-  - name: repositories or documents to read from
-    required: false

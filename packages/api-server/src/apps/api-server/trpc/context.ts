@@ -63,6 +63,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     secretStores,
     runtimeMutator,
     contributionsProgress,
+    onboardingChecklists,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -153,6 +154,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsProgress,
+      onboardingChecklists,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({

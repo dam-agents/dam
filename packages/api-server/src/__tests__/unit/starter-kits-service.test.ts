@@ -42,7 +42,6 @@ function kit(overrides: Partial<StarterKit> = {}): StarterKit {
         enabled: false,
       },
     ],
-    parameters: [{ name: "repository to review", required: true }],
     ...overrides,
   });
 }
@@ -849,8 +848,8 @@ describe("starter kits: onboarding turn", () => {
       "Connection (required, connected): github-app or github-pat",
     );
     expect(prompt).toContain('Schedule "benchmark": disabled');
-    expect(prompt).toContain("repository to review (required)");
     expect(prompt).toContain("follow ONBOARDING.md");
+    expect(prompt).toContain("set_onboarding_checklist");
   });
 
   it("reports a suggested connection the user never granted as NOT connected", async () => {
@@ -902,8 +901,9 @@ describe("starter kits: onboarding turn", () => {
   it("a kit whose apply created no schedules is onboarded at create, and its briefing holds nothing", async () => {
     const h = makeHarness({ ...LOADED, kit: kit({ schedules: [] }) });
     const prompt = await onboardingTaskAfterApply(h);
-    expect(prompt).toContain("Values only the user can supply");
+    expect(prompt).toContain("follow ONBOARDING.md");
     expect(prompt).not.toContain("mark_onboarding_complete");
+    expect(prompt).not.toContain("set_onboarding_checklist");
     expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
   });
 

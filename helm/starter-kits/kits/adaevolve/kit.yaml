@@ -18,8 +18,3 @@ connections:
 env:
   - name: SKYDISCOVER_SEARCH
     value: adaevolve
-parameters:
-  - name: target repository or problem definition
-    required: true
-  - name: optimization goal and how it is measured
-    required: true
