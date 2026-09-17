@@ -84,18 +84,18 @@ export function buildServeCommand(deps: {
 
       process.on("SIGHUP", () => {
         void load()
-          .then((next) => {
+          .then(async (next) => {
             if (!next.ok) {
               log.line(
                 `reload rejected, keeping the running manifest: ${next.error}`,
               );
               return;
             }
-            log.line("reload accepted — restart to apply it to running jobs");
-            void transportFor(deps.createTrpc(host)).connect(
+            await transportFor(deps.createTrpc(host)).connect(
               next.value.pushed,
               hostname(),
             );
+            worker.reload(next.value);
           })
           .catch((err: unknown) => log.line(`reload failed: ${String(err)}`));
       });

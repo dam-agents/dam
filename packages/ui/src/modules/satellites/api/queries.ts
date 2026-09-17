@@ -7,7 +7,8 @@ const PRESENCE_POLL_MS = 15_000;
 export function useSatellites() {
   return useQuery({
     ...trpc.satellites.list.queryOptions(),
-    refetchInterval: PRESENCE_POLL_MS,
+    refetchInterval: (query) =>
+      (query.state.data?.length ?? 0) > 0 ? PRESENCE_POLL_MS : false,
     meta: { errorToast: "Couldn't load satellites" },
   });
 }

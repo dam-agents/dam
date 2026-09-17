@@ -246,7 +246,7 @@ The whole subsystem ships behind an experimental feature flag ([features](../arc
 
 ## Security posture
 
-**Matching is authoritative server-side, execution is constrained satellite-side.** The api-server matches `cmd` against the Snapshot before a job is ever queued; the worker re-validates against its own Manifest before spawning, because the machine does not delegate to the cluster the question of what may run on it. Execution is `execFile` with the pattern's own literals, the Manifest's `cwd` and environment, and no caller-supplied value beyond validated arguments.
+**Matching is authoritative server-side, execution is constrained satellite-side.** The api-server matches `cmd` against the Snapshot before a job is ever queued; the worker re-validates against its own Manifest before spawning, because the machine does not delegate to the cluster the question of what may run on it. Execution takes the pattern's own literals, the Manifest's working directory, and no caller-supplied value beyond a validated argument — never a shell. The command inherits the worker's own environment; the Manifest declares none.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent. That is the whole exposure surface, and it is why the grammar cannot express an unbounded argument. Two further controls:
 

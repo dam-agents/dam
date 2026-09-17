@@ -81,11 +81,12 @@ export function createWorker(deps: {
 }) {
   const running = new Map<number, RunningJob>();
   const name = deps.manifest.pushed.name;
+  let manifest = deps.manifest;
   let draining = false;
   let stopped = false;
 
   function startJob(item: WorkItem): void {
-    const command = resolveCommand(deps.manifest, item.cmd);
+    const command = resolveCommand(manifest, item.cmd);
     if (typeof command === "string") {
       deps.log.line(`REFUSED ${name}#${item.sequence}: ${command}`);
       void deps.transport.report({
@@ -100,8 +101,8 @@ export function createWorker(deps: {
     }
 
     const [program, ...args] = item.cmd;
-    const cwd = command.cwd ?? deps.manifest.cwd;
-    const timeoutMs = command.timeoutMs ?? deps.manifest.timeoutMs;
+    const cwd = command.cwd ?? manifest.cwd;
+    const timeoutMs = command.timeoutMs ?? manifest.timeoutMs;
     const startedAt = Date.now();
     deps.log.line(`START ${name}#${item.sequence}: ${item.cmd.join(" ")}`);
 
@@ -211,10 +212,19 @@ export function createWorker(deps: {
 
     cancel,
 
+    reload(next: LocalManifest): void {
+      manifest = next;
+      deps.log.line("reload applied — permitted commands:");
+      for (const command of manifest.commands)
+        deps.log.line(
+          `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
+        );
+    },
+
     async start(): Promise<void> {
-      await deps.transport.connect(deps.manifest.pushed, deps.host);
+      await deps.transport.connect(manifest.pushed, deps.host);
       deps.log.line(`connected as "${name}" — permitted commands:`);
-      for (const command of deps.manifest.commands)
+      for (const command of manifest.commands)
         deps.log.line(
           `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
         );
@@ -234,7 +244,7 @@ export function createWorker(deps: {
             await new Promise((r) => setTimeout(r, 500));
             continue;
           }
-          const capacity = deps.manifest.pushed.maxConcurrent - running.size;
+          const capacity = manifest.pushed.maxConcurrent - running.size;
           try {
             const items = await deps.transport.claim({
               satellite: name,

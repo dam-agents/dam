@@ -216,3 +216,36 @@ run = "./x"
     expect(parsed.ok).toBe(false);
   });
 });
+
+describe("reloading the manifest", () => {
+  it("changes what the worker itself permits, not only what it pushed", async () => {
+    const widened = parseManifest(`
+name = "test-box"
+max_concurrent = 4
+
+[[command]]
+run = "/bin/echo (hello|goodbye)"
+
+[[command]]
+run = "/bin/sleep ^[1-9]$"
+
+[[command]]
+run = "/bin/echo added-by-reload"
+`);
+
+    const { worker, reports, allReported } = harness([
+      runItem(1, ["/bin/echo", "added-by-reload"]),
+    ]);
+    if (widened.ok) worker.reload(widened.value);
+
+    const running = worker.start();
+    await allReported;
+    await worker.drain();
+    await running;
+
+    expect(
+      reports[0]?.outcome.status,
+      "the server matched against the new manifest; the worker must too",
+    ).toBe("done");
+  });
+});
