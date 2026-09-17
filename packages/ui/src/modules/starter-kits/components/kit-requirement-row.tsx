@@ -1,4 +1,4 @@
-import { Information } from "@carbon/icons-react";
+import { Checkmark, Information } from "@carbon/icons-react";
 import type {
   ConnectionTemplateView,
   ConnectionView,
@@ -39,10 +39,11 @@ function iconSlugFor(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One row of a starter kit's connection
  * requirements: what the kit needs and one Connect button, which opens the
- * catalogue narrowed to what the requirement accepts. The granted connections
- * that satisfy it render below as the same cards the catalogue and the
- * Connections page use, each with a cross that takes it off the agent — the
- * row itself keeps no state of its own.
+ * catalogue narrowed to what the requirement accepts; once something
+ * satisfies it the button gives way to a Connected mark. The granted
+ * connections that satisfy it render below as the same cards the catalogue
+ * and the Connections page use, each with a cross that takes it off the
+ * agent — the row itself keeps no state of its own.
  */
 export function KitRequirementRow({
   requirement,
@@ -94,15 +95,26 @@ export function KitRequirementRow({
           )}
         </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0"
-          onClick={() => onConnect(requirement.accepts)}
-          data-testid={`starter-kit-connect-${requirement.accepts.join("-")}`}
-        >
-          {label}
-        </Button>
+        {granted.length > 0 ? (
+          <Badge
+            variant="muted"
+            className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"
+            data-testid={`starter-kit-connected-${requirement.accepts.join("-")}`}
+          >
+            <Checkmark size={16} className="text-success" />
+            Connected
+          </Badge>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => onConnect(requirement.accepts)}
+            data-testid={`starter-kit-connect-${requirement.accepts.join("-")}`}
+          >
+            {label}
+          </Button>
+        )}
       </div>
 
       {granted.length > 0 && (
