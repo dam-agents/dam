@@ -29,6 +29,7 @@ type ChatStopStreamArgs = Parameters<
 export interface BoltSlackGatewayDeps {
   resolveBotToken: SlackTokenResolver;
   setOriginalWorkspace: (teamId: SlackWorkspace) => void;
+  envBotToken: string;
   appToken: string;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
@@ -128,24 +129,29 @@ export function createBoltSlackGateway(
    * its workspace. It is asked before the socket opens, so no message is ever
    * served while the answer is unknown.
    *
+   * The credential is read from the operator's own configuration rather than
+   * through the resolver, because the resolver's answer is what this question
+   * decides: letting it answer before the question is settled would mean
+   * handing out the operator's token under a name whose workspace is unknown.
+   *
    * Not getting an answer is two different states. When Slack answers that the
    * credential is no good, that credential could not have served its workspace
-   * anyway, so it takes only that workspace out of service: the socket opens
-   * and every workspace holding an install row of its own is served as usual.
-   * When Slack does not answer at all, nothing has been learned about the
-   * credential, so this stays a failure to start and the worker retries it.
+   * anyway, so the socket opens and every workspace holding an install row of
+   * its own is served as usual. What goes dark is the empty-string name alone —
+   * a workspace that has since re-authorized keeps being served under the real
+   * team id Slack puts on its events. When Slack does not answer at all,
+   * nothing has been learned about the credential, so this stays a failure to
+   * start and the worker retries it.
    */
   async function learnOriginalWorkspace(bolt: BoltApp): Promise<void> {
-    const envToken = await deps.resolveBotToken(ORIGINAL_WORKSPACE);
-    if (!envToken) throw new Error("no bot token for the original workspace");
     let identity;
     try {
-      identity = await bolt.client.auth.test({ token: envToken });
+      identity = await bolt.client.auth.test({ token: deps.envBotToken });
     } catch (err) {
       const refusal = slackRefusal(err);
       if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
       process.stderr.write(
-        `[slack] the operator's bot token is ${refusal}; its workspace stays unserved until the token is replaced\n`,
+        `[slack] Slack refuses the operator's bot token (${refusal}); bindings that name the original workspace by the empty string are served by nothing until it is replaced\n`,
       );
       return;
     }

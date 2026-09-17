@@ -64,6 +64,15 @@ export interface SlackInstallService {
  * re-authorizing that workspace takes effect and it is never served by two
  * credentials at once.
  *
+ * While that workspace is unknown the empty string names nothing, and nothing
+ * is what it is answered with. Answering it with the operator's credential
+ * instead would look like the pre-multi-workspace behaviour but is the one
+ * thing that breaks the invariant above: the only way the workspace can be
+ * unknown is that Slack refused the credential that names it, and if that
+ * workspace has since re-authorized then its real team id reaches the live row
+ * while the empty string reaches a refused token — one workspace on two
+ * credentials, which is exactly what the single key exists to prevent.
+ *
  * A workspace with no row is served by nothing. The operator's credential
  * answers for the workspace it was issued for and no other, so a workspace that
  * installed the app without this platform's consent — or whose install was
@@ -99,7 +108,7 @@ export function createSlackInstallService(
 
     async resolveBotToken(teamId: SlackWorkspace): Promise<string | null> {
       const key = teamId === ORIGINAL_WORKSPACE ? originalTeamId : teamId;
-      if (key === null) return deps.envBotToken;
+      if (key === null) return null;
 
       const cached = tokens.get(key);
       if (cached && now() - cached.at < TOKEN_CACHE_TTL_MS) return cached.token;

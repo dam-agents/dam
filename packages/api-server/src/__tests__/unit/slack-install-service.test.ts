@@ -103,16 +103,23 @@ describe("slack install service — which credential answers", () => {
   });
 
   /**
-   * TEST_SCENARIO: The gateway asks for the operator's token in order to learn
-   * which workspace it belongs to, which happens before it has been told. That
-   * one call has to answer, or the gateway could never start — and it is the
-   * only call that can reach this state, because the gateway opens its socket
-   * afterwards.
+   * TEST_SCENARIO: While the original workspace is unknown the empty string
+   * names nothing, so nothing answers it — not even the operator's own token.
+   * The state is only reachable when Slack has refused that token, and a
+   * workspace that re-authorized in the meantime is served under its real team
+   * id; handing the refused token to the empty string would put that one
+   * workspace on two credentials, which is what the shared key prevents.
    */
-  it("answers the empty workspace with the operator's token before it has been told", async () => {
-    const svc = service();
+  it("serves nothing under the empty workspace while it has not been told which one that is", async () => {
+    const svc = service({
+      installs: {
+        [ORIGINAL_TEAM]: installRow(ORIGINAL_TEAM, "secret-original"),
+      },
+      secrets: { "secret-original": "xoxb-reauthorized" },
+    });
 
-    expect(await svc.resolveBotToken(ORIGINAL_WORKSPACE)).toBe(ENV_TOKEN);
+    expect(await svc.resolveBotToken(ORIGINAL_WORKSPACE)).toBeNull();
+    expect(await svc.resolveBotToken(ORIGINAL_TEAM)).toBe("xoxb-reauthorized");
   });
 
   /**

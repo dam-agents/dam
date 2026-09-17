@@ -710,6 +710,7 @@ export async function bootstrap() {
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
           setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
+          envBotToken: slackTokens.botToken,
           appToken: slackTokens.appToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
