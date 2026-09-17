@@ -39,8 +39,9 @@ export function CreateAgentInline({ onCreated }: Props) {
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName("coding-agent", name, setName);
 
+  const vmAnswered = flags !== undefined && install !== undefined;
   const offerVm =
-    (flags?.["vm-sandboxes"] ?? false) && (install?.virtualization ?? false);
+    vmAnswered && flags["vm-sandboxes"] === true && install.virtualization;
 
   const selectedTemplateId =
     templateId ??

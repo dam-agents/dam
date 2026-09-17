@@ -50,7 +50,7 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.nodeSelector).toBeUndefined();
   });
 
-  it("leaves a template's own backend alone when the caller asks for nothing", () => {
+  it("leaves the agent on a container when the caller asks for nothing", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       { ...baseTemplate, runtimeClassName: "kata" },
