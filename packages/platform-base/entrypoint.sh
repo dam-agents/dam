@@ -64,9 +64,9 @@ if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
 	#
 	# Intentional simplification: nothing bounds a *single* boot's file while it
 	# is being written, so an agent that logs without pause can still fill its
-	# disk; only the boot after it trims. The upgrade path is logrotate, which
-	# the image now has a directory for, once something in a machine can run it
-	# periodically.
+	# disk; only the boot after it trims. The upgrade path is logrotate, for
+	# which the image carries a directory but no binary, once something in a
+	# machine can run it periodically.
 	runtime_log=/workspace/log/agent-runtime.log
 	runtime_log_cap=33554432
 	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
