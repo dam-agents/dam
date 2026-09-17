@@ -219,7 +219,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
+    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -230,8 +230,20 @@ export function createMcpSession(
           "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
         ),
       attachment: attachmentInput,
+      unfurlLinks: z
+        .boolean()
+        .optional()
+        .describe(
+          "Slack only: whether Slack should unfurl links. Omit for Slack's default behavior.",
+        ),
+      unfurlMedia: z
+        .boolean()
+        .optional()
+        .describe(
+          "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
+        ),
     },
-    async ({ channel, text, chatId, attachment }) => {
+    async ({ channel, text, chatId, attachment, unfurlLinks, unfurlMedia }) => {
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const resolved = loaded?.resolved;
@@ -243,6 +255,8 @@ export function createMcpSession(
         {
           ...(chatId ? { conversationId: chatId } : {}),
           ...(resolved ? { attachment: resolved } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       );
       const failed = "error" in result;
@@ -258,6 +272,8 @@ export function createMcpSession(
           hasAttachment: attachmentAudit !== undefined,
           ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
           textLength: text.length,
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
@@ -383,7 +399,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
       attachment: attachmentInput,
@@ -399,8 +415,27 @@ export function createMcpSession(
         .describe(
           'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Use it when the thread is old enough that people watching the channel would otherwise miss the reply; leave it off for ordinary back-and-forth, which would spam the channel.',
         ),
+      unfurlLinks: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether Slack should unfurl links. Omit for Slack's default behavior.",
+        ),
+      unfurlMedia: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether Slack should unfurl media. Omit for Slack's default behavior.",
+        ),
     },
-    async ({ text, attachment, threadTs, alsoSendToChannel }) => {
+    async ({
+      text,
+      attachment,
+      threadTs,
+      alsoSendToChannel,
+      unfurlLinks,
+      unfurlMedia,
+    }) => {
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
@@ -411,6 +446,8 @@ export function createMcpSession(
           ...(threadTs ? { threadTs } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       );
       const failed = "error" in result;
@@ -425,6 +462,8 @@ export function createMcpSession(
           action: "reply",
           textLength: text.length,
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           hasAttachment: loaded !== undefined,
           ...(loaded ? { attachment: loaded.audit } : {}),
         },

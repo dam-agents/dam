@@ -131,6 +131,24 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toMatchObject([{ channel: BOUND, text: "hello" }]);
   });
 
+  it("passes explicit unfurl controls through to Slack while omitting defaults", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    await h.post("no cards", { unfurlLinks: false, unfurlMedia: false });
+    await h.post("Slack defaults");
+
+    expect(h.messages()).toMatchObject([
+      {
+        channel: BOUND,
+        text: "no cards",
+        unfurlLinks: false,
+        unfurlMedia: false,
+      },
+      { channel: BOUND, text: "Slack defaults" },
+    ]);
+    expect(h.messages()[1]).not.toHaveProperty("unfurlLinks");
+    expect(h.messages()[1]).not.toHaveProperty("unfurlMedia");
+  });
+
   it("bound-channel chatId short-circuits — works even when discovery knows nothing", async () => {
     const h = harness({ boundChannelId: BOUND, channels: [] });
     expect(await h.post("hello", { conversationId: BOUND })).toEqual({
