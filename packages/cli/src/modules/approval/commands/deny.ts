@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { printServiceError } from "../../shared/trpc/print.js";
+import { takesStandingVerdict } from "./standing-verdict.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -44,7 +45,9 @@ export function buildDenyCommand(deps: {
         });
 
         const service = deps.createApprovalService(host);
-        const result = await (opts.once
+        const standing =
+          !opts.once && (await takesStandingVerdict(service, id));
+        const result = await (opts.once || !standing
           ? service.dismiss(id)
           : service.denyForever(id));
         if (!result.ok) {

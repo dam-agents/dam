@@ -78,21 +78,22 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
           expiresAt: new Date(Date.now() + EVENT_TTL_MS),
         },
       ]);
+    } catch (err) {
+      deps.log(
+        `[satellites] could not write the outcome turn for ${agentId}: ${String(err)}`,
+      );
+      await releaseClaim(deps, claimed);
+      return false;
+    }
+
+    try {
       await deps.enqueue(agentId);
     } catch (err) {
       deps.log(
-        `[satellites] could not enqueue the outcome wake for ${agentId}: ${String(err)}`,
+        `[satellites] ${agentId} not enqueued; the outbox sweep will carry it: ${String(err)}`,
       );
-      for (const satellite of new Set(claimed.map((job) => job.satellite)))
-        await deps.repo.releaseOutcomes(
-          claimed[0]!.owner,
-          satellite,
-          claimed
-            .filter((job) => job.satellite === satellite)
-            .map((job) => job.sequence),
-        );
-      return false;
     }
+
     try {
       await deps.wakeAgent(agentId);
       await deps.repo.markWoken(
@@ -110,24 +111,44 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Hourly retry for outcomes that have not reached
- * their Agent. An Agent parked over budget cannot wake, so its turn waits in the
- * outbox and nothing else would start it. A claimed outcome whose wake failed is
- * retried here rather than announced again, so the Agent gets one turn late
- * instead of a second event.
+ * UNIT_BOUNDARY_DESCRIPTION: Hourly recovery for outcomes that have not reached
+ * their Agent, and the two states need opposite treatment. An outcome nobody has
+ * claimed has no turn written for it, so waking would bring the Agent up with
+ * nothing to read: it is announced. An outcome already claimed has its turn in
+ * the outbox and only lacks a running Agent — typically one parked over budget —
+ * so it is re-woken, never announced again, because one job owes one turn.
  */
-export function createOutcomeWakeRetry(deps: OutcomeDeliveryDeps) {
+export function createOutcomeWakeRetry(
+  deps: OutcomeDeliveryDeps,
+  deliver: (agentId: string) => Promise<boolean>,
+) {
   return async (): Promise<number> => {
     const agents = await deps.repo.agentsWithPendingOutcomes();
     for (const agentId of agents) {
-      const pending = await deps.repo.undeliveredFor(agentId);
+      if (await deliver(agentId)) continue;
+      const claimed = await deps.repo.undeliveredFor(agentId);
+      if (claimed.length === 0) continue;
       try {
         await deps.wakeAgent(agentId);
       } catch {
         continue;
       }
-      await deps.repo.markWoken(agentId, pending);
+      await deps.repo.markWoken(agentId, claimed);
     }
     return agents.length;
   };
+}
+
+async function releaseClaim(
+  deps: OutcomeDeliveryDeps,
+  claimed: JobRow[],
+): Promise<void> {
+  for (const satellite of new Set(claimed.map((job) => job.satellite)))
+    await deps.repo.releaseOutcomes(
+      claimed[0]!.owner,
+      satellite,
+      claimed
+        .filter((job) => job.satellite === satellite)
+        .map((job) => job.sequence),
+    );
 }

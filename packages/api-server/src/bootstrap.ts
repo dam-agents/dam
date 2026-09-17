@@ -473,8 +473,12 @@ export async function bootstrap() {
   await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
     satellitesBoot.sweepLeases().then(() => undefined),
   );
+  const retrySatelliteOutcomes = createOutcomeWakeRetry(
+    outcomeDeliveryDeps,
+    deliverSatelliteOutcome,
+  );
   await periodicJobs.register("satellite-outcome-wake-retry", 3_600_000, () =>
-    createOutcomeWakeRetry(outcomeDeliveryDeps)().then(() => undefined),
+    retrySatelliteOutcomes().then(() => undefined),
   );
 
   const contributionsProgressPort = {

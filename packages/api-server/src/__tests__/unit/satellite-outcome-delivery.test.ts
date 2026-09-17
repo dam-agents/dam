@@ -230,22 +230,25 @@ describe("an agent that could not be woken", () => {
     ).toEqual([]);
 
     wakeWorks = true;
-    const retry = createOutcomeWakeRetry({
-      repo: {
-        agentsWithPendingOutcomes: async () => ["agent-1"],
-        undeliveredFor: async () => [{ satellite: "gpu-box", sequence: 7 }],
-        markWoken: async (_agentId: string, refs: never[]) => {
-          stamped.push(refs);
+    const retry = createOutcomeWakeRetry(
+      {
+        repo: {
+          agentsWithPendingOutcomes: async () => ["agent-1"],
+          undeliveredFor: async () => [{ satellite: "gpu-box", sequence: 7 }],
+          markWoken: async (_agentId: string, refs: never[]) => {
+            stamped.push(refs);
+          },
+        } as never,
+        bump: async () => 1,
+        enqueue: async () => {},
+        wakeAgent: async (agentId) => {
+          woken.push(agentId);
         },
-      } as never,
-      bump: async () => 1,
-      enqueue: async () => {},
-      wakeAgent: async (agentId) => {
-        woken.push(agentId);
+        spillLog: async () => null,
+        log: () => {},
       },
-      spillLog: async () => null,
-      log: () => {},
-    });
+      async () => false,
+    );
 
     await retry();
     expect(
@@ -253,5 +256,101 @@ describe("an agent that could not be woken", () => {
       "the hourly sweep must reach it once the budget frees",
     ).toEqual(["agent-1"]);
     expect(stamped[0]).toEqual([{ satellite: "gpu-box", sequence: 7 }]);
+  });
+});
+
+describe("one job owes one turn", () => {
+  it("keeps the claim when the turn was written but the enqueue failed", async () => {
+    const released: number[] = [];
+    const deliver = createOutcomeDelivery({
+      repo: {
+        claimUndeliveredOutcomes: async () => [job()],
+        markWoken: async () => {},
+        releaseOutcomes: async (
+          _o: string,
+          _s: string,
+          sequences: number[],
+        ) => {
+          released.push(...sequences);
+        },
+      } as never,
+      bump: async () => 1,
+      enqueue: async () => {
+        throw new Error("redis is down");
+      },
+      wakeAgent: async () => {},
+      spillLog: async () => null,
+      log: () => {},
+    });
+
+    expect(await deliver("agent-1")).toBe(true);
+    expect(
+      released,
+      "the event is durable once bump commits; releasing would announce it twice",
+    ).toEqual([]);
+  });
+
+  it("releases the claim when no turn was written at all", async () => {
+    const released: number[] = [];
+    const deliver = createOutcomeDelivery({
+      repo: {
+        claimUndeliveredOutcomes: async () => [job()],
+        markWoken: async () => {},
+        releaseOutcomes: async (
+          _o: string,
+          _s: string,
+          sequences: number[],
+        ) => {
+          released.push(...sequences);
+        },
+      } as never,
+      bump: async () => {
+        throw new Error("postgres is down");
+      },
+      enqueue: async () => {},
+      wakeAgent: async () => {},
+      spillLog: async () => null,
+      log: () => {},
+    });
+
+    expect(await deliver("agent-1")).toBe(false);
+    expect(
+      released,
+      "nothing was written, so it must be announceable again",
+    ).toEqual([7]);
+  });
+});
+
+describe("the hourly sweep", () => {
+  it("announces an outcome nobody claimed, rather than waking an agent with nothing to read", async () => {
+    const announced: string[] = [];
+    const woken: string[] = [];
+    const retry = createOutcomeWakeRetry(
+      {
+        repo: {
+          agentsWithPendingOutcomes: async () => ["agent-1"],
+          undeliveredFor: async () => [],
+          markWoken: async () => {},
+        } as never,
+        bump: async () => 1,
+        enqueue: async () => {},
+        wakeAgent: async (agentId) => {
+          woken.push(agentId);
+        },
+        spillLog: async () => null,
+        log: () => {},
+      },
+      async (agentId) => {
+        announced.push(agentId);
+        return true;
+      },
+    );
+
+    await retry();
+    expect(announced).toEqual(["agent-1"]);
+    expect(
+      woken,
+      "announcing already wakes; a bare wake would find nothing",
+    ).toEqual([]);
   });
 });
