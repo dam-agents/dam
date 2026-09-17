@@ -9,7 +9,6 @@ import (
 	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,9 +21,20 @@ import (
 const (
 	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
 	vmReadinessPoll   = 3 * time.Second
-	vmStartingPoll    = 500 * time.Millisecond
-	vmStartingWindow  = 20 * time.Second
-	vmHealthPoll      = time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how closely a machine is watched while it
+	// UNIT_BOUNDARY_DESCRIPTION: starts, and for how long. The window runs
+	// UNIT_BOUNDARY_DESCRIPTION: from the moment the runner asked the machine
+	// UNIT_BOUNDARY_DESCRIPTION: to start, which it reports, and not from the
+	// UNIT_BOUNDARY_DESCRIPTION: Ready condition's own transition: a wake
+	// UNIT_BOUNDARY_DESCRIPTION: leaves that condition False and changes only
+	// UNIT_BOUNDARY_DESCRIPTION: its reason, so the stamp does not move, and a
+	// UNIT_BOUNDARY_DESCRIPTION: woken agent would be watched no more closely
+	// UNIT_BOUNDARY_DESCRIPTION: than one stuck for hours — which is the case
+	// UNIT_BOUNDARY_DESCRIPTION: this exists for.
+	vmStartingPoll   = 500 * time.Millisecond
+	vmStartingWindow = 20 * time.Second
+
+	vmHealthPoll = time.Minute
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 )
@@ -238,14 +248,6 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine that has just been asked to start is about to become ready, and the wait between it answering and the platform saying so is the last of a wake the user feels. So it is watched closely for as long as a start plausibly takes and loosely after that: an agent still not ready much later is not about to be, and polling it hard only costs the runner a subprocess each time. The clock is the Ready condition's own last transition, so a controller that restarts resumes the same judgement rather than watching every agent closely at once.
-func notReadyFor(agent *apiv1.Agent) time.Duration {
-	if c := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady); c != nil && !c.LastTransitionTime.IsZero() {
-		return time.Since(c.LastTransitionTime.Time)
-	}
-	return time.Since(agent.CreationTimestamp.Time)
-}
-
 func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {
 	msg := st.Message
 	if !st.Ready && msg == "" {
@@ -255,7 +257,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		poll := vmHealthPoll
 		if !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
 			poll = vmReadinessPoll
-			if notReadyFor(agent) < vmStartingWindow {
+			if starting := time.Duration(st.StartingMs) * time.Millisecond; starting > 0 && starting < vmStartingWindow {
 				poll = vmStartingPoll
 			}
 		}

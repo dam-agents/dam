@@ -21,6 +21,13 @@ type MachineStatus struct {
 	CPUs      int    `json:"cpus,omitempty"`
 	MemoryMiB int    `json:"memoryMiB,omitempty"`
 	Message   string `json:"message,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how long ago this runner last asked the
+	// UNIT_BOUNDARY_DESCRIPTION: machine to start, in milliseconds; zero when
+	// UNIT_BOUNDARY_DESCRIPTION: it has not asked since it came up. A machine
+	// UNIT_BOUNDARY_DESCRIPTION: asked recently is about to become ready or
+	// UNIT_BOUNDARY_DESCRIPTION: fail, and is worth watching closely until one
+	// UNIT_BOUNDARY_DESCRIPTION: or the other.
+	StartingMs int64 `json:"startingMs,omitempty"`
 }
 
 const (
