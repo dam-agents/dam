@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { sizeInMi } from "../../budgets/lib/slots.js";
-import { useFeatures } from "../../features/api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+} from "../../features/api/queries.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -39,6 +42,10 @@ export function CodingAgentSetupView() {
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
   const { data: flags } = useFeatures();
+  const { data: install } = useInstallCapabilities();
+  // UNIT_BOUNDARY_DESCRIPTION: the user's own switch and the install's support for microVMs are different questions, and the answer to the second is the server's. Offering the choice on an install that cannot honour it buys a refusal at the end of a filled-in form. The stored draft outlives either answer, so what is submitted is read through them rather than from the draft alone — a switch left on before the feature was hidden must not still be creating microVMs.
+  const offerVm =
+    (flags?.["vm-sandboxes"] ?? false) && (install?.virtualization ?? false);
 
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -65,7 +72,7 @@ export function CodingAgentSetupView() {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
-    vm: form.vm,
+    vm: offerVm && form.vm,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
@@ -126,7 +133,7 @@ export function CodingAgentSetupView() {
         onSubmit={() => void create()}
       />
 
-      {flags?.["vm-sandboxes"] && (
+      {offerVm && (
         <IsolationSetupSection vm={form.vm} onChange={(vm) => update({ vm })} />
       )}
 

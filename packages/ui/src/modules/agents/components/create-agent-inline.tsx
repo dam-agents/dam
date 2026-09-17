@@ -9,7 +9,10 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../types.js";
-import { useFeatures } from "../../features/api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+} from "../../features/api/queries.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -28,12 +31,16 @@ interface Props {
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
   const { data: flags } = useFeatures();
+  const { data: install } = useInstallCapabilities();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [vm, setVm] = useState(false);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName("coding-agent", name, setName);
+
+  const offerVm =
+    (flags?.["vm-sandboxes"] ?? false) && (install?.virtualization ?? false);
 
   const selectedTemplateId =
     templateId ??
@@ -45,7 +52,7 @@ export function CreateAgentInline({ onCreated }: Props) {
     templateId: selectedTemplateId,
     providerRef,
     egressPreset: "trusted",
-    vm,
+    vm: offerVm && vm,
   };
   const canCreate = isCreateAgentDraftComplete(draft);
 
@@ -82,7 +89,7 @@ export function CreateAgentInline({ onCreated }: Props) {
         </Select>
       </FormField>
 
-      {flags?.["vm-sandboxes"] && (
+      {offerVm && (
         <div className="flex items-center gap-3 text-sm">
           <Switch
             checked={vm}

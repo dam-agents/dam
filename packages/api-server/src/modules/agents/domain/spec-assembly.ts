@@ -56,7 +56,7 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: opts.vm ? { type: "vm" } : tmplSpec.backend,
+    backend: opts.vm ? { type: "vm" } : undefined,
     runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
     nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
   };

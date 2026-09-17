@@ -144,15 +144,15 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- The vm backend (`backend.type: vm` on a template): the agent runs as a
+# -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
 # vm-runner agent plus smolvm. The controller drives its machine API (TLS,
 # bearer token; both minted by the controller); the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
-# machine may reach nothing but it. Off = vm-backend templates are not
-# rendered and vm agents fail reconcile. One runner per owner; per-user fair-use
+# machine may reach nothing but it. Off = the create refuses the vm backend
+# and existing vm agents fail reconcile. One runner per owner; per-user fair-use
 # limits for machines are the upgrade path.
 virtualization:
   enabled: false

@@ -6,12 +6,8 @@ interface Catalogue {
   harnesses: TemplateView[];
 }
 
-export function imageCatalogue(
-  templates: TemplateView[],
-  { vmFeatureEnabled }: { vmFeatureEnabled: boolean },
-): Catalogue {
-  const visible = vmFeatureEnabled ? templates : templates.filter((t) => !t.vm);
-  return { harnesses: visible.filter((t) => t.category === "harness") };
+export function imageCatalogue(templates: TemplateView[]): Catalogue {
+  return { harnesses: templates.filter((t) => t.category === "harness") };
 }
 
 export function defaultHarnessId(harnesses: TemplateView[]): string | null {
