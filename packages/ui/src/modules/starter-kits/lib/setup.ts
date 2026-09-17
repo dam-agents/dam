@@ -207,41 +207,6 @@ function familiesIn(
   return out;
 }
 
-export interface ConnectTarget {
-  key: string;
-  label: string;
-  providerId: string;
-  templateId?: string;
-}
-
-export function connectTargets(
-  requirement: StarterKitConnectionRequirement,
-  templates: TemplateIndex,
-): ConnectTarget[] {
-  const families = familiesIn(templates);
-  const out: ConnectTarget[] = [];
-  const seen = new Set<string>();
-  for (const id of requirement.accepts) {
-    const family = families.get(id);
-    if (family) {
-      if (seen.has(family.id)) continue;
-      seen.add(family.id);
-      out.push({ key: family.id, label: family.title, providerId: family.id });
-      continue;
-    }
-    const template = templates.get(id);
-    if (!template || seen.has(id)) continue;
-    seen.add(id);
-    out.push({
-      key: id,
-      label: template.name,
-      providerId: template.family?.id ?? id,
-      templateId: id,
-    });
-  }
-  return out;
-}
-
 export function describeAccepts(
   ids: readonly string[],
   templates: TemplateIndex,
@@ -298,40 +263,6 @@ export function accepts(
     requirement.accepts.includes(connection.templateId) ||
     (familyId !== undefined && requirement.accepts.includes(familyId))
   );
-}
-
-export type RequirementChoiceMode = "connect" | "use" | "pick" | "chosen";
-
-export interface RequirementChoice<G> {
-  mode: RequirementChoiceMode;
-  chosen: G[];
-  candidates: GrantedConnection[];
-  switchTo: GrantedConnection[];
-}
-
-export function requirementChoice<G extends { id: string; templateId: string }>(
-  requirement: StarterKitConnectionRequirement,
-  owned: readonly GrantedConnection[],
-  granted: readonly G[],
-  templates: TemplateIndex,
-): RequirementChoice<G> {
-  const chosen = granted.filter((c) => accepts(requirement, c, templates));
-  const candidates = ownedMatches(requirement, owned, templates);
-  const unchosen = candidates.filter((c) => !chosen.some((g) => g.id === c.id));
-  const mode: RequirementChoiceMode =
-    chosen.length > 0
-      ? "chosen"
-      : candidates.length === 0
-        ? "connect"
-        : candidates.length === 1
-          ? "use"
-          : "pick";
-  return {
-    mode,
-    chosen,
-    candidates,
-    switchTo: chosen.length === 1 ? unchosen : [],
-  };
 }
 
 export function kitConnectionIds(

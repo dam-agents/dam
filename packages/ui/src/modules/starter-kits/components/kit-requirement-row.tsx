@@ -1,4 +1,4 @@
-import { Information, OverflowMenuVertical } from "@carbon/icons-react";
+import { Information } from "@carbon/icons-react";
 import type {
   ConnectionTemplateView,
   ConnectionView,
@@ -7,35 +7,22 @@ import type {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Select } from "@/components/ui/select";
 
+import type { RowMaintenanceActions } from "../../connections/components/catalog-connection-row.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { GithubAppInstallButton } from "../../connections/components/github-app-install-hint.js";
-import { GithubStepsCallout } from "../../connections/forms/github-steps-callout.js";
-import {
-  type ConnectTarget,
-  connectTargets,
-  describeAccepts,
-  type GrantedConnection,
-  requirementChoice,
-} from "../lib/setup.js";
+import { ConnectionRowCard } from "../../connections/components/connection-row-card.js";
+import { describeAccepts } from "../lib/setup.js";
 
 interface Props {
   requirement: StarterKitConnectionRequirement;
-  owned: readonly GrantedConnection[];
   granted: readonly ConnectionView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
   templates: readonly ConnectionTemplateView[];
-  onUse: (connectionId: string) => void;
+  maintenance: (
+    connection: ConnectionView,
+  ) => RowMaintenanceActions | undefined;
   onRevoke: (connectionId: string) => void;
-  onConnect: (target: ConnectTarget) => void;
+  onConnect: (accepts: readonly string[]) => void;
 }
 
 function iconSlugFor(
@@ -49,68 +36,27 @@ function iconSlugFor(
   )?.iconSlug;
 }
 
-function nameOf(connection: { id: string; name?: string }): string {
-  return connection.name ?? connection.id;
-}
-
-function ChosenConnection({
-  connection,
-  templateById,
-  showTemplate,
-}: {
-  connection: ConnectionView;
-  templateById: ReadonlyMap<string, ConnectionTemplateView>;
-  showTemplate: boolean;
-}) {
-  return (
-    <span className="flex min-w-0 items-center gap-2 rounded-md border border-kit-line bg-kit-tint py-1.5 pl-2.5 pr-1.5">
-      <ConnectionIcon
-        iconSlug={templateById.get(connection.templateId)?.iconSlug}
-        alt=""
-        size={16}
-        className="shrink-0 text-foreground/80"
-      />
-      <span className="truncate text-sm text-foreground">
-        {nameOf(connection)}
-      </span>
-      {showTemplate && (
-        <Badge variant="muted" size="sm">
-          {templateById.get(connection.templateId)?.name ??
-            connection.templateId}
-        </Badge>
-      )}
-      <GithubAppInstallButton connection={connection} />
-    </span>
-  );
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One row of a starter kit's connection
- * requirements. With nothing connected it offers the connect buttons; with one
- * candidate it uses that one; with several it asks which. Everything else the
- * requirement can reach sits in the overflow menu, so the row keeps one
- * primary action.
+ * requirements: what the kit needs and one Connect button, which opens the
+ * catalogue narrowed to what the requirement accepts. The granted connections
+ * that satisfy it render below as the same cards the catalogue and the
+ * Connections page use, each with a cross that takes it off the agent — the
+ * row itself keeps no state of its own.
  */
 export function KitRequirementRow({
   requirement,
-  owned,
   granted,
   templateById,
   templates,
-  onUse,
+  maintenance,
   onRevoke,
   onConnect,
 }: Props) {
   const slug = iconSlugFor(requirement.accepts, templates);
   const title = describeAccepts(requirement.accepts, templateById);
-  const { mode, chosen, candidates, switchTo } = requirementChoice(
-    requirement,
-    owned,
-    granted,
-    templateById,
-  );
-  const targets = connectTargets(requirement, templateById);
-  const showMenu = mode !== "connect";
+  const label =
+    requirement.accepts.length === 1 ? `Connect ${title}` : "Connect";
 
   return (
     <li
@@ -148,118 +94,31 @@ export function KitRequirementRow({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {chosen.map((c) => (
-            <ChosenConnection
-              key={c.id}
-              connection={c}
-              templateById={templateById}
-              showTemplate={targets.length > 1}
-            />
-          ))}
-
-          {mode === "use" && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => onUse(candidates[0].id)}
-              data-testid={`starter-kit-use-${candidates[0].id}`}
-            >
-              Use {nameOf(candidates[0])}
-            </Button>
-          )}
-
-          {mode === "pick" && (
-            <div className="w-[220px]">
-              <Select
-                size="sm"
-                value=""
-                aria-label={`Connection for ${title}`}
-                data-testid={`starter-kit-pick-${requirement.accepts.join("-")}`}
-                onChange={(e) => e.target.value && onUse(e.target.value)}
-              >
-                <option value="">Choose a connection…</option>
-                {candidates.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {nameOf(c)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-
-          {mode === "connect" &&
-            targets.map((t) => (
-              <Button
-                key={t.key}
-                size="sm"
-                variant="outline"
-                onClick={() => onConnect(t)}
-                data-testid={`starter-kit-connect-${t.key}`}
-              >
-                Connect {t.label}
-              </Button>
-            ))}
-
-          {showMenu && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`More options for ${title}`}
-                  data-testid={`starter-kit-more-${requirement.accepts.join("-")}`}
-                >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {switchTo.map((c) => (
-                  <DropdownMenuItem
-                    key={`use-${c.id}`}
-                    onSelect={() => {
-                      onRevoke(chosen[0].id);
-                      onUse(c.id);
-                    }}
-                  >
-                    Use {nameOf(c)} instead
-                  </DropdownMenuItem>
-                ))}
-                {targets.map((t) => (
-                  <DropdownMenuItem
-                    key={`connect-${t.key}`}
-                    onSelect={() => onConnect(t)}
-                  >
-                    Connect another {t.label}
-                  </DropdownMenuItem>
-                ))}
-                {chosen.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator className="-mx-1" />
-                    {chosen.map((c) => (
-                      <DropdownMenuItem
-                        key={`remove-${c.id}`}
-                        className="text-destructive"
-                        onSelect={() => onRevoke(c.id)}
-                      >
-                        Remove {nameOf(c)}
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={() => onConnect(requirement.accepts)}
+          data-testid={`starter-kit-connect-${requirement.accepts.join("-")}`}
+        >
+          {label}
+        </Button>
       </div>
 
-      {chosen.map((c) => (
-        <GithubStepsCallout
-          key={`steps-${c.id}`}
-          templateId={c.templateId}
-          className="mt-3"
-        />
-      ))}
+      {granted.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-3">
+          {granted.map((connection) => (
+            <li key={connection.id}>
+              <ConnectionRowCard
+                connection={connection}
+                template={templateById.get(connection.templateId)}
+                maintenance={maintenance(connection)}
+                onRemove={() => onRevoke(connection.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

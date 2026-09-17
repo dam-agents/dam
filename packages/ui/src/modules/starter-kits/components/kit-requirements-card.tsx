@@ -5,35 +5,30 @@ import type {
   StarterKitView,
 } from "api-server-api";
 
-import {
-  connectionRequirements,
-  type ConnectTarget,
-  type GrantedConnection,
-} from "../lib/setup.js";
+import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
+import { accepts, connectionRequirements } from "../lib/setup.js";
 import { KitRequirementRow } from "./kit-requirement-row.js";
 
 interface Props {
   kit: StarterKitView;
-  owned: readonly GrantedConnection[];
   granted: readonly ConnectionView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
   templates: readonly ConnectionTemplateView[];
-  onUse: (connectionId: string) => void;
   onRevoke: (connectionId: string) => void;
-  onConnect: (target: ConnectTarget) => void;
+  onConnect: (accepts: readonly string[]) => void;
 }
 
 export function KitRequirementsCard({
   kit,
-  owned,
   granted,
   templateById,
   templates,
-  onUse,
   onRevoke,
   onConnect,
 }: Props) {
   const why = kit.connections.find((c) => c.required && c.note)?.note;
+  const maintenance = useConnectionMaintenance();
 
   return (
     <div className="overflow-hidden rounded-lg border border-kit-line bg-kit-surface">
@@ -53,16 +48,18 @@ export function KitRequirementsCard({
           <KitRequirementRow
             key={requirement.accepts.join("|")}
             requirement={requirement}
-            owned={owned}
-            granted={granted}
+            granted={granted.filter((c) =>
+              accepts(requirement, c, templateById),
+            )}
             templateById={templateById}
             templates={templates}
-            onUse={onUse}
+            maintenance={maintenance.rowActions}
             onRevoke={onRevoke}
             onConnect={onConnect}
           />
         ))}
       </ul>
+      <ConnectionMaintenanceDialog maintenance={maintenance} />
     </div>
   );
 }

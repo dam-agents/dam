@@ -10,7 +10,6 @@ import {
   allowedHarnesses,
   buildStarterKitApplyInput,
   connectionRequirements,
-  connectTargets,
   describeAccepts,
   harnessesLine,
   isProviderRequirement,
@@ -21,7 +20,6 @@ import {
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
-  requirementChoice,
   requirementStatuses,
   shortKitVersion,
   type StarterKitSetupDraft,
@@ -319,22 +317,6 @@ describe("families on the template view", () => {
     );
   });
 
-  test("connect targets open a family page once, and a bare template opens its family preselected", () => {
-    const targets = connectTargets(
-      {
-        accepts: ["github", "github-enterprise", "github-app", "slack"],
-        required: true,
-      },
-      templates,
-    );
-    expect(targets.map((t) => [t.label, t.providerId, t.templateId])).toEqual([
-      ["GitHub", "github", undefined],
-      ["GitHub Enterprise", "github-enterprise", undefined],
-      ["GitHub App", "github", "github-app"],
-      ["Slack", "slack", "slack"],
-    ]);
-  });
-
   test("ownedMatches lists the owned connections a requirement accepts", () => {
     expect(
       ownedMatches(
@@ -366,38 +348,6 @@ describe("families on the template view", () => {
       { id: "c-gh2", templateId: "github-app", name: "org app" },
     ];
     expect(preselectedGrants(twoReqs, twoGithub, [], templates)).toEqual([]);
-  });
-
-  test("a requirement offers connecting, the one candidate, or a pick between several", () => {
-    const github = { accepts: ["github"], required: true };
-    expect(requirementChoice(github, [], [], templates).mode).toBe("connect");
-    const one = requirementChoice(github, owned, [], templates);
-    expect(one.mode).toBe("use");
-    expect(one.candidates.map((c) => c.id)).toEqual(["c-gh"]);
-    const twoGithub = [
-      ...owned,
-      { id: "c-gh2", templateId: "github-app", name: "org app" },
-    ];
-    expect(requirementChoice(github, twoGithub, [], templates).mode).toBe(
-      "pick",
-    );
-  });
-
-  test("a granted connection is shown, and the other candidates become switches", () => {
-    const github = { accepts: ["github"], required: true };
-    const twoGithub = [
-      ...owned,
-      { id: "c-gh2", templateId: "github-app", name: "org app" },
-    ];
-    const choice = requirementChoice(
-      github,
-      twoGithub,
-      [twoGithub[0]],
-      templates,
-    );
-    expect(choice.mode).toBe("chosen");
-    expect(choice.chosen.map((c) => c.id)).toEqual(["c-gh"]);
-    expect(choice.switchTo.map((c) => c.id)).toEqual(["c-gh2"]);
   });
 });
 

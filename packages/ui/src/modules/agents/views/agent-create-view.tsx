@@ -52,7 +52,7 @@ import {
   allowedHarnesses,
   buildStarterKitApplyInput,
   connectionRequirements,
-  type ConnectTarget,
+  describeAccepts,
   harnessesLine,
   isStarterKitSetupComplete,
   kitConnectionIds,
@@ -145,9 +145,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
     [connectionTemplates.data],
   );
-  const [connectTarget, setConnectTarget] = useState<ConnectTarget | null>(
-    null,
-  );
+  const [connectAccepts, setConnectAccepts] = useState<
+    readonly string[] | null
+  >(null);
   const grantedIds = useMemo(
     () => new Set(form.connectionIds),
     [form.connectionIds],
@@ -543,13 +543,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           kit && connectionRequirements(kit).length > 0 ? (
             <KitRequirementsCard
               kit={kit}
-              owned={owned}
               granted={grantedKitConnections}
               templateById={templateById}
               templates={connectionTemplates.data ?? []}
-              onUse={(id: string) => toggleConnection(id, true)}
               onRevoke={(id: string) => toggleConnection(id, false)}
-              onConnect={setConnectTarget}
+              onConnect={setConnectAccepts}
             />
           ) : undefined
         }
@@ -566,11 +564,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
       {kit && <KitSkillsSection kit={kit} />}
-      {connectTarget && (
+      {connectAccepts && (
         <ConnectionCatalogModal
-          initialProviderId={connectTarget.providerId}
-          initialTemplateId={connectTarget.templateId}
-          onClose={() => setConnectTarget(null)}
+          accepts={connectAccepts}
+          title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
+          subtitle="Pick one of your connections, or add a new one."
+          onClose={() => setConnectAccepts(null)}
           sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
           oauthReturnView={returnPath}
         />

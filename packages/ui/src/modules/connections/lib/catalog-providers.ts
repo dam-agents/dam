@@ -213,3 +213,26 @@ export function connectionKindSubtitle(
     return host;
   return template?.name ?? connection.templateId;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The catalogue narrowed to what a requirement
+ * accepts — a family id keeps its whole provider group, a template id keeps
+ * only that template and the connections made with it, and a group nothing
+ * accepts is dropped. Connections are matched on their own template, so a
+ * connection whose template is no longer offered still shows up to be used.
+ */
+export function filterGroupsByAccepts(
+  groups: readonly CatalogProviderGroup[],
+  accepts: readonly string[],
+): CatalogProviderGroup[] {
+  const wanted = new Set(accepts);
+  return groups.flatMap((group) => {
+    if (wanted.has(group.provider.id)) return [group];
+    const templates = group.templates.filter((t) => wanted.has(t.id));
+    const connections = group.connections.filter((c) =>
+      wanted.has(c.templateId),
+    );
+    if (templates.length === 0 && connections.length === 0) return [];
+    return [{ ...group, templates, connections }];
+  });
+}

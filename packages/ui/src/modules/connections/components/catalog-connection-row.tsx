@@ -1,6 +1,8 @@
+import { Close } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
@@ -28,6 +30,7 @@ interface Props {
   onDelete?: () => void;
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
+  onRemove?: () => void;
 }
 
 export function CatalogConnectionRow({
@@ -39,6 +42,7 @@ export function CatalogConnectionRow({
   onDelete,
   deleting = false,
   maintenance,
+  onRemove,
 }: Props) {
   return (
     <div
@@ -73,6 +77,18 @@ export function CatalogConnectionRow({
           onDelete={onDelete}
           deleting={deleting}
         />
+        {onRemove && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${connection.name} from this agent`}
+            title="Remove from this agent"
+            onClick={onRemove}
+            data-testid={`catalog-remove-${connection.id}`}
+          >
+            <Close size={16} />
+          </Button>
+        )}
       </div>
     </div>
   );
