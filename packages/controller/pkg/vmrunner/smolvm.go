@@ -21,6 +21,8 @@ const (
 	slowStatus = time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: a create is tens of milliseconds and a start is under a second, so this is far enough above both that a normal operation never trips it and an operator reading the log finds only the ones worth reading.
 	slowOp = 2 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: long enough for a guest to checkpoint its journal and let go of its disks, short enough that a VMM which is never going to exit is taken down rather than waited on.
+	vmmExitWait = 10 * time.Second
 )
 
 type Smolvm struct {
@@ -109,6 +111,12 @@ func (r *Smolvm) Start(id string) error {
 	dir := r.vmDir(id)
 	if dir != "" {
 		_ = r.runReporting(false, nil, "machine", "stop", "-n", id)
+		if !vmmGone("/proc", dir, vmmExitWait) {
+			for _, pid := range orphanPIDs("/proc", dir) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+			_ = vmmGone("/proc", dir, time.Second)
+		}
 		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
@@ -126,6 +134,18 @@ func (r *Smolvm) Start(id string) error {
 		}
 	}
 	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: stopping returns as soon as the guest has been asked to go, but the VMM outlives that request for as long as the shutdown takes — seconds, while the guest remounts its disk read-only and checkpoints its journal. A start issued inside that window is refused on the grounds that a VMM still holds the disks, and the refusal is indistinguishable from a machine that can never start: the next attempt stops whatever the last one left running and is refused the same way, so an agent nobody can wake stays unwakeable. A machine that really is stopped has nothing to wait for and answers at once, so an ordinary wake pays nothing for this.
+func vmmGone(procRoot, dir string, limit time.Duration) bool {
+	deadline := time.Now().Add(limit)
+	for len(orphanPIDs(procRoot, dir)) > 0 {
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return true
 }
 
 func (r *Smolvm) vmDir(id string) string {

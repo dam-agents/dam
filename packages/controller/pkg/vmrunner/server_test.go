@@ -428,6 +428,24 @@ func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(dir, "overlay.qcow2"))
 }
 
+// TEST_SCENARIO: a stop returns before its VMM does, and a start issued while that VMM still holds the disks is refused — which reads exactly like a machine that can never start, so the next attempt repeats it forever. The wait is what breaks that, and the machine that is genuinely stopped must not pay for it: both halves are asserted here, since a wait that always returned true would satisfy the second alone.
+func TestAStartWaitsForTheVMMTheStopLeftBehind(t *testing.T) {
+	proc := t.TempDir()
+	dir := "/home/smolvm/.cache/smolvm/vms/abc123"
+	require.NoError(t, os.MkdirAll(filepath.Join(proc, "100"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(proc, "100", "cmdline"),
+		[]byte("/proc/self/exe\x00_boot-vm\x00"+dir+"/boot-config.json"), 0o644))
+
+	started := time.Now()
+	assert.False(t, vmmGone(proc, dir, 150*time.Millisecond), "a VMM still holding the disks was reported gone")
+	assert.GreaterOrEqual(t, time.Since(started), 150*time.Millisecond, "the wait gave up before its limit")
+
+	require.NoError(t, os.RemoveAll(filepath.Join(proc, "100")))
+	started = time.Now()
+	assert.True(t, vmmGone(proc, dir, 10*time.Second))
+	assert.Less(t, time.Since(started), time.Second, "a stopped machine waited on a VMM that was already gone")
+}
+
 // TEST_SCENARIO: smolvm abandoned a machine's boot: of three processes only the one whose command line names that machine's vm dir is an orphan to kill.
 func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
 	proc := t.TempDir()
