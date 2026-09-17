@@ -32,7 +32,8 @@ case "$2" in
   start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"
     if [ -n "$FAKE_START_FAIL_ONCE" ] && [ ! -f "$FAKE_STATE/.failed-once" ]; then touch "$FAKE_STATE/.failed-once"; echo "$FAKE_START_FAIL_ONCE" >&2; exit 1; fi
     echo running > "$FAKE_STATE/$4" ;;
-  stop) echo stopped > "$FAKE_STATE/$4" ;;
+  stop) [ -n "$FAKE_STOP_SLEEP" ] && sleep "$FAKE_STOP_SLEEP"
+    echo stopped > "$FAKE_STATE/$4" ;;
   delete) rm -f "$FAKE_STATE/$4" ;;
 esac
 `
@@ -167,6 +168,63 @@ func TestRejectsWrongToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp.Body.Close()
+}
+
+// TEST_OVERVIEW: answers on the guest's loopback port the way a booted guest does, so a test can say when the platform could have known the agent was up.
+func guestServing(t *testing.T, port int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+}
+
+// TEST_SCENARIO: the runtime's start call lingers seconds past the moment the guest begins serving, and the platform used to spend every one of them telling the user their agent was not ready. The guest answers here while the start is still running, and the machine must be called ready on the strength of that answer alone — the assertion that it is still starting is the point, since a status that only turned ready after the call returned would satisfy the first half.
+func TestAGuestThatAnswersIsReadyBeforeItsStartReturns(t *testing.T) {
+	t.Setenv("FAKE_START_SLEEP", "3")
+	h := newHarness(t)
+	c := h.client()
+	guestServing(t, h.node.PortMin+loopbackOffset)
+
+	st, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.Equal(t, StateCreating, st.State)
+
+	var seen MachineStatus
+	require.Eventually(t, func() bool {
+		got, err := c.Status(t.Context(), "agent-a")
+		if err != nil {
+			return false
+		}
+		seen = got
+		return got.Ready
+	}, 2*time.Second, 10*time.Millisecond, "the guest answered but the machine was never called ready")
+	assert.Contains(t, []string{StateCreating, StateStarting}, seen.State,
+		"the machine was only called ready once its start had finished, which is the wait this removes")
+}
+
+// TEST_SCENARIO: the same answer means nothing on the way down. A machine being stopped keeps answering until it dies, so a stop that is still running must not be read as readiness — otherwise a hibernating agent would report itself ready for as long as its guest took to go.
+func TestAGuestAnsweringThroughItsOwnStopIsNotReady(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	guestServing(t, h.node.PortMin+loopbackOffset)
+
+	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.True(t, h.settle(t, "agent-a").Ready)
+
+	t.Setenv("FAKE_STOP_SLEEP", "2")
+	st, err := c.Ensure(t.Context(), "agent-a", spec(false))
+	require.NoError(t, err)
+	require.Equal(t, StateStopping, st.State)
+	for range 20 {
+		got, err := c.Status(t.Context(), "agent-a")
+		require.NoError(t, err)
+		require.False(t, got.Ready, "a machine on its way out was called ready because its guest still answered")
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TEST_SCENARIO: a vm agent waking for the first time: the machine is created with everything the guest needs to reach only its gateway, then started; the same request again is a no-op that reports the running machine, its port and its applied size.
