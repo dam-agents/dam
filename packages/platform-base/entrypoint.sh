@@ -100,23 +100,64 @@ extract_trust_store() (
 		trust extract --format=edk2-cacerts --filter=ca-anchors --overwrite --purpose=server-auth "$extracted/edk2/cacerts.bin" &&
 		trust extract --format=pem-directory-hash --filter=ca-anchors --overwrite --purpose server-auth "$extracted/pem/directory-hash" ||
 		exit 1
+	link_hashed_certs
+)
+
+link_hashed_certs() {
 	for link in "$extracted"/pem/directory-hash/*.0; do
 		[ -h "$link" ] || continue
 		name=${link##*/}
 		[ -e "/etc/pki/tls/certs/$name" ] ||
 			ln -sf "$(readlink -f "$link")" "/etc/pki/tls/certs/$name" ||
-			exit 1
+			return 1
 	done
-)
+}
+
+# Regenerating the trust store costs a second of every boot and produces the
+# same bytes each time, so a machine keeps the result on its storage disk and
+# copies it back instead. The key is the MITM CA *and* the image's own trust
+# source: keying on the CA alone would serve a stale store after an image
+# updated its public roots, since the CA is unchanged across that. Nothing
+# secret is cached — the tree is public roots plus this agent's CA certificate,
+# which already sits on disk unencrypted; the private key never leaves the
+# gateway.
+trust_cache_key() {
+	sha256sum "$mitm_ca" "$1" 2>/dev/null | cut -d' ' -f1 | tr -d '\n'
+}
 
 # No CA file mounted means the gateway never intercepts this agent's traffic, so
 # every host returns its real public certificate, which the public CAs cover.
 if [ -s "$mitm_ca" ]; then
 	trust_t0=$(date +%s)
-	if cp "$mitm_ca" "$anchor" && { extract_trust_store || /usr/sbin/update-ca-trust extract; }; then
-		echo "agent-entrypoint: platform CA trusted in $(($(date +%s) - trust_t0))s"
-	else
+	trust_source=/usr/share/pki/ca-trust-source/ca-bundle.trust.p11-kit
+	cache=/workspace/ca-trust
+	key=""
+	[ -d /workspace ] && key=$(trust_cache_key "$trust_source")
+
+	trusted=no
+	if cp "$mitm_ca" "$anchor"; then
+		# A cache is used only when it was produced from exactly this CA and
+		# this trust source, and still carries the bundle every TLS client
+		# here reads. Anything else falls through to a full extraction.
+		if [ -n "$key" ] && [ "$key" = "$(cat "$cache/key" 2>/dev/null)" ] &&
+			[ -s "$cache/extracted/pem/tls-ca-bundle.pem" ] &&
+			cp -a "$cache/extracted/." "$extracted/" && link_hashed_certs; then
+			trusted=cache
+		elif extract_trust_store || /usr/sbin/update-ca-trust extract; then
+			trusted=extract
+			if [ -n "$key" ] && rm -rf "$cache.new" && mkdir -p "$cache.new/extracted" &&
+				cp -a "$extracted/." "$cache.new/extracted/" 2>/dev/null &&
+				printf '%s' "$key" > "$cache.new/key"; then
+				rm -rf "$cache" && mv "$cache.new" "$cache"
+			fi
+			rm -rf "$cache.new"
+		fi
+	fi
+
+	if [ "$trusted" = no ]; then
 		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	else
+		echo "agent-entrypoint: platform CA trusted in $(($(date +%s) - trust_t0))s (from $trusted)"
 	fi
 fi
 
