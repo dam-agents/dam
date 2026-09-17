@@ -18,7 +18,6 @@ seed:
   ref: main
 install:
   command: bash bootstrap.sh
-  harnessEnv: LLM_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover

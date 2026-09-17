@@ -35,7 +35,6 @@ import {
   type RuntimeMutator,
   workspaceCommandEvent,
 } from "../../runtime-delivery/index.js";
-import { kitInstallCommand } from "../domain/install.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 
@@ -297,10 +296,14 @@ export function createStarterKitsService(
       const agent = await deps.agents.create(createInput);
 
       try {
-        const install = kitInstallCommand(kit, harness);
-        if (install !== null) {
+        if (kit.install) {
           await deps.runtimeMutator.bump(agent.id, [
-            workspaceCommandEvent("kit-install", agent.id, install, now()),
+            workspaceCommandEvent(
+              "kit-install",
+              agent.id,
+              kit.install.command,
+              now(),
+            ),
           ]);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
         }

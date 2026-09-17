@@ -298,7 +298,6 @@ describe("starter kits: apply", () => {
       knowledgeBase: { template: "plain-wiki" },
       install: {
         command: "curl -fsSL https://example.com/bootstrap.sh | bash",
-        harnessEnv: "PLAIN_WIKI_HARNESS",
       },
       onboarding: { command: "wiki-onboard" },
     });
@@ -318,25 +317,10 @@ describe("starter kits: apply", () => {
     ]);
     expect(events[0]!.id).toMatch(/^kit-install:agent-1:\d+$/);
     expect(events[0]!.payload).toEqual({
-      command:
-        "export PLAIN_WIKI_HARNESS=codex; curl -fsSL https://example.com/bootstrap.sh | bash",
+      command: "curl -fsSL https://example.com/bootstrap.sh | bash",
     });
     expect(events[1]!.payload).toEqual({ task: "/prompts:wiki-onboard" });
     expect(calls.woken).toEqual(["agent-1"]);
-  });
-
-  it("runs a kit's install without a harness variable when no family is known", async () => {
-    const { service, calls } = makeHarness({
-      ...LOADED,
-      kit: kit({
-        schedules: [],
-        install: { command: "echo hi", harnessEnv: "WIKI_HARNESS" },
-      }),
-    });
-    await service.apply(APPLY);
-    const [install] = calls.bumped.flatMap((b) => b.events);
-    expect(install!.payload).toEqual({ command: "echo hi" });
-    expect(calls.created[0]).not.toHaveProperty("kind");
   });
 
   it("seeds the kit's definition into the workspace and says so in the briefing", async () => {

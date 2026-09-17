@@ -17,7 +17,6 @@ seed:
   ref: main
 install:
   command: PLAIN_WIKI_BASE="file://$PWD" bash bootstrap.sh
-  harnessEnv: PLAIN_WIKI_HARNESS
 providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover

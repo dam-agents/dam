@@ -16,6 +16,8 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY bob-settings.mjs /app/bob-settings.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
+# Which harness family this image runs; kit bootstraps and pod shells read it.
+ENV PLATFORM_HARNESS=bob
 # 2.0's RuleLoader reads <workspace>/.bob/rules/ (every file appended to the
 # system prompt); the 1.x context.fileName lookup and system-defaults.json are
 # gone, so platform instructions ride in as a rules file instead.

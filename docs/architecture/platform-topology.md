@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-09-15
+Last verified: 2026-09-17
 
 ## Overview
 
@@ -58,7 +58,7 @@ A session's mode is agent-owned metadata: the client switching modes persists it
 
 ### agent-runtime
 
-The per-agent pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract. Its responsibilities are:
+The per-agent pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract. Every harness image also states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`) — an image `ENV`, so the harness, a kit's install command and terminal shells all inherit it without being told; images built on the Claude Code image inherit its value, and a custom image may carry none. Its responsibilities are:
 
 - Accept ACP WebSocket connections (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).

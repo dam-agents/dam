@@ -100,10 +100,6 @@ export const starterKitKnowledgeBaseSchema = z.object({
 
 export const starterKitInstallSchema = z.object({
   command: z.string().min(1),
-  harnessEnv: z
-    .string()
-    .regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name")
-    .optional(),
 });
 
 export const starterKitResourcesSchema = agentSizeSchema.extend({
