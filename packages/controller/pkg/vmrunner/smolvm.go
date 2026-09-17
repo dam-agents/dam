@@ -50,7 +50,8 @@ func (r *Smolvm) State(id string) (string, error) {
 	return StateRunning, nil
 }
 
-func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int, caDir string) error {
+// UNIT_BOUNDARY_DESCRIPTION: an image booted from a tree of its own files names nothing to run, so everything the image would have said — its entrypoint, its environment, the directory it starts in — is said here instead. The two environments are merged before either reaches the command line rather than passed one after the other, so which one wins is decided here and not by whichever order smolvm happens to apply them in; the platform's own values win, because they are what make the guest an agent rather than the image's idea of a container.
+func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int, caDir string, launch *ImageLaunch) error {
 	args := []string{"machine", "create", "-n", id, "-I", image, "--max-image-size", "16GiB",
 		"--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB), "--storage", strconv.Itoa(spec.StorageGiB),
 		"-u", "root", "--net", "--net-backend", "virtio-net", "-p", fmt.Sprintf("%d:%d", hostPort, guestAgentPort),
@@ -58,7 +59,28 @@ func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int,
 	for _, c := range spec.AllowCIDRs {
 		args = append(args, "--allow-cidr", c)
 	}
-	return r.run(envValues(spec.Env), append(args, envArgs(spec.Env)...)...)
+	env := spec.Env
+	var command []string
+	if launch != nil {
+		env = map[string]string{}
+		for _, kv := range launch.Env {
+			if k, v, ok := strings.Cut(kv, "="); ok {
+				env[k] = v
+			}
+		}
+		for k, v := range spec.Env {
+			env[k] = v
+		}
+		if launch.WorkingDir != "" {
+			args = append(args, "-w", launch.WorkingDir)
+		}
+		command = append(append([]string{}, launch.Entrypoint...), launch.Cmd...)
+	}
+	args = append(args, envArgs(env)...)
+	if len(command) > 0 {
+		args = append(append(args, "--"), command...)
+	}
+	return r.run(envValues(spec.Env), args...)
 }
 
 func (r *Smolvm) Update(id string, spec MachineSpec, applied *MachineSpec) error {

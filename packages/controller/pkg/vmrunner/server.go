@@ -1,6 +1,7 @@
 package vmrunner
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -32,8 +33,10 @@ const (
 	stateTTL         = time.Second
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
-	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the archives may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the archive being written and for whatever the volume is shared with.
+	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the cached images may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the image being fetched and for whatever the volume is shared with.
 	cacheBudgetPercent = 80
+	rootfsDir          = "rootfs"
+	launchFile         = "launch.json"
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -51,8 +54,8 @@ type cachedState struct {
 	at    time.Time
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an archive this runner wrote is left alone rather than counted against the budget or deleted, and its name never reaches a log line.
-var legacyTree = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$`)
+// UNIT_BOUNDARY_DESCRIPTION: the volume is shared, so its listing is not all ours — anything that does not look like an image this runner cached is left alone rather than counted against the budget or deleted, and its name never reaches a log line. Two shapes count: the directory a cached image is now, and the archive an earlier release left, which still boots.
+var cachedImage = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$`)
 
 var cachedArchive = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$`)
 
@@ -349,21 +352,39 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	cached := filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image)) + ".tar"
-	if _, err := os.Stat(cached); err != nil && s.Crane != "" {
-		if err := s.cacheImage(image, cached); err != nil {
-			return err
+	base := s.cachePath(image)
+	launch, err := readLaunch(base)
+	if err != nil {
+		return err
+	}
+	cached := ""
+	if launch == nil {
+		if _, archived := os.Stat(base + ".tar"); archived == nil {
+			cached = base + ".tar"
+		} else if s.Crane != "" {
+			if err := s.cacheImage(image, base, id); err != nil {
+				return err
+			}
+			if launch, err = readLaunch(base); err != nil {
+				return err
+			}
 		}
 	}
-	if _, err := os.Stat(cached); err == nil {
-		image = cached
+	if launch != nil {
+		cached = filepath.Join(base, rootfsDir)
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
+	if cached != "" {
+		if _, err := os.Stat(cached); err == nil {
+			image = cached
+		}
 	}
 	dir, err := s.machineDir(id)
 	if err != nil {
 		return err
 	}
 	s.forgetState(id)
-	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca")); err != nil {
+	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca"), launch); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
@@ -384,36 +405,127 @@ func firstLines(out string) string {
 	return out[:capturedOutput] + "… (truncated)"
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner uses is fetched once for the cluster rather than once per machine. It is stored as the image, not as the rootfs inside it: an image carries the ENTRYPOINT, CMD and env that say what a machine is supposed to run, and an unpacked tree carries only files. smolvm takes either, and given a bare tree it says so plainly — it boots to its own agent and waits for exec, so the guest comes up in 150 ms with the harness never started. Fetched under a unique temporary name and renamed, so runners racing on the same image all end up with a whole archive rather than half of one.
-func (s *Server) cacheImage(ref, archive string) error {
-	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner runs is fetched once for the cluster rather than once per machine. It is unpacked once too: smolvm mounts a tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. A tree alone is not enough to boot, because it carries files and not the entrypoint, environment and working directory the image names, so those are read with it and written beside it; without that record smolvm launches nothing and the guest comes up with no harness in it.
+func (s *Server) cacheImage(ref, cached, forMachine string) error {
+	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(archive), ".pull-*")
+	tmp, err := os.MkdirTemp(filepath.Dir(cached), ".unpack-*")
 	if err != nil {
 		return err
 	}
-	_ = tmp.Close()
-	defer os.Remove(tmp.Name())
+	defer os.RemoveAll(tmp)
+	if err := os.Mkdir(filepath.Join(tmp, rootfsDir), 0o755); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
 	defer cancel()
 	started := time.Now()
-	out, err := exec.CommandContext(ctx, s.Crane, "pull", ref, tmp.Name()).CombinedOutput()
+	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
 	if err != nil {
-		slog.Warn("image fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("pulling %s: %w: %s", ref, err, firstLines(string(out)))
+		slog.Warn("image config fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
+		return fmt.Errorf("reading the config of %s: %w", ref, err)
 	}
-	size := int64(0)
-	if info, err := os.Stat(tmp.Name()); err == nil {
-		size = info.Size()
+	launch, err := launchFromConfig(config)
+	if err != nil {
+		return fmt.Errorf("reading the config of %s: %w", ref, err)
 	}
-	slog.Info("image fetched into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", size)
-	if err := os.Rename(tmp.Name(), archive); err != nil {
+	if err := s.unpack(ctx, ref, filepath.Join(tmp, rootfsDir)); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(archive), archive, s.cacheBudget(filepath.Dir(archive)))
+	encoded, err := json.Marshal(launch)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(tmp, launchFile), encoded, 0o644); err != nil {
+		return err
+	}
+	slog.Info("image unpacked into the shared cache", "image", ref, "duration_ms", time.Since(started).Milliseconds(), "bytes", dirSize(tmp))
+	if err := s.claim(tmp, cached, forMachine); err != nil {
+		return err
+	}
+	s.evictImages(filepath.Dir(cached), cached, s.cacheBudget(filepath.Dir(cached)))
 	return nil
+}
+
+func (s *Server) unpack(ctx context.Context, ref, rootfs string) error {
+	export := exec.CommandContext(ctx, s.Crane, "export", ref, "-")
+	unpack := exec.CommandContext(ctx, "tar", "-x", "-C", rootfs)
+	stream, err := export.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	unpack.Stdin = stream
+	var exportErr, unpackErr bytes.Buffer
+	export.Stderr, unpack.Stderr = &exportErr, &unpackErr
+	if err := unpack.Start(); err != nil {
+		return err
+	}
+	if err := export.Run(); err != nil {
+		_ = unpack.Wait()
+		slog.Warn("image fetch failed", "image", ref)
+		return fmt.Errorf("exporting %s: %w: %s", ref, err, firstLines(exportErr.String()))
+	}
+	if err := unpack.Wait(); err != nil {
+		slog.Warn("image unpack failed", "image", ref)
+		return fmt.Errorf("unpacking %s: %w: %s", ref, err, firstLines(unpackErr.String()))
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runners share this volume and may unpack the same image at once, so the loser of the rename finds the winner's entry already there and keeps it — both wrote the same image. What it may also find is a tree from the release that stored no launch beside it, and that is not a winner but an entry no machine can boot: it is replaced rather than kept, or the first runner to meet one leaves every machine of that image booting a rootfs that names nothing to run. Replaced only if no other machine is running from it — the machine being created is not other, since a restarted runner recreates machines whose specs it still holds, and reading its own spec as somebody's claim would leave it unable to bring back exactly what it lost.
+func (s *Server) claim(tmp, cached, forMachine string) error {
+	err := os.Rename(tmp, cached)
+	if !errors.Is(err, fs.ErrExist) && !errors.Is(err, syscall.ENOTEMPTY) {
+		return err
+	}
+	if complete, readErr := readLaunch(cached); readErr == nil && complete != nil {
+		return nil
+	}
+	if s.imagesInUse(forMachine)[cached] {
+		return fmt.Errorf("%s is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image", filepath.Base(cached))
+	}
+	if err := os.RemoveAll(cached); err != nil {
+		return err
+	}
+	return os.Rename(tmp, cached)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the launch is written beside the tree rather than inside it, because anything inside is the guest's root filesystem and would show up in it. Its presence is also what marks a cache entry complete — a directory without one is an unpack from the release that stored only files, which names nothing to run and is never booted — replaced when the image is fetched again, or left to eviction if some machine is still running from it.
+func readLaunch(cached string) (*ImageLaunch, error) {
+	encoded, err := os.ReadFile(filepath.Join(cached, launchFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var launch ImageLaunch
+	if err := json.Unmarshal(encoded, &launch); err != nil {
+		return nil, err
+	}
+	return &launch, nil
+}
+
+func launchFromConfig(config []byte) (*ImageLaunch, error) {
+	var parsed struct {
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+			Cmd        []string `json:"Cmd"`
+			Env        []string `json:"Env"`
+			WorkingDir string   `json:"WorkingDir"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(config, &parsed); err != nil {
+		return nil, err
+	}
+	return &ImageLaunch{
+		Entrypoint: parsed.Config.Entrypoint,
+		Cmd:        parsed.Config.Cmd,
+		Env:        parsed.Config.Env,
+		WorkingDir: parsed.Config.WorkingDir,
+	}, nil
 }
 
 func dirSize(path string) int64 {
@@ -439,10 +551,36 @@ func (s *Server) cacheBudget(dir string) int64 {
 	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
 }
 
+func (s *Server) cachePath(image string) string {
+	return filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an unpacked image is not a spare a machine consumes at create, it is the read-only lower layer every machine of that image keeps mounted for as long as it runs — so deleting one to make room takes the running guests' filesystem out from under them. Which images are spoken for is read from the machines themselves rather than tracked alongside them, because the runner is restarted and its memory is not: a spec on disk outlives the process that wrote it, and a machine whose image is missing from this set is a machine about to lose its rootfs.
+func (s *Server) imagesInUse(except string) map[string]bool {
+	ids, err := s.machineIDs()
+	if err != nil {
+		return nil
+	}
+	inUse := map[string]bool{}
+	for _, id := range ids {
+		if id == except {
+			continue
+		}
+		spec := s.readSpec(id)
+		if spec == nil || spec.Image == "" {
+			continue
+		}
+		base := s.cachePath(spec.Image)
+		inUse[base], inUse[base+".tar"] = true, true
+	}
+	return inUse
+}
+
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	if budget <= 0 {
 		return
 	}
+	inUse := s.imagesInUse("")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -462,7 +600,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		path := filepath.Join(dir, e.Name())
 		var size int64
 		switch {
-		case e.IsDir() && legacyTree.MatchString(e.Name()):
+		case e.IsDir() && cachedImage.MatchString(e.Name()):
 			size = dirSize(path)
 		case !e.IsDir() && cachedArchive.MatchString(e.Name()):
 			size = info.Size()
@@ -477,7 +615,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		if used <= budget {
 			return
 		}
-		if a.path == keep {
+		if a.path == keep || inUse[a.path] {
 			continue
 		}
 		if err := os.RemoveAll(a.path); err != nil {
@@ -485,6 +623,10 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		}
 		used -= a.size
 		slog.Info("image cache: evicted an image to stay inside the volume", "image", filepath.Base(a.path), "bytes", a.size)
+	}
+	if used > budget {
+		slog.Warn("image cache: over its share of the volume, and every image left is one a machine is running from",
+			"bytes", used, "budget", budget)
 	}
 }
 
