@@ -17,13 +17,15 @@ seccomp (all from restricted-v2). The two real relaxations are:
     restore a container image's own ownership when it unpacks one for
     its machines to share; SETUID + SETGID, also the VM runner's alone,
     let it hand each machine's VMM its own unprivileged uid instead of
-    running them all as root.
+    running them all as root; DAC_OVERRIDE, likewise the runner's, so
+    that unpack can write into the read-only and foreign-owned
+    directories a faithful rootfs contains.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init and for the VM runner,
-CHOWN, FOWNER, SETUID and SETGID for the runner alone.
+CHOWN, FOWNER, SETUID, SETGID and DAC_OVERRIDE for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -45,6 +47,7 @@ allowedCapabilities:
   - FOWNER
   - SETUID
   - SETGID
+  - DAC_OVERRIDE
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny
