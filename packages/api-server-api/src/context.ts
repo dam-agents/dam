@@ -66,4 +66,5 @@ export interface ApiContext {
   budgets: BudgetsService;
   user: UserIdentity;
   e2eEnabled: boolean;
+  virtualizationEnabled: boolean;
 }

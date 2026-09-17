@@ -441,12 +441,12 @@ else
   AGENTS_RENDERED=$(helm template platform helm \
       -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
-             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image + "\t" + (.backend.type // "container"))')
+             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
   AGENT_TASKS=()
   AGENT_IMAGES=()
   VM_IMAGES=()
   SEEN_COMPONENTS=()
-  while IFS=$'\t' read -r name image backend; do
+  while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
     name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
     # Templates can share one image (presets, e.g. adaevolve/evox over the
@@ -455,15 +455,17 @@ else
     # ("platform-<component>" locally), not the template key — and dedup so
     # a shared image builds and loads once.
     comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
-    # vm-backend templates share the container images; their image is also
-    # loaded onto the VM runner pod after the install, once per image.
-    if [ "$backend" = vm ]; then case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac; fi
+    # The backend is chosen per agent at create, not declared by a template, so
+    # any agent image may be asked to boot as a microVM — every one of them is
+    # staged for the VM runners when the install supports them, once per image.
+    if [ -n "${VIRT_ENABLED:-}" ] && [ -d "packages/agents/$comp" ]; then
+      case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac
+    fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      # A vm-only image never runs as a k3s container, so it is not imported there.
-      [ "$backend" = vm ] || AGENT_IMAGES+=("$image")
+      AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
       # are not covered by //packages/agents:image — build straight from their Dockerfile, root

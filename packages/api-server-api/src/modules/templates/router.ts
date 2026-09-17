@@ -17,7 +17,6 @@ function toView(tmpl: Template) {
     releaseNotesUrl: tmpl.spec.releaseNotesUrl,
     setupNote: tmpl.spec.setupNote,
     experimental: tmpl.spec.experimental ?? false,
-    vm: tmpl.spec.backend?.type === "vm",
     size: {
       cpu: tmpl.spec.resources?.limits?.cpu,
       memory: tmpl.spec.resources?.limits?.memory,

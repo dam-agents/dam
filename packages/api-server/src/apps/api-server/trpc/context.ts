@@ -355,6 +355,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       budgets,
       user,
       e2eEnabled: config.e2eEnabled,
+      virtualizationEnabled: config.virtualizationEnabled,
     };
   };
 }

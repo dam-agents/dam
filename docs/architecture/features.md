@@ -12,6 +12,14 @@ always-on is deletion: drop its id from the enum and its gates from the UI —
 stored rows for a dropped id are simply never read again (Experiments and
 Knowledge Bases graduated this way).
 
+A per-user flag says what a user wants to see; it cannot say what the install
+can do. The same module therefore answers a second, install-wide question —
+whether this deployment supports microVMs — read from the chart's own value
+rather than from any stored row. A surface that needs both, like the agent
+setup form's isolation choice, asks both and offers nothing until each has
+answered: an unanswered question reads like a no, and a stored draft would
+otherwise be created as something its author did not choose.
+
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only. A
 pre-release surface can include agent-facing pieces — MCP tools on the
