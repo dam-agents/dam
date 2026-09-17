@@ -1,4 +1,9 @@
-import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
+import {
+  Book,
+  Chemistry,
+  Gift,
+  OverflowMenuVertical,
+} from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,13 +19,21 @@ import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { agentKindBadge } from "../utils/agent-kind.js";
+import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
+import {
+  agentKindBadge,
+  knowledgeBadge,
+  starterKitBadge,
+} from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import {
+  agentFailures,
+  ContributionFailuresBadge,
+} from "./contribution-failures-badge.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
@@ -70,6 +83,9 @@ export function AgentRow({
   onDelete,
 }: Props) {
   const kindBadge = agentKindBadge(agent);
+  const kitBadge = starterKitBadge(agent);
+  const knowledge = knowledgeBadge(agent);
+  const onShareKnowledge = knowledge ? onShare : undefined;
   return (
     <Card
       data-testid="agent-row"
@@ -88,7 +104,33 @@ export function AgentRow({
             </Badge>
           )}
           <VmRuntimeBadge agent={agent} />
-          <ContributionFailuresBadge failures={agent.contributionFailures} />
+          {kitBadge && (
+            <Badge
+              variant={kitBadge.variant}
+              className="shrink-0"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Gift size={12} aria-hidden />
+                {kitBadge.label}
+              </span>
+            </Badge>
+          )}
+          {knowledge && (
+            <Badge
+              variant={knowledge.variant}
+              className="shrink-0"
+              title={knowledge.title}
+            >
+              <span className="flex items-center gap-1.5">
+                <Book size={12} aria-hidden />
+                {knowledge.label}
+              </span>
+            </Badge>
+          )}
+          <OnboardingTag agent={agent} />
+          <ContributionFailuresBadge failures={agentFailures(agent)} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">
@@ -145,9 +187,9 @@ export function AgentRow({
               <DropdownMenuItem onSelect={onConfigure}>
                 {configureLabel}
               </DropdownMenuItem>
-              {onShare && (
-                <DropdownMenuItem onSelect={onShare}>
-                  {shareLabel ?? "Share"}
+              {onShareKnowledge && (
+                <DropdownMenuItem onSelect={onShareKnowledge}>
+                  {shareLabel ?? "Share knowledge base"}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />

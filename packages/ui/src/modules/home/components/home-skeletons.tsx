@@ -1,18 +1,5 @@
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 
-export function FeedFilterSkeleton() {
-  return (
-    <div className="flex w-full items-center justify-between">
-      <span className="text-sm">
-        <TextSkeleton width={104} tone="muted" />
-      </span>
-      <span className="text-sm">
-        <TextSkeleton width={132} tone="muted" />
-      </span>
-    </div>
-  );
-}
-
 export function WidgetSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

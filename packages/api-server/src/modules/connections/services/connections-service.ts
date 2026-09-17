@@ -102,15 +102,24 @@ export function createConnectionsService(deps: {
         > => c.kind === "egress-allow" || c.kind === "egress-inject",
       )
       .map((c) => c.host);
+    const presetAppSlug =
+      conn.auth.kind === "oauth" &&
+      template?.authKind === "oauth" &&
+      conn.auth.clientId === template.clientId &&
+      typeof template.extras?.appSlug === "string"
+        ? template.extras.appSlug
+        : undefined;
+    const appSlug =
+      conn.auth.kind === "oauth"
+        ? (conn.auth.appSlug ?? presetAppSlug)
+        : undefined;
     const oauthExtras =
       conn.auth.kind === "oauth" ||
       conn.auth.kind === "client-credentials" ||
       conn.auth.kind === "github-app"
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
-            ...(conn.auth.kind === "oauth" && conn.auth.appSlug
-              ? { appSlug: conn.auth.appSlug }
-              : {}),
+            ...(appSlug ? { appSlug } : {}),
             ...(conn.auth.kind === "oauth" && conn.auth.clientSecretRef
               ? { hasClientSecret: true }
               : {}),

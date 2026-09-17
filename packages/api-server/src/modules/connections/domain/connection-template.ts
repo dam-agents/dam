@@ -13,11 +13,17 @@ export type ConnectionTemplate =
   | HeaderConnectionTemplate
   | NoneConnectionTemplate;
 
+export interface ConnectionFamily {
+  id: string;
+  title: string;
+}
+
 interface TemplateCommon {
   id: string;
   name: string;
   category: ConnectionCategory;
   isCustom: boolean;
+  family?: ConnectionFamily;
   description?: string;
   iconSlug?: string;
   contributions: Contribution[];
@@ -135,6 +141,7 @@ export function templateToView(
     name: t.name,
     category: t.category,
     isCustom: t.isCustom,
+    ...(t.family ? { family: t.family } : {}),
     ...(t.description ? { description: t.description } : {}),
     ...(t.iconSlug ? { iconSlug: t.iconSlug } : {}),
     authKind: t.authKind,

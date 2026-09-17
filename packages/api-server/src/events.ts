@@ -71,6 +71,7 @@ export type AgentCreated = {
 export type AgentUpdated = {
   type: EventType.AgentUpdated;
   agentId: string;
+  ownerSub?: string;
 };
 
 export type AgentDeleted = {

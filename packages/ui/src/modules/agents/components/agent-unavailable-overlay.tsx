@@ -10,6 +10,7 @@ import type { AgentView } from "../../../types.js";
 import { useUpdateAgent } from "../api/mutations.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
+import { workspaceFailureSentence } from "../lib/workspace-failure.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -99,13 +100,7 @@ export function AgentUnavailableOverlay({
 
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
-  const budget = agent.overBudgetMessage;
-  const description =
-    state === "error" && agent.error
-      ? agent.error
-      : state === "over_budget" && budget
-        ? `${budget[0].toUpperCase()}${budget.slice(1)}.`
-        : OVERLAY_COPY[state].description;
+  const description = overlayDescription(state, agent);
 
   const waiting = state === "starting" || state === "preparing_workspace";
 
@@ -148,6 +143,21 @@ export function AgentUnavailableOverlay({
       )}
     </OverlayFrame>
   );
+}
+
+function overlayDescription(
+  state: AgentDisplayState,
+  agent: AgentView,
+): string {
+  if (state === "error" && agent.error) return agent.error;
+  const budget = agent.overBudgetMessage;
+  if (state === "over_budget" && budget)
+    return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
+  if (state === "preparing_workspace") {
+    const failing = agent.workspaceFailures.find((f) => !f.settled);
+    if (failing) return workspaceFailureSentence(failing);
+  }
+  return OVERLAY_COPY[state].description;
 }
 
 function SkipTheWait({ agent }: { agent: AgentView }) {

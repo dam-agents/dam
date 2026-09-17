@@ -41,6 +41,8 @@ COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
 COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
+# Which harness family this image runs; kit bootstraps and pod shells read it.
+ENV PLATFORM_HARNESS=claude-code
 
 # managed-settings.json carries the Stop/SubagentStop background-work report;
 # keep it otherwise minimal — a legacy allowedMcpServers shape breaks Claude

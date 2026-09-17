@@ -3,6 +3,8 @@ import { agentKindSchema } from "api-server-api";
 import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
+  WorkspaceFailure,
+  OnboardingStep,
   Agent,
   AgentKind,
   AgentSpec,
@@ -16,6 +18,7 @@ import type {
 import type { KubeObject } from "./k8s.js";
 import {
   ANN_AGENT_KIND,
+  ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
@@ -28,6 +31,8 @@ import {
   READY_REASON_OVER_BUDGET,
   STOP_REQUESTED_KEY,
   VERSION,
+  ANN_STARTER_KIT,
+  ANN_STARTER_KIT_ONBOARDED,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 
@@ -59,6 +64,9 @@ export interface InfraAgent {
   lifetimeMs: number;
   kind?: AgentKind;
   kbTemplateId?: string;
+  kbShareRoots?: string[];
+  starterKit?: string;
+  starterKitOnboarded?: string;
   hibernatedSince?: Date;
   ready: boolean;
   hibernated: boolean;
@@ -164,6 +172,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const hibernated =
     ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED;
   const annotations = obj.metadata?.annotations ?? {};
+  const kbShareRoots = splitRoots(annotations[ANN_KB_SHARE_ROOTS]);
   const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
   const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
   const hibernatedSince =
@@ -181,6 +190,13 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(kindParse.success ? { kind: kindParse.data } : {}),
     ...(annotations[ANN_KB_TEMPLATE]
       ? { kbTemplateId: annotations[ANN_KB_TEMPLATE] }
+      : {}),
+    ...(kbShareRoots ? { kbShareRoots } : {}),
+    ...(annotations[ANN_STARTER_KIT_ONBOARDED]
+      ? { starterKitOnboarded: annotations[ANN_STARTER_KIT_ONBOARDED] }
+      : {}),
+    ...(annotations[ANN_STARTER_KIT]
+      ? { starterKit: annotations[ANN_STARTER_KIT] }
       : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
@@ -216,6 +232,8 @@ export function assembleAgent(
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
+  workspaceFailures: WorkspaceFailure[],
+  onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
     id: infra.id,
@@ -235,9 +253,14 @@ export function assembleAgent(
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,
     unsupportedContributionKinds,
+    workspaceFailures,
     channels,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,
+    kbShareRoots: infra.kbShareRoots,
+    starterKit: infra.starterKit,
+    starterKitOnboarded: infra.starterKitOnboarded,
+    ...(onboardingSteps ? { onboardingSteps } : {}),
     features,
   };
 }
@@ -272,4 +295,13 @@ export function findOrphanedAgentIds(
   psqlAgentIds: string[],
 ): string[] {
   return psqlAgentIds.filter((id) => !infraIds.has(id));
+}
+
+function splitRoots(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const roots = raw
+    .split(",")
+    .map((root) => root.trim())
+    .filter((root) => root.length > 0);
+  return roots.length > 0 ? roots : undefined;
 }

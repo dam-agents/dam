@@ -1,7 +1,6 @@
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import type { useAgentRows } from "../hooks/use-agent-rows.js";
-import { isKnowledgeBase } from "../utils/agent-kind.js";
 import type { TemporarySandboxSplit } from "../utils/temporary-sandboxes.js";
 import { AgentRow } from "./agent-row.js";
 
@@ -23,7 +22,6 @@ export function SandboxList({
   onDelete,
 }: Props) {
   const selectAgent = useStore((s) => s.selectAgent);
-  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   return (
@@ -34,12 +32,9 @@ export function SandboxList({
           {...rowProps(agent)}
           working={workingByAgent?.get(agent.id)}
           temporaryDraw={drawByDriver.get(agent.id)}
-          onSelect={() =>
-            isKnowledgeBase(agent)
-              ? openKnowledgeBase(agent.id)
-              : selectAgent(agent.id)
-          }
+          onSelect={() => selectAgent(agent.id)}
           onConfigure={() => navigateToSandboxHome(agent.id)}
+          onShare={() => navigateToSandboxHome(agent.id, "setup", "knowledge")}
           configureLabel="Configure agent"
           onStop={() => onStop(agent)}
           onDelete={() => onDelete(agent)}

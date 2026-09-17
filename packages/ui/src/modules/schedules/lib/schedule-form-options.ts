@@ -52,3 +52,13 @@ export const TIMEZONE_OPTIONS: { value: string; label: string }[] = (
   const offset = offsetLabel(zone);
   return { value: zone, label: offset ? `${zone} (${offset})` : zone };
 });
+
+export const DAYS_ISO: { iso: number; label: string }[] = [
+  { iso: 1, label: "Mon" },
+  { iso: 2, label: "Tue" },
+  { iso: 3, label: "Wed" },
+  { iso: 4, label: "Thu" },
+  { iso: 5, label: "Fri" },
+  { iso: 6, label: "Sat" },
+  { iso: 7, label: "Sun" },
+];

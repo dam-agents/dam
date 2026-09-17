@@ -117,6 +117,7 @@ function setup(rows: Connection[] = [provider]) {
     channelsTxRepo: unused(),
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
+    onboardingChecklists: { readMany: async () => new Map() },
   });
   const ctx = unused<ApiContext>({
     agents,

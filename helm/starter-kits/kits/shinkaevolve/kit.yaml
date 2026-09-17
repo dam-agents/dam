@@ -1,0 +1,17 @@
+schemaVersion: v1
+id: shinkaevolve
+name: ShinkaEvolve
+description: >-
+  Sample-efficient evolutionary program-optimization agent. Brings its own agent, built on Claude Code.
+category: research
+icon: chart
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md
+image:
+  ref: quay.io/dam-agents/shinkaevolve # @ci-pin shinkaevolve-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, openai]
+resources:
+  storage: 5Gi
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.

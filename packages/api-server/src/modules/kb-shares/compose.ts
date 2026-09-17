@@ -9,7 +9,6 @@ import {
   PER_FILE_MAX_BYTES,
   TOTAL_MAX_BYTES,
 } from "agent-runtime-api/kb-snapshot";
-import { defaultShareRootsForKbTemplate } from "../knowledge-bases/index.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { kbShareRowId, secretsEqual } from "./domain/share-string.js";
@@ -161,7 +160,6 @@ function composeShareService(opts: ComposeShareServiceOpts): KbSharesService {
     purgeShareObjects: (row) => gate.purgeShareObjects(row),
     requestFlush: (agentId) => nudge.requestFlush(agentId),
     unconfigurePod: (agentId) => nudge.unconfigure(agentId),
-    defaultRootsForKbTemplate: defaultShareRootsForKbTemplate,
     listWorkspaceRoots: makeListWorkspaceRoots(
       createAgentFilesClient(opts.namespace),
       workspacePrefix,

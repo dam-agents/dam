@@ -137,10 +137,10 @@ test("share a knowledge base and read it over the share-host MCP endpoint", asyn
   try {
     let agentId = "";
     await test.step("create the knowledge base and seed its wiki", async () => {
-      await api.knowledgeBases.create.mutate({
+      await api.agents.create.mutate({
         name: KB_NAME,
         templateId: harnessName,
-        kbTemplateId: "plain-wiki",
+        kbShareRoots: ["wiki"],
       });
       agentId = await waitForAgentRunning(httpApi, KB_NAME);
       await agentFilesMutation(token, agentId, "mkdir", { path: "work/wiki" });

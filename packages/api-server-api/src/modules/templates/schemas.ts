@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  isProviderPresetType,
+  type ProviderPresetType,
+} from "../connections/providers.js";
 import { skillSourcePathSchema } from "../skills/schemas.js";
 
 export const templateGetInputSchema = z.object({
@@ -27,9 +31,7 @@ export const skillSourceSeedSchema = z.object({
   path: skillSourcePathSchema.optional(),
 });
 
-export const templateCategorySchema = z
-  .enum(["harness", "preconfigured"])
-  .default("harness");
+export const templateCategorySchema = z.enum(["harness"]).default("harness");
 
 export const harnessFamilySchema = z.enum([
   "claude-code",
@@ -46,6 +48,14 @@ export const templateSpecSchema = z
     description: z.string().optional(),
     category: templateCategorySchema,
     harness: harnessFamilySchema.optional(),
+    providers: z
+      .array(
+        z.custom<ProviderPresetType>(
+          (v) => typeof v === "string" && isProviderPresetType(v),
+          "unknown provider type",
+        ),
+      )
+      .optional(),
     tags: z.array(z.string()).optional(),
     docsUrl: z.string().optional(),
     releaseNotesUrl: z.string().optional(),

@@ -31,7 +31,7 @@ test("exchange messages with the agent", async ({ page }) => {
   await setMockAgentReply(api, agentId, scriptedReply);
 
   await test.step("open the agent chat from the agent list", async () => {
-    await page.goto(`${baseUrl}/coding-agents`);
+    await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
 
     await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
@@ -69,7 +69,7 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
 
   try {
     await test.step("open the agent chat", async () => {
-      await page.goto(`${baseUrl}/coding-agents`);
+      await page.goto(baseUrl);
       await expect(page.getByTestId("app-sidebar")).toBeVisible();
       await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
       await gotoAgentChat(page, agentName, agentId);

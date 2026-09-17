@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-09-08
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -96,7 +96,7 @@ Six properties of that stream are load-bearing for anyone reading the numbers:
 
 - **A session turn is counted when the prompt is sent, not when the reply lands.** Recording it on completion made the count depend on the transport surviving the whole turn, and the relay does not: a reconnect mid-turn dropped the socket, the turn was booked as a failure, and the reply arrived on a new socket that never saw the prompt and so counted as nothing. The bias fell entirely on long-running turns — the ones that matter most. Counting the send removes the dependency, and it is also the honest unit: what the user did is ask, and whether an answer came back is a question about the agent and its provider, not about platform usage. The cost is that abandonment is no longer visible; that was judged the cheaper loss, since an outcome skewed by network and provider failures would be read as product signal. The send is counted where the prompt is accepted from the client rather than where it is forwarded, so one abandoned during a cold start still counts — that window is exactly where a user waits longest.
 
-- **Only prompts a person typed are counted.** The UI sends one itself: opening a Kinded Agent that has no sessions yet fires a hidden greeting, so counting every prompt frame would make a sandbox someone opened once and abandoned read as having held a conversation — and that is precisely the sandbox the number needs to expose. Machine-originated prompts therefore mark themselves on the wire and the relay skips them. An unmarked prompt still counts, so a client that does not know about the marker is over- rather than under-recorded: a missing turn is invisible, an extra one is at least explicable.
+- **Only prompts a person typed are counted.** A Kinded Agent's first turn is an initialization event the runtime opens on the agent's side, so it never passes the relay; a machine-originated prompt that does pass it marks itself on the wire and the relay skips it. Either way a sandbox someone opened once and abandoned never reads as having held a conversation — and that is precisely the sandbox the number needs to expose. An unmarked prompt still counts, so a client that does not know about the marker is over- rather than under-recorded: a missing turn is invisible, an extra one is at least explicable.
 
 - **Connect events cover every authentication kind, not just OAuth.** A connection reaches its connected state either at creation or — for OAuth alone — when its authorization callback lands, so the event fires at whichever of those two points completes it. Emitting at both would double-count OAuth; emitting only at the callback (as it once did) left every non-OAuth connection invisible and could make disconnects outnumber connects.
 - **A connection event names its provider, not just its grant.** A Connection's identifier is per-grant and its record is destroyed on disconnect, so the provider must ride the event or the answer to *which providers do people connect* dies with the Connection.

@@ -41,6 +41,7 @@ export interface ComposeSchedulesAtBootOpts {
     stamp: AgentActivityStamp,
   ) => Promise<void>;
   redis: Redis;
+  onboardingPending?: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
 }
 
@@ -61,6 +62,9 @@ export function composeSchedulesAtBoot(
       "schedule:activity-stamp",
       ACTIVITY_STAMP_TTL_MS,
     ),
+    ...(opts.onboardingPending
+      ? { onboardingPending: opts.onboardingPending }
+      : {}),
     log,
   });
   const worker = startScheduleWorker({

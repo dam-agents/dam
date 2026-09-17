@@ -39,10 +39,7 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   });
 
   await test.step("open the coding agent setup page", async () => {
-    await page
-      .getByRole("button", { name: /create a coding agent/i })
-      .first()
-      .click();
+    await page.goto(`${baseUrl}/agents/new`);
     await expect(page.getByTestId("provider-select")).toBeVisible();
   });
 

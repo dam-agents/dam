@@ -1,4 +1,4 @@
-import { knowledgeBaseTemplateIdSchema } from "api-server-api";
+import { starterKitScheduleOverrideSchema } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -13,8 +13,8 @@ export const setupFormSchema = z.object({
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
-  kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
+  skipSeed: z.boolean().default(false),
   hibernationTimeoutMin: z
     .number()
     .int()
@@ -22,6 +22,9 @@ export const setupFormSchema = z.object({
     .nullable()
     .default(null)
     .catch(null),
+  slackChannelId: z.string().default(""),
+  skippedSchedules: z.array(z.string()).default([]),
+  scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 
@@ -32,20 +35,16 @@ export interface SetupFormState {
   reset: () => void;
 }
 
-function storageKey(flow: SetupFlow): string {
-  return `platform-setup-${flow}`;
-}
-
-function save(flow: SetupFlow, form: SetupForm): void {
+function save(key: string, form: SetupForm): void {
   try {
-    sessionStorage.setItem(storageKey(flow), JSON.stringify(form));
+    sessionStorage.setItem(key, JSON.stringify(form));
   } catch {}
 }
 
-function load(flow: SetupFlow): SetupForm | null {
+function load(key: string, flow: SetupFlow): SetupForm | null {
   let stored: unknown;
   try {
-    const raw = sessionStorage.getItem(storageKey(flow));
+    const raw = sessionStorage.getItem(key);
     if (!raw) return null;
     stored = JSON.parse(raw);
   } catch {
@@ -66,12 +65,16 @@ export function useSetupForm(
   flow: SetupFlow,
   defaults: Partial<SetupForm> = {},
   returnPath?: string,
+  scope?: string,
 ): SetupFormState {
+  const key = scope
+    ? `platform-setup-${flow}:${scope}`
+    : `platform-setup-${flow}`;
   const [form, setForm] = useState<SetupForm>(() => {
-    const restored = load(flow);
+    const restored = load(key, flow);
     if (restored) return restored;
     const fresh = setupFormSchema.parse({ name: "", ...defaults });
-    save(flow, fresh);
+    save(key, fresh);
     return fresh;
   });
 
@@ -79,11 +82,11 @@ export function useSetupForm(
     (patch: Partial<SetupForm>) => {
       setForm((prev) => {
         const next = { ...prev, ...patch };
-        save(flow, next);
+        save(key, next);
         return next;
       });
     },
-    [flow],
+    [key],
   );
 
   const toggleConnection = useCallback(
@@ -95,11 +98,11 @@ export function useSetupForm(
             ? [...new Set([...prev.connectionIds, id])]
             : prev.connectionIds.filter((x) => x !== id),
         };
-        save(flow, next);
+        save(key, next);
         return next;
       });
     },
-    [flow],
+    [key],
   );
 
   const setName = useCallback((name: string) => update({ name }), [update]);
@@ -107,9 +110,9 @@ export function useSetupForm(
 
   const reset = useCallback(() => {
     try {
-      sessionStorage.removeItem(storageKey(flow));
+      sessionStorage.removeItem(key);
     } catch {}
-  }, [flow]);
+  }, [key]);
 
   useEffect(() => {
     if (!returnPath) return;
@@ -124,7 +127,7 @@ export function useSetupForm(
           ...prev,
           connectionIds: [...new Set([...prev.connectionIds, connectionId])],
         };
-        save(flow, next);
+        save(key, next);
         return next;
       });
       return;
@@ -136,7 +139,7 @@ export function useSetupForm(
           ? "Connection authorized, but no connection was returned."
           : `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
     });
-  }, [flow, returnPath]);
+  }, [key, returnPath]);
 
   return { form, update, toggleConnection, reset };
 }

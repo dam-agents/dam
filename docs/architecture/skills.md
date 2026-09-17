@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-15
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -91,7 +91,7 @@ A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#sk
 - **Installed** — also tracked in `agent_skills`. Drift surfaces when its Postgres `contentHash` differs from the upstream scan's `contentHash`.
 - **Standalone** — on disk but not tracked. Authored in place via the Files panel, uploaded as Markdown files, seeded from the image (and platform-managed while its bytes match a shipped version — see [agent-skills](agent-skills.md)), or copied in by an Agent Kind's Install Command at create ([experiments](experiments.md) installs its authoring skill that way). A matching `agent_skill_publishes` row gives it a badge whose label is the pull request's **resolved state** — `Draft`, `Open`, `Merged`, `Closed`, or `Submitted` when the state isn't known — so the badge is a claim about the pull request, not merely about the row's existence. `Publish again` is offered in the `Closed` state only, where nothing landed upstream. There is still no install toggle; a **merged** standalone skill instead offers a `Track from {source}` kebab action, which hands it to the source and turns it into an Installed Skill Ref governed by the normal drift loop. That action is not the install toggle this section rejects — it is a one-way, explicitly confirmed governance handover. De-duplication is separate and deliberately looser: whenever a published skill's local copy is byte-identical to the content its source now serves, that source's own entry is suppressed so the page doesn't list one file twice. It keys on the publish record plus hash equality rather than on the resolved `merged` state, because the resolved state is only a lagging proxy for "the content is upstream" — gating on it would leave the duplicate visible from the moment a pull request merges until the resolver next looks. Tracking keeps the stricter `merged` gate, since it overwrites the local copy.
 
-The reconciled `state` read has a consumer beyond the Skills surface: the chat view gates a fresh experiment agent's onboarding greeting on its authoring skill being reported present, which is how it avoids running a command whose Install Command has not landed yet. A skill's bucket is not stable — tracking one moves it from Standalone to Installed — so a reader asking "is this skill on disk" must consider both.
+A skill's bucket is not stable — tracking one moves it from Standalone to Installed — so a reader asking "is this skill on disk" must consider both.
 
 ### Skill Publish Record
 
@@ -115,7 +115,7 @@ A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique 
 
 A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct. No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today. Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
 
-**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
+**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. The same apply, fed `(gitUrl, name)` entries directly rather than saved sets, is what a [starter kit](starter-kits.md) uses to install its external skills, so both paths share one resolution and one set of verdicts. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
 
 Names reuse the Connection name rule from one shared definition. Renaming is absent: a typo means deleting the set and saving it again, from the same dialog that adds one. An apply is bounded by the union it resolves, so a selection larger than one batch is refused before any source is read rather than part-way through.
 

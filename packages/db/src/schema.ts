@@ -214,6 +214,22 @@ export const agentSkills = pgTable(
   ],
 );
 
+export const starterKitCatalogEntries = pgTable(
+  "starter_kit_catalog_entries",
+  {
+    catalog: text("catalog").notNull(),
+    kitId: text("kit_id").notNull(),
+    version: text("version").notNull(),
+    source: text("source").notNull(),
+    kit: jsonb("kit").notNull(),
+    bundledSkills: jsonb("bundled_skills"),
+    refreshedAt: timestamp("refreshed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.catalog, table.kitId] })],
+);
+
 export const activityEvents = pgTable(
   "activity_events",
   {
@@ -283,6 +299,7 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
     skillsSnapshot: jsonb("skills_snapshot"),
+    onboardingChecklist: jsonb("onboarding_checklist"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );

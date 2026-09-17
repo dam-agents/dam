@@ -11,6 +11,8 @@ export const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
+  activityOpen: boolean;
+  setActivityOpen: (open: boolean) => void;
 }
 
 export function readStoredSidebarExpanded(): boolean {
@@ -28,4 +30,6 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
   },
+  activityOpen: false,
+  setActivityOpen: (open) => set({ activityOpen: open }),
 });

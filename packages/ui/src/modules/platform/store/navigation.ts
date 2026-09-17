@@ -8,6 +8,7 @@ import {
   routeToPath,
   type SandboxSection,
   type SettingsTab,
+  type StarterKitCategory,
   type View,
 } from "../lib/routes.js";
 
@@ -15,16 +16,17 @@ type ParameterlessView =
   | "home"
   | "terms"
   | "artifacts"
-  | "coding-agents"
-  | "coding-agent-new"
-  | "knowledge-base-new"
-  | "knowledge-bases";
+  | "agent-new"
+  | "starter-kits";
 
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  starterKitCatalog: string | null;
+  starterKitId: string | null;
+  starterKitCategory: StarterKitCategory | null;
   sandboxFocus: string | null;
   clearSandboxFocus: () => void;
   hydrateRoute: () => void;
@@ -35,7 +37,9 @@ export interface NavigationSlice {
     section?: SandboxSection,
     focus?: string,
   ) => void;
-  navigateToKnowledgeBases: () => void;
+  navigateToStarterKit: (catalog: string, kitId: string) => void;
+  navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
+  navigateToStarterKits: (category?: StarterKitCategory) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -99,9 +103,41 @@ export const createNavigationSlice: StateCreator<
       sandboxFocus: focus ?? null,
     });
   },
-  navigateToKnowledgeBases: () => {
-    history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));
-    set({ view: "knowledge-bases", agentId: null, sandboxFocus: null });
+  navigateToStarterKit: (catalog, kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit", catalog, kit: kitId }),
+    );
+    set({
+      view: "starter-kit",
+      starterKitCatalog: catalog,
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
+    });
+  },
+  navigateToStarterKitSetup: (catalog, kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit-new", catalog, kit: kitId }),
+    );
+    set({
+      view: "starter-kit-new",
+      starterKitCatalog: catalog,
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
+    });
+  },
+  navigateToStarterKits: (category) => {
+    const route = {
+      view: "starter-kits" as const,
+      ...(category ? { category } : {}),
+    };
+    history.pushState(null, "", routeToPath(route));
+    set({ ...routeToNavigationState(route), sandboxFocus: null });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

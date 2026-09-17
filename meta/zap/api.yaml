@@ -415,11 +415,11 @@ jobs:
         name: experiments.delete
         headers: ["Content-Type: application/json"]
         data: "{\"id\": \"zap\"}"
-      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/knowledgeBases.create"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/starterKits.create"
         method: POST
-        name: knowledgeBases.create
+        name: starterKits.create
         headers: ["Content-Type: application/json"]
-        data: "{\"name\": \"zap\", \"templateId\": \"zap\", \"image\": \"zap\", \"description\": \"zap\", \"connectionIds\": [\"zap\"], \"egressPreset\": \"none\", \"size\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}, \"kbTemplateId\": \"llm-wiki\"}"
+        data: "{\"catalog\": \"zap\", \"kitId\": \"zap\", \"name\": \"zap\", \"templateId\": \"zap\", \"connectionIds\": [\"zap\"], \"skipSchedules\": [\"zap\"], \"scheduleOverrides\": []}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/kbShares.status?input=%7B%22agentId%22%3A%20%22zap%22%7D"
         method: GET
         name: kbShares.status
