@@ -33,10 +33,15 @@ export function concreteResources(
     : { limits };
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, so a template's own backend is only the default. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
-  opts: { description?: string; size?: { cpu?: string; memory?: string } },
+  opts: {
+    description?: string;
+    size?: { cpu?: string; memory?: string };
+    vm?: boolean;
+  },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
   return {
@@ -51,9 +56,9 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: tmplSpec.backend,
-    runtimeClassName: tmplSpec.runtimeClassName,
-    nodeSelector: tmplSpec.nodeSelector,
+    backend: opts.vm ? { type: "vm" } : tmplSpec.backend,
+    runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
+    nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
   };
 }
 
@@ -63,6 +68,7 @@ export function assembleSpecFromImage(
     image?: string;
     description?: string;
     size?: { cpu?: string; memory?: string };
+    vm?: boolean;
   },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
@@ -71,5 +77,6 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
+    backend: opts.vm ? { type: "vm" } : undefined,
   };
 }

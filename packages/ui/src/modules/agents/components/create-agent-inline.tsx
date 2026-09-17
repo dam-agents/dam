@@ -6,8 +6,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../types.js";
+import { useFeatures } from "../../features/api/queries.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -25,9 +27,11 @@ interface Props {
 
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
+  const { data: flags } = useFeatures();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
+  const [vm, setVm] = useState(false);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName("coding-agent", name, setName);
 
@@ -41,6 +45,7 @@ export function CreateAgentInline({ onCreated }: Props) {
     templateId: selectedTemplateId,
     providerRef,
     egressPreset: "trusted",
+    vm,
   };
   const canCreate = isCreateAgentDraftComplete(draft);
 
@@ -76,6 +81,18 @@ export function CreateAgentInline({ onCreated }: Props) {
           ))}
         </Select>
       </FormField>
+
+      {flags?.["vm-sandboxes"] && (
+        <div className="flex items-center gap-3 text-sm">
+          <Switch
+            checked={vm}
+            onCheckedChange={setVm}
+            label="Run in a microVM"
+            testId="vm-toggle"
+          />
+          Run in a microVM
+        </div>
+      )}
 
       <div>
         <SectionLabel spaced>Provider</SectionLabel>

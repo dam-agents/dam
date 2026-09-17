@@ -16,6 +16,7 @@ const complete: CreateAgentDraft = {
   templateId: "claude-code",
   providerRef: { id: "conn-123" },
   egressPreset: "trusted",
+  vm: false,
 };
 
 describe("create-agent draft completeness", () => {
@@ -49,6 +50,15 @@ describe("buildCreateAgentInput", () => {
     ).toMatchObject({ egressPreset: "all" });
   });
 
+  // TEST_SCENARIO: the backend is chosen beside the image, not by picking a different one, so the same template reaches the server either way and only the vm flag differs.
+  it("asks for a microVM without changing the template", () => {
+    expect(buildCreateAgentInput({ ...complete, vm: true })).toMatchObject({
+      templateId: "claude-code",
+      vm: true,
+    });
+    expect(buildCreateAgentInput(complete)).not.toHaveProperty("vm");
+  });
+
   it("throws on an incomplete draft", () => {
     expect(() =>
       buildCreateAgentInput({ ...complete, providerRef: null }),
@@ -64,6 +74,7 @@ const setup: CodingAgentSetupDraft = {
   connectionIds: ["conn-granted"],
   registryCredential: EMPTY_REGISTRY_CREDENTIAL,
   hibernationTimeoutMin: 60,
+  vm: false,
 };
 
 const fullCredential = {

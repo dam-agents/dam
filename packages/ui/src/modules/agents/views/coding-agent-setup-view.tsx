@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { sizeInMi } from "../../budgets/lib/slots.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -11,6 +12,7 @@ import { ImageSection } from "../../sandboxes/components/setup/image-section.js"
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
+  IsolationSetupSection,
   LifecycleSetupSection,
   NameSection,
   ProviderSection,
@@ -36,6 +38,7 @@ export function CodingAgentSetupView() {
   );
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
+  const { data: flags } = useFeatures();
 
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -62,6 +65,7 @@ export function CodingAgentSetupView() {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
+    vm: form.vm,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
@@ -121,6 +125,10 @@ export function CodingAgentSetupView() {
         }
         onSubmit={() => void create()}
       />
+
+      {flags?.["vm-sandboxes"] && (
+        <IsolationSetupSection vm={form.vm} onChange={(vm) => update({ vm })} />
+      )}
 
       <ProviderSection
         selected={form.providerRef}

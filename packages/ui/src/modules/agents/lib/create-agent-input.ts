@@ -11,6 +11,7 @@ export interface CreateAgentDraft {
   templateId: string | null;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
+  vm: boolean;
 }
 
 export function isCreateAgentDraftComplete(draft: CreateAgentDraft): boolean {
@@ -31,6 +32,7 @@ export function buildCreateAgentInput(
     name: draft.name.trim(),
     templateId: draft.templateId!,
     egressPreset: draft.egressPreset,
+    ...(draft.vm ? { vm: true } : {}),
     appConnectionIds: [draft.providerRef!.id],
   };
 }
@@ -43,6 +45,7 @@ export interface CodingAgentSetupDraft {
   connectionIds: string[];
   registryCredential: RegistryCredential;
   hibernationTimeoutMin: number | null;
+  vm: boolean;
 }
 
 export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
@@ -82,6 +85,7 @@ export function buildCodingAgentSetupInput(
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
+    ...(draft.vm ? { vm: true } : {}),
     ...(draft.hibernationTimeoutMin === null
       ? {}
       : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),

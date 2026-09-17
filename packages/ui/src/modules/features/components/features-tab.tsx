@@ -30,7 +30,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "vm-sandboxes",
     label: "VM sandboxes",
     description:
-      "Reveals images that boot as their own microVM instead of a container, in the coding agent’s image list.",
+      "Adds the isolation choice to the coding agent’s setup, so an image can be booted as its own microVM instead of a container.",
   },
   {
     id: "session-costs",

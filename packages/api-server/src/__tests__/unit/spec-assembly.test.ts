@@ -32,6 +32,34 @@ describe("assembleSpecFromTemplate", () => {
     );
     expect(spec.hibernationTimeout).toBeUndefined();
   });
+
+  // TEST_SCENARIO: the vm backend is chosen beside the image rather than by picking a different template, so a plain container template must assemble as a microVM on request — and runtimeClassName and nodeSelector, which the CRD rejects on that backend, must not ride along.
+  it("boots a container template as a microVM without its container-only placement", () => {
+    const spec = assembleSpecFromTemplate(
+      "nous-1",
+      {
+        ...baseTemplate,
+        runtimeClassName: "kata",
+        nodeSelector: { pool: "gpu" },
+      },
+      { vm: true },
+      defaultLimits,
+    );
+    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.runtimeClassName).toBeUndefined();
+    expect(spec.nodeSelector).toBeUndefined();
+  });
+
+  it("leaves a template's own backend alone when the caller asks for nothing", () => {
+    const spec = assembleSpecFromTemplate(
+      "nous-1",
+      { ...baseTemplate, runtimeClassName: "kata" },
+      {},
+      defaultLimits,
+    );
+    expect(spec.backend).toBeUndefined();
+    expect(spec.runtimeClassName).toBe("kata");
+  });
 });
 
 describe("concreteResources", () => {
