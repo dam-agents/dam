@@ -16,7 +16,7 @@ seed:
   url: https://github.com/dam-agents/plain-wiki
   ref: main
 install:
-  command: PLAIN_WIKI_BASE="file://$PWD" bash bootstrap.sh
+  command: bash bootstrap.sh
 providers: [ibm-litellm, anthropic, openai]
 parameters:
   - name: what the knowledge base should cover
