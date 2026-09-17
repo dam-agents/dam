@@ -3705,7 +3705,8 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const { conversationId, attachment } = options ?? {};
+      const { conversationId, attachment, unfurlLinks, unfurlMedia } =
+        options ?? {};
       if (!text && !attachment) {
         return { error: "nothing to send — pass text or an attachment" };
       }
@@ -3728,6 +3729,8 @@ export function createSlackWorker(
             teamId: target.teamId,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
+            ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+            ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           });
         }
         if (attachment) {
@@ -3949,6 +3952,12 @@ export function createSlackWorker(
           text: args.text,
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
+          ...(args.unfurlLinks !== undefined
+            ? { unfurlLinks: args.unfurlLinks }
+            : {}),
+          ...(args.unfurlMedia !== undefined
+            ? { unfurlMedia: args.unfurlMedia }
+            : {}),
         });
         if (args.attachment) {
           try {
