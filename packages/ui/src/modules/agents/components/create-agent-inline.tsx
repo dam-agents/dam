@@ -6,13 +6,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../types.js";
-import {
-  useFeatures,
-  useInstallCapabilities,
-} from "../../features/api/queries.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -30,18 +26,12 @@ interface Props {
 
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
-  const { data: flags } = useFeatures();
-  const { data: install } = useInstallCapabilities();
+  const vmRuntime = useVmRuntime();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
-  const [vm, setVm] = useState(false);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName("coding-agent", name, setName);
-
-  const vmAnswered = flags !== undefined && install !== undefined;
-  const offerVm =
-    vmAnswered && flags["vm-sandboxes"] === true && install.virtualization;
 
   const selectedTemplateId =
     templateId ??
@@ -53,9 +43,9 @@ export function CreateAgentInline({ onCreated }: Props) {
     templateId: selectedTemplateId,
     providerRef,
     egressPreset: "trusted",
-    vm: offerVm && vm,
+    vm: vmRuntime.vm,
   };
-  const canCreate = isCreateAgentDraftComplete(draft);
+  const canCreate = isCreateAgentDraftComplete(draft) && vmRuntime.answered;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -89,18 +79,6 @@ export function CreateAgentInline({ onCreated }: Props) {
           ))}
         </Select>
       </FormField>
-
-      {offerVm && (
-        <div className="flex items-center gap-3 text-sm">
-          <Switch
-            checked={vm}
-            onCheckedChange={setVm}
-            label="Run in a microVM"
-            testId="vm-toggle"
-          />
-          Run in a microVM
-        </div>
-      )}
 
       <div>
         <SectionLabel spaced>Provider</SectionLabel>

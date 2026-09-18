@@ -7,7 +7,9 @@ Available:
 - `node` (24), `npm`, `pnpm`
 - `python` (3.12), `uv`, `uvx`
 - `gh`, `rg`, `fd`, `jq`, `gws`, `kubectl`, `oc`
+- `mise` to install extra software
 
-Only available if running in a root VM:
-- `k3s` (start with `k3s server &`, then use `k3s kubectl`, stops on restart)
-- `docker` (daemon starts when first called, stops on restart)
+Additionally available if running in a root VM:
+- `k3s`: start with `k3s server &`, use `k3s kubectl`, stops on restart
+- `docker`: daemon starts when first called, stops on restart
+- `dnf` to install extra software

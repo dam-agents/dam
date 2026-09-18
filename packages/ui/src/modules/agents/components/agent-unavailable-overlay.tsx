@@ -16,6 +16,7 @@ import type {
 } from "../utils/agent-resolver.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
+import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 interface OverlayCopy {
   Icon?: typeof Asleep;
@@ -83,7 +84,10 @@ export function AgentUnavailableOverlay({
           <h2 className="text-5xl font-normal tracking-tight text-foreground">
             {agent.name}
           </h2>
-          <Badge variant="warning">Reconnecting</Badge>
+          <div className="flex items-center gap-2">
+            <VmRuntimeBadge agent={agent} />
+            <Badge variant="warning">Reconnecting</Badge>
+          </div>
         </div>
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
@@ -119,7 +123,10 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        <StatusBadge state={state} />
+        <div className="flex items-center gap-2">
+          <VmRuntimeBadge agent={agent} />
+          <StatusBadge state={state} />
+        </div>
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {!Icon && <StartupTip sandbox={agent.name} />}

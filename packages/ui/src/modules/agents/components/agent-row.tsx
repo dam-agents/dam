@@ -24,6 +24,7 @@ import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
+import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 interface Props {
   agent: AgentView;
@@ -86,6 +87,7 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
+          <VmRuntimeBadge agent={agent} />
           <ContributionFailuresBadge failures={agent.contributionFailures} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
