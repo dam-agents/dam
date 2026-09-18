@@ -176,7 +176,7 @@ describe("online", () => {
 });
 
 describe("draining", () => {
-  it("is cleared by connect and drain alone, never by a heartbeat", async () => {
+  it("survives a heartbeat, and ends when the machine claims again", async () => {
     const calls: string[] = [];
     const repo = {
       get: async () => satellite({ draining: true }),
@@ -197,11 +197,16 @@ describe("draining", () => {
     });
 
     await ops.heartbeat("alice", { satellite: "gpu-box", running: [] });
+    expect(
+      calls,
+      "a machine that is shutting down must not un-shut itself on its own beat",
+    ).toEqual(["touch"]);
+
     await ops.claim("alice", { satellite: "gpu-box", capacity: 4, waitMs: 0 });
     expect(
-      calls.filter((c) => c.startsWith("setDraining")),
-      "a machine that is shutting down must not un-shut itself on its own beat",
-    ).toEqual([]);
+      calls,
+      "but a draining worker stops claiming, so a claim means it is serving again",
+    ).toContain("setDraining:false");
 
     await ops.drain("alice", "gpu-box");
     expect(calls).toContain("setDraining:true");

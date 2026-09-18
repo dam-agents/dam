@@ -55,11 +55,12 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       const deadline = now().getTime() + (input.waitMs ?? 0);
 
       for (;;) {
-        await deps.repo.touch(owner, input.satellite);
+        await deps.repo.setDraining(owner, input.satellite, false);
 
         const cancels = await deps.repo.takeCancellations(
           owner,
           input.satellite,
+          new Date(now().getTime() - LEASE_MS),
         );
         const items: WorkItem[] = cancels.map((job) => ({
           kind: "cancel",
@@ -134,6 +135,25 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
 export function createLeaseSweep(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
   return async (): Promise<number> => {
+    for (const job of await deps.repo.staleUnstarted(now())) {
+      const settled = await deps.repo.settle(
+        job.owner,
+        job.satellite,
+        job.sequence,
+        {
+          status: "cancelled",
+          reason: "it waited past its expiry without ever starting",
+        },
+      );
+      if (settled === null) continue;
+      await deps.deliverOutcome({
+        owner: job.owner,
+        agentId: job.agentId,
+        satellite: job.satellite,
+        sequence: job.sequence,
+      });
+    }
+
     const expired = await deps.repo.expiredLeases(now());
     for (const job of expired) {
       const settled = await deps.repo.settle(

@@ -49,6 +49,7 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     truncated: r.truncated,
     reason: r.reason,
     cancelRequested: r.cancelRequested,
+    cancelSentAt: r.cancelSentAt,
     deliveredAt: r.deliveredAt,
     wokeAt: r.wokeAt,
     startedAt: r.startedAt,
@@ -85,7 +86,6 @@ export function createSatellitesRepository(db: Db) {
             host,
             maxConcurrent,
             commands: manifest.commands,
-            draining: false,
             lastSeenAt: new Date(),
           },
         });
@@ -363,19 +363,32 @@ export function createSatellitesRepository(db: Db) {
      * cancellation the worker then ignores is bounded anyway: the Job either
      * finishes or its lease expires.
      */
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Hands over the cancellations waiting for this
+     * Satellite, at most once per lease. The request stays set, because clearing
+     * it on handover loses the cancellation outright if the poll response never
+     * arrives; the send is stamped instead, and a stamp older than a lease is
+     * re-sent to a worker that evidently did not act on it. Leaving it unstamped
+     * would re-send on every poll, and a poll that always answers never rests.
+     */
     async takeCancellations(
       owner: string,
       satellite: string,
+      resendBefore: Date,
     ): Promise<JobRow[]> {
       const rows = await db
         .update(satelliteJobs)
-        .set({ cancelRequested: false })
+        .set({ cancelSentAt: new Date() })
         .where(
           and(
             eq(satelliteJobs.owner, owner),
             eq(satelliteJobs.satellite, satellite),
             eq(satelliteJobs.status, "running"),
             eq(satelliteJobs.cancelRequested, true),
+            or(
+              sql`${satelliteJobs.cancelSentAt} is null`,
+              lt(satelliteJobs.cancelSentAt, resendBefore),
+            ),
           ),
         )
         .returning();
@@ -588,6 +601,26 @@ export function createSatellitesRepository(db: Db) {
             ),
           ),
         );
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Jobs past their TTL that never reached a
+     * machine — queued with nobody claiming, or held for an approval whose row
+     * is gone. They are settled rather than deleted: each still holds a place
+     * against the Satellite's concurrency, and the Agent that started it is owed
+     * an answer.
+     */
+    async staleUnstarted(now: Date): Promise<JobRow[]> {
+      const rows = await db
+        .select()
+        .from(satelliteJobs)
+        .where(
+          and(
+            lt(satelliteJobs.expiresAt, now),
+            notInArray(satelliteJobs.status, [...TERMINAL_STATUSES, "running"]),
+          ),
+        );
+      return rows.map(toJob);
     },
 
     async expiredLeases(now: Date): Promise<JobRow[]> {

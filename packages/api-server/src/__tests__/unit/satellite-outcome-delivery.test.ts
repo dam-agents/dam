@@ -33,6 +33,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     truncated: false,
     reason: null,
     cancelRequested: false,
+    cancelSentAt: null,
     deliveredAt: null,
     wokeAt: null,
     startedAt: new Date(),

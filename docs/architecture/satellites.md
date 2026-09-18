@@ -69,7 +69,7 @@ The count and the insert share one transaction, so two starts arriving together 
 
 `max_concurrent` is clamped to an operator ceiling. Everywhere else the Manifest governs the user's own machine and wins; here the queue is Platform's storage, so a Satellite may ask for less than the ceiling and never for more.
 
-A start is refused outright while the Satellite is **offline** (no heartbeat inside the window) or **draining**. Only `connect` and `drain` move that flag — a heartbeat may not clear it, or a shutting-down machine would un-shut itself on its own next beat.
+A start is refused outright while the Satellite is **offline** (no heartbeat inside the window) or **draining**. Draining is set by `drain` and cleared by a **claim**, and by nothing else: a draining worker stops claiming, so a claim is the machine saying it serves again, while a heartbeat and a Manifest push both say nothing about readiness. A heartbeat that cleared it would let a shutting-down machine un-shut itself on its own next beat.
 
 ## Jobs
 
@@ -90,7 +90,7 @@ A start is refused outright while the Satellite is **offline** (no heartbeat ins
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.
 
-An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it.
+An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it. A Job that reached its TTL without ever starting — queued with nobody claiming, or held for an approval that is gone — is **settled and told**, not deleted: it holds a place against the Satellite's concurrency until something ends it.
 
 Output is captured with stdout and stderr merged in terminal order. Under a few KB it comes back inline; over that the tool returns a path and the full log is written into the Agent's own sandbox, so a large log costs the model a line rather than a context window. The file is written **at read time** — when an outcome arrives the Agent may be hibernating, but an Agent asking for it is up by definition.
 

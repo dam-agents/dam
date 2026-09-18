@@ -25,6 +25,7 @@ export interface JobRow {
   truncated: boolean;
   reason: string | null;
   cancelRequested: boolean;
+  cancelSentAt: Date | null;
   deliveredAt: Date | null;
   wokeAt: Date | null;
   startedAt: Date | null;

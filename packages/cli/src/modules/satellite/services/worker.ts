@@ -113,11 +113,9 @@ export function createWorker(deps: {
 
     let output = "";
     let truncated = false;
-    const decoder = new StringDecoder("utf8");
-    const keep = (chunk: Buffer): void => {
-      if (truncated) return;
+    const append = (text: string): void => {
+      if (truncated || text === "") return;
       const room = OUTPUT_CAP_BYTES - output.length;
-      const text = decoder.write(chunk);
       if (text.length >= room) {
         output += text.slice(0, room);
         truncated = true;
@@ -132,8 +130,12 @@ export function createWorker(deps: {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout?.on("data", keep);
-    child.stderr?.on("data", keep);
+    for (const stream of [child.stdout, child.stderr]) {
+      if (!stream) continue;
+      const decoder = new StringDecoder("utf8");
+      stream.on("data", (chunk: Buffer) => append(decoder.write(chunk)));
+      stream.on("end", () => append(decoder.end()));
+    }
 
     const settle = (exitCode: number, signal: NodeJS.Signals | null): void => {
       const entry = running.get(item.sequence);
