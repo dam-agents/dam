@@ -6,7 +6,11 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import { useFeatures, useSetFeature } from "../api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+  useSetFeature,
+} from "../api/queries.js";
 
 interface FeatureRow {
   id: FeatureId;
@@ -58,10 +62,12 @@ const FEATURE_ROWS: FeatureRow[] = [
 function FeatureRowCard({
   row,
   enabled,
+  unsupported,
   onToggle,
 }: {
   row: FeatureRow;
   enabled: boolean;
+  unsupported?: string;
   onToggle: (enabled: boolean) => void;
 }) {
   return (
@@ -78,6 +84,11 @@ function FeatureRowCard({
         <span className="mt-0.5 block text-sm text-muted-foreground">
           {row.description}
         </span>
+        {unsupported && (
+          <span className="mt-1 block text-sm text-warning-fg">
+            {unsupported}
+          </span>
+        )}
       </span>
       <Switch checked={enabled} onCheckedChange={onToggle} />
     </label>
@@ -86,6 +97,7 @@ function FeatureRowCard({
 
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
+  const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
   return (
@@ -101,6 +113,11 @@ export function FeaturesTab() {
             key={row.id}
             row={row}
             enabled={flags?.[row.id] ?? false}
+            unsupported={
+              row.id === "vm-sandboxes" && install?.virtualization === false
+                ? "This install cannot run the new sandbox runtime, so agents keep the current one until an administrator enables virtualization."
+                : undefined
+            }
             onToggle={(enabled) =>
               setFeature.mutate({ feature: row.id, enabled })
             }

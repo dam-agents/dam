@@ -5,10 +5,7 @@ import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { sizeInMi } from "../../budgets/lib/slots.js";
-import {
-  useFeatures,
-  useInstallCapabilities,
-} from "../../features/api/queries.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -42,12 +39,7 @@ export function CodingAgentSetupView() {
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data: flags } = useFeatures();
-  const { data: install } = useInstallCapabilities();
-  // UNIT_BOUNDARY_DESCRIPTION: the user's own switch and the install's support for microVMs are different questions, and the answer to the second is the server's. Both must be yes before an agent is created as a microVM, and neither answer has arrived on the first render, which reads the same as a no. Creating on that first render would quietly make a pod for a user who asked for the new runtime, so the form waits for both answers before it can be submitted at all.
-  const vmAnswered = flags !== undefined && install !== undefined;
-  const offerVm =
-    vmAnswered && flags["vm-sandboxes"] === true && install.virtualization;
+  const vmRuntime = useVmRuntime();
 
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -74,14 +66,16 @@ export function CodingAgentSetupView() {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
-    vm: offerVm,
+    vm: vmRuntime.vm,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
   );
   const registryPartial = hasPartialRegistryCredential(draft);
   const canCreate =
-    isCodingAgentSetupComplete(draft) && !createAgent.isPending && vmAnswered;
+    isCodingAgentSetupComplete(draft) &&
+    !createAgent.isPending &&
+    vmRuntime.answered;
 
   const create = async () => {
     if (!canCreate) return;
@@ -107,13 +101,19 @@ export function CodingAgentSetupView() {
               Finish or clear the private-registry credentials.
             </p>
           )}
+          {vmRuntime.unknown && (
+            <p className="text-sm text-muted-foreground">
+              Could not read the sandbox runtime for this install, so this agent
+              runs as a container.
+            </p>
+          )}
           <Button onClick={() => void create()} disabled={!canCreate}>
             {createAgent.isPending ? "Creating…" : "Create coding agent"}
           </Button>
         </>
       }
     >
-      {offerVm && (
+      {vmRuntime.vm && (
         <Callout tone="info" inset className="mb-8 text-sm text-foreground">
           Experimental new sandbox runtime is{" "}
           <button
