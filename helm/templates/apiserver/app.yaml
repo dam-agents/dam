@@ -86,6 +86,7 @@ spec:
             "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
+      enableServiceLinks: false
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
       terminationGracePeriodSeconds: 45

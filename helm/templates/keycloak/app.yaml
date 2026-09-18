@@ -57,6 +57,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.keycloak) | nindent 6 }}
     spec:
+      enableServiceLinks: false
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       initContainers:
         - name: wait-for-postgres

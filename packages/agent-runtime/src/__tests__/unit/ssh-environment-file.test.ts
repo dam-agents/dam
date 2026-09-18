@@ -4,11 +4,7 @@ import {
   SSHD_MAX_ENV_ENTRIES,
 } from "../../modules/ssh.js";
 
-// TEST_OVERVIEW: `~/.ssh/environment` is what gives an SSH session the agent pod's
-// environment. sshd reads it into the login shell and dies with
-// "child_set_env: too many env vars" past 1000 entries, so the file must stay under
-// that limit and keep the entries that matter (credentials, proxy, PATH) when it has
-// to drop some.
+// TEST_OVERVIEW: `~/.ssh/environment` is what gives an SSH session the agent pod's environment. sshd reads it into the login shell and dies with "child_set_env: too many env vars" past 1000 entries, so the file must stay under that limit and keep the entries that matter (credentials, proxy, PATH) when it has to drop some.
 
 const keys = (body: string) =>
   body
@@ -17,9 +13,7 @@ const keys = (body: string) =>
     .map((l) => l.split("=")[0]);
 
 describe("buildSshEnvironmentFile", () => {
-  // TEST_SCENARIO: A pod that inherits hundreds of Kubernetes service-link vars on top
-  // of its own environment. The file must stay within the sshd limit, and the service
-  // links — useless in a shell — are the ones that go, not the credentials.
+  // TEST_SCENARIO: A pod that inherits hundreds of Kubernetes service-link vars on top of its own environment. The file must stay within the sshd limit, and the service links — useless in a shell — are the ones that go, not the credentials.
   it("caps the file and drops service links first", () => {
     const env: NodeJS.ProcessEnv = {
       ANTHROPIC_AUTH_TOKEN: "t",

@@ -441,6 +441,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					DNSPolicy:                    runnerDNSPolicy(spec.DNSPolicy),
 					ServiceAccountName:           spec.ServiceAccountName,
 					AutomountServiceAccountToken: ptrBool(false),
+					EnableServiceLinks:           ptrBool(false),
 					NodeSelector:                 spec.NodeSelector,
 					Tolerations:                  spec.Tolerations,
 					ImagePullSecrets:             spec.ImagePullSecrets,
