@@ -989,10 +989,6 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
-    # k3s: the sandbox installs it through mise, from GitHub above. These two
-    # are only for an agent that runs the upstream installer itself
-    - get.k3s.io
-    - update.k3s.io
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
