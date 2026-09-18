@@ -141,13 +141,12 @@ export function createSatellitesService(
         return;
       }
       if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
-      if (settled !== null)
-        await deps.deliverOutcome({
-          owner: deps.owner,
-          agentId: settled.agentId,
-          satellite: name,
-          sequence,
-        });
+      await deps.deliverOutcome({
+        owner: deps.owner,
+        agentId: settled.agentId,
+        satellite: name,
+        sequence,
+      });
     },
   };
 }
