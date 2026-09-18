@@ -171,7 +171,7 @@ describe("agent creation with a designated provider", () => {
     {
       label: "another owner's",
       rows: [{ ...provider, ownerId: "owner-2" }],
-      code: "FORBIDDEN",
+      code: "BAD_REQUEST",
     },
     {
       label: "non-provider",
