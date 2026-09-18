@@ -57,7 +57,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       for (;;) {
         await deps.repo.touch(owner, input.satellite);
 
-        const cancels = await deps.repo.pendingCancellations(
+        const cancels = await deps.repo.takeCancellations(
           owner,
           input.satellite,
         );

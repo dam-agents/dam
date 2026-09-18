@@ -924,6 +924,16 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
+    onApprovalExpired: async (row) => {
+      if (row.payload.kind !== "satellite_job") return;
+      await satellitesBoot.applyVerdict(
+        row.ownerSub,
+        row.payload.satellite,
+        row.payload.sequence,
+        false,
+        "nobody answered the approval before it expired",
+      );
+    },
     identityResolver: {
       resolve: async (agentId) => {
         const rootId = await invocationDriverResolution.resolveRoot(agentId);

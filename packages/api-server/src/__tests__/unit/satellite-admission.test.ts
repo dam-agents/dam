@@ -8,6 +8,7 @@ import {
 } from "../../modules/satellites/domain/admission.js";
 import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
+import { composeSatellitesModule } from "../../modules/satellites/compose.js";
 
 /**
  * TEST_OVERVIEW: Admission — whether a start becomes a Job at all. It is
@@ -187,7 +188,7 @@ describe("draining", () => {
       },
       renewLeases: async () => {},
       claimQueued: async () => [],
-      pendingCancellations: async () => [],
+      takeCancellations: async () => [],
     };
     const ops = createSatelliteWorkerOps({
       repo: repo as never,
@@ -204,5 +205,47 @@ describe("draining", () => {
 
     await ops.drain("alice", "gpu-box");
     expect(calls).toContain("setDraining:true");
+  });
+});
+
+describe("an approval that nobody answers", () => {
+  it("settles its job, so the hold does not outlive the approval", async () => {
+    const settled: { status: string; reason?: string }[] = [];
+    const delivered: string[] = [];
+    const composition = composeSatellitesModule({
+      db: {} as never,
+      maxConcurrentCeiling: 64,
+      ownerOf: async () => "alice",
+      isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
+      spillLog: async () => null,
+      deliverOutcome: async ({ satellite, sequence }) => {
+        delivered.push(`${satellite}#${sequence}`);
+      },
+    });
+    (composition.repo as unknown as Record<string, unknown>).settle = async (
+      _o: string,
+      _s: string,
+      _seq: number,
+      patch: { status: string; reason?: string },
+    ) => {
+      settled.push(patch);
+      return { agentId: "agent-1" };
+    };
+
+    await composition.applyVerdict(
+      "alice",
+      "gpu-box",
+      7,
+      false,
+      "nobody answered the approval before it expired",
+    );
+
+    expect(settled[0]?.status).toBe("cancelled");
+    expect(settled[0]?.reason).toContain("expired");
+    expect(
+      delivered,
+      "the agent is told, as with any terminal outcome",
+    ).toEqual(["gpu-box#7"]);
   });
 });

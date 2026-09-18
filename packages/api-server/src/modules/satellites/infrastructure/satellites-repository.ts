@@ -108,15 +108,31 @@ export function createSatellitesRepository(db: Db) {
       return rows.map(toSatellite);
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Removes a Satellite and everything keyed on it.
+     * The Jobs go too: a Job is keyed (owner, satellite, sequence), and the
+     * sequence restarts at 1 for a Satellite registered under the same name
+     * again, so rows left behind would collide with the first Jobs of its
+     * successor. Their record goes with them, which is what removing the machine
+     * asks for.
+     */
     async remove(owner: string, name: string): Promise<void> {
       await db
-        .delete(satellites)
-        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+        .delete(satelliteJobs)
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, name),
+          ),
+        );
       await db
         .delete(satelliteGrants)
         .where(
           and(eq(satelliteGrants.owner, owner), eq(satelliteGrants.name, name)),
         );
+      await db
+        .delete(satellites)
+        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
     },
 
     async touch(owner: string, name: string): Promise<void> {
@@ -339,13 +355,21 @@ export function createSatellitesRepository(db: Db) {
       });
     },
 
-    async pendingCancellations(
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Takes the cancellations waiting for this
+     * Satellite, clearing the flag as it hands them over. The flag is a request
+     * rather than a state, so leaving it set would re-send the same work item on
+     * every poll — and a poll that always answers non-empty never rests. A
+     * cancellation the worker then ignores is bounded anyway: the Job either
+     * finishes or its lease expires.
+     */
+    async takeCancellations(
       owner: string,
       satellite: string,
     ): Promise<JobRow[]> {
       const rows = await db
-        .select()
-        .from(satelliteJobs)
+        .update(satelliteJobs)
+        .set({ cancelRequested: false })
         .where(
           and(
             eq(satelliteJobs.owner, owner),
@@ -353,7 +377,8 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.status, "running"),
             eq(satelliteJobs.cancelRequested, true),
           ),
-        );
+        )
+        .returning();
       return rows.map(toJob);
     },
 
@@ -616,6 +641,13 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Retires Jobs past their TTL. An outcome the
+     * Agent has not been told about is kept regardless of age: deleting it would
+     * drop the one turn it is owed, and the hourly wake retry is what eventually
+     * clears it. A running Job is never touched, since the machine still holds
+     * it.
+     */
     async purgeExpired(now: Date): Promise<void> {
       await db
         .delete(satelliteJobs)
@@ -623,6 +655,7 @@ export function createSatellitesRepository(db: Db) {
           and(
             lt(satelliteJobs.expiresAt, now),
             ne(satelliteJobs.status, "running"),
+            sql`${satelliteJobs.deliveredAt} is not null`,
           ),
         );
     },

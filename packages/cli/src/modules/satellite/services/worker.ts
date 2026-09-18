@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import {
   MAX_JOB_OUTPUT_BYTES,
   matchCommand,
@@ -112,10 +113,11 @@ export function createWorker(deps: {
 
     let output = "";
     let truncated = false;
+    const decoder = new StringDecoder("utf8");
     const keep = (chunk: Buffer): void => {
       if (truncated) return;
       const room = OUTPUT_CAP_BYTES - output.length;
-      const text = chunk.toString("utf8");
+      const text = decoder.write(chunk);
       if (text.length >= room) {
         output += text.slice(0, room);
         truncated = true;
@@ -261,10 +263,14 @@ export function createWorker(deps: {
               capacity: Math.max(capacity, 0),
               waitMs: CLAIM_WAIT_MS,
             });
+            let started = 0;
             for (const item of items)
               if (item.kind === "cancel") cancel(item.sequence);
-              else startJob(item);
-            if (items.length === 0 && !stopped && !draining)
+              else {
+                startJob(item);
+                started++;
+              }
+            if (started === 0 && !stopped && !draining)
               await new Promise((r) => setTimeout(r, IDLE_MS));
           } catch (err) {
             deps.log.line(`claim failed, retrying: ${String(err)}`);

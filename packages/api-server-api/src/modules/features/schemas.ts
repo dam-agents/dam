@@ -5,6 +5,7 @@ export const featureIdSchema = z.enum([
   "vm-sandboxes",
   "session-costs",
   "interactive-artifacts",
+  "satellites",
 ]);
 
 export const featureSetFlagInputSchema = z.object({

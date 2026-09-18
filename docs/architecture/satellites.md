@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-09-17
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -88,6 +88,10 @@ A start is refused outright while the Satellite is **offline** (no heartbeat ins
 
 **Jobs are never retried.** The commands are not idempotent and nothing can judge one safe to repeat.
 
+**Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.
+
+An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it.
+
 Output is captured with stdout and stderr merged in terminal order. Under a few KB it comes back inline; over that the tool returns a path and the full log is written into the Agent's own sandbox, so a large log costs the model a line rather than a context window. The file is written **at read time** — when an outcome arrives the Agent may be hibernating, but an Agent asking for it is up by definition.
 
 ## Wake on finish
@@ -109,7 +113,7 @@ An Agent parked over budget cannot wake; its outcome waits and that hourly sweep
 
 A Command Pattern may declare that it always needs a human. That gates the *start* — never the reads — and the Job is created **pending approval** rather than blocking the call, so no turn stalls and an unattended Agent's Job simply waits for a person instead of failing.
 
-It reuses the approvals queue as a third type beside ext_authz and acp_native ([security-and-credentials](security-and-credentials.md)): the user-facing concept really is "something wants your permission", and Home already aggregates exactly that. Only the *once* verdicts apply — a standing "allow forever" is spelled by removing the declaration from the Manifest, on the user's own machine, so satellite policy has one source of truth. The surfaces read that capability from the contract rather than hardcoding it, so no button is offered that the service refuses.
+An approval nobody answers **expires**, and an expiry settles the Job exactly as a refusal does: the hold would otherwise keep its place against the machine's concurrency for ever and tell the Agent nothing. It reuses the approvals queue as a third type beside ext_authz and acp_native ([security-and-credentials](security-and-credentials.md)): the user-facing concept really is "something wants your permission", and Home already aggregates exactly that. Only the *once* verdicts apply — a standing "allow forever" is spelled by removing the declaration from the Manifest, on the user's own machine, so satellite policy has one source of truth. The surfaces read that capability from the contract rather than hardcoding it, so no button is offered that the service refuses.
 
 ## Trust boundary
 
@@ -122,6 +126,8 @@ A worker authenticates with an API key carrying the **serve scope**, which cover
 Revoking a grant, deleting a Satellite and deleting an Agent share one rule: **revocation stops dispatch and stops reads, never execution.** The command is already running on a machine Platform cannot reach. Queued Jobs are cancelled, running ones finish and are still recorded for the audit trail, and the Agent simply loses the tool.
 
 ## Surfaces
+
+Satellites are a pre-release surface behind a per-user [experimental feature flag](features.md), default off. The flag is disclosure, not authorization: it decides whether the section renders, while `dam satellite` and an Agent's tools work regardless — the agent surface needs no separate gate, since the tools appear only for an Agent that holds a grant, and granting one is deliberate.
 
 The Satellites section sits inside the Connections tab — adjacent because "a thing my agent can reach, granted per Agent" is the same shelf to a user, separate because a Satellite is not a Connection: it carries no credential, and the grant is a server-side read rather than a Contribution.
 

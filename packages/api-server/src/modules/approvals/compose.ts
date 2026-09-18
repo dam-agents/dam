@@ -20,6 +20,7 @@ import {
 } from "./services/ext-authz-gate.js";
 import {
   createDeliverySweeper,
+  type CreateDeliverySweeperDeps,
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
 import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
@@ -55,6 +56,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
 }
 
 export interface ComposeApprovalsSystemDeps {
+  onApprovalExpired: CreateDeliverySweeperDeps["onExpired"];
   db: Db;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
@@ -88,6 +90,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     platformAllowedHosts: deps.platformAllowedHosts,
   });
   const sweeper = createDeliverySweeper({
+    onExpired: deps.onApprovalExpired,
     repo,
     wrapperFrameSender: deps.wrapperFrameSender,
     staleMs: deps.sweep?.staleMs ?? 30_000,

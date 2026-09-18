@@ -31,6 +31,7 @@ export interface SatellitesComposition {
     satellite: string,
     sequence: number,
     allowed: boolean,
+    reason?: string,
   ) => Promise<void>;
 }
 
@@ -70,14 +71,14 @@ export function composeSatellitesModule(deps: {
       }),
     onAgentDeleted: (agentId) => repo.revokeAgentGrants(agentId),
     listAgentIds: () => repo.listGrantedAgentIds(),
-    applyVerdict: async (owner, satellite, sequence, allowed) => {
+    applyVerdict: async (owner, satellite, sequence, allowed, reason) => {
       if (allowed) {
         await repo.release(owner, satellite, sequence);
         return;
       }
       const settled = await repo.settle(owner, satellite, sequence, {
         status: "cancelled",
-        reason: "your human declined this command",
+        reason: reason ?? "your human declined this command",
       });
       if (settled !== null)
         await deps.deliverOutcome({

@@ -242,7 +242,7 @@ Deliberately minimal for v1.
 
 `serve` is the one verb with no UI counterpart, and its **log is the interface**. The parsed Command Patterns print at startup and on every reload, so "did my pattern parse the way I meant" is answered without a `check` verb. Every refused command is logged with the pattern it came closest to and where the match broke. Every Job start, exit and duration is one line. It takes an **explicit Manifest path** — no well-known filename, no discovery: the file decides what may run on this machine, and finding it implicitly is the wrong kind of convenience. Registration is implicit on first connect, so there is no `register`.
 
-The whole subsystem ships behind an experimental feature flag ([features](../architecture/features.md)), as Knowledge Bases does, so the grammar meets real Manifests before everyone sees it.
+The UI ships behind a per-user experimental feature flag ([features](../architecture/features.md)), as Knowledge Bases did, so the grammar meets real Manifests before everyone sees it. The flag is disclosure rather than authorization, so it gates the section and not the CLI or the agent's tools — and the agent surface needs no gate of its own, since the tools appear only for an Agent holding a grant.
 
 ## Security posture
 

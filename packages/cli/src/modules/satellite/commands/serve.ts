@@ -73,6 +73,7 @@ export function buildServeCommand(deps: {
         return process.exit(EXIT_INVALID_INPUT);
       }
 
+      let interrupted = false;
       const log = {
         line: (text: string) =>
           process.stderr.write(`${new Date().toISOString()} ${text}\n`),
@@ -93,6 +94,10 @@ export function buildServeCommand(deps: {
               );
               return;
             }
+            if (interrupted) {
+              log.line("reload ignored: this satellite is draining");
+              return;
+            }
             const refusal = worker.refusesReload(next.value);
             if (refusal !== null) {
               log.line(`reload rejected: ${refusal}`);
@@ -111,7 +116,6 @@ export function buildServeCommand(deps: {
           );
       });
 
-      let interrupted = false;
       const onInterrupt = (): void => {
         if (interrupted) {
           void worker.forceStop().finally(() => process.exit(EXIT_SUCCESS));

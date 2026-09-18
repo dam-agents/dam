@@ -3,11 +3,15 @@ import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useSatellites } from "../api/queries.js";
 import { SatelliteCard } from "./satellite-card.js";
 
 export function SatellitesSection() {
-  const satellitesQ = useSatellites();
+  const { data: features } = useFeatures();
+  const enabled = features?.satellites ?? false;
+  const satellitesQ = useSatellites(enabled);
+  if (!enabled) return null;
 
   if (satellitesQ.isPending)
     return (
