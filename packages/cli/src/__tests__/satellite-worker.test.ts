@@ -251,7 +251,7 @@ run = "/bin/echo added-by-reload"
 });
 
 describe("a reload that renames the satellite", () => {
-  it("is refused, because identity is the name and a rename is a different machine", () => {
+  it("is refused before anything is pushed, because a rename is a different machine", () => {
     const renamed = parseManifest(`
 name = "other-box"
 [[command]]
@@ -260,7 +260,9 @@ run = "/bin/echo hello"
     const { worker } = harness([]);
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) return;
-    expect(worker.reload(renamed.value)).toBe(false);
+    expect(worker.refusesReload(renamed.value)).toContain(
+      "different satellite",
+    );
   });
 
   it("is accepted when the name is unchanged", () => {
@@ -272,6 +274,6 @@ run = "/bin/echo hello"
     const { worker } = harness([]);
     expect(same.ok).toBe(true);
     if (!same.ok) return;
-    expect(worker.reload(same.value)).toBe(true);
+    expect(worker.refusesReload(same.value)).toBeNull();
   });
 });

@@ -42,7 +42,9 @@ export function buildServeCommand(deps: {
     .addHelpText(
       "after",
       "\nThe manifest decides what may run here — the platform can never widen it.\n" +
-        "Reload it with SIGHUP. First interrupt drains, second kills running jobs.\n\n" +
+        "Reload it with SIGHUP — a manifest that does not parse, or that renames the\n" +
+        "satellite, is refused and the running one is kept. First interrupt drains,\n" +
+        "second kills running jobs.\n\n" +
         "Example:\n  dam satellite serve ./satellite.toml\n",
     )
     .action(async (path: string, opts: { server?: string }) => {
@@ -91,13 +93,22 @@ export function buildServeCommand(deps: {
               );
               return;
             }
-            if (!worker.reload(next.value)) return;
+            const refusal = worker.refusesReload(next.value);
+            if (refusal !== null) {
+              log.line(`reload rejected: ${refusal}`);
+              return;
+            }
             await transportFor(deps.createTrpc(host)).connect(
               next.value.pushed,
               hostname(),
             );
+            worker.reload(next.value);
           })
-          .catch((err: unknown) => log.line(`reload failed: ${String(err)}`));
+          .catch((err: unknown) =>
+            log.line(
+              `reload failed, keeping the running manifest: ${String(err)}`,
+            ),
+          );
       });
 
       let interrupted = false;

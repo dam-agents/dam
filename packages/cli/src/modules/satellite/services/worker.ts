@@ -216,20 +216,19 @@ export function createWorker(deps: {
 
     cancel,
 
-    reload(next: LocalManifest): boolean {
-      if (next.pushed.name !== name) {
-        deps.log.line(
-          `reload rejected: the name changed from "${name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`,
-        );
-        return false;
-      }
+    refusesReload(next: LocalManifest): string | null {
+      return next.pushed.name === name
+        ? null
+        : `the name changed from "${name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`;
+    },
+
+    reload(next: LocalManifest): void {
       manifest = next;
       deps.log.line("reload applied — permitted commands:");
       for (const command of manifest.commands)
         deps.log.line(
           `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
         );
-      return true;
     },
 
     async start(): Promise<void> {
