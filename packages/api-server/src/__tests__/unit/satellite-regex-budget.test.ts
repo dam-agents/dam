@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_MANIFEST_TOKENS,
+  localOracle,
   matchCommand,
   parseCommandPattern,
   regexSources,
@@ -44,7 +45,7 @@ describe("the work the request thread pays before the deadline applies", () => {
   it("refuses a command whose patterns backtrack past the matcher's budget", () => {
     const nested = `./x ${"((a|a|a)...)... ".repeat(6)}z`;
     const argv = ["./x", ...Array.from({ length: 30 }, () => "a")];
-    const result = matchCommand([parse(nested)], argv);
+    const result = matchCommand([parse(nested)], argv, localOracle);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain("budget");

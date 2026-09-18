@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  localOracle,
   matchCommand,
   parseCommandPattern,
   type ParsedPattern,
@@ -31,7 +32,7 @@ function parse(...runs: string[]): ParsedPattern[] {
 }
 
 function accepts(patterns: ParsedPattern[], argv: string[]): boolean {
-  return matchCommand(patterns, argv).ok;
+  return matchCommand(patterns, argv, localOracle).ok;
 }
 
 describe("command pattern parsing", () => {
@@ -186,7 +187,11 @@ describe("refusals teach", () => {
   const patterns = parse("./process.sh (sales.db|events.db) [-n *]");
 
   it("names the closest pattern and where the match broke", () => {
-    const result = matchCommand(patterns, ["./process.sh", "secrets.db"]);
+    const result = matchCommand(
+      patterns,
+      ["./process.sh", "secrets.db"],
+      localOracle,
+    );
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.closest).toBe("./process.sh (sales.db|events.db) [-n *]");
@@ -194,7 +199,7 @@ describe("refusals teach", () => {
   });
 
   it("says so plainly when nothing starts with the program", () => {
-    const result = matchCommand(patterns, ["./nope.sh"]);
+    const result = matchCommand(patterns, ["./nope.sh"], localOracle);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.closest).toBeNull();

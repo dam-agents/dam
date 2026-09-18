@@ -50,7 +50,9 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   const createApiKey = useCreateApiKey();
 
   const manageSelected = selectedScopes.has("agents:manage");
-  const showBinding = hasAgentScope(selectedScopes);
+  const serveSelected = selectedScopes.has("satellites:serve");
+  const lockedToAll = manageSelected || serveSelected;
+  const showBinding = hasAgentScope(selectedScopes) || serveSelected;
 
   function toggleScope(scope: Scope) {
     const next = new Set(selectedScopes);
@@ -67,7 +69,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   }
 
   const bindsToSpecificAgents =
-    showBinding && !manageSelected && bindingMode === "specific";
+    showBinding && !lockedToAll && bindingMode === "specific";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -142,7 +144,10 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
             selectedAgentIds={selectedAgentIds}
             onModeChange={setBindingMode}
             onToggleAgent={toggleAgent}
-            lockedToAll={manageSelected}
+            lockedToAll={lockedToAll}
+            lockedReason={
+              manageSelected ? "manage" : serveSelected ? "serve" : null
+            }
           />
         )}
       </DialogBody>
@@ -191,6 +196,6 @@ function scopeDescription(scope: Scope): string {
     case "credentials:manage":
       return "Create, update, and delete connections and secrets.";
     case "satellites:serve":
-      return "Run a satellite: claim approved commands for a machine outside the platform and report their outcomes. Cannot operate agents.";
+      return "Run a satellite: claim approved commands for a machine outside the platform and report their outcomes. Cannot operate agents, and cannot be bound to one — a satellite serves every agent granted to it.";
   }
 }

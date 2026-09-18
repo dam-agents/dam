@@ -500,28 +500,39 @@ export function createSatellitesRepository(db: Db) {
       agentId: string,
       limit: number,
     ): Promise<JobRow[]> {
+      const oldest = await db
+        .select({
+          owner: satelliteJobs.owner,
+          satellite: satelliteJobs.satellite,
+          sequence: satelliteJobs.sequence,
+        })
+        .from(satelliteJobs)
+        .where(
+          and(
+            eq(satelliteJobs.agentId, agentId),
+            inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+            sql`${satelliteJobs.deliveredAt} is null`,
+          ),
+        )
+        .orderBy(satelliteJobs.endedAt)
+        .limit(limit);
+      if (oldest.length === 0) return [];
+
       const rows = await db
         .update(satelliteJobs)
         .set({ deliveredAt: new Date() })
         .where(
           and(
             eq(satelliteJobs.agentId, agentId),
-            inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             sql`${satelliteJobs.deliveredAt} is null`,
-            inArray(
-              satelliteJobs.sequence,
-              db
-                .select({ sequence: satelliteJobs.sequence })
-                .from(satelliteJobs)
-                .where(
-                  and(
-                    eq(satelliteJobs.agentId, agentId),
-                    inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
-                    sql`${satelliteJobs.deliveredAt} is null`,
-                  ),
-                )
-                .orderBy(satelliteJobs.endedAt)
-                .limit(limit),
+            or(
+              ...oldest.map((key) =>
+                and(
+                  eq(satelliteJobs.owner, key.owner),
+                  eq(satelliteJobs.satellite, key.satellite),
+                  eq(satelliteJobs.sequence, key.sequence),
+                ),
+              ),
             ),
           ),
         )

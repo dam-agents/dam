@@ -59,7 +59,7 @@ export function admit(
   cmd: string[],
   active: ActiveCounts,
   now: Date,
-  oracle?: RegexOracle,
+  oracle: RegexOracle,
 ): Admission {
   if (satellite.draining)
     return { ok: false, reason: `${satellite.name} is shutting down` };

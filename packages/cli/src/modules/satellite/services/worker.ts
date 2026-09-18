@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import {
   MAX_JOB_OUTPUT_BYTES,
+  localOracle,
   matchCommand,
   type WorkItem,
 } from "api-server-api";
@@ -78,6 +79,7 @@ function resolveCommand(
   const matched = matchCommand(
     manifest.commands.map((c) => c.parsed),
     cmd,
+    localOracle,
   );
   if (!matched.ok) return matched.reason;
   return manifest.commands[matched.index]!;

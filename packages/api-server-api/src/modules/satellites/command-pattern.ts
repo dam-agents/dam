@@ -233,10 +233,20 @@ interface MatchState {
   furthest: number;
   failure: string | null;
   steps: number;
-  oracle: RegexOracle | undefined;
+  oracle: RegexOracle;
 }
 
 export type RegexOracle = (source: string, value: string) => boolean;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The oracle every caller on the machine uses. It
+ * compiles and runs the pattern on the calling thread, which is the right answer
+ * exactly where the owner's own machine pays for their own pattern. The
+ * api-server passes an off-thread oracle instead, and the parameter is required
+ * so that choice is made rather than defaulted into.
+ */
+export const localOracle: RegexOracle = (source, value) =>
+  new RegExp(source).test(value);
 
 export function countTokens(patterns: ParsedPattern[]): number {
   let total = 0;
@@ -292,10 +302,7 @@ function matchToken(
 ): boolean {
   const arg = state.argv[at];
   if (arg === undefined) return false;
-  const matched =
-    state.oracle !== undefined
-      ? state.oracle(element.regexSource, arg)
-      : new RegExp(element.regexSource).test(arg);
+  const matched = state.oracle(element.regexSource, arg);
   if (!matched) return false;
   if (!element.open) return true;
   const problem = checkValue(element, arg, state, at);
@@ -375,7 +382,7 @@ export function argvRefusal(argv: string[]): string | null {
 export function matchCommand(
   patterns: ParsedPattern[],
   argv: string[],
-  oracle?: RegexOracle,
+  oracle: RegexOracle,
 ): CommandMatch | CommandRefusal {
   const oversize = argvRefusal(argv);
   if (oversize !== null) return { ok: false, reason: oversize, closest: null };

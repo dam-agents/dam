@@ -786,6 +786,7 @@ export {
   MAX_REPEAT,
   argvRefusal,
   countTokens,
+  localOracle,
   matchCommand,
   parseCommandPattern,
   regexSources,

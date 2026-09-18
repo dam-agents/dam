@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SatelliteCommand } from "api-server-api";
+import { localOracle, type SatelliteCommand } from "api-server-api";
 import {
   admit,
   compileCommands,
@@ -60,6 +60,7 @@ describe("admission", () => {
       ["./process.sh", "sales.db"],
       NO_ACTIVE,
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
@@ -73,6 +74,7 @@ describe("admission", () => {
       ["git", "-C", "/srv/repo", "pull"],
       NO_ACTIVE,
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
@@ -86,6 +88,7 @@ describe("admission", () => {
       ["./process.sh", "/etc/shadow"],
       NO_ACTIVE,
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -102,6 +105,7 @@ describe("admission", () => {
       ["./process.sh", "sales.db"],
       NO_ACTIVE,
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -115,6 +119,7 @@ describe("admission", () => {
       ["./process.sh", "sales.db"],
       NO_ACTIVE,
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(false);
   });
@@ -126,6 +131,7 @@ describe("admission", () => {
       ["./process.sh", "sales.db"],
       { total: 2, byPattern: new Map() },
       NOW,
+      localOracle,
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -143,6 +149,7 @@ describe("admission", () => {
       ["./train.sh", "./data/a.db"],
       active,
       NOW,
+      localOracle,
     );
     expect(exclusive.ok).toBe(false);
 
@@ -152,6 +159,7 @@ describe("admission", () => {
       ["./process.sh", "sales.db"],
       active,
       NOW,
+      localOracle,
     );
     expect(other.ok).toBe(true);
   });

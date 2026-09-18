@@ -46,10 +46,14 @@ function job(patch: Partial<JobRow> = {}): JobRow {
 function harness(claimed: JobRow[][]) {
   const events: { agentId: string; payload: unknown }[] = [];
   const woken: string[] = [];
+  const released: number[] = [];
   let call = 0;
   const deliver = createOutcomeDelivery({
     repo: {
       claimUndeliveredOutcomes: async () => claimed[call++] ?? [],
+      releaseOutcomes: async (_o: string, _s: string, sequences: number[]) => {
+        released.push(...sequences);
+      },
       agentsWithPendingOutcomes: async () => [],
       markWoken: async () => {},
       undeliveredFor: async () => [],
@@ -66,7 +70,7 @@ function harness(claimed: JobRow[][]) {
       `/home/agent/.dam/satellite-jobs/${ref}.log`,
     log: () => {},
   });
-  return { deliver, events, woken };
+  return { deliver, events, woken, released };
 }
 
 function task(payload: unknown): string {
@@ -114,6 +118,24 @@ describe("waking an agent with a finished job", () => {
     expect(text).toContain("3 satellite jobs");
     for (const ref of ["gpu-box#7", "gpu-box#8", "gpu-box#9"])
       expect(text).toContain(ref);
+  });
+
+  it("tells the agent only what fits, and leaves the rest claimable", async () => {
+    const big = "x".repeat(4000);
+    const { deliver, events, released } = harness([
+      Array.from({ length: 40 }, (_, i) =>
+        job({ sequence: i + 1, output: big }),
+      ),
+    ]);
+    await deliver("agent-1");
+    const text = task(events[0]?.payload);
+    expect(text.length).toBeLessThan(80_000);
+    expect(
+      released.length,
+      "a row claimed but trimmed out of the turn would never be told",
+    ).toBeGreaterThan(0);
+    for (const sequence of released)
+      expect(text).not.toContain(`gpu-box#${sequence} `);
   });
 
   it("does not wake for an outcome already delivered", async () => {

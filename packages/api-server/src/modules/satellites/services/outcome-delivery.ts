@@ -64,22 +64,30 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
     );
     if (claimed.length === 0) return false;
 
-    const parts = await Promise.all(
+    const described = await Promise.all(
       claimed.map((job) => describe(deps, agentId, job)),
     );
+    const told: JobRow[] = [];
+    const parts: string[] = [];
+    let budget = MAX_TURN_CHARS;
+    for (const [index, part] of described.entries()) {
+      if (told.length > 0 && part.length + 1 > budget) break;
+      told.push(claimed[index]!);
+      parts.push(part);
+      budget -= part.length + 1;
+    }
+    const overflow = claimed.slice(told.length);
+    if (overflow.length > 0) await releaseClaim(deps, overflow);
+
     const task = [
-      claimed.length === 1
+      told.length === 1
         ? "A satellite job you started has finished."
-        : `${claimed.length} satellite jobs you started have finished.`,
+        : `${told.length} satellite jobs you started have finished.`,
       "",
       ...parts,
       "",
       "Carry on with whatever you were asked to do with this result. If nothing was asked, summarize it briefly.",
     ].join("\n");
-    const payloadTask =
-      task.length <= MAX_TURN_CHARS
-        ? task
-        : `${task.slice(0, MAX_TURN_CHARS)}\n(this turn was trimmed; read the rest with the satellite job tools)`;
 
     try {
       await deps.bump(agentId, [
@@ -87,10 +95,8 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
           id: randomUUID(),
           kind: "satellite-outcome",
           payload: {
-            task: payloadTask,
-            refs: claimed.map((job) =>
-              formatJobRef(job.satellite, job.sequence),
-            ),
+            task,
+            refs: told.map((job) => formatJobRef(job.satellite, job.sequence)),
           },
           expiresAt: new Date(Date.now() + EVENT_TTL_MS),
         },
@@ -99,7 +105,7 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       deps.log(
         `[satellites] could not write the outcome turn for ${agentId}: ${String(err)}`,
       );
-      await releaseClaim(deps, claimed);
+      await releaseClaim(deps, told);
       return false;
     }
 
@@ -115,7 +121,7 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       await deps.wakeAgent(agentId);
       await deps.repo.markWoken(
         agentId,
-        claimed.map((job) => ({
+        told.map((job) => ({
           satellite: job.satellite,
           sequence: job.sequence,
         })),
