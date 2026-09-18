@@ -1,4 +1,9 @@
-import { AGENT_SCOPES, CREDENTIAL_SCOPES, type Scope } from "api-server-api";
+import {
+  AGENT_SCOPES,
+  CREDENTIAL_SCOPES,
+  SATELLITE_SCOPES,
+  type Scope,
+} from "api-server-api";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
@@ -15,10 +20,15 @@ import {
 import { useCreateApiKey } from "../../api/mutations.js";
 import { AgentBindingField, type BindingMode } from "./agent-binding-field.js";
 
-const SCOPE_GROUPS: { label: string; scopes: readonly Scope[] }[] = [
+const SCOPE_GROUPS = [
   { label: "Agents", scopes: AGENT_SCOPES },
   { label: "Credentials", scopes: CREDENTIAL_SCOPES },
-];
+  { label: "Satellites", scopes: SATELLITE_SCOPES },
+] as const;
+
+type GroupedScope = (typeof SCOPE_GROUPS)[number]["scopes"][number];
+const everyScopeHasAGroup: Record<Exclude<Scope, GroupedScope>, never> = {};
+void everyScopeHasAGroup;
 
 const hasAgentScope = (scopes: Set<Scope>): boolean =>
   AGENT_SCOPES.some((s) => scopes.has(s));
@@ -40,7 +50,9 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   const createApiKey = useCreateApiKey();
 
   const manageSelected = selectedScopes.has("agents:manage");
-  const showBinding = hasAgentScope(selectedScopes);
+  const serveSelected = selectedScopes.has("satellites:serve");
+  const lockedToAll = manageSelected || serveSelected;
+  const showBinding = hasAgentScope(selectedScopes) || serveSelected;
 
   function toggleScope(scope: Scope) {
     const next = new Set(selectedScopes);
@@ -57,7 +69,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   }
 
   const bindsToSpecificAgents =
-    showBinding && !manageSelected && bindingMode === "specific";
+    showBinding && !lockedToAll && bindingMode === "specific";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -132,7 +144,10 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
             selectedAgentIds={selectedAgentIds}
             onModeChange={setBindingMode}
             onToggleAgent={toggleAgent}
-            lockedToAll={manageSelected}
+            lockedToAll={lockedToAll}
+            lockedReason={
+              manageSelected ? "manage" : serveSelected ? "serve" : null
+            }
           />
         )}
       </DialogBody>
@@ -180,5 +195,7 @@ function scopeDescription(scope: Scope): string {
       return "List connections and secrets.";
     case "credentials:manage":
       return "Create, update, and delete connections and secrets.";
+    case "satellites:serve":
+      return "Run a satellite: claim approved commands for a machine outside the platform and report their outcomes. Cannot operate agents, and cannot be bound to one — a satellite serves every agent granted to it.";
   }
 }

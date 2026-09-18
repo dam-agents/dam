@@ -135,6 +135,10 @@ const BUILTIN_DRIVERS: Record<
     defaultOn: true,
   },
   "harness-config": { binding: { impl: "harness-config" }, defaultOn: false },
+  "satellite-outcome": {
+    binding: { impl: "satellite-outcome" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([

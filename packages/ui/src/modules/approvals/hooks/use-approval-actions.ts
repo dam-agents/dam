@@ -6,7 +6,7 @@ import {
   Globe,
   Misuse,
 } from "@carbon/icons-react";
-import type { ApprovalView } from "api-server-api";
+import { acceptsPermanentVerdict, type ApprovalView } from "api-server-api";
 
 import { useStore } from "../../../store.js";
 import {
@@ -63,6 +63,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
 
   const live = isHeldCallStillLive(row);
   const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
+  const permanent = acceptsPermanentVerdict(row.type);
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
 
   const confirmed = async (
@@ -101,19 +102,23 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       resolvedLabel: "Allowed",
       run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
     },
-    {
-      id: "allow-permanent",
-      label: "Allow permanently",
-      icon: CheckmarkFilled,
-      danger: false,
-      disabled: inflight,
-      tooltip: restart.permanentTooltip,
-      resolvedLabel: "Allowed permanently",
-      run: () =>
-        confirmed(restart.confirmNarrow, "Allow & restart", () =>
-          approvePermanent.mutateAsync({ id: row.id }),
-        ),
-    },
+    ...(permanent
+      ? [
+          {
+            id: "allow-permanent" as const,
+            label: "Allow permanently",
+            icon: CheckmarkFilled,
+            danger: false,
+            disabled: inflight,
+            tooltip: restart.permanentTooltip,
+            resolvedLabel: "Allowed permanently",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                approvePermanent.mutateAsync({ id: row.id }),
+              ),
+          },
+        ]
+      : []),
     ...(hostLabel
       ? [
           {
@@ -143,19 +148,23 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       resolvedLabel: "Denied",
       run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
     },
-    {
-      id: "deny-forever",
-      label: "Deny permanently",
-      icon: Misuse,
-      danger: true,
-      disabled: inflight,
-      tooltip: restart.denyForeverTooltip,
-      resolvedLabel: "Denied permanently",
-      run: () =>
-        confirmed(restart.confirmNarrow, "Deny & restart", () =>
-          denyForever.mutateAsync({ id: row.id }),
-        ),
-    },
+    ...(permanent
+      ? [
+          {
+            id: "deny-forever" as const,
+            label: "Deny permanently",
+            icon: Misuse,
+            danger: true,
+            disabled: inflight,
+            tooltip: restart.denyForeverTooltip,
+            resolvedLabel: "Denied permanently",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Deny & restart", () =>
+                denyForever.mutateAsync({ id: row.id }),
+              ),
+          },
+        ]
+      : []),
   ];
 
   return {

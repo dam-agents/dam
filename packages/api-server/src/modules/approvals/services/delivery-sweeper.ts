@@ -1,4 +1,7 @@
-import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
+import type {
+  ApprovalsRepository,
+  ExpiredApproval,
+} from "../infrastructure/approvals-repository.js";
 import type { WrapperFrameSender } from "./approvals-service.js";
 import {
   buildAcpPermissionResponse,
@@ -17,6 +20,7 @@ export interface CreateDeliverySweeperDeps {
   wrapperFrameSender: WrapperFrameSender;
   staleMs: number;
   batchSize: number;
+  onExpired(row: ExpiredApproval): Promise<void>;
 }
 
 export function createDeliverySweeper(
@@ -59,6 +63,12 @@ export function createDeliverySweeper(
           approvalId: row.id,
           agentId: row.agentId,
           ownerSub: row.ownerSub,
+        });
+        await deps.onExpired(row).catch((err: unknown) => {
+          getLogger().error(
+            { reason: formatError(err), approvalId: row.id },
+            "approvals.expired_settle_error",
+          );
         });
       }
     } finally {

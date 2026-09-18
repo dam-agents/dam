@@ -40,6 +40,9 @@ export {
   invocations,
   kbShares,
   agentCaseStudies,
+  satellites,
+  satelliteGrants,
+  satelliteJobs,
 } from "./schema.js";
 export {
   eq,
@@ -49,6 +52,7 @@ export {
   gte,
   ilike,
   inArray,
+  notInArray,
   asc,
   desc,
   isNotNull,

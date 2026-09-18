@@ -7,6 +7,14 @@ import type {
 } from "api-server-api";
 import type { PendingApprovalRow } from "../domain/types.js";
 
+export interface ExpiredApproval {
+  id: string;
+  agentId: string;
+  ownerSub: string;
+  type: ApprovalType;
+  payload: ApprovalPayload;
+}
+
 export interface ListApprovalsRepoOpts {
   limit?: number;
   status?: ApprovalStatus;
@@ -46,9 +54,7 @@ export interface ApprovalsRepository {
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string): Promise<void>;
-  expireOverdue(
-    now: Date,
-  ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
+  expireOverdue(now: Date): Promise<ExpiredApproval[]>;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
 }
@@ -306,8 +312,14 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           id: pendingApprovals.id,
           agentId: pendingApprovals.agentId,
           ownerSub: pendingApprovals.ownerSub,
+          type: pendingApprovals.type,
+          payload: pendingApprovals.payload,
         });
-      return rows;
+      return rows.map((row) => ({
+        ...row,
+        type: row.type as ApprovalType,
+        payload: row.payload as ApprovalPayload,
+      }));
     },
 
     async deleteForAgent(agentId) {

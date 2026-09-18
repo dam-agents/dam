@@ -538,6 +538,7 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  SatelliteJobPayload,
   ExtAuthzPayload,
   AcpNativePayload,
   AcpPermissionOption,
@@ -555,12 +556,16 @@ export {
   approvalApprovePermanentInputSchema,
   approvalDenyForeverInputSchema,
   approvalDismissInputSchema,
+  approvalGetInputSchema,
   approvalListForInstanceInputSchema,
   approvalListForOwnerInputSchema,
   approvalListOptionsSchema,
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
-export { describeApprovalPayload } from "./modules/approvals/format.js";
+export {
+  acceptsPermanentVerdict,
+  describeApprovalPayload,
+} from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {
@@ -739,6 +744,7 @@ export type {
 export {
   AGENT_SCOPES,
   ALL_SCOPES,
+  SATELLITE_SCOPES,
   API_KEY_PREFIX,
   CREDENTIAL_SCOPES,
 } from "./modules/api-keys/types.js";
@@ -771,3 +777,59 @@ export {
   type KbPublishWorkCaps,
   type KbPublishWorkOrder,
 } from "./modules/kb-publish/harness.js";
+
+export {
+  MAX_ARG_LENGTH,
+  MAX_ARGV_LENGTH,
+  MAX_MANIFEST_TOKENS,
+  MAX_MATCH_STEPS,
+  MAX_REPEAT,
+  argvRefusal,
+  countTokens,
+  localOracle,
+  matchCommand,
+  parseCommandPattern,
+  regexSources,
+} from "./modules/satellites/command-pattern.js";
+export type {
+  CommandMatch,
+  CommandRefusal,
+  ParsedPattern,
+  ParseResult,
+  RegexOracle,
+} from "./modules/satellites/command-pattern.js";
+
+export {
+  DEFAULT_MAX_CONCURRENT,
+  INLINE_OUTPUT_LIMIT,
+  MAX_JOB_OUTPUT_BYTES,
+  claimInputSchema,
+  commandArgvSchema,
+  formatJobRef,
+  heartbeatInputSchema,
+  jobRefSchema,
+  jobStatusSchema,
+  reportInputSchema,
+  satelliteCommandSchema,
+  satelliteConnectInputSchema,
+  satelliteGrantInputSchema,
+  satelliteManifestSchema,
+  satelliteNameSchema,
+  startJobInputSchema,
+} from "./modules/satellites/schemas.js";
+export type {
+  ClaimInput,
+  HeartbeatInput,
+  JobOutcome,
+  JobStarted,
+  JobStatus,
+  JobView,
+  ReportInput,
+  SatelliteAgentOps,
+  SatelliteCommand,
+  SatelliteManifest,
+  SatelliteView,
+  SatelliteWorkerOps,
+  SatellitesService,
+  WorkItem,
+} from "./modules/satellites/types.js";

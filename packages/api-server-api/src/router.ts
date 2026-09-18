@@ -12,6 +12,7 @@ import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
+import { satellitesRouter } from "./modules/satellites/router.js";
 import { knowledgeBasesRouter } from "./modules/knowledge-bases/router.js";
 import { linksRouter } from "./modules/links/router.js";
 import { featuresRouter } from "./modules/features/router.js";
@@ -48,6 +49,7 @@ export const appRouter = t.router({
   usage: usageRouter,
   e2e: e2eRouter,
   apiKeys: apiKeysRouter,
+  satellites: satellitesRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
   events: eventsRouter,

@@ -9,6 +9,9 @@ import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface ApprovalService {
+  get(
+    id: string,
+  ): Promise<Result<ApprovalView | null, TransportError | AuthRequiredError>>;
   listForOwner(
     opts?: ApprovalListOptions,
   ): Promise<
@@ -41,6 +44,9 @@ export function createApprovalService(deps: {
   trpc: TrpcClient;
 }): ApprovalService {
   return {
+    async get(id) {
+      return trpcCall(() => deps.trpc.approvals.get.query({ id }));
+    },
     async listForOwner(opts) {
       return trpcCall(() => deps.trpc.approvals.listForOwner.query(opts));
     },

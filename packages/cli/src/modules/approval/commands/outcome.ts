@@ -19,8 +19,8 @@ export interface OutcomeWording {
 }
 
 export function printOutcomeAndExit(
-  outcome: ApprovalActionOutcome,
   opts: { json?: boolean; once?: boolean },
+  outcome: ApprovalActionOutcome,
   wording: OutcomeWording,
 ): never {
   const exitCode =
