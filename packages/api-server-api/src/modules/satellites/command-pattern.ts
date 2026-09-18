@@ -1,6 +1,8 @@
 export const MAX_ARG_LENGTH = 4096;
 export const MAX_ARGV_LENGTH = 64;
 export const MAX_REPEAT = 16;
+export const MAX_MATCH_STEPS = 20_000;
+export const MAX_MANIFEST_TOKENS = 2048;
 
 export type ParseResult<T> =
   | { ok: true; value: T }
@@ -230,6 +232,7 @@ interface MatchState {
   dashDashSeen: boolean[];
   furthest: number;
   failure: string | null;
+  steps: number;
   oracle: RegexOracle | undefined;
 }
 
@@ -238,6 +241,21 @@ export type RegexOracle = (source: string, value: string) => boolean;
 export interface RegexProbe {
   source: string;
   value: string;
+}
+
+export function countTokens(patterns: ParsedPattern[]): number {
+  let total = 0;
+  const walk = (elements: Element[]): void => {
+    for (const element of elements) {
+      if (element.kind === "token") {
+        total++;
+        continue;
+      }
+      for (const alternative of element.alternatives) walk(alternative);
+    }
+  };
+  for (const pattern of patterns) walk(pattern.elements);
+  return total;
 }
 
 export function regexProbes(
@@ -309,6 +327,7 @@ function matchSequence(
   at: number,
   cont: Continuation,
 ): boolean {
+  if (state.steps++ > MAX_MATCH_STEPS) return false;
   if (at > state.furthest) state.furthest = at;
   if (index === elements.length) return cont(at);
   const element = elements[index]!;
@@ -379,15 +398,18 @@ export function matchCommand(
     pattern: ParsedPattern;
     failure: string | null;
   } | null = null;
+  const state: MatchState = {
+    argv,
+    dashDashSeen,
+    furthest: 0,
+    failure: null,
+    steps: 0,
+    oracle,
+  };
   for (let i = 0; i < patterns.length; i++) {
     const pattern = patterns[i]!;
-    const state: MatchState = {
-      argv,
-      dashDashSeen,
-      furthest: 0,
-      failure: null,
-      oracle,
-    };
+    state.furthest = 0;
+    state.failure = null;
     const matched = matchSequence(
       pattern.elements,
       0,
@@ -400,6 +422,12 @@ export function matchCommand(
       best = { furthest: state.furthest, pattern, failure: state.failure };
   }
 
+  if (state.steps > MAX_MATCH_STEPS)
+    return {
+      ok: false,
+      reason: `this satellite's command patterns are too tangled to match "${argv[0]}" within the matcher's budget`,
+      closest: null,
+    };
   if (best === null || best.furthest === 0)
     return {
       ok: false,

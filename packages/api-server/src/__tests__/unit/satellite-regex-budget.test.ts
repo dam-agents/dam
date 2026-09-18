@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseCommandPattern, regexProbes, matchCommand } from "api-server-api";
+import {
+  MAX_MANIFEST_TOKENS,
+  matchCommand,
+  parseCommandPattern,
+  regexProbes,
+} from "api-server-api";
+import { compileCommands } from "../../modules/satellites/domain/admission.js";
 import {
   evaluateRegexProbes,
   oracleFor,
@@ -22,6 +28,27 @@ function parse(run: string) {
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.value;
 }
+
+describe("the work the request thread pays before the deadline applies", () => {
+  it("refuses a command whose patterns backtrack past the matcher's budget", () => {
+    const nested = `./x ${"((a|a|a)...)... ".repeat(6)}z`;
+    const argv = ["./x", ...Array.from({ length: 30 }, () => "a")];
+    const result = matchCommand([parse(nested)], argv);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("budget");
+  });
+
+  it("refuses a manifest that declares more tokens than the matcher will carry", () => {
+    const wide = Array.from({ length: 300 }, (_, i) => ({
+      run: `./x${i} ${"a ".repeat(20)}`,
+    }));
+    const compiled = compileCommands(wide);
+    expect(compiled.ok).toBe(false);
+    if (compiled.ok) return;
+    expect(compiled.error).toContain(String(MAX_MANIFEST_TOKENS));
+  });
+});
 
 describe("a manifest regex meeting a hostile argument", () => {
   it("covers a glob token too, which compiles to a regex like any other", () => {

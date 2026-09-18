@@ -103,17 +103,24 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async report(owner: string, input: ReportInput): Promise<void> {
+      const written = {
+        output: input.outcome.output,
+        truncated: input.outcome.truncated,
+      };
       const patch =
         input.outcome.status === "done"
           ? {
               status: "done" as const,
               exitCode: input.outcome.exitCode,
-              output: input.outcome.output,
-              truncated: input.outcome.truncated,
+              ...written,
             }
           : input.outcome.status === "cancelled"
-            ? { status: "cancelled" as const, reason: "cancelled" }
-            : { status: "interrupted" as const, reason: input.outcome.reason };
+            ? { status: "cancelled" as const, reason: "cancelled", ...written }
+            : {
+                status: "interrupted" as const,
+                reason: input.outcome.reason,
+                ...written,
+              };
 
       const settled = await deps.repo.settle(
         owner,

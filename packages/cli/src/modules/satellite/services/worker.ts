@@ -32,8 +32,13 @@ export interface WorkerTransport {
     sequence: number;
     outcome:
       | { status: "done"; exitCode: number; output: string; truncated: boolean }
-      | { status: "cancelled" }
-      | { status: "interrupted"; reason: string };
+      | { status: "cancelled"; output?: string; truncated?: boolean }
+      | {
+          status: "interrupted";
+          reason: string;
+          output?: string;
+          truncated?: boolean;
+        };
   }): Promise<void>;
   drain(satellite: string): Promise<void>;
 }
@@ -123,7 +128,7 @@ export function createWorker(deps: {
     const append = (text: string): void => {
       if (truncated || text === "") return;
       const room = OUTPUT_CAP_BYTES - output.length;
-      if (text.length >= room) {
+      if (text.length > room) {
         output += text.slice(0, room);
         truncated = true;
         return;
@@ -160,13 +165,15 @@ export function createWorker(deps: {
           sequence: item.sequence,
           outcome:
             killedAs === "cancel"
-              ? { status: "cancelled" }
+              ? { status: "cancelled", output, truncated }
               : {
                   status: "interrupted",
                   reason:
                     killedAs === "timeout"
                       ? `stopped at its ${describeTimeout(timeoutMs)} timeout`
                       : "the satellite was stopped while this job was running",
+                  output,
+                  truncated,
                 },
         });
         return;

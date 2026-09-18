@@ -24,7 +24,10 @@ export interface SatellitesComposition {
   agentOps: SatelliteAgentOpsImpl;
   workerOps: SatelliteWorkerOpsImpl;
   sweepLeases: () => Promise<number>;
-  serviceFor: (owner: string) => SatellitesService;
+  serviceFor: (
+    owner: string,
+    agentBinding: readonly string[] | "*",
+  ) => SatellitesService;
   onAgentDeleted: (agentId: string) => Promise<void>;
   listAgentIds: () => Promise<string[]>;
   applyVerdict: (
@@ -81,10 +84,11 @@ export function composeSatellitesModule(deps: {
     }),
     workerOps: createSatelliteWorkerOps(workerDeps),
     sweepLeases: createLeaseSweep(workerDeps),
-    serviceFor: (owner) =>
+    serviceFor: (owner, agentBinding) =>
       createSatellitesService({
         repo,
         owner,
+        agentBinding,
         isAgentOwnedBy: deps.isAgentOwnedBy,
         deliverOutcome: deps.deliverOutcome,
         retireApproval: deps.retireApproval,

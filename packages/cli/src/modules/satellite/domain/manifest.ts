@@ -29,6 +29,7 @@ export type ManifestResult =
   | { ok: false; error: string };
 
 const DURATION = /^(\d+)(s|m|h)$/;
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 function parseDuration(text: unknown, where: string): number | string {
   if (text === undefined) return 0;
@@ -37,11 +38,11 @@ function parseDuration(text: unknown, where: string): number | string {
   const found = DURATION.exec(text);
   if (!found) return `${where}: timeout must look like 90s, 30m or 6h`;
   const n = Number(found[1]);
-  return found[2] === "s"
-    ? n * 1000
-    : found[2] === "m"
-      ? n * 60_000
-      : n * 3_600_000;
+  const ms =
+    found[2] === "s" ? n * 1000 : found[2] === "m" ? n * 60_000 : n * 3_600_000;
+  return ms > MAX_TIMEOUT_MS
+    ? `${where}: timeout must be under 24 days — a longer one overflows the timer and would kill the job at once`
+    : ms;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

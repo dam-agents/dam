@@ -70,8 +70,17 @@ export const reportInputSchema = z.object({
       output: z.string().max(MAX_JOB_OUTPUT_BYTES),
       truncated: z.boolean().default(false),
     }),
-    z.object({ status: z.literal("cancelled") }),
-    z.object({ status: z.literal("interrupted"), reason: z.string().max(280) }),
+    z.object({
+      status: z.literal("cancelled"),
+      output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
+      truncated: z.boolean().default(false),
+    }),
+    z.object({
+      status: z.literal("interrupted"),
+      reason: z.string().max(280),
+      output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
+      truncated: z.boolean().default(false),
+    }),
   ]),
 });
 

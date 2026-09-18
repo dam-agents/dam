@@ -781,8 +781,11 @@ export {
 export {
   MAX_ARG_LENGTH,
   MAX_ARGV_LENGTH,
+  MAX_MANIFEST_TOKENS,
+  MAX_MATCH_STEPS,
   MAX_REPEAT,
   argvRefusal,
+  countTokens,
   matchCommand,
   parseCommandPattern,
   regexProbes,

@@ -28,9 +28,17 @@ run = "/bin/echo (hello|goodbye)"
 about = "Say something"
 
 [[command]]
+run = "/bin/tail -f /etc/hosts"
+
+[[command]]
 run = "/bin/sleep ^[1-9]$"
 `;
 
+/**
+ * TEST_SCENARIO: The timeout is appended after the last [[command]] table, so
+ * TOML attaches it to that command rather than to the satellite. Keep the
+ * command the timeout spec runs last in MANIFEST.
+ */
 function manifest(timeout?: string) {
   const parsed = parseManifest(
     timeout === undefined ? MANIFEST : `${MANIFEST}\ntimeout = "${timeout}"\n`,
@@ -135,6 +143,23 @@ describe("a job that does not run to completion", () => {
     expect(reports[0]?.outcome.status).toBe("cancelled");
   });
 
+  it("still reports what the job printed before it was killed", async () => {
+    const { worker, reports, allReported } = harness([
+      runItem(1, ["/bin/tail", "-f", "/etc/hosts"]),
+    ]);
+    const running = worker.start();
+    await new Promise((r) => setTimeout(r, 400));
+    worker.cancel(1);
+    await allReported;
+    await worker.drain();
+    await running;
+    expect(reports[0]?.outcome.status).toBe("cancelled");
+    expect(
+      reports[0]?.outcome.output,
+      "a cancelled job's output is the only record of what it did",
+    ).toContain("localhost");
+  });
+
   it("reports a job killed at its timeout as interrupted, naming the timeout", async () => {
     const { worker, reports, allReported } = harness(
       [runItem(1, ["/bin/sleep", "9"])],
@@ -181,6 +206,18 @@ name = "box"
 run = "*"
 `);
     expect(parsed.ok).toBe(false);
+  });
+
+  it("rejects a timeout the timer cannot hold, rather than killing the job at once", () => {
+    const parsed = parseManifest(`
+name = "box"
+timeout = "999999h"
+[[command]]
+run = "./x"
+`);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toContain("timeout");
   });
 
   it("rejects a malformed duration rather than guessing", () => {

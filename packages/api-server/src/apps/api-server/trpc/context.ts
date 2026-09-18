@@ -283,7 +283,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownerSub: user.sub,
       surface,
     });
-    const satellites = satellitesBoot.serviceFor(user.sub);
+    const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
       ownerSub: user.sub,

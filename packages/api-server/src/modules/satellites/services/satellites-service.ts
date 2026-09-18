@@ -12,6 +12,7 @@ import type { SatellitesRepository } from "../infrastructure/satellites-reposito
 export interface SatellitesServiceDeps {
   repo: SatellitesRepository;
   owner: string;
+  agentBinding: readonly string[] | "*";
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
   deliverOutcome: (input: {
     owner: string;
@@ -31,6 +32,17 @@ export function createSatellitesService(
   deps: SatellitesServiceDeps,
 ): SatellitesService {
   const now = deps.now ?? (() => new Date());
+  const binding = deps.agentBinding;
+  const bound = (agentId: string): boolean =>
+    binding === "*" || binding.includes(agentId);
+
+  function mustBind(agentId: string): void {
+    if (!bound(agentId))
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `API key is not bound to agent ${agentId}`,
+      });
+  }
 
   async function mustExist(name: string): Promise<void> {
     if ((await deps.repo.get(deps.owner, name)) === null)
@@ -55,10 +67,9 @@ export function createSatellitesService(
           commands: row.commands,
           maxConcurrent: row.maxConcurrent,
           activeJobs: (await deps.repo.activeJobs(deps.owner, row.name)).length,
-          grantedAgentIds: await deps.repo.grantedAgentIds(
-            deps.owner,
-            row.name,
-          ),
+          grantedAgentIds: (
+            await deps.repo.grantedAgentIds(deps.owner, row.name)
+          ).filter(bound),
         })),
       );
     },
@@ -70,6 +81,7 @@ export function createSatellitesService(
     },
 
     async grant(name: string, agentId: string): Promise<void> {
+      mustBind(agentId);
       await mustExist(name);
       if (!(await deps.isAgentOwnedBy(agentId, deps.owner)))
         throw new TRPCError({ code: "FORBIDDEN", message: "not your agent" });
@@ -77,6 +89,7 @@ export function createSatellitesService(
     },
 
     async revoke(name: string, agentId: string): Promise<void> {
+      mustBind(agentId);
       await mustExist(name);
       await deps.repo.revoke(deps.owner, name, agentId);
       await deps.stopDispatch(
@@ -88,24 +101,26 @@ export function createSatellitesService(
     async listJobs(name: string): Promise<JobView[]> {
       await mustExist(name);
       const jobs = await deps.repo.listJobs(deps.owner, name);
-      return jobs.map((job) => ({
-        satellite: job.satellite,
-        sequence: job.sequence,
-        ref: formatJobRef(job.satellite, job.sequence),
-        agentId: job.agentId,
-        cmd: job.cmd,
-        status: job.status,
-        exitCode: job.exitCode,
-        startedAt: job.startedAt?.toISOString() ?? null,
-        endedAt: job.endedAt?.toISOString() ?? null,
-        createdAt: job.createdAt.toISOString(),
-      }));
+      return jobs
+        .filter((job) => bound(job.agentId))
+        .map((job) => ({
+          satellite: job.satellite,
+          sequence: job.sequence,
+          ref: formatJobRef(job.satellite, job.sequence),
+          agentId: job.agentId,
+          cmd: job.cmd,
+          status: job.status,
+          exitCode: job.exitCode,
+          startedAt: job.startedAt?.toISOString() ?? null,
+          endedAt: job.endedAt?.toISOString() ?? null,
+          createdAt: job.createdAt.toISOString(),
+        }));
     },
 
     async cancelJob(name: string, sequence: number): Promise<void> {
       await mustExist(name);
       const job = await deps.repo.getJob(deps.owner, name, sequence);
-      if (job === null)
+      if (job === null || !bound(job.agentId))
         throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
       if (isTerminal(job.status)) return;
       if (job.status === "running") {

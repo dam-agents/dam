@@ -59,11 +59,11 @@ Two rules constrain what a match may carry, and both are about the value rather 
 - **A matched argument may not begin with `-`** where the caller chose its first character, unless it follows a literal `--`. `--limit=*` pins that dash itself, and a whole-argument regex has named every character the argument may hold, so neither is second-guessed. This protects only as far as the target script honors `--`, which the platform cannot verify.
 - **No matched argument may carry a `..` segment**, whatever matched it and with no normalization. A regex may widen what an argument *says*; it can never widen where it *points*.
 
-Per-argument length and argv count are capped, because a user-authored regex meeting model-supplied input is a ReDoS on the machine this feature exists to protect.
+Per-argument length and argv count are capped before any matching starts, because a user-authored regex meeting model-supplied input is a ReDoS on the machine this feature exists to protect. A regex is then evaluated on a worker thread under a deadline, so a pattern that backtracks is abandoned rather than waited on; the api-server thread never runs one. The matcher itself carries a step budget shared across a Manifest's patterns, and a Manifest may declare only so many pattern tokens in total — together they bound what a start costs the request thread, whatever the owner wrote. A command that exhausts the budget is refused with that reason, never admitted.
 
 ## Admission
 
-A Job is accepted only when a worker will pick it up within a poll interval. There is **no backlog**: non-terminal Jobs may never exceed the Satellite's `max_concurrent`, and a start that would exceed it is refused with a reason rather than queued. That is what makes the *running* a start reports true in every case rather than the common one.
+A Job is accepted only when a worker will pick it up within a poll interval. There is **no backlog**: non-terminal Jobs may never exceed the Satellite's declared concurrency limit, and a start that would exceed it is refused with a reason rather than queued. That is what makes the *running* a start reports true in every case rather than the common one.
 
 The count and the insert share one transaction, so two starts arriving together cannot both read a count under the limit and both land. A per-command limit works the same way, for the command that must not run beside itself.
 

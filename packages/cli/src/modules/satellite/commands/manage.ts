@@ -12,6 +12,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -195,9 +196,19 @@ export function buildRemoveCommand(deps: ManageDeps): Command {
       .argument("<satellite>", "satellite name")
       .option("--yes", "skip the confirmation prompt"),
   ).action(async (name: string, opts: CommonOpts & { yes?: boolean }) => {
-    if (!opts.yes && process.stdin.isTTY !== true) {
-      process.stderr.write("Refusing to remove without --yes on a non-TTY.\n");
-      return process.exit(EXIT_RUNTIME_FAILURE);
+    if (!opts.yes) {
+      if (process.stdin.isTTY !== true) {
+        process.stderr.write(
+          "Refusing to remove without --yes on a non-TTY.\n",
+        );
+        return process.exit(EXIT_RUNTIME_FAILURE);
+      }
+      if (
+        !(await confirm(
+          `Remove satellite ${name} and every grant to it? Commands already running on the machine will not be stopped.`,
+        ))
+      )
+        exitCancelled(opts);
     }
     const at = await host(deps, opts);
     await attempt(at, () => deps.createTrpc(at).satellites.remove.mutate(name));

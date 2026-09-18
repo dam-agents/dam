@@ -1,5 +1,7 @@
 import {
+  countTokens,
   formatJobRef,
+  MAX_MANIFEST_TOKENS,
   matchCommand,
   parseCommandPattern,
   type JobStatus,
@@ -28,6 +30,12 @@ export function compileCommands(commands: SatelliteCommand[]): Compiled {
       return { ok: false, error: `"${command.run}": ${parsed.error}` };
     compiled.push({ command, parsed: parsed.value });
   }
+  const tokens = countTokens(compiled.map((c) => c.parsed));
+  if (tokens > MAX_MANIFEST_TOKENS)
+    return {
+      ok: false,
+      error: `these patterns hold ${tokens} tokens (max ${MAX_MANIFEST_TOKENS}) — a manifest this large costs the server more per command than it is worth`,
+    };
   return { ok: true, commands: compiled };
 }
 

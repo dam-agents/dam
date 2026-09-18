@@ -1,5 +1,6 @@
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
   operateAgentsProcedure,
   readAgentProcedure,
   serveSatellitesProcedure,
@@ -23,15 +24,17 @@ export const satellitesRouter = t.router({
 
   grant: operateAgentsProcedure
     .input(satelliteGrantInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.satellites.grant(input.satellite, input.agentId),
-    ),
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.satellites.grant(input.satellite, input.agentId);
+    }),
 
   revoke: operateAgentsProcedure
     .input(satelliteGrantInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.satellites.revoke(input.satellite, input.agentId),
-    ),
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.satellites.revoke(input.satellite, input.agentId);
+    }),
 
   remove: operateAgentsProcedure
     .input(satelliteNameSchema)
