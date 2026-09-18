@@ -26,6 +26,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   unsupportedContributionKinds: [],
   channels: [],
   spawnedBy: null,
+  vm: false,
 });
 
 describe("resolveAgentDisplay", () => {

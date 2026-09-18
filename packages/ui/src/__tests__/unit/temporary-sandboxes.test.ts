@@ -25,6 +25,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   unsupportedContributionKinds: [],
   channels: [],
   spawnedBy: null,
+  vm: false,
   ...overrides,
 });
 

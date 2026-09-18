@@ -55,6 +55,7 @@ import { ContributionFailuresBadge } from "../../agents/components/contribution-
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
+import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -548,6 +549,7 @@ export function ChatView() {
           <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
+          {agentView && <VmRuntimeBadge agent={agentView} />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

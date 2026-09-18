@@ -44,6 +44,7 @@ const agent = (
   unsupportedContributionKinds: [],
   channels: [],
   spawnedBy: null,
+  vm: false,
 });
 
 describe("slots", () => {
