@@ -468,7 +468,7 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) {
         throw new TRPCError({
-          code: "FORBIDDEN",
+          code: "BAD_REQUEST",
           message: "model-provider connection not found or not owned by caller",
         });
       }
