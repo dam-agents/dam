@@ -28,23 +28,24 @@ interface TreeEntry {
   type: "file" | "dir";
 }
 
+const entrySuffix: Record<TreeEntry["type"], string> = { file: "", dir: "/" };
+
 export function buildFileListCommand(deps: FileListDeps): Command {
   return new Command("list")
-    .description(
-      "List immediate children of a directory in an Agent's workspace",
-    )
+    .description("List a directory in an Agent's workspace")
     .argument("<ref>", "Agent Ref — name or 'agent-…' ID")
     .argument(
       "[remote-path]",
       "directory to list (workspace-relative; defaults to root)",
     )
     .option("--server <url>", "override the configured server URL")
+    .option("-R, --recursive", "list all nested files and directories")
     .option("--json", "emit entries as JSON (files and directories)")
     .action(
       async (
         ref: string,
         remotePath: string | undefined,
-        opts: { server?: string; json?: boolean },
+        opts: { server?: string; json?: boolean; recursive?: boolean },
       ) => {
         const flag = opts.server ? { server: opts.server } : undefined;
         const host = await resolveActiveHost(deps, {
@@ -72,33 +73,41 @@ export function buildFileListCommand(deps: FileListDeps): Command {
 
         const dir = (remotePath ?? "").replace(/\/+$/, "");
 
-        let entries: TreeEntry[];
+        const entries: TreeEntry[] = [];
         try {
-          const { results } = await trpc.files.listDirs.query({
-            paths: [dir],
-          });
-          const res = results[0];
-          if (!res || !res.ok) {
-            const reason = res?.error ?? "not-found";
-            process.stderr.write(
-              `error: cannot list \`${dir || "/"}\`: ${reason}\n`,
-            );
-            process.exit(EXIT_RUNTIME_FAILURE);
+          const pending = [dir];
+          while (pending.length > 0) {
+            const current = pending.pop()!;
+            const { results } = await trpc.files.listDirs.query({
+              paths: [current],
+            });
+            const res = results[0];
+            if (!res || !res.ok) {
+              const reason = res?.error ?? "not-found";
+              process.stderr.write(
+                `error: cannot list \`${current || "/"}\`: ${reason}\n`,
+              );
+              process.exit(EXIT_RUNTIME_FAILURE);
+            }
+            for (const entry of res.entries) {
+              const path = current ? `${current}/${entry.name}` : entry.name;
+              entries.push({ path, type: entry.type });
+              if (opts.recursive && entry.type === "dir") pending.push(path);
+            }
           }
-          entries = res.entries.map((e) => ({
-            path: dir ? `${dir}/${e.name}` : e.name,
-            type: e.type,
-          }));
         } catch (e) {
           printTrpcError(e, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
+        if (opts.recursive)
+          entries.sort((a, b) => a.path.localeCompare(b.path));
+
         const out = opts.json
           ? `${JSON.stringify(entries)}\n`
           : entries
-              .filter((e) => e.type === "file")
-              .map((e) => `${e.path}\n`)
+              .filter((e) => opts.recursive || e.type === "file")
+              .map((e) => `${e.path}${entrySuffix[e.type]}\n`)
               .join("");
         return writeStdoutAndExit(out, EXIT_SUCCESS);
       },

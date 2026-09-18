@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-09-15
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -120,4 +120,4 @@ A single `--exec` flag selects the client and how it is invoked (`ssh`, or an ed
 
 `dam import <agent> <path…>` bulk-uploads files or folders, each path argument becoming one atomically-replaced top-level entry under the agent's workspace. It builds a single gzipped tar — skipping symlinks and a shared exclusion set (`node_modules`, `.venv`, …) — and POSTs it as multipart to the same import endpoint the UI targets. Top-level replace is destructive at each named path, so it confirms on a TTY.
 
-`dam file get/put/list` are the granular, non-destructive counterparts — each operates on a single file over the same per-agent file surface the UI's file browser uses, reusing the shared token, compatibility, and resolver seams. Per-file size caps and the exclusion set are enforced server-side (single source of truth); the CLI surfaces the server's too-large error rather than duplicating the constant. Neither verb group introduces a service layer — each is one wire call classified inline. Recursive download, large-file streaming, and rm/mv/mkdir are out of scope until a concrete use case appears.
+`dam file get/put/list` are the granular, non-destructive counterparts over the same per-agent file surface the UI's file browser uses, reusing the shared token, compatibility, and resolver seams. Listing can cover one directory or recursively walk the workspace or a subtree through the existing directory-listing API. Recursive output includes files and directories as sorted workspace-relative paths; a failed directory read fails the command rather than returning a partial listing as complete. Per-file size caps and the exclusion set are enforced server-side (single source of truth); the CLI surfaces the server's too-large error rather than duplicating the constant. Neither verb group introduces a service layer — wire calls are classified inline. Recursive download, large-file streaming, and rm/mv/mkdir are out of scope until a concrete use case appears.
