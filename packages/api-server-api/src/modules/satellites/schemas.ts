@@ -56,6 +56,8 @@ export const heartbeatInputSchema = z.object({
   running: z.array(z.number().int().positive()).max(1024),
 });
 
+export const MAX_JOB_OUTPUT_BYTES = 1024 * 1024;
+
 export const reportInputSchema = z.object({
   satellite: satelliteNameSchema,
   sequence: z.number().int().positive(),
@@ -63,7 +65,7 @@ export const reportInputSchema = z.object({
     z.object({
       status: z.literal("done"),
       exitCode: z.number().int(),
-      output: z.string(),
+      output: z.string().max(MAX_JOB_OUTPUT_BYTES),
       truncated: z.boolean().default(false),
     }),
     z.object({ status: z.literal("cancelled") }),

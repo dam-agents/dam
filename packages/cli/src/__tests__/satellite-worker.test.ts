@@ -249,3 +249,29 @@ run = "/bin/echo added-by-reload"
     ).toBe("done");
   });
 });
+
+describe("a reload that renames the satellite", () => {
+  it("is refused, because identity is the name and a rename is a different machine", () => {
+    const renamed = parseManifest(`
+name = "other-box"
+[[command]]
+run = "/bin/echo hello"
+`);
+    const { worker } = harness([]);
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(worker.reload(renamed.value)).toBe(false);
+  });
+
+  it("is accepted when the name is unchanged", () => {
+    const same = parseManifest(`
+name = "test-box"
+[[command]]
+run = "/bin/echo hello"
+`);
+    const { worker } = harness([]);
+    expect(same.ok).toBe(true);
+    if (!same.ok) return;
+    expect(worker.reload(same.value)).toBe(true);
+  });
+});

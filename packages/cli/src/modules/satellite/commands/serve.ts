@@ -91,11 +91,11 @@ export function buildServeCommand(deps: {
               );
               return;
             }
+            if (!worker.reload(next.value)) return;
             await transportFor(deps.createTrpc(host)).connect(
               next.value.pushed,
               hostname(),
             );
-            worker.reload(next.value);
           })
           .catch((err: unknown) => log.line(`reload failed: ${String(err)}`));
       });

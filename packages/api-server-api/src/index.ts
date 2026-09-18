@@ -794,6 +794,7 @@ export type {
 export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
+  MAX_JOB_OUTPUT_BYTES,
   claimInputSchema,
   formatJobRef,
   heartbeatInputSchema,

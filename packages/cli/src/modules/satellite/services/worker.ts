@@ -1,8 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { matchCommand, type WorkItem } from "api-server-api";
+import {
+  MAX_JOB_OUTPUT_BYTES,
+  matchCommand,
+  type WorkItem,
+} from "api-server-api";
 import type { LocalCommand, LocalManifest } from "../domain/manifest.js";
 
-export const OUTPUT_CAP_BYTES = 1024 * 1024;
+export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
 
 function describeTimeout(ms: number | undefined): string {
   if (ms === undefined) return "configured";
@@ -212,13 +216,20 @@ export function createWorker(deps: {
 
     cancel,
 
-    reload(next: LocalManifest): void {
+    reload(next: LocalManifest): boolean {
+      if (next.pushed.name !== name) {
+        deps.log.line(
+          `reload rejected: the name changed from "${name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`,
+        );
+        return false;
+      }
       manifest = next;
       deps.log.line("reload applied — permitted commands:");
       for (const command of manifest.commands)
         deps.log.line(
           `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
         );
+      return true;
     },
 
     async start(): Promise<void> {
