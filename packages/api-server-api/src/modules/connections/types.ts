@@ -206,6 +206,8 @@ export interface ConnectionsService {
 
   getConnection(id: string): Promise<ConnectionView | null>;
 
+  validateProviderConnection(id: string): Promise<void>;
+
   createFromTemplate(
     input: ConnectionCreateInput & { id?: string },
   ): Promise<string>;

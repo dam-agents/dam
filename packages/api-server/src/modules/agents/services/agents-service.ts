@@ -445,6 +445,7 @@ export function createAgentsService(deps: {
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
+      providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
@@ -753,7 +754,21 @@ export function createAgentsService(deps: {
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
 
-      const grantSel = { connectionIds: input.connectionIds ?? [] };
+      const grantSel = {
+        connectionIds: Array.from(
+          new Set([
+            ...(input.connectionIds ?? []),
+            ...(input.providerConnectionId ? [input.providerConnectionId] : []),
+          ]),
+        ),
+        providerConnectionId: input.providerConnectionId,
+      };
+      if (input.providerConnectionId && !deps.grantProvisioner) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "provider validation is unavailable",
+        });
+      }
       const hasInitialGrants = grantSel.connectionIds.length > 0;
       if (deps.grantProvisioner && hasInitialGrants) {
         const g = await deps.grantProvisioner.resolveSpecGrants(grantSel);

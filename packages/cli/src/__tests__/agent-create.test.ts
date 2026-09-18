@@ -115,6 +115,7 @@ describe("dam agent create provider selection (#3786)", () => {
         name: "via cli",
         templateId: "claude-code",
         connectionIds: [provider.id],
+        providerConnectionId: provider.id,
       });
       expect(process.stdout.write).toHaveBeenCalledWith(
         `${JSON.stringify(agent)}\n`,
@@ -128,7 +129,7 @@ describe("dam agent create provider selection (#3786)", () => {
     {
       label: "non-provider",
       connections: [{ ...provider, templateId: "github" }],
-      ref: provider.id,
+      ref: provider.name,
     },
     {
       label: "ambiguous",
@@ -147,17 +148,34 @@ describe("dam agent create provider selection (#3786)", () => {
     },
   );
 
-  it.each(["expired", "pending", "disconnected"] as const)(
-    "rejects a %s provider before creating an agent",
+  it.each(["expired", "pending", "disconnected", "not a model provider"])(
+    "surfaces the server's rejection when the provider is %s",
     async (status) => {
-      const { run, create } = setup([{ ...provider, status }]);
-      await run(["--provider", provider.id], EXIT_INVALID_INPUT);
-      expect(create).not.toHaveBeenCalled();
+      const { run, create, getAgent } = setup();
+      create.mockRejectedValue(
+        Object.assign(new Error(`provider is ${status}`), {
+          data: { code: "BAD_REQUEST" },
+        }),
+      );
+      await run(["--provider", provider.id, "--wait"], EXIT_INVALID_INPUT);
+      expect(getAgent).not.toHaveBeenCalled();
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining(`is ${status}`),
       );
     },
   );
+
+  it("creates by id without listing connections when credential reads are forbidden", async () => {
+    const { run, create, listConnections } = setup();
+    listConnections.mockRejectedValue(new Error("Requires credentials:read"));
+    await run(["--provider", provider.id], EXIT_SUCCESS);
+    expect(listConnections).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerConnectionId: provider.id,
+      }),
+    );
+  });
 
   it("allows an explicit id to disambiguate duplicate provider names", async () => {
     const { run, create } = setup([
@@ -173,7 +191,7 @@ describe("dam agent create provider selection (#3786)", () => {
   it("fails without creating an agent when connections cannot be listed", async () => {
     const { run, create, listConnections } = setup();
     listConnections.mockRejectedValue(new Error("connection listing failed"));
-    await run(["--provider", provider.id], EXIT_RUNTIME_FAILURE);
+    await run(["--provider", provider.name], EXIT_RUNTIME_FAILURE);
     expect(create).not.toHaveBeenCalled();
     expect(process.stderr.write).toHaveBeenCalledWith(
       expect.stringContaining("connection listing failed"),
@@ -198,6 +216,7 @@ describe("dam agent create provider selection (#3786)", () => {
       name: "via cli",
       templateId: "claude-code",
       connectionIds: [provider.id],
+      providerConnectionId: provider.id,
       env: [{ name: "FOO", value: "bar" }],
       description: "Helper",
     });

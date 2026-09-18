@@ -147,10 +147,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       contributionsProgress,
       grantProvisioner: {
-        resolveSpecGrants(sel) {
-          return Promise.resolve({
+        async resolveSpecGrants(sel) {
+          if (sel.providerConnectionId)
+            await connections.validateProviderConnection(
+              sel.providerConnectionId,
+            );
+          return {
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          });
+          };
         },
         async applyAfterCreate(agentId, sel) {
           if (sel.connectionIds.length)

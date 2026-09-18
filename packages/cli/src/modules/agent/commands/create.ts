@@ -1,9 +1,6 @@
 import { Command } from "commander";
-import {
-  agentCreateInputSchema,
-  PROVIDER_TEMPLATE_IDS,
-  type ConnectionStatus,
-} from "api-server-api";
+import { agentCreateInputSchema, PROVIDER_TEMPLATE_IDS } from "api-server-api";
+import { CONNECTION_ID_PREFIX } from "../../connection/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
@@ -28,12 +25,6 @@ import {
 } from "../../shared/exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
-const PROVIDER_IS_ACTIVE: Record<ConnectionStatus, boolean> = {
-  active: true,
-  expired: false,
-  pending: false,
-  disconnected: false,
-};
 
 export function buildCreateCommand(deps: {
   compatService: CompatService;
@@ -193,40 +184,38 @@ async function runCreate(
   }
 
   const trpc = deps.createTrpcClient(host);
-  const connections = await trpcCall(() => trpc.connections.list.query());
-  if (!connections.ok) {
-    printServiceError(connections.error, host);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
-  const providers = connections.value.filter((connection) =>
-    PROVIDER_TEMPLATE_IDS.has(connection.templateId),
-  );
-  const matches = providers.filter((connection) =>
-    opts.provider!.startsWith("conn-")
-      ? connection.id === opts.provider
-      : connection.name === opts.provider,
-  );
-  if (matches.length !== 1) {
-    process.stderr.write(
-      matches.length === 0
-        ? `error: no model-provider connection matches '${opts.provider}'; run \`dam connection list\` to choose a provider, or \`dam agent create-interactive\` to add one\n`
-        : `error: multiple model-provider connections are named '${opts.provider}'; pass a connection id from \`dam connection list\`\n`,
+  let providerConnectionId = opts.provider;
+  if (!providerConnectionId.startsWith(CONNECTION_ID_PREFIX)) {
+    const connections = await trpcCall(() => trpc.connections.list.query());
+    if (!connections.ok) {
+      printServiceError(connections.error, host);
+      process.stderr.write(
+        "hint: provider name lookup requires credentials:read; pass --provider <connection-id> to create with agents:manage alone\n",
+      );
+      process.exit(EXIT_RUNTIME_FAILURE);
+    }
+    const matches = connections.value.filter(
+      (connection) =>
+        PROVIDER_TEMPLATE_IDS.has(connection.templateId) &&
+        connection.name === opts.provider,
     );
-    process.exit(EXIT_INVALID_INPUT);
-  }
-  const provider = matches[0]!;
-  if (!PROVIDER_IS_ACTIVE[provider.status]) {
-    process.stderr.write(
-      `error: model provider '${provider.name}' is ${provider.status}; reconnect it before creating an agent\n`,
-    );
-    process.exit(EXIT_INVALID_INPUT);
+    if (matches.length !== 1) {
+      process.stderr.write(
+        matches.length === 0
+          ? `error: no model-provider connection matches '${opts.provider}'; run \`dam connection list\` to choose a provider, or \`dam agent create-interactive\` to add one\n`
+          : `error: multiple model-provider connections are named '${opts.provider}'; pass a connection id from \`dam connection list\`\n`,
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+    providerConnectionId = matches[0]!.id;
   }
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     {
       name,
       templateId: template,
-      connectionIds: [provider.id],
+      connectionIds: [providerConnectionId],
+      providerConnectionId,
       description: opts.description,
       env: env.length > 0 ? env : undefined,
     },
@@ -236,6 +225,12 @@ async function runCreate(
   try {
     agent = await trpc.agents.create.mutate(createInput);
   } catch (e) {
+    if ((e as any)?.data?.code === "BAD_REQUEST") {
+      process.stderr.write(
+        `error: failed to create agent: ${errorReason(e)}\n`,
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
     if ((e as any)?.data?.code === "NOT_FOUND") {
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
