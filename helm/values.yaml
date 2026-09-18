@@ -930,8 +930,10 @@ apiServer:
   # -- Hosts seeded into the `trusted` egress preset.
   # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
   # row when an agent is created with `egressPreset: trusted`. Values are
-  # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
-  # matches are exact; a `pkg.go.dev` rule does not cover `proxy.golang.org`.
+  # hostnames — no schemes, no paths. A hostname matches exactly, so a
+  # `pkg.go.dev` rule does not cover `proxy.golang.org`; a leading `*.`
+  # stands for exactly one label, so `*.pkg.dev` covers
+  # `us-docker.pkg.dev` but not `a.b.pkg.dev`.
   #
   # Curated to mirror Anthropic's published default-allowed-domain list for
   # Claude Code so harnesses with "claude --trust-defaults" behavior keep
@@ -962,10 +964,9 @@ apiServer:
     # Container registries. The registry host alone never pulls: Docker Hub
     # first hands out an anonymous token from auth.docker.io, then 307s the
     # blob off to whichever CDN serves the caller's region. ghcr.io redirects
-    # its blobs the same way. gcr.io and registry.k8s.io are named here for the
-    # manifest fetch only — both fan blobs out to regional mirrors this
-    # literal-hostname list cannot express, so a pull from them can still stop
-    # at an inbox prompt for whichever mirror it was handed.
+    # its blobs the same way. gcr.io and registry.k8s.io hand their blobs to
+    # a per-region Artifact Registry host nobody can enumerate, which is what
+    # the `*.pkg.dev` wildcard is for.
     - quay.io
     - index.docker.io
     - registry-1.docker.io
@@ -976,6 +977,8 @@ apiServer:
     - pkg-containers.githubusercontent.com
     - gcr.io
     - registry.k8s.io
+    - "*.pkg.dev"
+    - registry.access.redhat.com
     # Go modules
     - proxy.golang.org
     - sum.golang.org
@@ -992,6 +995,19 @@ apiServer:
     - cdn.mise.run
     - mise-versions.jdx.dev
     - mise-java.jdx.dev
+    # Java
+    - download.java.net
+    # Kubernetes ecosystem tooling
+    - get.helm.sh
+    - dl.k8s.io
+    - istio-release.storage.googleapis.com
+    - mirror.openshift.com
+    # Supply-chain signing (cosign's TUF root)
+    - tuf-repo-cdn.sigstore.dev
+    # Vendor download hosts
+    - dl.google.com
+    - archive.apache.org
+    - tmaproduction.blob.core.windows.net
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
     # arXiv API

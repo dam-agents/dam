@@ -6,6 +6,7 @@ import type {
   RuleVerdict,
 } from "api-server-api";
 import type { EgressRuleRow } from "../domain/types.js";
+import { hostMatchCandidates } from "../domain/host-match.js";
 
 export interface EgressRulesRepository {
   findMatch(
@@ -128,17 +129,21 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     },
 
     async findMatch(agentId, host, method, path) {
+      const candidates = sql.join(
+        hostMatchCandidates(host).map((h) => sql`${h}`),
+        sql`, `,
+      );
       const rows = await db.execute<RawRule>(sql`
         SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
-          AND (host = ${host} OR host = '*')
+          AND host IN (${candidates})
           AND status = 'active'
           AND (method = ${method} OR method = '*')
           AND ${path} LIKE replace(path_pattern, '*', '%')
         ORDER BY
-          CASE WHEN host = '*' THEN 1 ELSE 0 END,
+          CASE WHEN host = ${host} THEN 0 WHEN host = '*' THEN 2 ELSE 1 END,
           CASE WHEN method = '*' THEN 1 ELSE 0 END,
           CASE WHEN path_pattern = '*' THEN 1 ELSE 0 END,
           length(path_pattern) DESC
