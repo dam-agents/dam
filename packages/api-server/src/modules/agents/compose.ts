@@ -89,6 +89,7 @@ export function composeAgentsModule(deps: {
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
+      providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,

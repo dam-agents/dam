@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-09-15
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -82,7 +82,7 @@ Every command group is a thin client over the procedures its subsystem already e
 - **Exit-code registry.** Beyond generic success/failure, the CLI has a small set of named exit codes for machine callers (agent-not-resolved, invalid-input, rule- and schedule-not-found, agent-not-reachable, approval-not-actionable). Wrapper scripts branch on the code; the specific numbers are a code-level contract, not architecture.
 - **`--json` parity.** Every read verb emits raw contract types under `--json` (an empty result is `[]`, never null); mutations emit a small result object. A very small number of verbs augment the raw shape where the annotation is the whole point of the flag — those departures are documented at the call site.
 - **TTY discipline.** Destructive verbs confirm on a TTY, take `--yes` to bypass, and refuse on non-TTY without it. Interactive-only verbs (interactive create, masked secret prompts) refuse on non-TTY and point at the scripted path.
-- **Client-side ref resolution.** Agent refs resolve through `AgentResolver`; connection and skill-source refs resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
+- **Client-side ref resolution.** Agent refs resolve through `AgentResolver`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 
@@ -91,8 +91,9 @@ Every command group is a thin client over the procedures its subsystem already e
 The CLI presents Agents as single, atomic entities — one resource carrying both spec and runtime state, with no separate instance type.
 
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side. **Delete** cascades through Kubernetes ownership to the StatefulSet, Service, NetworkPolicy, and owned volumes — the same path the UI's delete uses. **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
+- **Scripted create requires an explicit model-provider Connection**, addressed by id or unique name. An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches. Before creating the Agent, the server checks that the selected Connection belongs to the caller and is an active model provider, then includes it in the initial grants. Missing or invalid selections fail with guidance to choose or reconnect a provider.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero. Under `--json` every exit path still emits a valid Agent payload, so scripted callers never see empty stdout.
-- **`dam agent create-interactive`** is the TTY-bound complement to scripted create: it walks name → template → model-provider connection → optional GitHub PAT and ends with the same agent and grants the UI's "Add agent" dialog produces, running the same server mutations in the same order. Anything it creates during the run is tracked in a ledger and torn down in one cleanup pass on failure; what cleanup can't remove is reported as an orphan summary. The scripted `create` path stays the entry point for CI.
+- **`dam agent create-interactive`** is the TTY-bound complement to scripted create: it walks name → template → model-provider connection → optional GitHub PAT and ends with the same agent and grants the UI's "Add agent" dialog produces, creating the Agent before applying its connection grants. Anything it creates during the run is tracked in a ledger and torn down in one cleanup pass on failure; what cleanup can't remove is reported as an orphan summary. The scripted `create` path stays the entry point for CI.
 
 ## Terminal attach
 

@@ -51,7 +51,7 @@ export function buildListCommand(deps: {
 
       if (result.value.length === 0) {
         process.stderr.write(
-          "No agents.\nhint: create one with `dam agent create <name> --template <id>`\n",
+          "No agents.\nhint: create one with `dam agent create <name> --template <id> --provider <connection-id>`\n",
         );
         process.exit(EXIT_SUCCESS);
       }
