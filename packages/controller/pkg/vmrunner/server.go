@@ -379,7 +379,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		if launch == nil && archived {
 			cached = base + ".tar"
 			if launch, err = launchFromArchive(cached); err != nil {
-				return err
+				return fmt.Errorf("%w: %w", errImageUnreadable, err)
 			}
 		}
 	}
@@ -1035,9 +1035,14 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 var errEgressChanged = errors.New("egress allowlist changed")
 
+var errImageUnreadable = errors.New("the image archive cannot be read")
+
 func failureReason(err error) string {
 	if errors.Is(err, errEgressChanged) {
 		return ReasonEgressChanged
+	}
+	if errors.Is(err, errImageUnreadable) {
+		return ReasonImageUnavailable
 	}
 	m := err.Error()
 	switch {

@@ -635,6 +635,10 @@ func TestFailureReasonsMatchWhatTheUserIsTold(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, failureReason(errors.New(tc.err)), "error %q", tc.err)
 	}
+
+	unreadable := fmt.Errorf("%w: %w", errImageUnreadable, errors.New("unexpected end of JSON input"))
+	assert.Equal(t, ReasonImageUnavailable, failureReason(unreadable),
+		"an archive the runner could not read is the image being unusable, not a guest that failed to boot — the words come from the runner here rather than from smolvm, so nothing in the text would say so")
 }
 
 // TEST_SCENARIO: the runner pod restarts — an OOM, a node drain, a chart roll — and its machines survive on the kept volume. Their published ports have to come back with the process, or every vm agent stays unreachable with a machine that looks perfectly healthy.
