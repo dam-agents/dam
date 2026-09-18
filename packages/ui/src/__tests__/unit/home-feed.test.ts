@@ -1,3 +1,4 @@
+import type { AttentionItem } from "api-server-api";
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -11,17 +12,22 @@ import {
   type FeedItem,
   sortFeedItems,
 } from "../../modules/home/lib/feed-item.js";
-import type { SessionView } from "../../types.js";
 
 // TEST_OVERVIEW: the Home feed's ordering and filtering rules, kept pure so they can be pinned here.
 
-function session(overrides: Partial<SessionView> = {}): SessionView {
+function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
     sessionId: "s-1",
     agentId: "a-1",
     type: SessionType.Regular,
     mode: SessionMode.Chat,
+    title: null,
+    scheduleId: null,
+    experimentId: null,
     createdAt: "2026-08-19T10:00:00Z",
+    activityAt: null,
+    seenAt: null,
+    working: false,
     ...overrides,
   };
 }
@@ -40,7 +46,7 @@ function unread(
       sessionId: id,
       type,
       seenAt: "2026-08-19T07:00:00Z",
-      updatedAt: at ?? "2026-08-19T10:00:00Z",
+      activityAt: at ?? "2026-08-19T10:00:00Z",
     }),
   };
 }
@@ -92,7 +98,7 @@ describe("filterFeed", () => {
       id: "run",
       agentId: "a-1",
       at: "2026-08-19T11:00:00Z",
-      session: session({ sessionId: "run", running: true }),
+      session: session({ sessionId: "run", working: true }),
     },
     unread("chat", "2026-08-19T10:00:00Z"),
     unread("sched", "2026-08-19T09:00:00Z", SessionType.ScheduleCron),
@@ -161,10 +167,10 @@ describe("emptyStateFor", () => {
     ).not.toBe("Approvals could not be read");
 
     expect(
-      emptyStateFor("unread", { ...base, unreadableAgents: 2 }).title,
-    ).toBe("Some agents did not answer");
+      emptyStateFor("unread", { ...base, feedUnreadable: true }).title,
+    ).toBe("Activity could not be read");
     expect(
-      emptyStateFor("attention", { ...base, unreadableAgents: 2 }).title,
+      emptyStateFor("attention", { ...base, feedUnreadable: true }).title,
     ).toBe("All clear");
   });
 
@@ -174,7 +180,7 @@ describe("emptyStateFor", () => {
     const state = emptyStateFor("all", {
       allSourcesExcluded: true,
       noRunningAgents: false,
-      unreadableAgents: 3,
+      feedUnreadable: true,
       approvalsUnreadable: true,
     });
 

@@ -1,51 +1,55 @@
+import type { DismissedEntry } from "api-server-api";
+
 import type { FeedItem } from "./feed-item.js";
 
-const STORAGE_KEY = "platform-home-dismissed";
-const MAX_KEYS = 300;
+export interface DismissalTarget {
+  kind: DismissedEntry["kind"];
+  id: string;
+}
 
-export function dismissalKey(item: FeedItem): string | null {
+export function dismissalTarget(item: FeedItem): DismissalTarget | null {
   switch (item.kind) {
     case "approval":
-      return `approval:${item.approval.id}:${item.approval.createdAt}`;
+      return { kind: "approval", id: item.approval.id };
     case "unread":
-      return `session:${item.agentId}:${item.session.sessionId}:${item.at ?? ""}`;
+      return {
+        kind: "session",
+        id: `${item.agentId}:${item.session.sessionId}`,
+      };
     case "in-progress":
       return null;
   }
 }
 
+export function dismissalsByKey(
+  entries: readonly DismissedEntry[],
+): ReadonlyMap<string, number> {
+  const byKey = new Map<string, number>();
+  for (const entry of entries) {
+    const at = Date.parse(entry.at);
+    if (Number.isNaN(at)) continue;
+    byKey.set(`${entry.kind}:${entry.id}`, at);
+  }
+  return byKey;
+}
+
+export function isDismissedItem(
+  item: FeedItem,
+  byKey: ReadonlyMap<string, number>,
+): boolean {
+  const target = dismissalTarget(item);
+  if (!target) return false;
+  const at = byKey.get(`${target.kind}:${target.id}`);
+  if (at === undefined) return false;
+  if (item.kind === "approval") return true;
+  const activity = item.at === null ? null : Date.parse(item.at);
+  return activity === null || Number.isNaN(activity) || activity <= at;
+}
+
 export function sessionDismissedAt(
-  keys: Iterable<string>,
+  byKey: ReadonlyMap<string, number>,
   agentId: string,
   sessionId: string,
 ): number | null {
-  const prefix = `session:${agentId}:${sessionId}:`;
-  let newest: number | null = null;
-  for (const key of keys) {
-    if (!key.startsWith(prefix)) continue;
-    const at = Date.parse(key.slice(prefix.length));
-    if (Number.isNaN(at)) continue;
-    if (newest === null || at > newest) newest = at;
-  }
-  return newest;
-}
-
-export function loadDismissed(): string[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((entry): entry is string => typeof entry === "string");
-  } catch {
-    return [];
-  }
-}
-
-export function saveDismissed(keys: readonly string[]): string[] {
-  const capped = keys.slice(-MAX_KEYS);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
-  } catch {}
-  return capped;
+  return byKey.get(`session:${agentId}:${sessionId}`) ?? null;
 }

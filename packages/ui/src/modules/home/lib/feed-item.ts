@@ -1,7 +1,6 @@
-import type { ApprovalView } from "api-server-api";
+import type { ApprovalView, AttentionItem } from "api-server-api";
 
-import type { SessionView } from "../../../types.js";
-import { isFeedableSession } from "./unread.js";
+import { isFeedableAttention } from "./unread.js";
 
 export type FeedItem =
   | {
@@ -16,30 +15,28 @@ export type FeedItem =
       id: string;
       agentId: string;
       at: string | null;
-      session: SessionView;
+      session: AttentionItem;
     }
   | {
       kind: "unread";
       id: string;
       agentId: string;
       at: string | null;
-      session: SessionView;
+      session: AttentionItem;
     };
 
 export interface FeedSources {
   approvals: readonly ApprovalView[];
-  byAgent: readonly {
-    agentId: string;
-    sessions: readonly SessionView[];
-  }[];
+  attention: readonly AttentionItem[];
+  runningAgentIds: ReadonlySet<string>;
 }
 
-function sessionAt(session: SessionView): string | null {
-  return session.updatedAt ?? session.createdAt ?? null;
+function sessionAt(session: AttentionItem): string | null {
+  return session.activityAt ?? session.createdAt;
 }
 
 export function toFeedItems(
-  { approvals, byAgent }: FeedSources,
+  { approvals, attention, runningAgentIds }: FeedSources,
   now: number = Date.now(),
 ): FeedItem[] {
   const items: FeedItem[] = approvals.map((approval) => ({
@@ -50,27 +47,26 @@ export function toFeedItems(
     approval,
   }));
 
-  for (const { agentId, sessions } of byAgent) {
-    for (const session of sessions) {
-      if (session.running) {
-        items.push({
-          kind: "in-progress",
-          id: `running:${agentId}:${session.sessionId}`,
-          agentId,
-          at: sessionAt(session),
-          session,
-        });
-        continue;
-      }
-      if (isFeedableSession(session, now)) {
-        items.push({
-          kind: "unread",
-          id: `unread:${agentId}:${session.sessionId}`,
-          agentId,
-          at: sessionAt(session),
-          session,
-        });
-      }
+  for (const session of attention) {
+    const agentId = session.agentId;
+    if (session.working && runningAgentIds.has(agentId)) {
+      items.push({
+        kind: "in-progress",
+        id: `running:${agentId}:${session.sessionId}`,
+        agentId,
+        at: sessionAt(session),
+        session,
+      });
+      continue;
+    }
+    if (isFeedableAttention(session, now)) {
+      items.push({
+        kind: "unread",
+        id: `unread:${agentId}:${session.sessionId}`,
+        agentId,
+        at: sessionAt(session),
+        session,
+      });
     }
   }
 

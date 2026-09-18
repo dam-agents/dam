@@ -23,7 +23,6 @@ import {
 import { SchedulesWidget } from "../components/schedules-widget.js";
 import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
-import { usePodSessionsWatch } from "../hooks/use-pod-sessions-watch.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import {
   emptyStateFor,
@@ -46,10 +45,9 @@ export function HomeView() {
     hasAgents,
     loadingAgents,
     loadingFeed,
-    unreadableAgents,
+    feedUnreadable,
     approvalsUnreadable,
   } = useFeed();
-  usePodSessionsWatch();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
@@ -169,7 +167,7 @@ export function HomeView() {
               {...emptyStateFor(status, {
                 allSourcesExcluded: included.size === 0,
                 noRunningAgents: runningAgents.length === 0,
-                unreadableAgents,
+                feedUnreadable,
                 approvalsUnreadable,
               })}
             />

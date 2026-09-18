@@ -814,3 +814,49 @@ export const kbShares = pgTable(
     index("kb_shares_owner_idx").on(table.owner),
   ],
 );
+
+export const attentionRecords = pgTable(
+  "attention_records",
+  {
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    mode: text("mode").notNull(),
+    type: text("type").notNull(),
+    title: text("title"),
+    scheduleId: text("schedule_id"),
+    experimentId: text("experiment_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    activityAt: timestamp("activity_at", { withTimezone: true }),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    working: boolean("working").notNull().default(false),
+    capturedAt: timestamp("captured_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.sessionId] }),
+    index("attention_records_owner_activity_idx").on(
+      table.ownerSub,
+      table.activityAt,
+    ),
+    index("attention_records_activity_idx").on(table.activityAt),
+  ],
+);
+
+export const attentionState = pgTable(
+  "attention_state",
+  {
+    userSub: text("user_sub").notNull(),
+    itemKind: text("item_kind").notNull(),
+    itemId: text("item_id").notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userSub, table.itemKind, table.itemId] }),
+    index("attention_state_user_idx").on(table.userSub),
+  ],
+);
