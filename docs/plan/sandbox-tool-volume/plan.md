@@ -53,22 +53,60 @@ machine at `/opt/dam` — exactly the mechanism this feature proposes — so the
 | `find` (metadata) | 43 ms | **189 ms** | **24 ms** |
 | read all 208 MB | 1.23 s | **3.49 s** | **0.23 s** |
 
-Two conclusions, and they point in opposite directions for the two backends.
+**These are micro-benchmarks, and extrapolating them was wrong.** On the
+workload that actually matters — loading the thirteen dependencies a harness
+start loads — the difference is small:
+
+| harness dependency load (warm, alternating order) | virtiofs | image (local ext4) |
+|---|---|---|
+| round 1 | 194 ms | 171 ms |
+| round 2 | 180 ms | 156 ms |
+| round 3 | 177 ms | 161 ms |
+
+**+21 ms, +13%.** Against a ~3 s create that is not material. An earlier draft of
+this plan claimed virtiofs would make the harness start "materially worse" on the
+strength of the table above; the direct measurement does not support it, and the
+first figures that appeared to (194 ms vs 357 ms) were an ordering artefact — the
+local path ran first and paid the cold cost.
+
+**Where the real cost lives is per-file overhead, not bandwidth.** Reading the
+same 208 MB over virtiofs:
+
+| | time |
+|---|---|
+| as 4,814 separate file reads | 3.49 s |
+| as one `tar` stream | **0.307 s** |
+
+virtiofs streams at 1,041–1,472 MB/s (a 121 MB binary in 0.08 s). So anything
+sequential is nearly free and anything metadata-heavy is not.
 
 **CephFS is not the problem — it is faster than the guest's own disk.** Reading
-the whole tree on the runner took 0.23 s against 1.23 s inside the guest. So for
-the **container backend**, mounting this volume should cost nothing and may be
-quicker than the image layer. That wants confirming in a pod, but the signal is
-strong.
+the whole tree on the runner took 0.23 s against 1.23 s inside the guest. For the
+**container backend** this volume should cost nothing.
 
-**virtiofs is the tax.** Into a guest it is 2–3× slower on bulk reads and ~4× on
-metadata, and 6× on a cold exec. The guest's `/` is an overlay whose lower layer
-is local ext4 (`/dev/vda`), so this was a fair comparison, not an artefact.
+### On preloading, and why not to
 
-That matters because it lands on the work that just took agent creation from
-20.8 s to ~3 s. The harness start is ~1.5 s of mostly module loading; served over
-virtiofs it would be materially worse. **Putting node and the harness behind
-virtiofs would undo that.**
+The obvious fix for per-file overhead is to stage the tree locally before use.
+Measured in the guest:
+
+| | cost |
+|---|---|
+| copy the 673 MB tree to the guest's ext4 disk | **10.7 s** |
+| copy node alone (208 MB) to tmpfs | **1.38 s** |
+| exec from the staged ext4 copy | 39 ms — as fast as the image |
+| exec from tmpfs | **fails**: `/dev/shm` is `noexec` |
+
+Every one of those costs more than the +21 ms it removes, so staging is not worth
+doing for its own sake. Two notes for whoever revisits this:
+
+- **smolvm already implements it.** `-v <host>:<guest>:staged` "runs from a
+  guest-local copy for metadata-heavy workloads". If a future tool set proves
+  metadata-heavy, the flag is there — no invention needed.
+- **A single-file image would sidestep the overhead on both sides**, since the
+  cost is per file, not per byte. The guest kernel has **erofs** built in
+  (squashfs does not), but there is no `/dev/loop-control` and smolvm exposes no
+  extra-disk flag, so mounting one would need upstream work. Worth remembering,
+  not worth building now.
 
 ## The shape
 
@@ -89,18 +127,10 @@ One RWX volume, written by a job, consumed differently by the two backends.
   symlink rather than a rebuild.
 - **Container agents** mount `current/<arch>` read-only at `/opt/dam`, with
   `/opt/dam/bin` early on `PATH`. On the measurements above this is the easy win.
-- **VM agents** must not read hot tools over virtiofs. Two candidates:
-  - **(i) materialise at create** — the runner copies the tree onto the machine's
-    ext4 storage disk when the machine is made, so the guest reads locally. The
-    source read is cheap (0.23 s on CephFS); the write is the unknown.
-  - **(ii) split by temperature** — hot path (node, harness) stays in the image,
-    the long tail (kubectl, oc, gh, gws, python, uv) comes over virtiofs. Those
-    are lazily installed at runtime *today*, so virtiofs is strictly better than
-    what they do now.
-
-(ii) is cheap and safe and can ship first. (i) is what makes "one image for every
-harness" reachable on the VM backend, and it needs its own measurement before
-anyone commits to it.
+- **VM agents** get one more `-v <path>:/opt/dam:ro` on the machine — the flag the
+  runner already uses for the CA bundle. The measured cost is +21 ms on a harness
+  dependency load, which is the price of admission and not worth engineering
+  around. `:staged` is there if a future tool set turns out to be metadata-heavy.
 
 ## Decisions I need from you
 
@@ -112,10 +142,12 @@ anyone commits to it.
 | B | A + node + the harness packages | OS, agent-runtime, harness files and env |
 | C | B + the harness files | one image; harness identity entirely in config |
 
-The measurements say **A is safe on both backends today**, and B is safe on the
-container backend but needs (i) above for VM agents. I would ship A, measure (i),
-then decide about B. C buys little and puts agent-visible files behind a volume
-flip.
+The measurements put **A and B both within reach on both backends** — the
+virtiofs penalty is +21 ms, not the multiple I first assumed. A is still the
+right first step because it is reversible and touches nothing on the startup
+path; B is where "one image for every harness" actually arrives, and the harness
+being a mise install already makes it mechanical. C buys little and puts
+agent-visible files behind a volume flip.
 
 **D2 — replace the image's tools, or shadow them?** Shadowing (`/opt/dam/bin`
 ahead of `tool-bin`, image keeps what it has) makes every step reversible and
@@ -158,8 +190,10 @@ Union first, unless two harnesses already want conflicting pins.
    → verify → flip. No consumer yet; prove idempotence and rollback.
 3. **Consume in the container backend**, shadowing, one template first.
 4. **Consume in the VM backend** for the long tail only (D1/A), one more `-v`.
-5. **Measure (i)** — materialising the tree onto the machine's disk at create.
-   This decides whether B is reachable for VM agents.
+5. **Move node and the harness** (D1/B), collapsing the per-harness build matrix.
+   Re-measure a real harness start from the volume before and after — the +21 ms
+   here is a dependency-load proxy, not a full start, because the harness needs
+   env a bare test machine does not have.
 6. **Shrink the image** by deleting what the volume now provides. This is where
    the startup win is realised, and it is the least reversible step, so it is
    last.
