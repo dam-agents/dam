@@ -154,7 +154,7 @@ WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_PROVENANCE_API_FAILURES_FATAL=false \
     MISE_NODE_VERIFY=false \
-    PATH="/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
+    PATH="/usr/local/share/tool-shims:/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 # The runtime image has dnf, so the sandbox's own tools are installed here
 # rather than composed in a sysroot stage and copied in — and, the point of the
@@ -178,7 +178,7 @@ COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/p
 RUN chmod 0755 /usr/local/lib/platform-python
 RUN set -eu; \
     install -d -o 65532 /usr/local/share/tool-bin; \
-    mkdir -p /usr/local/share/lazy-tools /var/log/dam/install /var/cache/dam; \
+    mkdir -p /usr/local/share/lazy-tools /usr/local/share/tool-shims /var/log/dam/install /var/cache/dam; \
     chown 65532 /var/log/dam/install /var/cache/dam; \
     cd /usr/local/share/lazy-tools; \
     for spec in python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
@@ -188,13 +188,20 @@ RUN set -eu; \
     done
 # docker and k3s are shims rather than tools in the image: an agent that never
 # runs a container should not carry 270 MB of runtime it will not use, and an
-# agent that wants one should not have to be told how to get it. They install on
-# first use, like the mise-backed shims beside them, and they are last on PATH so
-# a real binary always wins.
+# agent that wants one should not have to be told how to get it.
+#
+# Unlike the mise-backed shims above, these sit ahead of the real binaries
+# rather than behind them, because they keep a job after the install: the docker
+# one starts a daemon that no init system is going to start, and the k3s one
+# supplies the --data-dir and --container-runtime-endpoint without which a
+# sandbox cluster does not work. Left last on PATH, each would be shadowed by
+# the binary it had just installed and would never run a second time.
+# dam-tool-real resolves past both shim directories.
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-tool-real /usr/local/bin/dam-tool-real
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-auto-install /usr/local/bin/dam-auto-install
-COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/lazy-tools/docker
-COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/lazy-tools/k3s
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-containerd /usr/local/bin/dam-containerd
+COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/tool-shims/docker
+COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/tool-shims/k3s
 
 # /etc/logrotate.d is empty but not optional: a service installer writes its
 # rotation config straight into it, and this base ships no logrotate at all, so

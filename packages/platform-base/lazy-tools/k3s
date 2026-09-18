@@ -33,16 +33,33 @@ real=$(dam-tool-real k3s)
 
 case "${1:-}" in
 server | agent)
+    # k3s bundles a containerd and starts it by default, which would be a second
+    # daemon and a second copy of every shared layer next to docker's. Pointing
+    # it at the one dam-containerd runs leaves a single content store.
+    #
+    # Both opt out, for the same reason: dam-containerd has to name k3s's CNI
+    # plugin and config directories, and it derives them from the data dir this
+    # shim picks. A caller who chooses either flag is somewhere that helper was
+    # not told about, so k3s keeps the containerd it brings.
     for arg in "$@"; do
-        case "$arg" in --data-dir | --data-dir=*) exec "$real" "$@" ;; esac
+        case "$arg" in
+        --data-dir | --data-dir=* | \
+            --container-runtime-endpoint | --container-runtime-endpoint=*)
+            exec "$real" "$@"
+            ;;
+        esac
     done
+
+    sub=$1
+    shift
+    set -- --container-runtime-endpoint "$(dam-containerd)" "$@"
     for d in /storage /workspace; do
         if [ -d "$d" ] && [ -w "$d" ]; then
-            sub=$1
-            shift
-            exec "$real" "$sub" --data-dir "$d/k3s" "$@"
+            set -- --data-dir "$d/k3s" "$@"
+            break
         fi
     done
+    exec "$real" "$sub" "$@"
     ;;
 esac
 

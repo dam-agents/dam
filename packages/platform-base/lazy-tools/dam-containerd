@@ -1,0 +1,81 @@
+#!/bin/sh
+# Installs and starts the one containerd that both the docker and the k3s shims
+# attach to, and prints its socket. One daemon means one content store, so a
+# layer a build and a cluster both want is pulled and stored once.
+#
+# Sharing this way rather than letting each runtime bring its own is what Fedora
+# already does for docker: its docker.service passes
+# --containerd=/run/containerd/containerd.sock instead of letting the daemon
+# fork a private one. k3s is the side that has to be told.
+set -eu
+sock=/run/containerd/containerd.sock
+[ -S "$sock" ] && { printf '%s\n' "$sock"; exit 0; }
+
+# Image layers written 750 are unreadable to a container running as a non-root
+# uid; see the k3s shim. The daemon inherits this umask, so it is set before it
+# starts rather than in whichever shim happened to call first.
+umask 022
+
+if ! dam-tool-real containerd >/dev/null 2>&1; then
+    dam-auto-install containerd sh -c '
+        command -v dnf >/dev/null 2>&1 || {
+            echo "no dnf on this image; install containerd manually" >&2; exit 1; }
+        dnf install -y --setopt=install_weak_deps=False containerd'
+fi
+real=$(dam-tool-real containerd)
+
+disk=
+for d in /storage /workspace; do
+    [ -d "$d" ] && [ -w "$d" ] && { disk=$d; break; }
+done
+
+# Deliberately not the packaged /etc/containerd/config.toml: the containerd RPM
+# ships one, so a generate-if-absent on that path would never fire, and its
+# defaults leave the root on the rootfs — which on the vm Backend is an overlay
+# the snapshotter cannot use.
+conf=/etc/containerd/dam.toml
+if [ ! -f "$conf" ]; then
+    mkdir -p /etc/containerd
+    tmp=$conf.$$
+    "$real" config default > "$tmp"
+
+    # A guest rootfs is an overlay, overlayfs refuses an overlay as an upperdir,
+    # and the default root sits inside it.
+    [ -n "$disk" ] && sed -i "s|^root = .*|root = '$disk/containerd'|" "$tmp"
+
+    k3sdir=${disk:+$disk/k3s}
+    k3sdir=${k3sdir:-/var/lib/rancher/k3s}
+
+    # k3s writes its generated CNI config under the data dir it was given, and
+    # a containerd that k3s did not start would otherwise look in /etc/cni/net.d
+    # and give every pod no network at all.
+    sed -i "s|conf_dir = '/etc/cni/net.d'|conf_dir = '$k3sdir/agent/etc/cni/net.d'|" "$tmp"
+
+    # The CNI plugins need both candidates named. k3s unpacks its bundled assets
+    # under whichever data dir it resolves first, and that is not always the one
+    # --data-dir gave it: a plain k3s kubectl run while the server is still
+    # starting unpacks them under the default, and the server then reuses those.
+    # Observed as pods stuck in FailedCreatePodSandBox, flannel not found.
+    bins="'$k3sdir/data/current/bin'"
+    [ "$k3sdir" = /var/lib/rancher/k3s ] ||
+        bins="$bins, '/var/lib/rancher/k3s/data/current/bin'"
+    sed -i "s|bin_dirs = \['/opt/cni/bin'\]|bin_dirs = [$bins, '/usr/libexec/cni', '/opt/cni/bin']|" "$tmp"
+
+    # Atomic, so a second shim racing this one never reads a half-written config.
+    mv "$tmp" "$conf"
+fi
+
+dam-auto-install containerd-start sh -c "
+    modprobe overlay 2>/dev/null || true
+
+    # Detached and disowned: the shim exits as soon as the socket answers, and
+    # the daemon has to outlive it.
+    nohup setsid '$real' --config '$conf' >>/var/log/dam/install/containerd.log 2>&1 &
+    for _ in \$(seq 1 60); do
+        [ -S '$sock' ] && exit 0
+        sleep 1
+    done
+    echo 'containerd did not answer within 60s; see /var/log/dam/install/containerd.log' >&2
+    exit 1"
+
+printf '%s\n' "$sock"

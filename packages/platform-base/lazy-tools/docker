@@ -37,26 +37,22 @@ if ! "$real" info >/dev/null 2>&1; then
             [ -d "$d" ] && [ -w "$d" ] && { root="--data-root $d/docker"; break; }
         done
 
-        # When k3s is already running, share its containerd rather than starting
-        # a second one: one daemon, one content store, a namespace each (moby and
-        # k8s.io), so a layer both want is pulled and stored once. The snapshotter
-        # feature is the half that matters — the socket alone would share the
-        # runtime while docker kept its own overlay2 image store, which is the
-        # storage this is meant to stop duplicating.
+        # The shared containerd rather than the private one the daemon would
+        # otherwise fork, so docker and k3s keep one content store between them.
+        # This is also what Fedora does: its docker.service passes the same flag.
         #
-        # The cost is a dependency: docker then needs that containerd to stay up,
-        # so stopping k3s stops docker too. Without k3s, the daemon brings its own
-        # containerd as usual.
+        # The snapshotter feature is the half that matters. The socket alone
+        # would share the runtime while docker kept its own overlay2 image
+        # store, which is the storage this is meant to stop duplicating.
         #
-        # The sharing only goes this way: the containerd docker brings runs with the
-        # CRI plugin disabled, so a later k3s cannot join it and starts a second one.
-        share=
-        sock=/run/k3s/containerd/containerd.sock
-        [ -S "$sock" ] && share="--containerd $sock --feature containerd-snapshotter=true"
+        # The cost is a dependency: the daemon needs that containerd to stay up.
+        sock=$(dam-containerd)
 
         # Detached and disowned: the shim exits as soon as the daemon answers,
         # and the daemon has to outlive it.
-        nohup "$dockerd" $root $share >>/var/log/dam/install/dockerd.log 2>&1 &
+        nohup "$dockerd" $root --containerd "$sock" \
+            --feature containerd-snapshotter=true \
+            >>/var/log/dam/install/dockerd.log 2>&1 &
         for _ in $(seq 1 60); do
             docker_real=$(dam-tool-real docker); "$docker_real" info >/dev/null 2>&1 && exit 0
             sleep 1
