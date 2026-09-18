@@ -10,6 +10,10 @@ import {
   type AgentDeleted,
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
+import type {
+  SlackConversationName,
+  SlackConversationRef,
+} from "../infrastructure/slack-gateway.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
@@ -103,15 +107,13 @@ interface Worker {
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  supportsUserLookup?(): Promise<boolean>;
   describeMessageReactions?(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  supportsMessageReactions?(): Promise<boolean>;
   resolveConversationNames?(
-    channelIds: string[],
-  ): Promise<Record<string, string | null>>;
+    refs: SlackConversationRef[],
+  ): Promise<SlackConversationName[]>;
 }
 
 export interface ChannelManager {
@@ -155,16 +157,14 @@ export interface ChannelManager {
     channelType: ChannelType,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  supportsUserLookup(): Promise<boolean>;
   describeMessageReactions(
     instanceName: string,
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  supportsMessageReactions(): Promise<boolean>;
   resolveSlackConversationNames(
-    channelIds: string[],
-  ): Promise<Record<string, string | null>>;
+    refs: SlackConversationRef[],
+  ): Promise<SlackConversationName[]>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -176,9 +176,7 @@ export const channelRpcRequestSchema = z.object({
     "declineTurn",
     "handOffTurn",
     "describeUsers",
-    "supportsUserLookup",
     "describeMessageReactions",
-    "supportsMessageReactions",
     "resolveConversationNames",
   ]),
   args: z.array(z.unknown()),
@@ -186,6 +184,10 @@ export const channelRpcRequestSchema = z.object({
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
 const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
+const slackConversationRefSchema = z.object({
+  channelId: z.string(),
+  teamId: z.string(),
+});
 const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: forInstance,
   postMessage: forInstance.rest(z.unknown()),
@@ -194,10 +196,8 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   declineTurn: forInstance,
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
-  supportsUserLookup: z.tuple([]),
   describeMessageReactions: forInstance.rest(z.unknown()),
-  supportsMessageReactions: z.tuple([]),
-  resolveConversationNames: z.tuple([z.array(z.string())]),
+  resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -236,7 +236,6 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ users: z.array(channelUserSchema) }),
     z.object({ error: z.string() }),
   ]),
-  supportsUserLookup: z.boolean(),
   describeMessageReactions: z.union([
     z.object({
       reactions: z.array(
@@ -251,8 +250,9 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
-  supportsMessageReactions: z.boolean(),
-  resolveConversationNames: z.record(z.string(), z.string().nullable()),
+  resolveConversationNames: z.array(
+    slackConversationRefSchema.extend({ name: z.string().nullable() }),
+  ),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -459,14 +459,6 @@ export function createChannelManager(deps: {
         });
       return worker.describeUsers(instanceName, userIds);
     },
-    supportsUserLookup: async () => {
-      const capable = workers.filter((w) => w.describeUsers);
-      if (capable.length === 0) return true;
-      const results = await Promise.all(
-        capable.map((w) => w.supportsUserLookup?.() ?? Promise.resolve(true)),
-      );
-      return results.some(Boolean);
-    },
     describeMessageReactions: (
       instanceName: string,
       channelType: ChannelType,
@@ -479,19 +471,8 @@ export function createChannelManager(deps: {
         });
       return worker.describeMessageReactions(instanceName, query);
     },
-    supportsMessageReactions: async () => {
-      const capable = workers.filter((w) => w.describeMessageReactions);
-      if (capable.length === 0) return true;
-      const results = await Promise.all(
-        capable.map(
-          (w) => w.supportsMessageReactions?.() ?? Promise.resolve(true),
-        ),
-      );
-      return results.some(Boolean);
-    },
-    resolveConversationNames: (channelIds: string[]) =>
-      slackWorker?.resolveConversationNames?.(channelIds) ??
-      Promise.resolve({}),
+    resolveConversationNames: (refs: SlackConversationRef[]) =>
+      slackWorker?.resolveConversationNames?.(refs) ?? Promise.resolve([]),
   } as const;
 
   subscriptions.push(
@@ -638,18 +619,10 @@ export function createChannelManager(deps: {
       );
     },
 
-    supportsUserLookup() {
-      return dispatch(
-        "supportsUserLookup",
-        [],
-        localHandlers.supportsUserLookup,
-      ).catch(() => true);
-    },
-
-    resolveSlackConversationNames(channelIds) {
-      return dispatch("resolveConversationNames", [channelIds], () =>
-        localHandlers.resolveConversationNames(channelIds),
-      ).catch(() => ({}));
+    resolveSlackConversationNames(refs) {
+      return dispatch("resolveConversationNames", [refs], () =>
+        localHandlers.resolveConversationNames(refs),
+      ).catch(() => []);
     },
 
     describeMessageReactions(instanceName, channelType, query) {
@@ -663,14 +636,6 @@ export function createChannelManager(deps: {
             query,
           ),
       );
-    },
-
-    supportsMessageReactions() {
-      return dispatch(
-        "supportsMessageReactions",
-        [],
-        localHandlers.supportsMessageReactions,
-      ).catch(() => true);
     },
   };
 }

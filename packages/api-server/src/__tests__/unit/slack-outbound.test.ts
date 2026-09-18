@@ -21,9 +21,10 @@ function harness(opts: {
   extraBoundChannelIds?: string[];
   channels?: FakeSlackChannel[];
   gatewayDown?: boolean;
+  workspace?: string;
 }) {
   const gw = createFakeSlackGateway();
-  gw.setChannels(opts.channels ?? []);
+  gw.setChannels(opts.channels ?? [], opts.workspace ?? "");
   if (opts.gatewayDown) {
     gw.start = async () => false;
   }
@@ -49,7 +50,9 @@ function harness(opts: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
         opts.boundChannelId
-          ? [opts.boundChannelId, ...(opts.extraBoundChannelIds ?? [])]
+          ? [opts.boundChannelId, ...(opts.extraBoundChannelIds ?? [])].map(
+              (id) => ({ id, teamId: opts.workspace ?? "" }),
+            )
           : [],
     },
     async () => {},
@@ -228,6 +231,7 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.uploads()).toEqual([
       {
         kind: "upload",
+        teamId: "",
         channelId: BOUND,
         filename: "lorem-ipsum.txt",
         threadTs: "1700000000.000100",
@@ -325,5 +329,62 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
       { id: "C-ALERTS", title: "#alerts" },
       { id: "C-GENERAL", title: "#general" },
     ]);
+  });
+});
+
+describe("slack outbound — which workspace a post goes out under", () => {
+  /**
+   * TEST_SCENARIO: The install that predates multi-workspace support. Its
+   * bindings carry no workspace, so posts go out under the operator's own
+   * token exactly as they always did — the backward compatibility the whole
+   * design rests on, asserted rather than assumed.
+   */
+  it("posts under the original workspace when the binding names none", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+
+    expect(await h.post("hello")).toMatchObject({ ok: true });
+    expect(h.messages()).toMatchObject([{ channel: BOUND, teamId: "" }]);
+  });
+
+  /**
+   * TEST_SCENARIO: A conversation in a workspace connected over OAuth. The post
+   * must go out under that workspace's own credential — sending it under the
+   * operator's token is the defect this whole change exists to fix, and it is
+   * invisible from the reply itself, so only the workspace on the wire proves
+   * it.
+   */
+  it("posts under the binding's own workspace", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      workspace: "T-SECOND",
+    });
+
+    expect(await h.post("hello")).toMatchObject({ ok: true });
+    expect(h.messages()).toMatchObject([
+      { channel: BOUND, teamId: "T-SECOND" },
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: Listing an agent's reachable conversations asks the
+   * workspace the agent is bound in. A channel only the original workspace can
+   * see must not surface for an agent bound elsewhere, or the agent would be
+   * offered somewhere it cannot post.
+   */
+  it("lists the conversations of the workspace the agent is bound in", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      workspace: "T-SECOND",
+    });
+    h.gw.setChannels(
+      [{ id: "C-ELSEWHERE", name: "elsewhere", botIsMember: true }],
+      "",
+    );
+
+    const listed = (await h.list()).map((c) => c.id);
+    expect(listed).toContain(BOUND);
+    expect(listed).not.toContain("C-ELSEWHERE");
   });
 });

@@ -15,6 +15,12 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
+    id: "interactive-artifacts",
+    label: "Interactive artifacts",
+    description:
+      "Lets buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
+  },
+  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
@@ -24,7 +30,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "vm-sandboxes",
     label: "VM sandboxes",
     description:
-      "Reveals images that boot as their own microVM instead of a container, in the coding agent’s image list.",
+      "Adds the isolation choice to the coding agent’s setup, so an image can be booted as a machine of its own rather than as a pod, with container engines and Kubernetes able to run inside it.",
   },
   {
     id: "session-costs",

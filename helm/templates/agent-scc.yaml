@@ -7,13 +7,26 @@ seccomp (all from restricted-v2). The two real relaxations are:
 
   - runAsUser: RunAsAny — the iptablesInit init container needs root
     because containerd doesn't promote capabilities.add into the
-    ambient set, so non-root processes can't exercise NET_ADMIN.
+    ambient set, so non-root processes can't exercise NET_ADMIN. The VM
+    runner needs it for the same reason, and every VMM it hosts runs as
+    that same uid — smolvm can give each machine one of its own, but a
+    VMM that takes one cannot read the shared image, so the pod is the
+    boundary around all of them rather than one boundary each.
   - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
-    caps.add (only the init container actually requests them).
+    caps.add. NET_RAW is the init container's alone; NET_ADMIN is asked
+    for by that container and by the VM runner, which needs it for the
+    per-machine NAT. CHOWN + FOWNER + DAC_OVERRIDE are the VM runner's
+    alone, and all three are what unpacking an image faithfully costs:
+    tar restores each file's owner and mode and then keeps writing into
+    directories it has just given away or made read-only. DAC_OVERRIDE
+    also lets the runner manage machine directories that a release which
+    briefly gave each VMM its own uid chowned away from it.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
-falls through to this one for pods that actually request NET_ADMIN.
+falls through to this one for pods that actually request a capability it
+adds — NET_ADMIN for an agent's iptables init and for the VM runner,
+CHOWN, FOWNER and DAC_OVERRIDE for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -31,6 +44,9 @@ allowPrivilegedContainer: false
 allowedCapabilities:
   - NET_ADMIN
   - NET_RAW
+  - CHOWN
+  - FOWNER
+  - DAC_OVERRIDE
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny

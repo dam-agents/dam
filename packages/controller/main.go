@@ -59,9 +59,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: a second worker would only queue for the same tokens, since the limiter is shared and the API server was never the thing saying no.
 	if restCfg.QPS == 0 {
-		restCfg.QPS = 50
-		restCfg.Burst = 100
+		restCfg.QPS = 200
+		restCfg.Burst = 400
 	}
 	slog.Info("kube client rate limits", "qps", restCfg.QPS, "burst", restCfg.Burst)
 
@@ -258,10 +259,15 @@ func resourceVersionChanged(oldObj, newObj interface{}) bool {
 	return oldMeta.GetResourceVersion() != newMeta.GetResourceVersion()
 }
 
-func enqueueStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInterface[string]) int {
+// UNIT_BOUNDARY_DESCRIPTION: the sweep re-checks every agent there is, and handing them to the single worker at once is what makes an agent someone is waiting for queue behind the whole fleet — measured at forty seconds of a saturated worker on an eighty-agent install, and it grows with the fleet. Spread across the interval instead, each agent is re-checked exactly as often as before and the queue is never more than a reconcile or two deep, so a create arriving mid-sweep is answered rather than parked. The cost is that an agent's first check after startup can land up to one interval later than it used to; nothing waits on a drift check, and a real change arrives through the informer rather than through this.
+func spreadStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInterface[string], over time.Duration) int {
 	items := store.List()
-	for _, obj := range items {
-		enqueueObjectName(obj, queue)
+	for i, obj := range items {
+		u := unstructuredFrom(obj)
+		if u == nil {
+			continue
+		}
+		queue.AddAfter(u.GetName(), time.Duration(i)*over/time.Duration(len(items)))
 	}
 	return len(items)
 }
@@ -293,8 +299,8 @@ func runDriftSweep(ctx context.Context, store cache.Store, queue workqueue.Typed
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			n := enqueueStoreObjects(store, queue)
-			slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n)
+			n := spreadStoreObjects(store, queue, interval)
+			slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n, "over", interval)
 		}
 	}
 }

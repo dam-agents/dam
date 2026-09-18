@@ -84,7 +84,7 @@ function harness(opts: {
         },
       ],
       resolveSlackChannelsByInstance: async () => [
-        opts.boundChannel?.() ?? "C1",
+        { id: opts.boundChannel?.() ?? "C1", teamId: "" },
       ],
     } as never,
     async () => {},

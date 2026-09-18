@@ -1137,6 +1137,8 @@ func TestRenderEnvoyBootstrap_TelemetryOffWithoutEndpoint(t *testing.T) {
 	assert.NotContains(t, got, "OpenTelemetryConfig")
 	assert.NotContains(t, got, "access_log")
 	assert.NotContains(t, got, "stats_sinks")
+	assert.NotContains(t, got, "stats_config")
+	assert.NotContains(t, got, "stats_flush_interval")
 	assert.NotContains(t, got, "otel_export")
 }
 
@@ -1168,6 +1170,121 @@ func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
 }
 
+func statsInclusionPatterns(t *testing.T, doc map[string]any) []map[string]any {
+	t.Helper()
+	cfg, ok := doc["stats_config"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	matcher, _ := cfg["stats_matcher"].(map[string]any)
+	incl, _ := matcher["inclusion_list"].(map[string]any)
+	raw, _ := incl["patterns"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, p := range raw {
+		if m, ok := p.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func statAdmitted(patterns []map[string]any, name string) bool {
+	for _, p := range patterns {
+		if v, ok := p["exact"].(string); ok && name == v {
+			return true
+		}
+		if v, ok := p["prefix"].(string); ok && strings.HasPrefix(name, v) {
+			return true
+		}
+		if v, ok := p["suffix"].(string); ok && strings.HasSuffix(name, v) {
+			return true
+		}
+		if v, ok := p["contains"].(string); ok && strings.Contains(name, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// TEST_SCENARIO: the stats sink is the gateway's only stats egress, so whatever it admits is what reaches the shared telemetry store. Envoy creates several stat families per worker thread, and a gateway that exported every stat it holds made those series the bulk of the store and crowded out the signals the store exists to hold. The inclusion list admits the families that answer questions about a credential-injecting egress proxy, and nothing whose series count scales with worker threads.
+func TestRenderEnvoyBootstrap_GatewayStatsExcludePerWorkerSeries(t *testing.T) {
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+
+	patterns := statsInclusionPatterns(t, mustParseBootstrap(t, got))
+	require.NotEmpty(t, patterns, "an active stats sink must render an inclusion list")
+
+	for _, name := range []string{
+		"http.agent_egress.downstream_rq_total",
+		"http.agent_egress.downstream_rq_5xx",
+		"http.agent_egress.ext_authz.denied",
+		"cluster.upstream_platform-conn-github_0a1b2c3d.upstream_rq_total",
+		"cluster.otel_export.upstream_cx_connect_fail",
+		"dns_cache.dns_cache.dns_query_failure",
+		"access_logs.open_telemetry_access_log.logs_dropped",
+		"tcp.l4.downstream_cx_total",
+		"server.memory_allocated",
+		"server.uptime",
+		"server.concurrency",
+		"main_thread.watchdog_miss",
+		"main_thread.watchdog_mega_miss",
+		"workers.watchdog_miss",
+		"workers.watchdog_mega_miss",
+	} {
+		assert.True(t, statAdmitted(patterns, name), "expected %q to be exported", name)
+	}
+
+	for _, name := range []string{
+		"listener.0.0.0.0_15001.worker_0.downstream_cx_active",
+		"listener.0.0.0.0_15001.worker_63.downstream_cx_total",
+		"listener.0.0.0.0_15001.worker_95.downstream_cx_length_ms",
+		"server.worker_0.watchdog_mega_miss",
+		"server.worker_95.watchdog_miss",
+		"server.watchdog_miss",
+		"filesystem.write_completed",
+		"runtime.load_success",
+	} {
+		assert.False(t, statAdmitted(patterns, name), "expected %q to be dropped", name)
+	}
+}
+
+// TEST_SCENARIO: every gateway pushes the same stat names, so without a resource attribute on the sink the rows arrive indistinguishable and attributable to no gateway at all. The environment resource detector reads the OTEL_RESOURCE_ATTRIBUTES the controller already sets on the gateway pod, which is where platform.gateway.id lives - the same identity the tracer resolves.
+func TestRenderEnvoyBootstrap_StatsSinkCarriesGatewayIdentity(t *testing.T) {
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil)
+	require.NoError(t, err)
+
+	doc := mustParseBootstrap(t, got)
+	sinks, _ := doc["stats_sinks"].([]any)
+	require.Len(t, sinks, 1)
+	sink, _ := sinks[0].(map[string]any)
+	typedConfig, _ := sink["typed_config"].(map[string]any)
+	detectors, _ := typedConfig["resource_detectors"].([]any)
+	require.Len(t, detectors, 1, "the sink must resolve the gateway's resource attributes")
+	detector, _ := detectors[0].(map[string]any)
+	assert.Equal(t, "envoy.tracers.opentelemetry.resource_detectors.environment", detector["name"])
+}
+
+// TEST_SCENARIO: Envoy's default flush is every five seconds, which writes a row per stat twelve times a minute for every gateway on the cluster. Gateway stats answer operational questions that a per-minute series answers just as well, so the interval is pinned rather than left at the default.
+func TestRenderEnvoyBootstrap_GatewayStatsFlushInterval(t *testing.T) {
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "60s", mustParseBootstrap(t, got)["stats_flush_interval"])
+}
+
+// TEST_SCENARIO: Envoy sizes its worker threads from the host's core count unless told otherwise, and the gateway container sets no CPU limit - so on a large node one gateway serving one agent spawns a worker per core, each with its own buffers, connection pools and stat series, against a 50m CPU request. The concurrency is pinned to what a single agent's egress needs.
+func TestEnvoyContainer_PinsWorkerConcurrency(t *testing.T) {
+	args := envoyContainer("agent-7", bootstrapTestCfg, nil, nil).Args
+	require.Contains(t, args, "--concurrency")
+	for i, a := range args {
+		if a == "--concurrency" {
+			require.Less(t, i+1, len(args))
+			assert.Equal(t, envoyWorkerConcurrency, args[i+1])
+		}
+	}
+}
+
 func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfgEnv(map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel.platform.svc:4318",
@@ -1179,6 +1296,7 @@ func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
 	assert.Contains(t, tracer, "uri: http://otel.platform.svc:4318/v1/traces")
 	assert.NotContains(t, tracer, "grpc_service")
 	assert.NotContains(t, got, "stats_sinks")
+	assert.NotContains(t, got, "stats_config")
 	assert.Contains(t, got, "envoy.access_loggers.open_telemetry")
 	assert.Contains(t, got, "uri: http://otel.platform.svc:4318/v1/logs")
 	doc := mustParseBootstrap(t, got)
@@ -1290,7 +1408,8 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 	assert.False(t, relayedServiceName, "controller's service.name must not ride onto the gateway")
 	_, relayedHeaders := env["OTEL_EXPORTER_OTLP_HEADERS"]
 	assert.False(t, relayedHeaders, "collector auth headers (Envoy can't use them, may hold a token) must not ride onto the gateway")
-	assert.Equal(t, "platform.gateway.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"])
+	assert.Equal(t, "service.name=platform-agent-gateway,platform.gateway.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"],
+		"the stats sink resolves its resource only from this env, so the shared service name must ride here too")
 }
 
 func TestEnvoyContainer_NoOTelEnvWhenDisabled(t *testing.T) {

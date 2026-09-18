@@ -1,7 +1,9 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
 import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
+  SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
   SlackGateway,
   SlackGatewayHandlers,
@@ -18,18 +20,25 @@ export interface FakeSlackChannel {
   botIsMember: boolean;
 }
 
+export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
+  teamId?: string;
+};
+export type FiredSlackCommand = Omit<SlackSlashCommand, "teamId"> & {
+  teamId?: string;
+};
+export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
+  teamId?: string;
+};
+
 export interface FakeSlackGateway extends SlackGateway {
-  fireMention(event: SlackMentionEvent): Promise<void>;
-  fireMessage(event: SlackChannelMessageEvent): Promise<void>;
-  fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
-  fireCommand(command: SlackSlashCommand): Promise<string>;
-  fireBotJoinedChannel(event: {
-    channel: string;
-    inviter?: string;
-  }): Promise<void>;
+  fireMention(event: FiredSlackEvent): Promise<void>;
+  fireMessage(event: FiredSlackEvent): Promise<void>;
+  fireDirectMessage(event: FiredSlackEvent): Promise<void>;
+  fireCommand(command: FiredSlackCommand): Promise<string>;
+  fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
-  setChannels(channels: FakeSlackChannel[]): void;
+  setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
@@ -105,7 +114,7 @@ function channelWindowOf(
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
-  let channels: FakeSlackChannel[] = [];
+  const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
@@ -137,6 +146,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async postMessage(args) {
       outbound.push({
         kind: "message",
+        teamId: args.teamId,
         channel: args.channel,
         text: args.text,
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
@@ -149,6 +159,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async postEphemeral(args) {
       outbound.push({
         kind: "ephemeral",
+        teamId: args.teamId,
         channel: args.channel,
         user: args.user,
         text: args.text,
@@ -160,6 +171,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       const ts = `stream-${nextStreamTs++}`;
       outbound.push({
         kind: "stream_start",
+        teamId: args.teamId,
         channel: args.channel,
         threadTs: args.threadTs,
         ts,
@@ -177,6 +189,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async appendStream(args) {
       outbound.push({
         kind: "stream_append",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         text: args.markdownText,
@@ -186,6 +199,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async stopStream(args) {
       outbound.push({
         kind: "stream_stop",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         ...(args.markdownText !== undefined ? { text: args.markdownText } : {}),
@@ -195,6 +209,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async setStatus(args) {
       outbound.push({
         kind: "status",
+        teamId: args.teamId,
         channel: args.channel,
         threadTs: args.threadTs,
         status: args.status,
@@ -204,6 +219,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async addReaction(args) {
       outbound.push({
         kind: "reaction",
+        teamId: args.teamId,
         channel: args.channel,
         ts: args.ts,
         name: args.name,
@@ -245,6 +261,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async uploadFile(args) {
       outbound.push({
         kind: "upload",
+        teamId: args.teamId,
         channelId: args.channelId,
         filename: args.filename,
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
@@ -267,14 +284,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       fileBytes.set(urlPrivate, bytes);
     },
 
-    async listBotChannels() {
-      return channels
+    async listBotChannels(teamId) {
+      return (channelsByWorkspace.get(teamId) ?? [])
         .filter((c) => c.botIsMember)
         .map(({ id, name }) => ({ id, name }));
     },
 
-    async getConversationInfo(channelId) {
-      const channel = channels.find((c) => c.id === channelId);
+    async getConversationInfo(channelId, teamId) {
+      const channel = (channelsByWorkspace.get(teamId) ?? []).find(
+        (c) => c.id === channelId,
+      );
       return channel
         ? { isMember: channel.botIsMember, name: channel.name }
         : null;
@@ -297,23 +316,42 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return `D-${userId}`;
     },
 
-    async fireMention(event) {
+    async fireMention(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onMention(event);
     },
 
-    async fireMessage(event) {
+    async fireMessage(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onMessage(event);
     },
 
-    async fireBotJoinedChannel(event) {
-      await requireHandlers().onBotJoinedChannel(event);
+    async fireBotJoinedChannel(input) {
+      await requireHandlers().onBotJoinedChannel({
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      });
     },
 
-    async fireDirectMessage(event) {
+    async fireDirectMessage(input) {
+      const event: SlackMentionEvent = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       await requireHandlers().onDirectMessage(event);
     },
 
-    async fireCommand(command) {
+    async fireCommand(input) {
+      const command: SlackSlashCommand = {
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      };
       let ackText = "";
       await requireHandlers().onCommand(command, async ({ text }) => {
         ackText = text;
@@ -329,8 +367,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       outbound.length = 0;
     },
 
-    setChannels(next) {
-      channels = [...next];
+    setChannels(next, teamId = "") {
+      channelsByWorkspace.set(teamId, [...next]);
     },
 
     setHistory(next) {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { pickVictim, type ProcEntry } from "../../core/mem-reaper.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  machineUsage,
+  pickVictim,
+  readMeminfoBytes,
+  type ProcEntry,
+} from "../../core/mem-reaper.js";
 
 /**
  * TEST_OVERVIEW: victim selection is the one piece of the reaper no e2e run
@@ -56,5 +64,50 @@ describe("pickVictim", () => {
   it("returns null for an empty or rootless table", () => {
     expect(pickVictim([], ROOT)).toBeNull();
     expect(pickVictim([proc(999, 1, "other", 100)], ROOT)).toBeNull();
+  });
+});
+
+// TEST_SCENARIO: a machine on the vm Backend has no cgroup limit, so the reaper
+// TEST_SCENARIO: reads the kernel's own numbers instead. MemAvailable is the one
+// TEST_SCENARIO: it must use: it already discounts the page cache the kernel
+// TEST_SCENARIO: hands back under pressure, while MemFree does not. On a guest
+// TEST_SCENARIO: holding hundreds of megabytes of cache, keying on MemFree would
+// TEST_SCENARIO: read as near-full and reap on an idle machine.
+describe("readMeminfoBytes", () => {
+  const meminfo = join(mkdtempSync(join(tmpdir(), "meminfo-")), "meminfo");
+  writeFileSync(
+    meminfo,
+    [
+      "MemTotal:        2074964 kB",
+      "MemFree:          158000 kB",
+      "MemAvailable:    1527552 kB",
+      "Cached:           741000 kB",
+      "",
+    ].join("\n"),
+  );
+
+  it("reads a key as bytes", () => {
+    expect(readMeminfoBytes("MemTotal", meminfo)).toBe(2074964 * 1024);
+    expect(readMeminfoBytes("MemAvailable", meminfo)).toBe(1527552 * 1024);
+  });
+
+  it("reads headroom from MemAvailable, not MemFree", () => {
+    const sample = machineUsage(meminfo);
+    const total = 2074964 * 1024;
+    expect(sample).not.toBeNull();
+    expect(sample?.limit).toBe(total);
+    // TEST_SCENARIO: these figures are a real guest's: 741 MB of the shortfall
+    // TEST_SCENARIO: between MemTotal and MemFree is reclaimable cache. Keyed on
+    // TEST_SCENARIO: MemFree the machine reads 92% used while idle, past the
+    // TEST_SCENARIO: 0.93 reaper threshold's shoulder; keyed on MemAvailable it
+    // TEST_SCENARIO: reads 26% and nothing is reaped.
+    expect((sample?.used ?? 0) / total).toBeCloseTo(0.264, 2);
+    const free = readMeminfoBytes("MemFree", meminfo) ?? 0;
+    expect((total - free) / total).toBeGreaterThan(0.9);
+  });
+
+  it("is null for an absent key or file", () => {
+    expect(readMeminfoBytes("Nope", meminfo)).toBeNull();
+    expect(readMeminfoBytes("MemTotal", `${meminfo}.missing`)).toBeNull();
   });
 });

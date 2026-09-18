@@ -25,6 +25,7 @@ import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import {
   ArtifactDeletionChip,
+  ArtifactInteractiveBadge,
   ArtifactKindBadge,
   ArtifactStatusBadge,
 } from "./artifact-badges.js";
@@ -119,6 +120,7 @@ export function ArtifactRow({
         className="ml-auto flex shrink-0 items-center gap-1.5"
         onClick={(e) => e.stopPropagation()}
       >
+        {artifact.interactive && <ArtifactInteractiveBadge />}
         {artifact.shareUrl && (
           <CopyLinkButton
             url={artifact.shareUrl}

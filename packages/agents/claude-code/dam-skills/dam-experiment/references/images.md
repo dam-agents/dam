@@ -117,5 +117,3 @@ prompt has to carry everything a chat would have supplied.
 - **`k-search-local`** — the same image benchmarking on an in-cluster NVIDIA
   GPU. Disabled by default: without a GPU node and a GPU-capable sandbox
   runtime class it never schedules.
-- **`claude-code-vm`** — the `claude-code` image booted as its own microVM
-  instead of a container; heavier to start than the container-backed default.

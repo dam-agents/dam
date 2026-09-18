@@ -106,6 +106,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
+      resolveSlackWorkspace: boot.resolveSlackWorkspace,
       agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
@@ -140,8 +141,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             conversationId: slackChannelId,
           }),
       },
-      resolveSlackChannelNames: (slackChannelIds) =>
-        channelManager.resolveSlackConversationNames(slackChannelIds),
+      resolveSlackChannelNames: (refs) =>
+        channelManager.resolveSlackConversationNames(refs),
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
@@ -356,6 +357,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       budgets,
       user,
       e2eEnabled: config.e2eEnabled,
+      virtualizationEnabled: config.virtualizationEnabled,
     };
   };
 }

@@ -19,11 +19,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM quay.io/fedora/fedora:42 AS runner
 
-# tar unpacks image archives, e2fsprogs makes and grows machine disks; the
-# smolvm release itself comes from GitHub, pinned. Its multi-GiB ext4
-# templates are sparse and stay so in the layer.
+# tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
+# expands the ext4 templates at start-up so the first agent created after a
+# roll does not wait for it; the smolvm release itself comes from GitHub,
+# pinned. Its multi-GiB ext4 templates are sparse and stay so in the layer.
 ARG SMOLVM_VERSION=1.16.0
-RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-core catatonit && dnf clean all && \
+RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-core catatonit zstd && dnf clean all && \
     (umask 022; curl -sSL https://smolmachines.com/install.sh | HOME=/opt bash -s -- --version ${SMOLVM_VERSION} --prefix /opt/smolvm) && \
     mv /opt/.local/share/smolvm/agent-rootfs /opt/smolvm/agent-rootfs && rm -rf /opt/.local && \
     chmod -R a+rX /opt/smolvm

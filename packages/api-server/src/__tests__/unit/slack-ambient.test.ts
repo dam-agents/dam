@@ -93,7 +93,7 @@ function harness(opts: {
         toRoster(
           opts.resolveBinding ? await opts.resolveBinding() : opts.binding,
         ),
-      resolveSlackChannelsByInstance: async () => ["C1"],
+      resolveSlackChannelsByInstance: async () => [{ id: "C1", teamId: "" }],
     } as never,
     async () => {},
     async (agentId: string, channelId: string, ambient: boolean) => {

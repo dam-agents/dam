@@ -251,6 +251,8 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)
 	assert.Equal(t, "http://10.96.42.42:10000", spec.Env["HTTPS_PROXY"])
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
+	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
+	assert.Equal(t, spec.Env["NO_PROXY"], spec.Env["no_proxy"], "clients reading either casing see the same list")
 	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
@@ -269,7 +271,8 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, []time.Duration{vmReadinessPoll}, *requeued)
+	assert.Equal(t, []time.Duration{vmStartingPoll}, *requeued,
+		"a machine whose creation is still in flight is watched closely — its guest can answer before that call returns")
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	markGatewayReady(t, r)
@@ -712,4 +715,90 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	_, queued := r.parkedRetry["my-agent"]
 	r.budgetMu.Unlock()
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
+}
+
+// TEST_SCENARIO: the runner unpacks each image once for every machine of it to share, and restoring a rootfs faithfully means writing the ownership and modes its files carry. Under a policy that drops every capability tar cannot: it fails on chown, then — given only CHOWN — on setting a mode it no longer owns, and then on writing into a directory it has just given away, which bits forbid even to root. All three are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it. DAC_OVERRIDE is also what lets the runner manage machine directories an earlier per-VM uid chowned away.
+func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.Contains(t, caps.Add, corev1.Capability("DAC_OVERRIDE"),
+		"or a machine directory an earlier per-VM uid chowned away is one this runner can no longer manage")
+	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
+	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
+	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
+}
+
+// TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.
+func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, requeued := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	last := func() time.Duration { return (*requeued)[len(*requeued)-1] }
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}))
+	assert.Equal(t, vmStartingPoll, last(),
+		"a machine asked to start a moment ago is watched closely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false,
+			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}))
+	assert.Equal(t, vmReadinessPoll, last(),
+		"one still unready long afterwards is not about to be, and is watched loosely")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}))
+	assert.Equal(t, vmHealthPoll, last(),
+		"and once it answers it is only checked for health")
+}
+
+// TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches what the runner shares with it through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once; machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.
+func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+	require.NotNil(t, caps)
+	assert.NotContains(t, caps.Add, corev1.Capability("SETUID"),
+		"the runner cannot change uid, so smolvm cannot drop a VMM's even if something asked it to")
+	assert.NotContains(t, caps.Add, corev1.Capability("SETGID"), "nor the group that goes with it")
+
+	var drop string
+	for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
+		if env.Name == "SMOLVM_VM_UID_DROP" {
+			drop = env.Value
+		}
+	}
+	assert.Equal(t, "off", drop,
+		"and the drop is refused in as many words, because a VMM that took one could not read the shared image")
+}
+
+// TEST_SCENARIO: smolvm accounts for its own boot in phases, but only when asked — and the runner is the only thing in a position to ask, since it is what spawns it. Without this the phase timings of a stall nobody can reproduce are never recorded at all. The format is asked for too: these lines land in the platform's own logs, where a line of terminal colour codes is a line nobody greps.
+func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "info", env["RUST_LOG"],
+		"or a slow boot reports no phases, and debug would bury them under every status call")
+	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
 }

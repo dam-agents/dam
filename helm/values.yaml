@@ -144,15 +144,15 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- The vm backend (`backend.type: vm` on a template): the agent runs as a
+# -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
 # vm-runner agent plus smolvm. The controller drives its machine API (TLS,
 # bearer token; both minted by the controller); the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
-# machine may reach nothing but it. Off = vm-backend templates are not
-# rendered and vm agents fail reconcile. One runner per owner; per-user fair-use
+# machine may reach nothing but it. Off = the create refuses the vm backend
+# and existing vm agents fail reconcile. One runner per owner; per-user fair-use
 # limits for machines are the upgrade path.
 virtualization:
   enabled: false
@@ -171,8 +171,15 @@ virtualization:
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
-    # is on, the chart binds its own SCC, which grants exactly the uid 0 and
-    # NET_ADMIN the runner needs and nothing else. Set this only where that
+    # is on, the chart binds its own SCC, which grants exactly what the
+    # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
+    # NAT, CHOWN + FOWNER so it can restore a container image's own
+    # ownership when it unpacks one for its machines to share, and
+    # DAC_OVERRIDE so that unpack can keep writing into the read-only and
+    # foreign-owned directories a faithful rootfs contains — and so the
+    # runner can manage machine directories that a release which briefly
+    # gave each VMM its own uid chowned away from it.
+    # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
@@ -297,7 +304,11 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities. Renders a cluster-scoped SCC + RoleBinding to
+    # allowedCapabilities, and CHOWN + FOWNER + DAC_OVERRIDE which only
+    # the VM runner requests. No agent workload can take them: agent containers are
+    # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
+    # controller refuses a configuration without that block, and an agent
+    # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
     # all SAs in `agentNamespace`. Default ON — required for
     # `iptablesInit`, harmless otherwise (OpenShift admission still
     # prefers more restrictive SCCs when the pod doesn't request the
@@ -563,6 +574,16 @@ keycloak:
   # upstream group to the `inspectors` group. Set to empty string to disable
   # usage-data access entirely (the endpoint will not be mounted).
   inspectorRole: "platform-inspector"
+  # -- Realm role required to connect another Slack workspace. Connecting a
+  # workspace is install-wide, not per-Agent, so it is an operator action
+  # rather than something any user may start. The chart auto-creates this role
+  # plus a `slack-installers` group mapped to it; grant access by adding users
+  # to the group via the Keycloak admin UI. Holders also see the Slack
+  # workspaces tab in Settings — it is hidden from everyone else. Leave empty
+  # to disable the install surface entirely (neither route is mounted) — the
+  # workspace the operator's `slackBotToken` was issued for keeps working
+  # either way.
+  slackInstallerRole: "platform-slack-installer"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -783,6 +804,26 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
+  # -- Slack app credentials (Basic Information -> App Credentials). Needed only
+  # to install the app into further workspaces: Slack hands the bot token over
+  # by copy-paste for the app's own workspace alone, and every other workspace
+  # must complete the OAuth exchange, which is what these sign. Leave empty to
+  # keep the install single-workspace — `slackBotToken` still serves it.
+  # The app must have public distribution activated and
+  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL. That
+  # URL is only ever fetched by the installing admin's browser, so it does not
+  # need to be reachable from the internet.
+  slackClientId: ""
+  slackClientSecret: ""
+  # -- Slack enterprise (organization) id that a connecting workspace must
+  # belong to, read from Slack's own install response. Empty means any
+  # workspace an operator invites may connect, which is what a standalone
+  # (non-Enterprise-Grid) app has to use — Slack reports no organization for
+  # those. Set it on an Enterprise Grid install: a Slack conversation id and a
+  # Slack user id each identify one thing only inside one organization, and two
+  # organizations connected at once would let a conversation reach the wrong
+  # Agent and a person inherit another person's platform identity.
+  slackEnterpriseId: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web
@@ -918,9 +959,18 @@ apiServer:
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
-    # Container registries
+    # Container registries. The registry host alone never pulls: Docker Hub
+    # first hands out an anonymous token from auth.docker.io, then 307s the
+    # blob off to whichever CDN serves the caller's region. ghcr.io redirects
+    # its blobs the same way. registry.k8s.io is deliberately absent: it fans
+    # blobs out to regional mirrors this literal-hostname list cannot express.
     - quay.io
     - registry-1.docker.io
+    - auth.docker.io
+    - production.cloudfront.docker.com
+    - production.cloudflare.docker.com
+    - ghcr.io
+    - pkg-containers.githubusercontent.com
     # Go modules
     - proxy.golang.org
     - sum.golang.org
@@ -939,6 +989,9 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
+    # k3s: the installer resolves a channel, then downloads from GitHub above
+    - get.k3s.io
+    - update.k3s.io
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -1199,10 +1252,13 @@ controller:
       # spec need not spend the full window in a real wait.
       #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
-      # reaper: at the threshold fraction of the pod's memory limit (default
+      # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
-      # so the harness survives instead of the whole container being
-      # OOM-killed. Set `MEM_REAPER=off` to disable.
+      # so the harness survives instead of the whole agent being OOM-killed.
+      # The ceiling is the pod's cgroup limit for a container, and the machine's
+      # own memory on the vm Backend, which has no cgroup limit; a container
+      # without a limit is left unwatched rather than measured against the node
+      # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
 
@@ -1460,24 +1516,6 @@ agentTemplates:
     telemetry: true
     harness: claude-code
     tags: ["Anthropic"]
-    image:
-      repository: quay.io/dam-agents/claude-code
-      tag: "" # @ci-pin claude-code-image-tag
-    storageSize: "5Gi"
-
-  # Claude Code as a persistent microVM on the VM runner instead of a
-  # container: the same claude-code image, booted as a VM with its own kernel.
-  # Rendered only when `virtualization.enabled`.
-  claude-code-vm:
-    enabled: true
-    displayName: "Claude Code VM"
-    description: "Claude Code in its own microVM instead of a container"
-    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
-    experimental: true
-    harness: claude-code
-    tags: ["Anthropic", "VM"]
-    backend:
-      type: vm
     image:
       repository: quay.io/dam-agents/claude-code
       tag: "" # @ci-pin claude-code-image-tag

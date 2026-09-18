@@ -26,7 +26,6 @@ vi.mock("../../core/security-log.js", () => ({
 }));
 
 async function mcpHarness(opts?: {
-  supportsMessageReactions?: boolean;
   reactions?: MessageReactionsResult | { error: string };
 }) {
   const replies: ChannelReply[] = [];
@@ -56,7 +55,6 @@ async function mcpHarness(opts?: {
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
-    supportsMessageReactions: opts?.supportsMessageReactions ?? true,
   } as unknown as McpSessionDeps);
 
   const [clientTransport, serverTransport] =
@@ -144,21 +142,18 @@ describe("describe_message_reactions MCP tool", () => {
     auditLines.length = 0;
   });
 
-  it("is registered when the channel manager reports scope support", async () => {
-    const { client } = await mcpHarness({ supportsMessageReactions: true });
+  /**
+   * TEST_SCENARIO: The tool list is per Agent while a Slack scope is granted
+   * per workspace, so the list cannot answer for all of them. The tool is
+   * always offered and reports a withheld scope when the call is made, rather
+   * than vanishing for every workspace because one of them said no.
+   */
+  it("stays offered whatever a single workspace granted", async () => {
+    const { client } = await mcpHarness();
     const { tools } = await client.listTools();
 
     expect(tools.some((t) => t.name === "describe_message_reactions")).toBe(
       true,
-    );
-  });
-
-  it("is omitted entirely when reactions:read is confirmed missing", async () => {
-    const { client } = await mcpHarness({ supportsMessageReactions: false });
-    const { tools } = await client.listTools();
-
-    expect(tools.some((t) => t.name === "describe_message_reactions")).toBe(
-      false,
     );
   });
 

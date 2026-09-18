@@ -15,7 +15,6 @@ const codex: TemplateView = {
   image: "quay.io/x/codex",
   category: "harness",
   experimental: false,
-  vm: false,
   harness: "codex",
 };
 

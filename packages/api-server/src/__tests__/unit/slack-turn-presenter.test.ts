@@ -22,6 +22,7 @@ function spyGateway(overrides?: Partial<SlackGateway>) {
 }
 
 const baseOpts: TurnPresenterOpts = {
+  teamId: "",
   channel: "C1",
   threadTs: "100.1",
   instanceName: "agent-1",

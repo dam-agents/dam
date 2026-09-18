@@ -256,6 +256,22 @@ export function executeTelegramUnbind(deps: {
   };
 }
 
+interface SlackConversationRef {
+  channelId: string;
+  teamId: string;
+}
+
+function slackConversationRef(channel: {
+  slackChannelId: string;
+  teamId?: string;
+}): SlackConversationRef {
+  return { channelId: channel.slackChannelId, teamId: channel.teamId ?? "" };
+}
+
+function slackConversationKey(ref: SlackConversationRef): string {
+  return `${ref.teamId}/${ref.channelId}`;
+}
+
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -477,6 +493,13 @@ export function createAgentsService(deps: {
       slackChannelId: string,
     ) => Promise<boolean>;
   };
+  resolveSlackWorkspace: (
+    slackChannelId: string,
+  ) => Promise<
+    | { kind: "resolved"; teamId: string }
+    | { kind: "unknown" }
+    | { kind: "unreachable" }
+  >;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -488,8 +511,8 @@ export function createAgentsService(deps: {
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   resolveSlackChannelNames?: (
-    slackChannelIds: string[],
-  ) => Promise<Record<string, string | null>>;
+    refs: SlackConversationRef[],
+  ) => Promise<(SlackConversationRef & { name: string | null })[]>;
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
@@ -507,32 +530,36 @@ export function createAgentsService(deps: {
 
   async function slackChannelNames(
     channelLists: ChannelConfig[][],
-  ): Promise<Record<string, string | null>> {
-    if (!deps.resolveSlackChannelNames) return {};
-    const ids = [
-      ...new Set(
-        channelLists
-          .flat()
-          .flatMap((c) =>
-            c.type === ChannelType.Slack ? [c.slackChannelId] : [],
-          ),
-      ),
-    ];
-    if (ids.length === 0) return {};
-    try {
-      return await deps.resolveSlackChannelNames(ids);
-    } catch {
-      return {};
+  ): Promise<Map<string, string | null>> {
+    const names = new Map<string, string | null>();
+    if (!deps.resolveSlackChannelNames) return names;
+    const refs = new Map<string, SlackConversationRef>();
+    for (const channel of channelLists.flat()) {
+      if (channel.type !== ChannelType.Slack) continue;
+      const ref = slackConversationRef(channel);
+      refs.set(slackConversationKey(ref), ref);
     }
+    if (refs.size === 0) return names;
+    try {
+      const resolved = await deps.resolveSlackChannelNames([...refs.values()]);
+      for (const entry of resolved) {
+        names.set(slackConversationKey(entry), entry.name);
+      }
+    } catch {
+      return names;
+    }
+    return names;
   }
 
   function withChannelNames(
     channels: ChannelConfig[],
-    names: Record<string, string | null>,
+    names: Map<string, string | null>,
   ): ChannelConfig[] {
     return channels.map((channel) => {
       if (channel.type !== ChannelType.Slack) return channel;
-      const name = names[channel.slackChannelId];
+      const name = names.get(
+        slackConversationKey(slackConversationRef(channel)),
+      );
       return name ? { ...channel, name } : channel;
     });
   }
@@ -579,6 +606,14 @@ export function createAgentsService(deps: {
       (b) => b.agentId === id,
     );
 
+    const workspace = await deps.resolveSlackWorkspace(slackChannelId);
+    if (workspace.kind === "unreachable") {
+      return err({ type: "WorkspaceUnreachable" as const });
+    }
+    if (workspace.kind !== "resolved") {
+      return err({ type: "WorkspaceUnresolved" as const });
+    }
+
     const requestedAmbient = ambient === true;
 
     const txResult = await deps.unitOfWork(async (tx) => {
@@ -586,6 +621,7 @@ export function createAgentsService(deps: {
         await deps.channelsTxRepo.upsertChannel(tx, id, {
           type: ChannelType.Slack,
           slackChannelId,
+          ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
         });
       } catch (e) {
@@ -744,7 +780,7 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size },
+          { description: input.description, size: input.size, vm: input.vm },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -755,6 +791,7 @@ export function createAgentsService(deps: {
             image: input.image,
             description: input.description,
             size: input.size,
+            vm: input.vm,
           },
           deps.agentDefaultLimits,
         );
@@ -764,7 +801,7 @@ export function createAgentsService(deps: {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "this template runs as its own microVM, which is not enabled on this install (virtualization.enabled)",
+            "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
         });
       }
       const templateEnv = seedTelemetryIdentity(
@@ -1213,10 +1250,19 @@ export function createAgentsService(deps: {
           slackChannelId: flow.slackChannelId,
           name: flow.channelTitle,
         };
-      const names = await slackChannelNames([
-        [{ type: ChannelType.Slack, slackChannelId: flow.slackChannelId }],
-      ]);
-      const name = names[flow.slackChannelId];
+      const workspace = await deps.resolveSlackWorkspace(flow.slackChannelId);
+      if (workspace.kind !== "resolved") {
+        return { slackChannelId: flow.slackChannelId };
+      }
+      const channel: ChannelConfig = {
+        type: ChannelType.Slack,
+        slackChannelId: flow.slackChannelId,
+        ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
+      };
+      const names = await slackChannelNames([[channel]]);
+      const name = names.get(
+        slackConversationKey(slackConversationRef(channel)),
+      );
       return {
         slackChannelId: flow.slackChannelId,
         ...(name ? { name } : {}),

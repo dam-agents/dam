@@ -116,10 +116,32 @@ export const slackFireCommandResultSchema = z
   .object({ ack: z.string() })
   .strict();
 
+export const slackConnectWorkspaceInputSchema = z
+  .object({
+    teamId: z.string().min(1),
+    teamName: z.string().optional(),
+    botToken: z.string().min(1),
+    channels: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1),
+          botIsMember: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const slackConnectWorkspaceResultSchema = z
+  .object({ ok: z.literal(true), secretPath: z.string() })
+  .strict();
+
 export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("message"),
+      teamId: z.string(),
       channel: z.string(),
       text: z.string(),
       threadTs: z.string().optional(),
@@ -129,6 +151,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("ephemeral"),
+      teamId: z.string(),
       channel: z.string(),
       user: z.string(),
       text: z.string(),
@@ -138,6 +161,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("reaction"),
+      teamId: z.string(),
       channel: z.string(),
       ts: z.string(),
       name: z.string(),
@@ -146,6 +170,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("upload"),
+      teamId: z.string(),
       channelId: z.string(),
       filename: z.string(),
       threadTs: z.string().optional(),
@@ -154,6 +179,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("stream_start"),
+      teamId: z.string(),
       channel: z.string(),
       threadTs: z.string(),
       ts: z.string(),
@@ -165,6 +191,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("stream_append"),
+      teamId: z.string(),
       channel: z.string(),
       ts: z.string(),
       text: z.string(),
@@ -173,6 +200,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("stream_stop"),
+      teamId: z.string(),
       channel: z.string(),
       ts: z.string(),
       text: z.string().optional(),
@@ -181,6 +209,7 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("status"),
+      teamId: z.string(),
       channel: z.string(),
       threadTs: z.string(),
       status: z.string(),

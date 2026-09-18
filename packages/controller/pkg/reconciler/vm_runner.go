@@ -374,7 +374,8 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	return rules
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm would chown each machine's data dir to run the VMM under an unprivileged uid, and the runner cannot: the chart's SCC drops every capability but NET_ADMIN, so that chown fails and no machine starts. SMOLVM_VM_UID_DROP=off leaves the VMM as uid 0 inside a container that is itself the boundary — no capabilities, no privilege escalation, seccomp and SELinux — rather than widening the SCC to admit CHOWN.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and this runner turns that off, because a VMM that takes one cannot then read what the runner shares with it. It reaches the image cache through an idmapped mount of one entry, on-disk uid 0, so every file the image gives another uid arrives in the guest as nobody — 27,374 of this image's 35,430, whose workload then exits the moment it starts. Measured both ways on one store: with the drop the guest boots in 150 ms and dies; without it the same tree presents those files as the user the image named, and the machine runs. Machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well, by a route not traced here — so this is the mechanism that was isolated, not the whole of what the drop costs.
+// UNIT_BOUNDARY_DESCRIPTION: the runner unpacks each image once for every machine of it to share, and a rootfs restored faithfully carries the ownership and modes its files were built with — so tar chowns each entry (CHOWN), sets a mode on a file it has just given away (FOWNER), and goes on writing into directories it no longer owns or that are read-only, which permission bits forbid even to root (DAC_OVERRIDE). All three are load-bearing: without them an image that is not already cached cannot be unpacked at all. DAC_OVERRIDE earns its place twice over, because a release that briefly gave each machine's VMM its own uid chowned those machines' directories away from the runner, which must still manage them.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
@@ -457,6 +458,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
+							Name: "RUST_LOG", Value: "info",
+						}, {
+							Name: "SMOLVM_LOG_FORMAT", Value: "json",
+						}, {
 							Name: "RUNNER_MEMORY_MIB",
 							ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{
 								ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
@@ -471,7 +476,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:       &root,
-							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}},
+							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "CHOWN", "FOWNER", "DAC_OVERRIDE"}},
 							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 						},
 						Resources:    resources,

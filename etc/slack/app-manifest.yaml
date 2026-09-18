@@ -37,6 +37,14 @@ features:
       should_escape: false
 
 oauth_config:
+  # Only needed to install into more than one workspace. Slack hands the bot
+  # token over by copy-paste for the app's own workspace alone; every other
+  # workspace has to complete the OAuth exchange, which needs this redirect URL
+  # and public distribution activated (Manage Distribution). Replace the host
+  # with the platform's own — the URL is fetched by the installing admin's
+  # browser, never by Slack, so an internal host behind a VPN is fine.
+  redirect_urls:
+    - https://platform.example.com/api/slack/install/callback
   scopes:
     bot:
       - commands
@@ -51,9 +59,9 @@ oauth_config:
       # reactions, including the contextual ack it opens ambient turns with.
       - reactions:write
       # describe_message_reactions (reactions.get): who reacted to a message
-      # and with what emoji — invisible to the agent otherwise. Optional:
-      # without it the tool is not registered at all, same treatment as
-      # users:read below.
+      # and with what emoji — invisible to the agent otherwise. Optional: a
+      # workspace that withholds it gets the tool answering that the scope is
+      # missing, rather than the tool disappearing for every workspace.
       - reactions:read
       # Cross-workspace outbound: list the channels the bot is in, check
       # membership before posting, and open direct messages.
@@ -61,10 +69,10 @@ oauth_config:
       - groups:read
       - im:write
       # Resolving the user ids the agent sees in a conversation to the people
-      # behind them (users.info). Both optional: without users:read the
-      # describe_channel_users tool is not registered at all (rather than
-      # exposing one that would always fail); with users:read but not
-      # users:read.email, the tool works but omits the email field.
+      # behind them (users.info). Both optional: a workspace without users:read
+      # gets describe_channel_users answering that the scope is missing, and one
+      # with users:read but not users:read.email resolves people without their
+      # email.
       - users:read
       - users:read.email
       - app_mentions:read
@@ -94,6 +102,12 @@ settings:
       # DM relays plain messages (no mention needed). Group DMs stay
       # mention-driven, so they arrive via app_mention — no message.mpim.
       - message.im
+      # A workspace whose credential has stopped working is marked rather than
+      # cleaned up: its bindings and identity links stay, and re-authorizing
+      # clears the mark. Without these the platform only finds out when a call
+      # fails.
+      - app_uninstalled
+      - tokens_revoked
       # The bot's own invite into a channel. Acted on only when the joining
       # member is the bot itself: the inviter gets a private bind link, so
       # nobody has to discover the slash command. Needs no scope beyond the

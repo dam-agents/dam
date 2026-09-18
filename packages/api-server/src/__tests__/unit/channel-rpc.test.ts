@@ -29,6 +29,7 @@ function fakeSlackWorker(): SlackWorker {
   return {
     type: ChannelType.Slack,
     connect: vi.fn(async () => {}),
+    standingIn: vi.fn(async () => "unknown" as const),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -39,16 +40,12 @@ function fakeSlackWorker(): SlackWorker {
     declineTurn: vi.fn(async () => ({ ok: true as const })),
     handOffTurn: vi.fn(async () => ({ ok: true as const, agent: "other" })),
     describeUsers: vi.fn(async () => ({ users: [] })),
-    supportsUserLookup: vi.fn(async () => true),
     describeMessageReactions: vi.fn(async () => ({
       reactions: [],
       conversationId: "C1",
       messageTs: "1.1",
     })),
-    supportsMessageReactions: vi.fn(async () => true),
-    resolveConversationNames: vi.fn(
-      async (): Promise<Record<string, string | null>> => ({}),
-    ),
+    resolveConversationNames: vi.fn(async () => []),
   };
 }
 

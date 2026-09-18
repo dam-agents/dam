@@ -91,6 +91,34 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
 
 4. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
+### More than one workspace
+
+Slack hands the bot token over by copy-paste for the app's own workspace only. Every other workspace has to complete Slack's install handshake, so to serve more than one:
+
+1. In the Slack app, activate public distribution (Manage Distribution) and register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL. Slack never fetches that URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
+2. Deploy with the app's client credentials (Basic Information → App Credentials):
+
+   ```sh
+   mise run cluster:install -- \
+     --set=apiServer.slackClientId=... \
+     --set=apiServer.slackClientSecret=... \
+     --set=apiServer.slackEnterpriseId=...   # Enterprise Grid only; see below
+   ```
+
+   On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id — a workspace outside it is then refused at the moment its credential would be accepted. Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one. Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
+
+3. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
+4. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of that role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
+5. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
+
+This is an invitation rather than open enrollment, and the two are not interchangeable. Both sides consent: an operator decides the platform is willing to serve a workspace, and an admin of that workspace grants it. A consent redirect the platform did not invite is refused — including the "Sharable URL" Slack's own Manage Distribution page hands out, which carries no invitation, so that URL is not the way in.
+
+Leaving `keycloak.slackInstallerRole` empty disables the install surface entirely — no routes, no tab — and the workspace `slackBotToken` was issued for keeps working either way.
+
+Connecting a channel does not change: you still paste a conversation id. One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out. Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
+
+The workspace that `slackBotToken` was issued for keeps working without any of this — it stays the fallback. Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
+
 The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 
 A mention in a channel no instance is bound to gets an ephemeral rejection.
@@ -118,4 +146,4 @@ Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provis
 
 ### vm-backend agents (VM runner)
 
-Templates with `backend.type: vm` run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC. Turn it on with `virtualization.enabled=true`, which then requires two more values or the install refuses to render: `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, and `virtualization.runner.egressCidrs`, the only kernel gate behind a guest's own egress allowlist (say `[0.0.0.0/0]` with the cluster's ranges in `egressExceptCidrs` to leave it unconfined out loud). The devices reach the pod only as device-plugin resources — `virtualization.devicePlugin.enabled=true` ships a DaemonSet that advertises them on any node with `/dev/kvm`, and without it the pod asks for KubeVirt's `devices.kubevirt.io/kvm` and `/tun` instead. Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [platform-topology](architecture/platform-topology.md#vm-runner). Locally, `mise run cluster:install -- --set=virtualization.enabled=true` creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and stages the agent image archives on the node for the runners to mount, since there is no registry. Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it.
+Agents created with `backend.type: vm` — the isolation the creator picks beside the image, not a template of its own — run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC. Turn it on with `virtualization.enabled=true`, which then requires two more values or the install refuses to render: `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, and `virtualization.runner.egressCidrs`, the only kernel gate behind a guest's own egress allowlist (say `[0.0.0.0/0]` with the cluster's ranges in `egressExceptCidrs` to leave it unconfined out loud). The devices reach the pod only as device-plugin resources — `virtualization.devicePlugin.enabled=true` ships a DaemonSet that advertises them on any node with `/dev/kvm`, and without it the pod asks for KubeVirt's `devices.kubevirt.io/kvm` and `/tun` instead. Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [platform-topology](architecture/platform-topology.md#vm-runner). Locally, `mise run cluster:install -- --set=virtualization.enabled=true` creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and stages the agent image archives on the node for the runners to mount, since there is no registry. Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it.

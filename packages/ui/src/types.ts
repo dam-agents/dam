@@ -105,7 +105,6 @@ export interface TemplateView {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
-  vm: boolean;
   size?: { cpu?: string; memory?: string };
 }
 
