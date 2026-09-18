@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS base
+FROM quay.io/fedora/fedora:44 AS base
 
 USER root
 WORKDIR /app
@@ -69,34 +69,6 @@ RUN set -eu; \
 # still carries all four.
 RUN mise exec node -- npm install -g npm@11.19.1
 
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
-USER root
-RUN dnf install \
-    -y \
-    --installroot=/sysroot \
-    --use-host-config \
-    --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
-    --setopt=install_weak_deps=0 \
-    catatonit \
-    curl \
-    diffutils \
-    file \
-    gawk \
-    git \
-    gzip \
-    hostname \
-    openssh-server \
-    openssl \
-    patch \
-    procps-ng \
-    tar \
-    unzip \
-    which \
-    xz-libs \
-    zip \
-    &&\
-    rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
-
 # A process supervisor for the vm Backend. k3s and anything else installed the
 # distro way refuses to install without one: its installer looks for systemd,
 # then for /sbin/openrc-run, and gives up. The image's init is catatonit and
@@ -112,7 +84,7 @@ RUN dnf install \
 # lives) and re-link /var out from under a running userspace. openrc is here to
 # supervise what the agent registers, nothing else. The scripts stay in
 # /etc/init.d for anything that asks for them by name.
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS openrc
+FROM quay.io/fedora/fedora:44 AS openrc
 USER root
 ARG OPENRC_VERSION=0.64
 ARG OPENRC_SHA256=f52dd53d6bd798476f8f0b74c5722afa1a59e408a4ec49c1333e5a152a25440d
@@ -165,7 +137,7 @@ RUN npm_config_inject_workspace_packages=true \
     cp packages/agent-runtime/package.json /deploy/package.json &&\
     (cd /deploy && pnpm pkg delete devDependencies)
 
-FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
+FROM quay.io/fedora/fedora:44 AS runner
 
 USER root
 WORKDIR /app
@@ -184,8 +156,13 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_NODE_VERIFY=false \
     PATH="/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
-COPY --from=sysroot /sysroot/usr/ /usr/
-COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
+# The runtime image has dnf, so the sandbox's own tools are installed here
+# rather than composed in a sysroot stage and copied in — and, the point of the
+# whole exercise, an agent can install what it needs at runtime too.
+RUN dnf install -y --setopt=install_weak_deps=False \
+    catatonit curl diffutils file gawk git gzip hostname openssh-server \
+    openssl patch procps-ng tar unzip which xz-libs zip \
+    && dnf clean all && rm -rf /var/cache/dnf
 COPY --from=openrc /out/ /
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base --chown=65532:0 /usr/local/share/mise/ /usr/local/share/mise/
@@ -201,12 +178,24 @@ COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/p
 RUN chmod 0755 /usr/local/lib/platform-python
 RUN set -eu; \
     install -d -o 65532 /usr/local/share/tool-bin; \
-    mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
+    mkdir -p /usr/local/share/lazy-tools /var/log/dam/install /var/cache/dam; \
+    chown 65532 /var/log/dam/install /var/cache/dam; \
+    cd /usr/local/share/lazy-tools; \
     for spec in python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
+# docker and k3s are shims rather than tools in the image: an agent that never
+# runs a container should not carry 270 MB of runtime it will not use, and an
+# agent that wants one should not have to be told how to get it. They install on
+# first use, like the mise-backed shims beside them, and they are last on PATH so
+# a real binary always wins.
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-tool-real /usr/local/bin/dam-tool-real
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-auto-install /usr/local/bin/dam-auto-install
+COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/lazy-tools/docker
+COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/lazy-tools/k3s
+
 # /etc/logrotate.d is empty but not optional: a service installer writes its
 # rotation config straight into it, and this base ships no logrotate at all, so
 # the directory is missing. k3s does that write with a bare `tee` under `set -e`

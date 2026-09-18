@@ -1,0 +1,40 @@
+#!/bin/sh
+# Reached only when the image ships no k3s, which is the normal case: this
+# directory is last on PATH.
+#
+# Upstream's installer is used rather than a pinned release, because it already
+# resolves the channel, picks the architecture and checks the download — and a
+# pin here would rot silently between platform releases. It is told to install
+# only: enabling or starting a service would send it looking for an init system
+# a sandbox does not run.
+#
+# `--data-dir` is defaulted onto the machine's storage disk for the same reason
+# docker's data root is: a guest's rootfs is an overlay, overlayfs refuses an
+# overlay as an upperdir, and k3s's containerd snapshotter fails on exactly that
+# — the default would not work at all on the vm Backend. An explicit --data-dir
+# always wins.
+set -eu
+
+if ! dam-tool-real k3s >/dev/null 2>&1; then
+    dam-auto-install k3s sh -c '
+        curl -sfL https://get.k3s.io \
+            | INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_START=true sh -'
+fi
+real=$(dam-tool-real k3s)
+
+case "${1:-}" in
+server | agent)
+    for arg in "$@"; do
+        case "$arg" in --data-dir | --data-dir=*) exec "$real" "$@" ;; esac
+    done
+    for d in /storage /workspace; do
+        if [ -d "$d" ] && [ -w "$d" ]; then
+            sub=$1
+            shift
+            exec "$real" "$sub" --data-dir "$d/k3s" "$@"
+        fi
+    done
+    ;;
+esac
+
+exec "$real" "$@"

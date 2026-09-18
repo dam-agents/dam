@@ -1,0 +1,39 @@
+#!/bin/sh
+# Reached only when the image ships no docker, which is the normal case: this
+# directory is last on PATH.
+#
+# There is no init system in a sandbox, so the daemon is started here rather
+# than enabled as a service, and its data root is put on the machine's storage
+# disk when there is one. That is not a preference: a guest's rootfs is an
+# overlay, overlayfs refuses an overlay as an upperdir, and the daemon's default
+# root is inside it — so on the vm Backend the default cannot work at all.
+set -eu
+
+if ! dam-tool-real docker >/dev/null 2>&1; then
+    dam-auto-install docker sh -c '
+        command -v dnf >/dev/null 2>&1 || {
+            echo "no dnf on this image; install Docker manually" >&2; exit 1; }
+        dnf install -y --setopt=install_weak_deps=False moby-engine docker-cli containerd'
+fi
+real=$(dam-tool-real docker)
+
+if ! "$real" info >/dev/null 2>&1; then
+    dam-auto-install dockerd sh -c '
+        set -eu
+        dockerd=$(dam-tool-real dockerd) || { echo "moby-engine installed no dockerd" >&2; exit 1; }
+        root=
+        for d in /storage /workspace; do
+            [ -d "$d" ] && [ -w "$d" ] && { root="--data-root $d/docker"; break; }
+        done
+        # Detached and disowned: the shim exits as soon as the daemon answers,
+        # and the daemon has to outlive it.
+        nohup "$dockerd" $root >>/var/log/dam/install/dockerd.log 2>&1 &
+        for _ in $(seq 1 60); do
+            docker_real=$(dam-tool-real docker); "$docker_real" info >/dev/null 2>&1 && exit 0
+            sleep 1
+        done
+        echo "dockerd did not answer within 60s; see /var/log/dam/install/dockerd.log" >&2
+        exit 1'
+fi
+
+exec "$real" "$@"
