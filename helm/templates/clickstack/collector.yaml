@@ -143,6 +143,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
     spec:
+      enableServiceLinks: false
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       # The ClickHouse exporter creates its schema (otel_logs/otel_metrics_*/…)
       # once, at collector start; it never retries the DDL, only the inserts.

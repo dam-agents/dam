@@ -37,11 +37,16 @@ const ENV_EXCLUDE_EXACT = new Set([
 ]);
 const ENV_EXCLUDE_PREFIX = ["npm_config_", "npm_lifecycle_", "SSH_"];
 
+export const SSHD_MAX_ENV_ENTRIES = 950;
+const isKubernetesServiceLink = (k: string) =>
+  /_(PORT|SERVICE_HOST|SERVICE_PORT)(_[A-Z0-9_]+)?$/.test(k);
+
 export function buildSshEnvironmentFile(
   env: NodeJS.ProcessEnv,
   warn?: (msg: string) => void,
 ): string {
   const lines: string[] = [];
+  const serviceLinks: string[] = [];
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) continue;
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
@@ -51,9 +56,15 @@ export function buildSshEnvironmentFile(
       warn?.(`skipping env ${k} (value spans multiple lines)`);
       continue;
     }
-    lines.push(`${k}=${v}`);
+    (isKubernetesServiceLink(k) ? serviceLinks : lines).push(`${k}=${v}`);
   }
-  return lines.length ? lines.join("\n") + "\n" : "";
+  const all = [...lines, ...serviceLinks];
+  const kept = all.slice(0, SSHD_MAX_ENV_ENTRIES);
+  if (kept.length < all.length)
+    warn?.(
+      `dropped ${all.length - kept.length} env vars over sshd's ${SSHD_MAX_ENV_ENTRIES}-entry limit (Kubernetes service links first)`,
+    );
+  return kept.length ? kept.join("\n") + "\n" : "";
 }
 
 export function refreshSshEnvironment(

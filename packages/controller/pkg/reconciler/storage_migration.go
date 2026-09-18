@@ -903,6 +903,7 @@ copy_verify() {
 					RestartPolicy:                corev1.RestartPolicyNever,
 					ServiceAccountName:           migrationServiceAccount,
 					AutomountServiceAccountToken: ptrBool(false),
+					EnableServiceLinks:           ptrBool(false),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser: &rootUID,
 					},
