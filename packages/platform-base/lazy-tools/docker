@@ -1,6 +1,7 @@
 #!/bin/sh
-# Reached only when the image ships no docker, which is the normal case: this
-# directory is last on PATH.
+# Reached on every docker call and not only the first: this directory sits ahead
+# of the binary the shim installs, because the daemon still has to be started
+# and no init system in a sandbox is going to start it.
 #
 # There is no init system in a sandbox, so the daemon is started here rather
 # than enabled as a service, and its data root is put on the machine's storage

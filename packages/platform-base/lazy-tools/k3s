@@ -62,7 +62,12 @@ server | agent)
 
     sub=$1
     shift
-    set -- --container-runtime-endpoint "$(dam-containerd)" "$@"
+    # Assigned rather than substituted inside the word: a dam-containerd that
+    # fails would otherwise leave an empty --container-runtime-endpoint behind
+    # and k3s would come up against nothing. As an assignment the substitution
+    # is the command, so set -e stops the shim here instead.
+    sock=$(dam-containerd)
+    set -- --container-runtime-endpoint "$sock" "$@"
     for d in /storage /workspace; do
         if [ -d "$d" ] && [ -w "$d" ]; then
             set -- --data-dir "$d/k3s" "$@"

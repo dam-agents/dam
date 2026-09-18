@@ -124,6 +124,18 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_NODE_VERIFY=false \
     PATH="/usr/local/share/tool-shims:/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
+# An agent installing a package at runtime goes out through the egress
+# allowlist, and Fedora's default metalink hands back a different set of mirror
+# hosts on every call — nothing an allowlist can name. Pin the two enabled repos
+# to Fedora's own host, so a runtime `dnf install` reaches exactly the one host
+# helm/values.yaml lists. openh264 is disabled rather than pinned: it lives on a
+# third host and nothing here wants it.
+RUN set -eu; \
+    sed -i -e 's|^metalink=|#metalink=|' \
+    -e 's|^#baseurl=http://download.example|baseurl=https://dl.fedoraproject.org|' \
+    /etc/yum.repos.d/fedora.repo /etc/yum.repos.d/fedora-updates.repo; \
+    sed -i 's|^enabled=1|enabled=0|' /etc/yum.repos.d/fedora-cisco-openh264.repo
+
 # The runtime image has dnf, so the sandbox's own tools are installed here
 # rather than composed in a sysroot stage and copied in — and, the point of the
 # whole exercise, an agent can install what it needs at runtime too.
@@ -171,11 +183,10 @@ COPY --chmod=755 packages/platform-base/lazy-tools/dam-lazy-tool /usr/local/bin/
 COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/tool-shims/docker
 COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/tool-shims/k3s
 
-# /etc/logrotate.d is empty but not optional: a service installer writes its
-# rotation config straight into it, and this base ships no logrotate at all, so
-# the directory is missing. k3s does that write with a bare `tee` under `set -e`
-# and dies there — after installing its binary and service file, before enabling
-# them — so the whole install fails on a log config nothing here even reads.
+# /etc/logrotate.d is empty but not optional: a service installer an agent runs
+# writes its rotation config straight into it, typically with a bare `tee` under
+# `set -e`, and this base ships no logrotate at all — so without the directory
+# the install dies partway, on a log config nothing here ever reads.
 RUN mkdir -p /home/agent /etc/logrotate.d /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
     chown 65532 /app &&\
     chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
@@ -209,6 +220,8 @@ RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     printf '#!/bin/sh\nexec dam-lazy-tool %s %s "$@"\n' "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done; \
+    test -n "$(ls -A /usr/local/share/lazy-tools)"; \
+    for f in /usr/local/share/lazy-tools/*; do test -x "$f"; done; \
     ls /usr/local/share/lazy-tools
 
 COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
