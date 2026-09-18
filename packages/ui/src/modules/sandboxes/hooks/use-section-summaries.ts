@@ -24,6 +24,7 @@ import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
+import { useTelegramChats } from "../../telegram/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -123,17 +124,19 @@ export function useSectionSummaries(agent: AgentView | null): {
   }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
+  const telegramChatCount = useTelegramChats(
+    availableChannels?.telegram ? agent?.id : undefined,
+  ).data?.chats.length;
   const channelsSummary = useMemo(() => {
     if (!agent || !availableChannels) return undefined;
     if (!availableChannels.slack && !availableChannels.telegram)
       return "No messenger configured";
     const kinds = [
-      ...new Set(
-        agent.channels.map((c) => (c.type === "slack" ? "Slack" : "Telegram")),
-      ),
+      ...(agent.channels.length > 0 ? ["Slack"] : []),
+      ...(telegramChatCount ? ["Telegram"] : []),
     ];
     return kinds.length > 0 ? kinds.join(", ") : "No channels connected";
-  }, [agent, availableChannels]);
+  }, [agent, availableChannels, telegramChatCount]);
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;

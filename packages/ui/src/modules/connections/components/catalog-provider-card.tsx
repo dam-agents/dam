@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 import type { ConnectionView } from "api-server-api";
 
+import { SlackAccountExplainer } from "@/components/channel-connection-explainer";
 import { Button } from "@/components/ui/button";
 import { PanelCard } from "@/components/ui/panel-card";
 
@@ -25,6 +26,7 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  onGoToChannels?: () => void;
 }
 
 export function CatalogProviderCard({
@@ -35,6 +37,7 @@ export function CatalogProviderCard({
   onDelete,
   deletingId,
   maintenance,
+  onGoToChannels,
 }: Props) {
   const { provider, templates, connections } = group;
 
@@ -61,6 +64,11 @@ export function CatalogProviderCard({
           size={16}
           className="shrink-0 text-foreground/80"
         />
+      }
+      titleAccessory={
+        provider.id === "slack" ? (
+          <SlackAccountExplainer onGoToChannels={onGoToChannels} />
+        ) : undefined
       }
       headerRight={connections.length > 0 && newButton}
     >

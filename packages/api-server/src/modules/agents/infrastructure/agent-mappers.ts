@@ -52,6 +52,7 @@ interface AgentStatusObject {
 export interface InfraAgent {
   id: string;
   name: string;
+  createdAt?: string;
   templateId?: string;
   owner?: string;
   spec: AgentSpec;
@@ -143,6 +144,15 @@ export function agentIsOwnedBy(obj: KubeObject, owner: string): boolean {
   return agentOwner(obj) === owner;
 }
 
+function createdAtOf(obj: KubeObject): string | undefined {
+  const raw = (
+    obj.metadata as { creationTimestamp?: Date | string } | undefined
+  )?.creationTimestamp;
+  if (!raw) return undefined;
+  const d = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
   const crSpec = (obj.spec ?? {}) as AgentSpecCR;
@@ -170,9 +180,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated && ready?.lastTransitionTime
       ? new Date(ready.lastTransitionTime)
       : undefined;
+  const createdAt = createdAtOf(obj);
   return {
     id,
     name: spec.name,
+    ...(createdAt ? { createdAt } : {}),
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
     owner: agentOwner(obj),
     spec,
@@ -220,6 +232,7 @@ export function assembleAgent(
   return {
     id: infra.id,
     name: infra.name,
+    ...(infra.createdAt ? { createdAt: infra.createdAt } : {}),
     templateId: infra.templateId,
     templateUpdate,
     spec: infra.spec,

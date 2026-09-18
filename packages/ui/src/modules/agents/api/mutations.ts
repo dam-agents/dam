@@ -191,6 +191,16 @@ export function useConnectSlack() {
   });
 }
 
+export function useSetSlackAmbient() {
+  return useMutation({
+    ...trpc.agents.connectSlack.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't change ambient mode",
+    },
+  });
+}
+
 export function useDisconnectSlack() {
   return useMutation({
     ...trpc.agents.disconnectSlack.mutationOptions(),

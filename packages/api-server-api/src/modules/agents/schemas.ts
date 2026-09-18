@@ -113,6 +113,10 @@ export const agentBindTelegramChatInputSchema = z.object({
   flowId: z.string().min(1),
 });
 
+export const agentPeekBindFlowInputSchema = z.object({
+  flowId: z.string().min(1),
+});
+
 export const agentBindSlackChannelInputSchema = z.object({
   agentId: z.string().min(1),
   flowId: z.string().min(1),

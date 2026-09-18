@@ -131,13 +131,14 @@ describe("slack shared-channel access", () => {
     expect(turn.outcome).toBe("success");
   });
 
-  it("unbound channel: 'No instance connected' ephemeral and no turn event", async () => {
+  it("unbound channel: an ephemeral says how to connect an agent, and no turn event", async () => {
     const h = harness({ binding: null });
     await h.mention(STRANGER);
 
-    expect(h.texts().join("\n")).toContain(
-      "No instance connected to this channel.",
-    );
+    const said = h.texts().join("\n");
+    expect(said).toContain("No agent is connected to this channel yet.");
+    expect(said).toContain("bind");
+    expect(said).not.toContain("instance");
     expect(h.turnEvents()).toHaveLength(0);
   });
 

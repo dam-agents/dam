@@ -12,6 +12,7 @@ import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/c
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
+import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -19,11 +20,17 @@ import {
   LifecycleSetupSection,
   NameSection,
   ProviderSection,
+  useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import {
+  offeredBindMessengers,
+  recordBindIntent,
+} from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { useAgents } from "../api/queries.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -39,6 +46,12 @@ export function CodingAgentSetupView() {
     {},
     RETURN_PATH,
   );
+  const availableChannels = useAgents().data?.availableChannels;
+  const { openCatalog, catalogNode } = useSetupConnectionCatalog({
+    connectionIds: form.connectionIds,
+    onToggle: toggleConnection,
+    oauthReturnView: RETURN_PATH,
+  });
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
   const { data: flags } = useFeatures();
@@ -79,16 +92,23 @@ export function CodingAgentSetupView() {
     (t) => t.id === form.templateId,
   );
   const registryPartial = hasPartialRegistryCredential(draft);
+  const channelsAnswered = availableChannels !== undefined;
+  const wantsChannel = form.channels.slack || form.channels.telegram;
   const canCreate =
     isCodingAgentSetupComplete(draft) &&
     !createAgent.isPending &&
-    (vmAnswered || !form.vm);
+    (vmAnswered || !form.vm) &&
+    (channelsAnswered || !wantsChannel);
 
   const create = async () => {
     if (!canCreate) return;
     try {
       const agent = await createAgent.mutateAsync(
         buildCodingAgentSetupInput(draft),
+      );
+      recordBindIntent(
+        agent.id,
+        offeredBindMessengers(form.channels, availableChannels),
       );
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
@@ -149,7 +169,7 @@ export function CodingAgentSetupView() {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
-        oauthReturnView={RETURN_PATH}
+        onOpenCatalog={openCatalog}
       />
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
@@ -162,6 +182,12 @@ export function CodingAgentSetupView() {
           selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
         }
       />
+      <SetupChannelsSection
+        value={form.channels}
+        onChange={(channels) => update({ channels })}
+        onGoToConnections={openCatalog}
+      />
+      {catalogNode}
     </SetupPageShell>
   );
 }

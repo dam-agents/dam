@@ -34,6 +34,17 @@ export function slackThreadKey(channelId: string, threadTs: string): string {
   return `${channelId}:${threadTs}`;
 }
 
+export function slackChannelIdFromThreadKey(
+  threadKey: string | null | undefined,
+): string | null {
+  if (!threadKey) return null;
+  if (isAmbientThreadKey(threadKey))
+    return threadKey.slice(AMBIENT_THREAD_KEY_PREFIX.length) || null;
+  const separator = threadKey.lastIndexOf(":");
+  if (separator <= 0 || separator === threadKey.length - 1) return null;
+  return threadKey.slice(0, separator);
+}
+
 export interface SessionView {
   sessionId: string;
   agentId: string;

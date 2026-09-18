@@ -52,11 +52,18 @@ export type SlackTokenResolver = (
   teamId: SlackWorkspace,
 ) => Promise<string | null>;
 
+export interface SlackBotJoinedChannelEvent {
+  channel: string;
+  inviter?: string;
+  teamId: SlackWorkspace;
+}
+
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
+  onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
 }
 
 /**
@@ -159,6 +166,15 @@ export interface SlackChannelInfo {
   name: string;
 }
 
+export interface SlackConversationRef {
+  channelId: string;
+  teamId: SlackWorkspace;
+}
+
+export interface SlackConversationName extends SlackConversationRef {
+  name: string | null;
+}
+
 export interface SlackUserInfo {
   id: string;
   username?: string;
@@ -226,7 +242,7 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{ isMember: boolean } | null>;
+  ): Promise<{ isMember: boolean; name: string | null } | null>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,

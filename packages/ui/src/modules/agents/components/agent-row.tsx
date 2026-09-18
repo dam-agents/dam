@@ -14,6 +14,8 @@ import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { agentKindBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
@@ -45,6 +47,8 @@ interface Props {
   onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
+  onAddToChannel?: (messenger: "slack" | "telegram") => void;
+  messengers?: { slack?: boolean; telegram?: boolean };
 }
 
 export function AgentRow({
@@ -67,6 +71,8 @@ export function AgentRow({
   onPause,
   onStop,
   onDelete,
+  onAddToChannel,
+  messengers = {},
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   return (
@@ -92,6 +98,7 @@ export function AgentRow({
         <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}
         </p>
+        <AgentChannelChips agent={agent} className="mt-2" />
         {temporaryDraw && temporaryDraw.count > 0 && (
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
             <Chemistry size={12} className="shrink-0 text-accent" />
@@ -147,6 +154,25 @@ export function AgentRow({
                 <DropdownMenuItem onSelect={onShare}>
                   {shareLabel ?? "Share"}
                 </DropdownMenuItem>
+              )}
+              {onAddToChannel && (messengers.slack || messengers.telegram) && (
+                <>
+                  <DropdownMenuSeparator />
+                  {messengers.slack && (
+                    <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
+                      <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                      Add to Slack channel
+                    </DropdownMenuItem>
+                  )}
+                  {messengers.telegram && (
+                    <DropdownMenuItem
+                      onSelect={() => onAddToChannel("telegram")}
+                    >
+                      <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+                      Add to Telegram chat
+                    </DropdownMenuItem>
+                  )}
+                </>
               )}
               <DropdownMenuSeparator />
               {display.state === "running" && (

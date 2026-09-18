@@ -9,11 +9,11 @@ import {
 } from "@/components/modal";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../../types.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
+import { AmbientModeCard } from "./ambient-mode-card.js";
 
 export function SlackChannelModal({
   agent,
@@ -69,7 +69,12 @@ export function SlackChannelModal({
             control={control}
             name="ambient"
             render={({ field }) => (
-              <AmbientRow checked={field.value} onChange={field.onChange} />
+              <AmbientModeCard checked={field.value} onChange={field.onChange}>
+                The agent reads along in the channel and may chime in without
+                being mentioned when it can clearly help. It is set per agent,
+                so other agents in the channel are unaffected, and it can be
+                turned off anytime — here or with the in-chat ambient command.
+              </AmbientModeCard>
             )}
           />
         </DialogBody>
@@ -101,36 +106,6 @@ function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
         A connected channel can't be swapped for another one. To reach this
         agent from somewhere else, connect that channel and disconnect this one.
       </p>
-    </div>
-  );
-}
-
-function AmbientRow({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-      <span className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">
-          Ambient mode
-        </span>
-        <span className="text-sm text-muted-foreground">
-          The agent reads along in the channel and may chime in without being
-          mentioned when it can clearly help. It is set per agent, so other
-          agents in the channel are unaffected, and it can be turned off anytime
-          — here or with the in-chat ambient command.
-        </span>
-      </span>
-      <Switch
-        className="mt-0.5"
-        checked={checked}
-        onCheckedChange={onChange}
-        label="Ambient mode"
-      />
     </div>
   );
 }

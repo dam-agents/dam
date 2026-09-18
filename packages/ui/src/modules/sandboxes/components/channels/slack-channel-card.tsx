@@ -1,22 +1,22 @@
-import { Add, OverflowMenuHorizontal } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { SlackChannelExplainer } from "@/components/channel-connection-explainer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 import { getBrand } from "../../../../brand.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
-import { findSlackChannels } from "../../hooks/use-slack-channel-form.js";
+import {
+  findSlackChannels,
+  slackChannelLabel,
+} from "../../hooks/use-slack-channel-form.js";
 import { ChannelCard } from "./channel-card.js";
+import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 
 type ModalTarget = SlackChannel | "new" | null;
@@ -24,9 +24,22 @@ type ModalTarget = SlackChannel | "new" | null;
 export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   return (
-    <ChannelCard iconSlug="slack" title="Slack">
+    <ChannelCard
+      iconSlug="slack"
+      title="Slack Channel"
+      titleAccessory={
+        <SlackChannelExplainer
+          onGoToConnections={
+            agent
+              ? () => navigateToSandboxHome(agent.id, "connections")
+              : undefined
+          }
+        />
+      }
+    >
       <div className="flex flex-col items-start gap-3 px-4 py-4">
         {agent && slackChannels.length > 0 ? (
           <div className="flex w-full flex-col gap-2">
@@ -80,13 +93,13 @@ function SlackChannelRow({
   const disconnectSlack = useDisconnectSlack();
 
   const brandShort = getBrand().short;
+  const label = slackChannelLabel(channel);
 
   const handleDisconnect = async () => {
     if (
       await showConfirm(
         <p>
-          Mentions in <strong>{channel.slackChannelId}</strong> will stop
-          reaching this agent.
+          Mentions in <strong>{label}</strong> will stop reaching this agent.
           {channel.default ? (
             <>
               {" "}
@@ -107,34 +120,20 @@ function SlackChannelRow({
   };
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-[15px] text-foreground">
-            {channel.slackChannelId}
-          </p>
-          {channel.default && (
-            <Badge variant="muted" className="shrink-0">
-              Default
-            </Badge>
-          )}
-        </div>
-        <p className="truncate text-sm text-muted-foreground">
-          {channel.ambient ? "Ambient on" : "Ambient off"}
-        </p>
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Slack channel ${channel.slackChannelId} actions`}
-            data-testid="slack-channel-menu"
-          >
-            <OverflowMenuHorizontal size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
+    <ChannelRow
+      title={label}
+      badge={
+        channel.default && (
+          <Badge variant="muted" className="shrink-0">
+            Default
+          </Badge>
+        )
+      }
+      subtitle={channel.ambient ? "Ambient on" : "Ambient off"}
+      actionsLabel={`Slack channel ${label} actions`}
+      menuTestId="slack-channel-menu"
+      actions={
+        <>
           <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
           <DropdownMenuItem
             tone="danger"
@@ -143,8 +142,8 @@ function SlackChannelRow({
           >
             Disconnect
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+        </>
+      }
+    />
   );
 }

@@ -4,18 +4,25 @@ import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
+import { useAgents } from "../../agents/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
+import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
   NameSection,
   ProviderSection,
+  useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import {
+  offeredBindMessengers,
+  recordBindIntent,
+} from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { ConnectedKnowledgeBasesSetup } from "../components/connected-knowledge-bases-setup.js";
@@ -34,6 +41,12 @@ export function KnowledgeBaseSetupView() {
     { kbTemplateId: DEFAULT_KB_TEMPLATE_ID },
     RETURN_PATH,
   );
+  const availableChannels = useAgents().data?.availableChannels;
+  const { openCatalog, catalogNode } = useSetupConnectionCatalog({
+    connectionIds: form.connectionIds,
+    onToggle: toggleConnection,
+    oauthReturnView: RETURN_PATH,
+  });
   const createKnowledgeBase = useCreateKnowledgeBase();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
 
@@ -54,14 +67,22 @@ export function KnowledgeBaseSetupView() {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
   };
+  const channelsAnswered = availableChannels !== undefined;
+  const wantsChannel = form.channels.slack || form.channels.telegram;
   const canCreate =
-    isKnowledgeBaseSetupComplete(draft) && !createKnowledgeBase.isPending;
+    isKnowledgeBaseSetupComplete(draft) &&
+    !createKnowledgeBase.isPending &&
+    (channelsAnswered || !wantsChannel);
 
   const create = async () => {
     if (!canCreate) return;
     try {
       const agent = await createKnowledgeBase.mutateAsync(
         buildKnowledgeBaseCreateInput(draft),
+      );
+      recordBindIntent(
+        agent.id,
+        offeredBindMessengers(form.channels, availableChannels),
       );
       reset();
       openKnowledgeBase(agent.id);
@@ -116,12 +137,18 @@ export function KnowledgeBaseSetupView() {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
-        oauthReturnView={RETURN_PATH}
+        onOpenCatalog={openCatalog}
       />
       <ConnectedKnowledgeBasesSetup
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
       />
+      <SetupChannelsSection
+        value={form.channels}
+        onChange={(channels) => update({ channels })}
+        onGoToConnections={openCatalog}
+      />
+      {catalogNode}
     </SetupPageShell>
   );
 }

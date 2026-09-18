@@ -24,6 +24,7 @@ export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   teamId?: string;
+  name?: string;
   ambient?: boolean;
   default?: boolean;
 }
@@ -49,6 +50,7 @@ export interface TemplateUpdate {
 export interface Agent {
   id: string;
   name: string;
+  createdAt?: string;
   templateId?: string;
   templateUpdate?: TemplateUpdate;
   spec: AgentSpec;
@@ -112,7 +114,7 @@ export type BindSlackChannelError =
   | { type: "ChannelAlreadyBound" };
 
 export type BindSlackChannelResult =
-  | { ok: true; value: { channelTitle: string | null } }
+  | { ok: true; value: { slackChannelId: string; channelTitle: string | null } }
   | { ok: false; error: BindSlackChannelError };
 
 export type BindTelegramChatError =
@@ -174,6 +176,12 @@ export interface AgentsService {
     agentId: string,
     flowId: string,
   ) => Promise<BindSlackChannelResult>;
+  peekSlackBindFlow: (
+    flowId: string,
+  ) => Promise<{ slackChannelId: string; name?: string } | null>;
+  peekTelegramBindFlow: (
+    flowId: string,
+  ) => Promise<{ chatTitle: string | null } | null>;
   bindTelegramChat: (
     agentId: string,
     flowId: string,
