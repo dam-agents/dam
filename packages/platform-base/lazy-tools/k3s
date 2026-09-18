@@ -15,6 +15,15 @@
 # always wins.
 set -eu
 
+# The sandbox shell runs with umask 027, and a container runtime started under it
+# creates every image layer 750 — which a container running as a non-root uid
+# cannot traverse, so it dies on `stat` of its own entrypoint. The same umask
+# reaches the projected service-account volumes, where it costs a non-root pod
+# its token and its CA. Diagnosed in a guest as all three symptoms of one cause:
+# CoreDNS crash-looping, traefik's installer unable to exec, and its helm fetch
+# failing x509 verification. 022 is what containerd assumes everywhere else.
+umask 022
+
 if ! dam-tool-real k3s >/dev/null 2>&1; then
     dam-auto-install k3s sh -c '
         curl -sfL https://get.k3s.io \

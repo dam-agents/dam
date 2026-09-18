@@ -9,6 +9,11 @@
 # root is inside it — so on the vm Backend the default cannot work at all.
 set -eu
 
+# See the k3s shim: the sandbox shell's umask 027 makes a container runtime lay
+# down image layers 750, and a container running as a non-root uid cannot then
+# traverse its own rootfs. 022 is what these runtimes assume everywhere else.
+umask 022
+
 if ! dam-tool-real docker >/dev/null 2>&1; then
     dam-auto-install docker sh -c '
         command -v dnf >/dev/null 2>&1 || {
