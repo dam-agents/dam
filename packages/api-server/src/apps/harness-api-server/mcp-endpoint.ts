@@ -927,7 +927,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const experiments = deps.experimentsServiceFor(verified.owner);
     const [ownerIsInspector, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
-      deps.satelliteOps?.granted(agentId) ?? [],
+      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+        (err: unknown) => {
+          console.error(
+            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            err,
+          );
+          return [];
+        },
+      ),
     ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,

@@ -84,6 +84,26 @@ describe("waking an agent with a finished job", () => {
     expect(woken).toEqual(["agent-1"]);
   });
 
+  it("carries why a job ended and what it printed, not one or the other", async () => {
+    const { deliver, events } = harness([
+      [
+        job({
+          status: "cancelled",
+          exitCode: null,
+          reason: "cancelled before it started",
+          output: "rows written: 4021",
+        }),
+      ],
+    ]);
+    await deliver("agent-1");
+    const text = task(events[0]?.payload);
+    expect(text).toContain("cancelled before it started");
+    expect(
+      text,
+      "a killed job's output is the only record of what it did before it died",
+    ).toContain("rows written: 4021");
+  });
+
   it("coalesces simultaneous finishes into a single turn", async () => {
     const { deliver, events } = harness([
       [job({ sequence: 7 }), job({ sequence: 8 }), job({ sequence: 9 })],

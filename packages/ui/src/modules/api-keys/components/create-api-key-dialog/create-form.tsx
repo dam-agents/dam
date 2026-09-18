@@ -27,9 +27,8 @@ const SCOPE_GROUPS = [
 ] as const;
 
 type GroupedScope = (typeof SCOPE_GROUPS)[number]["scopes"][number];
-type UngroupedScope = Exclude<Scope, GroupedScope>;
-const _everyScopeHasAGroup: UngroupedScope[] = [];
-void _everyScopeHasAGroup;
+const everyScopeHasAGroup: Record<Exclude<Scope, GroupedScope>, never> = {};
+void everyScopeHasAGroup;
 
 const hasAgentScope = (scopes: Set<Scope>): boolean =>
   AGENT_SCOPES.some((s) => scopes.has(s));

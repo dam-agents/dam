@@ -21,7 +21,7 @@ export function SatellitesSection() {
       </div>
     );
 
-  if (satellitesQ.isError)
+  if (satellitesQ.isError && satellitesQ.data === undefined)
     return (
       <div className="mt-8">
         <SectionLabel spaced>Satellites</SectionLabel>
@@ -38,6 +38,11 @@ export function SatellitesSection() {
   return (
     <div className="mt-8">
       <SectionLabel spaced>Satellites</SectionLabel>
+      {satellitesQ.isError && (
+        <p className="mb-2 text-xs text-danger">
+          Couldn&apos;t refresh — showing what was last loaded.
+        </p>
+      )}
       <Inset className="flex flex-col gap-4">
         {satellites.map((satellite) => (
           <SatelliteCard key={satellite.name} satellite={satellite} />

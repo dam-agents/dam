@@ -8,6 +8,7 @@ import {
   type WorkItem,
 } from "api-server-api";
 import { compileCommands } from "../domain/admission.js";
+import type { JobRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 export const LEASE_MS = 60_000;
@@ -146,40 +147,58 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
 export function createLeaseSweep(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
   return async (): Promise<number> => {
-    for (const job of await deps.repo.stopDispatch(
-      {},
-      "it waited past its expiry without ever starting",
-      STALE_JOB_TTL_MS,
-      now(),
-    )) {
-      await deps.deliverOutcome({
-        owner: job.owner,
-        agentId: job.agentId,
-        satellite: job.satellite,
-        sequence: job.sequence,
-      });
-    }
+    let expired: JobRow[] = [];
+    try {
+      for (const job of await deps.repo.stopDispatch(
+        {},
+        "it waited past its expiry without ever starting",
+        STALE_JOB_TTL_MS,
+        now(),
+      )) {
+        try {
+          await deps.deliverOutcome({
+            owner: job.owner,
+            agentId: job.agentId,
+            satellite: job.satellite,
+            sequence: job.sequence,
+          });
+        } catch (err) {
+          console.error(
+            `[satellites] ${job.satellite}#${job.sequence} expired unstarted but its agent was not told`,
+            err,
+          );
+        }
+      }
 
-    const expired = await deps.repo.expiredLeases(now());
-    for (const job of expired) {
-      const settled = await deps.repo.settle(
-        job.owner,
-        job.satellite,
-        job.sequence,
-        {
-          status: "interrupted",
-          reason: `${formatJobRef(job.satellite, job.sequence)} lost its worker; the command may have completed`,
-        },
-      );
-      if (settled === null) continue;
-      await deps.deliverOutcome({
-        owner: job.owner,
-        agentId: job.agentId,
-        satellite: job.satellite,
-        sequence: job.sequence,
-      });
+      expired = await deps.repo.expiredLeases(now());
+      for (const job of expired) {
+        try {
+          const settled = await deps.repo.settle(
+            job.owner,
+            job.satellite,
+            job.sequence,
+            {
+              status: "interrupted",
+              reason: `${formatJobRef(job.satellite, job.sequence)} lost its worker; the command may have completed`,
+            },
+          );
+          if (settled === null) continue;
+          await deps.deliverOutcome({
+            owner: job.owner,
+            agentId: job.agentId,
+            satellite: job.satellite,
+            sequence: job.sequence,
+          });
+        } catch (err) {
+          console.error(
+            `[satellites] ${job.satellite}#${job.sequence} lost its worker but was not settled`,
+            err,
+          );
+        }
+      }
+    } finally {
+      await deps.repo.purgeExpired(now());
     }
-    await deps.repo.purgeExpired(now());
     return expired.length;
   };
 }

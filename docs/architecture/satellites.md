@@ -96,7 +96,7 @@ Output is captured with stdout and stderr merged in terminal order. Under a few 
 
 ## Wake on finish
 
-A Job outliving the turn that started it is the normal case, so a terminal outcome **wakes the Agent** with a synthetic prompt carrying what `wait` would have returned. Without it the obvious use — start the nightly pipeline, then summarize what it produced — fails silently at the last step.
+A Job outliving the turn that started it is the normal case, so a terminal outcome **wakes the Agent** with a synthetic prompt carrying what `wait` would have returned — every field of it, so a Job that was interrupted or cancelled brings both why it ended and whatever it had printed by then. One turn carries a bounded number of outcomes and a bounded length; the rest stay unclaimed and are carried by the next delivery, since an Agent woken with a turn too large to read has not been told anything. Without it the obvious use — start the nightly pipeline, then summarize what it produced — fails silently at the last step.
 
 It rides a runtime event of its own ([runtime delivery](runtime-delivery.md)), handled agent-side by opening an ordinary chat Session. It cannot be a tool result: the Session that started the Job may be long gone.
 

@@ -28,6 +28,8 @@ export interface SatellitesServiceDeps {
   now?: () => Date;
 }
 
+const CANCEL_ATTEMPTS = 3;
+
 export function createSatellitesService(
   deps: SatellitesServiceDeps,
 ): SatellitesService {
@@ -119,34 +121,32 @@ export function createSatellitesService(
 
     async cancelJob(name: string, sequence: number): Promise<void> {
       await mustExist(name);
-      const job = await deps.repo.getJob(deps.owner, name, sequence);
-      if (job === null || !bound(job.agentId))
-        throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
-      if (isTerminal(job.status)) return;
-      if (job.status === "running") {
-        await deps.repo.requestCancel(deps.owner, name, sequence);
-        return;
-      }
-      const settled = await deps.repo.settle(
-        deps.owner,
-        name,
-        sequence,
-        { status: "cancelled", reason: "cancelled before it started" },
-        job.status,
-      );
-      if (settled === null) {
-        const now = await deps.repo.getJob(deps.owner, name, sequence);
-        if (now !== null && now.status === "running")
+      for (let attempt = 0; attempt < CANCEL_ATTEMPTS; attempt++) {
+        const job = await deps.repo.getJob(deps.owner, name, sequence);
+        if (job === null || !bound(job.agentId))
+          throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
+        if (isTerminal(job.status)) return;
+        if (job.status === "running") {
           await deps.repo.requestCancel(deps.owner, name, sequence);
+          return;
+        }
+        const settled = await deps.repo.settle(
+          deps.owner,
+          name,
+          sequence,
+          { status: "cancelled", reason: "cancelled before it started" },
+          job.status,
+        );
+        if (settled === null) continue;
+        if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
+        await deps.deliverOutcome({
+          owner: deps.owner,
+          agentId: settled.agentId,
+          satellite: name,
+          sequence,
+        });
         return;
       }
-      if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
-      await deps.deliverOutcome({
-        owner: deps.owner,
-        agentId: settled.agentId,
-        satellite: name,
-        sequence,
-      });
     },
   };
 }

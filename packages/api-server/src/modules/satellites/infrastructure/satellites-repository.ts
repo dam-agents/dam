@@ -496,7 +496,10 @@ export function createSatellitesRepository(db: Db) {
       return rows.length > 0;
     },
 
-    async claimUndeliveredOutcomes(agentId: string): Promise<JobRow[]> {
+    async claimUndeliveredOutcomes(
+      agentId: string,
+      limit: number,
+    ): Promise<JobRow[]> {
       const rows = await db
         .update(satelliteJobs)
         .set({ deliveredAt: new Date() })
@@ -505,10 +508,42 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.agentId, agentId),
             inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             sql`${satelliteJobs.deliveredAt} is null`,
+            inArray(
+              satelliteJobs.sequence,
+              db
+                .select({ sequence: satelliteJobs.sequence })
+                .from(satelliteJobs)
+                .where(
+                  and(
+                    eq(satelliteJobs.agentId, agentId),
+                    inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+                    sql`${satelliteJobs.deliveredAt} is null`,
+                  ),
+                )
+                .orderBy(satelliteJobs.endedAt)
+                .limit(limit),
+            ),
           ),
         )
         .returning();
       return rows.map(toJob);
+    },
+
+    async expireNow(
+      owner: string,
+      satellite: string,
+      sequence: number,
+    ): Promise<void> {
+      await db
+        .update(satelliteJobs)
+        .set({ expiresAt: new Date() })
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
+          ),
+        );
     },
 
     async releaseOutcomes(

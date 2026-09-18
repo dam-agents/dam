@@ -5,6 +5,8 @@ import type { JobRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_OUTCOMES_PER_TURN = 20;
+const MAX_TURN_CHARS = 64 * 1024;
 
 export interface OutcomeDeliveryDeps {
   repo: SatellitesRepository;
@@ -33,22 +35,33 @@ async function describe(
   job: JobRow,
 ): Promise<string> {
   const ref = formatJobRef(job.satellite, job.sequence);
-  const head = `${ref} (${job.cmd.join(" ")}) — ${job.status}${
-    job.exitCode === null ? "" : `, exit ${job.exitCode}`
-  }`;
-  if (job.reason !== null) return `${head}\n${job.reason}`;
+  const lines = [
+    `${ref} (${job.cmd.join(" ")}) — ${job.status}${
+      job.exitCode === null ? "" : `, exit ${job.exitCode}`
+    }`,
+  ];
+  if (job.reason !== null) lines.push(job.reason);
   const output = job.output ?? "";
-  if (output === "") return head;
-  if (output.length <= INLINE_OUTPUT_LIMIT) return `${head}\n${output}`;
-  const path = await deps.spillLog(agentId, ref, output);
-  return path === null
-    ? `${head}\n(output too large to include and could not be written to your workspace)`
-    : `${head}\nOutput was too large to include; it is at ${path}`;
+  if (output !== "") {
+    if (output.length <= INLINE_OUTPUT_LIMIT) lines.push(output);
+    else {
+      const path = await deps.spillLog(agentId, ref, output);
+      lines.push(
+        path === null
+          ? "(output too large to include and could not be written to your workspace)"
+          : `Output was too large to include; it is at ${path}`,
+      );
+    }
+  }
+  return lines.join("\n");
 }
 
 export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
   return async (agentId: string): Promise<boolean> => {
-    const claimed = await deps.repo.claimUndeliveredOutcomes(agentId);
+    const claimed = await deps.repo.claimUndeliveredOutcomes(
+      agentId,
+      MAX_OUTCOMES_PER_TURN,
+    );
     if (claimed.length === 0) return false;
 
     const parts = await Promise.all(
@@ -63,6 +76,10 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       "",
       "Carry on with whatever you were asked to do with this result. If nothing was asked, summarize it briefly.",
     ].join("\n");
+    const payloadTask =
+      task.length <= MAX_TURN_CHARS
+        ? task
+        : `${task.slice(0, MAX_TURN_CHARS)}\n(this turn was trimmed; read the rest with the satellite job tools)`;
 
     try {
       await deps.bump(agentId, [
@@ -70,7 +87,7 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
           id: randomUUID(),
           kind: "satellite-outcome",
           payload: {
-            task,
+            task: payloadTask,
             refs: claimed.map((job) =>
               formatJobRef(job.satellite, job.sequence),
             ),

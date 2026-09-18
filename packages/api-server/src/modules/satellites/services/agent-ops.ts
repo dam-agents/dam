@@ -20,6 +20,7 @@ import type { SatellitesRepository } from "../infrastructure/satellites-reposito
 export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const POLL_INTERVAL_MS = 500;
+const CANCEL_ATTEMPTS = 3;
 
 export interface AgentOpsDeps {
   repo: SatellitesRepository;
@@ -259,43 +260,33 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       sequence: number,
     ): Promise<JobOutcome> {
       const { owner } = await resolve(agentId, name);
-      const job = await deps.repo.getJob(owner, name, sequence);
-      if (job === null || job.agentId !== agentId)
-        throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
+      let job: JobRow | null = null;
+      for (let attempt = 0; attempt < CANCEL_ATTEMPTS; attempt++) {
+        job = await deps.repo.getJob(owner, name, sequence);
+        if (job === null || job.agentId !== agentId)
+          throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
 
-      if (isTerminal(job.status)) {
-        await deps.repo.markSeen(owner, name, sequence);
-        return outcome(agentId, job);
-      }
-      if (job.status === "running") {
-        await deps.repo.requestCancel(owner, name, sequence);
-        return outcome(agentId, { ...job, reason: "cancellation requested" });
-      }
-      const settled = await deps.repo.settle(
-        owner,
-        name,
-        sequence,
-        { status: "cancelled", reason: "cancelled before it started" },
-        job.status,
-      );
-      if (settled === null) {
-        const current = await deps.repo.getJob(owner, name, sequence);
-        if (current !== null && current.status === "running") {
-          await deps.repo.requestCancel(owner, name, sequence);
-          return outcome(agentId, {
-            ...current,
-            reason: "cancellation requested",
-          });
-        }
-        if (current !== null && isTerminal(current.status)) {
+        if (isTerminal(job.status)) {
           await deps.repo.markSeen(owner, name, sequence);
-          return outcome(agentId, current);
+          return outcome(agentId, job);
         }
-        return outcome(agentId, current ?? job);
+        if (job.status === "running") {
+          await deps.repo.requestCancel(owner, name, sequence);
+          return outcome(agentId, { ...job, reason: "cancellation requested" });
+        }
+        const settled = await deps.repo.settle(
+          owner,
+          name,
+          sequence,
+          { status: "cancelled", reason: "cancelled before it started" },
+          job.status,
+        );
+        if (settled === null) continue;
+        if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
+        await deps.repo.markSeen(owner, name, sequence);
+        return outcome(agentId, settled);
       }
-      if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
-      await deps.repo.markSeen(owner, name, sequence);
-      return outcome(agentId, settled);
+      return outcome(agentId, job!);
     },
   };
 }

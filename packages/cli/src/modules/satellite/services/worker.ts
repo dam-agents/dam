@@ -90,12 +90,20 @@ export function createWorker(deps: {
   host: string;
 }) {
   const running = new Map<number, RunningJob>();
+  const reporting = new Set<Promise<void>>();
   const report = (input: Parameters<WorkerTransport["report"]>[0]): void => {
-    void deps.transport.report(input).catch((err: unknown) => {
-      deps.log.line(
-        `could not report ${name}#${input.sequence}, leaving it to the lease: ${String(err)}`,
-      );
-    });
+    const sent = deps.transport
+      .report(input)
+      .catch((err: unknown) => {
+        deps.log.line(
+          `could not report ${name}#${input.sequence}, leaving it to the lease: ${String(err)}`,
+        );
+      })
+      .finally(() => reporting.delete(sent));
+    reporting.add(sent);
+  };
+  const settleReports = async (): Promise<void> => {
+    while (reporting.size > 0) await Promise.all([...reporting]);
   };
   const name = deps.manifest.pushed.name;
   let manifest = deps.manifest;
@@ -295,6 +303,7 @@ export function createWorker(deps: {
         }
       } finally {
         clearInterval(heartbeat);
+        await settleReports();
       }
     },
 
@@ -326,6 +335,7 @@ export function createWorker(deps: {
           .catch(() => {});
       }
       running.clear();
+      await settleReports();
     },
   };
 }

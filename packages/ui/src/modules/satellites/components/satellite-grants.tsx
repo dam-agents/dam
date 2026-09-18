@@ -26,7 +26,7 @@ export function SatelliteGrants({ satellite }: { satellite: SatelliteView }) {
       </div>
     );
 
-  if (agentsQ.isError)
+  if (agentsQ.isError && agentsQ.data === undefined)
     return (
       <div className="mt-3 border-t border-border pt-3">
         <p className="text-xs text-danger">
