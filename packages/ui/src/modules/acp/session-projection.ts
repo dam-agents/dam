@@ -66,10 +66,23 @@ export function applyUpdate(
   messages: Message[],
   update: AcpUpdate,
   at?: string,
+  telemetryPromptId?: string,
+): Message[] {
+  const next = applyUpdateOf(messages, update, at, telemetryPromptId);
+  return telemetryPromptId === undefined
+    ? next
+    : stampActiveReply(next, telemetryPromptId);
+}
+
+function applyUpdateOf(
+  messages: Message[],
+  update: AcpUpdate,
+  at?: string,
+  telemetryPromptId?: string,
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
-      return closeActiveAssistant(messages, at);
+      return closeActiveAssistant(messages, at, telemetryPromptId);
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
@@ -512,19 +525,51 @@ function mergeParts(
   return merged;
 }
 
-function closeActiveAssistant(messages: Message[], at?: string): Message[] {
+function activeReplyIndex(messages: Message[]): number {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
       if (m.promptId !== undefined && m.parts.length === 0) continue;
-      return messages.map((x, j) =>
-        j === i
-          ? { ...x, ...(at !== undefined && { at }), streaming: false }
-          : x,
-      );
+      return i;
     }
   }
-  return messages;
+  return -1;
+}
+
+function closeActiveAssistant(
+  messages: Message[],
+  at?: string,
+  telemetryPromptId?: string,
+): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1) return messages;
+  return messages.map((x, j) =>
+    j === i
+      ? {
+          ...x,
+          ...(at !== undefined && { at }),
+          ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          streaming: false,
+        }
+      : x,
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a replayed frame names the harness's prompt id
+ * in its metadata, because a replay rebuilt from the harness's own transcript
+ * carries no end-of-turn notification to name it on. The reply being streamed
+ * is the one that prompt produced, so it takes the name.
+ */
+function stampActiveReply(
+  messages: Message[],
+  telemetryPromptId: string,
+): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1 || messages[i].telemetryPromptId === telemetryPromptId) {
+    return messages;
+  }
+  return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
 }
 
 function appendOrExtendUser(

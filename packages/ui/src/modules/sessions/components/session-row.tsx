@@ -1,5 +1,6 @@
 import {
   Code,
+  Download,
   Edit,
   Hashtag,
   OverflowMenuVertical,
@@ -48,6 +49,7 @@ interface Props {
   cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
+  onExportTimeline?: () => void;
 }
 
 export function SessionRow({
@@ -61,6 +63,7 @@ export function SessionRow({
   cost,
   onResume,
   onDelete,
+  onExportTimeline,
 }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
@@ -191,6 +194,14 @@ export function SessionRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {onExportTimeline && (
+            <DropdownMenuItem
+              data-testid="session-export-timeline-button"
+              onSelect={onExportTimeline}
+            >
+              <Download size={13} /> Export telemetry
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             data-testid="session-delete-button"
             tone="danger"

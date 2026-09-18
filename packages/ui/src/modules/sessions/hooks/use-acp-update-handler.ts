@@ -41,7 +41,9 @@ export function useAcpUpdateHandler(
       }
 
       delivery.handleUpdate(update);
-      setMessages((prev) => applyUpdate(prev, update, frame?.at));
+      setMessages((prev) =>
+        applyUpdate(prev, update, frame?.at, frame?.telemetryPromptId),
+      );
     };
   }, [delivery, dismissStalePermission, setMessages]);
 }

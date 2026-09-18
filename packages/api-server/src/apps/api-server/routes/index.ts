@@ -62,6 +62,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     }),
   );
 
+  boot.mountTelemetryRoutes(app);
   boot.mountUsageRoutes(app);
   boot.mountCaseStudiesRoutes(app);
 
