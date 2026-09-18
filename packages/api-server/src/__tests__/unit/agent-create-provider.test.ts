@@ -167,7 +167,7 @@ describe("agent creation with a designated provider", () => {
   });
 
   it.each([
-    { label: "missing", rows: [], code: "FORBIDDEN" },
+    { label: "missing", rows: [], code: "BAD_REQUEST" },
     {
       label: "another owner's",
       rows: [{ ...provider, ownerId: "owner-2" }],
