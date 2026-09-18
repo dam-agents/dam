@@ -6,11 +6,12 @@ import {
   type JobStarted,
   type SatelliteView,
 } from "api-server-api";
-import { argvRefusal, regexProbes } from "api-server-api";
+import { argvRefusal, regexSources } from "api-server-api";
 import { admit, compileCommands, isOnline } from "../domain/admission.js";
 import {
-  evaluateRegexProbes,
-  oracleFor,
+  createRegexEvaluator,
+  RegexDeadlineError,
+  type RegexEvaluator,
 } from "../infrastructure/regex-worker.js";
 import { isTerminal, type JobRow, type SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
@@ -36,6 +37,7 @@ export interface AgentOpsDeps {
     output: string,
   ) => Promise<string | null>;
   retireApproval: (approvalId: string) => Promise<void>;
+  regexEvaluator?: RegexEvaluator;
   now?: () => Date;
 }
 
@@ -60,6 +62,7 @@ function view(
 
 export function createSatelliteAgentOps(deps: AgentOpsDeps) {
   const now = deps.now ?? (() => new Date());
+  const evaluator = deps.regexEvaluator ?? createRegexEvaluator();
 
   async function resolve(
     agentId: string,
@@ -157,18 +160,20 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
 
       let oracle;
       try {
-        oracle = oracleFor(
-          await evaluateRegexProbes(
-            regexProbes(
-              compiled.commands.map((c) => c.parsed),
-              cmd,
-            ),
-          ),
+        oracle = await evaluator.oracleFor(
+          regexSources(compiled.commands.map((c) => c.parsed)),
+          cmd,
         );
-      } catch {
+      } catch (err) {
+        if (err instanceof RegexDeadlineError)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${name} has a command pattern whose regex takes too long on this command — narrow the pattern`,
+          });
+        console.error("[satellites] regex evaluation failed", err);
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `${name} has a command pattern whose regex takes too long on this command — narrow the pattern`,
+          code: "INTERNAL_SERVER_ERROR",
+          message: "could not check this command against the manifest",
         });
       }
 

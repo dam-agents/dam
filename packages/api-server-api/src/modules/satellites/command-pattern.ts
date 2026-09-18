@@ -238,11 +238,6 @@ interface MatchState {
 
 export type RegexOracle = (source: string, value: string) => boolean;
 
-export interface RegexProbe {
-  source: string;
-  value: string;
-}
-
 export function countTokens(patterns: ParsedPattern[]): number {
   let total = 0;
   const walk = (elements: Element[]): void => {
@@ -258,10 +253,7 @@ export function countTokens(patterns: ParsedPattern[]): number {
   return total;
 }
 
-export function regexProbes(
-  patterns: ParsedPattern[],
-  argv: string[],
-): RegexProbe[] {
+export function regexSources(patterns: ParsedPattern[]): string[] {
   const sources = new Set<string>();
   const walk = (elements: Element[]): void => {
     for (const element of elements) {
@@ -273,11 +265,7 @@ export function regexProbes(
     }
   };
   for (const pattern of patterns) walk(pattern.elements);
-
-  const probes: RegexProbe[] = [];
-  for (const source of sources)
-    for (const value of argv) probes.push({ source, value });
-  return probes;
+  return [...sources];
 }
 
 function checkValue(

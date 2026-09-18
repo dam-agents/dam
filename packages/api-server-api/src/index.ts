@@ -788,7 +788,7 @@ export {
   countTokens,
   matchCommand,
   parseCommandPattern,
-  regexProbes,
+  regexSources,
 } from "./modules/satellites/command-pattern.js";
 export type {
   CommandMatch,
@@ -796,7 +796,6 @@ export type {
   ParsedPattern,
   ParseResult,
   RegexOracle,
-  RegexProbe,
 } from "./modules/satellites/command-pattern.js";
 
 export {
