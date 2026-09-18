@@ -1,4 +1,5 @@
 import type { FeatureId } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -10,7 +11,7 @@ import { useFeatures, useSetFeature } from "../api/queries.js";
 interface FeatureRow {
   id: FeatureId;
   label: string;
-  description: string;
+  description: ReactNode;
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
@@ -28,9 +29,23 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "vm-sandboxes",
-    label: "VM sandboxes",
-    description:
-      "Adds the isolation choice to the coding agent’s setup, so an image can be booted as a machine of its own rather than as a pod, with container engines and Kubernetes able to run inside it.",
+    label: "New sandbox runtime",
+    description: (
+      <>
+        Use a new sandbox runtime based on{" "}
+        <a
+          href="https://github.com/smol-machines/smolvm"
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-foreground"
+          onClick={(event) => event.stopPropagation()}
+        >
+          smolvm
+        </a>
+        . Starts much faster, and supports running containers (Docker,
+        Kubernetes).
+      </>
+    ),
   },
   {
     id: "session-costs",

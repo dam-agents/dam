@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-03
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -16,9 +16,11 @@ A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —
 whether this deployment supports microVMs — read from the chart's own value
 rather than from any stored row. A surface that needs both, like the agent
-setup form's isolation choice, asks both and offers nothing until each has
-answered: an unanswered question reads like a no, and a stored draft would
-otherwise be created as something its author did not choose.
+setup form, asks both and acts only once each has answered: an unanswered
+question reads like a no, and an agent would otherwise be created as
+something its author did not choose. The new sandbox runtime is not a choice
+inside the form — with both answers yes, every agent the form creates is a
+microVM, and the form says so in a notice pointing back at the flag.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only. A

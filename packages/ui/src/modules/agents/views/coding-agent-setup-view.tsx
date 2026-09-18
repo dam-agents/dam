@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { sizeInMi } from "../../budgets/lib/slots.js";
@@ -15,7 +16,6 @@ import { ImageSection } from "../../sandboxes/components/setup/image-section.js"
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
-  IsolationSetupSection,
   LifecycleSetupSection,
   NameSection,
   ProviderSection,
@@ -41,9 +41,10 @@ export function CodingAgentSetupView() {
   );
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: flags } = useFeatures();
   const { data: install } = useInstallCapabilities();
-  // UNIT_BOUNDARY_DESCRIPTION: the user's own switch and the install's support for microVMs are different questions, and the answer to the second is the server's. Offering the choice on an install that cannot honour it buys a refusal at the end of a filled-in form. The stored draft outlives either answer, so what is submitted is read through them rather than from the draft alone — a switch left on before the feature was hidden must not still be creating microVMs. Neither answer has arrived on the first render, which reads the same as a no; a draft that wants a microVM therefore waits for them rather than quietly creating the container it would otherwise submit, and a draft that does not is never delayed by a question it is not asking.
+  // UNIT_BOUNDARY_DESCRIPTION: the user's own switch and the install's support for microVMs are different questions, and the answer to the second is the server's. Both must be yes before an agent is created as a microVM, and neither answer has arrived on the first render, which reads the same as a no. Creating on that first render would quietly make a pod for a user who asked for the new runtime, so the form waits for both answers before it can be submitted at all.
   const vmAnswered = flags !== undefined && install !== undefined;
   const offerVm =
     vmAnswered && flags["vm-sandboxes"] === true && install.virtualization;
@@ -73,16 +74,14 @@ export function CodingAgentSetupView() {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
-    vm: offerVm && form.vm,
+    vm: offerVm,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
   );
   const registryPartial = hasPartialRegistryCredential(draft);
   const canCreate =
-    isCodingAgentSetupComplete(draft) &&
-    !createAgent.isPending &&
-    (vmAnswered || !form.vm);
+    isCodingAgentSetupComplete(draft) && !createAgent.isPending && vmAnswered;
 
   const create = async () => {
     if (!canCreate) return;
@@ -114,6 +113,20 @@ export function CodingAgentSetupView() {
         </>
       }
     >
+      {offerVm && (
+        <Callout tone="info" inset className="mb-8 text-sm text-foreground">
+          Experimental new sandbox runtime is{" "}
+          <button
+            type="button"
+            className="font-medium underline"
+            onClick={() => navigateToSettings("features")}
+          >
+            enabled
+          </button>
+          .
+        </Callout>
+      )}
+
       <NameSection value={form.name} onChange={(name) => update({ name })} />
 
       <ImageSection
@@ -136,10 +149,6 @@ export function CodingAgentSetupView() {
         }
         onSubmit={() => void create()}
       />
-
-      {offerVm && (
-        <IsolationSetupSection vm={form.vm} onChange={(vm) => update({ vm })} />
-      )}
 
       <ProviderSection
         selected={form.providerRef}
