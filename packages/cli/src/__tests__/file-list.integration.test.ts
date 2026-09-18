@@ -26,11 +26,13 @@ describe("dam file list (integration)", () => {
   let directories: Record<string, DirListResult>;
   let requested: string[];
   let batches: string[][];
+  let requestLengths: number[];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-file-list-"));
     requested = [];
     batches = [];
+    requestLengths = [];
     directories = {
       "": {
         path: "",
@@ -91,6 +93,7 @@ describe("dam file list (integration)", () => {
     } as unknown as AgentRuntimeContext;
 
     server = createServer(async (req, res) => {
+      requestLengths.push(Buffer.byteLength(req.url ?? ""));
       if (req.url === "/api/version") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
@@ -186,10 +189,18 @@ describe("dam file list (integration)", () => {
     },
   );
 
-  it.each([500, 501])(
-    "batches a frontier of %i directories within the API limit before descending",
-    async (count) => {
-      const paths = Array.from({ length: count }, (_, index) => `d${index}`);
+  it.each([
+    { count: 500, prefix: "d" },
+    { count: 501, prefix: "d" },
+    { count: 501, prefix: "package-with-a-realistic-directory-name-" },
+    { count: 501, prefix: "深い フォルダー%#?-" },
+  ])(
+    "lists $count directories named $prefix within the API and URL limits",
+    async ({ count, prefix }) => {
+      const paths = Array.from(
+        { length: count },
+        (_, index) => `${prefix}${index}`,
+      );
       directories = {
         "": {
           path: "",
@@ -213,13 +224,10 @@ describe("dam file list (integration)", () => {
       const result = await runList("-R", "--json");
       expect(result.exitCode, result.stderr).toBe(0);
       const nested = paths.map((path) => `${path}/nested`);
-      expect(batches).toEqual([
-        [""],
-        paths.slice(0, 500),
-        ...(count > 500 ? [paths.slice(500)] : []),
-        nested.slice(0, 500),
-        ...(count > 500 ? [nested.slice(500)] : []),
-      ]);
+      expect(batches.flat()).toEqual(["", ...paths, ...nested]);
+      expect(batches.every((batch) => batch.length <= 500)).toBe(true);
+      expect(batches.length).toBeLessThan(25);
+      expect(Math.max(...requestLengths)).toBeLessThan(7_200);
       expect(JSON.parse(result.stdout)).toEqual(
         paths
           .flatMap((path) => [

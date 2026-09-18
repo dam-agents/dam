@@ -30,6 +30,32 @@ interface TreeEntry {
 
 const entrySuffix: Record<TreeEntry["type"], string> = { file: "", dir: "/" };
 const MAX_DIRECTORY_BATCH_SIZE = 500;
+const MAX_ENCODED_DIRECTORY_INPUT_LENGTH = 7_000;
+
+function* directoryBatches(frontier: string[]): Generator<string[]> {
+  let paths: string[] = [];
+  const emptyInputLength = encodeURIComponent(
+    JSON.stringify({ 0: { paths: [] } }),
+  ).length;
+  let encodedInputLength = emptyInputLength;
+  for (const path of frontier) {
+    const pathLength = encodeURIComponent(JSON.stringify(path)).length;
+    const separatorLength = paths.length > 0 ? 3 : 0;
+    if (
+      paths.length > 0 &&
+      (paths.length === MAX_DIRECTORY_BATCH_SIZE ||
+        encodedInputLength + separatorLength + pathLength >
+          MAX_ENCODED_DIRECTORY_INPUT_LENGTH)
+    ) {
+      yield paths;
+      paths = [];
+      encodedInputLength = emptyInputLength;
+    }
+    encodedInputLength += (paths.length > 0 ? 3 : 0) + pathLength;
+    paths.push(path);
+  }
+  if (paths.length > 0) yield paths;
+}
 
 export function buildFileListCommand(deps: FileListDeps): Command {
   return new Command("list")
@@ -79,15 +105,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           let frontier = [dir];
           while (frontier.length > 0) {
             const nextFrontier: string[] = [];
-            for (
-              let offset = 0;
-              offset < frontier.length;
-              offset += MAX_DIRECTORY_BATCH_SIZE
-            ) {
-              const paths = frontier.slice(
-                offset,
-                offset + MAX_DIRECTORY_BATCH_SIZE,
-              );
+            for (const paths of directoryBatches(frontier)) {
               const { results } = await trpc.files.listDirs.query({ paths });
               for (const [index, current] of paths.entries()) {
                 const res = results[index];
