@@ -29,6 +29,7 @@ interface TreeEntry {
 }
 
 const entrySuffix: Record<TreeEntry["type"], string> = { file: "", dir: "/" };
+const MAX_DIRECTORY_BATCH_SIZE = 500;
 
 export function buildFileListCommand(deps: FileListDeps): Command {
   return new Command("list")
@@ -75,25 +76,39 @@ export function buildFileListCommand(deps: FileListDeps): Command {
 
         const entries: TreeEntry[] = [];
         try {
-          const pending = [dir];
-          while (pending.length > 0) {
-            const current = pending.pop()!;
-            const { results } = await trpc.files.listDirs.query({
-              paths: [current],
-            });
-            const res = results[0];
-            if (!res || !res.ok) {
-              const reason = res?.error ?? "not-found";
-              process.stderr.write(
-                `error: cannot list \`${current || "/"}\`: ${reason}\n`,
+          let frontier = [dir];
+          while (frontier.length > 0) {
+            const nextFrontier: string[] = [];
+            for (
+              let offset = 0;
+              offset < frontier.length;
+              offset += MAX_DIRECTORY_BATCH_SIZE
+            ) {
+              const paths = frontier.slice(
+                offset,
+                offset + MAX_DIRECTORY_BATCH_SIZE,
               );
-              process.exit(EXIT_RUNTIME_FAILURE);
+              const { results } = await trpc.files.listDirs.query({ paths });
+              for (const [index, current] of paths.entries()) {
+                const res = results[index];
+                if (!res || !res.ok) {
+                  const reason = res?.error ?? "not-found";
+                  process.stderr.write(
+                    `error: cannot list \`${current || "/"}\`: ${reason}\n`,
+                  );
+                  process.exit(EXIT_RUNTIME_FAILURE);
+                }
+                for (const entry of res.entries) {
+                  const path = current
+                    ? `${current}/${entry.name}`
+                    : entry.name;
+                  entries.push({ path, type: entry.type });
+                  if (opts.recursive && entry.type === "dir")
+                    nextFrontier.push(path);
+                }
+              }
             }
-            for (const entry of res.entries) {
-              const path = current ? `${current}/${entry.name}` : entry.name;
-              entries.push({ path, type: entry.type });
-              if (opts.recursive && entry.type === "dir") pending.push(path);
-            }
+            frontier = nextFrontier;
           }
         } catch (e) {
           printTrpcError(e, host);

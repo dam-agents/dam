@@ -25,10 +25,12 @@ describe("dam file list (integration)", () => {
   let host: string;
   let directories: Record<string, DirListResult>;
   let requested: string[];
+  let batches: string[][];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-file-list-"));
     requested = [];
+    batches = [];
     directories = {
       "": {
         path: "",
@@ -79,6 +81,7 @@ describe("dam file list (integration)", () => {
       files: {
         listDirs: async (paths: string[]) => {
           requested.push(...paths);
+          batches.push(paths);
           return paths.map(
             (path): DirListResult =>
               directories[path] ?? { path, ok: false, error: "not-found" },
@@ -179,8 +182,64 @@ describe("dam file list (integration)", () => {
         "empty/\nREADME.md\nsrc/\nsrc/index.ts\nsrc/nested/\nsrc/nested/hello world.ts\n",
       );
       expect(requested.sort()).toEqual(["", "empty", "src", "src/nested"]);
+      expect(batches).toEqual([[""], ["empty", "src"], ["src/nested"]]);
     },
   );
+
+  it.each([500, 501])(
+    "batches a frontier of %i directories within the API limit before descending",
+    async (count) => {
+      const paths = Array.from({ length: count }, (_, index) => `d${index}`);
+      directories = {
+        "": {
+          path: "",
+          ok: true,
+          entries: paths.map((name) => ({ name, type: "dir" })),
+        },
+      };
+      for (const path of paths) {
+        directories[path] = {
+          path,
+          ok: true,
+          entries: [{ name: "nested", type: "dir" }],
+        };
+        directories[`${path}/nested`] = {
+          path: `${path}/nested`,
+          ok: true,
+          entries: [{ name: "file.txt", type: "file" }],
+        };
+      }
+
+      const result = await runList("-R", "--json");
+      expect(result.exitCode, result.stderr).toBe(0);
+      const nested = paths.map((path) => `${path}/nested`);
+      expect(batches).toEqual([
+        [""],
+        paths.slice(0, 500),
+        ...(count > 500 ? [paths.slice(500)] : []),
+        nested.slice(0, 500),
+        ...(count > 500 ? [nested.slice(500)] : []),
+      ]);
+      expect(JSON.parse(result.stdout)).toEqual(
+        paths
+          .flatMap((path) => [
+            { path, type: "dir" },
+            { path: `${path}/nested`, type: "dir" },
+            { path: `${path}/nested/file.txt`, type: "file" },
+          ])
+          .sort((a, b) => a.path.localeCompare(b.path)),
+      );
+    },
+  );
+
+  it("fails without partial output when a sibling in a batch cannot be read", async () => {
+    directories.src = { path: "src", ok: false, error: "forbidden" };
+    const result = await runList("-R", "--json");
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("cannot list `src`: forbidden");
+    expect(batches).toEqual([[""], ["empty", "src"]]);
+  });
 
   it("scopes recursion to the requested subtree and strips trailing slashes", async () => {
     const result = await runList("src///", "-R");
