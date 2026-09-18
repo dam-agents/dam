@@ -107,6 +107,8 @@ Two rules keep it from becoming noise, and they are load-bearing because there i
 
 A claim is released only when no turn was written at all. Once the event is committed it is durable and the outbox carries it, so releasing after a later failure would let the next claim announce the same Job a second time. The hourly sweep therefore does two different things: it *announces* an outcome nobody claimed, and it only *re-wakes* one that was claimed — waking for an unclaimed outcome would bring the Agent up with nothing to read.
 
+Both sweeps — the one that settles a Job whose Lease or expiry has passed, and the hourly retry — run as ordinary platform scheduled jobs on the shared queue ([platform-topology](platform-topology.md)), so they fire once per period across replicas and each tick is idempotent.
+
 An Agent parked over budget cannot wake; its outcome waits and that hourly sweep retries. Holding the pod awake for the Job's duration was rejected as the most expensive option available — hours of compute against the owner's budget to avoid one wake.
 
 ## Approval
