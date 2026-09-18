@@ -1,8 +1,8 @@
 [settings]
 # npm: tools install through the npm CLI, not mise's embedded aube: aube stops
 # for a confirmation on "unpopular" packages (pi-memory) and skips postinstall
-# scripts (pnpm 12 ships as a placeholder its postinstall replaces), and the
-# agent Dockerfiles link into the npm layout (lib/node_modules/<pkg>).
+# scripts, and the agent Dockerfiles link into the npm layout
+# (lib/node_modules/<pkg>). Only gws still needs it.
 npm.package_manager = "npm"
 experimental = true
 lockfile = true
@@ -12,14 +12,17 @@ python.compile = false
 [tools]
 node = "24"
 # pnpm for the builder stage (workspace install) and for agents working in node
-# projects; keep in step with the pnpm pin in the repo .mise/config.toml.
-"npm:pnpm" = "12.3.4"
+# projects; keep in step with the pnpm pin in the repo .mise/config.toml. From
+# its own release, not the npm package: that one ships as a placeholder a
+# postinstall script has to replace.
+pnpm = "12.3.4"
 jq = "latest"
 fd = "latest"
 rg = "latest"
 # Pinned past the 7-day floor: 2.101.0 (2026-09-15) is the first release built
 # against golang.org/x/mod 0.41.0, fixing CVE-2026-56864 and CVE-2026-56865.
-# Back to "latest" once it ages past the floor.
+# It clears the floor on 2026-09-22; until then "latest" resolves back to
+# 2.100.0, which does not carry the fix. Back to "latest" after that date.
 gh = "2.101.0"
 uv = "latest"
 python = "3.12"
@@ -28,6 +31,9 @@ python = "3.12"
 # contribution; these make it usable out of the box.
 kubectl = "latest"
 oc = "latest"
+# A sandbox cluster, lazy like the two above: an agent that never asks for one
+# carries none of it. The shim beside it supplies the flags a cluster needs.
+k3s = "latest"
 
 [hooks]
 postinstall = '''

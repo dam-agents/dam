@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node && \
-    MISE_CACHE_DIR=/root/.cache/mise mise install "npm:pnpm"
+    MISE_CACHE_DIR=/root/.cache/mise mise install pnpm
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
@@ -63,10 +63,12 @@ RUN set -eu; \
     printf '#!/bin/sh\nexec "$(dirname -- "$(realpath -- "$0")")/python3" -m pip "$@"\n' > "$W/bin/$b"; \
     chmod 755 "$W/bin/$b"; \
     done
-# node 24.19.0's bundled npm ships vulnerable brace-expansion 5.0.7, ip-address
-# 10.2.0, tar 7.5.19 and undici 6.27.0; self-upgrade until a node release
-# bundles npm >= 11.19.1. Not npm 12: 12.0.2 predates the 11.19.1 dep bumps and
-# still carries all four.
+# Still needed as of node 24.21.0, which bundles npm 11.19.0 and with it
+# vulnerable brace-expansion 5.0.7, ip-address 10.2.0, tar 7.5.19 and undici
+# 6.27.0. 11.19.1 is the release that bumps all four, so self-upgrade until a
+# node release bundles >= 11.19.1 — re-check by reading npm --version out of a
+# stock node:<version> image, not out of this one. Not npm 12: 12.0.2 predates
+# the same dep bumps and still carries all four.
 RUN mise exec node -- npm install -g npm@11.19.1
 
 FROM base AS builder
@@ -145,29 +147,27 @@ COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
 RUN chmod 0755 /usr/local/lib/platform-python
 RUN set -eu; \
-    install -d -o 65532 /usr/local/share/tool-bin; \
-    mkdir -p /usr/local/share/lazy-tools /usr/local/share/tool-shims /var/log/dam/install /var/cache/dam; \
-    chown 65532 /var/log/dam/install /var/cache/dam; \
-    cd /usr/local/share/lazy-tools; \
-    for spec in python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
-    tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
-    chmod 755 "$bin"; \
-    done
-# docker and k3s are shims rather than tools in the image: an agent that never
-# runs a container should not carry 270 MB of runtime it will not use, and an
-# agent that wants one should not have to be told how to get it.
+    install -d -o 65532 /usr/local/share/tool-bin /usr/local/share/lazy-tools; \
+    mkdir -p /usr/local/share/tool-shims /var/log/dam/install /var/cache/dam; \
+    chown 65532 /var/log/dam/install /var/cache/dam
+# Two shim directories, and one rule decides which one a tool lands in: whether
+# the shim still has work to do once the tool is installed.
 #
-# Unlike the mise-backed shims above, these sit ahead of the real binaries
-# rather than behind them, because they keep a job after the install: the docker
-# one starts a daemon that no init system is going to start, and the k3s one
-# supplies the --data-dir and --container-runtime-endpoint without which a
-# sandbox cluster does not work. Left last on PATH, each would be shadowed by
-# the binary it had just installed and would never run a second time.
-# dam-tool-real resolves past both shim directories.
+# docker and k3s do, so they go here, ahead of the binary they install. The
+# docker one starts a daemon no init system is going to start; the k3s one
+# supplies the --data-dir and --container-runtime-endpoint a sandbox cluster
+# cannot work without. Left last on PATH, each would be shadowed by the binary
+# it had just installed and would never run a second time. Everything in
+# lazy-tools has no such job, so it sits last and any real binary wins.
+#
+# Both are shims rather than tools in the image because an agent that never runs
+# a container should not carry 270 MB of runtime it will not use, and one that
+# wants a container should not have to be told how to get it. dam-tool-real
+# resolves past both directories.
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-tool-real /usr/local/bin/dam-tool-real
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-auto-install /usr/local/bin/dam-auto-install
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-containerd /usr/local/bin/dam-containerd
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-lazy-tool /usr/local/bin/dam-lazy-tool
 COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/tool-shims/docker
 COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/tool-shims/k3s
 
@@ -185,6 +185,12 @@ RUN mkdir -p /home/agent /etc/logrotate.d /etc/pki/ca-trust/source/anchors /etc/
     sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
     echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
 
+# The eager set is named here; the lazy set is whatever the mise config declares
+# that this did not install, so a tool is named once and cannot be both. That is
+# what python used to be: installed eagerly and also given shims, four places
+# behind the real one on PATH, where they could never run.
+#
+# k3s is skipped because it has a shim of its own under the rule above.
 USER 65532
 RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh uv; \
@@ -192,7 +198,18 @@ RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node; \
     test -x /usr/local/share/tool-bin/uv && test -x /usr/local/share/tool-bin/uvx; \
     pip --version | grep -q "^pip "; \
-    pip list >/dev/null
+    pip list >/dev/null; \
+    cd /usr/local/share/lazy-tools; \
+    MISE_CACHE_DIR=/tmp/mise-cache mise ls --json \
+    | jq -r 'to_entries[] | select(.value[0].installed | not) | .key' \
+    | while read -r tool; do \
+    case "$tool" in k3s) continue ;; esac; \
+    bin="${tool##*/}"; bin="${bin##*:}"; \
+    case "$tool" in "npm:@googleworkspace/cli") bin=gws ;; esac; \
+    printf '#!/bin/sh\nexec dam-lazy-tool %s %s "$@"\n' "$tool" "$bin" > "$bin"; \
+    chmod 755 "$bin"; \
+    done; \
+    ls /usr/local/share/lazy-tools
 
 COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat

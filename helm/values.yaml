@@ -989,8 +989,8 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
-    # k3s: the sandbox resolves the release channel, then downloads from GitHub
-    # above; get.k3s.io is for an agent that runs the upstream installer itself
+    # k3s: the sandbox installs it through mise, from GitHub above. These two
+    # are only for an agent that runs the upstream installer itself
     - get.k3s.io
     - update.k3s.io
 

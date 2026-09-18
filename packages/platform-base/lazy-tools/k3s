@@ -1,12 +1,16 @@
 #!/bin/sh
 # Reached only when the image ships no k3s, which is the normal case.
 #
-# The release binary is fetched directly rather than through get.k3s.io. That
-# installer refuses to run at all unless it finds systemd or openrc to hand the
-# service to, and a sandbox has neither — its init is catatonit and the shims
-# start their daemons themselves. The version still comes from the same stable
-# channel the installer resolves, and the published checksum is still verified:
-# what is skipped is the service wiring, not the integrity check.
+# k3s is installed through mise like every other tool here, so it arrives with
+# the same lockfile, release-age floor and provenance checking as the rest. The
+# upstream get.k3s.io installer is deliberately not used: it refuses to run
+# unless it finds systemd or openrc to hand a service to, and a sandbox has
+# neither — its init is catatonit and these shims start their daemons
+# themselves.
+#
+# Unlike the mise-backed shims in lazy-tools, this one stays ahead of the binary
+# it installs, because it has work to do on every call and not just the first:
+# the flags below are what make a cluster work in a sandbox at all.
 #
 # `--data-dir` is defaulted onto the machine's storage disk: a guest's rootfs is
 # an overlay, overlayfs refuses an overlay as an upperdir, and k3s's containerd
@@ -24,45 +28,18 @@ set -eu
 umask 022
 
 if ! dam-tool-real k3s >/dev/null 2>&1; then
-    # A cluster needs a machine of its own, which only the vm Backend gives: the
-    # install writes to /usr/local/bin and k3s then needs root to run at all.
-    # Refusing here keeps the failure early and legible, rather than a permission
-    # error after a 70 MB download.
+    # A cluster needs a machine of its own, which only the vm Backend gives: k3s
+    # needs root to run at all. Refusing here keeps the failure early and
+    # legible, rather than one buried inside a cluster that can never start.
     [ "$(id -u)" = 0 ] || {
         echo "k3s needs root, which a container sandbox does not have; use a VM sandbox to run a cluster" >&2
         exit 1
     }
-    dam-auto-install k3s sh -c '
-        set -eu
-        case $(uname -m) in
-        x86_64) arch=amd64; suffix= ;;
-        aarch64) arch=arm64; suffix=-arm64 ;;
-        *) echo "no k3s release is published for $(uname -m)" >&2; exit 1 ;;
-        esac
-
-        # The channel URL redirects to the release page of the current stable;
-        # the last segment of where it lands is the version tag.
-        tag=$(curl -sS -L -o /dev/null -w "%{url_effective}" \
-            https://update.k3s.io/v1-release/channels/stable | sed "s|.*/||")
-        [ -n "$tag" ] || { echo "could not resolve the k3s stable channel" >&2; exit 1; }
-
-        # A + is not valid unencoded in a GitHub release path, and every k3s tag
-        # carries one.
-        rel=https://github.com/k3s-io/k3s/releases/download/$(printf %s "$tag" | sed "s/+/%2B/")
-        tmp=$(mktemp -d)
-        trap "rm -rf $tmp" EXIT
-        curl -sSfL -o "$tmp/k3s" "$rel/k3s$suffix"
-        curl -sSfL -o "$tmp/sums" "$rel/sha256sum-$arch.txt"
-
-        want=$(grep " k3s$suffix$" "$tmp/sums" | cut -d" " -f1)
-        got=$(sha256sum "$tmp/k3s" | cut -d" " -f1)
-        [ -n "$want" ] && [ "$want" = "$got" ] || {
-            echo "k3s checksum mismatch for $tag" >&2; exit 1; }
-
-        install -m 755 "$tmp/k3s" /usr/local/bin/k3s
-        echo "installed k3s $tag"'
+    dam-auto-install k3s env MISE_AUTO_INSTALL=false mise install k3s
 fi
-real=$(dam-tool-real k3s)
+# The postinstall hook normally puts it in tool-bin, which dam-tool-real finds;
+# mise itself is the fallback for a hook that could not write there.
+real=$(dam-tool-real k3s 2>/dev/null || mise which k3s)
 
 case "${1:-}" in
 server | agent)
