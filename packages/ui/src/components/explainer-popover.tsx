@@ -1,5 +1,5 @@
 import { Help } from "@carbon/icons-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
   Popover,
@@ -34,6 +34,7 @@ export function ExplainerPopover({
     clearTimeout(closeTimer.current);
     closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
   };
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

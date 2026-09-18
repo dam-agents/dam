@@ -272,6 +272,27 @@ function slackConversationKey(ref: SlackConversationRef): string {
   return `${ref.teamId}/${ref.channelId}`;
 }
 
+const SLACK_NAME_BUDGET_MS = 2_000;
+
+function withinBudget<T>(
+  work: Promise<T>,
+  budgetMs: number,
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), budgetMs);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -540,15 +561,19 @@ export function createAgentsService(deps: {
       refs.set(slackConversationKey(ref), ref);
     }
     if (refs.size === 0) return names;
-    try {
-      const resolved = await deps.resolveSlackChannelNames([...refs.values()]);
-      for (const entry of resolved) {
-        names.set(slackConversationKey(entry), entry.name);
-      }
-    } catch {
-      return names;
+    const resolved = await withinBudget(
+      deps.resolveSlackChannelNames([...refs.values()]),
+      SLACK_NAME_BUDGET_MS,
+    );
+    for (const entry of resolved ?? []) {
+      names.set(slackConversationKey(entry), entry.name);
     }
     return names;
+  }
+
+  async function namedChannelsOf(agentId: string): Promise<ChannelConfig[]> {
+    const channels = await deps.listChannelsByAgent(agentId);
+    return withChannelNames(channels, await slackChannelNames([channels]));
   }
 
   function withChannelNames(
@@ -577,14 +602,14 @@ export function createAgentsService(deps: {
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
     const [channels, status, userEnv, templateUpdate] = await Promise.all([
-      deps.listChannelsByAgent(infra.id),
+      namedChannelsOf(infra.id),
       safeStatus(infra.id),
       deps.agentEnvRepo.list(infra.id),
       templateUpdateFor(infra),
     ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
-      withChannelNames(channels, await slackChannelNames([channels])),
+      channels,
       status.failures,
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
@@ -674,19 +699,20 @@ export function createAgentsService(deps: {
       });
     }
 
-    const status = await safeStatus(id);
     const boundChannels = txResult.value.channels;
+    const [status, channelNames, templateUpdate] = await Promise.all([
+      safeStatus(id),
+      slackChannelNames([boundChannels]),
+      templateUpdateFor(infra),
+    ]);
     return ok(
       assembleAgent(
         infra,
-        withChannelNames(
-          boundChannels,
-          await slackChannelNames([boundChannels]),
-        ),
+        withChannelNames(boundChannels, channelNames),
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
-        await templateUpdateFor(infra),
+        templateUpdate,
         status.features,
         status.unsupportedKinds,
       ),
@@ -715,14 +741,13 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap] = await Promise.all([
+      const [failuresMap, envMap, channelNames] = await Promise.all([
         deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),
+        slackChannelNames([...channelMap.values()]),
       ]);
-
-      const channelNames = await slackChannelNames([...channelMap.values()]);
 
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
@@ -1245,6 +1270,7 @@ export function createAgentsService(deps: {
       if (!binding) return null;
       const flow = await binding.peekFlow(flowId);
       if (!flow) return null;
+      if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
       if (flow.channelTitle)
         return {
           slackChannelId: flow.slackChannelId,
@@ -1274,6 +1300,7 @@ export function createAgentsService(deps: {
       if (!binding) return null;
       const flow = await binding.peekFlow(flowId);
       if (!flow) return null;
+      if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
       return { chatTitle: flow.chatTitle ?? null };
     },
 

@@ -46,18 +46,19 @@ export function SetupChannelsSection({
   onChange: (next: SetupChannelSelection) => void;
   onGoToConnections?: () => void;
 }) {
-  const available = useAgents().data?.availableChannels ?? {};
-  const offered = ROWS.filter((row) => available[row.key]);
+  const available = useAgents().data?.availableChannels;
+  const offered = ROWS.filter((row) => available?.[row.key]);
 
   return (
     <section className="mb-8">
       <SectionLabel spaced>Channels</SectionLabel>
-      {offered.length === 0 ? (
+      {available && offered.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No messenger is set up on this platform, so there is nothing to
           connect yet. Ask your operator to configure Slack or Telegram.
         </p>
-      ) : (
+      )}
+      {offered.length > 0 && (
         <div className="flex flex-col gap-2">
           {offered.map((row) => (
             <MessengerCheckboxRow
@@ -93,8 +94,10 @@ function MessengerCheckboxRow({
   onCheckedChange: (checked: boolean) => void;
   explainer?: ReactNode;
 }) {
+  const inputId = `setup-channel-${row.key}`;
   return (
     <label
+      htmlFor={inputId}
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-md border px-4 py-3 transition-colors",
         checked ? "border-primary bg-muted/50" : "border-border bg-background",
@@ -116,6 +119,7 @@ function MessengerCheckboxRow({
         </span>
       </span>
       <Checkbox
+        id={inputId}
         checked={checked}
         onCheckedChange={(state) => onCheckedChange(state === true)}
         aria-label={row.label}

@@ -13,6 +13,7 @@ export function useTelegramChats(agentId: string | undefined) {
   return useQuery({
     ...trpc.agents.listTelegramChats.queryOptions({ agentId: agentId ?? "" }),
     enabled: !!agentId,
+    staleTime: 60_000,
   });
 }
 

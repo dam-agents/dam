@@ -1,5 +1,6 @@
 import {
   ChannelType,
+  isAmbientThreadKey,
   SessionType,
   type SessionView,
   slackChannelIdFromThreadKey,
@@ -44,7 +45,11 @@ export function useSessionConversations(
     (session: SessionView) => {
       if (session.type === SessionType.ChannelSlack) {
         const channelId = slackChannelIdFromThreadKey(session.threadTs);
-        return channelId ? slackByChannelId.get(channelId) : undefined;
+        const name = channelId ? slackByChannelId.get(channelId) : undefined;
+        if (!name) return undefined;
+        return isAmbientThreadKey(session.threadTs)
+          ? `${name} · ambient`
+          : name;
       }
       if (session.type === SessionType.ChannelTelegram)
         return session.threadTs

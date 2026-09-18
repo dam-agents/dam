@@ -54,8 +54,7 @@ export function AgentBindPicker({
     [displayedAgents, query],
   );
   const selectedId = pickedId ?? justCreatedId;
-  const selected =
-    sections.flatMap((s) => s.agents).find((a) => a.id === selectedId) ?? null;
+  const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
 
   const handleCreated = (agent: AgentView) => {
     markCreated(agent);

@@ -180,10 +180,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated && ready?.lastTransitionTime
       ? new Date(ready.lastTransitionTime)
       : undefined;
+  const createdAt = createdAtOf(obj);
   return {
     id,
     name: spec.name,
-    ...(createdAtOf(obj) ? { createdAt: createdAtOf(obj) } : {}),
+    ...(createdAt ? { createdAt } : {}),
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
     owner: agentOwner(obj),
     spec,

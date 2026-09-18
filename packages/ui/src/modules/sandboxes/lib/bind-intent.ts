@@ -26,10 +26,10 @@ export function consumeBindIntent(agentId: string): BindMessenger[] | null {
   } catch {
     return null;
   }
+  if (intent?.agentId !== agentId) return null;
   try {
     sessionStorage.removeItem(KEY);
   } catch {}
-  if (intent?.agentId !== agentId) return null;
   const messengers = (intent.messengers ?? []).filter(
     (m): m is BindMessenger => m === "slack" || m === "telegram",
   );
