@@ -32,6 +32,8 @@ const entrySuffix: Record<TreeEntry["type"], string> = { file: "", dir: "/" };
 const MAX_DIRECTORY_BATCH_SIZE = 500;
 const MAX_ENCODED_DIRECTORY_INPUT_LENGTH = 7_000;
 
+class DirectoryPathTooLongError extends Error {}
+
 function* directoryBatches(frontier: string[]): Generator<string[]> {
   let paths: string[] = [];
   const emptyInputLength = encodeURIComponent(
@@ -40,6 +42,11 @@ function* directoryBatches(frontier: string[]): Generator<string[]> {
   let encodedInputLength = emptyInputLength;
   for (const path of frontier) {
     const pathLength = encodeURIComponent(JSON.stringify(path)).length;
+    if (emptyInputLength + pathLength > MAX_ENCODED_DIRECTORY_INPUT_LENGTH) {
+      throw new DirectoryPathTooLongError(
+        `cannot list \`${path}\`: directory path exceeds the request URL size limit`,
+      );
+    }
     const separatorLength = paths.length > 0 ? 3 : 0;
     if (
       paths.length > 0 &&
@@ -129,7 +136,11 @@ export function buildFileListCommand(deps: FileListDeps): Command {
             frontier = nextFrontier;
           }
         } catch (e) {
-          printTrpcError(e, host);
+          if (e instanceof DirectoryPathTooLongError) {
+            process.stderr.write(`error: ${e.message}\n`);
+          } else {
+            printTrpcError(e, host);
+          }
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 

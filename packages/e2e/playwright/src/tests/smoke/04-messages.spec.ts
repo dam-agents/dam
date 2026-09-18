@@ -84,12 +84,16 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
       await expect(userMessage).toBeVisible();
       await expect(userMessage).toHaveAttribute("data-role", "user");
 
-      const reply = userMessage.locator("xpath=following-sibling::*[1]");
+      const reply = userMessage.locator(
+        'xpath=following-sibling::*[@data-testid="chat-message"][1]',
+      );
       await expect(reply).toHaveAttribute("data-role", "assistant");
       await expect(reply).toContainText(offsetReplyHead.trim());
       await expect(reply).toContainText(offsetReplyTail, { timeout: 30_000 });
 
-      const backgroundPrompt = reply.locator("xpath=following-sibling::*[1]");
+      const backgroundPrompt = reply.locator(
+        'xpath=following-sibling::*[@data-testid="chat-message"][1]',
+      );
       await expect(backgroundPrompt).toHaveAttribute("data-role", "user");
       await expect(backgroundPrompt).toContainText(offsetBackgroundPrompt);
     });

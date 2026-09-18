@@ -240,6 +240,46 @@ describe("dam file list (integration)", () => {
     },
   );
 
+  it.each([{ flags: [] }, { flags: ["-R", "--json"] }])(
+    "rejects a requested directory over the URL budget before listing it ($flags)",
+    async ({ flags }) => {
+      const path = Array.from({ length: 12 }, () => "深".repeat(70)).join("/");
+      directories[path] = { path, ok: true, entries: [] };
+
+      const result = await runList(path, ...flags);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(
+        "directory path exceeds the request URL size limit",
+      );
+      expect(batches).toEqual([]);
+    },
+  );
+
+  it("fails without partial output when a nested directory exceeds the URL budget", async () => {
+    let path = "src";
+    for (let depth = 0; depth < 12; depth++) {
+      const name = "深".repeat(70);
+      directories[path] = {
+        path,
+        ok: true,
+        entries: [{ name, type: "dir" }],
+      };
+      path = `${path}/${name}`;
+    }
+    directories[path] = { path, ok: true, entries: [] };
+
+    const result = await runList("-R", "--json");
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(
+      "directory path exceeds the request URL size limit",
+    );
+    expect(requested).toContain("src");
+    expect(requested).not.toContain(path);
+    expect(Math.max(...requestLengths)).toBeLessThan(7_200);
+  });
+
   it("fails without partial output when a sibling in a batch cannot be read", async () => {
     directories.src = { path: "src", ok: false, error: "forbidden" };
     const result = await runList("-R", "--json");
