@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -31,7 +32,8 @@ case "$2" in
   start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"
     if [ -n "$FAKE_START_FAIL_ONCE" ] && [ ! -f "$FAKE_STATE/.failed-once" ]; then touch "$FAKE_STATE/.failed-once"; echo "$FAKE_START_FAIL_ONCE" >&2; exit 1; fi
     echo running > "$FAKE_STATE/$4" ;;
-  stop) echo stopped > "$FAKE_STATE/$4" ;;
+  stop) [ -n "$FAKE_STOP_SLEEP" ] && sleep "$FAKE_STOP_SLEEP"
+    echo stopped > "$FAKE_STATE/$4" ;;
   delete) rm -f "$FAKE_STATE/$4" ;;
 esac
 `
@@ -166,6 +168,63 @@ func TestRejectsWrongToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp.Body.Close()
+}
+
+// TEST_OVERVIEW: answers on the guest's loopback port the way a booted guest does, so a test can say when the platform could have known the agent was up.
+func guestServing(t *testing.T, port int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+}
+
+// TEST_SCENARIO: the runtime's start call lingers seconds past the moment the guest begins serving, and the platform used to spend every one of them telling the user their agent was not ready. The guest answers here while the start is still running, and the machine must be called ready on the strength of that answer alone — the assertion that it is still starting is the point, since a status that only turned ready after the call returned would satisfy the first half.
+func TestAGuestThatAnswersIsReadyBeforeItsStartReturns(t *testing.T) {
+	t.Setenv("FAKE_START_SLEEP", "3")
+	h := newHarness(t)
+	c := h.client()
+	guestServing(t, h.node.PortMin+loopbackOffset)
+
+	st, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.Equal(t, StateCreating, st.State)
+
+	var seen MachineStatus
+	require.Eventually(t, func() bool {
+		got, err := c.Status(t.Context(), "agent-a")
+		if err != nil {
+			return false
+		}
+		seen = got
+		return got.Ready
+	}, 2*time.Second, 10*time.Millisecond, "the guest answered but the machine was never called ready")
+	assert.Contains(t, []string{StateCreating, StateStarting}, seen.State,
+		"the machine was only called ready once its start had finished, which is the wait this removes")
+}
+
+// TEST_SCENARIO: the same answer means nothing on the way down. A machine being stopped keeps answering until it dies, so a stop that is still running must not be read as readiness — otherwise a hibernating agent would report itself ready for as long as its guest took to go.
+func TestAGuestAnsweringThroughItsOwnStopIsNotReady(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	guestServing(t, h.node.PortMin+loopbackOffset)
+
+	_, err := c.Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.True(t, h.settle(t, "agent-a").Ready)
+
+	t.Setenv("FAKE_STOP_SLEEP", "2")
+	st, err := c.Ensure(t.Context(), "agent-a", spec(false))
+	require.NoError(t, err)
+	require.Equal(t, StateStopping, st.State)
+	for range 20 {
+		got, err := c.Status(t.Context(), "agent-a")
+		require.NoError(t, err)
+		require.False(t, got.Ready, "a machine on its way out was called ready because its guest still answered")
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TEST_SCENARIO: a vm agent waking for the first time: the machine is created with everything the guest needs to reach only its gateway, then started; the same request again is a no-op that reports the running machine, its port and its applied size.
@@ -367,6 +426,40 @@ func TestStartRecoversAnUncleanlyStoppedMachine(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
 	require.NoError(t, h.node.Runtime.Start("m1"))
 	assert.NoFileExists(t, filepath.Join(dir, "overlay.qcow2"))
+}
+
+// TEST_SCENARIO: the runtime expands its disk templates the first time a machine needs one, into a directory that a container throws away with the pod — so the expansion lands on whoever creates the next agent, measured at 24 s. Warming picks exactly the templates that are missing: one already expanded is left alone, so a warm pod does no work, and anything that is not a packed template is none of its business.
+func TestOnlyTheTemplatesThatAreMissingAreWarmed(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"storage-template.ext4.zst", "overlay-template.ext4.zst"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("packed"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "overlay-template.ext4"), []byte("already expanded"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "smolvm"), []byte("bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt.zst"), []byte("unrelated"), 0o644))
+
+	assert.Equal(t, []string{filepath.Join(dir, "storage-template.ext4.zst")}, templatesToWarm(dir))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "storage-template.ext4"), []byte("expanded"), 0o644))
+	assert.Empty(t, templatesToWarm(dir), "a pod whose templates are already expanded warms nothing")
+}
+
+// TEST_SCENARIO: a stop returns before its VMM does, and a start issued while that VMM still holds the disks is refused — which reads exactly like a machine that can never start, so the next attempt repeats it forever. The wait is what breaks that, and the machine that is genuinely stopped must not pay for it: both halves are asserted here, since a wait that always returned true would satisfy the second alone.
+func TestAStartWaitsForTheVMMTheStopLeftBehind(t *testing.T) {
+	proc := t.TempDir()
+	dir := "/home/smolvm/.cache/smolvm/vms/abc123"
+	require.NoError(t, os.MkdirAll(filepath.Join(proc, "100"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(proc, "100", "cmdline"),
+		[]byte("/proc/self/exe\x00_boot-vm\x00"+dir+"/boot-config.json"), 0o644))
+
+	started := time.Now()
+	assert.False(t, vmmGone(proc, dir, 150*time.Millisecond), "a VMM still holding the disks was reported gone")
+	assert.GreaterOrEqual(t, time.Since(started), 150*time.Millisecond, "the wait gave up before its limit")
+
+	require.NoError(t, os.RemoveAll(filepath.Join(proc, "100")))
+	started = time.Now()
+	assert.True(t, vmmGone(proc, dir, 10*time.Second))
+	assert.Less(t, time.Since(started), time.Second, "a stopped machine waited on a VMM that was already gone")
 }
 
 // TEST_SCENARIO: smolvm abandoned a machine's boot: of three processes only the one whose command line names that machine's vm dir is an orphan to kill.
@@ -628,7 +721,7 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 	h := newHarness(t)
 	fetches := filepath.Join(t.TempDir(), "fetches")
 	crane := filepath.Join(t.TempDir(), "crane")
-	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho \"$@\" >> "+fetches+"\nd=$(mktemp -d)\necho rootfs > \"$d/hello\"\ntar -cf - -C \"$d\" .\n"), 0o755))
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(fetches)), 0o755))
 	h.node.Crane = crane
 
 	c := h.client()
@@ -641,14 +734,25 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 
 	pulled, err := os.ReadFile(fetches)
 	require.NoError(t, err)
-	assert.Equal(t, 1, len(strings.Fields(strings.TrimSpace(string(pulled))))/3,
+	assert.Equal(t, 1, strings.Count(string(pulled), "export "),
 		"the second machine boots from the tree the first left behind: %s", pulled)
-	rootfs := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
-	assert.Contains(t, h.calls(), "-I "+rootfs,
-		"smolvm is handed the unpacked tree, never the registry reference")
-	unpacked, err := os.ReadFile(filepath.Join(rootfs, "hello"))
-	require.NoError(t, err, "the tree is unpacked, not left as an archive")
+	assert.Equal(t, 1, strings.Count(string(pulled), "config "),
+		"and its config was read once, with the tree, rather than per machine: %s", pulled)
+
+	cached := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
+	unpacked, err := os.ReadFile(filepath.Join(cached, "rootfs", "hello"))
+	require.NoError(t, err, "the tree every machine of this image shares")
 	assert.Equal(t, "rootfs\n", string(unpacked))
+
+	calls := h.calls()
+	assert.Contains(t, calls, "-I "+filepath.Join(cached, "rootfs"), "smolvm is handed the shared tree")
+	assert.Contains(t, calls, "-- /entry serve",
+		"and told what to run, which the tree does not say and without which the machine boots to nothing")
+	assert.Contains(t, calls, "-w /app", "in the directory the image starts in")
+	assert.Contains(t, calls, "-e PATH=/bin", "with the image's environment")
+	assert.Contains(t, calls, "-e A=b",
+		"and the platform's winning where the two collide, or the guest is the image's idea of a container rather than an agent")
+	assert.NotContains(t, calls, "-e A=image", "which is what the image said")
 }
 
 // TEST_SCENARIO: every deploy adds an image under a fresh tag and nothing else prunes the shared volume, so without eviction it fills and then refuses every machine. The oldest archive goes first, and the one just fetched is never the victim.
@@ -676,7 +780,7 @@ func TestTheImageCacheEvictsTheOldestArchiveFirst(t *testing.T) {
 	_, oldestErr := os.Stat(oldest)
 	_, newerErr := os.Stat(newer)
 	_, keepErr := os.Stat(keep)
-	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first")
+	assert.True(t, os.IsNotExist(oldestErr), "the oldest archive goes first, none of these being one a machine is running from")
 	assert.NoError(t, newerErr, "the newer one stays while the budget allows it")
 	assert.NoError(t, keepErr, "the archive just fetched is never the one evicted")
 	_, strangerErr := os.Stat(stranger)
@@ -702,21 +806,25 @@ func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
 }
 
-// TEST_SCENARIO: an image is unpacked once and shared. smolvm mounts an unpacked tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — so the runner keeps the tree, and a runner that still holds an archive from an earlier release goes on booting from it rather than refetching.
-func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T) {
+// TEST_SCENARIO: an image is unpacked once and every machine of it boots that one tree, which is what the sharing is for — but a tree alone names no entrypoint, so what the image says to run is read with it and kept beside it. A tree left by the release that stored only files has no such record, and a machine booted from one starts and runs nothing; it is replaced rather than trusted. An archive an earlier release cached still boots, since smolvm reads the image out of it.
+func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 	h := newHarness(t)
 	images := filepath.Join(h.node.StateDir, "images")
-	require.NoError(t, os.MkdirAll(filepath.Join(images, "quay.io_x_vm_1", "usr"), 0o755))
+	tree := filepath.Join(images, "quay.io_x_vm_1")
+	require.NoError(t, os.MkdirAll(filepath.Join(tree, "usr"), 0o755))
 
+	fetches := filepath.Join(t.TempDir(), "fetches")
 	crane := filepath.Join(t.TempDir(), "crane")
-	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(fetches)), 0o755))
 	h.node.Crane = crane
 
 	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	h.settle(t, "agent-a")
-	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_vm_1"),
-		"the unpacked tree is used and no fetch is attempted, or the failing crane would have surfaced")
+	assert.NotContains(t, h.calls(), "-I "+tree+" ",
+		"a tree with no launch beside it names no entrypoint, so a machine booted from one would start and never run the harness")
+	assert.FileExists(t, fetches, "so the image is fetched again rather than the bare tree being trusted")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(tree, "rootfs"), "and the machine boots what that fetch wrote")
 
 	legacy := filepath.Join(images, "quay.io_x_old_9.tar")
 	require.NoError(t, os.WriteFile(legacy, []byte("tar"), 0o644))
@@ -725,11 +833,30 @@ func TestARunnerBootsFromAnUnpackedTreeAndStillHonoursAnOldArchive(t *testing.T)
 	_, err = h.client().Ensure(t.Context(), "agent-b", s)
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
-	assert.Contains(t, h.calls(), "-I "+legacy,
-		"an archive left by an earlier release still boots rather than being refetched")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_old_9", "rootfs"),
+		"an archive still on disk is upgraded rather than kept, or an install that already ran an image would never get the faster path for it")
 }
 
-// TEST_SCENARIO: a tar that cannot write into the rootfs it is restoring reports every entry it failed on, which for a whole image is megabytes. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches and unpacks the image again. What is kept is the head, because the first failure is the one the rest follow from.
+// TEST_SCENARIO: upgrading an archive to a tree means fetching the image again, and a fetch can fail — a registry that is down, a tag that has been deleted. An archive already on disk would still have started that machine, so a failed upgrade falls back to it rather than failing the create: the point of keeping the archive is precisely the case where the fetch cannot be made.
+func TestAFailedUpgradeStillBootsTheArchiveOnDisk(t *testing.T) {
+	h := newHarness(t)
+	broken := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(broken, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	h.node.Crane = broken
+	kept := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar")
+	require.NoError(t, os.MkdirAll(filepath.Dir(kept), 0o755))
+	require.NoError(t, os.WriteFile(kept, []byte("tar"), 0o644))
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	st := h.settle(t, "agent-a")
+
+	assert.Equal(t, StateRunning, st.State, "the create is not failed by an upgrade that could not be made")
+	assert.Contains(t, h.calls(), "-I "+kept,
+		"and the archive on disk still starts the machine, which is the whole of what it is kept for")
+}
+
+// TEST_SCENARIO: a tool that fails per entry reports per entry, and for a whole image that reached megabytes when the runner still unpacked one itself. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches the image again. The cap belongs to the boundary rather than to whichever tool is behind it. What is kept is the head, because the first failure is the one the rest follow from.
 func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
 	var flood strings.Builder
 	for i := 0; flood.Len() < 3_000_000; i++ {
@@ -741,4 +868,91 @@ func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
 	assert.Contains(t, kept, "usr/lib/entry-0:", "and it is the head, where the first failure is")
 	assert.Contains(t, kept, "truncated", "and it says that it is not the whole story")
 	assert.Equal(t, "boom", firstLines("  boom  "), "output that already fits is passed through, trimmed")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a real crane answers two questions about an image and the runner asks both — what it says to run, and what its filesystem holds. A fake that answers only one would let a change that stopped asking the other pass.
+func fakeCrane(log string) string {
+	return "#!/bin/sh\n" +
+		"echo \"$@\" >> " + log + "\n" +
+		"if [ \"$1\" = config ]; then\n" +
+		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\",\"A=image\"],\"WorkingDir\":\"/app\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"d=$(mktemp -d); echo rootfs > \"$d/hello\"; tar -cf - -C \"$d\" .\n"
+}
+
+// TEST_SCENARIO: an unpacked image is not a spare a machine consumes at create — it is the read-only lower layer every machine of that image keeps mounted for as long as it runs. Evicting one to make room therefore takes a running guest's filesystem away from it, and the machine does not fail at the moment of the deletion but the next time it reads a file it no longer has. The cache reads the machines' own stored specs to find which images are spoken for, and goes over its budget rather than free one of them.
+func TestTheImageCacheNeverEvictsAnImageAMachineIsRunning(t *testing.T) {
+	h := newHarness(t)
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(filepath.Join(t.TempDir(), "log"))), 0o755))
+	h.node.Crane = crane
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "agent-a")
+
+	dir := filepath.Join(h.node.StateDir, "images")
+	booted := filepath.Join(dir, "quay.io_x_vm_1")
+	require.DirExists(t, booted, "the tree agent-a is running from")
+	old := time.Now().Add(-9 * time.Hour)
+	require.NoError(t, os.Chtimes(booted, old, old))
+
+	spare := filepath.Join(dir, "quay.io_x_other_2.tar")
+	require.NoError(t, os.WriteFile(spare, make([]byte, 1<<20), 0o644))
+
+	h.node.evictImages(dir, spare, 1)
+
+	assert.DirExists(t, booted,
+		"the oldest entry by far, and still the rootfs of a running machine — a full volume is the lesser harm")
+	_, spareErr := os.Stat(spare)
+	assert.NoError(t, spareErr, "and what was just fetched is never the one evicted either")
+}
+
+// TEST_SCENARIO: a runner restart takes its machines with it but not their specs, so the controller asks for each one again and the runner creates it afresh — with that machine's own spec already on disk naming the image it is about to unpack. The guard that keeps an in-use image from being replaced must not read that as somebody else's claim, or a runner would come back unable to recreate exactly the machines it just lost, and only for images whose cache entry predates the launch record.
+func TestARestartedRunnerCanRecreateTheMachineThatOwnsTheImage(t *testing.T) {
+	h := newHarness(t)
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte(fakeCrane(filepath.Join(t.TempDir(), "log"))), 0o755))
+	h.node.Crane = crane
+
+	s := spec(true)
+	require.NoError(t, os.MkdirAll(filepath.Join(h.node.StateDir, "machines", "agent-a"), 0o755))
+	require.NoError(t, h.node.writeSpec("agent-a", s), "the spec a restart leaves behind")
+	stale := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1")
+	require.NoError(t, os.MkdirAll(filepath.Join(stale, "usr"), 0o755), "and a tree from the release that stored no launch")
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", s)
+	require.NoError(t, err)
+	st := h.settle(t, "agent-a")
+
+	assert.Equal(t, StateRunning, st.State,
+		"the machine is recreated: its own spec is not another machine's claim on the image")
+	assert.FileExists(t, filepath.Join(stale, launchFile),
+		"and the tree it could not have booted is replaced by one that says what to run")
+}
+
+// TEST_SCENARIO: a create that is normally tens of milliseconds has been seen taking twenty seconds, and only when the platform is the one asking — by hand it does not reproduce, so nothing can be learned after the fact. smolvm accounts for its own boot in phases, so a slow operation keeps that account in the runner's log where an operator will find it. A normal operation keeps nothing: the same text on every call would bury the one worth reading. The output is redacted like a failure's, because an operator's Secret reaches a guest on that command line.
+func TestASlowMachineOperationKeepsTheRuntimesAccountOfIt(t *testing.T) {
+	var logged bytes.Buffer
+	restore := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(restore) })
+
+	dir := t.TempDir()
+	slow := filepath.Join(dir, "slow")
+	require.NoError(t, os.WriteFile(slow,
+		[]byte("#!/bin/sh\nsleep 2.2\necho 'boot: disks ready elapsed_ms=19000'\necho 'seen s3cret-token'\n"), 0o755))
+	require.NoError(t, (&Smolvm{Bin: slow}).run([]string{"s3cret-token"}, "machine", "start", "-n", "agent-a"))
+
+	assert.Contains(t, logged.String(), "boot: disks ready",
+		"the runtime's own phase timings are what make an unreproducible stall readable")
+	assert.NotContains(t, logged.String(), "s3cret-token", "and a Secret on that command line is not published to reach them")
+
+	logged.Reset()
+	quick := filepath.Join(dir, "quick")
+	require.NoError(t, os.WriteFile(quick, []byte("#!/bin/sh\necho 'boot: disks ready elapsed_ms=19'\n"), 0o755))
+	require.NoError(t, (&Smolvm{Bin: quick}).run(nil, "machine", "start", "-n", "agent-b"))
+	assert.NotContains(t, logged.String(), "boot: disks ready",
+		"an operation that was not slow keeps nothing, or the slow one is lost among them")
 }

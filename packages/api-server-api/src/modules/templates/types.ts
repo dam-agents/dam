@@ -46,7 +46,6 @@ export interface TemplateSpec {
   hibernationTimeout?: string;
   storageSize?: string;
   storageClass?: string;
-  backend?: { type: "container" | "vm"; vm?: Record<string, unknown> };
   runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   skillSources?: SkillSourceSeed[];

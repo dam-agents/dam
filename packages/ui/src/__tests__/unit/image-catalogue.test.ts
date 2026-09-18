@@ -5,7 +5,6 @@ import type { TemplateView } from "../../types.js";
 
 function template(
   id: string,
-  vm: boolean,
   category: TemplateView["category"] = "harness",
 ): TemplateView {
   return {
@@ -13,50 +12,20 @@ function template(
     name: id,
     image: `${id}:latest`,
     category,
-    experimental: vm,
-    vm,
+    experimental: false,
   };
 }
 
 const CATALOGUE = [
-  template("claude-code", false),
-  template("codex", false),
-  template("claude-code-vm", true),
-  template("nous", false, "preconfigured"),
-  template("nous-vm", true, "preconfigured"),
+  template("claude-code"),
+  template("codex"),
+  template("nous", "preconfigured"),
 ];
 
 describe("imageCatalogue", () => {
-  it("hides VM-backed templates entirely when the feature is off", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, {
-      vmFeatureEnabled: false,
-    });
-    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
-  });
-
-  it("mixes VM-backed templates in alongside container ones when on", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, {
-      vmFeatureEnabled: true,
-    });
-    expect(harnesses.map((t) => t.id)).toEqual([
-      "claude-code",
-      "codex",
-      "claude-code-vm",
-    ]);
-  });
-
+  // TEST_SCENARIO: the harness list is the only one the setup form offers, and a preconfigured image reaching it would be offered as something to build an agent on rather than the prepared thing it is.
   it("leaves specialized images out of the only list it offers", () => {
-    const { harnesses } = imageCatalogue(CATALOGUE, { vmFeatureEnabled: true });
-    expect(harnesses.every((t) => t.category === "harness")).toBe(true);
-  });
-
-  it("is a no-op on an install that ships no VM templates", () => {
-    const containersOnly = CATALOGUE.filter((t) => !t.vm);
-    for (const vmFeatureEnabled of [false, true]) {
-      const { harnesses } = imageCatalogue(containersOnly, {
-        vmFeatureEnabled,
-      });
-      expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
-    }
+    const { harnesses } = imageCatalogue(CATALOGUE);
+    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
   });
 });

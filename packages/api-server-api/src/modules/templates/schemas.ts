@@ -60,12 +60,6 @@ export const templateSpecSchema = z
     hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
     storageClass: z.string().optional(),
-    backend: z
-      .object({
-        type: z.enum(["container", "vm"]),
-        vm: z.object({}).passthrough().optional(),
-      })
-      .optional(),
     runtimeClassName: z.string().optional(),
     nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),

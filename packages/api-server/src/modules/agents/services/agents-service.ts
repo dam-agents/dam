@@ -716,7 +716,7 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size },
+          { description: input.description, size: input.size, vm: input.vm },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -727,6 +727,7 @@ export function createAgentsService(deps: {
             image: input.image,
             description: input.description,
             size: input.size,
+            vm: input.vm,
           },
           deps.agentDefaultLimits,
         );
@@ -736,7 +737,7 @@ export function createAgentsService(deps: {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "this template runs as its own microVM, which is not enabled on this install (virtualization.enabled)",
+            "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
         });
       }
       const templateEnv = seedTelemetryIdentity(

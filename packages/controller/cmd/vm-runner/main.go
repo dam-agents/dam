@@ -69,6 +69,7 @@ func main() {
 		slog.Error("reading the machines already in the state dir", "error", err)
 		os.Exit(1)
 	}
+	go srv.Runtime.WarmTemplates()
 	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "tls", *tlsCert != "")
 	if *tlsCert != "" {
 		err = http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, srv.Handler())

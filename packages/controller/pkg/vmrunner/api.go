@@ -1,5 +1,13 @@
 package vmrunner
 
+// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes.
+type ImageLaunch struct {
+	Entrypoint []string `json:"entrypoint"`
+	Cmd        []string `json:"cmd"`
+	Env        []string `json:"env"`
+	WorkingDir string   `json:"workingDir"`
+}
+
 type MachineSpec struct {
 	Image      string            `json:"image"`
 	CPUs       int               `json:"cpus"`

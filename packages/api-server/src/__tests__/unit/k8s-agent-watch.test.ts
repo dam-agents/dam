@@ -51,6 +51,31 @@ describe("k8s agent watch", () => {
     return { hints, conns, watch, changed };
   }
 
+  // TEST_SCENARIO: an agent that has been quiet is the case a reader is waiting on — it has just become ready, or just failed — so its first hint goes out without waiting for the window to close. A burst is still collapsed: the writes that follow inside the window produce one further hint when it closes, never one apiece, and that trailing hint carries the burst's last state so a reader is never left holding the first of several.
+  it("hints a quiet agent at once, and collapses the burst that follows", async () => {
+    const { hints, conns } = harness();
+    const conn = conns[0]!;
+
+    conn.onEvent("ADDED", agent("a"));
+    expect(hints).toHaveLength(1);
+
+    conn.onEvent("MODIFIED", { ...agent("a"), status: { phase: "starting" } });
+    conn.onEvent("MODIFIED", { ...agent("a"), status: { phase: "running" } });
+    expect(hints).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(hints).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(hints).toHaveLength(2);
+
+    conn.onEvent("MODIFIED", {
+      ...agent("a"),
+      status: { phase: "hibernated" },
+    });
+    expect(hints).toHaveLength(3);
+  });
+
   // TEST_SCENARIO: a watch replay carries no synthetic DELETED — an agent deleted during a reconnect gap must still get a hint once the replay settles, or open tabs show it forever.
   it("hints an agent missing from the reconnect replay", async () => {
     const { hints, conns, watch } = harness();

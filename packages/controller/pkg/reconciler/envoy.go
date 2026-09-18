@@ -488,6 +488,8 @@ const envoyListenAddress = "0.0.0.0"
 
 const gatewayOTelServiceName = "platform-agent-gateway"
 
+const envoyWorkerConcurrency = "2"
+
 type envoyOTelView struct {
 	Traces          bool
 	AccessLogs      bool
@@ -650,6 +652,7 @@ func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Se
 		Args: []string{
 			"--config-path", envoyBootstrapMount + "/envoy.yaml",
 			"--log-level", "info",
+			"--concurrency", envoyWorkerConcurrency,
 		},
 		VolumeMounts: mounts,
 		Resources: corev1.ResourceRequirements{
@@ -708,7 +711,7 @@ func gatewayOTelEnv(instanceName string, cfg *config.Config) []corev1.EnvVar {
 	}
 	env = append(env, corev1.EnvVar{
 		Name:  "OTEL_RESOURCE_ATTRIBUTES",
-		Value: fmt.Sprintf("platform.gateway.id=%s,k8s.namespace.name=%s", instanceName, cfg.Namespace),
+		Value: fmt.Sprintf("service.name=%s,platform.gateway.id=%s,k8s.namespace.name=%s", gatewayOTelServiceName, instanceName, cfg.Namespace),
 	})
 	return env
 }

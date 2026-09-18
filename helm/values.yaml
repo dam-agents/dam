@@ -144,15 +144,15 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- The vm backend (`backend.type: vm` on a template): the agent runs as a
+# -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
 # vm-runner agent plus smolvm. The controller drives its machine API (TLS,
 # bearer token; both minted by the controller); the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
-# machine may reach nothing but it. Off = vm-backend templates are not
-# rendered and vm agents fail reconcile. One runner per owner; per-user fair-use
+# machine may reach nothing but it. Off = the create refuses the vm backend
+# and existing vm agents fail reconcile. One runner per owner; per-user fair-use
 # limits for machines are the upgrade path.
 virtualization:
   enabled: false
@@ -175,8 +175,10 @@ virtualization:
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, CHOWN + FOWNER so it can restore a container image's own
     # ownership when it unpacks one for its machines to share, and
-    # DAC_OVERRIDE so that unpack can write into the read-only and
-    # foreign-owned directories such a rootfs contains.
+    # DAC_OVERRIDE so that unpack can keep writing into the read-only and
+    # foreign-owned directories a faithful rootfs contains — and so the
+    # runner can manage machine directories that a release which briefly
+    # gave each VMM its own uid chowned away from it.
     # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
@@ -1514,24 +1516,6 @@ agentTemplates:
     telemetry: true
     harness: claude-code
     tags: ["Anthropic"]
-    image:
-      repository: quay.io/dam-agents/claude-code
-      tag: "" # @ci-pin claude-code-image-tag
-    storageSize: "5Gi"
-
-  # Claude Code as a persistent microVM on the VM runner instead of a
-  # container: the same claude-code image, booted as a VM with its own kernel.
-  # Rendered only when `virtualization.enabled`.
-  claude-code-vm:
-    enabled: true
-    displayName: "Claude Code VM"
-    description: "Claude Code in its own microVM instead of a container"
-    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
-    experimental: true
-    harness: claude-code
-    tags: ["Anthropic", "VM"]
-    backend:
-      type: vm
     image:
       repository: quay.io/dam-agents/claude-code
       tag: "" # @ci-pin claude-code-image-tag

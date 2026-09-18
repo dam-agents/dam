@@ -11,6 +11,14 @@ export function useFeatures(enabled = true) {
   });
 }
 
+export function useInstallCapabilities() {
+  return useQuery({
+    ...trpc.features.install.queryOptions(),
+    staleTime: Infinity,
+    meta: { errorToast: "Couldn't load what this install supports" },
+  });
+}
+
 export function useSetFeature() {
   return useMutation({
     ...trpc.features.setFlag.mutationOptions(),
