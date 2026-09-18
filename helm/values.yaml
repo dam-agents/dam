@@ -962,15 +962,20 @@ apiServer:
     # Container registries. The registry host alone never pulls: Docker Hub
     # first hands out an anonymous token from auth.docker.io, then 307s the
     # blob off to whichever CDN serves the caller's region. ghcr.io redirects
-    # its blobs the same way. registry.k8s.io is deliberately absent: it fans
-    # blobs out to regional mirrors this literal-hostname list cannot express.
+    # its blobs the same way. gcr.io and registry.k8s.io are named here for the
+    # manifest fetch only — both fan blobs out to regional mirrors this
+    # literal-hostname list cannot express, so a pull from them can still stop
+    # at an inbox prompt for whichever mirror it was handed.
     - quay.io
+    - index.docker.io
     - registry-1.docker.io
     - auth.docker.io
     - production.cloudfront.docker.com
     - production.cloudflare.docker.com
     - ghcr.io
     - pkg-containers.githubusercontent.com
+    - gcr.io
+    - registry.k8s.io
     # Go modules
     - proxy.golang.org
     - sum.golang.org
@@ -985,6 +990,8 @@ apiServer:
     # Mise (toolchain manager)
     - mise.jdx.dev
     - cdn.mise.run
+    - mise-versions.jdx.dev
+    - mise-java.jdx.dev
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
     # arXiv API
