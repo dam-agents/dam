@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
+import { useAgents } from "../../agents/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
@@ -18,7 +19,10 @@ import {
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { recordBindIntent } from "../../sandboxes/lib/bind-intent.js";
+import {
+  offeredBindMessengers,
+  recordBindIntent,
+} from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { ConnectedKnowledgeBasesSetup } from "../components/connected-knowledge-bases-setup.js";
@@ -37,6 +41,7 @@ export function KnowledgeBaseSetupView() {
     { kbTemplateId: DEFAULT_KB_TEMPLATE_ID },
     RETURN_PATH,
   );
+  const availableChannels = useAgents().data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
@@ -73,7 +78,7 @@ export function KnowledgeBaseSetupView() {
       );
       recordBindIntent(
         agent.id,
-        (["slack", "telegram"] as const).filter((m) => form.channels[m]),
+        offeredBindMessengers(form.channels, availableChannels),
       );
       reset();
       openKnowledgeBase(agent.id);

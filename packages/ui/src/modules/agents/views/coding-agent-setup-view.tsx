@@ -24,9 +24,13 @@ import {
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { recordBindIntent } from "../../sandboxes/lib/bind-intent.js";
+import {
+  offeredBindMessengers,
+  recordBindIntent,
+} from "../../sandboxes/lib/bind-intent.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { useAgents } from "../api/queries.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -42,6 +46,7 @@ export function CodingAgentSetupView() {
     {},
     RETURN_PATH,
   );
+  const availableChannels = useAgents().data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
@@ -100,7 +105,7 @@ export function CodingAgentSetupView() {
       );
       recordBindIntent(
         agent.id,
-        (["slack", "telegram"] as const).filter((m) => form.channels[m]),
+        offeredBindMessengers(form.channels, availableChannels),
       );
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);

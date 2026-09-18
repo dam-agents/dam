@@ -7,6 +7,15 @@ interface BindIntent {
   messengers: BindMessenger[];
 }
 
+export function offeredBindMessengers(
+  selected: Record<BindMessenger, boolean>,
+  available: Partial<Record<BindMessenger, boolean>> | undefined,
+): BindMessenger[] {
+  return (["slack", "telegram"] as const).filter(
+    (m) => selected[m] && available?.[m],
+  );
+}
+
 export function recordBindIntent(
   agentId: string,
   messengers: BindMessenger[],
