@@ -85,6 +85,13 @@ export function createWorker(deps: {
   host: string;
 }) {
   const running = new Map<number, RunningJob>();
+  const report = (input: Parameters<WorkerTransport["report"]>[0]): void => {
+    void deps.transport.report(input).catch((err: unknown) => {
+      deps.log.line(
+        `could not report ${name}#${input.sequence}, leaving it to the lease: ${String(err)}`,
+      );
+    });
+  };
   const name = deps.manifest.pushed.name;
   let manifest = deps.manifest;
   let draining = false;
@@ -94,7 +101,7 @@ export function createWorker(deps: {
     const command = resolveCommand(manifest, item.cmd);
     if (typeof command === "string") {
       deps.log.line(`REFUSED ${name}#${item.sequence}: ${command}`);
-      void deps.transport.report({
+      report({
         satellite: name,
         sequence: item.sequence,
         outcome: {
@@ -148,7 +155,7 @@ export function createWorker(deps: {
         deps.log.line(
           `${killedAs.toUpperCase()} ${name}#${item.sequence} after ${elapsed}s`,
         );
-        void deps.transport.report({
+        report({
           satellite: name,
           sequence: item.sequence,
           outcome:
@@ -168,7 +175,7 @@ export function createWorker(deps: {
       deps.log.line(
         `EXIT ${name}#${item.sequence}: code ${exitCode} in ${elapsed}s`,
       );
-      void deps.transport.report({
+      report({
         satellite: name,
         sequence: item.sequence,
         outcome: {
@@ -185,7 +192,7 @@ export function createWorker(deps: {
     child.on("error", (err) => {
       running.delete(item.sequence);
       deps.log.line(`FAILED ${name}#${item.sequence}: ${err.message}`);
-      void deps.transport.report({
+      report({
         satellite: name,
         sequence: item.sequence,
         outcome: {

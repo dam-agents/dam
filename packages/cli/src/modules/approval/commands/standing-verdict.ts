@@ -16,5 +16,5 @@ export async function takesStandingVerdict(
   const listed = await service.listForOwner();
   if (!listed.ok) return true;
   const row = listed.value.find((approval) => approval.id === id);
-  return row === undefined || acceptsPermanentVerdict(row.type);
+  return row !== undefined && acceptsPermanentVerdict(row.type);
 }

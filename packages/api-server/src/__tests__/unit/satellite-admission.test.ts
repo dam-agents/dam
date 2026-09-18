@@ -224,6 +224,7 @@ describe("an approval that nobody answers", () => {
       isAgentOwnedBy: async () => true,
       requestApproval: async () => "appr-1",
       spillLog: async () => null,
+      retireApproval: async () => {},
       deliverOutcome: async ({ satellite, sequence }) => {
         delivered.push(`${satellite}#${sequence}`);
       },
@@ -252,5 +253,48 @@ describe("an approval that nobody answers", () => {
       delivered,
       "the agent is told, as with any terminal outcome",
     ).toEqual(["gpu-box#7"]);
+  });
+});
+
+describe("revocation", () => {
+  it("settles what has not started, retires its approval, and tells the agent", async () => {
+    const retired: string[] = [];
+    const delivered: string[] = [];
+    const stopped: { scope: unknown; reason: string }[] = [];
+    const composition = composeSatellitesModule({
+      db: {} as never,
+      maxConcurrentCeiling: 64,
+      ownerOf: async () => "alice",
+      isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
+      spillLog: async () => null,
+      retireApproval: async (id) => {
+        retired.push(id);
+      },
+      deliverOutcome: async ({ satellite, sequence }) => {
+        delivered.push(`${satellite}#${sequence}`);
+      },
+    });
+    (composition.repo as unknown as Record<string, unknown>).stopDispatch =
+      async (scope: unknown, reason: string) => {
+        stopped.push({ scope, reason });
+        return [
+          {
+            owner: "alice",
+            agentId: "agent-1",
+            satellite: "gpu-box",
+            sequence: 7,
+            approvalId: "appr-1",
+          },
+        ];
+      };
+    (composition.repo as unknown as Record<string, unknown>).revokeAgentGrants =
+      async () => {};
+
+    await composition.onAgentDeleted("agent-1");
+
+    expect(stopped[0]?.scope).toEqual({ agentId: "agent-1" });
+    expect(retired, "the approval it held is closed too").toEqual(["appr-1"]);
+    expect(delivered).toEqual(["gpu-box#7"]);
   });
 });

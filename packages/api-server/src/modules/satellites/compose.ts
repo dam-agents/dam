@@ -6,6 +6,7 @@ import {
 } from "./infrastructure/satellites-repository.js";
 import {
   createSatelliteAgentOps,
+  JOB_TTL_MS,
   type AgentOpsDeps,
   type SatelliteAgentOpsImpl,
 } from "./services/agent-ops.js";
@@ -42,9 +43,26 @@ export function composeSatellitesModule(deps: {
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
   requestApproval: AgentOpsDeps["requestApproval"];
   spillLog: AgentOpsDeps["spillLog"];
+  retireApproval: AgentOpsDeps["retireApproval"];
   deliverOutcome: WorkerOpsDeps["deliverOutcome"];
 }): SatellitesComposition {
   const repo = createSatellitesRepository(deps.db);
+
+  const stopDispatch = async (
+    scope: { owner?: string; satellite?: string; agentId?: string },
+    reason: string,
+  ): Promise<void> => {
+    const settled = await repo.stopDispatch(scope, reason, JOB_TTL_MS);
+    for (const job of settled) {
+      if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
+      await deps.deliverOutcome({
+        owner: job.owner,
+        agentId: job.agentId,
+        satellite: job.satellite,
+        sequence: job.sequence,
+      });
+    }
+  };
   const workerDeps: WorkerOpsDeps = {
     repo,
     maxConcurrentCeiling: deps.maxConcurrentCeiling,
@@ -59,6 +77,7 @@ export function composeSatellitesModule(deps: {
       ownerOf: deps.ownerOf,
       requestApproval: deps.requestApproval,
       spillLog: deps.spillLog,
+      retireApproval: deps.retireApproval,
     }),
     workerOps: createSatelliteWorkerOps(workerDeps),
     sweepLeases: createLeaseSweep(workerDeps),
@@ -68,8 +87,14 @@ export function composeSatellitesModule(deps: {
         owner,
         isAgentOwnedBy: deps.isAgentOwnedBy,
         deliverOutcome: deps.deliverOutcome,
+        retireApproval: deps.retireApproval,
+        stopDispatch: (scope, reason) =>
+          stopDispatch({ ...scope, owner }, reason),
       }),
-    onAgentDeleted: (agentId) => repo.revokeAgentGrants(agentId),
+    onAgentDeleted: async (agentId) => {
+      await repo.revokeAgentGrants(agentId);
+      await stopDispatch({ agentId }, "the agent was deleted");
+    },
     listAgentIds: () => repo.listGrantedAgentIds(),
     applyVerdict: async (owner, satellite, sequence, allowed, reason) => {
       if (allowed) {

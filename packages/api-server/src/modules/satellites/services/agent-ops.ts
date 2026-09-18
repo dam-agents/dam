@@ -30,6 +30,7 @@ export interface AgentOpsDeps {
     ref: string,
     output: string,
   ) => Promise<string | null>;
+  retireApproval: (approvalId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -108,8 +109,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         code: "NOT_FOUND",
         message: `no job ${formatJobRef(name, sequence)} belongs to this agent`,
       });
-    if (isTerminal(job.status))
-      await deps.repo.markDelivered(owner, name, sequence);
+    if (isTerminal(job.status)) await deps.repo.markSeen(owner, name, sequence);
     return outcome(agentId, job);
   }
 
@@ -177,8 +177,8 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         });
       const job = inserted;
       const ref = formatJobRef(name, job.sequence);
-      if (verdict.status === "pending-approval")
-        await deps.requestApproval({
+      if (verdict.status === "pending-approval") {
+        const approvalId = await deps.requestApproval({
           agentId,
           owner,
           satellite: name,
@@ -186,6 +186,8 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           ref,
           cmd,
         });
+        await deps.repo.setApprovalId(owner, name, job.sequence, approvalId);
+      }
       return {
         ref,
         satellite: name,
@@ -230,6 +232,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         status: "cancelled",
         reason: "cancelled before it started",
       });
+      if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
       return outcome(agentId, settled ?? job);
     },
   };

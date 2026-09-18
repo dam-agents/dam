@@ -55,7 +55,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "satellites",
     label: "Satellites",
     description:
-      "Reveals satellites — machines outside the platform that run a fixed set of approved commands for an agent. Set one up with `dam satellite serve`; this shows it here and lets you grant it to an agent.",
+      "Reveals satellites — machines outside the platform that run a fixed set of approved commands for an agent. Set one up with the dam satellite serve command; this shows it here and lets you grant it to an agent.",
   },
   {
     id: "session-costs",

@@ -19,6 +19,11 @@ export interface SatellitesServiceDeps {
     satellite: string;
     sequence: number;
   }) => Promise<void>;
+  stopDispatch: (
+    scope: { satellite?: string; agentId?: string },
+    reason: string,
+  ) => Promise<void>;
+  retireApproval: (approvalId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -60,23 +65,10 @@ export function createSatellitesService(
 
     async remove(name: string): Promise<void> {
       await mustExist(name);
-      for (const job of await deps.repo.activeJobs(deps.owner, name)) {
-        if (job.status === "running") {
+      await deps.stopDispatch({ satellite: name }, "satellite removed");
+      for (const job of await deps.repo.activeJobs(deps.owner, name))
+        if (job.status === "running")
           await deps.repo.requestCancel(deps.owner, name, job.sequence);
-          continue;
-        }
-        const settled = await deps.repo.settle(deps.owner, name, job.sequence, {
-          status: "cancelled",
-          reason: "satellite removed",
-        });
-        if (settled !== null)
-          await deps.deliverOutcome({
-            owner: deps.owner,
-            agentId: settled.agentId,
-            satellite: name,
-            sequence: job.sequence,
-          });
-      }
       await deps.repo.remove(deps.owner, name);
     },
 
@@ -90,6 +82,10 @@ export function createSatellitesService(
     async revoke(name: string, agentId: string): Promise<void> {
       await mustExist(name);
       await deps.repo.revoke(deps.owner, name, agentId);
+      await deps.stopDispatch(
+        { satellite: name, agentId },
+        "the agent's access to this satellite was revoked",
+      );
     },
 
     async listJobs(name: string): Promise<JobView[]> {
@@ -123,6 +119,7 @@ export function createSatellitesService(
         status: "cancelled",
         reason: "cancelled before it started",
       });
+      if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
       if (settled !== null)
         await deps.deliverOutcome({
           owner: deps.owner,

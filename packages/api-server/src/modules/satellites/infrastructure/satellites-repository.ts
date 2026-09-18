@@ -481,14 +481,15 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
-    async markDelivered(
+    async markSeen(
       owner: string,
       satellite: string,
       sequence: number,
     ): Promise<boolean> {
+      const now = new Date();
       const rows = await db
         .update(satelliteJobs)
-        .set({ deliveredAt: new Date() })
+        .set({ deliveredAt: now, wokeAt: now })
         .where(
           and(
             eq(satelliteJobs.owner, owner),
@@ -603,26 +604,6 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
-    /**
-     * UNIT_BOUNDARY_DESCRIPTION: Jobs past their TTL that never reached a
-     * machine — queued with nobody claiming, or held for an approval whose row
-     * is gone. They are settled rather than deleted: each still holds a place
-     * against the Satellite's concurrency, and the Agent that started it is owed
-     * an answer.
-     */
-    async staleUnstarted(now: Date): Promise<JobRow[]> {
-      const rows = await db
-        .select()
-        .from(satelliteJobs)
-        .where(
-          and(
-            lt(satelliteJobs.expiresAt, now),
-            notInArray(satelliteJobs.status, [...TERMINAL_STATUSES, "running"]),
-          ),
-        );
-      return rows.map(toJob);
-    },
-
     async expiredLeases(now: Date): Promise<JobRow[]> {
       const rows = await db
         .select()
@@ -663,13 +644,62 @@ export function createSatellitesRepository(db: Db) {
       await db
         .delete(satelliteGrants)
         .where(eq(satelliteGrants.agentId, agentId));
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: The one rule every revocation shares —
+     * revoking a grant, removing a Satellite, deleting an Agent. A Job that has
+     * not reached a machine is settled, because only dispatch was ever ours to
+     * stop; a running one is left alone, since its command is already executing
+     * where the platform cannot reach. The settled rows come back so the caller
+     * can tell the Agent and retire any approval they were holding, and their
+     * expiry is pushed out so the outcome outlives the sweep that settles it.
+     */
+    async stopDispatch(
+      scope: { owner?: string; satellite?: string; agentId?: string },
+      reason: string,
+      ttlMs: number,
+      onlyExpiredBefore?: Date,
+    ): Promise<JobRow[]> {
+      const filters = [
+        notInArray(satelliteJobs.status, [...TERMINAL_STATUSES, "running"]),
+        ...(onlyExpiredBefore
+          ? [lt(satelliteJobs.expiresAt, onlyExpiredBefore)]
+          : []),
+        ...(scope.owner ? [eq(satelliteJobs.owner, scope.owner)] : []),
+        ...(scope.satellite
+          ? [eq(satelliteJobs.satellite, scope.satellite)]
+          : []),
+        ...(scope.agentId ? [eq(satelliteJobs.agentId, scope.agentId)] : []),
+      ];
+      const rows = await db
+        .update(satelliteJobs)
+        .set({
+          status: "cancelled",
+          reason,
+          endedAt: new Date(),
+          leaseUntil: null,
+          expiresAt: new Date(Date.now() + ttlMs),
+        })
+        .where(and(...filters))
+        .returning();
+      return rows.map(toJob);
+    },
+
+    async setApprovalId(
+      owner: string,
+      satellite: string,
+      sequence: number,
+      approvalId: string,
+    ): Promise<void> {
       await db
         .update(satelliteJobs)
-        .set({ status: "cancelled", endedAt: new Date(), leaseUntil: null })
+        .set({ approvalId })
         .where(
           and(
-            eq(satelliteJobs.agentId, agentId),
-            inArray(satelliteJobs.status, ["queued", "pending-approval"]),
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
           ),
         );
     },

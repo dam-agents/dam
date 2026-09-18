@@ -11,6 +11,7 @@ import { compileCommands } from "../domain/admission.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 export const LEASE_MS = 60_000;
+const STALE_JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CLAIM_POLL_MS = 500;
 
 export interface WorkerOpsDeps {
@@ -54,8 +55,11 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
         });
       const deadline = now().getTime() + (input.waitMs ?? 0);
 
-      for (;;) {
+      if (satellite.draining)
         await deps.repo.setDraining(owner, input.satellite, false);
+
+      for (;;) {
+        await deps.repo.touch(owner, input.satellite);
 
         const cancels = await deps.repo.takeCancellations(
           owner,
@@ -135,17 +139,12 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
 export function createLeaseSweep(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
   return async (): Promise<number> => {
-    for (const job of await deps.repo.staleUnstarted(now())) {
-      const settled = await deps.repo.settle(
-        job.owner,
-        job.satellite,
-        job.sequence,
-        {
-          status: "cancelled",
-          reason: "it waited past its expiry without ever starting",
-        },
-      );
-      if (settled === null) continue;
+    for (const job of await deps.repo.stopDispatch(
+      {},
+      "it waited past its expiry without ever starting",
+      STALE_JOB_TTL_MS,
+      now(),
+    )) {
       await deps.deliverOutcome({
         owner: job.owner,
         agentId: job.agentId,

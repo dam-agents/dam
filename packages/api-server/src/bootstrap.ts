@@ -436,6 +436,8 @@ export async function bootstrap() {
     requestApproval: createSatelliteApprovalRequester({
       approvals: satellitesApprovals,
     }),
+    retireApproval: (approvalId) =>
+      satellitesApprovals.expirePending(approvalId),
     spillLog: async (agentId, ref, output) => {
       try {
         return await createAgentWorkspaceFiles(

@@ -123,7 +123,7 @@ Anything an Agent can call is callable by a **prompt-injected** Agent. That is t
 
 A worker authenticates with an API key carrying the **serve scope**, which covers only what serving needs: registering a command surface, claiming the work approved for it, heartbeating, reporting what came back, and declaring itself draining. It confers no reach over Agents or credentials. Nothing stops an owner minting a key that holds *more* than that scope — the platform cannot tell which key a machine will be given — so the guidance is the narrow key, and what the platform guarantees is only that the scope itself buys nothing else. That is what keeps the long-lived key a machine outside the cluster must hold from being worth more than the machine.
 
-Revoking a grant, deleting a Satellite and deleting an Agent share one rule: **revocation stops dispatch and stops reads, never execution.** The command is already running on a machine Platform cannot reach. Queued Jobs are cancelled, running ones finish and are still recorded for the audit trail, and the Agent simply loses the tool.
+Revoking a grant, deleting a Satellite and deleting an Agent share one rule, and share the code that applies it so the three cannot drift: **revocation stops dispatch and stops reads, never execution.** The command is already running on a machine Platform cannot reach. Queued Jobs are cancelled, running ones finish and are still recorded for the audit trail, and the Agent simply loses the tool.
 
 ## Surfaces
 
