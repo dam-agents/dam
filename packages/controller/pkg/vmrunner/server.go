@@ -379,7 +379,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		if launch == nil && archived {
 			cached = base + ".tar"
 			if launch, err = launchFromArchive(cached); err != nil {
-				return fmt.Errorf("%w: %w", errImageUnreadable, err)
+				return fmt.Errorf("%w: %w", errImageUnusable, err)
 			}
 		}
 	}
@@ -438,11 +438,11 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
 	if err != nil {
 		slog.Warn("image config fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("reading the config of %s: %w", ref, err)
+		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
 	launch, err := launchFromConfig(config)
 	if err != nil {
-		return fmt.Errorf("reading the config of %s: %w", ref, err)
+		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
 	if err := s.unpack(ctx, ref, filepath.Join(tmp, rootfsDir)); err != nil {
 		return err
@@ -582,6 +582,9 @@ func launchFromConfig(config []byte) (*ImageLaunch, error) {
 	}
 	if err := json.Unmarshal(config, &parsed); err != nil {
 		return nil, err
+	}
+	if len(parsed.Config.Entrypoint) == 0 && len(parsed.Config.Cmd) == 0 {
+		return nil, errors.New("the image names neither an entrypoint nor a command")
 	}
 	return &ImageLaunch{
 		Entrypoint: parsed.Config.Entrypoint,
@@ -1035,13 +1038,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 var errEgressChanged = errors.New("egress allowlist changed")
 
-var errImageUnreadable = errors.New("the image archive cannot be read")
+var errImageUnusable = errors.New("the image cannot be run")
 
 func failureReason(err error) string {
 	if errors.Is(err, errEgressChanged) {
 		return ReasonEgressChanged
 	}
-	if errors.Is(err, errImageUnreadable) {
+	if errors.Is(err, errImageUnusable) {
 		return ReasonImageUnavailable
 	}
 	m := err.Error()

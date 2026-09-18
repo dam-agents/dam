@@ -636,9 +636,9 @@ func TestFailureReasonsMatchWhatTheUserIsTold(t *testing.T) {
 		assert.Equal(t, tc.want, failureReason(errors.New(tc.err)), "error %q", tc.err)
 	}
 
-	unreadable := fmt.Errorf("%w: %w", errImageUnreadable, errors.New("unexpected end of JSON input"))
+	unreadable := fmt.Errorf("%w: %w", errImageUnusable, errors.New("unexpected end of JSON input"))
 	assert.Equal(t, ReasonImageUnavailable, failureReason(unreadable),
-		"an archive the runner could not read is the image being unusable, not a guest that failed to boot — the words come from the runner here rather than from smolvm, so nothing in the text would say so")
+		"an image the runner cannot run is the image being unusable, not a guest that failed to boot — the words come from the runner here rather than from smolvm, so nothing in the text would say so")
 }
 
 // TEST_SCENARIO: the runner pod restarts — an OOM, a node drain, a chart roll — and its machines survive on the kept volume. Their published ports have to come back with the process, or every vm agent stays unreachable with a machine that looks perfectly healthy.
@@ -842,7 +842,7 @@ func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 }
 
 // TEST_OVERVIEW: the shape `docker save` writes — layers, the image config, and a manifest naming which document is that config. The layer is larger than any config so the reader has something it must skip by size, and the manifest comes last, where docker puts it, so the config is only resolvable once the whole archive has been read.
-func fakeArchive(t *testing.T, path string) {
+func fakeArchive(t *testing.T, path string, config ...string) {
 	t.Helper()
 	var buf bytes.Buffer
 	archive := tar.NewWriter(&buf)
@@ -852,7 +852,11 @@ func fakeArchive(t *testing.T, path string) {
 		_, err := archive.Write([]byte(body))
 		require.NoError(t, err)
 	}
-	write("config.json", `{"config":{"Entrypoint":["/entry"],"Cmd":["serve"],"Env":["A=image"],"WorkingDir":"/app"}}`)
+	image := `{"config":{"Entrypoint":["/entry"],"Cmd":["serve"],"Env":["A=image"],"WorkingDir":"/app"}}`
+	if len(config) > 0 {
+		image = config[0]
+	}
+	write("config.json", image)
 	write("layer.tar", strings.Repeat("x", 2<<20))
 	write("manifest.json", `[{"Config":"config.json","Layers":["layer.tar"]}]`)
 	require.NoError(t, archive.Close())
@@ -882,8 +886,8 @@ func TestAFailedUpgradeStillBootsTheArchiveOnDisk(t *testing.T) {
 	assert.Contains(t, calls, "-w /app", "and the working directory the image asks for")
 }
 
-// TEST_SCENARIO: the entrypoint is what makes a machine more than a booted filesystem, so an archive that cannot yield one is refused at create. Failing here tells the user why, where booting anyway would leave a machine that starts, answers nothing, and says nothing about the reason.
-func TestAnArchiveWithNoImageConfigFailsTheCreateRatherThanBootingNothing(t *testing.T) {
+// TEST_SCENARIO: the entrypoint is what makes a machine more than a booted filesystem, so an archive that cannot yield one is refused at create — whether the config is missing altogether or names nothing to run. Failing here tells the user why, where booting anyway would leave a machine that starts, answers nothing, and says nothing about the reason.
+func TestAnArchiveThatNamesNothingToRunFailsTheCreate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "image.tar")
 	var buf bytes.Buffer
 	archive := tar.NewWriter(&buf)
@@ -896,6 +900,11 @@ func TestAnArchiveWithNoImageConfigFailsTheCreateRatherThanBootingNothing(t *tes
 
 	_, err = launchFromArchive(path)
 	require.ErrorContains(t, err, "image config", "the refusal names what the archive could not give")
+
+	fakeArchive(t, path, `{"config":{"Env":["A=image"],"WorkingDir":"/app"}}`)
+	_, err = launchFromArchive(path)
+	require.ErrorContains(t, err, "entrypoint",
+		"an image that names nothing to run is refused too: a launch record that carries no command leaves the same guest with nothing in it")
 
 	fakeArchive(t, path)
 	launch, err := launchFromArchive(path)
