@@ -2,6 +2,7 @@
 package vmrunner
 
 import (
+	"archive/tar"
 	"bytes"
 	"errors"
 	"fmt"
@@ -373,8 +374,7 @@ func TestForwarderHonoursAllowFromAndLocalArchives(t *testing.T) {
 	assert.Zero(t, guest(), "nothing was forwarded")
 
 	archive := filepath.Join(h.node.StateDir, "images", "platform-claude-code-vm_latest.tar")
-	require.NoError(t, os.MkdirAll(filepath.Dir(archive), 0o755))
-	require.NoError(t, os.WriteFile(archive, []byte("tar"), 0o644))
+	fakeArchive(t, archive)
 	s := spec(true)
 	s.Image = "platform-claude-code-vm:latest"
 	_, err = h.client().Ensure(t.Context(), "agent-b", s)
@@ -837,23 +837,67 @@ func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 		"an archive still on disk is upgraded rather than kept, or an install that already ran an image would never get the faster path for it")
 }
 
-// TEST_SCENARIO: upgrading an archive to a tree means fetching the image again, and a fetch can fail — a registry that is down, a tag that has been deleted. An archive already on disk would still have started that machine, so a failed upgrade falls back to it rather than failing the create: the point of keeping the archive is precisely the case where the fetch cannot be made.
+// TEST_OVERVIEW: the shape `docker save` writes — layers, the image config, and a manifest naming which document is that config. The layer is larger than any config so the reader has something it must skip by size, and the manifest comes last, where docker puts it, so the config is only resolvable once the whole archive has been read.
+func fakeArchive(t *testing.T, path string) {
+	t.Helper()
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	write := func(name, body string) {
+		t.Helper()
+		require.NoError(t, archive.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body))}))
+		_, err := archive.Write([]byte(body))
+		require.NoError(t, err)
+	}
+	write("config.json", `{"config":{"Entrypoint":["/entry"],"Cmd":["serve"],"Env":["A=image"],"WorkingDir":"/app"}}`)
+	write("layer.tar", strings.Repeat("x", 2<<20))
+	write("manifest.json", `[{"Config":"config.json","Layers":["layer.tar"]}]`)
+	require.NoError(t, archive.Close())
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o644))
+}
+
+// TEST_SCENARIO: upgrading an archive to a tree means fetching the image again, and a fetch can fail — a registry that is down, a tag that has been deleted, or an images volume mounted read-only, which is how the local cluster stages its archives. An archive already on disk would still have started that machine, so a failed upgrade falls back to it rather than failing the create. What the machine is told to run then comes from the archive itself: smolvm reads the layers out of one but not the config, so a machine handed the archive alone boots its filesystem and runs nothing at all.
 func TestAFailedUpgradeStillBootsTheArchiveOnDisk(t *testing.T) {
 	h := newHarness(t)
 	broken := filepath.Join(t.TempDir(), "crane")
 	require.NoError(t, os.WriteFile(broken, []byte("#!/bin/sh\nexit 1\n"), 0o755))
 	h.node.Crane = broken
 	kept := filepath.Join(h.node.StateDir, "images", "quay.io_x_vm_1.tar")
-	require.NoError(t, os.MkdirAll(filepath.Dir(kept), 0o755))
-	require.NoError(t, os.WriteFile(kept, []byte("tar"), 0o644))
+	fakeArchive(t, kept)
 
 	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
 	st := h.settle(t, "agent-a")
 
 	assert.Equal(t, StateRunning, st.State, "the create is not failed by an upgrade that could not be made")
-	assert.Contains(t, h.calls(), "-I "+kept,
+	calls := h.calls()
+	assert.Contains(t, calls, "-I "+kept,
 		"and the archive on disk still starts the machine, which is the whole of what it is kept for")
+	assert.Contains(t, calls, "-- /entry serve",
+		"with the entrypoint the archive names, or the guest comes up with no harness in it")
+	assert.Contains(t, calls, "-w /app", "and the working directory the image asks for")
+}
+
+// TEST_SCENARIO: the entrypoint is what makes a machine more than a booted filesystem, so an archive that cannot yield one is refused at create. Failing here tells the user why, where booting anyway would leave a machine that starts, answers nothing, and says nothing about the reason.
+func TestAnArchiveWithNoImageConfigFailsTheCreateRatherThanBootingNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "image.tar")
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	body := `[{"Config":"config.json","Layers":["layer.tar"]}]`
+	require.NoError(t, archive.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0o644, Size: int64(len(body))}))
+	_, err := archive.Write([]byte(body))
+	require.NoError(t, err)
+	require.NoError(t, archive.Close())
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o644))
+
+	_, err = launchFromArchive(path)
+	require.ErrorContains(t, err, "image config", "the refusal names what the archive could not give")
+
+	fakeArchive(t, path)
+	launch, err := launchFromArchive(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/entry"}, launch.Entrypoint, "and a whole archive yields what the image says to run")
+	assert.Equal(t, []string{"A=image"}, launch.Env, "with the environment it was built with")
 }
 
 // TEST_SCENARIO: a tool that fails per entry reports per entry, and for a whole image that reached megabytes when the runner still unpacked one itself. That output reaches the Agent as a condition message, and one over 32 KiB is refused by the API server — so the status write fails instead of the create, the reconcile never records the reason, and every retry fetches the image again. The cap belongs to the boundary rather than to whichever tool is behind it. What is kept is the head, because the first failure is the one the rest follow from.
