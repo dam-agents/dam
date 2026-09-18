@@ -1,10 +1,14 @@
 import { Command } from "commander";
-import { agentCreateInputSchema } from "api-server-api";
+import {
+  agentCreateInputSchema,
+  PROVIDER_TEMPLATE_IDS,
+  type ConnectionStatus,
+} from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
@@ -24,6 +28,12 @@ import {
 } from "../../shared/exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
+const PROVIDER_IS_ACTIVE: Record<ConnectionStatus, boolean> = {
+  active: true,
+  expired: false,
+  pending: false,
+  disconnected: false,
+};
 
 export function buildCreateCommand(deps: {
   compatService: CompatService;
@@ -45,6 +55,10 @@ export function buildCreateCommand(deps: {
     )
     .option("--description <text>", "free-form description")
     .option(
+      "--provider <id-or-name>",
+      "model-provider connection id or unique name (required; see `dam connection list`)",
+    )
+    .option(
       "--env <KEY=VAL>",
       "env var, repeatable",
       (val: string, prev: string[]) => [...prev, val],
@@ -61,9 +75,9 @@ export function buildCreateCommand(deps: {
       [
         "",
         "Examples:",
-        "  dam agent create my-agent --template claude-code",
-        "  dam agent create my-agent --template claude-code --wait",
-        '  dam agent create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description "Coding helper"',
+        "  dam agent create my-agent --template claude-code --provider conn-123",
+        '  dam agent create my-agent --template claude-code --provider "My provider" --wait',
+        '  dam agent create my-agent --template pi-agent --provider conn-123 --description "Coding helper"',
         "",
       ].join("\n"),
     )
@@ -73,6 +87,7 @@ export function buildCreateCommand(deps: {
         opts: {
           server?: string;
           template?: string;
+          provider?: string;
           description?: string;
           env?: string[];
           wait?: boolean;
@@ -92,6 +107,7 @@ async function runCreate(
   opts: {
     server?: string;
     template?: string;
+    provider?: string;
     description?: string;
     env?: string[];
     wait?: boolean;
@@ -119,6 +135,13 @@ async function runCreate(
     process.exit(EXIT_INVALID_INPUT);
   }
   const template = opts.template;
+
+  if (!opts.provider) {
+    process.stderr.write(
+      "error: `--provider <id-or-name>` is required; run `dam connection list` to choose a model provider, or `dam agent create-interactive` to add one\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
 
   const envResult = parseEnvFlag(opts.env ?? []);
   if (!envResult.ok) {
@@ -161,8 +184,8 @@ async function runCreate(
     printServiceError(tmplResult.error, host);
     process.exit(EXIT_RUNTIME_FAILURE);
   }
-  const match = tmplResult.value.find((t) => t.id === template);
-  if (!match) {
+  const selectedTemplate = tmplResult.value.find((t) => t.id === template);
+  if (!selectedTemplate) {
     process.stderr.write(
       `error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`,
     );
@@ -170,11 +193,40 @@ async function runCreate(
   }
 
   const trpc = deps.createTrpcClient(host);
+  const connections = await trpcCall(() => trpc.connections.list.query());
+  if (!connections.ok) {
+    printServiceError(connections.error, host);
+    process.exit(EXIT_RUNTIME_FAILURE);
+  }
+  const providers = connections.value.filter((connection) =>
+    PROVIDER_TEMPLATE_IDS.has(connection.templateId),
+  );
+  const matches = providers.filter((connection) =>
+    opts.provider!.startsWith("conn-")
+      ? connection.id === opts.provider
+      : connection.name === opts.provider,
+  );
+  if (matches.length !== 1) {
+    process.stderr.write(
+      matches.length === 0
+        ? `error: no model-provider connection matches '${opts.provider}'; run \`dam connection list\` to choose a provider, or \`dam agent create-interactive\` to add one\n`
+        : `error: multiple model-provider connections are named '${opts.provider}'; pass a connection id from \`dam connection list\`\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const provider = matches[0]!;
+  if (!PROVIDER_IS_ACTIVE[provider.status]) {
+    process.stderr.write(
+      `error: model provider '${provider.name}' is ${provider.status}; reconnect it before creating an agent\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     {
       name,
       templateId: template,
+      connectionIds: [provider.id],
       description: opts.description,
       env: env.length > 0 ? env : undefined,
     },
