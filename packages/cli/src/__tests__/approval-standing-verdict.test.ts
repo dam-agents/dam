@@ -41,8 +41,8 @@ describe("whether a standing verdict reaches an approval", () => {
     const takes = await takesStandingVerdict(
       service(async () => ({
         ok: false,
-        error: { kind: "transport", message: "boom" },
-      })) as ApprovalService,
+        error: { kind: "transport", reason: "boom" },
+      })),
       "a1",
     );
     expect(takes.ok).toBe(false);
