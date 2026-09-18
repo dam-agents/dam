@@ -10,6 +10,7 @@ interface TokenElement {
   kind: "token";
   source: string;
   regex: RegExp;
+  regexSource?: string;
   open: boolean;
   openAtStart: boolean;
 }
@@ -97,6 +98,7 @@ function parseToken(token: string): ParseResult<TokenElement> {
         kind: "token",
         source: token,
         regex,
+        regexSource: `^(?:${body})$`,
         open: true,
         openAtStart: false,
       },
@@ -231,6 +233,36 @@ interface MatchState {
   dashDashSeen: boolean[];
   furthest: number;
   failure: string | null;
+  oracle: RegexOracle | undefined;
+}
+
+export type RegexOracle = (source: string, value: string) => boolean;
+
+export interface RegexProbe {
+  source: string;
+  value: string;
+}
+
+export function regexProbes(
+  patterns: ParsedPattern[],
+  argv: string[],
+): RegexProbe[] {
+  const sources = new Set<string>();
+  const walk = (elements: Element[]): void => {
+    for (const element of elements) {
+      if (element.kind === "token") {
+        if (element.regexSource !== undefined) sources.add(element.regexSource);
+        continue;
+      }
+      for (const alternative of element.alternatives) walk(alternative);
+    }
+  };
+  for (const pattern of patterns) walk(pattern.elements);
+
+  const probes: RegexProbe[] = [];
+  for (const source of sources)
+    for (const value of argv) probes.push({ source, value });
+  return probes;
 }
 
 function checkValue(
@@ -257,7 +289,11 @@ function matchToken(
 ): boolean {
   const arg = state.argv[at];
   if (arg === undefined) return false;
-  if (!element.regex.test(arg)) return false;
+  const matched =
+    element.regexSource !== undefined && state.oracle !== undefined
+      ? state.oracle(element.regexSource, arg)
+      : element.regex.test(arg);
+  if (!matched) return false;
   if (!element.open) return true;
   const problem = checkValue(element, arg, state, at);
   if (problem !== null) {
@@ -326,6 +362,7 @@ function markDashDash(argv: string[]): boolean[] {
 export function matchCommand(
   patterns: ParsedPattern[],
   argv: string[],
+  oracle?: RegexOracle,
 ): CommandMatch | CommandRefusal {
   if (argv.length === 0)
     return { ok: false, reason: "empty command", closest: null };
@@ -356,6 +393,7 @@ export function matchCommand(
       dashDashSeen,
       furthest: 0,
       failure: null,
+      oracle,
     };
     const matched = matchSequence(
       pattern.elements,

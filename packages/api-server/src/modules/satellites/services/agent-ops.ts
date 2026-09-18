@@ -6,7 +6,12 @@ import {
   type JobStarted,
   type SatelliteView,
 } from "api-server-api";
+import { regexProbes } from "api-server-api";
 import { admit, compileCommands, isOnline } from "../domain/admission.js";
+import {
+  evaluateRegexProbes,
+  oracleFor,
+} from "../infrastructure/regex-worker.js";
 import { isTerminal, type JobRow, type SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
@@ -146,12 +151,30 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       for (const job of active)
         byPattern.set(job.pattern, (byPattern.get(job.pattern) ?? 0) + 1);
 
+      let oracle;
+      try {
+        oracle = oracleFor(
+          await evaluateRegexProbes(
+            regexProbes(
+              compiled.commands.map((c) => c.parsed),
+              cmd,
+            ),
+          ),
+        );
+      } catch {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${name} has a command pattern whose regex takes too long on this command — narrow the pattern`,
+        });
+      }
+
       const verdict = admit(
         satellite,
         compiled.commands,
         cmd,
         { total: active.length, byPattern },
         at,
+        oracle,
       );
       if (!verdict.ok)
         throw new TRPCError({ code: "BAD_REQUEST", message: verdict.reason });
@@ -223,7 +246,11 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       const job = await deps.repo.getJob(owner, name, sequence);
       if (job === null || job.agentId !== agentId)
         throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
-      if (isTerminal(job.status)) return outcome(agentId, job);
+
+      if (isTerminal(job.status)) {
+        await deps.repo.markSeen(owner, name, sequence);
+        return outcome(agentId, job);
+      }
       if (job.status === "running") {
         await deps.repo.requestCancel(owner, name, sequence);
         return outcome(agentId, { ...job, reason: "cancellation requested" });
@@ -233,6 +260,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         reason: "cancelled before it started",
       });
       if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
+      await deps.repo.markSeen(owner, name, sequence);
       return outcome(agentId, settled ?? job);
     },
   };

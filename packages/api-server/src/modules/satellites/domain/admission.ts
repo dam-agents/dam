@@ -4,6 +4,7 @@ import {
   parseCommandPattern,
   type JobStatus,
   type ParsedPattern,
+  type RegexOracle,
   type SatelliteCommand,
 } from "api-server-api";
 import type { SatelliteRow } from "./types.js";
@@ -50,6 +51,7 @@ export function admit(
   cmd: string[],
   active: ActiveCounts,
   now: Date,
+  oracle?: RegexOracle,
 ): Admission {
   if (satellite.draining)
     return { ok: false, reason: `${satellite.name} is shutting down` };
@@ -65,6 +67,7 @@ export function admit(
   const matched = matchCommand(
     compiled.map((c) => c.parsed),
     cmd,
+    oracle,
   );
   if (!matched.ok)
     return {

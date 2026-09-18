@@ -783,12 +783,15 @@ export {
   MAX_REPEAT,
   matchCommand,
   parseCommandPattern,
+  regexProbes,
 } from "./modules/satellites/command-pattern.js";
 export type {
   CommandMatch,
   CommandRefusal,
   ParsedPattern,
   ParseResult,
+  RegexOracle,
+  RegexProbe,
 } from "./modules/satellites/command-pattern.js";
 
 export {

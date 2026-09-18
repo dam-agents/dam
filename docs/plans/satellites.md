@@ -177,7 +177,7 @@ Hitting the limit never cancels anything: running Jobs finish and new starts are
 
 Revoking a Satellite Grant, deleting a Satellite, and deleting an Agent share a shape: the command is already executing on the user's machine, where Platform has no reach. One rule covers all three — **revocation stops dispatch and stops reads, never execution.**
 
-Queued Jobs are cancelled server-side, since nothing ran and nothing is lost. Running Jobs finish, and their outcomes are still recorded for the audit trail, but the Agent can no longer read them because the tool went with the grant. Deleting a Satellite also cancels the worker's claim, so the worker learns on its next poll and can signal the process group — cooperative, never guaranteed.
+Queued Jobs are cancelled server-side, since nothing ran and nothing is lost. Running Jobs finish. After a revoked grant or a deleted Agent their outcomes are still recorded and only the Agent's access is gone; after a *removed Satellite* the Job rows go with the Satellite, so the command runs on with nothing listening and no record kept. Stopping the command itself is the job of whoever is at the machine.
 
 Blocking deletion while Jobs run was rejected: it makes "stop this" fail exactly when a user most wants it, and anyone who can start a Satellite can kill its processes directly.
 
