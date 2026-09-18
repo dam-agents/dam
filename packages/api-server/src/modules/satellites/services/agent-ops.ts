@@ -6,7 +6,7 @@ import {
   type JobStarted,
   type SatelliteView,
 } from "api-server-api";
-import { regexProbes } from "api-server-api";
+import { argvRefusal, regexProbes } from "api-server-api";
 import { admit, compileCommands, isOnline } from "../domain/admission.js";
 import {
   evaluateRegexProbes,
@@ -137,6 +137,10 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       name: string,
       cmd: string[],
     ): Promise<JobStarted> {
+      const oversize = argvRefusal(cmd);
+      if (oversize !== null)
+        throw new TRPCError({ code: "BAD_REQUEST", message: oversize });
+
       const at = now();
       const { owner, satellite } = await resolve(agentId, name);
       const compiled = compileCommands(satellite.commands);

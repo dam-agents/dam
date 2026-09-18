@@ -9,8 +9,7 @@ export type ParseResult<T> =
 interface TokenElement {
   kind: "token";
   source: string;
-  regex: RegExp;
-  regexSource?: string;
+  regexSource: string;
   open: boolean;
   openAtStart: boolean;
 }
@@ -83,9 +82,8 @@ function isRegexToken(token: string): boolean {
 function parseToken(token: string): ParseResult<TokenElement> {
   if (isRegexToken(token)) {
     const body = token.slice(1, -1);
-    let regex: RegExp;
     try {
-      regex = new RegExp(`^(?:${body})$`);
+      new RegExp(`^(?:${body})$`);
     } catch (err) {
       return {
         ok: false,
@@ -97,7 +95,6 @@ function parseToken(token: string): ParseResult<TokenElement> {
       value: {
         kind: "token",
         source: token,
-        regex,
         regexSource: `^(?:${body})$`,
         open: true,
         openAtStart: false,
@@ -151,7 +148,7 @@ function parseToken(token: string): ParseResult<TokenElement> {
     value: {
       kind: "token",
       source: token,
-      regex: new RegExp(`^${pattern}$`),
+      regexSource: `^${pattern}$`,
       open: wildcards > 0,
       openAtStart,
     },
@@ -251,7 +248,7 @@ export function regexProbes(
   const walk = (elements: Element[]): void => {
     for (const element of elements) {
       if (element.kind === "token") {
-        if (element.regexSource !== undefined) sources.add(element.regexSource);
+        sources.add(element.regexSource);
         continue;
       }
       for (const alternative of element.alternatives) walk(alternative);
@@ -290,9 +287,9 @@ function matchToken(
   const arg = state.argv[at];
   if (arg === undefined) return false;
   const matched =
-    element.regexSource !== undefined && state.oracle !== undefined
+    state.oracle !== undefined
       ? state.oracle(element.regexSource, arg)
-      : element.regex.test(arg);
+      : new RegExp(element.regexSource).test(arg);
   if (!matched) return false;
   if (!element.open) return true;
   const problem = checkValue(element, arg, state, at);
@@ -359,26 +356,22 @@ function markDashDash(argv: string[]): boolean[] {
   return marks;
 }
 
+export function argvRefusal(argv: string[]): string | null {
+  if (argv.length === 0) return "empty command";
+  if (argv.length > MAX_ARGV_LENGTH)
+    return `command has ${argv.length} arguments (max ${MAX_ARGV_LENGTH})`;
+  if (argv.some((arg) => arg.length > MAX_ARG_LENGTH))
+    return `an argument exceeds ${MAX_ARG_LENGTH} characters`;
+  return null;
+}
+
 export function matchCommand(
   patterns: ParsedPattern[],
   argv: string[],
   oracle?: RegexOracle,
 ): CommandMatch | CommandRefusal {
-  if (argv.length === 0)
-    return { ok: false, reason: "empty command", closest: null };
-  if (argv.length > MAX_ARGV_LENGTH)
-    return {
-      ok: false,
-      reason: `command has ${argv.length} arguments (max ${MAX_ARGV_LENGTH})`,
-      closest: null,
-    };
-  const tooLong = argv.find((arg) => arg.length > MAX_ARG_LENGTH);
-  if (tooLong !== undefined)
-    return {
-      ok: false,
-      reason: `an argument exceeds ${MAX_ARG_LENGTH} characters`,
-      closest: null,
-    };
+  const oversize = argvRefusal(argv);
+  if (oversize !== null) return { ok: false, reason: oversize, closest: null };
 
   const dashDashSeen = markDashDash(argv);
   let best: {

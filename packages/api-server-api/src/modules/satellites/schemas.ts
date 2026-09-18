@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_ARG_LENGTH, MAX_ARGV_LENGTH } from "./command-pattern.js";
+
 export const DEFAULT_MAX_CONCURRENT = 16;
 export const INLINE_OUTPUT_LIMIT = 4096;
 
@@ -73,9 +75,14 @@ export const reportInputSchema = z.object({
   ]),
 });
 
+export const commandArgvSchema = z
+  .array(z.string().max(MAX_ARG_LENGTH))
+  .min(1)
+  .max(MAX_ARGV_LENGTH);
+
 export const startJobInputSchema = z.object({
   satellite: satelliteNameSchema,
-  cmd: z.array(z.string()).min(1),
+  cmd: commandArgvSchema,
 });
 
 export const jobRefSchema = z.object({

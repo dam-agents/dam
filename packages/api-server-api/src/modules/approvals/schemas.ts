@@ -17,6 +17,7 @@ export const approvalListForInstanceInputSchema =
     agentId: z.string().min(1),
   });
 
+export const approvalGetInputSchema = idSchema;
 export const approvalApproveOnceInputSchema = idSchema;
 export const approvalApprovePermanentInputSchema = idSchema;
 export const approvalApproveHostInputSchema = idSchema;

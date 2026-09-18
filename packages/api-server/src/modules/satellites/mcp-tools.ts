@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { SatelliteView } from "api-server-api";
+import { commandArgvSchema, type SatelliteView } from "api-server-api";
 import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
 
 /**
@@ -93,12 +93,9 @@ export function registerSatelliteTools(
     ].join("\n"),
     {
       satellite: z.enum(names).describe("Which satellite to run on."),
-      cmd: z
-        .array(z.string())
-        .min(1)
-        .describe(
-          'The command as an argument list, exactly as it would be typed: ["./process.sh", "sales.db", "-n", "50"].',
-        ),
+      cmd: commandArgvSchema.describe(
+        'The command as an argument list, exactly as it would be typed: ["./process.sh", "sales.db", "-n", "50"].',
+      ),
     },
     ({ satellite, cmd }) =>
       run(async () => json(await deps.ops.start(deps.agentId, satellite, cmd))),

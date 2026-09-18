@@ -188,6 +188,13 @@ export function createApprovalsService(
   deps: CreateApprovalsServiceDeps,
 ): ApprovalsService {
   return {
+    async get(id) {
+      const row = await loadOwned(deps, id);
+      return row && matchesBinding(deps.agentBinding, row.agentId)
+        ? toView(row)
+        : null;
+    },
+
     async listForOwner(opts) {
       const rows = await deps.repo.listPendingForOwner(deps.ownerSub, opts);
       const visible = rows.filter((r) =>

@@ -356,14 +356,6 @@ export function createSatellitesRepository(db: Db) {
     },
 
     /**
-     * UNIT_BOUNDARY_DESCRIPTION: Takes the cancellations waiting for this
-     * Satellite, clearing the flag as it hands them over. The flag is a request
-     * rather than a state, so leaving it set would re-send the same work item on
-     * every poll — and a poll that always answers non-empty never rests. A
-     * cancellation the worker then ignores is bounded anyway: the Job either
-     * finishes or its lease expires.
-     */
-    /**
      * UNIT_BOUNDARY_DESCRIPTION: Hands over the cancellations waiting for this
      * Satellite, at most once per lease. The request stays set, because clearing
      * it on handover loses the cancellation outright if the poll response never
@@ -708,8 +700,9 @@ export function createSatellitesRepository(db: Db) {
      * UNIT_BOUNDARY_DESCRIPTION: Retires Jobs past their TTL. An outcome the
      * Agent has not been told about is kept regardless of age: deleting it would
      * drop the one turn it is owed, and the hourly wake retry is what eventually
-     * clears it. A running Job is never touched, since the machine still holds
-     * it.
+     * clears it. Told about means woken, not merely claimed for delivery — a row
+     * a delivery claimed and did not finish is exactly what the retry comes back
+     * for. A running Job is never touched, since the machine still holds it.
      */
     async purgeExpired(now: Date): Promise<void> {
       await db
@@ -719,6 +712,7 @@ export function createSatellitesRepository(db: Db) {
             lt(satelliteJobs.expiresAt, now),
             ne(satelliteJobs.status, "running"),
             sql`${satelliteJobs.deliveredAt} is not null`,
+            sql`${satelliteJobs.wokeAt} is not null`,
           ),
         );
     },

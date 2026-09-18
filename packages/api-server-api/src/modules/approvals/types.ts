@@ -69,6 +69,7 @@ export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 export type ApprovalActionOutcome = z.infer<typeof approvalActionOutcomeSchema>;
 
 export interface ApprovalsService {
+  get(id: string): Promise<ApprovalView | null>;
   listForOwner(opts?: ApprovalListOptions): Promise<ApprovalView[]>;
   listForInstance(
     agentId: string,

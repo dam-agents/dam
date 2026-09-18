@@ -62,13 +62,21 @@ export function buildApproveCommand(deps: {
         });
 
         const service = deps.createApprovalService(host);
-        const standing =
-          !opts.once && (await takesStandingVerdict(service, id));
-        const once = opts.once === true || !standing;
-        if (opts.once !== true && !standing)
-          process.stderr.write(
-            "This approval takes only a one-time verdict; applying that.\n",
-          );
+        let once = opts.once === true;
+        if (!once) {
+          const takes = await takesStandingVerdict(service, id);
+          if (!takes.ok) {
+            process.stderr.write(
+              `error: ${takes.reason} — re-run with --once to apply the one-time verdict\n`,
+            );
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+          once = !takes.standing;
+          if (once)
+            process.stderr.write(
+              "This approval takes only a one-time verdict; applying that.\n",
+            );
+        }
         const result = await (once
           ? service.approveOnce(id)
           : opts.entireHost

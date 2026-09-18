@@ -66,9 +66,6 @@ export function createSatellitesService(
     async remove(name: string): Promise<void> {
       await mustExist(name);
       await deps.stopDispatch({ satellite: name }, "satellite removed");
-      for (const job of await deps.repo.activeJobs(deps.owner, name))
-        if (job.status === "running")
-          await deps.repo.requestCancel(deps.owner, name, job.sequence);
       await deps.repo.remove(deps.owner, name);
     },
 

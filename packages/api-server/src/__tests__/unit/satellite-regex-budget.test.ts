@@ -24,6 +24,23 @@ function parse(run: string) {
 }
 
 describe("a manifest regex meeting a hostile argument", () => {
+  it("covers a glob token too, which compiles to a regex like any other", () => {
+    const probes = regexProbes([parse("./x **/*.db")], ["./x", "a/b.db"]);
+    expect(
+      probes.map((probe) => probe.value),
+      "every token must be probed, or the unprobed one falls back to the event loop",
+    ).toEqual(["./x", "a/b.db", "./x", "a/b.db"]);
+  });
+
+  it("abandons an ambiguous glob chain, not only an explicit regex", async () => {
+    const patterns = [parse("./x **/**/**/**/**/**/**/z")];
+    const argv = ["./x", `${"a/".repeat(90)}b`];
+
+    await expect(
+      evaluateRegexProbes(regexProbes(patterns, argv), 100),
+    ).rejects.toBeInstanceOf(RegexDeadlineError);
+  });
+
   it("is abandoned at its deadline instead of stalling the server", async () => {
     const patterns = [parse("./x ^(a+)+$")];
     const argv = ["./x", `${"a".repeat(40)}b`];
