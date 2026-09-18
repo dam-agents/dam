@@ -47,6 +47,9 @@ if ! "$real" info >/dev/null 2>&1; then
         # The cost is a dependency: docker then needs that containerd to stay up,
         # so stopping k3s stops docker too. Without k3s, the daemon brings its own
         # containerd as usual.
+        #
+        # The sharing only goes this way: the containerd docker brings runs with the
+        # CRI plugin disabled, so a later k3s cannot join it and starts a second one.
         share=
         sock=/run/k3s/containerd/containerd.sock
         [ -S "$sock" ] && share="--containerd $sock --feature containerd-snapshotter=true"
