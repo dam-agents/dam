@@ -42,9 +42,10 @@ export function buildServeCommand(deps: {
     .addHelpText(
       "after",
       "\nThe manifest decides what may run here — the platform can never widen it.\n" +
-        "Reload it with SIGHUP — a manifest that does not parse, or that renames the\n" +
-        "satellite, is refused and the running one is kept. First interrupt drains,\n" +
-        "second kills running jobs.\n\n" +
+        "Reload it with SIGHUP — a manifest that does not parse, that renames the\n" +
+        "satellite, or that arrives while draining is refused, and so is one whose\n" +
+        "push fails; the running manifest is kept in every case. First interrupt\n" +
+        "drains, second kills running jobs.\n\n" +
         "Example:\n  dam satellite serve ./satellite.toml\n",
     )
     .action(async (path: string, opts: { server?: string }) => {

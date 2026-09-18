@@ -418,6 +418,7 @@ export function createSatellitesRepository(db: Db) {
         truncated?: boolean;
         reason?: string | null;
       },
+      expect?: JobStatus,
     ): Promise<JobRow | null> {
       const rows = await db
         .update(satelliteJobs)
@@ -432,6 +433,7 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.satellite, satellite),
             eq(satelliteJobs.sequence, sequence),
             notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
+            ...(expect ? [eq(satelliteJobs.status, expect)] : []),
           ),
         )
         .returning();

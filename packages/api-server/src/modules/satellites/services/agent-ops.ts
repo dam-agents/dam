@@ -10,6 +10,7 @@ import { argvRefusal, regexSources } from "api-server-api";
 import { admit, compileCommands, isOnline } from "../domain/admission.js";
 import {
   createRegexEvaluator,
+  RegexBusyError,
   RegexDeadlineError,
   type RegexEvaluator,
 } from "../infrastructure/regex-worker.js";
@@ -170,6 +171,12 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
             code: "BAD_REQUEST",
             message: `${name} has a command pattern whose regex takes too long on this command — narrow the pattern`,
           });
+        if (err instanceof RegexBusyError)
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message:
+              "the command matcher is busy checking another command — try again",
+          });
         console.error("[satellites] regex evaluation failed", err);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -264,13 +271,31 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         await deps.repo.requestCancel(owner, name, sequence);
         return outcome(agentId, { ...job, reason: "cancellation requested" });
       }
-      const settled = await deps.repo.settle(owner, name, sequence, {
-        status: "cancelled",
-        reason: "cancelled before it started",
-      });
+      const settled = await deps.repo.settle(
+        owner,
+        name,
+        sequence,
+        { status: "cancelled", reason: "cancelled before it started" },
+        job.status,
+      );
+      if (settled === null) {
+        const current = await deps.repo.getJob(owner, name, sequence);
+        if (current !== null && current.status === "running") {
+          await deps.repo.requestCancel(owner, name, sequence);
+          return outcome(agentId, {
+            ...current,
+            reason: "cancellation requested",
+          });
+        }
+        if (current !== null && isTerminal(current.status)) {
+          await deps.repo.markSeen(owner, name, sequence);
+          return outcome(agentId, current);
+        }
+        return outcome(agentId, current ?? job);
+      }
       if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
       await deps.repo.markSeen(owner, name, sequence);
-      return outcome(agentId, settled ?? job);
+      return outcome(agentId, settled);
     },
   };
 }

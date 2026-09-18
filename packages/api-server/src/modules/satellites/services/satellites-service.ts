@@ -127,10 +127,19 @@ export function createSatellitesService(
         await deps.repo.requestCancel(deps.owner, name, sequence);
         return;
       }
-      const settled = await deps.repo.settle(deps.owner, name, sequence, {
-        status: "cancelled",
-        reason: "cancelled before it started",
-      });
+      const settled = await deps.repo.settle(
+        deps.owner,
+        name,
+        sequence,
+        { status: "cancelled", reason: "cancelled before it started" },
+        job.status,
+      );
+      if (settled === null) {
+        const now = await deps.repo.getJob(deps.owner, name, sequence);
+        if (now !== null && now.status === "running")
+          await deps.repo.requestCancel(deps.owner, name, sequence);
+        return;
+      }
       if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
       if (settled !== null)
         await deps.deliverOutcome({

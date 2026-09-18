@@ -8,6 +8,7 @@ import {
 import { compileCommands } from "../../modules/satellites/domain/admission.js";
 import {
   createRegexEvaluator,
+  RegexBusyError,
   RegexDeadlineError,
 } from "../../modules/satellites/infrastructure/regex-worker.js";
 
@@ -113,6 +114,27 @@ describe("a manifest regex meeting a hostile argument", () => {
       wrong,
     );
     expect(matchCommand(patterns, wrong, wrongOracle).ok).toBe(false);
+
+    await evaluator.stop();
+  });
+
+  it("refuses a command that waited its turn too long, rather than letting the queue grow", async () => {
+    const evaluator = createRegexEvaluator(300, 50);
+    await warm(evaluator);
+
+    const slow = [parse("./x ^(a+)+$")];
+    const fast = [parse("./y ^v[0-9]+$")];
+    const ahead = evaluator.oracleFor(regexSources(slow), [
+      "./x",
+      `${"a".repeat(40)}b`,
+    ]);
+    const behind = evaluator.oracleFor(regexSources(fast), ["./y", "v1"]);
+
+    await expect(ahead).rejects.toBeInstanceOf(RegexDeadlineError);
+    await expect(
+      behind,
+      "one owner's slow pattern must not become another owner's unbounded wait",
+    ).rejects.toBeInstanceOf(RegexBusyError);
 
     await evaluator.stop();
   });

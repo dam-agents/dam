@@ -3,6 +3,8 @@ import { Worker } from "node:worker_threads";
 import type { RegexOracle } from "api-server-api";
 
 export const REGEX_DEADLINE_MS = 250;
+export const REGEX_QUEUE_WAIT_MS = 250;
+const MAX_COMPILED_SOURCES = 4096;
 
 export class RegexDeadlineError extends Error {
   constructor() {
@@ -11,10 +13,18 @@ export class RegexDeadlineError extends Error {
   }
 }
 
+export class RegexBusyError extends Error {
+  constructor() {
+    super("the command matcher was busy for longer than a command may wait");
+    this.name = "RegexBusyError";
+  }
+}
+
 const WORKER_SOURCE = `
 const { parentPort } = require("node:worker_threads");
 const compiled = new Map();
 parentPort.on("message", (job) => {
+  if (compiled.size > job.maxCompiled) compiled.clear();
   const bits = new Uint8Array(job.sources.length * job.argv.length);
   for (let s = 0; s < job.sources.length; s++) {
     const source = job.sources[s];
@@ -60,11 +70,19 @@ interface Pending {
  *
  * Known ceiling: one thread serves the whole replica and evaluates one command
  * at a time, so a command waits behind whatever is already matching. That is
- * bounded by the deadline and is the reason abandoning is safe — terminating
- * the thread cannot hit a bystander. A pool keyed by owner is the upgrade path
- * if matching ever shows up in request latency.
+ * what makes abandoning safe — terminating the thread cannot hit a bystander —
+ * but it means one owner's slow pattern is another owner's queue, so the wait
+ * itself is bounded too: a command that has queued longer than the wait budget
+ * is refused as busy rather than left to accumulate. A pool keyed by owner is
+ * the upgrade path if matching ever shows up in request latency. The thread
+ * keeps each source it compiles so a later command does not pay for it again,
+ * and drops the lot once it holds more than a Manifest could name, since the
+ * sources come from Manifests that change.
  */
-export function createRegexEvaluator(deadlineMs = REGEX_DEADLINE_MS) {
+export function createRegexEvaluator(
+  deadlineMs = REGEX_DEADLINE_MS,
+  queueWaitMs = REGEX_QUEUE_WAIT_MS,
+) {
   let worker: Worker | null = null;
   let ready: Promise<Worker> | null = null;
   const pending = new Map<number, Pending>();
@@ -126,16 +144,23 @@ export function createRegexEvaluator(deadlineMs = REGEX_DEADLINE_MS) {
         resolve: (bits) => done(() => resolve(bits)),
         reject: (err) => done(() => reject(err)),
       });
-      running.postMessage({ id, sources, argv });
+      running.postMessage({
+        id,
+        sources,
+        argv,
+        maxCompiled: MAX_COMPILED_SOURCES,
+      });
     });
   }
 
   return {
     async oracleFor(sources: string[], argv: string[]): Promise<RegexOracle> {
-      const serialized = queue.then(
-        () => evaluate(sources, argv),
-        () => evaluate(sources, argv),
-      );
+      const enqueuedAt = Date.now();
+      const turn = (): Promise<Uint8Array> =>
+        Date.now() - enqueuedAt > queueWaitMs
+          ? Promise.reject(new RegexBusyError())
+          : evaluate(sources, argv);
+      const serialized = queue.then(turn, turn);
       queue = serialized.catch(() => undefined);
       const bits = await serialized;
       const at = new Map(sources.map((source, index) => [source, index]));

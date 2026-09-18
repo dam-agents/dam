@@ -298,3 +298,51 @@ describe("revocation", () => {
     expect(delivered).toEqual(["gpu-box#7"]);
   });
 });
+
+describe("a cancel that races the worker's claim", () => {
+  it("does not overwrite a job the worker started between the read and the write", async () => {
+    const requested: number[] = [];
+    let status = "queued";
+    const composition = composeSatellitesModule({
+      db: {} as never,
+      maxConcurrentCeiling: 64,
+      ownerOf: async () => "alice",
+      isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
+      spillLog: async () => null,
+      retireApproval: async () => {},
+      deliverOutcome: async () => {},
+    });
+    const repo = composition.repo as unknown as Record<string, unknown>;
+    repo.get = async () => satellite();
+    repo.getJob = async () => ({
+      owner: "alice",
+      satellite: "gpu-box",
+      sequence: 7,
+      agentId: "agent-1",
+      status,
+      approvalId: null,
+      cmd: ["./process.sh", "sales.db"],
+    });
+    repo.settle = async (
+      _o: string,
+      _n: string,
+      _s: number,
+      _patch: unknown,
+      expect_: string | undefined,
+    ) => {
+      status = "running";
+      return expect_ === undefined || expect_ === "running" ? {} : null;
+    };
+    repo.requestCancel = async (_o: string, _n: string, sequence: number) => {
+      requested.push(sequence);
+    };
+
+    await composition.serviceFor("alice", "*").cancelJob("gpu-box", 7);
+
+    expect(
+      requested,
+      "the row moved to running under the read, so the write must not land and the cancel becomes a request",
+    ).toEqual([7]);
+  });
+});

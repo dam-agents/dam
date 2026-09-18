@@ -2,6 +2,7 @@ import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
   operateAgentsProcedure,
+  requireWildcardBinding,
   readAgentProcedure,
   serveSatellitesProcedure,
 } from "../../auth-procedures.js";
@@ -37,6 +38,7 @@ export const satellitesRouter = t.router({
     }),
 
   remove: operateAgentsProcedure
+    .use(requireWildcardBinding)
     .input(satelliteNameSchema)
     .mutation(({ ctx, input }) => ctx.satellites.remove(input)),
 
