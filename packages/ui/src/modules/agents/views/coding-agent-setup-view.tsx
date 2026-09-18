@@ -92,10 +92,13 @@ export function CodingAgentSetupView() {
     (t) => t.id === form.templateId,
   );
   const registryPartial = hasPartialRegistryCredential(draft);
+  const channelsAnswered = availableChannels !== undefined;
+  const wantsChannel = form.channels.slack || form.channels.telegram;
   const canCreate =
     isCodingAgentSetupComplete(draft) &&
     !createAgent.isPending &&
-    (vmAnswered || !form.vm);
+    (vmAnswered || !form.vm) &&
+    (channelsAnswered || !wantsChannel);
 
   const create = async () => {
     if (!canCreate) return;

@@ -67,8 +67,12 @@ export function KnowledgeBaseSetupView() {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
   };
+  const channelsAnswered = availableChannels !== undefined;
+  const wantsChannel = form.channels.slack || form.channels.telegram;
   const canCreate =
-    isKnowledgeBaseSetupComplete(draft) && !createKnowledgeBase.isPending;
+    isKnowledgeBaseSetupComplete(draft) &&
+    !createKnowledgeBase.isPending &&
+    (channelsAnswered || !wantsChannel);
 
   const create = async () => {
     if (!canCreate) return;
