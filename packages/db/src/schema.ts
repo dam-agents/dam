@@ -461,6 +461,7 @@ export const satelliteJobs = pgTable(
     cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
+    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
     leaseUntil: timestamp("lease_until", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),

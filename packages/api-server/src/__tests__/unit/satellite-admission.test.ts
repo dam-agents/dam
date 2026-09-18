@@ -354,3 +354,55 @@ describe("a cancel that races the worker's claim", () => {
     ).toEqual([7]);
   });
 });
+
+describe("a job that finishes while its agent is waiting", () => {
+  it("is claimed by the wait before the wake delivery can take it", async () => {
+    const calls: string[] = [];
+    let status = "running";
+    const composition = composeSatellitesModule({
+      db: {} as never,
+      maxConcurrentCeiling: 64,
+      ownerOf: async () => "alice",
+      isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
+      spillLog: async () => null,
+      retireApproval: async () => {},
+      deliverOutcome: async () => {},
+    });
+    const repo = composition.repo as unknown as Record<string, unknown>;
+    repo.get = async () => satellite();
+    repo.grantedNames = async () => [{ owner: "alice", name: "gpu-box" }];
+    repo.isGranted = async () => true;
+    repo.markAwaited = async () => {
+      calls.push("markAwaited");
+      status = "done";
+    };
+    repo.getJob = async () => {
+      calls.push("getJob");
+      return {
+        owner: "alice",
+        satellite: "gpu-box",
+        sequence: 7,
+        agentId: "agent-1",
+        status,
+        cmd: ["./process.sh", "sales.db"],
+        exitCode: 0,
+        output: "",
+        truncated: false,
+        reason: null,
+        approvalId: null,
+      };
+    };
+    repo.markSeen = async () => {
+      calls.push("markSeen");
+      return true;
+    };
+
+    await composition.agentOps.wait("agent-1", "gpu-box", 7, 0);
+
+    expect(
+      calls[0],
+      "the lease must be taken before the first read, or the report path claims the outcome first",
+    ).toBe("markAwaited");
+  });
+});

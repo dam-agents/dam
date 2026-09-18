@@ -72,9 +72,13 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
     let budget = MAX_TURN_CHARS;
     for (const [index, part] of described.entries()) {
       if (told.length > 0 && part.length + 1 > budget) break;
+      const trimmed =
+        part.length + 1 > budget
+          ? `${part.slice(0, Math.max(budget - 1, 0))}\n(trimmed to fit this turn; read the rest with the satellite job tools)`
+          : part;
       told.push(claimed[index]!);
-      parts.push(part);
-      budget -= part.length + 1;
+      parts.push(trimmed);
+      budget -= trimmed.length + 1;
     }
     const overflow = claimed.slice(told.length);
     if (overflow.length > 0) await releaseClaim(deps, overflow);
@@ -148,15 +152,17 @@ export function createOutcomeWakeRetry(
   return async (): Promise<number> => {
     const agents = await deps.repo.agentsWithPendingOutcomes();
     for (const agentId of agents) {
-      if (await deliver(agentId)) continue;
-      const claimed = await deps.repo.undeliveredFor(agentId);
-      if (claimed.length === 0) continue;
       try {
+        if (await deliver(agentId)) continue;
+        const claimed = await deps.repo.undeliveredFor(agentId);
+        if (claimed.length === 0) continue;
         await deps.wakeAgent(agentId);
-      } catch {
-        continue;
+        await deps.repo.markWoken(agentId, claimed);
+      } catch (err) {
+        deps.log(
+          `[satellites] the outcome sweep skipped ${agentId}: ${String(err)}`,
+        );
       }
-      await deps.repo.markWoken(agentId, claimed);
     }
     return agents.length;
   };

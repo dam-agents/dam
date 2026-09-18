@@ -52,6 +52,7 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     cancelSentAt: r.cancelSentAt,
     deliveredAt: r.deliveredAt,
     wokeAt: r.wokeAt,
+    awaitedUntil: r.awaitedUntil,
     startedAt: r.startedAt,
     endedAt: r.endedAt,
     createdAt: r.createdAt,
@@ -475,6 +476,35 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Renews a live wait's claim on an outcome. A
+     * finished Job has two ways to reach its Agent — the blocking call it is
+     * already sitting in, and a fresh turn for the ordinary case where nothing
+     * is listening — and exactly one of them must carry it. The blocking call
+     * owns it while it is actually blocking, which is what this lease says; the
+     * delivery skips a Job whose lease has not lapsed. It is a lease rather than
+     * a flag because a waiter can die mid-poll, and then the outcome has to
+     * become deliverable again on its own.
+     */
+    async markAwaited(
+      owner: string,
+      satellite: string,
+      sequence: number,
+      until: Date,
+    ): Promise<void> {
+      await db
+        .update(satelliteJobs)
+        .set({ awaitedUntil: until })
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
+            sql`${satelliteJobs.deliveredAt} is null`,
+          ),
+        );
+    },
+
     async markSeen(
       owner: string,
       satellite: string,
@@ -512,6 +542,7 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.agentId, agentId),
             inArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             sql`${satelliteJobs.deliveredAt} is null`,
+            sql`(${satelliteJobs.awaitedUntil} is null or ${satelliteJobs.awaitedUntil} < now())`,
           ),
         )
         .orderBy(satelliteJobs.endedAt)

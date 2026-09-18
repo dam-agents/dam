@@ -21,6 +21,7 @@ export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const POLL_INTERVAL_MS = 500;
 const CANCEL_ATTEMPTS = 3;
+const AWAIT_LEASE_MS = POLL_INTERVAL_MS * 4;
 
 export interface AgentOpsDeps {
   repo: SatellitesRepository;
@@ -245,8 +246,15 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       sequence: number,
       deadlineMs: number,
     ): Promise<JobOutcome> {
+      const { owner } = await resolve(agentId, name);
       const deadline = now().getTime() + deadlineMs;
       for (;;) {
+        await deps.repo.markAwaited(
+          owner,
+          name,
+          sequence,
+          new Date(now().getTime() + AWAIT_LEASE_MS),
+        );
         const current = await read(agentId, name, sequence);
         if (isTerminal(current.status)) return current;
         if (now().getTime() >= deadline) return current;

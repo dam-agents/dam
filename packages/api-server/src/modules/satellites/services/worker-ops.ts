@@ -128,6 +128,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
         input.satellite,
         input.sequence,
         patch,
+        "running",
       );
       if (settled === null) return;
       await deps.deliverOutcome({

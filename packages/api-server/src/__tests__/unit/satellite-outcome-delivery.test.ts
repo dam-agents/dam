@@ -36,6 +36,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     cancelSentAt: null,
     deliveredAt: null,
     wokeAt: null,
+    awaitedUntil: null,
     startedAt: new Date(),
     endedAt: new Date(),
     createdAt: new Date(),

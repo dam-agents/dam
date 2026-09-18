@@ -28,6 +28,7 @@ export interface JobRow {
   cancelSentAt: Date | null;
   deliveredAt: Date | null;
   wokeAt: Date | null;
+  awaitedUntil: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
   createdAt: Date;

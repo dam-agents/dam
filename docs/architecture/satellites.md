@@ -102,7 +102,7 @@ It rides a runtime event of its own ([runtime delivery](runtime-delivery.md)), h
 
 Two rules keep it from becoming noise, and they are load-bearing because there is no opt-out:
 
-- **An outcome already delivered does not wake.** Whichever path reports it first claims it, so an Agent sitting in `wait` does not also get a turn about the same Job.
+- **An outcome already delivered does not wake.** One outcome reaches an Agent once, and the two paths that could carry it — the blocking `wait` the Agent is already sitting in, and a fresh turn for the ordinary case where nothing is listening — are arbitrated rather than left to whichever fires first. A `wait` takes a short lease on the Job and renews it every poll; the delivery skips a Job whose lease has not lapsed. It is a lease and not a flag because a waiter can die mid-poll, and the outcome then has to become deliverable again on its own — which is what the hourly retry is for. Without it the report path always won, because a report settles and delivers in the same breath while the waiter is still between polls, and the Agent was told the same thing twice.
 - **Simultaneous finishes coalesce.** Delivery claims *every* undelivered outcome for the Agent in one atomic statement, so three Jobs ending together produce one turn.
 
 A claim is released only when no turn was written at all. Once the event is committed it is durable and the outbox carries it, so releasing after a later failure would let the next claim announce the same Job a second time. The hourly sweep therefore does two different things: it *announces* an outcome nobody claimed, and it only *re-wakes* one that was claimed — waking for an unclaimed outcome would bring the Agent up with nothing to read.
