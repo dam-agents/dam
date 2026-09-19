@@ -76,7 +76,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: %w", name, err)
 	}
 
-	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner,
+	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, name, owner,
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
@@ -417,6 +417,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
+	unresolvedGrants.forget(name)
 }
 
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {
