@@ -761,7 +761,7 @@ func (s *Server) copyInit(to string) error {
 		return err
 	}
 	if _, err := io.Copy(destination, source); err != nil {
-		destination.Close()
+		_ = destination.Close()
 		_ = os.Remove(staged)
 		return err
 	}
