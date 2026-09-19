@@ -48,6 +48,8 @@ func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *con
 }
 
 func (c *IdleChecker) RunLoop(ctx context.Context) {
+	c.check(ctx)
+
 	interval := c.checkInterval()
 	slog.Info("idle checker started",
 		"timeout", c.config.AgentBase.IdleTimeout.AsDuration(), "interval", interval)

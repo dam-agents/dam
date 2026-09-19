@@ -278,6 +278,39 @@ func TestIdleChecker_ServesOverridesWhenGlobalTimeoutIsZero(t *testing.T) {
 	assert.Equal(t, 15*time.Second, checker.checkInterval(), "the observed override sets the cadence when the install has none")
 }
 
+// TEST_SCENARIO: A restart forgets what the last sweep observed, so the run loop must sweep once before its first tick; otherwise a one-minute agent waits out the chart-wide cadence and the reported bug returns on every restart.
+func TestIdleChecker_RunLoopSweepsBeforeFirstTick(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("minute-agent", staleTime, nil), time.Minute)
+	ss := agentStatefulSet("minute-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stopped := make(chan struct{})
+	go func() {
+		checker.RunLoop(ctx)
+		close(stopped)
+	}()
+
+	require.Eventually(t, func() bool {
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "minute-agent", metav1.GetOptions{})
+		return err == nil && *gotSS.Spec.Replicas == 0
+	}, 2*time.Second, 10*time.Millisecond,
+		"the first tick is five minutes away, so only a sweep before it can hibernate this agent")
+
+	assert.Equal(t, 15*time.Second, checker.checkInterval(),
+		"the sweep before the first tick also seeds the cadence from the agent's own timeout")
+
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("idle checker did not stop when its context was cancelled")
+	}
+}
+
 // TEST_SCENARIO: The run loop used to shut itself down on an always-on install, which left every per-agent timeout unserved, so it must stay up and stop only when its context is cancelled.
 func TestIdleChecker_RunLoopStaysUpWhenGlobalTimeoutIsZero(t *testing.T) {
 	agent := withHibernationTimeout(idleAgentCR("opt-in-agent", "", nil), time.Minute)
