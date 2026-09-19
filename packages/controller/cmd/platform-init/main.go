@@ -123,7 +123,7 @@ func openBootLog(root string) {
 		logf("WARNING: opening the boot log (%v); this machine's output stays discarded", err)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	for _, fd := range []int{syscall.Stdout, syscall.Stderr} {
 		if err := syscall.Dup3(int(file.Fd()), fd, 0); err != nil {
 			logf("WARNING: redirecting fd %d to the boot log (%v)", fd, err)
@@ -281,13 +281,13 @@ func copyFile(from, to string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	destination, err := os.OpenFile(to, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(destination, source); err != nil {
-		destination.Close()
+		_ = destination.Close()
 		return err
 	}
 	return destination.Close()
