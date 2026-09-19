@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "11"
+    agent-platform.ai/crd-schema-generation: "12"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -91,6 +91,38 @@ spec:
                   vm:
                     description: VM carries vm-backend props; present only when type
                       == "vm".
+                    properties:
+                      disk:
+                        description: |-
+                          Disk describes the machine's one storage disk. Omitted, the controller
+                          derives it from the Agent's Mounts, which is how an Agent written by a
+                          caller that only knows the container backend still boots.
+                        properties:
+                          persist:
+                            description: |-
+                              Persist are absolute guest paths bind-mounted from the disk, seeded once
+                              from whatever the image ships at that path. They survive a stop, an
+                              in-place restart and hibernation, and go with the Agent on delete.
+                            items:
+                              maxLength: 256
+                              pattern: ^/[A-Za-z0-9._@+-][A-Za-z0-9._@/+-]*$
+                              type: string
+                            type: array
+                          size:
+                            description: |-
+                              Size is the whole disk as a K8s resource Quantity (e.g. "20Gi"), rounded
+                              up to a GiB when the machine is created and grown in place — never shrunk
+                              — when it rises. Empty inherits StorageSize, then the chart default.
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a machine may persist at most 16 paths
+                          rule: '!has(self.persist) || size(self.persist) <= 16'
+                        - message: a persisted path may not contain '..'
+                          rule: '!has(self.persist) || self.persist.all(p, !p.contains(''..''))'
+                        - message: a persisted path may not nest inside another
+                          rule: '!has(self.persist) || self.persist.all(p, self.persist.all(q,
+                            p == q || !p.startsWith(q + ''/'')))'
                     type: object
                 required:
                 - type

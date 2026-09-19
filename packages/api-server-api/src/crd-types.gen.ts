@@ -30,7 +30,27 @@ export interface AgentSpecCR {
     /**
      * VM carries vm-backend props; present only when type == "vm".
      */
-    vm?: {};
+    vm?: {
+      /**
+       * Disk describes the machine's one storage disk. Omitted, the controller
+       * derives it from the Agent's Mounts, which is how an Agent written by a
+       * caller that only knows the container backend still boots.
+       */
+      disk?: {
+        /**
+         * Persist are absolute guest paths bind-mounted from the disk, seeded once
+         * from whatever the image ships at that path. They survive a stop, an
+         * in-place restart and hibernation, and go with the Agent on delete.
+         */
+        persist?: string[];
+        /**
+         * Size is the whole disk as a K8s resource Quantity (e.g. "20Gi"), rounded
+         * up to a GiB when the machine is created and grown in place — never shrunk
+         * — when it rises. Empty inherits StorageSize, then the chart default.
+         */
+        size?: string;
+      };
+    };
   };
   /**
    * Description is an optional human-readable description.

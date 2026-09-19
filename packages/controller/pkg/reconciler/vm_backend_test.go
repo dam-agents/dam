@@ -253,7 +253,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
 	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
 	assert.Equal(t, spec.Env["NO_PROXY"], spec.Env["no_proxy"], "clients reading either casing see the same list")
-	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
+	assert.Equal(t, []string{"/home/agent"}, spec.Persist, "the runner is told what the disk holds; the image is not asked")
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
 
@@ -395,16 +395,85 @@ func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
 }
 
-// TEST_SCENARIO: a persisted mount carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
-func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
+// TEST_SCENARIO: the disk carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
+func TestVMBackendRefusesADiskSizeItCannotParse(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5GG"}}
+	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{Size: "5GG", Persist: []string{"/home/agent"}}}
 	r, node, _ := setupVMReconciler(t, agent)
 
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "/home/agent")
+	assert.Contains(t, err.Error(), "5GG")
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
+}
+
+// TEST_SCENARIO: a machine has one disk, so the Agent says how big it is once and which paths live on it. The container backend's mounts cannot say that — each is a volume with a size of its own — so summing them bought a number no single path was held to, and rounding each up to a GiB first paid for that rounding once per mount. Here two persisted paths of 4Gi each are one 10Gi disk: the Agent's own storage size, stated once.
+func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{Persist: []string{"/home/agent", "/data"}}}
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true, Size: "4Gi"},
+		{Path: "/data", Persist: true, Size: "4Gi"},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	spec := node.spec("my-agent")
+	assert.Equal(t, 10, spec.StorageGiB, "the Agent's storage size, not 4+4")
+	assert.Equal(t, []string{"/data", "/home/agent"}, spec.Persist, "sorted, so reordering the list is not a restart")
+}
+
+// TEST_SCENARIO: an Agent written by a caller that only knows the container backend carries mounts and no disk block. Its persisted mounts still name the paths and its own storage size is still the disk, so it boots with exactly what the default template has always meant — a non-persisted mount contributes nothing, because a machine discards its whole root at every stop and a path with no place on the disk is already empty on the next boot.
+func TestVMBackendDerivesTheDiskFromMountsWhenNoneIsDeclared(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/tmp", Persist: false},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	spec := node.spec("my-agent")
+	assert.Equal(t, []string{"/home/agent"}, spec.Persist)
+	assert.Equal(t, 10, spec.StorageGiB)
+}
+
+// TEST_SCENARIO: a disk block that lists nothing is an Agent that persists nothing, which is not the same as an Agent that declared no block at all — the second falls back to its mounts, the first is taken at its word.
+func TestVMBackendHonoursAnEmptyPersistList(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{}}
+	agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true}}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Empty(t, node.spec("my-agent").Persist)
+}
+
+// TEST_SCENARIO: the runner's volume holds three things with three lifetimes — the machine disks that are an owner's agents, the per-machine bookkeeping a restart rebuilds, and an image cache. Each gets its own mount, including the images when no shared volume is configured, so one never appears inside another depending on how the install is set up.
+func TestRunnerMountsEachLifetimeSeparately(t *testing.T) {
+	mounts := func(imageCacheClaim string) map[string]corev1.VolumeMount {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		r.config.VM.Runner.ImageCacheClaim = imageCacheClaim
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		byPath := map[string]corev1.VolumeMount{}
+		for _, m := range dep.Spec.Template.Spec.Containers[0].VolumeMounts {
+			byPath[m.MountPath] = m
+		}
+		return byPath
+	}
+
+	plain := mounts("")
+	assert.Equal(t, "disks", plain[vmRunnerDisksPath].SubPath)
+	assert.Equal(t, "machines", plain[vmRunnerMachinesPath].SubPath)
+	assert.Equal(t, "images", plain[vmRunnerImagesPath].SubPath,
+		"with no shared cache the images are still their own mount, not a directory inside another")
+
+	shared := mounts("platform-vm-images")
+	assert.Empty(t, shared[vmRunnerImagesPath].SubPath)
+	assert.Equal(t, "image-cache", shared[vmRunnerImagesPath].Name, "the shared volume replaces that mount rather than nesting in it")
 }
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.

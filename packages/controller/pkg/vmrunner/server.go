@@ -39,6 +39,7 @@ const (
 	cacheBudgetPercent = 80
 	rootfsDir          = "rootfs"
 	launchFile         = "launch.json"
+	shareDir           = "share"
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -66,6 +67,7 @@ var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 type Server struct {
 	Token      string
 	StateDir   string
+	ImageDir   string
 	Runtime    *Smolvm
 	PortMin    int
 	PortMax    int
@@ -73,6 +75,7 @@ type Server struct {
 	ReserveMiB int
 	AllowFrom  []*net.IPNet
 	Crane      string
+	Init       string
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -158,7 +161,7 @@ func (s *Server) list(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) machineIDs() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	entries, err := os.ReadDir(s.StateDir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -248,7 +251,8 @@ func (s *Server) deadForLong(id string) bool {
 
 func needsRestart(applied, desired MachineSpec) bool {
 	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
-		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env)
+		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB ||
+		!reflect.DeepEqual(applied.Env, desired.Env) || !reflect.DeepEqual(applied.Persist, desired.Persist)
 }
 
 func createOnlyDrift(applied, desired MachineSpec) string {
@@ -278,7 +282,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		}
 		return nil
 	}
-	if err := s.writeCA(id, spec.CACert); err != nil {
+	if err := s.writeShare(id, spec); err != nil {
 		return err
 	}
 	if state == StateAbsent {
@@ -386,6 +390,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if launch != nil && cached == "" {
 		cached = filepath.Join(base, rootfsDir)
 	}
+	if launch == nil {
+		if launch, err = s.launchFromRegistry(image); err != nil {
+			return err
+		}
+	}
 	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
 	if cached != "" {
 		if _, err := os.Stat(cached); err == nil {
@@ -397,7 +406,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return err
 	}
 	s.forgetState(id)
-	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca"), launch); err != nil {
+	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, shareDir), launch); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
@@ -405,6 +414,24 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	}
 	s.markStarting(id)
 	return s.Runtime.Start(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: platform-init is the machine's entrypoint, and it execs the image's own — so what the image says to run has to be known before the machine is created, on every path that reaches a boot. A cached tree carries it beside the files and an archive carries it inside, but a machine booting straight from a registry reference has neither, and smolvm would read the config itself and launch the image's entrypoint directly, leaving the disk unmounted. One config fetch costs no layers and answers it. An install that disabled the fetch is refused rather than booted without persistence: what it would save is a machine whose work does not survive its first stop.
+func (s *Server) launchFromRegistry(ref string) (*ImageLaunch, error) {
+	if s.Crane == "" {
+		return nil, fmt.Errorf("%w: %s names no cached image and this runner cannot read one from the registry", errImageLaunchUnknown, ref)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	defer cancel()
+	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
+	}
+	launch, err := launchFromConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
+	}
+	return launch, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a tool that fails per entry reports per entry, and for a whole image that ran to 2.6 MB when the runner still unpacked one itself. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server — so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches the image again. The cap belongs to the boundary rather than to the tool behind it, which is why it outlived the unpack that found it. Keeping the head keeps the first failure, which is the one that explains the rest.
@@ -618,7 +645,7 @@ func (s *Server) cacheBudget(dir string) int64 {
 }
 
 func (s *Server) cachePath(image string) string {
-	return filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+	return filepath.Join(s.ImageDir, strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an unpacked image is not a spare a machine consumes at create, it is the read-only lower layer every machine of that image keeps mounted for as long as it runs — so deleting one to make room takes the running guests' filesystem out from under them. Which images are spoken for is read from the machines themselves rather than tracked alongside them, because the runner is restarted and its memory is not: a spec on disk outlives the process that wrote it, and a machine whose image is missing from this set is a machine about to lose its rootfs.
@@ -696,16 +723,53 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 	}
 }
 
-func (s *Server) writeCA(id, ca string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, the mount plan it applies and the CA the guest must trust, and it is rewritten on every ensure so a plan the controller has changed is the plan the next boot applies — the share is a live host directory, while the command line that names it is fixed at create. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+func (s *Server) writeShare(id string, spec MachineSpec) error {
 	base, err := s.machineDir(id)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(base, "ca")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	share := filepath.Join(base, shareDir)
+	if err := os.MkdirAll(filepath.Join(share, "ca"), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(ca), 0o644)
+	if err := os.WriteFile(filepath.Join(share, "ca", "ca.crt"), []byte(spec.CACert), 0o644); err != nil {
+		return err
+	}
+	plan, err := json.Marshal(Plan{Persist: spec.Persist})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(share, "plan.json"), plan, 0o644); err != nil {
+		return err
+	}
+	return s.copyInit(filepath.Join(share, "init"))
+}
+
+func (s *Server) copyInit(to string) error {
+	if s.Init == "" {
+		return errors.New("no platform-init binary configured, so a machine would boot with its disk unmounted")
+	}
+	source, err := os.Open(s.Init)
+	if err != nil {
+		return fmt.Errorf("reading platform-init: %w", err)
+	}
+	defer source.Close()
+	staged := to + ".new"
+	destination, err := os.OpenFile(staged, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destination, source); err != nil {
+		destination.Close()
+		_ = os.Remove(staged)
+		return err
+	}
+	if err := destination.Close(); err != nil {
+		_ = os.Remove(staged)
+		return err
+	}
+	return os.Rename(staged, to)
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
@@ -958,7 +1022,7 @@ func (s *Server) allocatePort(id string) (int, error) {
 		return p, nil
 	}
 	used := map[int]bool{}
-	entries, _ := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	entries, _ := os.ReadDir(s.StateDir)
 	for _, e := range entries {
 		used[s.port(e.Name())] = true
 	}
@@ -1026,7 +1090,7 @@ func (s *Server) machineDir(id string) (string, error) {
 	if !machineID.MatchString(id) {
 		return "", fmt.Errorf("invalid machine id %q", id)
 	}
-	return filepath.Join(s.StateDir, "machines", id), nil
+	return filepath.Join(s.StateDir, id), nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
