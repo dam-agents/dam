@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: File listings preserve shallow output and recursively enumerate workspace paths through the existing file API, failing without partial output if a directory cannot be read.
+// TEST_OVERVIEW: File listings name every entry of a directory, marking directories with a trailing slash, and recursively enumerate workspace paths through the existing file API, failing without partial output if a directory cannot be read.
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -158,10 +158,10 @@ describe("dam file list (integration)", () => {
     }
   }
 
-  it("keeps the default listing shallow and files-only", async () => {
+  it("lists directories and files of one directory, marking directories with a trailing slash", async () => {
     const result = await runList();
     expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout).toBe("README.md\n");
+    expect(result.stdout).toBe("empty/\nsrc/\nREADME.md\n");
     expect(requested).toEqual([""]);
   });
 
@@ -298,6 +298,13 @@ describe("dam file list (integration)", () => {
     expect(requested).toEqual(["src", "src/nested"]);
   });
 
+  it("names a subdirectory the user can descend into when listing it shallowly", async () => {
+    const result = await runList("src");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe("src/nested/\nsrc/index.ts\n");
+    expect(requested).toEqual(["src"]);
+  });
+
   it("returns recursive JSON with the existing path and type shape", async () => {
     const result = await runList("src", "-R", "--json");
     expect(result.exitCode, result.stderr).toBe(0);
@@ -309,6 +316,7 @@ describe("dam file list (integration)", () => {
   });
 
   it.each([
+    { flags: [], output: "" },
     { flags: ["-R"], output: "" },
     { flags: ["-R", "--json"], output: "[]\n" },
   ])(

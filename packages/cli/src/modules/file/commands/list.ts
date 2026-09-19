@@ -74,7 +74,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
     )
     .option("--server <url>", "override the configured server URL")
     .option("-R, --recursive", "list all nested files and directories")
-    .option("--json", "emit entries as JSON (files and directories)")
+    .option("--json", "emit entries as JSON")
     .action(
       async (
         ref: string,
@@ -149,10 +149,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
 
         const out = opts.json
           ? `${JSON.stringify(entries)}\n`
-          : entries
-              .filter((e) => opts.recursive || e.type === "file")
-              .map((e) => `${e.path}${entrySuffix[e.type]}\n`)
-              .join("");
+          : entries.map((e) => `${e.path}${entrySuffix[e.type]}\n`).join("");
         return writeStdoutAndExit(out, EXIT_SUCCESS);
       },
     );
