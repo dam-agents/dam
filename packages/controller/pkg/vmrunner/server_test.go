@@ -655,7 +655,7 @@ func TestFailureReasonsMatchWhatTheUserIsTold(t *testing.T) {
 		err  string
 		want string
 	}{
-		{"cannot read archive /var/lib/vm-runner/images/x.tar", ReasonImageUnavailable},
+		{"cannot read archive /var/lib/platform/images/x.tar", ReasonImageUnavailable},
 		{"unknown flag --image", ReasonImageUnavailable},
 		{"failed to pull quay.io/x/y:1", ReasonImageUnavailable},
 		{"no free machine port", ReasonOutOfCapacity},
