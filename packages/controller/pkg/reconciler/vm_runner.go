@@ -39,7 +39,7 @@ const (
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
 	vmRunnerPort         = 4600
-	vmRunnerCertYears = 10
+	vmRunnerCertYears    = 10
 )
 
 type runnerConn struct {

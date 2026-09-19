@@ -17,8 +17,9 @@ import (
 const (
 	bootLogCap    = 32 << 20
 	trustCacheEnv = "PLATFORM_TRUST_CACHE"
-	backendEnv    = "PLATFORM_BACKEND"
 	bootLogName   = "agent-runtime.log"
+	// UNIT_BOUNDARY_DESCRIPTION: what a container runtime searches when an image names a bare command and its config sets no PATH. Without this an image that boots as a container would fail as a machine, on nothing but the absence of a variable it never had to set.
+	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
 func logf(format string, args ...any) {
@@ -47,7 +48,6 @@ func main() {
 		persist(root, path)
 	}
 	offerTrustCache(root)
-	declareBackend()
 
 	binary, err := lookPath(command[0])
 	if err != nil {
@@ -183,13 +183,6 @@ func offerTrustCache(root string) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image cannot work out for itself, and has to know: its root is discarded at every stop, so the tricks a pod image plays with node-local scratch move data off durable storage here rather than onto it. An image that does not read this still works — it is told, not asked.
-func declareBackend() {
-	if err := os.Setenv(backendEnv, "vm"); err != nil {
-		logf("WARNING: could not set %s (%v)", backendEnv, err)
-	}
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the first boot seeds a declared path from whatever the image ships there, so a home an image baked is the home the agent starts from. The copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
 func persist(root, path string) {
 	store := vmrunner.AgentStore(root, path)
@@ -236,7 +229,7 @@ func seed(from, store string) error {
 	return os.Rename(staged, store)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ownership is copied, not just content. An image's home belongs to the user its harness runs as, and a tree reproduced as root's would leave that user unable to write its own home. Sockets, devices and fifos are skipped: they are not state an agent carries across a boot, and reproducing them needs privileges this copy should not assume.
+// UNIT_BOUNDARY_DESCRIPTION: ownership and mode are copied, not just content. An image's home belongs to the user its harness runs as, and a tree reproduced as root's would leave that user unable to write its own home. Mode is set after the entry exists rather than at creation, because creation masks it through the umask this process inherited — which would quietly drop the group-write, setgid and sticky bits an image relies on, once, on the only boot that seeds. Sockets, devices and fifos are skipped: they are not state an agent carries across a boot, and reproducing them needs privileges this copy should not assume.
 func copyTree(from, to string, info fs.FileInfo) error {
 	switch {
 	case info.Mode()&fs.ModeSymlink != 0:
@@ -272,11 +265,15 @@ func copyTree(from, to string, info fs.FileInfo) error {
 		logf("WARNING: not seeding %s, which is neither a file, a directory nor a symlink", from)
 		return nil
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		if err := os.Lchown(to, int(stat.Uid), int(stat.Gid)); err != nil {
+			return err
+		}
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
 		return nil
 	}
-	return os.Lchown(to, int(stat.Uid), int(stat.Gid))
+	return os.Chmod(to, info.Mode().Perm()|info.Mode()&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky))
 }
 
 func copyFile(from, to string, mode fs.FileMode) error {
@@ -312,7 +309,11 @@ func lookPath(command string) (string, error) {
 	if filepath.Base(command) != command {
 		return command, executable(command)
 	}
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+	search := os.Getenv("PATH")
+	if search == "" {
+		search = defaultPath
+	}
+	for _, dir := range filepath.SplitList(search) {
 		candidate := filepath.Join(dir, command)
 		if executable(candidate) == nil {
 			return candidate, nil
