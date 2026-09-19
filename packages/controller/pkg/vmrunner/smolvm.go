@@ -86,10 +86,10 @@ func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int,
 		}
 		command = append(append([]string{}, launch.Entrypoint...), launch.Cmd...)
 	}
-	args = append(args, envArgs(env)...)
 	if len(command) == 0 {
 		return errImageLaunchUnknown
 	}
+	args = append(args, envArgs(env)...)
 	args = append(append(args, "--", InitPath), command...)
 	return r.run(envValues(spec.Env), args...)
 }
@@ -113,15 +113,14 @@ func (r *Smolvm) Stop(id string) error {
 	if err := r.run(nil, "machine", "stop", "-n", id); err != nil {
 		return err
 	}
-	r.discardOverlay(id)
+	discardOverlay(id, r.vmDir(id))
 	return nil
 }
 
 func (r *Smolvm) Delete(id string) error { return r.run(nil, "machine", "delete", "-n", id, "-f") }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's root is a throwaway overlay, and this is what makes that true rather than nearly true. Kept, it is a tier nobody declared: it survives an ordinary stop and start, so software installed outside the declared paths looks persistent, and is then thrown away by the first boot that has to discard a corrupt one — weeks later, silently, with no way to tell afterwards which of the two a machine did. Discarded every time, the rule is the same sentence as the container backend's: a declared path, or gone. It runs on the way down, so a hibernated fleet does not hold an overlay each on its owner's disk, and again on the way up, because a machine that died with its runner never got the stop and would otherwise wake onto a stale root.
-func (r *Smolvm) discardOverlay(id string) {
-	dir := r.vmDir(id)
+func discardOverlay(id, dir string) {
 	if dir == "" {
 		return
 	}
@@ -149,7 +148,7 @@ func (r *Smolvm) Start(id string) error {
 		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
-		r.discardOverlay(id)
+		discardOverlay(id, dir)
 	}
 	err := r.run(nil, "machine", "start", "-n", id)
 	if err != nil {

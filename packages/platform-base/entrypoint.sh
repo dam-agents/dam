@@ -86,7 +86,11 @@ if [ -s "$mitm_ca" ]; then
 				printf '%s' "$key" > "$cache.new/key"; then
 				rm -rf "$cache" && mv "$cache.new" "$cache"
 			fi
-			rm -rf "$cache.new"
+			# Guarded on $cache, not $key: with no cache directory the
+			# expansion would be a bare ".new" under the working directory.
+			if [ -n "$cache" ]; then
+				rm -rf "$cache.new"
+			fi
 		fi
 	fi
 
