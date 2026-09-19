@@ -148,9 +148,51 @@ type Backend struct {
 	VM *VMBackend `json:"vm,omitempty"`
 }
 
-// VMBackend is deliberately empty for now — scratch sizing and placement are
-// chart-level policy (config.VM); it exists so future vm-only props have a home.
-type VMBackend struct{}
+// VMBackend carries the props that exist only on the vm backend. Placement and
+// the runner's own shape stay chart-level policy (config.VM); what lives here is
+// what differs per agent.
+type VMBackend struct {
+	// Disk describes the machine's one storage disk. Omitted, the controller
+	// derives it from the Agent's Mounts, which is how an Agent written by a
+	// caller that only knows the container backend still boots.
+	// +optional
+	Disk *VMDisk `json:"disk,omitempty"`
+}
+
+// VMDisk is the vm backend's whole storage model, and it is deliberately not
+// Mounts. A pod can attach one volume per path, so on the container backend a
+// mount is both a size and a placement; a machine has exactly one disk, so the
+// size is stated once and the paths are only placements on it. Nothing else in
+// the guest is durable: a machine's root is a throwaway overlay discarded every
+// time it stops, so a path that is not listed here is empty on the next boot.
+// That is the same rule the container backend states for a path with no mount,
+// which is why the vm backend needs no ephemeral list to go with this one.
+// +kubebuilder:validation:XValidation:rule="!has(self.persist) || size(self.persist) <= 16",message="a machine may persist at most 16 paths"
+// +kubebuilder:validation:XValidation:rule="!has(self.persist) || self.persist.all(p, !p.contains('..'))",message="a persisted path may not contain '..'"
+// +kubebuilder:validation:XValidation:rule="!has(self.persist) || self.persist.all(p, self.persist.all(q, p == q || !p.startsWith(q + '/')))",message="a persisted path may not nest inside another"
+type VMDisk struct {
+	// Size is the whole disk as a K8s resource Quantity (e.g. "20Gi"), rounded
+	// up to a GiB when the machine is created and grown in place — never shrunk
+	// — when it rises. Empty inherits StorageSize, then the chart default.
+	// +optional
+	Size string `json:"size,omitempty"`
+	// Persist are absolute guest paths bind-mounted from the disk, seeded once
+	// from whatever the image ships at that path. They survive a stop, an
+	// in-place restart and hibernation, and go with the Agent on delete.
+	// +optional
+	// +kubebuilder:validation:items:Pattern=`^/[A-Za-z0-9._@+-][A-Za-z0-9._@/+-]*$`
+	// +kubebuilder:validation:items:MaxLength=256
+	Persist []string `json:"persist,omitempty"`
+}
+
+// GetDisk returns the declared disk, or nil when the Agent was written without
+// one — including when it carries no vm block at all.
+func (b *VMBackend) GetDisk() *VMDisk {
+	if b == nil {
+		return nil
+	}
+	return b.Disk
+}
 
 // IsVM reports whether the spec selects the vm backend.
 func (s *AgentSpec) IsVM() bool {
@@ -262,7 +304,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=11
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=12
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

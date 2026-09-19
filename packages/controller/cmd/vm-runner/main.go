@@ -13,9 +13,11 @@ import (
 
 func main() {
 	listen := flag.String("listen", ":4600", "address to serve the machine API on")
-	stateDir := flag.String("state-dir", "/var/lib/vm-runner", "per-machine state (published port, CA file, applied spec) and local image archives under images/")
+	stateDir := flag.String("state-dir", "/var/lib/platform/machines", "per-machine state: published port, applied spec, and the share each guest reads its plan, CA and platform-init from")
+	imageDir := flag.String("image-dir", "/var/lib/platform/images", "unpacked agent images and local archives, shared by every runner when the install gives them one volume")
 	smolvm := flag.String("smolvm", "smolvm", "smolvm binary")
 	crane := flag.String("crane", "crane", "crane binary, used to fetch an agent image the shared cache does not hold (empty disables the fetch)")
+	initBin := flag.String("platform-init", "/usr/local/libexec/platform-init", "platform-init binary, copied into every machine's share and run as its entrypoint")
 	portMin := flag.Int("port-min", 31000, "first port machines are published on")
 	portMax := flag.Int("port-max", 31099, "last port machines are published on")
 	memory := flag.Int("memory-mib", 0, "memory the runner may commit to machines; required")
@@ -32,9 +34,9 @@ func main() {
 		os.Exit(1)
 	}
 	srv := &vmrunner.Server{
-		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, Runtime: &vmrunner.Smolvm{Bin: *smolvm},
+		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, ImageDir: *imageDir, Runtime: &vmrunner.Smolvm{Bin: *smolvm},
 		PortMin: *portMin, PortMax: *portMax, MemoryMiB: *memory, ReserveMiB: *reserve,
-		Crane: *crane,
+		Crane: *crane, Init: *initBin,
 	}
 	for _, c := range strings.Split(*allowFrom, ",") {
 		if c = strings.TrimSpace(c); c != "" {
@@ -55,7 +57,7 @@ func main() {
 			slog.Warn("device not writable for machine uids", "path", dev, "error", err)
 		}
 	}
-	for _, dir := range []string{os.Getenv("HOME"), *stateDir} {
+	for _, dir := range []string{os.Getenv("HOME"), *stateDir, *imageDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			slog.Error("creating state dir", "path", dir, "error", err)
 			os.Exit(1)
@@ -70,7 +72,7 @@ func main() {
 		os.Exit(1)
 	}
 	go srv.Runtime.WarmTemplates()
-	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "tls", *tlsCert != "")
+	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin)
 	if *tlsCert != "" {
 		err = http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, srv.Handler())
 	} else {

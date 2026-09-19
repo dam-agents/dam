@@ -14,7 +14,9 @@ ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -o /vm-runner ./cmd/vm-runner
+    go build -o /vm-runner ./cmd/vm-runner && \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -o /platform-init ./cmd/platform-init
 
 
 FROM quay.io/fedora/fedora:42 AS runner
@@ -52,8 +54,16 @@ RUN set -eu; \
 
 COPY --from=builder /vm-runner /usr/local/bin/vm-runner
 
-# smolvm keeps machines and their disks under $HOME/.cache; the chart mounts a
-# volume there so they outlive the pod. catatonit reaps the guest processes
-# smolvm leaves behind when it gives up on a boot.
-ENV HOME=/var/lib/smolvm
+# platform-init is the entrypoint of every machine, not of this pod: the runner
+# copies it into each machine's share, where the guest runs it before the agent
+# image's own entrypoint. It is statically linked because the guest it runs in
+# is the agent image, which shares no libc with this one.
+COPY --from=builder /platform-init /usr/local/libexec/platform-init
+
+# smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
+# chart mounts the disks: one of three mounts under /var/lib/platform, beside the
+# per-machine bookkeeping and the image cache, each with a lifetime of its own.
+# catatonit reaps the guest processes smolvm leaves behind when it gives up on a
+# boot.
+ENV HOME=/var/lib/platform/disks
 ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm"]

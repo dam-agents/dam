@@ -184,7 +184,7 @@ export function startMemReaper(opts: {
   );
   const cgLimit =
     cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15 ? cgMax : null;
-  const inMachine = process.env.PLATFORM_VM_PERSIST_PATHS !== undefined;
+  const inMachine = process.env.PLATFORM_BACKEND === "vm";
   if (cgLimit === null && !(inMachine && readMeminfoBytes("MemAvailable"))) {
     opts.log("no readable memory limit; reaper disabled");
     return;
