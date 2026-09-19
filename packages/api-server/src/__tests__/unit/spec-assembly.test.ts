@@ -76,14 +76,25 @@ describe("assembleSpecFromTemplate", () => {
 
 describe("vmDiskFromMounts", () => {
   // TEST_SCENARIO: a machine discards its whole root every time it stops, so a path with no place on the disk is already empty on the next boot. A non-persisted mount therefore needs no counterpart here — unlike a container, where it is an emptyDir of its own.
-  it("keeps only the paths that persist", () => {
+  it("keeps only the paths that persist, in a stable order", () => {
     expect(
       vmDiskFromMounts([
         { path: "/home/agent", persist: true },
         { path: "/tmp", persist: false },
         { path: "/data", persist: true },
       ]),
-    ).toEqual({ disk: { persist: ["/home/agent", "/data"] } });
+    ).toEqual({ disk: { persist: ["/data", "/home/agent"] } });
+  });
+
+  // TEST_SCENARIO: mounts may nest, because each is a volume of its own on the container backend. One disk persists a path and everything under it, so the child is already covered — and the Agent resource refuses a persisted path inside another, so declaring both would fail admission at create.
+  it("drops a mount nested inside another persisted one", () => {
+    expect(
+      vmDiskFromMounts([
+        { path: "/home/agent/work", persist: true },
+        { path: "/home/agent", persist: true },
+        { path: "/data", persist: true },
+      ]),
+    ).toEqual({ disk: { persist: ["/data", "/home/agent"] } });
   });
 
   // TEST_SCENARIO: a template with no mounts says nothing about the disk, which is not the same as saying nothing persists. Leaving the block off is what tells the controller to fall back to the chart's default mounts; an empty list would be taken at its word and the agent would lose its home.

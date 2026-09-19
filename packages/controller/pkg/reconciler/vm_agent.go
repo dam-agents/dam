@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +19,9 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
+const vmBackendEnv = "PLATFORM_BACKEND"
 
 const (
 	vmReadinessPoll = 3 * time.Second
@@ -74,6 +78,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	env["IS_SANDBOX"] = "1"
+	env[vmBackendEnv] = "vm"
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 
@@ -305,11 +310,24 @@ func resolveVMDisk(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults)
 			}
 		}
 	}
-	slices.Sort(persist)
-	persist = slices.Compact(persist)
+	persist = outermost(persist)
 
 	return vmDisk{
 		gibibytes: max(int((quantity.Value()+(1<<30)-1)>>30), 1),
 		persist:   persist,
 	}, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one disk persists a path and everything under it, so a declared path inside another is already covered by its parent and binding it again would mount the parent's own subtree onto itself. Mounts may nest — each is a volume of its own on the container backend, and a template that nested two has always been legal — so the nesting is resolved here rather than refused, and the list is sorted so that reordering it is not a restart.
+func outermost(paths []string) []string {
+	slices.Sort(paths)
+	paths = slices.Compact(paths)
+	kept := paths[:0]
+	for _, path := range paths {
+		if len(kept) > 0 && strings.HasPrefix(path, kept[len(kept)-1]+"/") {
+			continue
+		}
+		kept = append(kept, path)
+	}
+	return kept
 }

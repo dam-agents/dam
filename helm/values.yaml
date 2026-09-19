@@ -194,6 +194,11 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
+    # Upgrading onto this layout abandons the machines an earlier release kept
+    # under `smolvm/` and `vm-runner/` on the same claim: those agents are
+    # recreated with empty disks, and the bytes stay until the owner's last vm
+    # agent goes and the claim is deleted with the runner. Delete the runner
+    # PVCs before the upgrade to reclaim them at once.
     # Set once: a later change only grows the claim, and only on a class
     # that allows expansion.
     storage: 100Gi

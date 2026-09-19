@@ -17,7 +17,10 @@ func TestSeedingReproducesTheImageTree(t *testing.T) {
 	image := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(image, "work", "nested"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(image, "work", "nested", "file"), []byte("baked"), 0o640))
+	require.NoError(t, os.Chmod(filepath.Join(image, "work", "nested", "file"), 0o640))
 	require.NoError(t, os.Symlink("nested/file", filepath.Join(image, "work", "link")))
+	require.NoError(t, os.Mkdir(filepath.Join(image, "shared"), 0o755))
+	require.NoError(t, os.Chmod(filepath.Join(image, "shared"), 0o2775|fs.ModeSetgid|fs.ModeSticky))
 
 	store := filepath.Join(t.TempDir(), "agent", "home", "agent")
 	require.NoError(t, seed(image, store))
@@ -29,6 +32,11 @@ func TestSeedingReproducesTheImageTree(t *testing.T) {
 	info, err := os.Stat(filepath.Join(store, "work", "nested", "file"))
 	require.NoError(t, err)
 	assert.Equal(t, fs.FileMode(0o640), info.Mode().Perm(), "a mode the image set is a mode the agent keeps")
+
+	info, err = os.Stat(filepath.Join(store, "shared"))
+	require.NoError(t, err)
+	assert.Equal(t, fs.ModeDir|fs.ModeSetgid|fs.ModeSticky|0o2775&fs.ModePerm, info.Mode()&(fs.ModeDir|fs.ModeSetgid|fs.ModeSticky|fs.ModePerm),
+		"setgid, sticky and group-write survive the umask this process inherited; seeding happens once, so a bit dropped here never comes back")
 
 	target, err := os.Readlink(filepath.Join(store, "work", "link"))
 	require.NoError(t, err)

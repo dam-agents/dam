@@ -438,6 +438,20 @@ func TestVMBackendDerivesTheDiskFromMountsWhenNoneIsDeclared(t *testing.T) {
 	assert.Equal(t, 10, spec.StorageGiB)
 }
 
+// TEST_SCENARIO: mounts may nest — each is a volume of its own on the container backend — but one disk persists a path and everything under it, so the child is already covered and binding it again would mount the parent's own subtree onto itself.
+func TestVMBackendDropsAPersistedPathInsideAnother(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent/work", Persist: true},
+		{Path: "/home/agent", Persist: true},
+		{Path: "/data", Persist: true},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Equal(t, []string{"/data", "/home/agent"}, node.spec("my-agent").Persist)
+}
+
 // TEST_SCENARIO: a disk block that lists nothing is an Agent that persists nothing, which is not the same as an Agent that declared no block at all — the second falls back to its mounts, the first is taken at its word.
 func TestVMBackendHonoursAnEmptyPersistList(t *testing.T) {
 	agent := vmAgentCR()
