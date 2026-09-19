@@ -227,3 +227,95 @@ func TestIdleChecker_CheckInterval(t *testing.T) {
 		assert.Equal(t, tt.expected, checker.checkInterval(), "timeout=%v", tt.timeout)
 	}
 }
+
+func withHibernationTimeout(agent *apiv1.Agent, d time.Duration) *apiv1.Agent {
+	agent.Spec.HibernationTimeout = &metav1.Duration{Duration: d}
+	return agent
+}
+
+// TEST_SCENARIO: An agent that sets a one-minute hibernation timeout must be swept inside its own window, so the sweep cadence follows the shortest per-agent timeout in play, not the chart-wide one.
+func TestIdleChecker_CheckIntervalFollowsShortestAgentTimeout(t *testing.T) {
+	recentTime := time.Now().UTC().Add(-10 * time.Second).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("quick-agent", recentTime, nil), time.Minute)
+	ss := agentStatefulSet("quick-agent", 1)
+	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+
+	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "before any sweep the chart-wide default sets the cadence")
+
+	checker.check(context.Background())
+
+	assert.Equal(t, 15*time.Second, checker.checkInterval(), "a one-minute agent must be swept inside its own window")
+}
+
+// TEST_SCENARIO: An agent past its own short timeout hibernates even though the chart-wide default is far longer, which is the case the one-minute setting exercises.
+func TestIdleChecker_HibernatesByShortPerAgentTimeout(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("minute-agent", staleTime, nil), time.Minute)
+	ss := agentStatefulSet("minute-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "minute-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "an agent past its own timeout hibernates whatever the chart-wide default says")
+}
+
+// TEST_SCENARIO: An install whose chart-wide default never hibernates still has to serve agents that set their own positive timeout, so the sweep keeps running and honours the override.
+func TestIdleChecker_ServesOverridesWhenGlobalTimeoutIsZero(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("opt-in-agent", staleTime, nil), time.Minute)
+	ss := agentStatefulSet("opt-in-agent", 1)
+	checker, client := newIdleChecker(t, 0, []*apiv1.Agent{agent}, ss)
+
+	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "with nothing observed yet the sweep still runs, at its slowest cadence")
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "opt-in-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "an opted-in agent hibernates even when the install defaults to always-on")
+	assert.Equal(t, 15*time.Second, checker.checkInterval(), "the observed override sets the cadence when the install has none")
+}
+
+// TEST_SCENARIO: The run loop used to shut itself down on an always-on install, which left every per-agent timeout unserved, so it must stay up and stop only when its context is cancelled.
+func TestIdleChecker_RunLoopStaysUpWhenGlobalTimeoutIsZero(t *testing.T) {
+	agent := withHibernationTimeout(idleAgentCR("opt-in-agent", "", nil), time.Minute)
+	checker, _ := newIdleChecker(t, 0, []*apiv1.Agent{agent})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stopped := make(chan struct{})
+	go func() {
+		checker.RunLoop(ctx)
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("idle checker exited although agents can set their own hibernation timeout")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("idle checker did not stop when its context was cancelled")
+	}
+}
+
+// TEST_SCENARIO: A zero per-agent timeout means never hibernate, and such an agent must not drag the sweep cadence down either.
+func TestIdleChecker_ZeroPerAgentTimeoutNeverHibernates(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("always-on-agent", staleTime, nil), 0)
+	ss := agentStatefulSet("always-on-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "always-on-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "an always-on agent keeps running however long it sits idle")
+	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "an always-on agent does not speed the sweep up")
+}
