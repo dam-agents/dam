@@ -31,10 +31,15 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: one tree, three lifetimes, each its own mount. The machine disks under disks/ are an owner's agents and outlive everything; the per-machine bookkeeping under machines/ is rebuilt from the cluster after a pod restart; the unpacked images under images/ are a cache, and the install may put them on a volume every runner shares or a node directory of read-only archives. Mounting images/ explicitly even when it falls back to this claim keeps the three separable, rather than having one appear inside another depending on configuration.
 const (
-	vmRunnerComponent = "vm-runner"
-	vmRunnerPort      = 4600
-	vmRunnerCertYears = 10
+	vmRunnerComponent    = "vm-runner"
+	vmRunnerStatePath    = "/var/lib/platform"
+	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
+	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
+	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
+	vmRunnerPort         = 4600
+	vmRunnerCertYears    = 10
 )
 
 type runnerConn struct {
@@ -409,25 +414,28 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		resources.Limits[corev1.ResourceName(k)] = q
 	}
 	mounts := []corev1.VolumeMount{
-		{Name: "state", MountPath: "/var/lib/smolvm", SubPath: "smolvm"},
-		{Name: "state", MountPath: "/var/lib/vm-runner", SubPath: "vm-runner"},
+		{Name: "state", MountPath: vmRunnerDisksPath, SubPath: "disks"},
+		{Name: "state", MountPath: vmRunnerMachinesPath, SubPath: "machines"},
 		{Name: "credentials", MountPath: "/etc/vm-runner", ReadOnly: true},
 	}
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr.To[int32](0o400)}}},
 	}
-	if claim := spec.ImageCacheClaim; claim != "" {
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: "/var/lib/vm-runner/images"})
+	switch {
+	case spec.ImageCacheClaim != "":
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath})
 		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: spec.ImageCacheClaim},
 		}})
-	} else if host := spec.ImageArchiveHostPath; host != "" {
+	case spec.ImageArchiveHostPath != "":
 		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: "/var/lib/vm-runner/images", ReadOnly: true})
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: vmRunnerImagesPath, ReadOnly: true})
 		volumes = append(volumes, corev1.Volume{Name: "image-archives", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: host, Type: &dir},
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageArchiveHostPath, Type: &dir},
 		}})
+	default:
+		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: r.runnerOwnerRef(ctx)},
@@ -450,6 +458,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Image:           spec.Image,
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
+							"--state-dir=" + vmRunnerMachinesPath,
+							"--image-dir=" + vmRunnerImagesPath,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",

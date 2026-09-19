@@ -33,6 +33,24 @@ export function concreteResources(
     : { limits };
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine has one disk, so the mounts a template declares become a list of paths on it rather than a volume each. One disk persists a path and everything under it, so a mount nested inside another is already covered by its parent and is dropped rather than declared twice — mounts may nest, because each is a volume of its own on the container backend, and the Agent resource refuses a persisted path inside another. Only the paths are carried over: the disk's size stays the Agent's own storageSize, which the controller already reads, so the number is not written down twice and cannot drift between them. A non-persisted mount has nothing to carry — a machine discards its whole root at every stop, so a path with no place on the disk is already empty on the next boot. A template with no mounts at all leaves the block off entirely, which is what tells the controller to fall back to the chart's default mounts instead of reading it as "persist nothing".
+export function vmDiskFromMounts(
+  mounts: TemplateSpec["mounts"],
+): { disk: { persist: string[] } } | undefined {
+  if (!mounts?.length) return undefined;
+  const persist = mounts
+    .filter((m) => m.persist)
+    .map((m) => m.path)
+    .sort();
+  return {
+    disk: {
+      persist: persist.filter(
+        (path, i) => i === 0 || !path.startsWith(`${persist[i - 1]}/`),
+      ),
+    },
+  };
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
 export function assembleSpecFromTemplate(
   name: string,
@@ -56,7 +74,9 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: opts.vm ? { type: "vm" } : undefined,
+    backend: opts.vm
+      ? { type: "vm", vm: vmDiskFromMounts(tmplSpec.mounts) }
+      : undefined,
     runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
     nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
   };

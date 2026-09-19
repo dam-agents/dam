@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,12 +16,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
+const vmBackendEnv = "PLATFORM_BACKEND"
+
 const (
-	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
-	vmReadinessPoll   = 3 * time.Second
+	vmReadinessPoll = 3 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: how closely a machine is watched while it
 	// UNIT_BOUNDARY_DESCRIPTION: starts, and for how long. The window runs
 	// UNIT_BOUNDARY_DESCRIPTION: from the moment the runner asked the machine
@@ -74,24 +78,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	env["IS_SANDBOX"] = "1"
+	env[vmBackendEnv] = "vm"
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 
-	var persist []string
-	storageGiB := 0
-	for _, m := range resolveSpecMounts(spec, defaults) {
-		if !m.Persist {
-			continue
-		}
-		persist = append(persist, m.Path)
-		size := effectiveMountSize(m, spec, defaults)
-		q, err := resource.ParseQuantity(size)
-		if err != nil {
-			return vmrunner.MachineStatus{}, fmt.Errorf("mount %s has size %q: %w", m.Path, size, err)
-		}
-		storageGiB += int((q.Value() + (1 << 30) - 1) >> 30)
+	disk, err := resolveVMDisk(spec, defaults)
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
 	}
-	env[vmPersistPathsEnv] = strings.Join(persist, ",")
 
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -106,7 +100,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
 		MemoryMiB:  max(int(mem.Value()>>20), 1),
-		StorageGiB: max(storageGiB, 1),
+		StorageGiB: disk.gibibytes,
+		Persist:    disk.persist,
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
@@ -283,4 +278,56 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 		}
 	}
 	return false
+}
+
+type vmDisk struct {
+	gibibytes int
+	persist   []string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk and a set of paths on it, which is why the vm backend states it separately from Mounts. A pod attaches one volume per path, so on the container backend a mount is a size and a placement at once; a machine has a single disk, so summing the mounts' sizes produced a number no path was held to — two 10Gi mounts bought 20Gi that either path could eat — and rounding each one up to a GiB first paid for that rounding once per mount. The size is one quantity here, rounded once. An Agent written without the block still boots: its persisted mounts name the paths and its own storage size is the disk, which is what the default template already meant.
+func resolveVMDisk(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (vmDisk, error) {
+	declared := spec.Backend.VM.GetDisk()
+	size := defaults.StorageSize
+	if spec.StorageSize != "" {
+		size = spec.StorageSize
+	}
+	if declared != nil && declared.Size != "" {
+		size = declared.Size
+	}
+	quantity, err := resource.ParseQuantity(size)
+	if err != nil {
+		return vmDisk{}, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
+	}
+
+	var persist []string
+	if declared != nil {
+		persist = slices.Clone(declared.Persist)
+	} else {
+		for _, m := range resolveSpecMounts(spec, defaults) {
+			if m.Persist {
+				persist = append(persist, m.Path)
+			}
+		}
+	}
+	persist = outermost(persist)
+
+	return vmDisk{
+		gibibytes: max(int((quantity.Value()+(1<<30)-1)>>30), 1),
+		persist:   persist,
+	}, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one disk persists a path and everything under it, so a declared path inside another is already covered by its parent and binding it again would mount the parent's own subtree onto itself. Mounts may nest — each is a volume of its own on the container backend, and a template that nested two has always been legal — so the nesting is resolved here rather than refused, and the list is sorted so that reordering it is not a restart.
+func outermost(paths []string) []string {
+	slices.Sort(paths)
+	paths = slices.Compact(paths)
+	kept := paths[:0]
+	for _, path := range paths {
+		if len(kept) > 0 && strings.HasPrefix(path, kept[len(kept)-1]+"/") {
+			continue
+		}
+		kept = append(kept, path)
+	}
+	return kept
 }

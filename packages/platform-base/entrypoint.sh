@@ -12,68 +12,11 @@
 # writable at build time (see Dockerfile).
 set -eu
 
-# On the vm Backend the root filesystem is a throwaway overlay and only the
-# machine's storage disk at /workspace survives a stop, so every path the
-# controller declared persistent (PLATFORM_VM_PERSIST_PATHS) is bind-mounted
-# from there, seeded from the image on its first boot. The guest runs as root,
-# which is what lets a plain agent image do this; a container never sets the
-# variable and skips it.
-if [ "${PLATFORM_VM_PERSIST_PATHS+vm}" = vm ]; then
-	# sshd would otherwise drop an `agent` login to uid 65532, into a home the
-	# root-run harness owns: nothing writable, none of the injected environment.
-	if [ "$(id -u)" = 0 ]; then
-		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
-	fi
-	if [ "$(stat -c %d /workspace 2>/dev/null)" = "$(stat -c %d / 2>/dev/null)" ]; then
-		echo "agent-entrypoint: /workspace is not the machine's storage disk; refusing to boot without persistence" >&2
-		exit 1
-	fi
-
-	# A machine's console goes nowhere — stdout and stderr are both /dev/null in
-	# the guest — so everything written from here on is discarded before anything
-	# can read it: the rest of this boot, and then every diagnostic the harness
-	# writes, including the event-loop stall monitor and the cgroup
-	# memory-pressure warning that precedes an out-of-memory restart. That is
-	# why a machine that dies is opaque afterwards. Point both streams at the
-	# storage disk, where they outlive the machine and the agent can read back
-	# the boot that killed it. This sits as early as the disk allows, so the
-	# whole boot is in the record rather than only the part after the harness
-	# starts.
-	#
-	# Each boot starts a fresh file and moves the one before it aside, so the
-	# history is one boot deep: enough that a machine which died still explains
-	# itself on the boot after. An over-long previous boot keeps its last
-	# megabytes rather than being emptied — a failure shows at the end of a log,
-	# so the cap has to trim the start, never the whole file.
-	#
-	# Intentional simplification: nothing bounds a *single* boot's file while it
-	# is being written, so an agent that logs without pause can still fill its
-	# disk; only the boot after it trims. The upgrade path is logrotate, for
-	# which the image carries a directory but no binary, once something in a
-	# machine can run it periodically.
-	runtime_log=/workspace/log/agent-runtime.log
-	runtime_log_cap=33554432
-	if mkdir -p /workspace/log 2>/dev/null && : >>"$runtime_log" 2>/dev/null; then
-		mv -f "$runtime_log" "$runtime_log.prev" 2>/dev/null || true
-		if [ "$(wc -c <"$runtime_log.prev" 2>/dev/null || echo 0)" -gt "$runtime_log_cap" ]; then
-			tail -c "$runtime_log_cap" "$runtime_log.prev" >"$runtime_log.trim" 2>/dev/null &&
-				mv -f "$runtime_log.trim" "$runtime_log.prev" ||
-				rm -f "$runtime_log.trim"
-		fi
-		exec >>"$runtime_log" 2>&1
-		echo "agent-entrypoint: boot log starts $(date -u +%Y-%m-%dT%H:%M:%SZ); the previous boot is beside it"
-	else
-		echo "agent-entrypoint: WARNING: could not open $runtime_log; this machine's output stays discarded" >&2
-	fi
-	for path in $(printf '%s' "$PLATFORM_VM_PERSIST_PATHS" | tr ',' ' '); do
-		store="/workspace$path"
-		if [ ! -d "$store" ]; then
-			mkdir -p "$store"
-			[ -d "$path" ] && [ ! "$path" -ef "$store" ] && cp -a "$path/." "$store/"
-		fi
-		mkdir -p "$path"
-		[ "$path" -ef "$store" ] || mount --bind "$store" "$path"
-	done
+# sshd would otherwise drop an `agent` login to uid 65532, into a home the
+# root-run harness owns: nothing writable, none of the injected environment. Only
+# a machine runs this image as root; a container is the agent user already.
+if [ "$(id -u)" = 0 ]; then
+	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 fi
 
 mitm_ca=/etc/platform/ca/ca.crt
@@ -120,9 +63,12 @@ trust_cache_key() {
 if [ -s "$mitm_ca" ]; then
 	trust_t0=$(date +%s%N)
 	trust_source=/usr/share/pki/ca-trust-source/ca-bundle.trust.p11-kit
-	cache=/workspace/ca-trust
+	# PLATFORM_TRUST_CACHE is set by platform-init on the vm Backend and names a
+	# directory on the machine's storage disk. A container has no such disk and
+	# leaves it unset, which skips the cache and extracts every boot as before.
+	cache="${PLATFORM_TRUST_CACHE:-}"
 	key=""
-	[ -d /workspace ] && key=$(trust_cache_key "$trust_source")
+	[ -n "$cache" ] && key=$(trust_cache_key "$trust_source")
 
 	trusted=no
 	if cp "$mitm_ca" "$anchor"; then
@@ -140,7 +86,11 @@ if [ -s "$mitm_ca" ]; then
 				printf '%s' "$key" > "$cache.new/key"; then
 				rm -rf "$cache" && mv "$cache.new" "$cache"
 			fi
-			rm -rf "$cache.new"
+			# Guarded on $cache, not $key: with no cache directory the
+			# expansion would be a bare ".new" under the working directory.
+			if [ -n "$cache" ]; then
+				rm -rf "$cache.new"
+			fi
 		fi
 	fi
 
@@ -159,17 +109,21 @@ if [ ! -f "$home/.initialized" ]; then
 fi
 mkdir -p "$home/work"
 
-# $HOME is a shared RWX network volume; cache traffic (mise, uv, npm, ...)
-# would hammer it, so ~/.cache points at pod-local disk (/tmp is an emptyDir)
-# instead. Caches are disposable, so a pre-existing real directory (older
-# volumes, or anything a harness recreated) is discarded. `ln -sfn` keeps the
-# swap idempotent when the owner pod and a fork pod boot the volume together.
-# The symlink persists on the volume but /tmp is fresh every pod, so the
-# target is (re)created each boot to keep the link from dangling.
+# Container Backend only. $HOME there is a network volume, so cache traffic
+# (mise, uv, npm, ...) would hammer it and ~/.cache points at pod-local disk
+# (/tmp is an emptyDir) instead. A machine's $HOME is a local disk and its /tmp
+# is the root overlay, which the machine discards every time it stops — so the
+# same swap would move the cache off durable storage onto the one filesystem
+# that does not survive, which is why the vm Backend keeps ~/.cache where it is.
+# Caches are disposable, so a pre-existing real directory (older volumes, or
+# anything a harness recreated) is discarded. `ln -sfn` keeps the swap idempotent
+# when the owner pod and a fork pod boot the volume together. The symlink
+# persists on the volume but /tmp is fresh every pod, so the target is
+# (re)created each boot to keep the link from dangling.
 mkdir -p /tmp/agent-cache
 # A failing swap leaves a real ~/.cache on the workspace volume — a perf wart,
 # never a boot failure.
-if [ ! -L "$home/.cache" ]; then
+if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
 	# Probe with a scratch link first so a failing swap leaves any existing
 	# cache directory intact instead of deleting it with no replacement.
 	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
