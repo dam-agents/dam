@@ -8,10 +8,10 @@ Last verified: 2026-09-18
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts and session costs. Graduating a feature to
-always-on is deletion: drop its id from the enum and its gates from the UI —
-stored rows for a dropped id are simply never read again (Experiments and
-Knowledge Bases graduated this way).
+interactive artifacts and session costs. Graduating a feature to always-on is
+deletion: drop its id from the enum and its gates from the UI — stored rows for
+a dropped id are simply never read again (Experiments, Knowledge Bases and the
+[starter kit](starter-kits.md) catalog graduated this way).
 
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —

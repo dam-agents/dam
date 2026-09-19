@@ -78,14 +78,22 @@ function harness(opts: {
     version: 3,
     lastSettledVersion: 2,
   });
+  const charged: string[][] = [];
   const outboxRepo = {
     getRow: async () => row,
-    recordOutcome: async () => ({
-      newlyFailed: [],
-      recovered: [],
-      gaveUp: [],
-      eventsGaveUp: opts.eventsGaveUp ?? [],
-    }),
+    recordOutcome: async (
+      _agentId: string,
+      _version: number,
+      outcome: { deliveredEventIds: string[] },
+    ) => {
+      charged.push(outcome.deliveredEventIds);
+      return {
+        newlyFailed: [],
+        recovered: [],
+        gaveUp: [],
+        eventsGaveUp: opts.eventsGaveUp ?? [],
+      };
+    },
     markEventsUndeliverable: async (agentId: string, kinds: string[]) => {
       opts.onMarkUndeliverable?.(agentId, kinds);
       return opts.undeliverableCount ?? 0;
@@ -114,7 +122,7 @@ function harness(opts: {
       settledEvents: opts.settledEventIds,
     }),
   } as unknown as AgentRuntimeClient;
-  return createWorkerHandler({
+  const handler = createWorkerHandler({
     outboxRepo,
     agentsRuntimeRepo,
     stateBuilder,
@@ -124,6 +132,7 @@ function harness(opts: {
     resolveOwner: async () => (opts.owner === undefined ? OWNER : opts.owner),
     log: () => {},
   });
+  return Object.assign(handler, { charged });
 }
 
 async function collectHints(run: () => Promise<void>) {
@@ -246,5 +255,34 @@ describe("runtime worker workspace-mutation settle hint", () => {
     });
     const seen = await collectHints(() => handler(AGENT_ID));
     expect(seen).toEqual([]);
+  });
+});
+
+describe("what a delivery round is charged for", () => {
+  // TEST_SCENARIO: the runtime stops at a workspace mutation it could not complete and holds everything behind it, so those events were never attempted. Charging them a delivery attempt anyway spends their retry budget while they wait, and a kit's install command is eventually given up on without ever having run.
+  it("charges only the events the runtime reached", async () => {
+    const seed = seedEvent("seed-1");
+    const install = installEvent("install-1");
+    const behind = resetEvent("reset-1");
+    const run = harness({
+      events: [seed, install, behind],
+      settledEventIds: [seed.id],
+    });
+    await run(AGENT_ID);
+
+    expect(run.charged).toHaveLength(1);
+    expect(run.charged[0]).toEqual([seed.id, install.id]);
+  });
+
+  it("charges every event when the runtime got through them all", async () => {
+    const seed = seedEvent("seed-1");
+    const behind = resetEvent("reset-1");
+    const run = harness({
+      events: [seed, behind],
+      settledEventIds: [seed.id, behind.id],
+    });
+    await run(AGENT_ID);
+
+    expect(run.charged[0]).toEqual([seed.id, behind.id]);
   });
 });

@@ -13,11 +13,7 @@ const canonicalPaths = [
   "/slack/bind",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
-  "/coding-agents",
-  "/coding-agents/new",
-  "/knowledge-bases",
-  "/knowledge-bases/new",
-  "/knowledge-bases/kb-1",
+  "/agents/new",
   "/artifacts",
 ];
 
@@ -37,16 +33,15 @@ describe("route round-trip", () => {
     expect(parseRoute(path).view).toBe("home");
   });
 
-  it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
-    expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
-  });
-
-  it("redirects the retired KB settings page to the full agent settings", () => {
-    expect(parseRoute("/knowledge-bases/kb-1/settings")).toEqual({
-      view: "sandbox-home",
-      agentId: "kb-1",
-      sandboxSection: "setup",
-    });
+  // TEST_SCENARIO: the per-kind destinations are gone, and so are their paths. An unknown path is Home like any other, rather than something the router still carries a case for.
+  it.each([
+    "/coding-agents",
+    "/coding-agents/new",
+    "/knowledge-bases",
+    "/knowledge-bases/kb-1",
+    "/knowledge-bases/kb-1/settings",
+  ])("no longer knows %s", (path) => {
+    expect(parseRoute(path).view).toBe("home");
   });
 });
 

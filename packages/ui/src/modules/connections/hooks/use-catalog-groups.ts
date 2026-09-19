@@ -21,6 +21,7 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
   byTab: Map<CatalogTab, CatalogProviderGroup[]>;
   populated: CatalogProviderGroup[];
   templateById: Map<string, ConnectionTemplateView>;
+  loading: boolean;
 } {
   const templatesQ = useConnectionTemplates();
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
@@ -49,5 +50,5 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
     () => new Map(allTemplates.map((t) => [t.id, t])),
     [allTemplates],
   );
-  return { byTab, populated, templateById };
+  return { byTab, populated, templateById, loading: templatesQ.isPending };
 }

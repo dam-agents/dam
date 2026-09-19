@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-09-08
+Last verified: 2026-09-16
 
 ## Overview
 
@@ -11,7 +11,7 @@ the artifact library (the agent-scoped artifact lists show one only while it
 holds that agent's artifacts — see [artifact-library](artifact-library.md));
 no interface path creates an experiment agent. The data
 and every procedure stay live, and the chat view still renders a running
-experiment's dock and gates the onboarding greeting. Mentions of the
+experiment's dock. Mentions of the
 destination below describe the design the hidden surfaces implemented, kept
 as the reference for their return.
 
@@ -77,11 +77,13 @@ agents ∪ agents with at least one Experiment row** — a marked agent with
 nothing in it yet is an empty group, and an unmarked agent that registered a
 plan earns a group too. There is no backfill and nothing disappears.
 
-Opening a fresh experiment agent **greets the user**: the UI hidden-sends
-`/experiment-onboard` so the agent opens by asking what to optimize. It waits until the
-agent reports that skill among its installed skills, so it never runs a command
-the Install Command has not delivered yet — the skill is copied last precisely so
-its presence implies the command and the purpose note both landed.
+A fresh experiment agent **greets the user** the way a knowledge base does: its
+create queues an `initialization` event carrying `/experiment-onboard` behind the
+Install Command on the same rail ([runtime-delivery](runtime-delivery.md#event)),
+so the agent opens by asking what to optimize — and only once the install that
+delivers the command and the purpose note has run, because the rail runs an
+agent's events in order. That ordering replaces the skill-presence poll the
+browser used to make before sending the command itself.
 
 ## Resources
 

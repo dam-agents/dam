@@ -1,3 +1,4 @@
+import { workspaceCommandEventPayload } from "agent-runtime-api";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -36,7 +37,7 @@ export function createWorkspaceCommandPlugin(deps: {
         );
       }
       return async (payload, ctx) => {
-        const { command } = payload as WorkspaceCommandEventPayload;
+        const { command } = workspaceCommandEventPayload.parse(payload);
         const sentinel = join(ctx.pluginStateDir, DONE_SENTINEL);
         if (await sentinelExists(sentinel)) {
           deps.log(`[workspace-command] already run, skipping`);

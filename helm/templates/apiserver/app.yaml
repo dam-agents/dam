@@ -77,12 +77,14 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
-      # The api-server loads the mounted agent-templates once at boot,
+      # The api-server loads the mounted harness templates and the built-in
+      # starter kit catalog once at boot,
       # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
       # the pod when the rendered templates change, making `helm upgrade` of a
       # template take effect instead of serving stale ones until the next restart.
       {{- $checksums := dict
-            "checksum/agent-templates" (include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum)
+            "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
+            "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
             "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
@@ -319,6 +321,20 @@ spec:
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}
             {{- end }}
+            {{- $catalogs := list }}
+            {{- if .Values.starterKits.builtin.enabled }}
+            {{- $catalogs = append $catalogs (dict "name" .Values.starterKits.builtin.name "path" "/etc/platform/starter-kits") }}
+            {{- end }}
+            {{- range .Values.starterKits.catalogs }}
+            {{- $entry := dict "name" .name "url" .url }}
+            {{- with .ref }}{{- $_ := set $entry "ref" . }}{{- end }}
+            {{- with .dir }}{{- $_ := set $entry "dir" . }}{{- end }}
+            {{- $catalogs = append $catalogs $entry }}
+            {{- end }}
+            {{- if $catalogs }}
+            - name: STARTER_KITS_CATALOGS
+              value: {{ $catalogs | toJson | quote }}
+            {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_ID
@@ -416,7 +432,7 @@ spec:
             # agent templates are mounted from a ConfigMap and loaded
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
-              value: /etc/platform/agent-templates
+              value: /etc/platform/harness-templates
             # Curated public-repo catalog (gitRepos), mounted from a ConfigMap
             # and loaded once at boot (same pattern as agent templates).
             - name: GIT_REPOS_PATH
@@ -479,9 +495,16 @@ spec:
             - name: git-repos
               mountPath: /etc/platform/git-repos
               readOnly: true
-            - name: agent-templates
-              mountPath: /etc/platform/agent-templates
+            - name: harness-templates
+              mountPath: /etc/platform/harness-templates
               readOnly: true
+            {{- if .Values.starterKits.builtin.enabled }}
+            # The built-in starter kit catalog: chart files projected back into
+            # their directory layout (ConfigMap keys cannot contain slashes).
+            - name: starter-kits
+              mountPath: /etc/platform/starter-kits
+              readOnly: true
+            {{- end }}
             {{- if .Values.apiServer.db.caCert }}
             - name: pg-ca
               mountPath: /etc/platform/pg-ca
@@ -538,9 +561,24 @@ spec:
             items:
               - key: trusted-hosts
                 path: trusted-hosts
-        - name: agent-templates
+        - name: harness-templates
           configMap:
-            name: {{ include "platform.fullname" . }}-agent-templates
+            name: {{ include "platform.fullname" . }}-harness-templates
+        {{- if .Values.starterKits.builtin.enabled }}
+        - name: starter-kits
+          configMap:
+            name: {{ include "platform.fullname" . }}-starter-kits
+            items:
+              - key: catalog.yaml
+                path: catalog.yaml
+              {{- range $path, $_ := .Files.Glob "starter-kits/kits/*/**" }}
+              {{- $id := index (splitList "/" $path) 2 }}
+              {{- if include "platform.starterKits.kitEnabled" (dict "root" $ "id" $id) }}
+              - key: {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}
+                path: {{ $path | trimPrefix "starter-kits/" | quote }}
+              {{- end }}
+              {{- end }}
+        {{- end }}
         - name: git-repos
           configMap:
             name: {{ include "platform.fullname" . }}-git-repos

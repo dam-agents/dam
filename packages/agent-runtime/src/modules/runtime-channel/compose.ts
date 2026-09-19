@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { eventKind } from "agent-runtime-api";
 import type {
+  EventReportInput,
   ContributionKind,
   HarnessConfigService,
   Plugin,
@@ -23,6 +24,7 @@ import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
+import { createInitializationPlugin } from "./drivers/initialization-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createExperimentExecutePlugin } from "./drivers/experiment-execute-plugin.js";
 import { createDispatcher, type ContextEnv } from "./dispatcher.js";
@@ -98,6 +100,10 @@ export async function composeRuntimeChannel(
     agentId: opts.agentId,
   });
 
+  const reporter = {
+    report: (input: EventReportInput) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
   registry.register(
@@ -106,10 +112,7 @@ export async function composeRuntimeChannel(
       stateStore: triggerStateStore,
       runPrecheck: createPrecheckRunner({ workDir: opts.workDir }),
       log,
-      reporter: {
-        report: (input) =>
-          harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
-      },
+      reporter,
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -119,6 +122,7 @@ export async function composeRuntimeChannel(
   registry.register(
     createExperimentExecutePlugin({ driver: opts.triggerDriver }),
   );
+  registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
 
   const harnessConfigRaw = resolved["harness-config"];
   const harnessConfigPlugin = createHarnessConfigPlugin({
@@ -158,6 +162,7 @@ export async function composeRuntimeChannel(
     dispatcher,
     eventDispatcher,
     stateStore,
+    reporter,
     readHarnessConfig: async () =>
       harnessConfigPlugin.supported
         ? await harnessConfigPlugin.readCurrent()

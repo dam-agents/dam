@@ -1,4 +1,6 @@
 import { TRPCError } from "@trpc/server";
+
+import { legacyShareRoots } from "../domain/legacy-roots.js";
 import type {
   Agent,
   AgentsService,
@@ -47,9 +49,6 @@ export interface KbSharesServiceDeps {
   purgeShareObjects: (row: KbShareRow) => Promise<void>;
   requestFlush: (agentId: string) => Promise<void>;
   unconfigurePod: (agentId: string) => Promise<void>;
-  defaultRootsForKbTemplate: (
-    kbTemplateId: string | undefined,
-  ) => readonly string[];
   listWorkspaceRoots: (agentId: string) => Promise<string[]>;
   objectStoreConfigured: boolean;
   logActor?: "user" | "agent";
@@ -96,7 +95,7 @@ export function createKbSharesService(
         message: "knowledge base not found",
       });
     }
-    if (agent.kind !== "knowledge-base") {
+    if (rootsOf(agent).length === 0) {
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
         message: "sharing is available only for knowledge bases",
@@ -136,7 +135,7 @@ export function createKbSharesService(
         .then((roots): KbShareWorkspaceListing => ({ state: "listed", roots }))
         .catch((): KbShareWorkspaceListing => ({ state: "unreachable" }));
       return {
-        roots: deps.defaultRootsForKbTemplate(agent.kbTemplateId),
+        roots: rootsOf(agent),
         workspace,
       };
     },
@@ -165,8 +164,7 @@ export function createKbSharesService(
           owner: deps.owner,
           secret: mintShareSecret(),
           publicName: agent.name,
-          roots:
-            input.roots ?? deps.defaultRootsForKbTemplate(agent.kbTemplateId),
+          roots: input.roots ?? rootsOf(agent),
         });
       } catch (err) {
         if (isUniqueViolation(err)) {
@@ -251,4 +249,15 @@ export function createKbSharesService(
       return { valid: true, name: row.publicName };
     },
   };
+}
+
+function rootsOf(agent: {
+  kind?: string;
+  kbTemplateId?: string;
+  kbShareRoots?: readonly string[];
+}): readonly string[] {
+  if (agent.kbShareRoots && agent.kbShareRoots.length > 0)
+    return agent.kbShareRoots;
+  if (agent.kind !== "knowledge-base") return [];
+  return legacyShareRoots(agent.kbTemplateId);
 }

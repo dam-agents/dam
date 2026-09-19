@@ -26,7 +26,6 @@ export interface AgentsSlice {
   deletedAgents: ReadonlySet<string>;
   markAgentDeleted: (id: string) => void;
   selectAgent: (id: string) => void;
-  openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
   goBack: () => void;
 }
@@ -104,20 +103,6 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
-  openKnowledgeBase: (id) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "knowledge-base-chat", agent: id }),
-    );
-    get().resetChatContext();
-    set({
-      selectedAgent: id,
-      view: "knowledge-base-chat",
-      mobileScreen: "sessions",
-    });
-  },
-
   openAgentSession: (agentId, sessionId) => {
     history.pushState(
       null,
@@ -134,17 +119,9 @@ export const createAgentsSlice: StateCreator<
   },
 
   goBack: () => {
-    const fromKnowledgeBase = get().view === "knowledge-base-chat";
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "home" }),
-    );
+    history.pushState(null, "", routeToPath({ view: "home" }));
     get().resetChatContext();
-    set({
-      selectedAgent: null,
-      view: fromKnowledgeBase ? "knowledge-bases" : "home",
-    });
+    set({ selectedAgent: null, view: "home" });
   },
 });
 

@@ -15,6 +15,8 @@ RUN --mount=type=cache,target=/tmp/npm-cache,uid=65532 \
 
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
+# Which harness family this image runs; kit bootstraps and pod shells read it.
+ENV PLATFORM_HARNESS=codex
 COPY --chown=65532:0 system-config.toml /etc/codex/config.toml
 COPY --chown=65532:0 requirements.toml /etc/codex/requirements.toml
 COPY --chown=65532:0 workspace/ /app/working-dir/

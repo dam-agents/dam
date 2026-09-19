@@ -8,7 +8,10 @@ import { createKindedAgent } from "../agents/services/kinded-agent-create.js";
 import type { ArtifactLibraryServiceImpl } from "../artifact-library/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { createInvocationsRepository } from "../invocations/index.js";
-import { buildExperimentInstallCommand } from "./domain/install-command.js";
+import {
+  buildExperimentInstallCommand,
+  EXPERIMENT_ONBOARD_COMMAND,
+} from "./domain/install-command.js";
 import { createExperimentsRepository } from "./infrastructure/experiments-repository.js";
 import { createExecuteLauncher } from "./infrastructure/execute-launcher.js";
 import { createDashboardSnapshotter } from "./services/dashboard-snapshot.js";
@@ -73,6 +76,7 @@ export function composeExperimentsForOwner(opts: {
             createKindedAgent(kindedRail, {
               createInput: { ...input, kind: "experiment" },
               installCommand: buildExperimentInstallCommand(),
+              initializationTask: EXPERIMENT_ONBOARD_COMMAND,
               eventIdPrefix: "experiment-install",
               securityEvent: "experiment_sandbox.create",
             }),

@@ -28,6 +28,9 @@ import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
+import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
+import type { OnboardingStep } from "api-server-api";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
@@ -91,11 +94,27 @@ export async function textTool<T>(
   }
 }
 
+function renderChecklist(steps: OnboardingStep[]): string {
+  const done = steps.filter((s) => s.done).length;
+  return [
+    `Onboarding checklist: ${done}/${steps.length} done`,
+    ...steps.map((s) => `${s.done ? "[x]" : "[ ]"} ${s.id}: ${s.label}`),
+  ].join("\n");
+}
+
 export interface McpSessionDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
+  markOnboardingComplete: ((agentId: string) => Promise<void>) | null;
+  onboardingChecklist: {
+    set: (
+      agentId: string,
+      steps: { id: string; label: string }[],
+    ) => Promise<OnboardingStep[]>;
+    complete: (agentId: string, id: string) => Promise<OnboardingStep[]>;
+  } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
@@ -604,6 +623,62 @@ export function createMcpSession(
       ),
   );
 
+  if (deps.markOnboardingComplete) {
+    const markOnboardingComplete = deps.markOnboardingComplete;
+    server.tool(
+      "mark_onboarding_complete",
+      "Call this once your starter kit's onboarding is genuinely finished: every value the kit needs has been collected from the user and written where it expects it. Until you call it, the platform HOLDS every schedule on this agent — occurrences are skipped, not queued up — so calling it early is worse than calling it late. If the user abandons onboarding, leave it uncalled.",
+      {},
+      async () => {
+        await markOnboardingComplete(agentId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Onboarding marked complete. Schedules on this agent are now live.",
+            },
+          ],
+        };
+      },
+    );
+  }
+
+  if (deps.onboardingChecklist) {
+    const checklist = deps.onboardingChecklist;
+    server.tool(
+      "set_onboarding_checklist",
+      "Declare what your onboarding needs FROM THE USER, so they can watch progress in the platform UI. Call it BEFORE asking them anything, with one short step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying connections, writing files, registering schedules — is never a step. Three to six steps is typical. Call it again to add, rename or drop steps as the conversation evolves — the steps you keep stay ticked. An id is the stable handle you tick later (kebab-case); a label reads as a to-do line addressed to the user.",
+      {
+        steps: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(64),
+              label: z.string().min(1).max(120),
+            }),
+          )
+          .min(1)
+          .max(20),
+      },
+      ({ steps }) =>
+        textTool(
+          "Failed to set the onboarding checklist",
+          () => checklist.set(agentId, steps),
+          renderChecklist,
+        ),
+    );
+    server.tool(
+      "complete_onboarding_step",
+      "Tick one step of your onboarding checklist by id, the moment the user has supplied or done it — not when you start on it. Idempotent.",
+      { id: z.string().min(1).max(64) },
+      ({ id }) =>
+        textTool(
+          "Failed to complete the onboarding step",
+          () => checklist.complete(agentId, id),
+          renderChecklist,
+        ),
+    );
+  }
+
   server.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
@@ -871,6 +946,8 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  markOnboardingComplete: OnboardingMarker;
+  onboardingChecklist: OnboardingChecklistOps;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -911,13 +988,23 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       k8s: deps.k8s,
       skills,
       schedules,
+      markOnboardingComplete: verified.onboardingPending
+        ? (id) => deps.markOnboardingComplete(id, verified.owner)
+        : null,
+      onboardingChecklist: verified.onboardingPending
+        ? {
+            set: (id, steps) =>
+              deps.onboardingChecklist.set(id, verified.owner, steps),
+            complete: (id, stepId) =>
+              deps.onboardingChecklist.complete(id, verified.owner, stepId),
+          }
+        : null,
       artifactLibrary,
       invocations,
       experiments,
-      kbShares:
-        verified.kind === "knowledge-base"
-          ? deps.kbShareOpsFor(verified.owner)
-          : null,
+      kbShares: verified.kbShareRoots
+        ? deps.kbShareOpsFor(verified.owner)
+        : null,
       agentHome: deps.agentHome,
       caseStudySubmissions: deps.caseStudySubmissions,
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,

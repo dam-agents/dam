@@ -2,6 +2,8 @@ import type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
+  Event,
+  EventReportInput,
   HarnessConfigCurrent,
   RuntimeChannelService,
 } from "agent-runtime-api";
@@ -18,12 +20,26 @@ export interface ApplyStateDeps {
   onSnapshotProcessed?: (
     contributions: ApplyStateInput["state"]["contributions"],
   ) => void;
+  reporter?: { report(input: EventReportInput): Promise<void> };
   log: (msg: string) => void;
 }
 
 export function createRuntimeChannelService(
   deps: ApplyStateDeps,
 ): RuntimeChannelService {
+  const reportWorkspaceFailure = async (event: Event, message: string) => {
+    try {
+      await deps.reporter?.report({
+        eventId: event.id,
+        outcome: "failed",
+        detail: message.slice(0, 2000),
+      });
+    } catch (err) {
+      deps.log(
+        `[runtime] failure report for ${event.id} did not send: ${(err as Error).message}`,
+      );
+    }
+  };
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(work: () => Promise<T>): Promise<T> => {
     const run = tail.then(work, work);
@@ -54,6 +70,7 @@ export function createRuntimeChannelService(
         deps.eventDispatcher,
         deps.stateStore,
         deps.log,
+        reportWorkspaceFailure,
       );
       return {
         status: "stale",
@@ -78,6 +95,7 @@ export function createRuntimeChannelService(
       deps.eventDispatcher,
       deps.stateStore,
       deps.log,
+      reportWorkspaceFailure,
     );
 
     const harnessConfigCurrent = await deps.readHarnessConfig();

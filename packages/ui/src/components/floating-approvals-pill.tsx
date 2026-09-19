@@ -48,7 +48,7 @@ export function FloatingApprovalsPill() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [expanded]);
 
-  const chatSurface = view === "chat" || view === "knowledge-base-chat";
+  const chatSurface = view === "chat";
 
   if (view === "home" || items.length === 0) return null;
 

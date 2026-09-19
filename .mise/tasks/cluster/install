@@ -437,11 +437,18 @@ else
   # Build (and below, load) only the templates enabled in the effective rendered
   # values (--set/--helm-values honored). Capture first so a failed render aborts
   # rather than silently building none. Templates are one ConfigMap keyed by
-  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry.
-  AGENTS_RENDERED=$(helm template platform helm \
-      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
-    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
+  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry. Enabled built-in
+  # kits whose image is a local `platform-*` tag join the list as "kit:<id>"; a
+  # kit on a published image is left for the node to pull.
+  RENDERED=$(helm template platform helm \
+      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
+  AGENTS_RENDERED=$(printf '%s\n' "$RENDERED" \
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-harness-templates$"))
              | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
+  KITS_RENDERED=$(printf '%s\n' "$RENDERED" \
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-starter-kits$"))
+             | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
+             | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
   AGENT_TASKS=()
   AGENT_IMAGES=()
   VM_IMAGES=()
@@ -479,7 +486,7 @@ else
     else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
-  done <<< "$AGENTS_RENDERED"
+  done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
   echo "Loading images into k3s..."

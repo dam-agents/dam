@@ -19,6 +19,7 @@ export function hintFor(
         ownerSub: event.ownerSub,
         hint: { topic: "agents", agentId: event.agentId },
       };
+    case EventType.AgentUpdated:
     case EventType.AgentDeleted:
       return event.ownerSub
         ? {
@@ -75,7 +76,6 @@ export function hintFor(
         hint: { topic: "kbShares", agentId: event.agentId },
       };
     case EventType.UserAuthenticated:
-    case EventType.AgentUpdated:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:
     case EventType.SlackConnected:

@@ -63,7 +63,7 @@ export async function reopenMockAgentChat(
   page: Page,
   agentId: string,
 ): Promise<void> {
-  await page.goto(`${baseUrl}/coding-agents`);
+  await page.goto(baseUrl);
   await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible({
     timeout: 60_000,
   });
@@ -82,7 +82,7 @@ export async function openMockAgentChat(
   await ensureAgentExists(api, agentName, harnessName);
   const agentId = await waitForAgentRunning(api, agentName);
   await loginViaUi(page);
-  await page.goto(`${baseUrl}/coding-agents`);
+  await page.goto(baseUrl);
   await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
   await gotoAgentChat(page, agentName, agentId);
   await expect(chatInput(page)).toBeVisible();

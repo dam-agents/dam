@@ -4,6 +4,7 @@ import type { TriggerEventPayload } from "agent-runtime-api";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
+  ANN_STARTER_KIT_ONBOARDED,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -29,6 +30,7 @@ import {
   connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
+  scanPublicGithubArchive,
 } from "./modules/skills/index.js";
 import {
   composeKbShareServing,
@@ -146,6 +148,17 @@ import {
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
+import {
+  createCatalogSourceFromLocator,
+  createOnboardingChecklist,
+  createOnboardingChecklistRepository,
+  createOnboardingMarker,
+  createCatalogRefresh,
+  createGitRefResolver,
+  createResolvedCatalogRepository,
+  createStarterKitsRepository,
+  parseCatalogSeeds,
+} from "./modules/starter-kits/index.js";
 import { composeTemplatesModule } from "./modules/templates/compose.js";
 import {
   composeInvocationLivenessSweep,
@@ -293,6 +306,29 @@ export async function bootstrap() {
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const resolvedCatalog = createResolvedCatalogRepository(db);
+  const starterKitsRepo = createStarterKitsRepository({
+    resolved: resolvedCatalog,
+  });
+  const starterKitsRefresh = createCatalogRefresh({
+    catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
+      const located = createCatalogSourceFromLocator(
+        c.locator,
+        c.kind,
+        c.ref,
+        c.dir,
+      );
+      return located ? [{ name: c.name, ...located }] : [];
+    }),
+    repo: resolvedCatalog,
+    refs: createGitRefResolver(),
+    appVersion: config.appVersion,
+    scanSkills: async (gitUrl, ref, subPath) =>
+      (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+      })),
+  });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -412,13 +448,24 @@ export async function bootstrap() {
     resolveOwner: resolveAgentOwner,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
+  await periodicJobs.register("starter-kits-refresh", 600_000, () =>
+    starterKitsRefresh.run(),
+  );
+  void starterKitsRefresh
+    .run()
+    .catch((err: unknown) =>
+      getLogger().warn({ err }, "starter kits: initial refresh failed"),
+    );
+
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );
+  const onboardingChecklists = createOnboardingChecklistRepository(db);
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
     progress: runtimeDelivery.contributionsProgress,
+    retryWorkspaceMutation: runtimeDelivery.retryWorkspaceMutation,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -627,6 +674,7 @@ export async function bootstrap() {
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
+    onboardingChecklists,
   });
 
   const identityLinkService = createIdentityLinkService({
@@ -900,6 +948,13 @@ export async function bootstrap() {
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
+    onboardingPending: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return (
+        agent?.starterKit !== undefined &&
+        agent.starterKitOnboarded === undefined
+      );
+    },
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1138,6 +1193,7 @@ export async function bootstrap() {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
+      onboardingChecklists,
       grantProvisioner: {
         async resolveSpecGrants(sel) {
           if (sel.providerConnectionId)
@@ -1215,6 +1271,7 @@ export async function bootstrap() {
     secretStores,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
+    onboardingChecklists,
     getAgentCapabilities: (agentId) =>
       runtimeDelivery.agentsRuntimeRepo
         .get(agentId)
@@ -1235,6 +1292,7 @@ export async function bootstrap() {
     agentsRepo,
     connectionsBoot,
     templatesRepo,
+    starterKitsRepo,
     reposService,
     userDirectory,
     apiKeysModule,
@@ -1268,6 +1326,30 @@ export async function bootstrap() {
       ? createAgentTelemetry({ reader: metricsReader })
       : createUnavailableAgentTelemetry(),
     wakeAgent: wakeAgentFor,
+    markOnboardingComplete: (agentId: string, owner: string) =>
+      createOnboardingMarker({
+        agents: harnessAgentsServiceFor(owner),
+        markAgentOnboarded: (id, at) =>
+          agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
+      })(agentId, owner),
+    onboardingChecklist: {
+      set: (
+        agentId: string,
+        owner: string,
+        steps: readonly { id: string; label: string }[],
+      ) =>
+        createOnboardingChecklist({
+          agents: harnessAgentsServiceFor(owner),
+          repo: onboardingChecklists,
+          ownerSub: owner,
+        }).set(agentId, steps),
+      complete: (agentId: string, owner: string, id: string) =>
+        createOnboardingChecklist({
+          agents: harnessAgentsServiceFor(owner),
+          repo: onboardingChecklists,
+          ownerSub: owner,
+        }).complete(agentId, id),
+    },
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,

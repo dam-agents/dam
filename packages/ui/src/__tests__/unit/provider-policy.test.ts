@@ -13,7 +13,7 @@ describe("setupProviderPolicy", () => {
     expect(policy.recommended).toBe("ibm-litellm");
   });
 
-  test.each(["coding-agent", "knowledge-base"] as const)(
+  test.each(["coding-agent", "starter-kit"] as const)(
     "%s offers every provider, still steering to the proxy",
     (flow) => {
       expect(setupProviderPolicy(flow)).toEqual({

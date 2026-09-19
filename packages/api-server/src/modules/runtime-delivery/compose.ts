@@ -5,6 +5,8 @@ import type {
   ContributionKind,
   DriverFailure,
   RuntimeDeliveryService,
+  WorkspaceFailure,
+  WorkspaceMutationKind,
 } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
@@ -45,6 +47,9 @@ import {
   type ContributionsProgress,
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
+import { emit, EventType } from "../../events.js";
+import { workspaceEvent } from "./domain/workspace-event.js";
+import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -64,6 +69,10 @@ export interface RuntimeDeliveryComposition {
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
   contributionsProgress(agentId: string): Promise<ContributionsProgress>;
+  retryWorkspaceMutation(
+    agentId: string,
+    kind: WorkspaceMutationKind,
+  ): Promise<boolean>;
   registerEventOutcomeHandler(kind: string, handler: EventOutcomeHandler): void;
 }
 
@@ -71,6 +80,7 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  workspaceFailures: WorkspaceFailure[];
   features: RuntimeFeatures;
   unsupportedKinds: ContributionKind[];
 }
@@ -129,6 +139,20 @@ export function composeRuntimeDelivery(
   });
 
   const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
+  for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
+    eventOutcomeHandlers.set(kind, async (event) => {
+      const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
+        log(
+          `${event.agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
+        );
+        return null;
+      });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: event.agentId,
+        ...(ownerSub ? { ownerSub } : {}),
+      });
+    });
 
   const hello = createHelloHandler({
     outboxRepo,
@@ -161,19 +185,31 @@ export function composeRuntimeDelivery(
     stateBuilder,
     builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
-      const [row, preparing, features] = await Promise.all([
+      const [row, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRow(agentId),
         outboxRepo.preparingWorkspaceAgentIds([agentId]),
         outboxRepo.runtimeFeaturesMany([agentId]),
+        outboxRepo.workspaceFailures([agentId]),
       ]);
       const { settled, failures } = progressOf(row);
       return {
         settled,
         failures,
         preparingWorkspace: preparing.has(agentId),
+        workspaceFailures: workspace.get(agentId) ?? [],
         features: features.get(agentId) ?? runtimeFeaturesOf(null),
         unsupportedKinds: row?.droppedContributionKinds ?? [],
       };
+    },
+
+    async retryWorkspaceMutation(agentId, kind): Promise<boolean> {
+      const latest = await outboxRepo.latestWorkspaceEvent(agentId, kind);
+      if (!latest) return false;
+      await runtimeMutator.bump(agentId, [
+        workspaceEvent(kind, kind, agentId, latest.payload, new Date()),
+      ]);
+      await runtimeMutator.enqueueAfterCommit(agentId);
+      return true;
     },
 
     async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
@@ -192,10 +228,11 @@ export function composeRuntimeDelivery(
     ): Promise<Map<string, ContributionsStatus>> {
       const result = new Map<string, ContributionsStatus>();
       if (agentIds.length === 0) return result;
-      const [rows, preparing, features] = await Promise.all([
+      const [rows, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRows(agentIds),
         outboxRepo.preparingWorkspaceAgentIds(agentIds),
         outboxRepo.runtimeFeaturesMany(agentIds),
+        outboxRepo.workspaceFailures(agentIds),
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
@@ -205,6 +242,7 @@ export function composeRuntimeDelivery(
           settled,
           failures,
           preparingWorkspace: preparing.has(id),
+          workspaceFailures: workspace.get(id) ?? [],
           features: features.get(id) ?? runtimeFeaturesOf(null),
           unsupportedKinds: row?.droppedContributionKinds ?? [],
         });

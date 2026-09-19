@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { ProviderPresetType } from "../connections/providers.js";
 import type { EnvVar } from "../shared.js";
 import type { harnessFamilySchema } from "./schemas.js";
 
@@ -15,7 +16,7 @@ export interface Resources {
 
 export const SPEC_VERSION = "agent-platform.ai/v1";
 
-export type TemplateCategory = "harness" | "preconfigured";
+export type TemplateCategory = "harness";
 
 export type HarnessFamily = z.infer<typeof harnessFamilySchema>;
 
@@ -32,6 +33,7 @@ export interface TemplateSpec {
   description?: string;
   category?: TemplateCategory;
   harness?: HarnessFamily;
+  providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;

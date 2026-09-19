@@ -67,10 +67,16 @@ export function ConnectionsSetupSection({
   connectionIds,
   onToggle,
   oauthReturnView,
+  title,
+  leading,
+  excludeIds,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   oauthReturnView: string;
+  title?: string;
+  leading?: React.ReactNode;
+  excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -78,10 +84,10 @@ export function ConnectionsSetupSection({
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
+      excludeProviderConnections(connectionsQ.data ?? []).filter(
+        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
       ),
-    [connectionsQ.data, grantedIds],
+    [connectionsQ.data, grantedIds, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
 
@@ -92,6 +98,8 @@ export function ConnectionsSetupSection({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={() => setCatalogOpen(true)}
+        {...(title ? { title } : {})}
+        {...(leading ? { leading } : {})}
       />
       {catalogOpen && (
         <ConnectionCatalogModal

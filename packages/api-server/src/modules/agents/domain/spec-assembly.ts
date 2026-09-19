@@ -41,6 +41,7 @@ export function assembleSpecFromTemplate(
     description?: string;
     size?: { cpu?: string; memory?: string };
     vm?: boolean;
+    storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
@@ -54,7 +55,7 @@ export function assembleSpecFromTemplate(
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
-    storageSize: tmplSpec.storageSize,
+    storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
     backend: opts.vm ? { type: "vm" } : undefined,
     runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
@@ -69,6 +70,7 @@ export function assembleSpecFromImage(
     description?: string;
     size?: { cpu?: string; memory?: string };
     vm?: boolean;
+    storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
@@ -78,5 +80,6 @@ export function assembleSpecFromImage(
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
     backend: opts.vm ? { type: "vm" } : undefined,
+    storageSize: opts.storage,
   };
 }

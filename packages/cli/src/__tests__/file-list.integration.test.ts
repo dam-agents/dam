@@ -75,6 +75,7 @@ describe("dam file list (integration)", () => {
           overBudget: false,
           contributionFailures: [],
           unsupportedContributionKinds: [],
+          workspaceFailures: [],
           channels: [],
         }),
       },

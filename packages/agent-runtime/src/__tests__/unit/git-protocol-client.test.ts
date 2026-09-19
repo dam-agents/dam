@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runOnce } from "../../core/run-once.js";
-import { createGitProtocolClient } from "../../modules/skills/infrastructure/git-protocol-client.js";
+import { createGitProtocolClient } from "../../modules/git/protocol-client.js";
 
 /**
  * TEST_OVERVIEW: the git client drives real git through the shared subprocess
