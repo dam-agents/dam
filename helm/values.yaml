@@ -148,7 +148,11 @@ istio:
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
-# vm-runner agent plus smolvm. The controller drives its machine API (TLS,
+# vm-runner agent plus smolvm. A machine persists exactly the paths its Agent
+# declares in `backend.vm.disk.persist`, bind-mounted from its one storage disk
+# by platform-init, which the runner runs as every machine's entrypoint; the
+# rest of the guest is a root overlay the machine discards each time it stops,
+# so anything installed outside those paths is gone on the next boot. The controller drives its machine API (TLS,
 # bearer token; both minted by the controller); the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = the create refuses the vm backend
@@ -183,10 +187,13 @@ virtualization:
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
-    # Machine disks — every vm agent's workspace — and smolvm's image cache
-    # live here. The claim outlives a pod restart and a chart upgrade, but not
-    # its owner: the sweep removes a runner once that owner has no vm agents
-    # left, and takes the claim with it, so the next one re-fetches the image.
+    # One claim, three directories with three lifetimes: `disks/` holds the
+    # machine disks — every vm agent's storage — `machines/` the per-machine
+    # bookkeeping a restarted runner rebuilds, and `images/` the unpacked agent
+    # images, unless `imageCache` below gives every runner one volume to share.
+    # The claim outlives a pod restart and a chart upgrade, but not its owner:
+    # the sweep removes a runner once that owner has no vm agents left, and
+    # takes the claim with it, so the next one re-fetches the image.
     # Set once: a later change only grows the claim, and only on a class
     # that allows expansion.
     storage: 100Gi
