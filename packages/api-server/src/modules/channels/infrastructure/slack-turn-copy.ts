@@ -145,9 +145,9 @@ export function slackTurnContract(ctx: {
         "alsoSendToChannel when that message is old enough that people " +
         "watching the channel would miss a thread-only reply."
       : `• ${TOOL}reply — post a message into this thread ` +
-        `(threadTs="${ctx.replyThreadTs}"). Pass alsoSendToChannel when this ` +
-        "thread is old enough that people watching the channel would miss a " +
-        "thread-only reply.";
+        `(threadTs="${ctx.replyThreadTs}"). The thread is where your answer ` +
+        "belongs: leave alsoSendToChannel off unless you are asked to " +
+        "surface the answer to the whole channel.";
   const reactIds = multi
     ? "messageTs = the [ts …] tag of the message you are reacting to"
     : `messageTs="${ctx.eventTs}"`;
@@ -172,14 +172,18 @@ export function slackTurnContract(ctx: {
       "for when you are explicitly asked to announce something, cross-post to " +
       "another channel, or start a new thread — never as a way to answer the " +
       "message in front of you.",
-    ...(ctx.canLookupUsers
-      ? [
-          "People appear here as bare Slack ids like U024BE7LH, in speaker " +
-            `labels and inside message text — call ${TOOL}describe_channel_users ` +
-            'with channel="slack" to learn who they are before naming someone, ' +
-            "attributing work, or reasoning about their local time.",
-        ]
-      : []),
+    "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
+      "and inside message text" +
+      (ctx.canLookupUsers
+        ? ` — call ${TOOL}describe_channel_users with channel="slack" to ` +
+          "learn who they are before naming someone, attributing work, or " +
+          "reasoning about their local time."
+        : ".") +
+      " That is how ids reach you, never how they leave you: a raw id in a " +
+      "message is unreadable to the people in the channel. Address someone " +
+      "by tagging them — <@U024BE7LH>, which Slack renders as their name — " +
+      "or by the name you looked up, and never write the bare id as visible " +
+      "text.",
     multi
       ? `You're reading ${batchCount} messages from ${where}. Each [ts …] tag ` +
         "above is that message's own send time, in seconds since the Unix epoch."
