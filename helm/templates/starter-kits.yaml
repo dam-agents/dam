@@ -17,6 +17,9 @@ with the same reader every other catalog gets.
 {{- $enabledEntries := list }}
 {{- range $catalog.kits }}
 {{- $id := .id | default (trimPrefix "kits/" (.path | default "")) }}
+{{- if not $id }}
+{{- fail (printf "starter kit catalog entry %v has no id and no path to derive one from; an entry naming a repository must set `id`, or starterKits.builtin.kits.<id>.enabled can never switch it off" .) }}
+{{- end }}
 {{- if include "platform.starterKits.kitEnabled" (dict "root" $root "id" $id) }}
 {{- $enabledEntries = append $enabledEntries . }}
 {{- end }}

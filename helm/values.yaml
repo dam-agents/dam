@@ -1609,7 +1609,9 @@ e2e:
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
 # `builtin` is the platform's own catalog, shipped inside this chart
 # (helm/starter-kits) and mounted into the api-server — versioned with the
-# release, no network needed. `catalogs` adds external ones: each names a
+# release, no network needed — unless one of its entries names a repository
+# (`id` + `url`), which is resolved over the network on every refresh.
+# `catalogs` adds external ones: each names a
 # public git repository holding catalog.yaml (optionally `/tree/<ref>/<dir>`
 # to name a directory or `#<ref>` to pin). Rendered as STARTER_KITS_CATALOGS.
 starterKits:

@@ -2,6 +2,8 @@ import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
 
 import { connectionRequirements, describeAccepts } from "./setup.js";
 
+export const VM_BACKEND_LABEL = "New sandbox runtime";
+
 export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   knowledge: "Knowledge",
   software: "Software",
@@ -62,7 +64,7 @@ export function kitBadges(
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
   if (kit.backend === "vm")
-    badges.push({ key: "backend", label: "New sandbox runtime" });
+    badges.push({ key: "backend", label: VM_BACKEND_LABEL });
 
   const skills = kit.skillsInKit.length + kit.skills.length;
   if (skills > 0) {
