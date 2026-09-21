@@ -15,6 +15,7 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,6 +28,8 @@ import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { useAgentsList } from "../../agents/api/queries.js";
+import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { slackSessionKind } from "../lib/session-category.js";
@@ -112,6 +115,10 @@ export function SessionRow({
       : "font-normal text-foreground";
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const agents = useAgentsList();
+  const agent = agents.find((a) => a.id === s.agentId);
+  const onboarding =
+    s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const channel =
@@ -143,6 +150,11 @@ export function SessionRow({
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
+          {onboarding && (
+            <Badge variant={onboarding.variant} size="sm" className="shrink-0">
+              {onboarding.label}
+            </Badge>
+          )}
           <SessionIndicators
             scheduled={scheduled}
             terminal={terminal}

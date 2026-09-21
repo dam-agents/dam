@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-16
+Last verified: 2026-09-18
 
 ## System context
 
@@ -68,12 +68,12 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
 - [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
+- [starter-kits](architecture/starter-kits.md) — git-hosted kits applied to a new agent: connection requirements as template sets, platform-created schedules, suggested channels, optional Template pin, platform-composed onboarding first turn; catalog read from one pinned index, never cluster state.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [harness configuration](architecture/harness-config.md) — the Config panel's model/mode/config defaults: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
 - [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, dashboard-artifact live view. GUI surfaces hidden pending a rethink; created over the API.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
-- [home-feed](architecture/home-feed.md) — what Home shows since you last looked: a per-owner attention record written by one lease-elected watcher, so hibernated agents still report, with seen and dismissed as watermarks.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link — to anyone, or to a named list of viewers who sign in — across a dedicated share host and content host, with folders, a retention date, and versions.
 - [case-studies](architecture/case-studies.md) — the agent-case-study skill and the edition store behind it: agents write sanitized weekly accounts of their own use case, submitted as owner-only pending editions that the owner releases to inspector-gated read surfaces.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).

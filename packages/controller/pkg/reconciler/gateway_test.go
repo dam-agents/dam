@@ -49,6 +49,9 @@ func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken,
 		"gateway pod must have no SA token — Secret-read RBAC would bypass volume-mount scoping")
+	require.NotNil(t, ss.Spec.Template.Spec.EnableServiceLinks)
+	assert.False(t, *ss.Spec.Template.Spec.EnableServiceLinks,
+		"service links would inject one env var set per sibling agent Service; nothing in the pod reads them")
 }
 
 func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {

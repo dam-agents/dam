@@ -61,6 +61,8 @@ export {
 
 export type {
   Agent,
+  WorkspaceFailure,
+  WorkspaceMutationKind,
   AgentKind,
   AgentSpec,
   AgentState,
@@ -110,6 +112,7 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
+export { toAgentView } from "./modules/agents/view.js";
 export type {
   BudgetReserved,
   BudgetsService,
@@ -176,14 +179,34 @@ export {
   experimentFolderName,
 } from "./modules/experiments/schemas.js";
 export type {
-  KnowledgeBaseCreateInput,
-  KnowledgeBaseTemplateId,
-  KnowledgeBasesService,
-} from "./modules/knowledge-bases/types.js";
+  StarterKit,
+  StarterKitApplyInput,
+  StarterKitBundledSkills,
+  ResolvedSkill,
+  StarterKitApplyResult,
+  StarterKitCatalog,
+  StarterKitCatalogEntry,
+  StarterKitCategory,
+  StarterKitConnectionRequirement,
+  OnboardingStep,
+  StarterKitImage,
+  StarterKitResources,
+  StarterKitSchedule,
+  StarterKitScheduleOverride,
+  StarterKitScheduleTiming,
+  StarterKitView,
+  StarterKitsService,
+  ResolvedStarterKit,
+} from "./modules/starter-kits/types.js";
 export {
-  knowledgeBaseCreateInputSchema,
-  knowledgeBaseTemplateIdSchema,
-} from "./modules/knowledge-bases/schemas.js";
+  onboardingStepSchema,
+  starterKitApplyInputSchema,
+  starterKitCatalogSchema,
+  starterKitScheduleOverrideSchema,
+  starterKitCategorySchema,
+  starterKitSchema,
+} from "./modules/starter-kits/schemas.js";
+export { requirementAccepts } from "./modules/starter-kits/requirements.js";
 export type {
   KbShareCreateInput,
   KbShareDefaults,
@@ -375,6 +398,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionFamilyView,
   ConnectionTemplateView,
   TemplateInput as ConnectionTemplateInput,
   TemplateInputState as ConnectionTemplateInputState,
@@ -475,6 +499,7 @@ export type {
   SkillRef,
   SkillApplyBatchInput,
   SkillSet,
+  SkillEntriesApplyInput,
   SkillSetApplyInput,
   SkillSetApplyResult,
   SkillSetCreateInput,

@@ -30,6 +30,18 @@ export type WorkerHandler = (
   opts?: { retryUntilReady?: boolean },
 ) => Promise<void>;
 
+function attemptedEventIds(
+  events: readonly { id: string; kind: string }[],
+  settledEventIds: readonly string[],
+): string[] {
+  const settled = new Set(settledEventIds);
+  const held = events.findIndex(
+    (e) => isWorkspaceMutationKind(e.kind) && !settled.has(e.id),
+  );
+  const attempted = held === -1 ? events : events.slice(0, held + 1);
+  return attempted.map((e) => e.id);
+}
+
 export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
   async function emitWorkspaceMutationSettled(agentId: string): Promise<void> {
     try {
@@ -161,7 +173,10 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       droppedKindsChanged,
     } = await deps.outboxRepo.recordOutcome(agentId, row.version, {
       ...settle,
-      deliveredEventIds: payload.events.map((e) => e.id),
+      deliveredEventIds: attemptedEventIds(
+        payload.events,
+        settle.settledEventIds,
+      ),
       droppedContributionKinds: payload.droppedContributionKinds,
     });
 

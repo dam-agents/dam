@@ -1,0 +1,65 @@
+#!/bin/sh
+# Reached on every docker call and not only the first: this directory sits ahead
+# of the binary the shim installs, because the daemon still has to be started
+# and no init system in a sandbox is going to start it.
+#
+# There is no init system in a sandbox, so the daemon is started here rather
+# than enabled as a service, and its data root is put on the machine's storage
+# disk when there is one. That is not a preference: a guest's rootfs is an
+# overlay, overlayfs refuses an overlay as an upperdir, and the daemon's default
+# root is inside it — so on the vm Backend the default cannot work at all.
+set -eu
+
+# See the k3s shim: the sandbox shell's umask 027 makes a container runtime lay
+# down image layers 750, and a container running as a non-root uid cannot then
+# traverse its own rootfs. Verified in a guest — with 022 a `--user 65534`
+# container runs, without it the same container dies on its own entrypoint.
+# 022 is what these runtimes assume everywhere else.
+umask 022
+
+# moby-engine brings the daemon, the CLI, containerd, runc, docker-proxy and
+# iptables. The last two are not incidental: without docker-proxy the daemon
+# refuses to start, and without iptables it fails registering its bridge network.
+if ! dam-tool-real docker >/dev/null 2>&1; then
+    dam-auto-install docker sh -c '
+        command -v dnf >/dev/null 2>&1 || {
+            echo "no dnf on this image; install Docker manually" >&2; exit 1; }
+        dnf install -y --setopt=install_weak_deps=False moby-engine'
+fi
+real=$(dam-tool-real docker)
+
+if ! "$real" info >/dev/null 2>&1; then
+    dam-auto-install dockerd sh -c '
+        set -eu
+        dockerd=$(dam-tool-real dockerd) || { echo "moby-engine installed no dockerd" >&2; exit 1; }
+
+        root=
+        for d in /storage /workspace; do
+            [ -d "$d" ] && [ -w "$d" ] && { root="--data-root $d/docker"; break; }
+        done
+
+        # The shared containerd rather than the private one the daemon would
+        # otherwise fork, so docker and k3s keep one content store between them.
+        # This is also what Fedora does: its docker.service passes the same flag.
+        #
+        # The snapshotter feature is the half that matters. The socket alone
+        # would share the runtime while docker kept its own overlay2 image
+        # store, which is the storage this is meant to stop duplicating.
+        #
+        # The cost is a dependency: the daemon needs that containerd to stay up.
+        sock=$(dam-containerd)
+
+        # Detached and disowned: the shim exits as soon as the daemon answers,
+        # and the daemon has to outlive it.
+        nohup "$dockerd" $root --containerd "$sock" \
+            --feature containerd-snapshotter=true \
+            >>/var/log/dam/install/dockerd.log 2>&1 &
+        for _ in $(seq 1 60); do
+            docker_real=$(dam-tool-real docker); "$docker_real" info >/dev/null 2>&1 && exit 0
+            sleep 1
+        done
+        echo "dockerd did not answer within 60s; see /var/log/dam/install/dockerd.log" >&2
+        exit 1'
+fi
+
+exec "$real" "$@"

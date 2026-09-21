@@ -9,12 +9,9 @@ import {
   type View,
 } from "../lib/routes.js";
 
-const isChatView = (view: View) =>
-  view === "chat" || view === "knowledge-base-chat";
+const isChatView = (view: View) => view === "chat";
 
-const isChatRoute = (
-  route: Route,
-): route is Extract<Route, { view: "chat" | "knowledge-base-chat" }> =>
+const isChatRoute = (route: Route): route is Extract<Route, { view: "chat" }> =>
   isChatView(route.view);
 
 export function useBrowserHistory(): void {

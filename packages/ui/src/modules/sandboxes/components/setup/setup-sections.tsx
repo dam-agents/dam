@@ -4,7 +4,6 @@ import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Switch } from "@/components/ui/switch";
 
 import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
@@ -68,10 +67,16 @@ export function ConnectionsSetupSection({
   connectionIds,
   onToggle,
   oauthReturnView,
+  title,
+  leading,
+  excludeIds,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   oauthReturnView: string;
+  title?: string;
+  leading?: React.ReactNode;
+  excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -79,10 +84,10 @@ export function ConnectionsSetupSection({
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
+      excludeProviderConnections(connectionsQ.data ?? []).filter(
+        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
       ),
-    [connectionsQ.data, grantedIds],
+    [connectionsQ.data, grantedIds, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
 
@@ -93,6 +98,8 @@ export function ConnectionsSetupSection({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={() => setCatalogOpen(true)}
+        {...(title ? { title } : {})}
+        {...(leading ? { leading } : {})}
       />
       {catalogOpen && (
         <ConnectionCatalogModal
@@ -101,37 +108,6 @@ export function ConnectionsSetupSection({
           oauthReturnView={oauthReturnView}
         />
       )}
-    </section>
-  );
-}
-
-export function IsolationSetupSection({
-  vm,
-  onChange,
-}: {
-  vm: boolean;
-  onChange: (vm: boolean) => void;
-}) {
-  return (
-    <section className="mb-8">
-      <SectionLabel spaced>Isolation</SectionLabel>
-      <Inset>
-        <div className="flex items-start gap-3">
-          <Switch
-            checked={vm}
-            onCheckedChange={onChange}
-            label="Run in a microVM"
-            testId="vm-toggle"
-          />
-          <div>
-            <p className="text-sm text-foreground">Run in a microVM</p>
-            <p className="text-sm text-muted-foreground">
-              The image above, booted as a machine of its own rather than as a
-              pod. Container engines and Kubernetes can run inside it.
-            </p>
-          </div>
-        </div>
-      </Inset>
     </section>
   );
 }

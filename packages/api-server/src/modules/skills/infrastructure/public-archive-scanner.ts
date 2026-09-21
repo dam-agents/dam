@@ -188,23 +188,24 @@ async function skillDirsIn(
 export async function scanPublicGithubArchive(
   gitUrl: string,
   subPath?: string,
+  ref = "HEAD",
 ): Promise<Skill[]> {
   const host = detectHost(gitUrl);
   if (!host)
     throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
 
-  const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/HEAD.tar.gz`;
+  const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/${encodeURIComponent(ref)}.tar.gz`;
   const res = await fetch(archiveUrl, { redirect: "follow" });
   if (res.status === 404) throw new PublicArchiveNotFoundError(gitUrl);
   if (!res.ok) throw new Error(`github archive ${res.status} for ${gitUrl}`);
 
   const shaMatch = res.url.match(/\/([0-9a-f]{40})(?:\?.*)?$/);
-  if (!shaMatch) {
+  if (!shaMatch && !/^[0-9a-f]{40}$/.test(ref)) {
     if ((res.headers.get("content-type") ?? "").includes("text/html"))
       return [];
     throw new Error(`unexpected archive redirect: ${res.url}`);
   }
-  const version = shaMatch[1];
+  const version = shaMatch ? shaMatch[1] : ref;
 
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "platform-public-scan-"));
   try {

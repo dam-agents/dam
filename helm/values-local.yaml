@@ -89,7 +89,7 @@ virtualization:
 
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
-agentTemplates:
+harnessTemplates:
   claude-code:
     image:
       repository: platform-claude-code
@@ -113,69 +113,6 @@ agentTemplates:
       repository: platform-bob
       tag: latest
 
-  nous:
-    enabled: false
-    image:
-      repository: platform-nous
-      tag: latest
-    # A campaign's measurement phase can run several target-system daemons at
-    # once (a pm2 benchmark held three ~1 GiB daemons simultaneously) — the
-    # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
-    # heavy campaign fits; the campaign prompt should still bound its own
-    # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
-    #
-    # The CPU ceiling is deliberately half the memory-driven sizing: at 4 the
-    # worker's boot burst (a ~13 MB upstream fetch plus a dozen concurrent
-    # egress dials) could take half the 8-core VM and starve ztunnel, which
-    # terminated the driver's in-flight status poll through the waypoint and
-    # killed the run with a synthesized 503. Memory is the resource nous
-    # actually runs out of; CPU only needs to be enough not to crowd the mesh.
-    resources:
-      requests:
-        cpu: "1"
-        memory: "2Gi"
-      limits:
-        cpu: "2"
-        memory: "8Gi"
-
-  openevolve:
-    enabled: false
-    image:
-      repository: platform-openevolve
-      tag: latest
-
-  shinkaevolve:
-    enabled: false
-    image:
-      repository: platform-shinkaevolve
-      tag: latest
-
-  gepa:
-    enabled: false
-    image:
-      repository: platform-gepa
-      tag: latest
-    resources:
-      requests:
-        cpu: "1"
-        memory: "2Gi"
-      limits:
-        cpu: "2"
-        memory: "8Gi"
-
-  # Both presets share the one locally-built skydiscover image.
-  adaevolve:
-    enabled: false
-    image:
-      repository: platform-skydiscover
-      tag: latest
-
-  evox:
-    enabled: false
-    image:
-      repository: platform-skydiscover
-      tag: latest
-
   # Test fixture; not in the values.yaml catalog — the mock image is never
   # release-tagged (CI pushes per-commit shas for the e2e job only).
   mock:
@@ -189,16 +126,6 @@ agentTemplates:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
 
-  k-search:
-    enabled: false
-    image:
-      repository: platform-k-search
-      tag: latest
-
-  k-search-local:
-    image:
-      repository: platform-k-search
-      tag: latest
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
@@ -232,3 +159,20 @@ keycloak:
 terms:
   version: dev
   text: "Dev placeholder Terms of Use."
+
+# Workload kits run on images this checkout builds (packages/agents/<image>),
+# the way the harness templates above do: each kit points at the local tag,
+# and cluster:install / cluster:build-agent build and load the image of every
+# enabled kit. Off by default — the research images are large; flip `enabled`
+# (or pass --set=starterKits.builtin.kits.<id>.enabled=true) to bring one in.
+starterKits:
+  builtin:
+    kits:
+      nous: { enabled: false, image: platform-nous:latest }
+      openevolve: { enabled: false, image: platform-openevolve:latest }
+      shinkaevolve: { enabled: false, image: platform-shinkaevolve:latest }
+      gepa: { enabled: false, image: platform-gepa:latest }
+      # Both presets share the one locally built skydiscover image.
+      adaevolve: { enabled: false, image: platform-skydiscover:latest }
+      evox: { enabled: false, image: platform-skydiscover:latest }
+      k-search: { enabled: false, image: platform-k-search:latest }

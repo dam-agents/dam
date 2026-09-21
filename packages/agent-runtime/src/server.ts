@@ -37,7 +37,7 @@ import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createHarnessClient } from "./modules/runtime-channel/harness-client.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
-import { configureGitCredentialHelper } from "./modules/git.js";
+import { configureGitCredentialHelper } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";

@@ -32,6 +32,8 @@ const agent = (
   templateUpdate: null,
   features: { liveUpdates: true },
   kbTemplateId: null,
+  starterKit: null,
+  starterKitOnboarded: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
@@ -42,8 +44,10 @@ const agent = (
   state,
   contributionFailures: [],
   unsupportedContributionKinds: [],
+  workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  vm: false,
 });
 
 describe("slots", () => {

@@ -16,9 +16,22 @@ export const eventKind = z.enum([
   "workspace-seed",
   "workspace-command",
   "experiment-execute",
+  "initialization",
   "harness-config",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
+
+export const workspaceMutationEventKinds = [
+  "workspace-seed",
+  "workspace-command",
+] as const satisfies readonly EventKind[];
+export type WorkspaceMutationEventKind =
+  (typeof workspaceMutationEventKinds)[number];
+export function isWorkspaceMutationEventKind(
+  kind: string,
+): kind is WorkspaceMutationEventKind {
+  return (workspaceMutationEventKinds as readonly string[]).includes(kind);
+}
 
 export const mergeMode = z.enum([
   "overwrite",
@@ -159,6 +172,9 @@ export const scheduleResetEvent = z.object({
 export const workspaceSeedEventPayload = z.object({
   url: z.string().min(1),
   ref: z.string().min(1).optional(),
+  commit: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
+  into: z.enum(["work", "home"]).optional(),
 });
 export type WorkspaceSeedEventPayload = z.infer<
   typeof workspaceSeedEventPayload
@@ -203,6 +219,21 @@ export const experimentExecuteEvent = z.object({
   payload: experimentExecuteEventPayload,
 });
 
+export const initializationEventPayload = z.object({
+  task: z.string().min(1),
+});
+export type InitializationEventPayload = z.infer<
+  typeof initializationEventPayload
+>;
+
+export const initializationEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("initialization"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: initializationEventPayload,
+});
+
 export const harnessConfigEventPayload = z.object({
   model: z.string().min(1).optional(),
   mode: z.string().min(1).optional(),
@@ -227,6 +258,7 @@ export const event = z.discriminatedUnion("kind", [
   workspaceSeedEvent,
   workspaceCommandEvent,
   experimentExecuteEvent,
+  initializationEvent,
   harnessConfigEvent,
 ]);
 export type Event = z.infer<typeof event>;

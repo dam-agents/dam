@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
+  PROVIDER_TEMPLATE_IDS,
+  type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
   type AgentConnections,
   type Connection,
@@ -57,6 +59,12 @@ import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
 const MAX_SHARED_KB_CONNECTIONS_PER_OWNER = 20;
+const PROVIDER_IS_ACTIVE: Record<ConnectionStatus, boolean> = {
+  active: true,
+  expired: false,
+  pending: false,
+  disconnected: false,
+};
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -94,15 +102,24 @@ export function createConnectionsService(deps: {
         > => c.kind === "egress-allow" || c.kind === "egress-inject",
       )
       .map((c) => c.host);
+    const presetAppSlug =
+      conn.auth.kind === "oauth" &&
+      template?.authKind === "oauth" &&
+      conn.auth.clientId === template.clientId &&
+      typeof template.extras?.appSlug === "string"
+        ? template.extras.appSlug
+        : undefined;
+    const appSlug =
+      conn.auth.kind === "oauth"
+        ? (conn.auth.appSlug ?? presetAppSlug)
+        : undefined;
     const oauthExtras =
       conn.auth.kind === "oauth" ||
       conn.auth.kind === "client-credentials" ||
       conn.auth.kind === "github-app"
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
-            ...(conn.auth.kind === "oauth" && conn.auth.appSlug
-              ? { appSlug: conn.auth.appSlug }
-              : {}),
+            ...(appSlug ? { appSlug } : {}),
             ...(conn.auth.kind === "oauth" && conn.auth.clientSecretRef
               ? { hasClientSecret: true }
               : {}),
@@ -454,6 +471,29 @@ export function createConnectionsService(deps: {
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
       return conn ? toView(conn) : null;
+    },
+
+    async validateProviderConnection(id: string): Promise<void> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "model-provider connection not found or not owned by caller",
+        });
+      }
+      if (!PROVIDER_TEMPLATE_IDS.has(conn.templateId)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `connection '${conn.name}' is not a model provider`,
+        });
+      }
+      const status = deriveStatus(conn);
+      if (!PROVIDER_IS_ACTIVE[status]) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `model provider '${conn.name}' is ${status}; reconnect it before creating an agent`,
+        });
+      }
     },
 
     startOAuth(

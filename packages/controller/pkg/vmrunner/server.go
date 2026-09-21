@@ -1,6 +1,7 @@
 package vmrunner
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/subtle"
@@ -33,6 +34,7 @@ const (
 	stateTTL         = time.Second
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
+	maxImageConfig   = 1 << 20
 	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the cached images may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the image being fetched and for whatever the volume is shared with.
 	cacheBudgetPercent = 80
 	rootfsDir          = "rootfs"
@@ -376,9 +378,12 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		}
 		if launch == nil && archived {
 			cached = base + ".tar"
+			if launch, err = launchFromArchive(cached); err != nil {
+				return fmt.Errorf("%w: %w", errImageUnusable, err)
+			}
 		}
 	}
-	if launch != nil {
+	if launch != nil && cached == "" {
 		cached = filepath.Join(base, rootfsDir)
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
@@ -433,11 +438,11 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
 	if err != nil {
 		slog.Warn("image config fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
-		return fmt.Errorf("reading the config of %s: %w", ref, err)
+		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
 	launch, err := launchFromConfig(config)
 	if err != nil {
-		return fmt.Errorf("reading the config of %s: %w", ref, err)
+		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
 	if err := s.unpack(ctx, ref, filepath.Join(tmp, rootfsDir)); err != nil {
 		return err
@@ -516,6 +521,56 @@ func readLaunch(cached string) (*ImageLaunch, error) {
 	return &launch, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an archive boots a machine without a tree beside it, but it carries the image's own config as well as its layers, and that is where the entrypoint, environment and working directory live. smolvm reads the layers out of it and not the config, so a machine handed an archive and nothing else comes up with its filesystem and no process — the same silent failure the launch record exists to prevent, on the path the record does not reach. Entries are held only while they could still be that config: a layer is skipped by its size, and anything that is not an object by its first byte.
+func launchFromArchive(path string) (*ImageLaunch, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var manifest []byte
+	documents := map[string][]byte{}
+	reader := tar.NewReader(f)
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading the archive %s: %w", path, err)
+		}
+		if header.Typeflag != tar.TypeReg || header.Size > maxImageConfig {
+			continue
+		}
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("reading the archive %s: %w", path, err)
+		}
+		name := strings.TrimPrefix(filepath.Clean(header.Name), "./")
+		if name == "manifest.json" {
+			manifest = body
+			continue
+		}
+		if len(body) > 0 && body[0] == '{' {
+			documents[name] = body
+		}
+	}
+
+	var entries []struct{ Config string }
+	if err := json.Unmarshal(manifest, &entries); err != nil {
+		return nil, fmt.Errorf("reading the manifest of %s: %w", path, err)
+	}
+	if len(entries) == 0 || entries[0].Config == "" {
+		return nil, fmt.Errorf("the archive %s names no image config", path)
+	}
+	config, held := documents[strings.TrimPrefix(filepath.Clean(entries[0].Config), "./")]
+	if !held {
+		return nil, fmt.Errorf("the archive %s is missing its image config %s", path, entries[0].Config)
+	}
+	return launchFromConfig(config)
+}
+
 func launchFromConfig(config []byte) (*ImageLaunch, error) {
 	var parsed struct {
 		Config struct {
@@ -527,6 +582,9 @@ func launchFromConfig(config []byte) (*ImageLaunch, error) {
 	}
 	if err := json.Unmarshal(config, &parsed); err != nil {
 		return nil, err
+	}
+	if len(parsed.Config.Entrypoint) == 0 && len(parsed.Config.Cmd) == 0 {
+		return nil, errors.New("the image names neither an entrypoint nor a command")
 	}
 	return &ImageLaunch{
 		Entrypoint: parsed.Config.Entrypoint,
@@ -980,9 +1038,14 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 var errEgressChanged = errors.New("egress allowlist changed")
 
+var errImageUnusable = errors.New("the image cannot be run")
+
 func failureReason(err error) string {
 	if errors.Is(err, errEgressChanged) {
 		return ReasonEgressChanged
+	}
+	if errors.Is(err, errImageUnusable) {
+		return ReasonImageUnavailable
 	}
 	m := err.Error()
 	switch {

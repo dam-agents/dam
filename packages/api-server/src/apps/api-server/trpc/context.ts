@@ -1,7 +1,10 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import { composeAgentsModule } from "../../../modules/agents/index.js";
-import { EXPERIMENT_ACTIVE_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import {
+  ANN_STARTER_KIT_ONBOARDED,
+  EXPERIMENT_ACTIVE_KEY,
+} from "../../../modules/agents/infrastructure/labels.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../../modules/templates/index.js";
@@ -15,7 +18,7 @@ import {
   composeInvocationsQueryForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
-import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
+import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
@@ -58,6 +61,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     secretStores,
     runtimeMutator,
     contributionsProgress,
+    onboardingChecklists,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -69,6 +73,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    starterKitsRepo,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -147,11 +152,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsProgress,
+      onboardingChecklists,
       grantProvisioner: {
-        resolveSpecGrants(sel) {
-          return Promise.resolve({
+        async resolveSpecGrants(sel) {
+          if (sel.providerConnectionId)
+            await connections.validateProviderConnection(
+              sel.providerConnectionId,
+            );
+          return {
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          });
+          };
         },
         async applyAfterCreate(agentId, sel) {
           if (sel.connectionIds.length)
@@ -168,16 +178,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const invocationsQuery = composeInvocationsQueryForOwner({
       db,
       owner: user.sub,
-    });
-    const { knowledgeBases } = composeKnowledgeBasesForOwner({
-      owner: user.sub,
-      surface,
-      agents,
-      readTemplateSpec,
-      runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
     });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,
@@ -239,6 +239,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       templatesRepo,
       runtimeProgress: contributionsProgress,
+    });
+    const { starterKits } = composeStarterKitsForOwner({
+      owner: user.sub,
+      repo: starterKitsRepo,
+      agents,
+      schedules,
+      connections,
+      skills,
+      surface,
+      readTemplateSpec,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
+      markAgentOnboarded: (agentId, at) =>
+        agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
+      runtimeMutator,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -346,7 +362,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRules,
       experiments,
       invocationsQuery,
-      knowledgeBases,
+      starterKits,
       kbShares,
       artifactLibrary,
       caseStudies,

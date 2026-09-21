@@ -149,6 +149,16 @@ export function usePauseAgent() {
   });
 }
 
+export function useRetryWorkspace() {
+  return useMutation({
+    ...trpc.agents.retryWorkspace.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to retry the workspace step",
+    },
+  });
+}
+
 export function useStopAgent() {
   return useMutation({
     ...trpc.agents.stop.mutationOptions(),

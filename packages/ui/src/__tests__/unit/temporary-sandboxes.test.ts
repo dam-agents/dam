@@ -13,6 +13,8 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   templateUpdate: null,
   features: { liveUpdates: true },
   kbTemplateId: null,
+  starterKit: null,
+  starterKitOnboarded: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
@@ -23,8 +25,10 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   state: "running",
   contributionFailures: [],
   unsupportedContributionKinds: [],
+  workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  vm: false,
   ...overrides,
 });
 

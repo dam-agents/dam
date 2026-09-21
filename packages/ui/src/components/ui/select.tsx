@@ -10,6 +10,8 @@ const selectVariants = cva(
     variants: {
       variant: {
         standard: "border-input",
+        ghost:
+          "border-transparent bg-transparent hover:border-input hover:bg-background",
         invalid: "border-destructive focus-visible:ring-destructive",
       },
       size: {

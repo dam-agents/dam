@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 
 import type { AgentView } from "../../../types.js";
+import { workspaceStepLabel } from "../lib/workspace-failure.js";
 
 export function ContributionFailuresBadge({
   failures,
@@ -18,4 +19,15 @@ export function ContributionFailuresBadge({
       {label}
     </Badge>
   );
+}
+
+export function agentFailures(
+  agent: Pick<AgentView, "contributionFailures" | "workspaceFailures">,
+): AgentView["contributionFailures"] {
+  return [
+    ...agent.contributionFailures,
+    ...agent.workspaceFailures
+      .filter((f) => f.settled)
+      .map((f) => ({ kind: workspaceStepLabel(f.kind), message: f.error })),
+  ];
 }

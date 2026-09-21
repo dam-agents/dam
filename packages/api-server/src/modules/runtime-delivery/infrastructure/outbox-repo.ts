@@ -1,5 +1,6 @@
 import {
   and,
+  desc,
   eq,
   inArray,
   isNull,
@@ -16,6 +17,8 @@ import type {
   ContributionKind,
   DriverFailure,
   RuntimeEventKind,
+  WorkspaceFailure,
+  WorkspaceMutationKind,
 } from "api-server-api";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "../domain/workspace-mutation.js";
@@ -90,6 +93,13 @@ export interface OutboxRepo {
   ): Promise<ApplyTransitions>;
   listRetryable(maxAttempts: number): Promise<OutboxRow[]>;
   preparingWorkspaceAgentIds(agentIds: string[]): Promise<Set<string>>;
+  workspaceFailures(
+    agentIds: string[],
+  ): Promise<Map<string, WorkspaceFailure[]>>;
+  latestWorkspaceEvent(
+    agentId: string,
+    kind: WorkspaceMutationKind,
+  ): Promise<PendingEventRow | null>;
   markEventsUndeliverable(
     agentId: string,
     kinds: RuntimeEventKind[],
@@ -266,6 +276,18 @@ export function createOutboxRepo(db: Db): OutboxRepo {
                 isNull(runtimeEvents.dispatchedAt),
               ),
             );
+          await tx
+            .update(runtimeEvents)
+            .set({ error: null })
+            .where(
+              and(
+                eq(runtimeEvents.agentId, agentId),
+                inArray(runtimeEvents.id, result.settledEventIds),
+                inArray(runtimeEvents.kind, [
+                  ...WORKSPACE_MUTATION_EVENT_KINDS,
+                ]),
+              ),
+            );
         }
 
         const settledIds = new Set(result.settledEventIds);
@@ -298,7 +320,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               .update(runtimeEvents)
               .set({
                 dispatchedAt: new Date(),
-                error: `gave up after ${maxAttempts} delivery attempts`,
+                error: sql`coalesce(${runtimeEvents.error} || ' — ', '') || ${`gave up after ${maxAttempts} delivery attempts`}`,
               })
               .where(
                 and(
@@ -408,6 +430,71 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           ),
         )) as { agentId: string }[];
       return new Set(rows.map((r) => r.agentId));
+    },
+
+    async workspaceFailures(
+      agentIds,
+    ): Promise<Map<string, WorkspaceFailure[]>> {
+      const out = new Map<string, WorkspaceFailure[]>();
+      if (agentIds.length === 0) return out;
+      const rows = (await db
+        .select({
+          agentId: runtimeEvents.agentId,
+          kind: runtimeEvents.kind,
+          error: runtimeEvents.error,
+          dispatchedAt: runtimeEvents.dispatchedAt,
+          attempts: runtimeEvents.attempts,
+        })
+        .from(runtimeEvents)
+        .where(
+          and(
+            inArray(runtimeEvents.agentId, agentIds),
+            inArray(runtimeEvents.kind, [...WORKSPACE_MUTATION_EVENT_KINDS]),
+          ),
+        )
+        .orderBy(desc(runtimeEvents.version))) as {
+        agentId: string;
+        kind: WorkspaceMutationKind;
+        error: string | null;
+        dispatchedAt: Date | null;
+        attempts: number;
+      }[];
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const key = `${r.agentId}/${r.kind}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (r.error === null) continue;
+        const list = out.get(r.agentId) ?? [];
+        list.push({
+          kind: r.kind,
+          error: r.error,
+          settled: r.dispatchedAt !== null,
+          attempts: r.attempts,
+          maxAttempts: DEFAULT_MAX_APPLY_ATTEMPTS,
+        });
+        out.set(r.agentId, list);
+      }
+      return out;
+    },
+
+    async latestWorkspaceEvent(agentId, kind): Promise<PendingEventRow | null> {
+      const rows = (await db
+        .select({
+          id: runtimeEvents.id,
+          agentId: runtimeEvents.agentId,
+          kind: runtimeEvents.kind,
+          payload: runtimeEvents.payload,
+          version: runtimeEvents.version,
+          expiresAt: runtimeEvents.expiresAt,
+        })
+        .from(runtimeEvents)
+        .where(
+          and(eq(runtimeEvents.agentId, agentId), eq(runtimeEvents.kind, kind)),
+        )
+        .orderBy(desc(runtimeEvents.version))
+        .limit(1)) as PendingEventRow[];
+      return rows[0] ?? null;
     },
 
     async markEventsUndeliverable(agentId, kinds): Promise<number> {

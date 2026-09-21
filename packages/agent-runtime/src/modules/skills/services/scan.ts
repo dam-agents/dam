@@ -12,7 +12,7 @@ import {
   type DetectedOwnerRepo,
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
-import type { GitProtocolClient } from "../infrastructure/git-protocol-client.js";
+import type { GitProtocolClient } from "../../git/protocol-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
 
 export interface ScanDeps {

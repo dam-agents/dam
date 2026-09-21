@@ -18,7 +18,7 @@ import { useStore } from "../store.js";
 export function DocsLauncher() {
   const titleId = useId();
   const view = useStore((s) => s.view);
-  const chatSurface = view === "chat" || view === "knowledge-base-chat";
+  const chatSurface = view === "chat";
   const banner =
     useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot) !==
     "connected";

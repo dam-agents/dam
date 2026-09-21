@@ -48,7 +48,7 @@ export function useSyncRestartingAgents() {
         "It looks like you've reached your usage limit for active agents. To start this agent, please hibernate some of your running sandboxes. You can manage your sandboxes by clicking the button below.",
         "You do not have enough usage slots to start this agent.",
         { confirmLabel: "Manage sandboxes" },
-      ).then((ok) => ok && setView("coding-agents"));
+      ).then((ok) => ok && setView("home"));
     }
   }, [data, dataUpdatedAt, setRestartingAgents, showConfirm, setView]);
 }

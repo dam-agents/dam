@@ -5,13 +5,13 @@ import { nextSandboxName, type SandboxNameKind } from "../lib/sandbox-name.js";
 import {
   isCodingAgent,
   isExperimentSandbox,
-  isKnowledgeBase,
+  isStarterKitAgent,
 } from "../utils/agent-kind.js";
 
 const MATCHES_KIND = {
   "coding-agent": isCodingAgent,
   experiment: isExperimentSandbox,
-  "knowledge-base": isKnowledgeBase,
+  "starter-kit": isStarterKitAgent,
 } as const;
 
 function useDefaultSandboxName(kind: SandboxNameKind): string {

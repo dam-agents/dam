@@ -1,0 +1,17 @@
+schemaVersion: v1
+id: gepa
+name: GEPA
+description: >-
+  Reflective prompt and text-optimization agent. Brings its own agent, built on Claude Code.
+category: research
+icon: idea
+docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md
+image:
+  ref: quay.io/dam-agents/gepa # @ci-pin gepa-image-tag
+  harness: claude-code
+  providers: [ibm-litellm, anthropic]
+resources:
+  storage: 5Gi
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories and publish results.

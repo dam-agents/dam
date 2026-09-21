@@ -22,40 +22,9 @@ import {
   agentStopInputSchema,
   agentUpgradeInputSchema,
   agentWakeInputSchema,
+  agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
-import type { Agent } from "./types.js";
-
-export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
-  return {
-    spawnedBy,
-    id: agent.id,
-    name: agent.name,
-    templateId: agent.templateId ?? null,
-    templateUpdate: agent.templateUpdate ?? null,
-    features: agent.features,
-    image: agent.spec.image,
-    description: agent.spec.description,
-    env: agent.spec.env,
-    hibernationTimeoutMin: agent.effectiveHibernationTimeoutMin,
-    grantedSecretIds: agent.spec.grantedSecretIds ?? [],
-    grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
-    state: agent.state,
-    error: agent.error,
-    stopRequested: agent.stopRequested,
-    overBudget: agent.overBudget,
-    overBudgetMessage: agent.overBudgetMessage,
-    size: {
-      cpu: agent.spec.resources?.limits?.cpu,
-      memory: agent.spec.resources?.limits?.memory,
-    },
-    podTerminationReason: agent.podTerminationReason,
-    contributionFailures: agent.contributionFailures,
-    unsupportedContributionKinds: agent.unsupportedContributionKinds,
-    channels: agent.channels,
-    kind: agent.kind,
-    kbTemplateId: agent.kbTemplateId ?? null,
-  };
-}
+import { toAgentView } from "./view.js";
 
 export const agentsRouter = t.router({
   list: readAgentProcedure.query(async ({ ctx }) => {
@@ -135,6 +104,14 @@ export const agentsRouter = t.router({
     .input(agentStopInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.stop(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toAgentView(agent);
+    }),
+
+  retryWorkspace: manageAgentsProcedure
+    .input(agentRetryWorkspaceInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.retryWorkspace(input.id, input.kind);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),

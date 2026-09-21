@@ -4,12 +4,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
+import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { ConnectedKnowledgeBases } from "./connected-knowledge-bases.js";
 import { KbSharingSection } from "./kb-sharing-section.js";
 
 export function KnowledgeSection({ agent }: { agent: AgentView }) {
-  const shareable = isKnowledgeBase(agent);
+  const shareable = sharesKnowledgeBase(agent);
   const focus = useStore((s) => s.sandboxFocus);
   const clearSandboxFocus = useStore((s) => s.clearSandboxFocus);
   const ref = useRef<HTMLElement>(null);

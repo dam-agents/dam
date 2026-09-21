@@ -143,6 +143,7 @@ spec:
       {{- $checksums := dict "checksum/nginx-config" (toYaml .Values.ui | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.ui "internal" $checksums) | nindent 6 }}
     spec:
+      enableServiceLinks: false
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: ui

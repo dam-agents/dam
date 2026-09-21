@@ -13,13 +13,13 @@ import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
-import { knowledgeBasesRouter } from "./modules/knowledge-bases/router.js";
 import { linksRouter } from "./modules/links/router.js";
 import { featuresRouter } from "./modules/features/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
+import { starterKitsRouter } from "./modules/starter-kits/router.js";
 import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
@@ -38,7 +38,7 @@ export const appRouter = t.router({
   attention: attentionRouter,
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
-  knowledgeBases: knowledgeBasesRouter,
+  starterKits: starterKitsRouter,
   kbShares: kbSharesRouter,
   artifactLibrary: artifactLibraryRouter,
   caseStudies: caseStudiesRouter,

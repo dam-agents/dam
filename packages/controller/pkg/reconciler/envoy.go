@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -96,15 +98,68 @@ func (c envoyHostChain) HasQueryParamCredential() bool {
 
 const envoySecretTypeAllowOnly = "allow-only"
 
-func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
 		return nil, err
 	}
-	return filterByGrants(all, grantedSecretIDs, grantedConnectionIDs), nil
+	return filterByGrants(agent, all, grantedSecretIDs, grantedConnectionIDs), nil
 }
 
-func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
+type grantKind string
+
+const (
+	grantKindSecrets     grantKind = "granted-secret-ids"
+	grantKindConnections grantKind = "granted-connection-ids"
+)
+
+type unresolvedGrantKey struct {
+	agent string
+	kind  grantKind
+}
+
+type unresolvedGrantReporter struct {
+	mu       sync.Mutex
+	reported map[unresolvedGrantKey][]string
+}
+
+var unresolvedGrants = &unresolvedGrantReporter{}
+
+func (u *unresolvedGrantReporter) takeChange(key unresolvedGrantKey, unresolved []string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(unresolved) == 0 {
+		delete(u.reported, key)
+		return false
+	}
+	if slices.Equal(u.reported[key], unresolved) {
+		return false
+	}
+	if u.reported == nil {
+		u.reported = map[unresolvedGrantKey][]string{}
+	}
+	u.reported[key] = slices.Clone(unresolved)
+	return true
+}
+
+func (u *unresolvedGrantReporter) forget(agent string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for key := range u.reported {
+		if key.agent == agent {
+			delete(u.reported, key)
+		}
+	}
+}
+
+func (u *unresolvedGrantReporter) warnOnChange(agent string, kind grantKind, message string, unresolved []string) {
+	if !u.takeChange(unresolvedGrantKey{agent: agent, kind: kind}, unresolved) {
+		return
+	}
+	slog.Warn(message, "agent", agent, "unresolvedIds", unresolved)
+}
+
+func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
 	grantedSecretIds := toGrantSet(grantedSecretIDs)
 	grantedConnIds := toGrantSet(grantedConnectionIDs)
 
@@ -131,14 +186,12 @@ func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnection
 		}
 	}
 
-	if unresolved := unresolvedKeys(grantedSecretIds, resolvedSecrets); len(unresolved) > 0 {
-		slog.Warn("granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing",
-			"unresolvedIds", unresolved)
-	}
-	if unresolved := unresolvedKeys(grantedConnIds, resolvedConns); len(unresolved) > 0 {
-		slog.Warn("granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing",
-			"unresolvedIds", unresolved)
-	}
+	unresolvedGrants.warnOnChange(agent, grantKindSecrets,
+		"granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing",
+		unresolvedKeys(grantedSecretIds, resolvedSecrets))
+	unresolvedGrants.warnOnChange(agent, grantKindConnections,
+		"granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing",
+		unresolvedKeys(grantedConnIds, resolvedConns))
 
 	return out
 }

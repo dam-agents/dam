@@ -176,6 +176,13 @@ describe("hintFor", () => {
     expect(hintFor({ type: EventType.AgentUpdated, agentId: "a1" })).toBeNull();
   });
 
+  // TEST_SCENARIO: every agent change the UI must see live — the onboarding stamp, a checklist write, a workspace seed or install settling — is one AgentUpdated; it reaches the owner's channel exactly when its emitter named the owner.
+  it("projects an agents hint when an agent update names its owner", () => {
+    expect(
+      hintFor({ type: EventType.AgentUpdated, agentId: "a1", ownerSub: "u1" }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "agents", agentId: "a1" } });
+  });
+
   // TEST_SCENARIO: A runtime's hello is what establishes whether the platform may watch its session list. That claim is stored on the Agent, which the K8s watch cannot see change, so the hello must project an agents hint of its own — otherwise an agent that says hello after a subscription is established stays out of the watch set until an unrelated event fires.
   it("projects an agents hint when a runtime says hello", () => {
     expect(

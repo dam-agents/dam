@@ -17,6 +17,8 @@ interface Props {
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
   inset?: boolean;
+  title?: string;
+  leading?: React.ReactNode;
 }
 
 export function GrantedConnectionsPanel({
@@ -25,37 +27,46 @@ export function GrantedConnectionsPanel({
   onToggleGrant,
   onOpenCatalog,
   inset = true,
+  title = "My connections",
+  leading,
 }: Props) {
   const maintenance = useConnectionMaintenance();
+
+  const header = (
+    <div className="mb-3 flex items-center justify-between">
+      <SectionLabel>{title}</SectionLabel>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onOpenCatalog}
+        data-testid="open-connection-catalog"
+      >
+        <Add size={16} />
+        Add Connection
+      </Button>
+    </div>
+  );
 
   if (groups.length === 0)
     return (
       <>
-        <SectionLabel spaced>My connections</SectionLabel>
-        <EmptyStateCard
-          message="You have not added any Connections to this Agent yet"
-          actionLabel="Add Connection"
-          onAction={onOpenCatalog}
-          actionTestId="open-connection-catalog"
-        />
+        {header}
+        {leading && <Wrap inset={inset}>{leading}</Wrap>}
+        {!leading && (
+          <EmptyStateCard
+            message="You have not added any Connections to this Agent yet"
+            actionLabel="Add Connection"
+            onAction={onOpenCatalog}
+          />
+        )}
       </>
     );
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-between">
-        <SectionLabel>My connections</SectionLabel>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onOpenCatalog}
-          data-testid="open-connection-catalog"
-        >
-          <Add size={16} />
-          New
-        </Button>
-      </div>
+      {header}
       <Wrap inset={inset}>
+        {leading}
         {groups.map((group) => (
           <ConnectionGroupCard
             key={group.provider.id}
