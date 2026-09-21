@@ -2,6 +2,7 @@ import type { AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type { BudgetsService } from "./modules/budgets/types.js";
+import type { AttentionService } from "./modules/attention/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
@@ -9,10 +10,7 @@ import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type { FeaturesService } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
-import type {
-  LiveEventsService,
-  PodSessionsService,
-} from "./modules/events/types.js";
+import type { LiveEventsService } from "./modules/events/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
 import type { InvocationsQueryService } from "./modules/invocations/types.js";
 import type { KbSharesService } from "./modules/kb-shares/types.js";
@@ -24,6 +22,7 @@ import type { SkillsService } from "./modules/skills/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
+import type { TelemetryService } from "./modules/telemetry/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 import type { UsageService } from "./modules/usage/types.js";
@@ -45,6 +44,7 @@ export interface ApiContext {
   connections: ConnectionsService;
   skills: SkillsService;
   approvals: ApprovalsService;
+  attention: AttentionService;
   egressRules: EgressRulesService;
   experiments: ExperimentsService;
   invocationsQuery: InvocationsQueryService;
@@ -57,8 +57,8 @@ export interface ApiContext {
   harnessConfig: HarnessConfigService;
   links: Links;
   liveEvents: LiveEventsService;
-  podSessions: PodSessionsService;
   metrics: MetricsService;
+  telemetry: TelemetryService;
   terms: TermsService;
   usage: UsageService;
   e2e: E2eService;

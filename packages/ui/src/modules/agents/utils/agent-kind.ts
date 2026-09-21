@@ -100,6 +100,6 @@ export function onboardingBadge(
       : "Onboarding",
     variant: "kit",
     title:
-      "Still being set up. Its schedules are held until the agent marks onboarding complete.",
+      "Still being set up. Any schedules on it are held until the agent marks onboarding complete.",
   };
 }

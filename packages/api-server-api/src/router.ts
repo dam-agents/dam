@@ -3,6 +3,7 @@ import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
+import { attentionRouter } from "./modules/attention/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
@@ -21,6 +22,7 @@ import { skillsRouter } from "./modules/skills/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
 import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
+import { telemetryRouter } from "./modules/telemetry/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
 import { termsRouter } from "./modules/terms/router.js";
 import { usageRouter } from "./modules/usage/router.js";
@@ -34,6 +36,7 @@ export const appRouter = t.router({
   connections: connectionsRouter,
   skills: skillsRouter,
   approvals: approvalsRouter,
+  attention: attentionRouter,
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
   starterKits: starterKitsRouter,
@@ -44,6 +47,7 @@ export const appRouter = t.router({
   files: filesRouter,
   links: linksRouter,
   metrics: metricsRouter,
+  telemetry: telemetryRouter,
   terms: termsRouter,
   usage: usageRouter,
   e2e: e2eRouter,

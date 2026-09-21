@@ -1,17 +1,17 @@
 ---
-id:
+id: 089
 title: "Notifications as a per-owner attention record; the agent still owns session truth"
-status: proposed
+status: accepted
 supersedes:
-subsystem: agent-lifecycle
+subsystem: home-feed
 tags: [notifications, home, sessions, events]
-summary: The platform stores what needs a user's attention, written by a lease-elected watcher pulling on pod notices, with seen and dismissed as per-user watermarks; the agent remains the sole source of truth for which sessions exist.
+summary: The platform stores what needs a user's attention, written by a lease-elected watcher pulling on pod notices, with dismissal as a per-user watermark and read state snapshotted from the agent until sharing makes it per person; the agent remains the sole source of truth for which sessions exist.
 ---
 
-# ADR: Notifications as a per-owner attention record; the agent still owns session truth
+# ADR-089: Notifications as a per-owner attention record; the agent still owns session truth
 
 **Date:** 2026-09-02
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @kapetr
 
 ## Context
@@ -35,8 +35,9 @@ The platform keeps a per-owner record of what needs attention — session activi
 whether it was seen — while the agent remains the sole source of truth for which sessions exist.
 The record is written by a lease-elected watcher in the api-server that consumes the pod surface
 ADR-086 built: it holds the session watch to every running agent, and on each notice re-reads the
-pod's session list and upserts the record. Read and dismissed state move out of the pod and become
-per-user watermarks on that record, so Home can answer "what did I miss" for a hibernated agent.
+pod's session list and upserts the record. Dismissal moves out of the browser and becomes a
+per-user watermark on that record, so Home can answer "what did I miss" for a hibernated agent and
+a triage decision follows its owner to the next device.
 
 The boundary that keeps ADR-055 intact: **the record is never consulted to answer what sessions
 exist.** A missing row means nobody was told, not that nothing happened. Nothing reads it for
@@ -46,21 +47,30 @@ The rules that follow from it:
 
 - **Attention only, and only where nothing else owns the fact.** Approvals already have a durable
   owner-scoped table and stay there — they get no record of their own. A record exists for a
-  session because a session has no server-side row to point at.
+  session because a session has no server-side row carrying what the feed renders; the session
+  directory that does exist is a spend-attribution key with a different lifetime and no owner.
 - **One row per session, aggregating.** Activity updates the row rather than appending to it;
   history stays in the session transcript, which the agent already owns.
-- **Seen and dismissed are watermarks, not flags.** The record is one row per session; seen and
-  dismissed live beside it as one state row per user and session, each a timestamp. Unread means
-  activity later than the seen mark; hidden means activity no later than the dismissed mark. New
-  activity therefore returns a dismissed row without any explicit un-dismiss, and one user's
-  dismissal hides nothing for another.
-- **Seen is derived from presence, not declared by the client.** A turn relayed while a visible
-  viewer is attached means the user was watching; a turn dispatched in-pod, or relayed only to a
-  viewer whose page is hidden, means they were not. The browser reports visibility on the
-  attachment, and that is the client's only word in it. Server-held streams and passive reads are
-  not viewers and mark nothing. The pod's own read state is retired.
-- **In progress is never stored.** Whether an agent is working now is read live from awake pods, so
-  a pod that dies without notice cannot leave phantom work on the page.
+- **Seen and dismissed are watermarks, not flags.** Unread means activity later than the seen mark;
+  hidden means activity no later than the dismissed mark. New activity therefore returns a
+  dismissed row without any explicit un-dismiss, and one user's dismissal hides nothing for another.
+  The state rows are keyed per user from the first migration, so what changes later is where a
+  watermark comes from, never the shape of the table.
+- **Read state is snapshotted from the agent until there is more than one reader to distinguish.**
+  The agent stamps when a session was last seen by a viewer; the watcher copies that stamp onto the
+  record, which is what lets a sleeping agent answer at all. Deriving *seen* from the platform's own
+  view of visible presence is the better rule and stays the committed direction — a turn relayed
+  while a visible viewer is attached means the user was watching, a turn dispatched in-pod or
+  relayed only to a hidden page means they were not. It is not this record's delivery: the relay
+  tracks viewers per agent rather than per session and no browser reports page visibility, so the
+  change spans the browser, the relay and the pod, and its one unique gain is per-person read state.
+  Nothing can use that yet — an agent has exactly one owner, cannot be transferred, and roles do not
+  exist — so it lands with the shared-agent work, which reopens approvals on the same grounds. Until
+  then read state is per session, not per person, and the pod keeps writing it.
+- **In progress is never trusted from the record.** Whether an agent is working now is read live
+  from awake pods. The record does carry whether a session was working at its last capture, but a
+  reader shows that only while the agent is currently running, so a pod that dies without notice
+  cannot leave phantom work on the page.
 - **The producer pulls; notices never carry state.** ADR-086's contract holds on the pod side too:
   a notice means re-read, and the watcher's read-then-upsert is the one write moment. The capture
   window is bounded by the hibernation timeout — a notice fires within milliseconds of a turn and
@@ -69,6 +79,13 @@ The rules that follow from it:
 - **The write moment feeds the standard pipeline.** The upsert emits a domain event; the live-hints
   saga projects it as an ordinary per-owner hint. The dedicated owner-wide session subscription
   ADR-086 added is then retired, and browsers stop holding per-agent reads for the feed.
+- **Terminal sessions are included.** They have no turn boundary, but they have something chat
+  lacks: an unambiguous viewer, since a terminal admits one attachment at a time and the pod already
+  stamps seen only while it is held. The missing half is an activity stamp for output produced while
+  nobody is attached. With it, unread reads exactly as it does for chat, and "still working" comes
+  from the output liveness the pod already reports — so no quiet-period rule is needed.
+- **Records are trimmed at ninety days.** The feed shows a week, so nothing a reader could still see
+  is ever trimmed, and the per-user rows go with the record they annotate.
 - **Sessions pull, moments push.** The artifact-touch report stays a pod-initiated push because a
   touch is a moment whose data only the observed frame carries; a session record is state the pod
   can always re-serve, so it needs no push path of its own.
@@ -77,17 +94,17 @@ The rules that follow from it:
 
 - **Mirror pod session state into Postgres** — reverses ADR-055 and restores the two-stores-disagree
   failure that replaced ADR-017; a mirror is consulted for truth, an attention record is not.
-- **The pod pushes reports carrying payload** — this draft's original shape; rejected with ADR-086
+- **The pod pushes reports carrying payload** — this record's original shape; rejected with ADR-086
   in place. It adds a pod→platform route, retry and shutdown-flush machinery for the same loss
   bound the pull design already has, and it violates 086's notices-never-carry-state contract.
 - **Append one record per moment, immutably** — the feed shows one row per session, so the reader
   would collapse them anyway, and dismissal would need a version key to distinguish the moment
   dismissed from the next one.
-- **Keep read state in the pod** — the state is a property of the user and the session together,
-  not of the session, and a sleeping pod cannot answer for it.
+- **Keep dismissal in the pod, beside read state** — a sleeping pod cannot answer for it, and
+  dismissal is a property of the user and the session together, not of the session.
 - **Client-declared read receipts** — seen is a watermark on a live stream, so a truthful client
   converges on per-turn receipts with visibility and unload handling in every viewing surface;
-  the relay already holds both operands (viewer attached, turn delivered) in one place.
+  the relay holds both operands in one place and is where the rule belongs when it moves.
 - **A transactional outbox for the writer** — [ADR-083](083-eventing-layering.md) reserves that for
   a consumer whose loss no reconcile can bound; the watcher re-reads every pod on lease failover
   and the upsert's no-op guard suppresses the unchanged, which is that reconcile.
@@ -100,29 +117,23 @@ The rules that follow from it:
   follow the user across devices instead of living in one local store capped at 300 keys. The feed
   becomes one owner-scoped query plus the standard hint, replacing the per-agent pod reads and the
   dedicated session subscription browsers hold today.
-- **Easier:** The store notifications need (#3100) and the store the feed needs are the same store,
-  so a notification centre, channel push, and the floating pill read one source rather than three.
+- **Easier:** The store notifications need and the store the feed needs are the same store, so a
+  notification centre, channel push, and the floating pill read one source rather than three.
 - **Harder:** An always-on watcher re-scopes ADR-086's "an unobserved agent generates no reporting
   traffic": an idle agent still emits nothing, but a busy agent now reports whether or not any
   human is watching. Recording is the point, but the promise narrows and should be stated, not
-  inherited silently.
+  inherited silently. It narrows a second time inside the pod: the terminal liveness sweep runs
+  only while some client subscribes to the session watch, and a permanent subscriber means it runs
+  whenever an agent is awake.
 - **Harder:** Session titles now exist in two places — the agent's own metadata and this record's
   snapshot — so a renamed session shows its old title on Home until the next notice. ADR-055
   removed exactly this kind of duplication; the mitigation is that the copy is never read for
   correctness.
-- **Harder:** Terminal sessions have no turn boundary, so "finished" has no meaning for them;
-  surfacing them needs a quiet-period rule, and they are excluded from unread entirely today.
+- **Harder:** Read state stays per session while the record is per user, so the two halves of the
+  feed disagree about who they are for until the shared-agent work closes the gap. A second person
+  reading a session marks it read for its owner, exactly as today.
 - **Committed-to:** The leader lease. A row-writing producer is the first consumer of ADR-086's
-  surface where exactly-once matters, so the watcher is lease-elected — the trivial
-  single-holder kind, with failover healed by re-reading every pod. And visible presence stays the
-  definition of "seen": a future surface that reads a session without attaching a viewer will not
-  mark it, and the rule has to be revisited rather than patched at the call site.
-
-## Open Questions
-
-- How long records are retained, and whether trimming removes rows the user has already seen or
-  dismissed.
-- Whether terminal sessions are in the first cut, and what quiet period counts as their activity
-  boundary.
-- Whether an agent's ownership can transfer, which decides if the owner stored on a record can go
-  stale.
+  surface where exactly-once matters, so the watcher is lease-elected — the trivial single-holder
+  kind, with failover healed by re-reading every pod. And visible presence stays the definition
+  "seen" moves to: a future surface that reads a session without attaching a viewer will not mark
+  it, and the rule has to be revisited rather than patched at the call site.

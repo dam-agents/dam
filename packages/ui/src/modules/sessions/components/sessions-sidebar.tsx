@@ -1,5 +1,5 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
-import { SessionMode } from "api-server-api";
+import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -21,6 +21,7 @@ import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
+import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
@@ -105,6 +106,7 @@ export function SessionsSidebar({
     selectedAgent,
     features?.["session-costs"] ?? false,
   );
+  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
@@ -166,6 +168,17 @@ export function SessionsSidebar({
           onResumeSession(s.sessionId, s.mode);
         }}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
+        {...(telemetryEnabled && selectedAgent
+          ? {
+              onExportTimeline: () =>
+                void downloadTelemetryExport({
+                  agentId: selectedAgent,
+                  sessionId: s.sessionId,
+                  signal: "logs",
+                  sinceHours: TELEMETRY_MAX_SINCE_HOURS,
+                }),
+            }
+          : {})}
       />
     );
   };

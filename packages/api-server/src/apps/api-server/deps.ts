@@ -5,7 +5,6 @@ import type { Redis } from "ioredis";
 import type {
   E2eService,
   LiveEventsService,
-  PodSessionsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -48,6 +47,7 @@ import type { SchedulesBoot } from "../../modules/schedules/index.js";
 import type { SecretStoreRegistry } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import type { MetricsReader } from "../../modules/metrics/index.js";
+import type { TelemetryReader } from "../../modules/telemetry/index.js";
 import type { SessionDirectory } from "../../modules/session-directory/index.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { StarterKitsRepository } from "../../modules/starter-kits/index.js";
@@ -98,17 +98,18 @@ export interface ApiServerDeps {
   onboardingChecklists: OnboardingChecklistReader;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
+  mountTelemetryRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   mountCaseStudiesRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   metricsReader: MetricsReader | null;
+  telemetryReader: TelemetryReader | null;
   sessionDirectory: SessionDirectory;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
   liveEvents: LiveEventsService;
-  podSessions: PodSessionsService;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

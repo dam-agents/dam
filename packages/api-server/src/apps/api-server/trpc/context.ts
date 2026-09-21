@@ -13,6 +13,11 @@ import {
   createMetricsService,
   createSessionTypeSpend,
 } from "../../../modules/metrics/index.js";
+import {
+  createDisabledTelemetryService,
+  createTelemetryService,
+  scopeOwnedAgentIds,
+} from "../../../modules/telemetry/index.js";
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
@@ -28,6 +33,8 @@ import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { composeAttentionService } from "../../../modules/attention/compose.js";
+import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
@@ -64,6 +71,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     schedulesBoot,
     listRegisteredAgentIds,
     metricsReader,
+    telemetryReader,
     sessionDirectory,
     terms,
     e2e,
@@ -76,7 +84,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
-    podSessions,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -278,6 +285,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
+    const attention = composeAttentionService({
+      db,
+      ownerSub: user.sub,
+      ownsApproval: async (approvalId) =>
+        (await createApprovalsRepository(db).getPending(approvalId))
+          ?.ownerSub === user.sub,
+    });
     const files = composeFilesModule(
       api,
       config.namespace,
@@ -307,11 +321,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         listRegisteredAgentIds(user.sub),
       ]);
       const names = new Map(live.map((a) => [a.id, a.name]));
-      const ids = [...new Set([...names.keys(), ...registered])];
-      const scoped =
-        user.agentIds === "*"
-          ? ids
-          : ids.filter((id) => user.agentIds.includes(id));
+      const scoped = scopeOwnedAgentIds({
+        liveIds: [...names.keys()],
+        registeredIds: registered,
+        granted: user.agentIds,
+      });
       return scoped.map((id) => ({ id, name: names.get(id) ?? null }));
     };
     const { caseStudies } = composeCaseStudiesForOwner({
@@ -339,6 +353,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           }),
         })
       : createDisabledMetricsService();
+    const telemetry = telemetryReader
+      ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
+      : createDisabledTelemetryService();
 
     return {
       templates,
@@ -352,6 +369,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connections,
       skills,
       approvals,
+      attention,
       egressRules,
       experiments,
       invocationsQuery,
@@ -364,8 +382,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       harnessConfig,
       links: config.links,
       liveEvents,
-      podSessions,
       metrics,
+      telemetry,
       terms,
       usage: composeUsageForOwner(user.sub),
       e2e,

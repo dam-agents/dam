@@ -4,12 +4,7 @@ export type { ApiContext, UserIdentity } from "./context.js";
 export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
-export type {
-  LiveEventsService,
-  PodSessionsNotice,
-  PodSessionsService,
-} from "./modules/events/types.js";
-export { podSessionsNoticeSchema } from "./modules/events/schemas.js";
+export type { LiveEventsService } from "./modules/events/types.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
@@ -447,6 +442,15 @@ export {
   slackChannelIdFromThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
+export { attentionDismissInputSchema } from "./modules/attention/schemas.js";
+export type {
+  AttentionDismissal,
+  AttentionItem,
+  AttentionItemKind,
+  AttentionList,
+  AttentionService,
+  DismissedEntry,
+} from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
@@ -797,3 +801,46 @@ export {
   type KbPublishWorkCaps,
   type KbPublishWorkOrder,
 } from "./modules/kb-publish/harness.js";
+
+export {
+  telemetryTurnsInputSchema,
+  telemetryTurnInputSchema,
+  telemetryLogsInputSchema,
+  telemetryExportQuerySchema,
+  telemetryExportSignalSchema,
+} from "./modules/telemetry/schemas.js";
+export {
+  TELEMETRY_MAX_SINCE_HOURS,
+  TELEMETRY_DEFAULT_SINCE_HOURS,
+  TELEMETRY_MAX_TURNS,
+  TELEMETRY_DEFAULT_TURNS,
+  TELEMETRY_MAX_SPANS,
+  TELEMETRY_DEFAULT_SPANS,
+  TELEMETRY_MAX_LOGS,
+  TELEMETRY_DEFAULT_LOGS,
+  TELEMETRY_MAX_LOG_ROWS,
+  TELEMETRY_DEFAULT_LOG_ROWS,
+  TELEMETRY_MAX_TRACE_HOURS,
+  TELEMETRY_EXPORT_MAX_ROWS,
+} from "./modules/telemetry/constants.js";
+export type {
+  TelemetryService,
+  TelemetryTurnsQuery,
+  TelemetryTurnQuery,
+  TelemetryLogsQuery,
+  TelemetryExportQuery,
+  TelemetryExportSignal,
+  TurnSummary,
+  TurnGrouping,
+  TurnDetail,
+  TelemetrySpan,
+  TelemetryLog,
+  LogAttachment,
+  TelemetryUnavailable,
+  TelemetryTurns,
+  TelemetryTurn,
+  TelemetryLogs,
+  TelemetryTurnsResult,
+  TelemetryTurnResult,
+  TelemetryLogsResult,
+} from "./modules/telemetry/types.js";

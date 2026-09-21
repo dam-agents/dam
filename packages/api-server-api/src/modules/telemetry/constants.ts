@@ -1,0 +1,23 @@
+export const TELEMETRY_MAX_SINCE_HOURS = 720;
+
+export const TELEMETRY_DEFAULT_SINCE_HOURS = 24;
+
+export const TELEMETRY_MAX_TURNS = 500;
+
+export const TELEMETRY_DEFAULT_TURNS = 100;
+
+export const TELEMETRY_MAX_SPANS = 2000;
+
+export const TELEMETRY_DEFAULT_SPANS = 1000;
+
+export const TELEMETRY_MAX_LOGS = 2000;
+
+export const TELEMETRY_DEFAULT_LOGS = 1000;
+
+export const TELEMETRY_MAX_LOG_ROWS = 1000;
+
+export const TELEMETRY_DEFAULT_LOG_ROWS = 200;
+
+export const TELEMETRY_MAX_TRACE_HOURS = 6;
+
+export const TELEMETRY_EXPORT_MAX_ROWS = 50_000;

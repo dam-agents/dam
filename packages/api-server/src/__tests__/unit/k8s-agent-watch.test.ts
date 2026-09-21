@@ -19,6 +19,7 @@ describe("k8s agent watch", () => {
 
   function harness() {
     const hints: { ownerSub: string; agentId?: string }[] = [];
+    const changed: string[] = [];
     const bus = {
       publish: (ownerSub: string, hint: { agentId?: string }) =>
         void hints.push({ ownerSub, agentId: hint.agentId }),
@@ -39,9 +40,15 @@ describe("k8s agent watch", () => {
           };
         },
       },
-      { plural: "agents", ownerLabel: "owner", log: () => {}, debounceMs: 1 },
+      {
+        plural: "agents",
+        ownerLabel: "owner",
+        log: () => {},
+        onAgentChanged: (id: string) => changed.push(id),
+        debounceMs: 1,
+      },
     );
-    return { hints, conns, watch };
+    return { hints, conns, watch, changed };
   }
 
   // TEST_SCENARIO: an agent that has been quiet is the case a reader is waiting on — it has just become ready, or just failed — so its first hint goes out without waiting for the window to close. A burst is still collapsed: the writes that follow inside the window produce one further hint when it closes, never one apiece, and that trailing hint carries the burst's last state so a reader is never left holding the first of several.

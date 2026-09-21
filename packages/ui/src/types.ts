@@ -84,6 +84,7 @@ export interface Message {
   notice?: boolean;
   loadOlderBefore?: string;
   at?: string;
+  telemetryPromptId?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;

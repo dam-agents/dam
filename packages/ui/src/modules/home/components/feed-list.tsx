@@ -1,3 +1,5 @@
+import type { SessionMode } from "api-server-api";
+
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
@@ -14,7 +16,11 @@ const COARSE_TICK_MS = 5 * MINUTE_MS;
 interface Props {
   items: readonly FeedItem[];
   agents: readonly AgentView[];
-  onOpenSession: (agentId: string, sessionId: string) => void;
+  onOpenSession: (
+    agentId: string,
+    sessionId: string,
+    mode: SessionMode,
+  ) => void;
   onDismiss: (item: FeedItem) => void;
   onResolved: (item: FeedItem, label: string) => void;
   resolvedLabelFor: (id: string) => string | null;
@@ -71,7 +77,13 @@ export function FeedList({
             agentName={nameOf(item.agentId)}
             meta={meta}
             artifacts={artifactsFor(item)}
-            onOpen={() => onOpenSession(item.agentId, item.session.sessionId)}
+            onOpen={() =>
+              onOpenSession(
+                item.agentId,
+                item.session.sessionId,
+                item.session.mode,
+              )
+            }
             onDismiss={
               item.kind === "unread" ? () => onDismiss(item) : undefined
             }

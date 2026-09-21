@@ -14,7 +14,6 @@ import {
   NotificationsPanel,
 } from "./modules/home/components/notifications-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
-import { usePodSessionsWatch } from "./modules/home/hooks/use-pod-sessions-watch.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
@@ -67,7 +66,6 @@ function MainApp() {
   useLiveEvents();
   useAgentCrashToasts();
   useApprovalToasts();
-  usePodSessionsWatch();
 
   useEffect(() => {
     const path = window.location.pathname;

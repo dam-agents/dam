@@ -18,7 +18,7 @@ export function OnboardingChecklistCard({
       <p className="mt-0.5 text-sm text-muted-foreground">
         {listed.length > 0
           ? "Complete these tasks to get your agent running."
-          : "The agent's onboarding session walks you through this. Its schedules are held until it marks onboarding complete."}
+          : "The agent's onboarding session walks you through this. Any schedules on it are held until it marks onboarding complete."}
       </p>
       {listed.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">

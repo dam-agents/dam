@@ -34,6 +34,7 @@ export enum EventType {
   ScheduleDeleted = "ScheduleDeleted",
   SchedulePrecheckReported = "SchedulePrecheckReported",
   HarnessConfigChanged = "HarnessConfigChanged",
+  AttentionChanged = "AttentionChanged",
   ArtifactCreated = "ArtifactCreated",
   ArtifactUpdated = "ArtifactUpdated",
   ArtifactDeleted = "ArtifactDeleted",
@@ -275,6 +276,12 @@ export type ExperimentChanged = {
   surface?: string;
 };
 
+export type AttentionChanged = {
+  type: EventType.AttentionChanged;
+  ownerSub: string;
+  agentId: string;
+};
+
 export type SessionTurnRelayed = {
   type: EventType.SessionTurnRelayed;
   agentId: string;
@@ -431,6 +438,7 @@ export type DomainEvent =
   | ArtifactDeleted
   | ArtifactFolderChanged
   | ExperimentChanged
+  | AttentionChanged
   | SessionTurnRelayed
   | AgentRelayAttached
   | ArtifactPublished
