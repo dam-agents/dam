@@ -108,6 +108,11 @@ settings:
       # fails.
       - app_uninstalled
       - tokens_revoked
+      # The bot's own invite into a channel. Acted on only when the joining
+      # member is the bot itself: the inviter gets a private bind link, so
+      # nobody has to discover the slash command. Needs no scope beyond the
+      # channels:read / groups:read already requested above.
+      - member_joined_channel
   interactivity:
     is_enabled: true
   org_deploy_enabled: false

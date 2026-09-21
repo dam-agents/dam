@@ -10,6 +10,10 @@ import {
   type AgentDeleted,
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
+import type {
+  SlackConversationName,
+  SlackConversationRef,
+} from "../infrastructure/slack-gateway.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
@@ -107,6 +111,9 @@ interface Worker {
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
+  resolveConversationNames?(
+    refs: SlackConversationRef[],
+  ): Promise<SlackConversationName[]>;
 }
 
 export interface ChannelManager {
@@ -155,6 +162,9 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
+  resolveSlackConversationNames(
+    refs: SlackConversationRef[],
+  ): Promise<SlackConversationName[]>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -167,12 +177,17 @@ export const channelRpcRequestSchema = z.object({
     "handOffTurn",
     "describeUsers",
     "describeMessageReactions",
+    "resolveConversationNames",
   ]),
   args: z.array(z.unknown()),
 });
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
 const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
+const slackConversationRefSchema = z.object({
+  channelId: z.string(),
+  teamId: z.string(),
+});
 const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: forInstance,
   postMessage: forInstance.rest(z.unknown()),
@@ -182,6 +197,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
+  resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -234,6 +250,9 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
+  resolveConversationNames: z.array(
+    slackConversationRefSchema.extend({ name: z.string().nullable() }),
+  ),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -452,6 +471,8 @@ export function createChannelManager(deps: {
         });
       return worker.describeMessageReactions(instanceName, query);
     },
+    resolveConversationNames: (refs: SlackConversationRef[]) =>
+      slackWorker?.resolveConversationNames?.(refs) ?? Promise.resolve([]),
   } as const;
 
   subscriptions.push(
@@ -596,6 +617,12 @@ export function createChannelManager(deps: {
         [instanceName, channelType, userIds],
         () => localHandlers.describeUsers(instanceName, channelType, userIds),
       );
+    },
+
+    resolveSlackConversationNames(refs) {
+      return dispatch("resolveConversationNames", [refs], () =>
+        localHandlers.resolveConversationNames(refs),
+      ).catch(() => []);
     },
 
     describeMessageReactions(instanceName, channelType, query) {

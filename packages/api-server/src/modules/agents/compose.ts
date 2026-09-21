@@ -88,6 +88,9 @@ export function composeAgentsModule(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
+  resolveSlackChannelNames?: (
+    refs: { channelId: string; teamId: string }[],
+  ) => Promise<{ channelId: string; teamId: string; name: string | null }[]>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -145,6 +148,7 @@ export function composeAgentsModule(deps: {
       resolveSlackWorkspace: deps.resolveSlackWorkspace,
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
+      resolveSlackChannelNames: deps.resolveSlackChannelNames,
     }),
     repo,
     isOwnedAgent: (agentId) =>

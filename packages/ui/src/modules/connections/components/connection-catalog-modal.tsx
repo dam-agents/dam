@@ -37,6 +37,7 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  onGoToChannels?: () => void;
   initialProviderId?: string;
   initialTemplateId?: string;
   accepts?: readonly string[];
@@ -48,6 +49,7 @@ export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  onGoToChannels,
   initialProviderId,
   initialTemplateId,
   accepts,
@@ -173,6 +175,7 @@ export function ConnectionCatalogModal({
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
+                  onGoToChannels={onGoToChannels}
                 />
               ))}
             </div>

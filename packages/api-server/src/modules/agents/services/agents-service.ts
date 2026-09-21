@@ -273,6 +273,43 @@ export function executeTelegramUnbind(deps: {
   };
 }
 
+interface SlackConversationRef {
+  channelId: string;
+  teamId: string;
+}
+
+function slackConversationRef(channel: {
+  slackChannelId: string;
+  teamId?: string;
+}): SlackConversationRef {
+  return { channelId: channel.slackChannelId, teamId: channel.teamId ?? "" };
+}
+
+function slackConversationKey(ref: SlackConversationRef): string {
+  return `${ref.teamId}/${ref.channelId}`;
+}
+
+const SLACK_NAME_BUDGET_MS = 2_000;
+
+function withinBudget<T>(
+  work: Promise<T>,
+  budgetMs: number,
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), budgetMs);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -371,7 +408,10 @@ export function executeSlackBind(deps: {
       });
     }
 
-    return ok({ channelTitle: flow.channelTitle ?? null });
+    return ok({
+      slackChannelId: flow.slackChannelId,
+      channelTitle: flow.channelTitle ?? null,
+    });
   };
 }
 
@@ -510,6 +550,9 @@ export function createAgentsService(deps: {
   >;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
+  resolveSlackChannelNames?: (
+    refs: SlackConversationRef[],
+  ) => Promise<(SlackConversationRef & { name: string | null })[]>;
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
@@ -526,6 +569,46 @@ export function createAgentsService(deps: {
     }
   }
 
+  async function slackChannelNames(
+    channelLists: ChannelConfig[][],
+  ): Promise<Map<string, string | null>> {
+    const names = new Map<string, string | null>();
+    if (!deps.resolveSlackChannelNames) return names;
+    const refs = new Map<string, SlackConversationRef>();
+    for (const channel of channelLists.flat()) {
+      if (channel.type !== ChannelType.Slack) continue;
+      const ref = slackConversationRef(channel);
+      refs.set(slackConversationKey(ref), ref);
+    }
+    if (refs.size === 0) return names;
+    const resolved = await withinBudget(
+      deps.resolveSlackChannelNames([...refs.values()]),
+      SLACK_NAME_BUDGET_MS,
+    );
+    for (const entry of resolved ?? []) {
+      names.set(slackConversationKey(entry), entry.name);
+    }
+    return names;
+  }
+
+  async function namedChannelsOf(agentId: string): Promise<ChannelConfig[]> {
+    const channels = await deps.listChannelsByAgent(agentId);
+    return withChannelNames(channels, await slackChannelNames([channels]));
+  }
+
+  function withChannelNames(
+    channels: ChannelConfig[],
+    names: Map<string, string | null>,
+  ): ChannelConfig[] {
+    return channels.map((channel) => {
+      if (channel.type !== ChannelType.Slack) return channel;
+      const name = names.get(
+        slackConversationKey(slackConversationRef(channel)),
+      );
+      return name ? { ...channel, name } : channel;
+    });
+  }
+
   async function templateUpdateFor(
     infra: InfraAgent,
   ): Promise<TemplateUpdate | undefined> {
@@ -540,7 +623,7 @@ export function createAgentsService(deps: {
   ): Promise<ReturnType<typeof assembleAgent>> {
     const [channels, status, userEnv, templateUpdate, checklists] =
       await Promise.all([
-        deps.listChannelsByAgent(infra.id),
+        namedChannelsOf(infra.id),
         safeStatus(infra.id),
         deps.agentEnvRepo.list(infra.id),
         templateUpdateFor(infra),
@@ -640,15 +723,20 @@ export function createAgentsService(deps: {
       });
     }
 
-    const status = await safeStatus(id);
+    const boundChannels = txResult.value.channels;
+    const [status, channelNames, templateUpdate] = await Promise.all([
+      safeStatus(id),
+      slackChannelNames([boundChannels]),
+      templateUpdateFor(infra),
+    ]);
     return ok(
       assembleAgent(
         infra,
-        txResult.value.channels,
+        withChannelNames(boundChannels, channelNames),
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
-        await templateUpdateFor(infra),
+        templateUpdate,
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
@@ -679,13 +767,15 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap, checklistMap] = await Promise.all([
-        deps.contributionsProgress
-          .statusMany([...infraIds])
-          .catch(() => new Map<string, ContributionsStatus>()),
-        deps.agentEnvRepo.listMany([...infraIds]),
-        deps.onboardingChecklists.readMany([...infraIds]),
-      ]);
+      const [failuresMap, envMap, channelNames, checklistMap] =
+        await Promise.all([
+          deps.contributionsProgress
+            .statusMany([...infraIds])
+            .catch(() => new Map<string, ContributionsStatus>()),
+          deps.agentEnvRepo.listMany([...infraIds]),
+          slackChannelNames([...channelMap.values()]),
+          deps.onboardingChecklists.readMany([...infraIds]),
+        ]);
 
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
@@ -705,7 +795,7 @@ export function createAgentsService(deps: {
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
-          channelMap.get(infra.id) ?? [],
+          withChannelNames(channelMap.get(infra.id) ?? [], channelNames),
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
@@ -1263,6 +1353,45 @@ export function createAgentsService(deps: {
         },
         binding,
       })(agentId, flowId);
+    },
+
+    async peekSlackBindFlow(flowId) {
+      const binding = deps.slackBinding;
+      if (!binding) return null;
+      const flow = await binding.peekFlow(flowId);
+      if (!flow) return null;
+      if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
+      if (flow.channelTitle)
+        return {
+          slackChannelId: flow.slackChannelId,
+          name: flow.channelTitle,
+        };
+      const workspace = await deps.resolveSlackWorkspace(flow.slackChannelId);
+      if (workspace.kind !== "resolved") {
+        return { slackChannelId: flow.slackChannelId };
+      }
+      const channel: ChannelConfig = {
+        type: ChannelType.Slack,
+        slackChannelId: flow.slackChannelId,
+        ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
+      };
+      const names = await slackChannelNames([[channel]]);
+      const name = names.get(
+        slackConversationKey(slackConversationRef(channel)),
+      );
+      return {
+        slackChannelId: flow.slackChannelId,
+        ...(name ? { name } : {}),
+      };
+    },
+
+    async peekTelegramBindFlow(flowId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return null;
+      const flow = await binding.peekFlow(flowId);
+      if (!flow) return null;
+      if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
+      return { chatTitle: flow.chatTitle ?? null };
     },
 
     async bindSlackChannel(agentId, flowId) {

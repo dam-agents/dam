@@ -25,15 +25,21 @@ import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
+import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
   LifecycleSetupSection,
   NameSection,
   ProviderSection,
+  useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import {
+  offeredBindMessengers,
+  recordBindIntent,
+} from "../../sandboxes/lib/bind-intent.js";
 import {
   narrowPolicyToTemplate,
   setupProviderPolicy,
@@ -66,6 +72,7 @@ import {
 } from "../../starter-kits/lib/setup.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { useAgents } from "../api/queries.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -125,6 +132,13 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     kit ? `${kit.catalog}/${kit.id}` : undefined,
   );
   const vmRuntime = useVmRuntime();
+  const agentsQ = useAgents();
+  const availableChannels = agentsQ.data?.availableChannels;
+  const { openCatalog, catalogNode } = useSetupConnectionCatalog({
+    connectionIds: form.connectionIds,
+    onToggle: toggleConnection,
+    oauthReturnView: returnPath,
+  });
   const apply = useApplyStarterKit();
   const createAgent = useCreateAgent();
   const budget = useBudgetReserved();
@@ -267,13 +281,18 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     (name) => !form.skippedSchedules.includes(name),
   );
   const pending = kit ? apply.isPending : createAgent.isPending;
+  const channelsAnswered = availableChannels !== undefined || agentsQ.isError;
+  const wantsChannel = form.channels.slack || form.channels.telegram;
   const canApply = kit
     ? isStarterKitSetupComplete(kit, draft, owned, templateById) &&
       harnessAllowed &&
       !noCompatibleProvider &&
       !blockingSchedule &&
       !pending
-    : isCodingAgentSetupComplete(plainDraft) && !pending && vmRuntime.answered;
+    : isCodingAgentSetupComplete(plainDraft) &&
+      !pending &&
+      vmRuntime.answered &&
+      (channelsAnswered || !wantsChannel);
 
   const create = async () => {
     if (!canApply) return;
@@ -281,6 +300,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       try {
         const agent = await createAgent.mutateAsync(
           buildCodingAgentSetupInput(plainDraft),
+        );
+        recordBindIntent(
+          agent.id,
+          offeredBindMessengers(form.channels, availableChannels),
         );
         reset();
         setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
@@ -553,7 +576,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
-        oauthReturnView={returnPath}
+        onOpenCatalog={openCatalog}
         title="Connections"
         excludeIds={kitOwnedConnectionIds}
         leading={
@@ -608,6 +631,15 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           onToggle={toggleConnection}
         />
       )}
+
+      {!kit && (
+        <SetupChannelsSection
+          value={form.channels}
+          onChange={(channels) => update({ channels })}
+          onGoToConnections={openCatalog}
+        />
+      )}
+      {catalogNode}
     </SetupPageShell>
   );
 }

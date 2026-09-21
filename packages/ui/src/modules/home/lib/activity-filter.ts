@@ -71,8 +71,6 @@ export function channelTypeFor(
   const agent = agents.find((candidate) => candidate.id === item.agentId);
   if (agent?.channels.some((channel) => channel.type === "slack"))
     return "slack";
-  if (agent?.channels.some((channel) => channel.type === "telegram"))
-    return "telegram";
   return "chat";
 }
 

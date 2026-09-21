@@ -17,7 +17,11 @@ export function useBindTelegramChat() {
   return useMutation({
     ...trpc.agents.bindTelegramChat.mutationOptions(),
     meta: {
-      invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
+      invalidates: [
+        agentsKeys.listWithChannels(),
+        trpc.agents.list.queryKey(),
+        trpc.agents.listTelegramChats.queryKey(),
+      ],
     },
   });
 }

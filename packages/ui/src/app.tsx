@@ -18,6 +18,7 @@ import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -106,6 +107,7 @@ function MainApp() {
           <NotificationsPanel onClose={() => setActivityOpen(false)} />
         )}
         <DialogOverlay />
+        <PendingBindModal />
         <ConnectionBanner />
       </>
     );
@@ -159,6 +161,7 @@ function MainApp() {
         <NotificationsPanel onClose={() => setActivityOpen(false)} />
       )}
       <DialogOverlay />
+      <PendingBindModal />
       <ConnectionBanner />
     </div>
   );

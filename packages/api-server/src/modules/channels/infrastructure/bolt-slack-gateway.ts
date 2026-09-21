@@ -231,6 +231,24 @@ export function createBoltSlackGateway(
         }
       });
 
+      bolt.event("member_joined_channel", async ({ event, context }) => {
+        const joined = event as {
+          user: string;
+          channel: string;
+          inviter?: string;
+          team?: string;
+        };
+        const workspace = joined.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
+        const selfId =
+          context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
+        if (!selfId || joined.user !== selfId) return;
+        await handlers.onBotJoinedChannel({
+          channel: joined.channel,
+          inviter: joined.inviter,
+          teamId: workspace,
+        });
+      });
+
       bolt.command(deps.commandName, async ({ command, ack }) => {
         await handlers.onCommand(
           {
@@ -557,7 +575,10 @@ export function createBoltSlackGateway(
           channel: channelId,
         });
         if (!info.channel) return null;
-        return { isMember: !!info.channel.is_member };
+        return {
+          isMember: !!info.channel.is_member,
+          name: info.channel.name ?? null,
+        };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;
         throw err;

@@ -30,6 +30,7 @@ import {
   SESSION_CATEGORY_LABELS,
   sessionCategory,
 } from "../lib/session-category.js";
+import { useSessionConversations } from "../lib/use-session-conversations.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
@@ -73,6 +74,7 @@ export function SessionsSidebar({
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
+  const conversationOf = useSessionConversations(selectedAgent);
   const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
     enabled: agentOperable,
     activeSessionId: sessionId,
@@ -160,6 +162,7 @@ export function SessionsSidebar({
         draft={draft}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts?.get(s.sessionId)}
+        conversation={conversationOf(s)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);

@@ -17,6 +17,7 @@ import {
   agentDisconnectSlackInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
+  agentPeekBindFlowInputSchema,
   agentUpdateInputSchema,
   agentPauseInputSchema,
   agentStopInputSchema,
@@ -193,6 +194,14 @@ export const agentsRouter = t.router({
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),
+
+  peekSlackBindFlow: manageAgentsProcedure
+    .input(agentPeekBindFlowInputSchema)
+    .query(({ ctx, input }) => ctx.agents.peekSlackBindFlow(input.flowId)),
+
+  peekTelegramBindFlow: manageAgentsProcedure
+    .input(agentPeekBindFlowInputSchema)
+    .query(({ ctx, input }) => ctx.agents.peekTelegramBindFlow(input.flowId)),
 
   bindSlackChannel: manageAgentsProcedure
     .input(agentBindSlackChannelInputSchema)

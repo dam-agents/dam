@@ -13,13 +13,13 @@ import { ConnectionIcon } from "../../connections/components/connection-icon.js"
 const CHANNELS = [
   {
     type: "slack" as const,
-    title: "In a Slack channel",
+    title: "Slack Channel",
     blurb:
       "Your team can interact with the agent in a Slack channel or their DMs.",
   },
   {
     type: "telegram" as const,
-    title: "In a Telegram chat",
+    title: "Telegram Chat",
     blurb: "Your team can interact with the agent in a Telegram group or DM.",
   },
 ];

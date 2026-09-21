@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
@@ -63,24 +63,46 @@ export function ProviderSection({
   );
 }
 
-export function ConnectionsSetupSection({
+export function useSetupConnectionCatalog({
   connectionIds,
   onToggle,
   oauthReturnView,
+}: {
+  connectionIds: string[];
+  onToggle: (id: string, granted: boolean) => void;
+  oauthReturnView: string;
+}): { openCatalog: () => void; catalogNode: ReactNode } {
+  const [open, setOpen] = useState(false);
+  const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
+  const openCatalog = useCallback(() => setOpen(true), []);
+  return {
+    openCatalog,
+    catalogNode: open ? (
+      <ConnectionCatalogModal
+        onClose={() => setOpen(false)}
+        sandbox={{ grantedIds, onToggleGrant: onToggle }}
+        oauthReturnView={oauthReturnView}
+      />
+    ) : null,
+  };
+}
+
+export function ConnectionsSetupSection({
+  connectionIds,
+  onToggle,
+  onOpenCatalog,
   title,
   leading,
   excludeIds,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
-  oauthReturnView: string;
+  onOpenCatalog: () => void;
   title?: string;
   leading?: React.ReactNode;
   excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
-  const [catalogOpen, setCatalogOpen] = useState(false);
-
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const staged = useMemo(
     () =>
@@ -97,17 +119,10 @@ export function ConnectionsSetupSection({
         groups={groups}
         templateById={templateById}
         onToggleGrant={onToggle}
-        onOpenCatalog={() => setCatalogOpen(true)}
+        onOpenCatalog={onOpenCatalog}
         {...(title ? { title } : {})}
         {...(leading ? { leading } : {})}
       />
-      {catalogOpen && (
-        <ConnectionCatalogModal
-          onClose={() => setCatalogOpen(false)}
-          sandbox={{ grantedIds, onToggleGrant: onToggle }}
-          oauthReturnView={oauthReturnView}
-        />
-      )}
     </section>
   );
 }

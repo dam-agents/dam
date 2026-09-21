@@ -3,6 +3,7 @@ import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
 import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
+  SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
   SlackGateway,
   SlackGatewayHandlers,
@@ -25,12 +26,16 @@ export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
 export type FiredSlackCommand = Omit<SlackSlashCommand, "teamId"> & {
   teamId?: string;
 };
+export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
+  teamId?: string;
+};
 
 export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: FiredSlackEvent): Promise<void>;
   fireMessage(event: FiredSlackEvent): Promise<void>;
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
+  fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
@@ -289,7 +294,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       const channel = (channelsByWorkspace.get(teamId) ?? []).find(
         (c) => c.id === channelId,
       );
-      return channel ? { isMember: channel.botIsMember } : null;
+      return channel
+        ? { isMember: channel.botIsMember, name: channel.name }
+        : null;
     },
 
     async getUserInfo(userId) {
@@ -323,6 +330,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         teamId: input.teamId ?? ORIGINAL_WORKSPACE,
       };
       await requireHandlers().onMessage(event);
+    },
+
+    async fireBotJoinedChannel(input) {
+      await requireHandlers().onBotJoinedChannel({
+        ...input,
+        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+      });
     },
 
     async fireDirectMessage(input) {

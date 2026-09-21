@@ -2,13 +2,13 @@ import {
   Code,
   Download,
   Edit,
-  Hashtag,
   OverflowMenuVertical,
   Time,
   TrashCan,
 } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
+  ChannelType,
   SessionMode,
   type SessionRuntime,
   SessionType,
@@ -24,16 +24,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
-import { formatTimestamp } from "@/lib/format-time";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
-import { slackSessionKind } from "../lib/session-category.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -50,6 +50,7 @@ interface Props {
   draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
+  conversation?: string;
   onResume: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
@@ -64,6 +65,7 @@ export function SessionRow({
   draft = false,
   backgroundWork = NO_WORK,
   cost,
+  conversation,
   onResume,
   onDelete,
   onExportTimeline,
@@ -124,10 +126,12 @@ export function SessionRow({
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;
-  const channel =
-    s.type === SessionType.ChannelSlack ||
-    s.type === SessionType.ChannelTelegram;
-  const slackKind = slackSessionKind(s);
+  const messenger =
+    s.type === SessionType.ChannelSlack
+      ? ChannelType.Slack
+      : s.type === SessionType.ChannelTelegram
+        ? ChannelType.Telegram
+        : null;
 
   return (
     <div
@@ -148,7 +152,7 @@ export function SessionRow({
       }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5">
+        <div className="relative flex items-center gap-1.5">
           {}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
@@ -161,19 +165,53 @@ export function SessionRow({
           <SessionIndicators
             scheduled={scheduled}
             terminal={terminal}
-            channel={channel}
-            ambient={slackKind === "ambient"}
+            messenger={messenger}
             needsApproval={needsApproval}
             working={working}
             draft={draft}
             backgroundWork={backgroundWork}
           />
+          {}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                data-testid="session-menu-button"
+                variant="ghost"
+                size="icon-xs"
+                className={cn(
+                  "absolute top-1/2 -right-1 -translate-y-1/2",
+                  HOVER_ACTION,
+                )}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="More actions"
+              >
+                <OverflowMenuVertical size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {onExportTimeline && (
+                <DropdownMenuItem
+                  data-testid="session-export-timeline-button"
+                  onSelect={onExportTimeline}
+                >
+                  <Download size={13} /> Export telemetry
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                data-testid="session-delete-button"
+                tone="danger"
+                onSelect={onDelete}
+              >
+                <TrashCan size={13} /> Delete session
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <span className="text-[11px] text-muted-foreground truncate">
-          {slackKind
-            ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
-            : ""}
-          {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {conversation ? `${conversation} · ` : ""}
+          <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
+            {timeAgo(s.updatedAt ?? s.createdAt)}
+          </span>
           {runTime && (
             <span data-testid="session-run-time">
               {" · "}
@@ -191,38 +229,6 @@ export function SessionRow({
           )}
         </span>
       </div>
-      {}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            data-testid="session-menu-button"
-            variant="ghost"
-            size="icon-xs"
-            className={cn("shrink-0", HOVER_ACTION)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="More actions"
-          >
-            <OverflowMenuVertical size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          {onExportTimeline && (
-            <DropdownMenuItem
-              data-testid="session-export-timeline-button"
-              onSelect={onExportTimeline}
-            >
-              <Download size={13} /> Export telemetry
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            data-testid="session-delete-button"
-            tone="danger"
-            onSelect={onDelete}
-          >
-            <TrashCan size={13} /> Delete session
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
       {}
       {menuOpen && (
         <div
@@ -251,8 +257,7 @@ export function SessionRow({
 function SessionIndicators({
   scheduled,
   terminal,
-  channel,
-  ambient,
+  messenger,
   needsApproval,
   working,
   draft,
@@ -260,8 +265,7 @@ function SessionIndicators({
 }: {
   scheduled: boolean;
   terminal: boolean;
-  channel: boolean;
-  ambient: boolean;
+  messenger: ChannelType | null;
   needsApproval: boolean;
   working: boolean;
   draft: boolean;
@@ -271,7 +275,7 @@ function SessionIndicators({
   if (
     !scheduled &&
     !terminal &&
-    !channel &&
+    !messenger &&
     !needsApproval &&
     !working &&
     !hasBackgroundWork &&
@@ -279,48 +283,38 @@ function SessionIndicators({
   )
     return null;
   return (
-    <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
+    <span
+      className={cn(
+        "ml-auto flex shrink-0 items-center gap-2 pl-2 pr-6 hover-capable:pr-0",
+        HOVER_YIELD,
+      )}
+    >
       {terminal && (
         <Code size={16} className="text-foreground" aria-label="Terminal" />
       )}
-      {channel &&
-        (ambient ? (
-          <span
-            className="inline-flex items-start text-foreground"
-            aria-label="Ambient channel session"
-          >
-            <Hashtag size={16} />
-            <span
-              className="text-[9px] font-semibold leading-none text-accent"
-              aria-hidden
-            >
-              A
-            </span>
-          </span>
-        ) : (
-          <Hashtag
-            size={16}
-            className="text-foreground"
-            aria-label="Channel session"
-          />
-        ))}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
       {needsApproval ? (
-        <span
-          data-testid="session-approval-dot"
-          role="img"
-          aria-label="Needs your approval"
-          className="w-2 h-2 rounded-full bg-accent shrink-0"
-        />
+        <IndicatorBox>
+          <span
+            data-testid="session-approval-dot"
+            role="img"
+            aria-label="Needs your approval"
+            className="w-2 h-2 rounded-full bg-accent"
+          />
+        </IndicatorBox>
       ) : working ? (
-        <WorkingDots className="text-accent" title="Working" />
+        <IndicatorBox>
+          <WorkingDots className="text-accent" title="Working" />
+        </IndicatorBox>
       ) : hasBackgroundWork ? (
-        <WorkingDots
-          className="working-dots-slow text-success"
-          title={backgroundWorkLabel(backgroundWork)}
-        />
+        <IndicatorBox>
+          <WorkingDots
+            className="working-dots-slow text-success"
+            title={backgroundWorkLabel(backgroundWork)}
+          />
+        </IndicatorBox>
       ) : draft ? (
         <span
           data-testid="session-draft-marker"
@@ -332,6 +326,22 @@ function SessionIndicators({
           <Edit size={16} />
         </span>
       ) : null}
+      {messenger && !working && (
+        <ConnectionIcon
+          iconSlug={messenger}
+          alt={messenger === ChannelType.Slack ? "Slack" : "Telegram"}
+          size={16}
+          className="shrink-0"
+        />
+      )}
+    </span>
+  );
+}
+
+function IndicatorBox({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center">
+      {children}
     </span>
   );
 }

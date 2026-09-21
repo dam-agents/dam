@@ -89,10 +89,14 @@ export function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
   return `${String(Number(sizeMultiplier(size, unit).toFixed(2)))}x`;
 }
 
-export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
-  return `${formatMultiplier(size, unit)} · ${formatCores(size.cpuMilli)} CPU · ${formatGi(
+export function formatCpuMemory(size: SizeMi): string {
+  return `${formatCores(size.cpuMilli)} CPU · ${formatGi(
     size.memoryMi * BYTES_PER_MI,
   )} Gi`;
+}
+
+export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
+  return `${formatMultiplier(size, unit)} · ${formatCpuMemory(size)}`;
 }
 
 export type ComputeCellState = "running" | "awake" | "available";
