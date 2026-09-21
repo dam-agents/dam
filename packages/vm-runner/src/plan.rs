@@ -38,6 +38,11 @@ impl Health {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: clears the quiet mark, and only that, because an operation is now running against this machine and the silence it has been keeping belongs to the machine that operation is replacing. `ever_ready` survives: a machine that has answered once is still one that can be given up on. Without this an unhealthy restart is a loop — the restart begins, the guest is not ready yet, the old quiet mark still stands, and the very next decision gives up on it again.
+    pub fn operation_started(&mut self) {
+        self.quiet_since = None;
+    }
+
     pub fn dead_for_long(&self, now: SystemTime) -> bool {
         let Some(since) = self.quiet_since else {
             return false;
@@ -432,6 +437,51 @@ mod tests {
         assert!(
             !quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)),
             "a machine that came back was restarted for the silence it came out of"
+        );
+    }
+
+    // TEST_SCENARIO: the restart that follows a machine being given up on must not immediately qualify the machine to be given up on again. The operation is running, the guest is not ready yet, and the silence being measured belongs to the guest that is being replaced — so the quiet mark is cleared when the operation starts. Without it the runner restarts a machine every reconcile, forever, and each restart is counted against it.
+    #[test]
+    fn a_restart_does_not_leave_the_machine_qualifying_for_another_one() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let later = |after: Duration| start + after;
+        let want = running_spec();
+
+        let mut health = Health::default();
+        health.observed_running(true, start);
+        health.observed_running(false, later(Duration::from_secs(1)));
+        let gave_up = later(UNHEALTHY_RESTART + Duration::from_secs(2));
+        assert!(
+            health.dead_for_long(gave_up),
+            "the machine is quiet enough to restart"
+        );
+
+        health.operation_started();
+
+        assert!(
+            !health.dead_for_long(gave_up),
+            "the restart it just asked for would immediately earn another"
+        );
+        assert_eq!(
+            plan(
+                Some(&want),
+                &want,
+                STATE_RUNNING,
+                false,
+                health.dead_for_long(gave_up)
+            ),
+            None,
+            "and the runner would keep restarting it every reconcile"
+        );
+        assert!(
+            health.ever_ready,
+            "a machine that has answered once can still be given up on later"
+        );
+
+        health.observed_running(false, later(UNHEALTHY_RESTART * 2));
+        assert!(
+            health.dead_for_long(later(UNHEALTHY_RESTART * 3 + Duration::from_secs(2))),
+            "the window runs again from the silence after the restart"
         );
     }
 
