@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-19
+Last verified: 2026-09-21
 
 ## Overview
 
@@ -96,7 +96,7 @@ A Schedule fire is the one wake nobody is waiting on: the api-server commits the
 
 The harness child process runs for the pod's lifetime, not per-connection. Multiple ACP channels (UI tab WebSockets, the Slack worker, the in-process trigger handler) attach to the same runtime concurrently and engage with sessions implicitly through the `sessionId` they carry on each frame.
 
-Each session is an append-only in-memory log (≤2 MB soft cap). Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them. Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
+Each session is an append-only in-memory log (≤2 MB soft cap). Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them. Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented. From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns. A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen. A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 

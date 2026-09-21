@@ -22,6 +22,7 @@ import type { SkillsService } from "./modules/skills/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
+import type { TelemetryService } from "./modules/telemetry/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 import type { UsageService } from "./modules/usage/types.js";
@@ -57,6 +58,7 @@ export interface ApiContext {
   links: Links;
   liveEvents: LiveEventsService;
   metrics: MetricsService;
+  telemetry: TelemetryService;
   terms: TermsService;
   usage: UsageService;
   e2e: E2eService;

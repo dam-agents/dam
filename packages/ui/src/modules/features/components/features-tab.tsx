@@ -57,6 +57,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
   },
+  {
+    id: "agent-telemetry",
+    label: "Agent telemetry",
+    description:
+      "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
+  },
 ];
 
 function FeatureRowCard({
