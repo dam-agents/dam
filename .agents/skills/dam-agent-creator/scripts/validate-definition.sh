@@ -47,6 +47,85 @@ if [ -f .gitignore ]; then
       || warn "no !/.github/ re-include (fine only if the definition has no CI)"; }
 fi
 
+# ------------------------------------------------------------------ kit.yaml ----
+# The kit is read by the platform BEFORE the agent exists, so everything wrong with it
+# fails silently: a kit that misses the schema is dropped from the catalog listing with
+# only a server-side log, and a kit that declares `onboarding` stamps the agent onboarded
+# at create — no gate, no checklist tools, no hold on its schedules. These are greps, not
+# a YAML parse: they catch the shapes this skill's template can get wrong, not every way
+# a hand-edited kit could be invalid. The platform's own schema is the real gate.
+if [ ! -f kit.yaml ]; then
+  warn "no kit.yaml — the agent must be created by hand (correct only for a private definition whose kit lives in the catalog repo)"
+else
+  pass "required file: kit.yaml"
+
+  grep -qE '^schemaVersion:[[:space:]]*v1[[:space:]]*$' kit.yaml \
+    && pass "kit.yaml declares schemaVersion v1" \
+    || fail "kit.yaml must declare 'schemaVersion: v1' — the catalog drops a kit it cannot parse"
+
+  if [ -f .gitignore ] && ! grep -qxF '!/kit.yaml' .gitignore; then
+    fail ".gitignore missing re-include: !/kit.yaml (an untracked kit.yaml is invisible to the catalog)"
+  elif [ -f .gitignore ]; then
+    pass ".gitignore re-includes kit.yaml"
+  fi
+
+  if grep -qE '^onboarding:' kit.yaml; then
+    fail "kit.yaml declares 'onboarding:' — leave it out, or the agent is stamped onboarded at create and loses the gate, the checklist tools and the hold on its schedules"
+  else
+    pass "kit.yaml leaves 'onboarding' absent (platform-composed briefing → ONBOARDING.md)"
+  fi
+
+  if grep -qE '^seed:' kit.yaml; then
+    seed_block="$(sed -n '/^seed:/,/^[a-z]/p' kit.yaml)"
+    printf '%s' "$seed_block" | grep -qE '^[[:space:]]+self:[[:space:]]*true' \
+      && pass "kit.yaml seeds itself (seed.self)" \
+      || fail "kit.yaml seed must be 'self: true' — a definition kit never repeats its own URL"
+    printf '%s' "$seed_block" | grep -qE '^[[:space:]]+into:[[:space:]]*home' \
+      && pass "kit.yaml seeds into \$HOME (seed.into: home)" \
+      || fail "kit.yaml seed must be 'into: home' — this definition IS \$HOME, and the default ('work') would put it in the wrong place"
+    printf '%s' "$seed_block" | grep -qE '^[[:space:]]+url:' \
+      && fail "kit.yaml seed names both 'self' and 'url' — a seed names exactly one" \
+      || pass "kit.yaml seed names exactly one source"
+  else
+    fail "kit.yaml declares no 'seed:' — without one the platform creates an agent with no definition"
+  fi
+
+  # id, the sentinel and the schedule prefix all name the same agent; a mismatch means
+  # ONBOARDING creates a second copy of every schedule the kit already made.
+  kit_id="$(grep -m1 -E '^id:' kit.yaml | sed -e 's/^id:[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  if [ -z "$kit_id" ]; then
+    fail "kit.yaml declares no 'id:'"
+  else
+    pass "kit.yaml id: $kit_id"
+    if [ -f ONBOARDING.md ]; then
+      sentinel_name="$(grep -oE '\.[a-z0-9-]+-onboarded' ONBOARDING.md | head -1 | sed -e 's/^\.//' -e 's/-onboarded$//')"
+      if [ -n "$sentinel_name" ] && [ "$sentinel_name" != "$kit_id" ]; then
+        fail "kit.yaml id '$kit_id' != the agent name in ONBOARDING's sentinel '$sentinel_name'"
+      elif [ -n "$sentinel_name" ]; then
+        pass "kit id matches the onboarding sentinel"
+      fi
+    fi
+    sched_block="$(sed -n '/^schedules:/,/^[a-z]/p' kit.yaml)"
+    bad_names="$(printf '%s' "$sched_block" | grep -E '^[[:space:]]+-[[:space:]]*name:' \
+      | grep -vE "^[[:space:]]+-[[:space:]]*name:[[:space:]]*$kit_id-" || true)"
+    if [ -n "$bad_names" ]; then
+      fail "schedule names must start with '$kit_id-' (the prefix ONBOARDING checks for):"
+      printf '%s\n' "$bad_names" | sed 's/^/      /'
+    elif [ -n "$sched_block" ]; then
+      pass "every kit schedule name carries the agent prefix"
+    fi
+  fi
+
+  # A precheck naming a script that is not in the repo is a broken check on every
+  # occurrence — and it fails open, so the schedule keeps running and nobody notices.
+  for s in $(grep -E '^[[:space:]]+precheck:' kit.yaml \
+             | grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' | sort -u); do
+    [ -f "$s" ] \
+      && pass "kit precheck script exists: $s" \
+      || fail "kit.yaml declares a precheck running $s, which this repo does not contain"
+  done
+fi
+
 # ---------------------------------------------------- version & changelog ----
 if [ -f VERSION ]; then
   ver="$(head -1 VERSION)"
@@ -84,7 +163,8 @@ fi
 # ----------------------------------------------- leftover scaffolding marks ----
 # --exclude: a copy of this validator carries these literals in its own messages
 leftovers="$(grep -rnE '\{\{[A-Z_]+\}\}|TODO\(creator\)' \
-  --include='*.md' --include='*.sh' --exclude='validate-definition.sh' . 2>/dev/null \
+  --include='*.md' --include='*.sh' --include='*.yaml' --include='*.yml' \
+  --exclude='validate-definition.sh' . 2>/dev/null \
   | grep -v '^\./\.git/' || true)"
 if [ -n "$leftovers" ]; then
   fail "unresolved placeholders / TODO(creator) markers remain:"

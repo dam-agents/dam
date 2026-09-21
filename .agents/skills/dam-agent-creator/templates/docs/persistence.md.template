@@ -12,7 +12,7 @@ the agent definition itself.
 
 | Path | Kind | Holds |
 | --- | --- | --- |
-| `/home/agent` (outer) | git repo, remote `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
+| `/home/agent` (outer) | git repo, remote `$DEFINITION_REPO` (`origin`) | Definition: `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
 | `/home/agent/work` | **plain data directory** (no `.git`) | Live runtime state. Shared across concurrent runs; the source of truth. |
 | `$GITHUB_REPO_WORK` | git remote | Durable, versioned **backup** of `work/`. Written only via a disposable tmpfs clone (below). |
 
@@ -123,7 +123,7 @@ scheduled run:
 ```bash
 git -C /home/agent fetch origin main
 git -C /home/agent checkout -b "fix/<short-slug>" origin/main
-git -C /home/agent add -- CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore LICENSE docs scripts
+git -C /home/agent add -- kit.yaml CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore LICENSE docs scripts
 git -C /home/agent commit -m "<describe the change>"
 git -C /home/agent push -u origin "fix/<short-slug>"
 gh pr create --repo "$DEFINITION_REPO" --base main --head "fix/<short-slug>" \

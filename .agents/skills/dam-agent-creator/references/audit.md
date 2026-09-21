@@ -49,6 +49,12 @@ Include what applies; add domain checks from the design's effects list.
   and it keeps warning until the operator gets real bin dirs ahead of the shim dir on
   `PATH` (§5a — reported, never absorbed).
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
+- **Precheck health**, per scheduled mode: run `scripts/precheck.sh <mode>`, timed, and
+  assert the exit code is 0 or 1 and the run finished well inside the platform's
+  two-minute deadline. A Precheck that breaks or times out **fails open** — the schedule
+  keeps paying for the full turn on every occurrence and nothing raises an alarm, so the
+  only symptom is a decline counter stuck at zero. Check it weekly for the same reason
+  the scopes are checked weekly: the failure mode is silent and expensive.
 - Error scan: `ERROR:`-prefixed lines across the week's logs; with a structured events
   log, also group **every `level: error` event of the week into `failures[]` signatures**
   (`event`/`tool`/`error` with volatile bits normalized, each dated first/last) for the
@@ -68,7 +74,10 @@ Include what applies; add domain checks from the design's effects list.
 
 - Every designed schedule exists and is enabled (`mcp__platform-outbound__list_schedules`)
   with the cron ONBOARDING registered — a dead schedule is invisible to every other check;
-  the log-gap check catches the past, this catches the future.
+  the log-gap check catches the past, this catches the future. Compare each one against
+  `kit.yaml`: the kit created them and later kit edits never reach a live agent, so a task
+  text or `precheck` that has moved on in git is drift only this check will find. Report
+  it; changing a schedule is the operator's call in the direct session.
 - **Failure diagnosis** — for every `failures[]` signature the script grouped: cause +
   fix, classified as *environment* / *agent mistake* / *definition bug*. Counting errors
   is never enough — nothing else asks *why*. A verified environment cause goes to

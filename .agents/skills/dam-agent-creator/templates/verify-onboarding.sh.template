@@ -74,6 +74,14 @@ if [ "$STRUCTURE" = 1 ]; then
     # tracked branch; the onboarding sentinel exists with a UTC timestamp;
     # harness adapter hooks registered by name (when the design has them).
 
+  : # -------------------------------------------------------------- schedules
+    # TODO(creator): one check per schedule name in kit.yaml — it exists on this
+    # agent. The platform creates them from the kit at apply and ONBOARDING only
+    # fills gaps, so a missing one is silent: the run type simply never fires.
+    # Check names only. Cadence and enabled state are the operator's (a suggested
+    # schedule is off on purpose) and a gate that fails on their choice teaches
+    # the agent to ignore this script.
+
   : # ------------------------------------------------------------------ work/
     # TODO(creator): work/ present and a PLAIN DIRECTORY (no .git — the
     # invariant the NFS volume forces); work/AGENTS.md pointer present;
@@ -98,6 +106,12 @@ if [ "$LIVE" = 1 ]; then
     # read-only `preflight.sh <mode>` per scheduled run type: valid worklist JSON,
     # no `error` field. A probe that cannot run is `warn` with the reason —
     # never silently skipped, and never reported as a pass.
+    #
+    # Then `precheck.sh <mode>` per mode, timed. Assert the exit code is 0 or 1
+    # and nothing else, and that it finished well inside the platform's two-minute
+    # deadline. Both failures are invisible in production: a Precheck that breaks
+    # or times out FAILS OPEN, so the schedule keeps running the expensive turn
+    # every time and only the decline counter — stuck at zero — ever says so.
 fi
 
 # ------------------------------------------------------------------- summary

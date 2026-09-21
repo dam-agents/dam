@@ -8,7 +8,7 @@ restating them there at length.
 
 | Path | Kind | Holds |
 | --- | --- | --- |
-| `$HOME` (`/home/agent`) | **definition repo** (`origin` = where ONBOARDING.md was fetched from, fork-aware) | `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
+| `$HOME` (`/home/agent`) | **definition repo** (`origin` = the kit's seed, or where ONBOARDING.md was fetched from — fork-aware either way) | `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
 | `$HOME/work` | **plain data directory — never a git repo** (the shared volume corrupts a concurrently-mutated `.git`; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs |
 | state remote | optional git remote (env var, e.g. `GITHUB_REPO_WORK`) | durable, versioned backup of `work/`, written only via the tmpfs backup script |
 
@@ -42,7 +42,9 @@ Pick per the interview; a definition may combine them.
   script (`references/preflight.md`) and ends, when state changed, with the commit & push
   persist step. Multiple run types are fine (e.g. a frequent work heartbeat + an hourly
   people-facing sweep + the weekly audit) — each gets a mode in the pre-flight, a row in
-  CLAUDE.md's run-types table, and a registration step in ONBOARDING.
+  CLAUDE.md's run-types table, an entry under `schedules:` in `kit.yaml` (with that mode's
+  Precheck), and a check-then-create step in ONBOARDING for an agent deployed without the
+  kit.
 - **Reactive** — work triggered by inbound channel messages. There is no pre-flight;
   instead CLAUDE.md defines a **request-handling contract**: how a request is validated,
   the same idempotency checks an equivalent scheduled run would do (dedup marker, state
@@ -182,7 +184,7 @@ Two layers, both under `work/`:
 
 ## Definition file inventory
 
-Beyond the templates (CLAUDE.md, AGENTS.md, ONBOARDING.md, .gitignore, VERSION,
+Beyond the templates (kit.yaml, CLAUDE.md, AGENTS.md, ONBOARDING.md, .gitignore, VERSION,
 CHANGELOG.md, docs/self-modification.md, docs/persistence.md), write per-domain:
 
 - `docs/<runtype-or-procedure>.md` — one per run type / major procedure: the exact per-item

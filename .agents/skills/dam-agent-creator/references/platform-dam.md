@@ -34,12 +34,37 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
 - Temp files go under `/tmp`, namespaced per item (`/tmp/<agent>-<item>/`), and are
   cleaned up by the end of the run — leftovers are an audit finding.
 
+## Starter Kits — how an agent gets created
+
+- A **kit** is how the platform creates an agent from a definition repository: a
+  `kit.yaml` at the repo root that the platform reads out of git and applies at create.
+  The full contract, and what it leaves ONBOARDING to do, is `references/kit.md`. Every
+  generated definition ships one.
+- **Apply is create-only.** Connections, schedules, seed and size are set up before the
+  agent's first turn; editing the kit afterwards never touches agents already created
+  from it.
+- The platform **never reads configuration back out of an agent's repository or
+  workspace** — the kit is a catalog input read before create. An agent committing to its
+  own definition can widen nothing the platform enforces.
+- **The onboarding gate.** An agent created from a kit is not configured until it says so,
+  and the scheduler **holds every schedule on it** until then (the occurrence is skipped,
+  the next is armed as normal, the schedule records `held: onboarding not complete`).
+  Three MCP tools exist only while it is pending — `set_onboarding_checklist`,
+  `complete_onboarding_step`, `mark_onboarding_complete` — and the generated ONBOARDING
+  drives all three. The checklist holds only what the **operator** must supply; never the
+  agent's own work.
+
 ## Scheduling
 
-- Schedules are **platform schedules only**, managed via MCP:
-  `mcp__platform-outbound__list_schedules`, `create_schedule` (`sessionMode: fresh`),
-  `toggle_schedule`, `delete_schedule`. Never an in-process cron or background loop —
-  only platform schedules survive restarts and are visible to the operator.
+- Schedules are **platform schedules only**. A kit declares them and apply creates them;
+  otherwise they are managed via MCP: `mcp__platform-outbound__list_schedules`,
+  `create_schedule` (`sessionMode: fresh`), `toggle_schedule`, `delete_schedule`. Never an
+  in-process cron or background loop — only platform schedules survive restarts and are
+  visible to the operator.
+- A schedule may carry a **Precheck**: a shell command run before the fire whose exit code
+  decides whether a turn happens at all (`0` allow, `1` decline, anything else fails open
+  and runs). That is where a generated agent's pre-flight belongs — an idle occurrence
+  then wakes no model (`references/preflight.md` → **The Precheck**).
 - Each scheduled run starts a **fresh session** in a **fresh shell**: no memory of
   previous runs beyond what is in files, and **no environment exports from the onboarding
   session**. This is why state files, logs, and the worklist JSON carry everything — and
