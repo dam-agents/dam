@@ -132,7 +132,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     kit ? `${kit.catalog}/${kit.id}` : undefined,
   );
   const vmRuntime = useVmRuntime();
-  const availableChannels = useAgents().data?.availableChannels;
+  const agentsQ = useAgents();
+  const availableChannels = agentsQ.data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
@@ -280,7 +281,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     (name) => !form.skippedSchedules.includes(name),
   );
   const pending = kit ? apply.isPending : createAgent.isPending;
-  const channelsAnswered = availableChannels !== undefined;
+  const channelsAnswered = availableChannels !== undefined || agentsQ.isError;
   const wantsChannel = form.channels.slack || form.channels.telegram;
   const canApply = kit
     ? isStarterKitSetupComplete(kit, draft, owned, templateById) &&
