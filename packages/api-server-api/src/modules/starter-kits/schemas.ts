@@ -116,6 +116,7 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
+  backend: z.literal("vm").optional(),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   install: starterKitInstallSchema.optional(),
@@ -163,6 +164,7 @@ export const onboardingStepSchema = z.object({
 });
 
 export const starterKitCatalogEntrySchema = z.object({
+  id: starterKitIdSchema.optional(),
   path: z.string().min(1).default("."),
   url: z.url().optional(),
   ref: z.string().min(1).optional(),

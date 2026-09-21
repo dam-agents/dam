@@ -14,7 +14,7 @@ done
 
 if [ "$FORCE" != "true" ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then
-    echo "This will uninstall k3s and delete all cluster data."
+    echo "This will stop k3s and delete all cluster data."
   else
     echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
   fi
@@ -26,8 +26,13 @@ if [ "$FORCE" != "true" ]; then
 fi
 
 if [ -n "${IS_SANDBOX:-}" ]; then
-  /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
-  echo "k3s uninstalled from host."
+  if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
+    /usr/local/bin/k3s-uninstall.sh
+  else
+    sudo pkill -f 'k3s server' || true
+    sudo rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
+  fi
+  echo "k3s stopped and its cluster data removed."
 else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
   echo "k3s cluster ($LIMA_INSTANCE) deleted."

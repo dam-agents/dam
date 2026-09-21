@@ -20,7 +20,15 @@ whether this deployment supports microVMs — read from the chart's own value
 rather than from any stored row. A surface that needs both, like either form that
 creates an agent, asks both and acts only once each has answered: an unanswered
 question reads like a no, and an agent would otherwise be created as
-something its author did not choose. The new sandbox runtime is not a choice
+something its author did not choose. **A kit that declares `backend: vm` is the exception, and reads neither answer**
+([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a
+machine, so the agent gets one whether or not its owner ever opted in, and a
+kit that declares nothing gets the ordinary sandbox even from an owner who did.
+The flag still decides what that owner *sees* — a `vm` kit wears a badge rather
+than being hidden — and the install-wide answer still decides whether the kit is
+offered at all. The rule is the same one stated above from the other side: a
+per-user flag says what a user wants to see, and here the kit, not the user, is
+choosing the runtime. The new sandbox runtime is not a choice
 inside the form — with both answers yes, every agent the form creates is a
 microVM, and the form says so in a notice pointing back at the flag.
 

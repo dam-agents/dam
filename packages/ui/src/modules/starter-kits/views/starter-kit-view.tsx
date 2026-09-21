@@ -29,7 +29,7 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
-import { CATEGORY_LABEL } from "../lib/catalog-cards.js";
+import { CATEGORY_LABEL, VM_BACKEND_LABEL } from "../lib/catalog-cards.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
@@ -238,6 +238,11 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
               {skillCount > 0 && (
                 <Badge variant="muted" size="sm">
                   {skillCount} {skillCount === 1 ? "skill" : "skills"}
+                </Badge>
+              )}
+              {kit.backend === "vm" && (
+                <Badge variant="muted" size="sm">
+                  {VM_BACKEND_LABEL}
                 </Badge>
               )}
             </div>
