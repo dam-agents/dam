@@ -35,10 +35,14 @@ const (
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
 	maxImageConfig   = 1 << 20
-	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the cached images may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the image being fetched and for whatever the volume is shared with.
-	cacheBudgetPercent = 80
-	rootfsDir          = "rootfs"
-	launchFile         = "launch.json"
+	rootfsDir        = "rootfs"
+	launchFile       = "launch.json"
+	shareDir         = "share"
+
+	// UNIT_BOUNDARY_DESCRIPTION: where a runner records which cached images its own machines hold, so the runners sharing a node directory can see each other's claims. A runner reads only its own machines — they are its child processes — so on a shared directory its in-use set is a third of the answer, and evicting on it alone takes a running guest's root filesystem away from a machine belonging to somebody else.
+	holdersDir = ".holders"
+	// UNIT_BOUNDARY_DESCRIPTION: how long a holders file is believed after its last write. Machines are processes of the runner that made them, so a runner that stopped refreshing has no machines left running and its claims are safe to ignore — the window only has to outlast the gap between two reconciles, which the controller drives about once a minute.
+	holderStale = 30 * time.Minute
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -66,6 +70,7 @@ var imageRef = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
 type Server struct {
 	Token      string
 	StateDir   string
+	ImageDir   string
 	Runtime    *Smolvm
 	PortMin    int
 	PortMax    int
@@ -73,6 +78,11 @@ type Server struct {
 	ReserveMiB int
 	AllowFrom  []*net.IPNet
 	Crane      string
+	Init       string
+	// UNIT_BOUNDARY_DESCRIPTION: this runner's name in the holders directory, unique among the runners that may share an image directory with it.
+	RunnerID string
+	// UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy, wherever they live. There is no filesystem-share fallback: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so a share of either would let the images eat something that is not theirs.
+	ImageBudget int64
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -105,6 +115,7 @@ func (s *Server) Start() error {
 			}
 		}
 	}
+	s.publishHolders()
 	return nil
 }
 
@@ -158,7 +169,7 @@ func (s *Server) list(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) machineIDs() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	entries, err := os.ReadDir(s.StateDir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -248,7 +259,8 @@ func (s *Server) deadForLong(id string) bool {
 
 func needsRestart(applied, desired MachineSpec) bool {
 	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
-		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB || !reflect.DeepEqual(applied.Env, desired.Env)
+		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB ||
+		!reflect.DeepEqual(applied.Env, desired.Env)
 }
 
 func createOnlyDrift(applied, desired MachineSpec) string {
@@ -267,6 +279,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
+	defer s.publishHolders()
 	state, err := s.machineState(id)
 	if err != nil {
 		return err
@@ -278,7 +291,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		}
 		return nil
 	}
-	if err := s.writeCA(id, spec.CACert); err != nil {
+	if err := s.writeShare(id, spec); err != nil {
 		return err
 	}
 	if state == StateAbsent {
@@ -386,6 +399,11 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if launch != nil && cached == "" {
 		cached = filepath.Join(base, rootfsDir)
 	}
+	if launch == nil {
+		if launch, err = s.launchFromRegistry(image); err != nil {
+			return err
+		}
+	}
 	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
 	if cached != "" {
 		if _, err := os.Stat(cached); err == nil {
@@ -397,7 +415,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		return err
 	}
 	s.forgetState(id)
-	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, "ca"), launch); err != nil {
+	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, shareDir), launch); err != nil {
 		return err
 	}
 	if err := s.forward(id, port); err != nil {
@@ -405,6 +423,24 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	}
 	s.markStarting(id)
 	return s.Runtime.Start(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: platform-init is the machine's entrypoint, and it execs the image's own — so what the image says to run has to be known before the machine is created, on every path that reaches a boot. A cached tree carries it beside the files and an archive carries it inside, but a machine booting straight from a registry reference has neither, and smolvm would read the config itself and launch the image's entrypoint directly, leaving the disk unmounted. One config fetch costs no layers and answers it. An install that disabled the fetch is refused rather than booted without persistence: what it would save is a machine whose work does not survive its first stop.
+func (s *Server) launchFromRegistry(ref string) (*ImageLaunch, error) {
+	if s.Crane == "" {
+		return nil, fmt.Errorf("%w: %s names no cached image and this runner cannot read one from the registry", errImageLaunchUnknown, ref)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	defer cancel()
+	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
+	}
+	launch, err := launchFromConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
+	}
+	return launch, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a tool that fails per entry reports per entry, and for a whole image that ran to 2.6 MB when the runner still unpacked one itself. That text becomes the Agent's condition message, and a condition message over 32 KiB is rejected by the API server — so the status write fails rather than the create: the reconcile never records why, retries, and each retry fetches the image again. The cap belongs to the boundary rather than to the tool behind it, which is why it outlived the unpack that found it. Keeping the head keeps the first failure, which is the one that explains the rest.
@@ -418,7 +454,7 @@ func firstLines(out string) string {
 	return out[:capturedOutput] + "… (truncated)"
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto a volume every runner shares, so the handful of images nearly every owner runs is fetched once for the cluster rather than once per machine. It is unpacked once too: smolvm mounts a tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. A tree alone is not enough to boot, because it carries files and not the entrypoint, environment and working directory the image names, so those are read with it and written beside it; without that record smolvm launches nothing and the guest comes up with no harness in it.
+// UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto the cache it shares with any runner mounting the same directory, so the handful of images nearly every owner runs is fetched once per cache rather than once per machine. It is unpacked once too: smolvm mounts a tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. A tree alone is not enough to boot, because it carries files and not the entrypoint, environment and working directory the image names, so those are read with it and written beside it; without that record smolvm launches nothing and the guest comes up with no harness in it.
 func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
@@ -458,7 +494,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := s.claim(tmp, cached, forMachine); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(cached), cached, s.cacheBudget(filepath.Dir(cached)))
+	s.evictImages(filepath.Dir(cached), cached, s.ImageBudget)
 	return nil
 }
 
@@ -496,7 +532,7 @@ func (s *Server) claim(tmp, cached, forMachine string) error {
 	if complete, readErr := readLaunch(cached); readErr == nil && complete != nil {
 		return nil
 	}
-	if s.imagesInUse(forMachine)[cached] {
+	if s.imagesInUse(forMachine)[cached] || s.heldElsewhere(s.ImageDir)[cached] {
 		return fmt.Errorf("%s is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image", filepath.Base(cached))
 	}
 	if err := os.RemoveAll(cached); err != nil {
@@ -609,16 +645,8 @@ func dirSize(path string) int64 {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
-func (s *Server) cacheBudget(dir string) int64 {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return 0
-	}
-	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
-}
-
 func (s *Server) cachePath(image string) string {
-	return filepath.Join(s.StateDir, "images", strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
+	return filepath.Join(s.ImageDir, strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an unpacked image is not a spare a machine consumes at create, it is the read-only lower layer every machine of that image keeps mounted for as long as it runs — so deleting one to make room takes the running guests' filesystem out from under them. Which images are spoken for is read from the machines themselves rather than tracked alongside them, because the runner is restarted and its memory is not: a spec on disk outlives the process that wrote it, and a machine whose image is missing from this set is a machine about to lose its rootfs.
@@ -642,11 +670,78 @@ func (s *Server) imagesInUse(except string) map[string]bool {
 	return inUse
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: publishes what this runner's machines hold, so a runner sharing the node's image directory can be seen by the others. One file per runner rather than one per image, because it is rewritten whole from the machines on disk and a whole rewrite cannot leave a claim behind for a machine that is gone. Its mtime is the liveness signal, so a file is refreshed even when the set did not change. Failure is logged and not returned: a runner that cannot publish its claims still runs its machines, and the cost is that another runner may evict an image it holds.
+func (s *Server) publishHolders() {
+	if s.RunnerID == "" {
+		return
+	}
+	dir := filepath.Join(s.ImageDir, holdersDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+		return
+	}
+	held := s.imagesInUse("")
+	names := make([]string, 0, len(held))
+	for path := range held {
+		names = append(names, filepath.Base(path))
+	}
+	sort.Strings(names)
+	path := filepath.Join(dir, s.RunnerID)
+	staged := path + ".new"
+	if err := os.WriteFile(staged, []byte(strings.Join(names, "\n")), 0o644); err != nil {
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+		return
+	}
+	if err := os.Rename(staged, path); err != nil {
+		_ = os.Remove(staged)
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every other runner's claims on the shared directory, keyed the way evictImages keys its entries. This runner's own file is skipped, because every caller already reads the machines on disk directly and that read is both current and able to make the exception the published snapshot cannot: a recreate excludes the machine it is bringing back, and answering it with this runner's own published claim on that same machine would refuse the image forever, on the one path that can replace a launch-less tree. Eviction loses nothing by the skip, reading the same machines unfiltered. A file older than holderStale is skipped and deleted: its runner is gone, and with it the machines that were holding those images, so keeping the claims would pin images nothing can boot from. A file this runner cannot read is treated as holding everything it names nothing about — that is, skipped — because guessing narrower is what deletes somebody's rootfs.
+func (s *Server) heldElsewhere(dir string) map[string]bool {
+	held := map[string]bool{}
+	entries, err := os.ReadDir(filepath.Join(dir, holdersDir))
+	if err != nil {
+		return held
+	}
+	for _, e := range entries {
+		if e.IsDir() || strings.HasSuffix(e.Name(), ".new") {
+			continue
+		}
+		if s.RunnerID != "" && e.Name() == s.RunnerID {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(dir, holdersDir, e.Name())
+		if time.Since(info.ModTime()) > holderStale {
+			_ = os.Remove(path)
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, name := range strings.Split(string(body), "\n") {
+			if name = strings.TrimSpace(name); name != "" {
+				held[filepath.Join(dir, name)] = true
+			}
+		}
+	}
+	return held
+}
+
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	if budget <= 0 {
 		return
 	}
 	inUse := s.imagesInUse("")
+	for path := range s.heldElsewhere(dir) {
+		inUse[path], inUse[path+".tar"] = true, true
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -696,16 +791,46 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 	}
 }
 
-func (s *Server) writeCA(id, ca string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init and the CA the guest must trust, and it is rewritten on every ensure so a CA the controller has rotated is the CA the next boot trusts — the share is a live host directory, while the command line that names it is fixed at create. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+func (s *Server) writeShare(id string, spec MachineSpec) error {
 	base, err := s.machineDir(id)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(base, "ca")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	share := filepath.Join(base, shareDir)
+	if err := os.MkdirAll(filepath.Join(share, "ca"), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(ca), 0o644)
+	if err := os.WriteFile(filepath.Join(share, "ca", "ca.crt"), []byte(spec.CACert), 0o644); err != nil {
+		return err
+	}
+	return s.copyInit(filepath.Join(share, "init"))
+}
+
+func (s *Server) copyInit(to string) error {
+	if s.Init == "" {
+		return errors.New("no platform-init binary configured, so a machine would boot with its disk unmounted")
+	}
+	source, err := os.Open(s.Init)
+	if err != nil {
+		return fmt.Errorf("reading platform-init: %w", err)
+	}
+	defer source.Close()
+	staged := to + ".new"
+	destination, err := os.OpenFile(staged, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destination, source); err != nil {
+		_ = destination.Close()
+		_ = os.Remove(staged)
+		return err
+	}
+	if err := destination.Close(); err != nil {
+		_ = os.Remove(staged)
+		return err
+	}
+	return os.Rename(staged, to)
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
@@ -752,6 +877,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 		delete(s.listeners, id)
 	}
 	s.mu.Unlock()
+	s.publishHolders()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -958,7 +1084,7 @@ func (s *Server) allocatePort(id string) (int, error) {
 		return p, nil
 	}
 	used := map[int]bool{}
-	entries, _ := os.ReadDir(filepath.Join(s.StateDir, "machines"))
+	entries, _ := os.ReadDir(s.StateDir)
 	for _, e := range entries {
 		used[s.port(e.Name())] = true
 	}
@@ -1026,7 +1152,7 @@ func (s *Server) machineDir(id string) (string, error) {
 	if !machineID.MatchString(id) {
 		return "", fmt.Errorf("invalid machine id %q", id)
 	}
-	return filepath.Join(s.StateDir, "machines", id), nil
+	return filepath.Join(s.StateDir, id), nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

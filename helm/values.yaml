@@ -148,7 +148,12 @@ istio:
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
-# vm-runner agent plus smolvm. The controller drives its machine API (TLS,
+# vm-runner agent plus smolvm. A machine persists the agent's home and nothing
+# else, bind-mounted from its one storage disk by platform-init, which the
+# runner runs as every machine's entrypoint; the rest of the guest is a root
+# overlay the machine discards each time it stops, so anything installed
+# outside HOME is gone on the next boot. An Agent whose mounts ask to persist
+# a path outside HOME is refused rather than silently losing it. The controller drives its machine API (TLS,
 # bearer token; both minted by the controller); the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = the create refuses the vm backend
@@ -183,10 +188,18 @@ virtualization:
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
     scc: ""
-    # Machine disks — every vm agent's workspace — and smolvm's image cache
-    # live here. The claim outlives a pod restart and a chart upgrade, but not
-    # its owner: the sweep removes a runner once that owner has no vm agents
-    # left, and takes the claim with it, so the next one re-fetches the image.
+    # One claim, three directories with three lifetimes: `disks/` holds the
+    # machine disks — every vm agent's storage — `machines/` the per-machine
+    # bookkeeping a restarted runner rebuilds, and `images/` the unpacked agent
+    # images, unless `imageCache` below gives every runner one volume to share.
+    # The claim outlives a pod restart and a chart upgrade, but not its owner:
+    # the sweep removes a runner once that owner has no vm agents left, and
+    # takes the claim with it, so the next one re-fetches the image.
+    # Upgrading onto this layout abandons the machines an earlier release kept
+    # under `smolvm/` and `vm-runner/` on the same claim: those agents are
+    # recreated with empty disks, and the bytes stay until the owner's last vm
+    # agent goes and the claim is deleted with the runner. Delete the runner
+    # PVCs before the upgrade to reclaim them at once.
     # Set once: a later change only grows the claim, and only on a class
     # that allows expansion.
     storage: 100Gi
@@ -255,18 +268,32 @@ virtualization:
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
-  # One volume every runner mounts, holding the agent images as archives. A
-  # machine may reach only its gateway, so the guest cannot pull its own image;
-  # the runner fetches it here on a miss, and every other owner then boots that
-  # image without touching the registry. Needs a ReadWriteMany class — on ODF
-  # that is `ocs-storagecluster-cephfs`. Without it each runner falls back to
-  # its own disk, which means one pull per owner for the same few images.
-  # The runner keeps the archives inside a share of this volume, evicting the
-  # least recently written first, so a tag per deploy does not fill it.
+  # A directory on each node that every runner scheduled there shares. A machine
+  # may reach only its gateway, so the guest cannot pull its own image; the
+  # runner fetches it here on a miss, and the next owner on that node boots the
+  # same image without touching the registry. Empty = each runner caches on its
+  # own claim, which means one pull per owner for the same few images.
+  #
+  # A host directory rather than a ReadWriteMany claim: RWX is the expensive
+  # class to ask an install for, and it buys cluster-wide dedup where per-node
+  # is enough. The runner already holds /dev/kvm and runs as root, so a host
+  # directory is not a privilege it did not have — but on OpenShift it still
+  # needs `runner.scc`, since the chart's own agent SCC refuses hostPath.
+  #
+  # Runners on one node evict from this directory independently, so each
+  # publishes which cached images its machines hold and reads the others'
+  # before deleting anything — otherwise one runner reclaiming space takes the
+  # root filesystem out from under another's running guest.
+  #
+  # `budget` is what the cached images may occupy, evicting least-recently-
+  # written first so a tag per deploy does not fill the disk. It is a byte
+  # count and it is required, wherever the cache lives: a node's filesystem is
+  # shared with everything else the node runs, and `runner.storage` is shared
+  # with the machine disks, so a share of either would let the images eat
+  # space that is not theirs. Keep it well under whichever it sits on.
   imageCache:
-    enabled: false
-    storageClass: ""
-    size: 50Gi
+    hostPath: ""
+    budget: 50Gi
   devicePlugin:
     enabled: false
     image:

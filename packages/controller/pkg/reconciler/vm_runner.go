@@ -28,13 +28,19 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
 
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged archives. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
 const (
-	vmRunnerComponent = "vm-runner"
-	vmRunnerPort      = 4600
-	vmRunnerCertYears = 10
+	vmRunnerComponent    = "vm-runner"
+	vmRunnerStatePath    = "/var/lib/platform"
+	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
+	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
+	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
+	vmRunnerPort         = 4600
+	vmRunnerCertYears    = 10
 )
 
 type runnerConn struct {
@@ -238,6 +244,18 @@ func selfSignedCert(names ...string) (string, string, error) {
 	return string(certPEM), string(keyPEM), nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the cached images may occupy. Every cache is bounded by this one number, wherever it lives: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so neither can be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node or the disks it shares with run out.
+func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
+	size, err := resource.ParseQuantity(spec.ImageCacheBudget)
+	if err != nil {
+		return 0, fmt.Errorf("vm runner image cache budget %q is not a quantity: %w", spec.ImageCacheBudget, err)
+	}
+	if size.Value() <= 0 {
+		return 0, fmt.Errorf("vm runner image cache budget %q leaves the cached images no room at all", spec.ImageCacheBudget)
+	}
+	return size.Value(), nil
+}
+
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
@@ -387,6 +405,10 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
+	imageBudget, err := imageBudgetBytes(spec)
+	if err != nil {
+		return err
+	}
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
 	podLabels := map[string]string{"istio.io/dataplane-mode": "none"}
 	for k, v := range labels {
@@ -409,25 +431,29 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		resources.Limits[corev1.ResourceName(k)] = q
 	}
 	mounts := []corev1.VolumeMount{
-		{Name: "state", MountPath: "/var/lib/smolvm", SubPath: "smolvm"},
-		{Name: "state", MountPath: "/var/lib/vm-runner", SubPath: "vm-runner"},
+		{Name: "state", MountPath: vmRunnerDisksPath, SubPath: "disks"},
+		{Name: "state", MountPath: vmRunnerMachinesPath, SubPath: "machines"},
 		{Name: "credentials", MountPath: "/etc/vm-runner", ReadOnly: true},
 	}
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr.To[int32](0o400)}}},
 	}
-	if claim := spec.ImageCacheClaim; claim != "" {
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: "/var/lib/vm-runner/images"})
-		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
-		}})
-	} else if host := spec.ImageArchiveHostPath; host != "" {
+	switch {
+	case spec.ImageCacheHostPath != "":
 		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: "/var/lib/vm-runner/images", ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "image-archives", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: host, Type: &dir},
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath})
+		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageCacheHostPath, Type: &dir},
 		}})
+	case spec.ImageArchiveHostPath != "":
+		dir := corev1.HostPathDirectoryOrCreate
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: vmRunnerImagesPath, ReadOnly: true})
+		volumes = append(volumes, corev1.Volume{Name: "image-archives", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageArchiveHostPath, Type: &dir},
+		}})
+	default:
+		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: r.runnerOwnerRef(ctx)},
@@ -450,6 +476,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Image:           spec.Image,
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
+							"--state-dir=" + vmRunnerMachinesPath,
+							"--image-dir=" + vmRunnerImagesPath,
+							"--runner-id=" + name,
+							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",

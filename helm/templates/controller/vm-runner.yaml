@@ -54,31 +54,4 @@ subjects:
     name: {{ $name }}
     namespace: {{ .Values.agentNamespace }}
 {{- end }}
-{{- $cache := .Values.virtualization.imageCache | default dict }}
-{{- if $cache.enabled }}
----
-{{- /*
-One volume for every runner: a machine may reach only its gateway, so the guest
-cannot pull its own image and the runner fetches it here. Shared, so the handful
-of images nearly every owner runs is fetched once for the cluster. ReadWriteMany
-because every runner mounts it at once.
-*/}}
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ $name }}-images
-  namespace: {{ .Values.agentNamespace }}
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: vm-runner
-spec:
-  accessModes:
-    - ReadWriteMany
-  {{- with $cache.storageClass }}
-  storageClassName: {{ . | quote }}
-  {{- end }}
-  resources:
-    requests:
-      storage: {{ $cache.size | default "50Gi" | quote }}
-{{- end }}
 {{- end }}

@@ -15,12 +15,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
+const vmBackendEnv = "PLATFORM_BACKEND"
+
 const (
-	vmPersistPathsEnv = "PLATFORM_VM_PERSIST_PATHS"
-	vmReadinessPoll   = 3 * time.Second
+	vmReadinessPoll = 3 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: how closely a machine is watched while it
 	// UNIT_BOUNDARY_DESCRIPTION: starts, and for how long. The window runs
 	// UNIT_BOUNDARY_DESCRIPTION: from the moment the runner asked the machine
@@ -74,24 +77,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	env["IS_SANDBOX"] = "1"
+	env[vmBackendEnv] = "vm"
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 
-	var persist []string
-	storageGiB := 0
-	for _, m := range resolveSpecMounts(spec, defaults) {
-		if !m.Persist {
-			continue
-		}
-		persist = append(persist, m.Path)
-		size := effectiveMountSize(m, spec, defaults)
-		q, err := resource.ParseQuantity(size)
-		if err != nil {
-			return vmrunner.MachineStatus{}, fmt.Errorf("mount %s has size %q: %w", m.Path, size, err)
-		}
-		storageGiB += int((q.Value() + (1 << 30) - 1) >> 30)
+	storageGiB, err := resolveVMDiskGiB(spec, defaults)
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
 	}
-	env[vmPersistPathsEnv] = strings.Join(persist, ",")
 
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -106,7 +99,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
 		MemoryMiB:  max(int(mem.Value()>>20), 1),
-		StorageGiB: max(storageGiB, 1),
+		StorageGiB: storageGiB,
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
@@ -283,4 +276,35 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 		}
 	}
 	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
+func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {
+			return 0, fmt.Errorf("the vm backend persists only %s, so this Agent's persisted mount %s would be lost at the first stop; move it under %s or run this Agent on the container backend",
+				agentHomeDir, m.Path, agentHomeDir)
+		}
+	}
+	size := defaults.StorageSize
+	if spec.StorageSize != "" {
+		size = spec.StorageSize
+	}
+	quantity, err := resource.ParseQuantity(size)
+	if err != nil {
+		return 0, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
+	}
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if !m.Persist || m.Size == "" {
+			continue
+		}
+		asked, err := resource.ParseQuantity(m.Size)
+		if err != nil {
+			return 0, fmt.Errorf("the size %q of the persisted mount %s is not a quantity: %w", m.Size, m.Path, err)
+		}
+		if asked.Value() > quantity.Value() {
+			quantity = asked
+		}
+	}
+	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
 }

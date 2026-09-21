@@ -50,6 +50,29 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.nodeSelector).toBeUndefined();
   });
 
+  // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the vm backend carries no storage block of its own and the mounts travel unchanged. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
+  it("carries the template's mounts unchanged and invents no vm storage block", () => {
+    const spec = assembleSpecFromTemplate(
+      "nous-1",
+      {
+        ...baseTemplate,
+        storageSize: "20Gi",
+        mounts: [
+          { path: "/home/agent", persist: true },
+          { path: "/tmp", persist: false },
+        ],
+      },
+      { vm: true },
+      defaultLimits,
+    );
+    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.mounts).toEqual([
+      { path: "/home/agent", persist: true },
+      { path: "/tmp", persist: false },
+    ]);
+    expect(spec.storageSize).toBe("20Gi");
+  });
+
   it("leaves the agent on a container when the caller asks for nothing", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",

@@ -6,8 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -178,7 +180,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-		ServiceAccountName: "platform-vm-runner",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -226,7 +228,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-		ServiceAccountName: "platform-vm-runner",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	var requeued []time.Duration
@@ -253,7 +255,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
 	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
 	assert.Equal(t, spec.Env["NO_PROXY"], spec.Env["no_proxy"], "clients reading either casing see the same list")
-	assert.Equal(t, "/home/agent", spec.Env[vmPersistPathsEnv])
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
 
@@ -327,7 +328,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
@@ -395,16 +396,164 @@ func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
 }
 
-// TEST_SCENARIO: a persisted mount carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
-func TestVMBackendRefusesAMountSizeItCannotParse(t *testing.T) {
+// TEST_SCENARIO: the disk carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
+func TestVMBackendRefusesADiskSizeItCannotParse(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5GG"}}
+	agent.Spec.StorageSize = "5GG"
 	r, node, _ := setupVMReconciler(t, agent)
 
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "/home/agent")
+	assert.Contains(t, err.Error(), "5GG")
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
+}
+
+// TEST_SCENARIO: a machine has one disk, so the Agent's own storage size is the whole of it. The container backend's mounts cannot say that — each is a volume with a size of its own — so summing them bought a number no single path was held to, and rounding each up to a GiB first paid for that rounding once per mount. Here two persisted mounts of 4Gi each are one 10Gi disk.
+func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true, Size: "4Gi"},
+		{Path: "/home/agent/work", Persist: true, Size: "4Gi"},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
+}
+
+// TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
+func TestVMBackendAcceptsTheDefaultMounts(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/tmp", Persist: false},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB)
+}
+
+// TEST_SCENARIO: a machine keeps HOME and nothing else, so a mount asking to persist a path outside it cannot be honoured. Dropping it silently is the failure this backend exists to stop being possible — the agent would run, look healthy, and lose that path the first time it stopped — so the reconcile fails and says where the path would have to move.
+func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/data", Persist: true},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+
+	err := r.Reconcile(context.Background(), agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "/data")
+	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
+}
+
+// TEST_SCENARIO: a mount's own size wins over the Agent's storageSize on the container backend, so a spec that asks for 50Gi there must not quietly get the chart's default here. The machine has one disk, so the largest thing any persisted mount asks for is what it is sized to — the one field of Mount this backend could still drop without saying so.
+func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
+	disk := func(configure func(*apiv1.AgentSpec)) int {
+		agent := vmAgentCR()
+		configure(&agent.Spec)
+		r, node, _ := setupVMReconciler(t, agent)
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+		return node.spec("my-agent").StorageGiB
+	}
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
+	}), "the mount's own size raises the disk rather than being dropped")
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.StorageSize = "20Gi"
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
+	}), "a mount that asks for more than storageSize wins, as it does on the container backend")
+
+	assert.Equal(t, 20, disk(func(spec *apiv1.AgentSpec) {
+		spec.StorageSize = "20Gi"
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}}
+	}), "a mount asking for less never shrinks the disk below what the Agent itself declared")
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{
+			{Path: "/home/agent", Persist: true, Size: "50Gi"},
+			{Path: "/home/agent/work", Persist: true, Size: "30Gi"},
+		}
+	}), "nested mounts share the one disk, so it is the largest of them and not their sum")
+
+	assert.Equal(t, 10, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{
+			{Path: "/home/agent", Persist: true},
+			{Path: "/tmp", Persist: false, Size: "80Gi"},
+		}
+	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
+}
+
+// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath so the claim's root, which still holds trees from earlier releases, is never exposed.
+func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
+	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.VM.Runner)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		byPath := map[string]corev1.VolumeMount{}
+		for _, m := range dep.Spec.Template.Spec.Containers[0].VolumeMounts {
+			byPath[m.MountPath] = m
+		}
+		byName := map[string]corev1.Volume{}
+		for _, v := range dep.Spec.Template.Spec.Volumes {
+			byName[v.Name] = v
+		}
+		return byPath, byName
+	}
+
+	plain, _ := mounts(func(*config.VMRunnerSpec) {})
+	assert.Equal(t, "disks", plain[vmRunnerDisksPath].SubPath)
+	assert.Equal(t, "machines", plain[vmRunnerMachinesPath].SubPath)
+	assert.Equal(t, "images", plain[vmRunnerImagesPath].SubPath,
+		"with no node cache the images are still their own mount, not a directory inside another")
+
+	node, volumes := mounts(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" })
+	assert.Empty(t, node[vmRunnerImagesPath].SubPath)
+	assert.Equal(t, "image-cache", node[vmRunnerImagesPath].Name, "the node directory replaces that mount rather than nesting in it")
+	require.NotNil(t, volumes["image-cache"].HostPath, "the node cache is a host directory, not a claim of its own")
+	assert.Equal(t, "/var/lib/platform-images", volumes["image-cache"].HostPath.Path)
+	assert.False(t, node[vmRunnerImagesPath].ReadOnly, "the runner fetches into this one, unlike the staged archives")
+}
+
+// TEST_SCENARIO: every runner announces itself and every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
+func TestEveryCacheIsBoundedAndEveryRunnerNamed(t *testing.T) {
+	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.VM.Runner)
+		if err := r.applyRunnerDeployment(context.Background(), testOwner); err != nil {
+			return "", err
+		}
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return strings.Join(dep.Spec.Template.Spec.Containers[0].Args, " "), nil
+	}
+
+	own, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
+	require.NoError(t, err)
+	assert.Contains(t, own, "--runner-id=platform-vm-runner-")
+	assert.Contains(t, own, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
+
+	shared, err := args(t, func(spec *config.VMRunnerSpec) {
+		spec.ImageCacheHostPath = "/var/lib/platform-images"
+		spec.ImageCacheBudget = "20Gi"
+	})
+	require.NoError(t, err)
+	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)),
+		"the same number bounds the node directory, which is shared with the whole host")
+
+	for _, bad := range []string{"", "plenty", "0"} {
+		_, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = bad })
+		require.Error(t, err, "budget %q", bad)
+		assert.Contains(t, err.Error(), "image cache budget")
+	}
 }
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.
@@ -804,4 +953,9 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "info", env["RUST_LOG"],
 		"or a slow boot reports no phases, and debug would bury them under every status call")
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
+}
+
+// TEST_SCENARIO: the agent home is one path on both backends, but it is written down twice — here, and in the machine contract platform-init reads. The guest binary carries no Kubernetes libraries and this package pulls in nearly three hundred, so it cannot import its way to one copy. Nothing but this would notice the two drifting, and a machine would then bind-mount a home the controller never set.
+func TestTheAgentHomeAgreesWithTheMachineContract(t *testing.T) {
+	assert.Equal(t, agentHomeDir, vmrunner.AgentHome)
 }

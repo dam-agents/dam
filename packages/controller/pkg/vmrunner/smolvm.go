@@ -27,6 +27,8 @@ const (
 	warmTimeout = 5 * time.Minute
 )
 
+var errImageLaunchUnknown = errors.New("this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it")
+
 type Smolvm struct {
 	Bin string
 }
@@ -59,11 +61,11 @@ func (r *Smolvm) State(id string) (string, error) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an image booted from a tree of its own files names nothing to run, so everything the image would have said — its entrypoint, its environment, the directory it starts in — is said here instead. The two environments are merged before either reaches the command line rather than passed one after the other, so which one wins is decided here and not by whichever order smolvm happens to apply them in; the platform's own values win, because they are what make the guest an agent rather than the image's idea of a container.
-func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int, caDir string, launch *ImageLaunch) error {
+func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int, share string, launch *ImageLaunch) error {
 	args := []string{"machine", "create", "-n", id, "-I", image, "--max-image-size", "16GiB",
 		"--cpus", strconv.Itoa(spec.CPUs), "--mem", strconv.Itoa(spec.MemoryMiB), "--storage", strconv.Itoa(spec.StorageGiB),
 		"-u", "root", "--net", "--net-backend", "virtio-net", "-p", fmt.Sprintf("%d:%d", hostPort, guestAgentPort),
-		"-v", caDir + ":/etc/platform/ca:ro"}
+		"-v", share + ":" + SharePath + ":ro"}
 	for _, c := range spec.AllowCIDRs {
 		args = append(args, "--allow-cidr", c)
 	}
@@ -84,10 +86,11 @@ func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int,
 		}
 		command = append(append([]string{}, launch.Entrypoint...), launch.Cmd...)
 	}
-	args = append(args, envArgs(env)...)
-	if len(command) > 0 {
-		args = append(append(args, "--"), command...)
+	if len(command) == 0 {
+		return errImageLaunchUnknown
 	}
+	args = append(args, envArgs(env)...)
+	args = append(append(args, "--", InitPath), command...)
 	return r.run(envValues(spec.Env), args...)
 }
 
@@ -106,8 +109,31 @@ func (r *Smolvm) Update(id string, spec MachineSpec, applied *MachineSpec) error
 	return r.run(envValues(spec.Env), append(args, envArgs(spec.Env)...)...)
 }
 
-func (r *Smolvm) Stop(id string) error   { return r.run(nil, "machine", "stop", "-n", id) }
+func (r *Smolvm) Stop(id string) error {
+	if err := r.run(nil, "machine", "stop", "-n", id); err != nil {
+		return err
+	}
+	discardOverlay(id, r.vmDir(id))
+	return nil
+}
+
 func (r *Smolvm) Delete(id string) error { return r.run(nil, "machine", "delete", "-n", id, "-f") }
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine's root is a throwaway overlay, and this is what makes that true rather than nearly true. Kept, it is a tier nobody declared: it survives an ordinary stop and start, so software installed outside the declared paths looks persistent, and is then thrown away by the first boot that has to discard a corrupt one — weeks later, silently, with no way to tell afterwards which of the two a machine did. Discarded every time, the rule is the same sentence as the container backend's: a declared path, or gone. It runs on the way down, so a hibernated fleet does not hold an overlay each on its owner's disk, and again on the way up, because a machine that died with its runner never got the stop and would otherwise wake onto a stale root.
+func discardOverlay(id, dir string) {
+	if dir == "" {
+		return
+	}
+	if !vmmGone("/proc", dir, vmmExitWait) {
+		slog.Warn("machine still has a VMM holding its disks; leaving the root overlay in place", "machine", id)
+		return
+	}
+	for _, f := range []string{"overlay.qcow2", "overlay.formatted"} {
+		if err := os.Remove(filepath.Join(dir, f)); err != nil && !os.IsNotExist(err) {
+			slog.Warn("could not discard the root overlay", "machine", id, "file", f, "error", err)
+		}
+	}
+}
 
 func (r *Smolvm) Start(id string) error {
 	dir := r.vmDir(id)
@@ -122,14 +148,9 @@ func (r *Smolvm) Start(id string) error {
 		for _, f := range []string{"agent.ready", "agent.sock", "control.sock", "vm.lock", "agent.pid"} {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
+		discardOverlay(id, dir)
 	}
 	err := r.run(nil, "machine", "start", "-n", id)
-	if err != nil && dir != "" && strings.Contains(err.Error(), "boot process exited") {
-		for _, f := range []string{"overlay.qcow2", "overlay.formatted"} {
-			_ = os.Remove(filepath.Join(dir, f))
-		}
-		err = r.run(nil, "machine", "start", "-n", id)
-	}
 	if err != nil {
 		for _, pid := range orphanPIDs("/proc", dir) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
