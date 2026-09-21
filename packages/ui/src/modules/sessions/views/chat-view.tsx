@@ -9,6 +9,7 @@ import {
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import {
   type CSSProperties,
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -750,7 +751,7 @@ export function ChatView() {
                           label={dividerLabel(item, now)}
                         />
                       ) : (
-                        <div key={item.message.id}>
+                        <Fragment key={item.message.id}>
                           <ChatMessage
                             message={item.message}
                             isLast={item.index === messages.length - 1}
@@ -770,7 +771,7 @@ export function ChatView() {
                                 turn={turnForMessage.get(item.message.id)!}
                               />
                             )}
-                        </div>
+                        </Fragment>
                       ),
                     )}
                     {telemetryEnabled && sessionTurns.isError && (
