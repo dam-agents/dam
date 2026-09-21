@@ -6,14 +6,30 @@ Last verified: 2026-09-21
 
 A **Satellite** is an MCP server on a machine outside the cluster, reached through a queue the machine polls. It lets an Agent call tools on a host it has no other access to — a capable machine in a higher-security zone, whose firewall admits nothing inbound.
 
-The machine polls; nothing is pushed to it. `dam satellite connect` runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back. The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
+The machine polls; nothing is pushed to it. The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back. The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-`connect` takes either form, and **nothing above the worker can tell them apart**:
+Two verbs start a worker, and **nothing above it can tell them apart**:
 
-- `dam satellite connect ./satellite.toml` — a **Manifest** of permitted command shapes, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
-- `dam satellite connect --name gpu-box -- npx -y @acme/build-mcp` — any stdio MCP server, whose tools are offered verbatim.
+- `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any stdio MCP server, whose tools are offered verbatim.
+- `dam satellite commands --name gpu-box "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
 
-Making the Manifest a degenerate MCP server rather than a parallel concept is what keeps the platform out of the business of understanding commands. It forwards a tool call and stores an outcome; the machine alone reads the arguments.
+Two verbs rather than one flag because the two are different things to set up, not two ways of saying one thing, and an explicit verb cannot be misread the way a selector flag can.
+
+Making the Command Surface a degenerate MCP server rather than a parallel concept is what keeps the platform out of the business of understanding commands. It forwards a tool call and stores an outcome; the machine alone reads the arguments.
+
+The Command Surface is **text the user passes, not a file the worker reads**. It comes as one argument or on stdin, which is what a heredoc wants:
+
+```
+dam satellite commands --name gpu-box --cwd /srv --timeout 6h <<'EOF'
+./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]  # Process a database
+./deploy.sh (staging|prod)   # Deploy it  [approval]
+./train.sh ./data/**/*.db    # Train      [max=1 timeout=2h]
+EOF
+```
+
+A `#` opens a description, and only where a shell would see one — at the start of a line or after whitespace — so an anchored regex may hold a bare `#` without escaping. A trailing `[…]` group inside the description carries the few per-command settings: `approval`, `max=N`, `timeout=D`, `cwd=PATH`. An option the parser does not know is refused rather than ignored, because a silently dropped `approval` is the one mistake this format must not make.
+
+Having no file is the point. Nothing can drift between what the user wrote and what the machine enforces, there is no path to get wrong, and the surface is visible in the shell history that started the worker. It costs the ability to reload: changing what may run means restarting the worker, which drains first.
 
 ```mermaid
 sequenceDiagram
@@ -47,15 +63,15 @@ MCP is the *contract* between Platform and a Satellite, but not the *transport*:
 ## Concepts
 
 - **Satellite** — a named, owner-scoped command surface, identified by `(owner, name)`. Durable: the record outlives any connection, and its commands stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one worker each, so every call stays attributable to a real person's key. Platform's sharing model lends *Agents*, never resources ([multi-player](../strategy/multi-player.md)).
-- **Manifest** — the local file declaring the Satellite's name, its execution defaults and its Command Patterns. Read only by the worker; the platform never sees it. One form of Satellite has one; an MCP-server Satellite has none.
+- **Command Surface** — the text declaring a Satellite's Command Patterns and their settings, passed to `dam satellite commands`. Read only by the worker; the platform never sees it. An MCP-server Satellite has none.
 - **Snapshot** — the server's copy of the Satellite's **tool list**, replaced on each connect, and what the Agent's tools are built from. It is a *claim by the Satellite*, not a platform guarantee: identity is the name, so a worker reconnecting from a different checkout serves the same name backed by different tools.
-- **Command Pattern** — one permitted command shape (below). A Manifest concept only, enforced entirely on the machine.
+- **Command Pattern** — one permitted command shape (below). A Command Surface concept only, enforced entirely on the machine.
 - **Job** — one tool call, identified by `(satellite, sequence)` and rendered `gpu-box#7`. The sequence is minted server-side, since the id must return before any worker has seen the Job.
 - **Satellite Grant** — the per-Agent permission to reach a Satellite. The granted set decides whether the tools are registered at all.
 
 ## Command Patterns
 
-These apply to a Manifest-backed Satellite, and live entirely on the machine: the platform stores a tool, not a grammar, and never parses an argument. A pattern is a usage line, and the grammar is the security boundary. Seven forms, no sub-syntax: literals, `(a|b)` for a closed set, `[…]` optional, `(…)...` repeating, `*` for one filename-like argument or part of one, `**` for a path-like one, and `^…$` for a regex covering a **whole** argument.
+These apply to a Command Surface, and live entirely on the machine: the platform stores a tool, not a grammar, and never parses an argument. A pattern is a usage line, and the grammar is the security boundary. Seven forms, no sub-syntax: literals, `(a|b)` for a closed set, `[…]` optional, `(…)...` repeating, `*` for one filename-like argument or part of one, `**` for a path-like one, and `^…$` for a regex covering a **whole** argument.
 
 The **first token must be a literal**. A pattern that lets the caller choose the program is a shell, not an allowlist, and that is the one thing the parser refuses outright.
 
@@ -74,9 +90,9 @@ A Job is accepted only when a worker will pick it up within a poll interval. The
 
 The count and the insert share one transaction, so two calls arriving together cannot both read a count under the limit and both land. A per-tool limit works the same way, for the tool that must not run beside itself.
 
-Admission decides only what the platform can know from the Snapshot: that the Satellite is **online** and not **draining**, that it offers the named tool, and that there is room. It does not read the arguments — a call whose arguments the machine will refuse is admitted, dispatched and refused there, one round trip later. That is the price of the platform not understanding what its Satellites do, and it is paid in a wasted poll rather than in a wrong answer. A per-command limit inside a Manifest is counted on the machine for the same reason: the platform sees one `run` tool and cannot tell two commands apart.
+Admission decides only what the platform can know from the Snapshot: that the Satellite is **online** and not **draining**, that it offers the named tool, and that there is room. It does not read the arguments — a call whose arguments the machine will refuse is admitted, dispatched and refused there, one round trip later. That is the price of the platform not understanding what its Satellites do, and it is paid in a wasted poll rather than in a wrong answer. A per-command limit inside a Command Surface is counted on the machine for the same reason: the platform sees one `run` tool and cannot tell two commands apart.
 
-`max_concurrent` is clamped to an operator ceiling. Everywhere else the Manifest governs the user's own machine and wins; here the queue is Platform's storage, so a Satellite may ask for less than the ceiling and never for more.
+`--max-concurrent` is clamped to an operator ceiling. Everywhere else the machine's own declaration governs and wins; here the queue is Platform's storage, so a Satellite may ask for less than the ceiling and never for more.
 
 Draining is set by `drain` and cleared by a **claim**, and by nothing else: a draining worker stops claiming, so a claim is the machine saying it serves again, while a heartbeat and a Snapshot push both say nothing about readiness. A heartbeat that cleared it would let a shutting-down machine un-shut itself on its own next beat.
 
@@ -122,17 +138,17 @@ An Agent parked over budget cannot wake; its outcome waits and that hourly sweep
 
 ## Approval
 
-A Manifest may declare that a Command Pattern always needs a human. The platform cannot see that — it sees one tool — so **the machine asks**: the worker claims the Job, matches the call, finds the declaration and reports `needs-approval` instead of running. The Job goes back to waiting rather than ending, the api-server raises the request, and a verdict marks the Job allowed and requeues it so the machine does not ask a second time.
+A Command Surface may declare that a Command Pattern always needs a human, with `[approval]`. The platform cannot see that — it sees one tool — so **the machine asks**: the worker claims the Job, matches the call, finds the declaration and reports `needs-approval` instead of running. The Job goes back to waiting rather than ending, the api-server raises the request, and a verdict marks the Job allowed and requeues it so the machine does not ask a second time.
 
-Moving the question to the machine is what makes it work for any Satellite rather than only a Manifest-backed one: an MCP server can hold a call for a human by the same reply, without the platform learning anything about what its tools mean.
+Moving the question to the machine is what makes it work for any Satellite rather than only a command-backed one: an MCP server can hold a call for a human by the same reply, without the platform learning anything about what its tools mean.
 
 `needs-approval` is the one move out of *running* that is not terminal, so it takes the lease with it — nothing is executing, and a lease left behind would sweep the Job into *interrupted* while the person was still deciding.
 
-An approval nobody answers **expires**, and an expiry settles the Job exactly as a refusal does: the hold would otherwise keep its place against the machine's concurrency for ever and tell the Agent nothing. It reuses the approvals queue as a third type beside ext_authz and acp_native ([security-and-credentials](security-and-credentials.md)): the user-facing concept really is "something wants your permission", and Home already aggregates exactly that. Only the *once* verdicts apply — a standing "allow forever" is spelled by removing the declaration from the Manifest, on the user's own machine, so satellite policy has one source of truth. The surfaces read that capability from the contract rather than hardcoding it, so no button is offered that the service refuses.
+An approval nobody answers **expires**, and an expiry settles the Job exactly as a refusal does: the hold would otherwise keep its place against the machine's concurrency for ever and tell the Agent nothing. It reuses the approvals queue as a third type beside ext_authz and acp_native ([security-and-credentials](security-and-credentials.md)): the user-facing concept really is "something wants your permission", and Home already aggregates exactly that. Only the *once* verdicts apply — a standing "allow forever" is spelled by dropping `[approval]` from the Command Surface, on the user's own machine, so satellite policy has one source of truth. The surfaces read that capability from the contract rather than hardcoding it, so no button is offered that the service refuses.
 
 ## Trust boundary
 
-**The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean. The worker matches every call against the Manifest on its own disk before spawning. Execution takes the pattern's own literals, the Manifest's working directory, and no caller-supplied value beyond a matched argument. It is never a shell, so nothing in an argument is expanded or interpreted. The command — or the MCP server — inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
+**The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean. The worker matches every call against the Command Surface it was started with before spawning. Execution takes the pattern's own literals, the surface's working directory, and no caller-supplied value beyond a matched argument. It is never a shell, so nothing in an argument is expanded or interpreted. The command — or the MCP server — inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any. What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
 
@@ -148,11 +164,11 @@ Satellites are a pre-release surface behind a per-user [experimental feature fla
 
 The Satellites section sits inside the Connections tab — adjacent because "a thing my agent can reach, granted per Agent" is the same shelf to a user, separate because a Satellite is not a Connection: it carries no credential, and the grant is a server-side read rather than a Contribution.
 
-The CLI is at parity plus `dam satellite connect`, whose **log is the interface**: the parsed Command Patterns print at startup and on every reload, every refused command names the pattern it came closest to, and every Job start and exit is one line. The Manifest path is explicit — the file decides what may run on the machine, and discovering it implicitly is the wrong kind of convenience. `--name` is what picks the MCP-server form, so which of the two a command means never depends on argument order. Shutdown drains on the first interrupt and forces on the second; reload is SIGHUP and applies to a Manifest only — an MCP server's tool list is whatever it reports at connect.
+The CLI is at parity plus `dam satellite mcp` and `dam satellite commands`, whose **log is the interface**: the parsed Command Patterns print at startup, every refused command names the pattern it came closest to, and every Job start and exit is one line. A parse error names the line it is on, since the text the user just typed is the whole allowlist. Shutdown drains on the first interrupt and forces on the second. There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
 
 `dam satellite` marks itself **experimental** in its description and help text. The UI gates on the feature flag; the CLI has no flag to read, so it says so where a user meets it. A reload is refused for three reasons, and each keeps the running Manifest rather than silently disabling the machine: it does not parse, it renames the Satellite — identity is the name, so a rename is a different machine and needs a restart — or the machine is already draining, where widening what may run is the wrong answer. A reload whose push to the platform fails keeps the running Manifest too, for the same reason. An accepted reload reaches the Snapshot first and the worker second, so the machine never enforces a Manifest the server has not taken.
 
-A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has. Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the Manifest it currently holds.
+A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has. Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
 Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`. Two machines offering a tool of the same name stay distinct, and no tool needs a `satellite` argument the model could get wrong. A proxied call blocks briefly and returns the outcome if it is quick, and a job reference otherwise, so the common short call costs one tool call rather than two.
 

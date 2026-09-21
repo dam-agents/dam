@@ -86,7 +86,7 @@ export function buildListCommand(deps: ManageDeps): Command {
       return writeStdoutAndExit(`${JSON.stringify(rows)}\n`, EXIT_SUCCESS);
     if (rows.length === 0) {
       process.stderr.write(
-        "No satellites. Start one with `dam satellite connect ./satellite.toml`.\n",
+        "No satellites. Start one with `dam satellite commands` or `dam satellite mcp`.\n",
       );
       return process.exit(EXIT_SUCCESS);
     }

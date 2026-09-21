@@ -13,7 +13,8 @@ import {
   buildListCommand,
   buildRemoveCommand,
 } from "./commands/manage.js";
-import { buildConnectCommand } from "./commands/connect.js";
+import { buildCommandsCommand } from "./commands/commands.js";
+import { buildMcpCommand } from "./commands/mcp.js";
 
 export interface SatelliteModuleOptions {
   tokenProvider: TokenProvider;
@@ -45,7 +46,8 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
         "change without a deprecation. Turn on the Satellites experimental\n" +
         "feature to see them in the web UI as well.\n",
     );
-  parent.addCommand(buildConnectCommand(shared));
+  parent.addCommand(buildMcpCommand(shared));
+  parent.addCommand(buildCommandsCommand(shared));
   parent.addCommand(buildListCommand(shared));
   parent.addCommand(buildJobsCommand(shared));
   parent.addCommand(buildGrantCommand(shared, false));

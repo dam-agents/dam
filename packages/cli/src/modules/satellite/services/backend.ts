@@ -1,10 +1,10 @@
 import type { SatelliteTool } from "api-server-api";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: What the worker runs work against. Both forms of
- * `dam satellite connect` reduce to this: a set of tools and a way to call one.
- * A Manifest becomes a backend offering exactly one tool, so the transport, the
- * platform and the Agent see nothing but an MCP server either way.
+ * UNIT_BOUNDARY_DESCRIPTION: What the worker runs work against. Both ways of
+ * starting a worker reduce to this: a set of tools and a way to call one. A
+ * Command Surface becomes a backend offering exactly one tool, so the transport,
+ * the platform and the Agent see nothing but an MCP server either way.
  */
 export interface SatelliteBackend {
   readonly tools: SatelliteTool[];

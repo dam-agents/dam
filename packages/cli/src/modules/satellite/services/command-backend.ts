@@ -2,7 +2,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { MAX_JOB_OUTPUT_BYTES, type SatelliteTool } from "api-server-api";
 import { localOracle, matchCommand } from "../domain/command-pattern.js";
-import type { LocalCommand, LocalManifest } from "../domain/manifest.js";
+import type {
+  CommandSurface,
+  LocalCommand,
+} from "../domain/command-surface.js";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
@@ -40,8 +43,8 @@ function signalGroup(entry: RunningJob, signal: NodeJS.Signals): void {
   }
 }
 
-export function describeManifest(manifest: LocalManifest): string[] {
-  return manifest.commands.map(
+export function describeSurface(surface: CommandSurface): string[] {
+  return surface.commands.map(
     (command) =>
       `  ${command.run}` +
       (command.about === undefined ? "" : `\n      ${command.about}`) +
@@ -49,15 +52,8 @@ export function describeManifest(manifest: LocalManifest): string[] {
   );
 }
 
-/**
- * The one tool a Manifest-backed Satellite advertises. The permitted shapes ride
- * in the description as the same usage lines the Manifest is written in, rather
- * than as a JSON Schema: a model reads one usage line more reliably than a large
- * anyOf, and the machine re-matches every call anyway, so the description
- * informs but never decides.
- */
-export function runTool(manifest: LocalManifest): SatelliteTool {
-  const lines = manifest.commands.map(
+export function runTool(surface: CommandSurface): SatelliteTool {
+  const lines = surface.commands.map(
     (command) =>
       `  ${command.run}` +
       [
@@ -70,9 +66,9 @@ export function runTool(manifest: LocalManifest): SatelliteTool {
   );
   return {
     name: RUN_TOOL,
-    title: `Run an approved command on ${manifest.pushed.name}`,
+    title: `Run an approved command on ${surface.pushed.name}`,
     description: [
-      `Run one of the commands ${manifest.pushed.name} permits.`,
+      `Run one of the commands ${surface.pushed.name} permits.`,
       "Each line below is a permitted command shape. Literals must match exactly;",
       "(a|b) is a closed choice; [x] is optional; (x)... repeats;",
       "* stands for one filename-like argument or part of one, ** for a path-like one,",
@@ -99,11 +95,11 @@ export function runTool(manifest: LocalManifest): SatelliteTool {
 }
 
 function resolveCommand(
-  manifest: LocalManifest,
+  surface: CommandSurface,
   cmd: string[],
 ): LocalCommand | string {
   const matched = matchCommand(
-    manifest.commands.map((c) => c.parsed),
+    surface.commands.map((c) => c.parsed),
     cmd,
     localOracle,
   );
@@ -111,13 +107,18 @@ function resolveCommand(
     return matched.closest
       ? `${matched.reason}. Closest permitted command: ${matched.closest}`
       : matched.reason;
-  return manifest.commands[matched.index]!;
+  return surface.commands[matched.index]!;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A Manifest served as a one-tool MCP server. Its
- * `run` tool takes the command, and this is where the allowlist is enforced —
- * the platform forwards the call without reading it, so nothing else checks.
+ * UNIT_BOUNDARY_DESCRIPTION: A Command Surface served as a one-tool MCP server.
+ * Its `run` tool takes the command, and this is where the allowlist is enforced
+ * — the platform forwards the call without reading it, so nothing else checks.
+ *
+ * The permitted shapes ride in the tool description as the same usage lines the
+ * user wrote, not as a JSON Schema: a model reads one usage line more reliably
+ * than a large anyOf, and the machine re-matches every call anyway, so the
+ * description informs but never decides.
  *
  * A per-command `max_concurrent` is counted here rather than at admission,
  * because the platform sees one tool and cannot tell two commands apart. The
@@ -126,13 +127,9 @@ function resolveCommand(
  * rules out on purpose.
  */
 export function createCommandBackend(
-  initial: LocalManifest,
+  surface: CommandSurface,
   log: { line: (text: string) => void },
-): SatelliteBackend & {
-  reload(next: LocalManifest): void;
-  refusesReload(next: LocalManifest): string | null;
-} {
-  let manifest = initial;
+): SatelliteBackend {
   const running = new Map<number, RunningJob>();
 
   function call(input: {
@@ -160,7 +157,7 @@ export function createCommandBackend(
       });
     const argv = cmd as string[];
 
-    const command = resolveCommand(manifest, argv);
+    const command = resolveCommand(surface, argv);
     if (typeof command === "string") {
       log.line(`REFUSED #${sequence}: ${command}`);
       return Promise.resolve({
@@ -171,10 +168,6 @@ export function createCommandBackend(
       });
     }
 
-    // Per-command concurrency is counted here rather than on the platform: the
-    // platform sees one tool and cannot tell two commands apart. Ceiling: a
-    // refusal costs the Agent a turn where admission would have cost nothing.
-    // Upgrade path is a tool per command, which the single-tool shape rules out.
     if (command.maxConcurrent !== undefined) {
       const active = [...running.values()].filter(
         (entry) => entry.command === command,
@@ -205,8 +198,8 @@ export function createCommandBackend(
     command: LocalCommand,
   ): Promise<CallOutcome> {
     const [program, ...args] = argv;
-    const cwd = command.cwd ?? manifest.cwd;
-    const timeoutMs = command.timeoutMs ?? manifest.timeoutMs;
+    const cwd = command.cwd ?? surface.cwd;
+    const timeoutMs = command.timeoutMs ?? surface.timeoutMs;
     const startedAt = Date.now();
     log.line(`START #${sequence}: ${argv.join(" ")}`);
 
@@ -301,7 +294,7 @@ export function createCommandBackend(
 
   return {
     get tools(): SatelliteTool[] {
-      return [runTool(manifest)];
+      return [runTool(surface)];
     },
     call,
     cancel(sequence: number): void {
@@ -319,13 +312,5 @@ export function createCommandBackend(
       }
     },
     close: () => Promise.resolve(),
-    refusesReload(next: LocalManifest): string | null {
-      return next.pushed.name === manifest.pushed.name
-        ? null
-        : `the name changed from "${manifest.pushed.name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`;
-    },
-    reload(next: LocalManifest): void {
-      manifest = next;
-    },
   };
 }

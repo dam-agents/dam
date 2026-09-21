@@ -129,10 +129,6 @@ export function createWorker(deps: {
 
     announce,
 
-    async push(tools: SatelliteTool[]): Promise<void> {
-      await transport.connect(manifest(tools), deps.host);
-    },
-
     async start(): Promise<void> {
       await transport.connect(manifest(backend.tools), deps.host);
       announce(`connected as "${name}"`);

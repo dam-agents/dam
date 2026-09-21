@@ -239,15 +239,15 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 
 ## Satellites (bounded context) — proposed, in design
 
-A Satellite is an MCP server running on the user's own machine, reached by a queue the machine polls over outbound HTTPS. It lets an Agent call tools on a host it has no other access to — either a Manifest of permitted command shapes, which becomes a one-tool server, or any stdio MCP server. Design in [`docs/plans/satellites.md`](plans/satellites.md).
+A Satellite is an MCP server running on the user's own machine, reached by a queue the machine polls over outbound HTTPS. It lets an Agent call tools on a host it has no other access to — either a Command Surface of permitted command shapes, which becomes a one-tool server, or any stdio MCP server. Design in [`docs/plans/satellites.md`](plans/satellites.md).
 
 | Term | Definition |
 |------|-----------|
 | Satellite | A named, owner-scoped command surface on a machine outside the cluster, identified by `(owner, name)`. Durable: the record outlives any connection, and its commands stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one Satellite each, so every call stays attributable to a real person's key |
-| Worker | The `dam satellite connect` process that claims Work Items and calls the local tool. Holds no inbound connection: it polls. Deliberately never called an Agent, which it is not |
-| Manifest | The local file declaring a Satellite's name, its execution defaults, and its Command Patterns. Authored by the user, pushed on connect, snapshotted server-side |
+| Worker | The `dam satellite mcp` or `dam satellite commands` process that claims Work Items and calls the local tool. Holds no inbound connection: it polls. Deliberately never called an Agent, which it is not |
+| Command Surface | The text declaring a Satellite's Command Patterns and their settings, passed to `dam satellite commands` as one argument or on stdin. There is no file, so nothing can drift between what the user wrote and what the machine enforces |
 | Command Pattern | One permitted command shape, written as a usage line: literals, closed alternations, optional and repeating groups, a star for one filename-like argument, a double star for a path-like one, and an anchored regex covering a whole argument. Deliberately no named slots and no sub-part regexes — the names were read by nothing, and a regex that covers the whole argument is what constrains a flag's value |
-| Snapshot | The server's copy of a Satellite's compiled Manifest, replaced on each connect. The source for the tool descriptions an Agent reads, so commands stay visible while the Satellite is offline. A claim by the Satellite, never a platform guarantee — identity is the name, so a reconnect may back it with different scripts |
+| Snapshot | The server's copy of a Satellite's tool list, replaced on each connect. The source for the tools an Agent sees, so they stay visible while the Satellite is offline. A claim by the Satellite, never a platform guarantee — identity is the name, so a reconnect may back it with different tools |
 | Job | One execution of a Command Pattern match, identified by `(satellite, sequence)` and rendered `gpu-box#7`. Always asynchronous: starting returns the id and the outcome is read back separately. The sequence is minted server-side, since the Satellite has not seen the job when the id must be returned |
 | Job Status | `queued`, `running`, `done` (exit code and captured output), `interrupted` (the worker stopped renewing its lease, so the outcome is unknowable), or `cancelled`. Never retried — the commands are not idempotent and nothing can judge one safe to repeat |
 | Lease | What a worker renews by heartbeat while running a Job. Expiry is how interruption is detected: a process that dies cannot file a report about itself |

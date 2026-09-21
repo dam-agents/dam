@@ -8,6 +8,10 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
  * names on the command line. The worker owns the child process, so the platform
  * still reaches nothing but the queue; what the tools mean is entirely the
  * server's business, and the platform never reads inside their schemas.
+ *
+ * The server inherits the worker's own environment, exactly as a Command Surface
+ * command does, so what the user exported when they started the worker is what
+ * it sees.
  */
 
 interface McpContent {
@@ -47,9 +51,6 @@ export async function createMcpBackend(
     command: spec.command,
     args: spec.args,
     cwd: spec.cwd,
-    // The server inherits the worker's own environment, exactly as a Manifest
-    // command does, so what the user exported when they started the worker is
-    // what it sees.
     env: process.env as Record<string, string>,
     stderr: "inherit",
   });

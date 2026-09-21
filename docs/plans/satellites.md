@@ -10,11 +10,13 @@ A **Satellite** is a command surface running on the user's own machine, reached 
 > three ways, and [`docs/architecture/satellites.md`](../architecture/satellites.md)
 > is the current description:
 >
-> - `dam satellite serve <manifest>` became **`dam satellite connect`**, which
->   takes either a Manifest or a stdio MCP server to run.
+> - `dam satellite serve <manifest>` became two verbs — **`dam satellite mcp`**,
+>   which runs a stdio MCP server, and **`dam satellite commands`**, which takes
+>   the permitted command shapes as text on the command line or on stdin. The
+>   TOML manifest file is gone, and with it SIGHUP reload.
 > - A Satellite is an **MCP server** to the transport and to the platform. A
->   Manifest becomes a one-tool server whose `run` tool takes the command, so
->   there is one shape rather than two.
+>   Command Surface becomes a one-tool server whose `run` tool takes the command,
+>   so there is one shape rather than two.
 > - **Matching moved entirely to the machine.** The api-server no longer parses
 >   a command or evaluates a pattern's regex, and the grammar moved to the CLI;
 >   a Command Pattern that needs a human is reported back as `needs-approval`
