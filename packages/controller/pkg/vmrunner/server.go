@@ -35,11 +35,9 @@ const (
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
 	maxImageConfig   = 1 << 20
-	// UNIT_BOUNDARY_DESCRIPTION: how much of the image directory the cached images may hold when nothing configures a budget. A share of the filesystem is the right default only where that filesystem is the runner's own claim and holds nothing else; a node directory shared with the rest of the host is not that, which is why the per-node cache is given a byte count instead.
-	cacheBudgetPercent = 80
-	rootfsDir          = "rootfs"
-	launchFile         = "launch.json"
-	shareDir           = "share"
+	rootfsDir        = "rootfs"
+	launchFile       = "launch.json"
+	shareDir         = "share"
 
 	// UNIT_BOUNDARY_DESCRIPTION: where a runner records which cached images its own machines hold, so the runners sharing a node directory can see each other's claims. A runner reads only its own machines — they are its child processes — so on a shared directory its in-use set is a third of the answer, and evicting on it alone takes a running guest's root filesystem away from a machine belonging to somebody else.
 	holdersDir = ".holders"
@@ -81,9 +79,9 @@ type Server struct {
 	AllowFrom  []*net.IPNet
 	Crane      string
 	Init       string
-	// UNIT_BOUNDARY_DESCRIPTION: this runner's name in the holders directory. Empty keeps the cache private to this runner: nothing is published and nothing else's claims are read, which is what the per-owner fallback wants.
+	// UNIT_BOUNDARY_DESCRIPTION: this runner's name in the holders directory, unique among the runners that may share an image directory with it.
 	RunnerID string
-	// UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy. Zero falls back to a share of the filesystem.
+	// UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy, wherever they live. There is no filesystem-share fallback: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so a share of either would let the images eat something that is not theirs.
 	ImageBudget int64
 
 	mu         sync.Mutex
@@ -496,7 +494,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := s.claim(tmp, cached, forMachine); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(cached), cached, s.cacheBudget(filepath.Dir(cached)))
+	s.evictImages(filepath.Dir(cached), cached, s.ImageBudget)
 	return nil
 }
 
@@ -647,17 +645,6 @@ func dirSize(path string) int64 {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
-func (s *Server) cacheBudget(dir string) int64 {
-	if s.ImageBudget > 0 {
-		return s.ImageBudget
-	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return 0
-	}
-	return int64(stat.Blocks) * int64(stat.Bsize) / 100 * cacheBudgetPercent
-}
-
 func (s *Server) cachePath(image string) string {
 	return filepath.Join(s.ImageDir, strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
 }

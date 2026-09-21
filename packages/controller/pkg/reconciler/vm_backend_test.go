@@ -180,7 +180,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-		ServiceAccountName: "platform-vm-runner",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -228,7 +228,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-		ServiceAccountName: "platform-vm-runner",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	var requeued []time.Duration
@@ -328,7 +328,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi"}}
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
@@ -483,31 +483,38 @@ func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	assert.False(t, node[vmRunnerImagesPath].ReadOnly, "the runner fetches into this one, unlike the staged archives")
 }
 
-// TEST_SCENARIO: a runner only publishes its claims on the cached images where another runner could read them, which is the node cache. On its own claim there is nobody to tell. The budget goes the same way: a share of the filesystem is right for a claim sized for exactly this and wrong for a node's disk, which the agent images would otherwise crowd out.
-func TestTheRunnerAnnouncesItselfOnlyOnTheSharedCache(t *testing.T) {
-	args := func(configure func(*config.VMRunnerSpec)) string {
+// TEST_SCENARIO: every runner announces itself and every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
+func TestEveryCacheIsBoundedAndEveryRunnerNamed(t *testing.T) {
+	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		if err := r.applyRunnerDeployment(context.Background(), testOwner); err != nil {
+			return "", err
+		}
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)
-		return strings.Join(dep.Spec.Template.Spec.Containers[0].Args, " ")
+		return strings.Join(dep.Spec.Template.Spec.Containers[0].Args, " "), nil
 	}
 
-	own := args(func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
-	assert.Contains(t, own, "--runner-id= ", "a private cache has no other runner to announce to")
-	assert.Contains(t, own, "--image-budget-bytes=0", "a budget is meaningless without the shared directory it bounds")
+	own, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
+	require.NoError(t, err)
+	assert.Contains(t, own, "--runner-id=platform-vm-runner-")
+	assert.Contains(t, own, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
 
-	shared := args(func(spec *config.VMRunnerSpec) {
+	shared, err := args(t, func(spec *config.VMRunnerSpec) {
 		spec.ImageCacheHostPath = "/var/lib/platform-images"
 		spec.ImageCacheBudget = "20Gi"
 	})
-	assert.Contains(t, shared, "--runner-id=platform-vm-runner-")
-	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
+	require.NoError(t, err)
+	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)),
+		"the same number bounds the node directory, which is shared with the whole host")
 
-	unbounded := args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" })
-	assert.Contains(t, unbounded, "--image-budget-bytes=0", "no budget falls back rather than inventing a number for somebody's node")
+	for _, bad := range []string{"", "plenty", "0"} {
+		_, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = bad })
+		require.Error(t, err, "budget %q", bad)
+		assert.Contains(t, err.Error(), "image cache budget")
+	}
 }
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.

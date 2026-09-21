@@ -286,11 +286,11 @@ virtualization:
   # root filesystem out from under another's running guest.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
-  # written first so a tag per deploy does not fill the node. Unlike a claim
-  # sized for this and nothing else, a node's filesystem is shared with
-  # everything else it runs, so this is a byte count rather than a share of it.
-  # Leave it empty and the runner falls back to a share, which on a node is
-  # almost certainly too much.
+  # written first so a tag per deploy does not fill the disk. It is a byte
+  # count and it is required, wherever the cache lives: a node's filesystem is
+  # shared with everything else the node runs, and `runner.storage` is shared
+  # with the machine disks, so a share of either would let the images eat
+  # space that is not theirs. Keep it well under whichever it sits on.
   imageCache:
     hostPath: ""
     budget: 50Gi

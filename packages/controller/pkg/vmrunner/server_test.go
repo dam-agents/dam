@@ -1092,26 +1092,19 @@ func TestAnAbandonedRunnersClaimsStopPinningImages(t *testing.T) {
 	assert.NoFileExists(t, marker, "and the claim itself goes, rather than being re-read every eviction")
 }
 
-// TEST_SCENARIO: the per-owner fallback puts the cache on the runner's own claim, where there is nobody to tell and nobody to read. A holders file written there would be a file no one ever opens, so a runner with no identity publishes nothing.
-func TestAPrivateCacheAnnouncesNothing(t *testing.T) {
-	images := t.TempDir()
-	private := cacheRunner(t, "", images)
-	holdsImage(t, private, "agent-a", "quay.io/x/mine:1")
-
-	private.publishHolders()
-
-	assert.NoDirExists(t, filepath.Join(images, holdersDir))
-}
-
-// TEST_SCENARIO: the budget bounds a directory the install sized, not the filesystem under it — on a node that filesystem is the host's, and a share of it would let the agent images crowd out everything else the node runs.
-func TestAConfiguredBudgetIsWhatBoundsTheNodeCache(t *testing.T) {
+// TEST_SCENARIO: one number bounds the cache wherever it lives. There is no share-of-the-filesystem fallback to be had: a node's filesystem is shared with everything else the node runs, and the runner's own claim is shared with the machine disks, so either share would let the images evict their way into space that is not theirs.
+func TestTheCacheIsBoundedByItsBudgetAndNothingElse(t *testing.T) {
 	images := t.TempDir()
 	s := cacheRunner(t, "runner-a", images)
+	s.ImageBudget = 6000
 
-	assert.Equal(t, int64(0), s.ImageBudget)
-	fromFilesystem := s.cacheBudget(images)
+	keep := holdsImage(t, s, "agent-a", "quay.io/x/mine:1")
+	stale := holdsImage(t, cacheRunner(t, "runner-b", images), "agent-b", "quay.io/x/cold:1")
+	older := time.Now().Add(-time.Hour)
+	require.NoError(t, os.Chtimes(stale, older, older))
 
-	s.ImageBudget = 7 << 30
-	assert.Equal(t, int64(7<<30), s.cacheBudget(images))
-	assert.NotEqual(t, int64(7<<30), fromFilesystem, "the fallback reads the filesystem, so the two are not the same number by accident")
+	s.evictImages(images, keep, s.ImageBudget)
+
+	assert.DirExists(t, keep, "this runner's own machine is running from it")
+	assert.NoDirExists(t, stale, "nothing claims this one and the budget is spent")
 }

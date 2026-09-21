@@ -244,26 +244,16 @@ func selfSignedCert(names ...string) (string, string, error) {
 	return string(certPEM), string(keyPEM), nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner publishes its claims on the cached images only where the directory is shared with other runners, which is the node cache and nothing else. On its own claim there is nobody to tell, and an identity would only make a holders file no one reads. The Deployment name is the identity because it is already unique per owner and stable across the pod restarts that recreate the same machines.
-func runnerCacheID(spec config.VMRunnerSpec, name string) string {
-	if spec.ImageCacheHostPath == "" {
-		return ""
-	}
-	return name
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a share of the filesystem is the right budget for the runner's own claim, which holds nothing else and is sized for exactly this. A node directory is not: its filesystem is the host's, so the same rule would let the agent images crowd out the kubelet. The node cache therefore carries a byte count and only the node cache does — an unparseable one is a chart the operator must fix rather than a cache that quietly eats the node, so it is refused at render, not here.
-func imageBudgetBytes(spec config.VMRunnerSpec) int64 {
-	if spec.ImageCacheHostPath == "" || spec.ImageCacheBudget == "" {
-		return 0
-	}
+// UNIT_BOUNDARY_DESCRIPTION: what the cached images may occupy. Every cache is bounded by this one number, wherever it lives: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so neither can be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node or the disks it shares with run out.
+func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 	size, err := resource.ParseQuantity(spec.ImageCacheBudget)
 	if err != nil {
-		slog.Warn("vm runner: image cache budget is not a quantity, falling back to a share of the node filesystem",
-			"budget", spec.ImageCacheBudget, "error", err)
-		return 0
+		return 0, fmt.Errorf("vm runner image cache budget %q is not a quantity: %w", spec.ImageCacheBudget, err)
 	}
-	return size.Value()
+	if size.Value() <= 0 {
+		return 0, fmt.Errorf("vm runner image cache budget %q leaves the cached images no room at all", spec.ImageCacheBudget)
+	}
+	return size.Value(), nil
 }
 
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
@@ -415,6 +405,10 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
+	imageBudget, err := imageBudgetBytes(spec)
+	if err != nil {
+		return err
+	}
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
 	podLabels := map[string]string{"istio.io/dataplane-mode": "none"}
 	for k, v := range labels {
@@ -484,8 +478,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Args: []string{
 							"--state-dir=" + vmRunnerMachinesPath,
 							"--image-dir=" + vmRunnerImagesPath,
-							"--runner-id=" + runnerCacheID(spec, name),
-							fmt.Sprintf("--image-budget-bytes=%d", imageBudgetBytes(spec)),
+							"--runner-id=" + name,
+							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
