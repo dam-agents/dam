@@ -21,12 +21,12 @@ pub const SYSTEM_DIR: &str = "system";
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gosource;
 
     // TEST_SCENARIO: the guest contract is written twice, once here and once in Go, because platform-init runs inside the machine and this runner runs outside it. Two copies of a contract drift, and this one drifts silently: a runner writing the share at one path and an entrypoint reading it at another produces a machine that boots, finds no init, and comes up with no agent in it. So the Go file is read as the source of truth and every constant is matched against it — a rename on either side fails here rather than in a guest nobody is watching.
     #[test]
     fn the_go_half_of_the_guest_contract_says_the_same_thing() {
-        let go = std::fs::read_to_string("../controller/pkg/vmrunner/guest.go")
-            .expect("the Go half of the guest contract is next door");
+        let go = gosource::read("guest.go");
 
         for (name, ours) in [
             ("SharePath", SHARE_PATH),
@@ -39,9 +39,8 @@ mod tests {
             ("AgentDir", AGENT_DIR),
             ("SystemDir", SYSTEM_DIR),
         ] {
-            let theirs = go_const(&go, name);
             assert_eq!(
-                theirs.as_deref(),
+                go_const(&go, name).as_deref(),
                 Some(ours),
                 "{name} disagrees between guest.go and guest.rs"
             );
@@ -64,19 +63,16 @@ mod tests {
         assert_eq!(go_const("InitPath = Unknown + \"/init\"", "InitPath"), None);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: reads one constant from a Go const block, in the two shapes guest.go uses: a quoted literal, and SharePath joined to a quoted suffix. Deliberately not a Go parser — anything it does not recognise is None, which fails the comparison above, because a reader that guessed at an unfamiliar shape would agree with a file it had not understood.
+    // UNIT_BOUNDARY_DESCRIPTION: guest.go states two of these paths as SharePath joined to a quoted suffix rather than as a literal, which the shared reader does not resolve because no other Go file this crate mirrors does it. Resolving it here keeps that shape local to the one contract that uses it.
     fn go_const(source: &str, name: &str) -> Option<String> {
-        let value = source.lines().find_map(|line| {
+        if let Some(value) = gosource::const_value(source, name) {
+            return Some(value);
+        }
+        let raw = source.lines().find_map(|line| {
             let (left, right) = line.split_once('=')?;
             (left.trim() == name).then(|| right.trim().to_string())
         })?;
-        if let Some(suffix) = value.strip_prefix("SharePath + ") {
-            return Some(format!("{SHARE_PATH}{}", unquote(suffix)?));
-        }
-        unquote(&value).map(str::to_string)
-    }
-
-    fn unquote(value: &str) -> Option<&str> {
-        value.strip_prefix('"')?.strip_suffix('"')
+        let suffix = raw.strip_prefix("SharePath + ")?;
+        Some(format!("{SHARE_PATH}{}", gosource::unquote(suffix)?))
     }
 }

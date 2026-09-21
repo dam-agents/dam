@@ -73,3 +73,150 @@ pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_EGRESS_CHANGED: &str = "MachineEgressChanged";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gosource;
+
+    // UNIT_BOUNDARY_DESCRIPTION: the JSON names this crate actually writes, taken from serde's own output rather than from the attributes, so a rename, a dropped field or a skip condition that does not fire is caught as the wire sees it and not as the source reads.
+    fn wire_names(value: &impl Serialize) -> Vec<String> {
+        match serde_json::to_value(value).expect("the wire types serialize") {
+            serde_json::Value::Object(map) => map.keys().cloned().collect(),
+            other => panic!("a wire type must serialize to an object, got {other}"),
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: asserts one Rust type writes exactly what its Go counterpart declares. `filled` holds a non-zero value in every field and must produce every JSON name Go declares; `Default` must produce exactly those Go does not mark omitempty, which is what makes a mismatched skip condition visible instead of merely untested.
+    fn matches_go_struct<T: Serialize + Default>(go: &str, name: &str, filled: &T) {
+        let fields = gosource::struct_fields(go, name);
+        assert!(
+            !fields.is_empty(),
+            "no json-tagged fields found for Go struct {name} — the reader no longer understands api.go"
+        );
+
+        let mut declared: Vec<&str> = fields.iter().map(|f| f.json.as_str()).collect();
+        let mut ours = wire_names(filled);
+        declared.sort_unstable();
+        ours.sort_unstable();
+        assert_eq!(
+            declared, ours,
+            "{name} writes different JSON names than api.go declares"
+        );
+
+        let mut always: Vec<&str> = fields
+            .iter()
+            .filter(|f| !f.omitempty)
+            .map(|f| f.json.as_str())
+            .collect();
+        let mut ours_when_zero = wire_names(&T::default());
+        always.sort_unstable();
+        ours_when_zero.sort_unstable();
+        assert_eq!(
+            always, ours_when_zero,
+            "{name} omits a different set of fields than api.go's omitempty tags when every value is zero"
+        );
+    }
+
+    // TEST_SCENARIO: these types are one half of a contract whose other half is Go, and the two processes meet as JSON over the wire and never as types — so nothing but a test can tell them apart. A renamed field, a dropped one, or an omitempty that only one side applies does not fail a build: it fails at runtime, between a controller and a runner, as a value that silently reads as its zero. api.go is read as the source of truth and every field is compared as serde actually writes it.
+    #[test]
+    fn the_go_half_of_the_wire_contract_says_the_same_thing() {
+        let go = gosource::read("api.go");
+
+        matches_go_struct(
+            &go,
+            "ImageLaunch",
+            &ImageLaunch {
+                entrypoint: vec!["/entry".into()],
+                cmd: vec!["serve".into()],
+                env: vec!["A=image".into()],
+                working_dir: "/app".into(),
+            },
+        );
+        matches_go_struct(
+            &go,
+            "MachineSpec",
+            &MachineSpec {
+                image: "quay.io/x/vm:1".into(),
+                cpus: 2,
+                memory_mib: 2048,
+                storage_gib: 20,
+                env: [("A".to_string(), "b".to_string())].into_iter().collect(),
+                ca_cert: "-----BEGIN CERTIFICATE-----".into(),
+                allow_cidrs: vec!["10.0.0.1/32".into()],
+                revision: "r1".into(),
+                running: true,
+            },
+        );
+        matches_go_struct(
+            &go,
+            "MachineStatus",
+            &MachineStatus {
+                state: STATE_RUNNING.into(),
+                reason: REASON_NOT_READY.into(),
+                restarts: 1,
+                port: 31000,
+                ready: true,
+                cpus: 2,
+                memory_mib: 2048,
+                message: "up".into(),
+                starting_ms: 1,
+            },
+        );
+    }
+
+    // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
+    #[test]
+    fn the_states_and_reasons_are_the_ones_the_controller_matches_on() {
+        let go = gosource::read("api.go");
+
+        for (name, ours) in [
+            ("StateAbsent", STATE_ABSENT),
+            ("StateUnknown", STATE_UNKNOWN),
+            ("StateCreating", STATE_CREATING),
+            ("StateStarting", STATE_STARTING),
+            ("StateRestarting", STATE_RESTARTING),
+            ("StateRunning", STATE_RUNNING),
+            ("StateStopping", STATE_STOPPING),
+            ("StateStopped", STATE_STOPPED),
+            ("ReasonNotReady", REASON_NOT_READY),
+            ("ReasonOutOfCapacity", REASON_OUT_OF_CAPACITY),
+            ("ReasonImageUnavailable", REASON_IMAGE_UNAVAILABLE),
+            ("ReasonBootFailed", REASON_BOOT_FAILED),
+            ("ReasonEgressChanged", REASON_EGRESS_CHANGED),
+        ] {
+            assert_eq!(
+                gosource::const_value(&go, name).as_deref(),
+                Some(ours),
+                "{name} disagrees between api.go and api.rs"
+            );
+        }
+    }
+
+    // TEST_SCENARIO: the reader is worth having only if a struct it cannot find fails the comparison rather than passing it vacuously — an empty field list must be caught by the assertion above, not read as "nothing disagrees".
+    #[test]
+    fn a_struct_the_reader_cannot_find_yields_no_fields() {
+        assert!(gosource::struct_fields("type Other struct {\n}", "MachineSpec").is_empty());
+        assert!(gosource::struct_fields("", "MachineSpec").is_empty());
+    }
+
+    // TEST_SCENARIO: omitempty is the half of a tag a reader is most likely to get quietly wrong, because a tag it mis-splits still yields a plausible name. Both shapes api.go uses are pinned here.
+    #[test]
+    fn the_reader_tells_an_omitempty_tag_from_a_plain_one() {
+        let go = "type S struct {\n\tA string `json:\"a\"`\n\tB string `json:\"b,omitempty\"`\n}";
+        let fields = gosource::struct_fields(go, "S");
+        assert_eq!(
+            fields,
+            vec![
+                gosource::GoField {
+                    json: "a".into(),
+                    omitempty: false
+                },
+                gosource::GoField {
+                    json: "b".into(),
+                    omitempty: true
+                },
+            ]
+        );
+    }
+}

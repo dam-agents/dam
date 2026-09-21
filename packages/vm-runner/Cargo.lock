@@ -3041,6 +3041,7 @@ dependencies = [
  "axum",
  "axum-server",
  "clap",
+ "ipnet",
  "serde",
  "serde_json",
  "smolvm",
