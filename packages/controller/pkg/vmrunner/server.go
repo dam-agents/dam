@@ -83,6 +83,8 @@ type Server struct {
 	RunnerID string
 	// UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy, wherever they live. There is no filesystem-share fallback: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so a share of either would let the images eat something that is not theirs.
 	ImageBudget int64
+	// UNIT_BOUNDARY_DESCRIPTION: cache entries this process keeps whatever the budget says, named by image reference. A runner's own claims are its machines, read from their specs on disk; the preloader has no machines and holds this list instead, which is what lets an image nobody is running yet survive the eviction that would otherwise take it first.
+	Pinned []string
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -651,11 +653,11 @@ func (s *Server) cachePath(image string) string {
 
 // UNIT_BOUNDARY_DESCRIPTION: an unpacked image is not a spare a machine consumes at create, it is the read-only lower layer every machine of that image keeps mounted for as long as it runs — so deleting one to make room takes the running guests' filesystem out from under them. Which images are spoken for is read from the machines themselves rather than tracked alongside them, because the runner is restarted and its memory is not: a spec on disk outlives the process that wrote it, and a machine whose image is missing from this set is a machine about to lose its rootfs.
 func (s *Server) imagesInUse(except string) map[string]bool {
+	inUse := map[string]bool{}
 	ids, err := s.machineIDs()
 	if err != nil {
-		return nil
+		return inUse
 	}
-	inUse := map[string]bool{}
 	for _, id := range ids {
 		if id == except {
 			continue
@@ -681,6 +683,9 @@ func (s *Server) publishHolders() {
 		return
 	}
 	held := s.imagesInUse("")
+	for path := range s.pinnedImages() {
+		held[path] = true
+	}
 	names := make([]string, 0, len(held))
 	for path := range held {
 		names = append(names, filepath.Base(path))
@@ -739,6 +744,9 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		return
 	}
 	inUse := s.imagesInUse("")
+	for path := range s.pinnedImages() {
+		inUse[path] = true
+	}
 	for path := range s.heldElsewhere(dir) {
 		inUse[path], inUse[path+".tar"] = true, true
 	}

@@ -16,6 +16,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /vm-runner ./cmd/vm-runner && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -o /vm-image-cache ./cmd/vm-image-cache && \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /platform-init ./cmd/platform-init
 
 
@@ -53,6 +55,14 @@ RUN set -eu; \
     chmod 0755 /opt/smolvm/agent-rootfs/usr/local/bin/crane /usr/local/bin/crane
 
 COPY --from=builder /vm-runner /usr/local/bin/vm-runner
+
+# The per-node image cache service runs from this same image, as the DaemonSet's
+# own command rather than this ENTRYPOINT: it needs the crane and tar this image
+# already carries, and nothing else here. One image keeps the two halves of the
+# cache — the runner that fills it on a miss and the service that fills it
+# before anyone misses — built and pinned together, which is what makes them
+# agree on what a cache entry is.
+COPY --from=builder /vm-image-cache /usr/local/bin/vm-image-cache
 
 # platform-init is the entrypoint of every machine, not of this pod: the runner
 # copies it into each machine's share, where the guest runs it before the agent
