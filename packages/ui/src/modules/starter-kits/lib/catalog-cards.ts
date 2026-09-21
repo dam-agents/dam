@@ -24,6 +24,7 @@ export function kitBadges(
     | "skills"
     | "skillsInKit"
     | "knowledgeBase"
+    | "backend"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
@@ -59,6 +60,9 @@ export function kitBadges(
   }
 
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
+
+  if (kit.backend === "vm")
+    badges.push({ key: "backend", label: "New sandbox runtime" });
 
   const skills = kit.skillsInKit.length + kit.skills.length;
   if (skills > 0) {

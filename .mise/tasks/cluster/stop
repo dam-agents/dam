@@ -2,7 +2,14 @@
 #MISE description="Stop the k3s VM (preserves data)"
 set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo systemctl stop k3s
+  # A sandbox may have no service manager at all (the agent image's init is the
+  # harness, not systemd), in which case k3s was started as a plain background
+  # process and is stopped as one.
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl stop k3s
+  else
+    sudo pkill -f 'k3s server' || true
+  fi
 else
   limactl stop platform-k3s
 fi

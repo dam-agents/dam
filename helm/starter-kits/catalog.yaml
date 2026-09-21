@@ -12,3 +12,9 @@ kits:
   - path: kits/adaevolve
   - path: kits/evox
   - path: kits/k-search
+  # A definition kit: its kit.yaml lives in the repository holding the agent it
+  # installs, so the kit and its code are one commit. Listed here rather than in
+  # a moving catalog because it is off by default and the switch that turns it
+  # on is a chart value.
+  - id: software-developer
+    url: https://github.com/dam-agents/software-developer

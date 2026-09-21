@@ -71,6 +71,15 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   # provision scripts are idempotent, so re-running over a partial state heals
   # it.
   if [ ! -f "$KUBECONFIG" ]; then
+    # The lima provision script installs k3s through get.k3s.io, which refuses
+    # to run without systemd or openrc ("Can not find systemd or openrc to use
+    # as a process supervisor"). A sandbox whose init is the harness has
+    # neither, and there k3s is a plain process the caller starts.
+    if ! command -v systemctl >/dev/null 2>&1 && [ ! -x /sbin/openrc-run ]; then
+      echo "FATAL: no k3s is serving here and this sandbox has no process supervisor to install one under." >&2
+      echo "Start it yourself first — 'k3s server &' — then run this again." >&2
+      exit 1
+    fi
     echo "Provisioning k3s on host (sandbox mode)..."
     # Lima provision scripts may shell out to apt-get; stub it so the loop
     # below doesn't fail on a non-Debian host. Idempotent.
@@ -144,8 +153,16 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     echo "Configuring k3s container log rotation (issue #244)..."
     sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
-    sudo systemctl restart k3s
-    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+    # A sandbox whose init is the harness has no service manager, so there is
+    # nothing to restart k3s with. The drop-in is read at its next start, and
+    # log rotation is a safeguard rather than something the install needs, so
+    # say so and carry on instead of stopping a running cluster.
+    if command -v systemctl >/dev/null 2>&1; then
+      sudo systemctl restart k3s
+      kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+    else
+      echo "No service manager here — container log rotation applies the next time k3s starts."
+    fi
   fi
 else
   if ! limactl shell "$LIMA_INSTANCE" sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then

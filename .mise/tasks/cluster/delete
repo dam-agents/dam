@@ -26,7 +26,15 @@ if [ "$FORCE" != "true" ]; then
 fi
 
 if [ -n "${IS_SANDBOX:-}" ]; then
-  /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+  # k3s-uninstall.sh is written by the get.k3s.io installer, which needs a
+  # service manager and so never ran in a sandbox that has none. Without this
+  # fallback the delete reports success having removed nothing.
+  if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
+    /usr/local/bin/k3s-uninstall.sh
+  else
+    sudo pkill -f 'k3s server' || true
+    sudo rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
+  fi
   echo "k3s uninstalled from host."
 else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true

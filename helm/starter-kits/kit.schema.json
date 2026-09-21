@@ -71,6 +71,10 @@
         "ref"
       ]
     },
+    "backend": {
+      "type": "string",
+      "const": "vm"
+    },
     "resources": {
       "type": "object",
       "properties": {

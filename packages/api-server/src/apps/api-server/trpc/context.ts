@@ -263,6 +263,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+      virtualizationEnabled: config.virtualizationEnabled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

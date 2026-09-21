@@ -240,6 +240,11 @@ function KitDetail({ kit }: { kit: StarterKitView }) {
                   {skillCount} {skillCount === 1 ? "skill" : "skills"}
                 </Badge>
               )}
+              {kit.backend === "vm" && (
+                <Badge variant="muted" size="sm">
+                  New sandbox runtime
+                </Badge>
+              )}
             </div>
           </DialogHeader>
 

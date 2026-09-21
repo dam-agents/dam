@@ -89,6 +89,7 @@ function makeHarness(
   loaded: LoadedKit | null,
   agent: Agent | null = null,
   agentGrants: { connectionId: string; grantedAt: string }[] = [],
+  virtualizationEnabled = true,
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -221,6 +222,7 @@ function makeHarness(
         calls.enqueued.push(agentId);
       },
     },
+    virtualizationEnabled,
   });
   return { service, calls };
 }
@@ -1042,5 +1044,43 @@ describe("starter kits: domain helpers", () => {
     expect(parseKitRef("code-reviewer@abc")).toBeNull();
     expect(parseKitRef("broken")).toBeNull();
     expect(parseKitRef("platform/@v1")).toBeNull();
+  });
+});
+
+describe("starter kits: backend", () => {
+  const VM_KIT: LoadedKit = {
+    ...LOADED,
+    kit: kit({ backend: "vm" }),
+  };
+
+  // TEST_SCENARIO: whether the install can run a microVM is a capability, not a preference. A kit that needs one is unusable on an install with virtualization off — the create refuses it — so the catalog must not offer it at all, the same way a disabled built-in kit never reaches the UI. Listing it would end in a user choosing a kit that cannot be created.
+  it("hides a vm kit from the catalog when the install cannot run one", async () => {
+    const off = makeHarness(VM_KIT, null, [], false);
+    expect(await off.service.list()).toEqual([]);
+    expect(await off.service.get("platform", "code-reviewer")).toBeNull();
+
+    const on = makeHarness(VM_KIT, null, [], true);
+    expect(await on.service.list()).toHaveLength(1);
+    expect(await on.service.get("platform", "code-reviewer")).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: a kit that declares no backend says nothing about how it runs, so it stays on offer wherever it would otherwise be — an install without virtualization is the ordinary case, and hiding every kit there would empty the catalog.
+  it("leaves a kit that declares no backend alone", async () => {
+    const { service } = makeHarness(LOADED, null, [], false);
+    expect(await service.list()).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the kit's declaration is what puts the agent on the vm Backend — not the user's own vm-sandboxes flag, which is disclosure rather than authorization. Apply must therefore pass it explicitly on the create.
+  it("creates the agent as a microVM when the kit asks for one", async () => {
+    const { service, calls } = makeHarness(VM_KIT);
+    await service.apply(APPLY);
+    expect(calls.created[0]).toMatchObject({ vm: true });
+  });
+
+  // TEST_SCENARIO: `vm` is absent rather than false for a kit that declares no backend, so the create falls through to whatever the install and the user's flag would have chosen. Sending false would override that choice from a kit that never expressed one.
+  it("says nothing about the backend when the kit does not", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply(APPLY);
+    expect(calls.created[0]).not.toHaveProperty("vm");
   });
 });

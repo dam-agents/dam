@@ -60,6 +60,7 @@ export interface StarterKitsServiceDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  virtualizationEnabled?: boolean;
   now?: () => Date;
 }
 
@@ -245,14 +246,17 @@ export function createStarterKitsService(
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
 
+  const runnableHere = (loaded: LoadedKit): boolean =>
+    loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
+
   return {
     async list() {
-      return (await deps.repo.list()).map(toView);
+      return (await deps.repo.list()).filter(runnableHere).map(toView);
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded ? toView(loaded) : null;
+      return loaded && runnableHere(loaded) ? toView(loaded) : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
@@ -302,6 +306,7 @@ export function createStarterKitsService(
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
         ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
+        ...(kit.backend === "vm" ? { vm: true } : {}),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),
