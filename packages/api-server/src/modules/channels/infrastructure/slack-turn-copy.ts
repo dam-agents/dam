@@ -163,6 +163,15 @@ export function slackTurnContract(ctx: {
       `news) (${reactIds}). Pass the Slack emoji short name, no colons.`,
     `• ${TOOL}no_reply_needed — end your turn without posting anything, when ` +
       "the message doesn't call for a response.",
+    (ctx.batch?.inThread === false
+      ? "Your response belongs in a thread under the message you are " +
+        `answering — use ${TOOL}reply, not ${TOOL}send_channel_message. `
+      : "This message reached you from a thread, so your response belongs in " +
+        `that thread — use ${TOOL}reply, not ${TOOL}send_channel_message. `) +
+      `${TOOL}send_channel_message posts a new top-level message and is only ` +
+      "for when you are explicitly asked to announce something, cross-post to " +
+      "another channel, or start a new thread — never as a way to answer the " +
+      "message in front of you.",
     ...(ctx.canLookupUsers
       ? [
           "People appear here as bare Slack ids like U024BE7LH, in speaker " +
