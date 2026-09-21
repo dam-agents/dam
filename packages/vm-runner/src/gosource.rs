@@ -50,3 +50,20 @@ pub fn struct_fields(source: &str, name: &str) -> Vec<GoField> {
         })
         .collect()
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the text of a Go `var name = regexp.MustCompile(`…`)`, so a hand-written matcher on this side can be pinned to the pattern it was written against. The pattern is not interpreted — only compared — because a Rust regex engine agreeing with Go's proves nothing about a matcher that uses neither.
+pub fn regexp_source(source: &str, name: &str) -> Option<String> {
+    let line = source
+        .lines()
+        .find(|line| line.starts_with(&format!("var {name} = regexp.MustCompile(")))?;
+    let body = line.split_once('`')?.1;
+    Some(body.split_once('`')?.0.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the argument list of a Go call inside one named function, as written. Scoped to the function because a call this common appears more than once in a file — an earlier version of this took the first line in the file that contained it and read a log sanitiser's replacements as the cache's, which is the whole failure this module exists to avoid: agreeing confidently with something it had not located.
+pub fn call_args_in(source: &str, function: &str, call: &str) -> Option<String> {
+    let body = source.split_once(&format!("func {function}"))?.1;
+    let body = body.split_once("\n}")?.0;
+    let after = body.split_once(call)?.1;
+    Some(after.split_once(')')?.0.to_string())
+}
