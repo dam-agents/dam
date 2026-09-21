@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 var crdGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}

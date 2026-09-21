@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 // TEST_OVERVIEW: The controller publishes the agent pod's restart count on the

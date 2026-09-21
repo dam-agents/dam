@@ -20,8 +20,8 @@ import (
 
 	storagev1 "k8s.io/api/storage/v1"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 func migrationConfig() *config.Config {

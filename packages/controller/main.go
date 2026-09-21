@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
-	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
-	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/crdcheck"
+	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
+	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
 )
 
 func main() {
