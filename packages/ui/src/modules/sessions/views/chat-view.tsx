@@ -744,13 +744,17 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {items.map((item) =>
-                      item.kind === "divider" ? (
-                        <ThreadDivider
-                          key={item.key}
-                          label={dividerLabel(item, now)}
-                        />
-                      ) : (
+                    {items.map((item) => {
+                      if (item.kind === "divider") {
+                        return (
+                          <ThreadDivider
+                            key={item.key}
+                            label={dividerLabel(item, now)}
+                          />
+                        );
+                      }
+                      const turn = turnForMessage.get(item.message.id);
+                      return (
                         <Fragment key={item.message.id}>
                           <ChatMessage
                             message={item.message}
@@ -762,18 +766,16 @@ export function ChatView() {
                             onDelete={deleteMessage}
                             onLoadOlder={loadOlderKeepingScroll}
                           />
-                          {selectedAgent &&
-                            sessionId &&
-                            turnForMessage.get(item.message.id) && (
-                              <TurnTelemetry
-                                agentId={selectedAgent}
-                                sessionId={sessionId}
-                                turn={turnForMessage.get(item.message.id)!}
-                              />
-                            )}
+                          {selectedAgent && sessionId && turn && (
+                            <TurnTelemetry
+                              agentId={selectedAgent}
+                              sessionId={sessionId}
+                              turn={turn}
+                            />
+                          )}
                         </Fragment>
-                      ),
-                    )}
+                      );
+                    })}
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-[11px] text-muted-foreground/70">
                         Telemetry for this session could not be read.
