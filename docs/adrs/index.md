@@ -85,6 +85,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 089 | [Notifications as a per-owner attention record; the agent still owns session truth](089-notification-record.md) |  | home-feed | The platform stores what needs a user's attention, written by a lease-elected watcher pulling on pod notices, with dismissal as a per-user watermark and read state snapshotted from the agent until sharing makes it per person; the agent remains the sole source of truth for which sessions exist. |
 | 091 | [The vm Backend runs on a VM runner pod holding /dev/kvm, not under KubeVirt](091-vm-runner-microvms.md) |  | platform-topology | A vm agent is a persistent smolvm microVM inside one chart-rendered VM runner pod that holds /dev/kvm as a device grant and is driven through a small runner agent; KubeVirt, its containerDisk image pipeline and the virtiofs PVC sharing are removed. |
 | 092 | [Interactive artifacts delegate prompts to their host chat](092-interactive-artifact-bridge.md) |  | artifact-library | Inject a platform-owned API into sandboxed HTML artifacts and carry prompt requests over window.postMessage to the host's existing chat sender. |
+| 093 | [An Invocation is a durable delegation record that follows its driver](093-durable-delegation-record.md) |  | agent-lifecycle | The Invocation record outlives its target for the driver Agent's lifetime, carrying prompt, result, timings and a pointer to the target's conversation captured into object storage before the target is deleted. |
 
 ## Superseded
 
