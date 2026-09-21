@@ -69,32 +69,34 @@ cleanup() {
     echo "=== End diagnostics ==="
   fi
 
-  if [ -z "${IS_SANDBOX:-}" ]; then
-    echo ""
-    echo "=== Tearing down test cluster ==="
-    mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
-  fi
+  echo ""
+  echo "=== Tearing down test cluster ==="
+  mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
 
   exit $exit_code
 }
 trap cleanup EXIT
 
-# Skip pre-nuke in sandbox/CI — the runner starts clean. Locally, a prior
-# run may have died before teardown fired, leaving a half-provisioned VM.
-if [ -z "${IS_SANDBOX:-}" ]; then
-  echo "Nuking any pre-existing test cluster..."
-  mise run cluster:delete -- --vm-name="$VM_NAME" --force
-fi
+# Nuke any pre-existing cluster before provisioning. A previous run may have
+# died before its own teardown fired, and a CI runner is not guaranteed to be
+# ephemeral — the same host has served two jobs in a row, the second starting
+# on the first's half-removed k3s. That state fails before any test runs: the
+# node comes up without flannel, so `/run/flannel/subnet.env` is missing and
+# every pod sandbox — k3s's own bootstrap included — fails to get a network.
+# In a sandbox this uninstalls k3s from the host; locally it deletes the VM.
+echo "Nuking any pre-existing test cluster..."
+mise run cluster:delete -- --vm-name="$VM_NAME" --force
 
 # Provision a fresh e2e cluster. Install args + the apiserver race-fix live in
 # e2e:install, shared with e2e:loop so the two never drift.
 E2E_VM_NAME="$VM_NAME" mise run e2e:install
 
-# Wipe data to the specs' expected clean slate. On lima/CI the cluster is
-# brand new and this is a fast no-op; in a sandbox the cluster persists
-# between runs and still carries the previous run's data (the specs'
-# clean-slate assertions fail on it). Re-gate afterwards — the reset
-# bounces the apiserver.
+# Wipe data to the specs' expected clean slate. The nuke above means the
+# cluster is brand new by the time we get here and this is a fast no-op; it
+# stays because nothing should depend on that being true, and a cluster that
+# did survive still carries the previous run's data, which the specs'
+# clean-slate assertions fail on. Re-gate afterwards — the reset bounces the
+# apiserver.
 E2E_VM_NAME="$VM_NAME" mise run e2e:reset
 E2E_VM_NAME="$VM_NAME" mise run e2e:gate
 
