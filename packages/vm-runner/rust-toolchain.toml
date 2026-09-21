@@ -1,6 +1,0 @@
-# The components the package's checks need, declared rather than assumed: a
-# toolchain without them fails `check:fmt` with a rustup error that names the
-# missing piece instead of the code.
-[toolchain]
-channel = "1.94"
-components = ["rustfmt", "clippy"]
