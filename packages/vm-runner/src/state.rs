@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::api::MachineSpec;
+use crate::files;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine leaves on disk, which is what lets a runner be restarted without losing the machines it was running. Every answer here is read from the filesystem rather than from memory, because the machines outlive the process that made them: a spec on disk says what a machine was asked to be, its port file says where it is published, and the directory's existence says it is this runner's at all. The Go runner reads the same files in the same formats, and a rollout runs both against one state directory, so the names and shapes are pinned against server.go by the tests.
 
@@ -13,6 +12,9 @@ pub const SPEC_FILE: &str = "spec.json";
 
 // UNIT_BOUNDARY_DESCRIPTION: the published port, kept as a file rather than in memory because the allocator reads every machine's to find a free one, and a runner that forgot them would hand out a port another machine is already published on.
 pub const PORT_FILE: &str = "port";
+
+// UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so the two runners write one machine's state the same way whatever umask each was started under.
+pub const PORT_MODE: u32 = 0o644;
 
 // UNIT_BOUNDARY_DESCRIPTION: the mode the spec is written with, named because it is the exception: every other file this runner writes is world-readable, and this one is not, because its env holds the Agent's secrets in plaintext.
 pub const SPEC_MODE: u32 = 0o600;
@@ -82,15 +84,11 @@ pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Res
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let mut stored = spec.clone();
     stored.running = false;
-    let path = dir.join(SPEC_FILE);
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(SPEC_MODE)
-        .open(&path)?;
-    file.write_all(&serde_json::to_vec(&stored)?)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(SPEC_MODE))?;
+    files::write(
+        &dir.join(SPEC_FILE),
+        &serde_json::to_vec(&stored)?,
+        SPEC_MODE,
+    )?;
     Ok(())
 }
 
@@ -126,7 +124,7 @@ pub fn allocate_port(
         .find(|candidate| !taken.contains(candidate))
         .ok_or_else(|| anyhow::anyhow!("no free machine port"))?;
     fs::create_dir_all(&dir)?;
-    fs::write(dir.join(PORT_FILE), free.to_string())?;
+    files::write(&dir.join(PORT_FILE), free.to_string().as_bytes(), PORT_MODE)?;
     Ok(free)
 }
 
@@ -134,19 +132,58 @@ pub fn allocate_port(
 mod tests {
     use super::*;
     use crate::gosource;
+    use std::os::unix::fs::PermissionsExt;
 
-    // TEST_SCENARIO: this module and the Go runner read and write one state directory, and a rollout that replaces one with the other runs both against it. A file named differently is a machine the new runner cannot see — which it would then recreate, on a port it believes free, over a disk another machine is using.
+    // TEST_SCENARIO: this module and the Go runner read and write one state directory, and a rollout that replaces one with the other runs both against it. A file named differently is a machine the new runner cannot see — which it would then recreate, on a port it believes free, over a disk another machine is using. Each name is read out of the call that writes it rather than looked for anywhere in the file: `server.go` holds other strings, and a guard that would be satisfied by an unrelated one somewhere else is not the guard its failure message claims to be.
     #[test]
-    fn the_go_runner_reads_the_same_files() {
+    fn the_go_runner_writes_the_same_files_with_the_same_modes() {
         let go = gosource::read("server.go");
+
+        let spec = gosource::call_args_in(&go, "(s *Server) writeSpec", "os.WriteFile(")
+            .expect("server.go still writes a machine's spec");
         assert!(
-            go.contains(&format!("\"{SPEC_FILE}\"")),
-            "server.go no longer names {SPEC_FILE}, so the two runners no longer read one machine's spec"
+            spec.contains(&format!("\"{SPEC_FILE}\"")),
+            "writeSpec no longer writes {SPEC_FILE}, so the two runners no longer read one machine's spec: {spec}"
+        );
+
+        let port = gosource::call_args_in(&go, "(s *Server) allocatePort", "os.WriteFile(")
+            .expect("server.go still writes a machine's port");
+        assert!(
+            port.contains(&format!("\"{PORT_FILE}\"")),
+            "allocatePort no longer writes {PORT_FILE}, so the two runners no longer agree where a machine is published: {port}"
+        );
+
+        assert!(
+            go.contains(&format!("\"{SPEC_FILE}\"), b, 0o{:o})", SPEC_MODE)),
+            "the Go runner no longer writes the spec {SPEC_MODE:o}, which is the one file here holding the Agent's secrets"
         );
         assert!(
-            go.contains(&format!("\"{PORT_FILE}\"")),
-            "server.go no longer names {PORT_FILE}, so the two runners no longer agree where a machine is published"
+            go.contains(&format!(
+                "\"{PORT_FILE}\"), []byte(strconv.Itoa(p)), 0o{:o})",
+                PORT_MODE
+            )),
+            "the Go runner no longer writes the port file {PORT_MODE:o}"
         );
+    }
+
+    // TEST_SCENARIO: the modes this module writes with, checked on the files themselves rather than trusted to the constants. Both go through the shared writer, which states the mode instead of taking the umask — so an install with a tighter umask writes the same state directory as one with the usual umask, and as the Go runner.
+    #[test]
+    fn a_machines_state_is_written_with_the_modes_the_go_runner_states() {
+        let dir = TempDir::new();
+        fs::create_dir_all(dir.path().join("agent-a")).unwrap();
+
+        write_spec(dir.path(), "agent-a", &MachineSpec::default()).unwrap();
+        allocate_port(dir.path(), "agent-a", 31000..=31000).unwrap();
+
+        let mode_of = |name: &str| {
+            fs::metadata(dir.path().join("agent-a").join(name))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode_of(SPEC_FILE), SPEC_MODE);
+        assert_eq!(mode_of(PORT_FILE), PORT_MODE);
     }
 
     // TEST_SCENARIO: both matchers here are hand-written, which is only safe while the patterns they were written against are still the patterns in force. The machine id one is the guard that keeps a caller-supplied name from escaping the state directory, so a widened pattern is a path traversal and not a cosmetic change.
