@@ -1079,6 +1079,34 @@ func TestEvictionSparesAnImageAnotherRunnerHolds(t *testing.T) {
 	assert.DirExists(t, spare, "and this runner's own machine from this one")
 }
 
+// TEST_SCENARIO: a runner publishes every machine whose spec it holds, the one being recreated included — it cannot know which of them a later create will be for. claim() has to make that exception, because a restarted runner recreates the machines it still holds specs for, and the tree it finds may be a launch-less one from an older release. Reading its own published claim as somebody else's would refuse that image forever, telling the operator to stop the very machine they are starting, on the one path that can replace such a tree.
+func TestARunnersOwnClaimNeverBlocksTheMachineItIsRecreating(t *testing.T) {
+	images := t.TempDir()
+	staged := func(name string) string {
+		dir := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, launchFile), []byte(`{"entrypoint":["/bin/sh"]}`), 0o644))
+		return dir
+	}
+
+	mine := cacheRunner(t, "runner-a", images)
+	cached := holdsImage(t, mine, "agent-a", "quay.io/x/mine:1")
+	mine.publishHolders()
+
+	require.NoError(t, mine.claim(staged("incoming"), cached, "agent-a"),
+		"this runner's own published claim names the machine being recreated, and must not stand in its way")
+	assert.FileExists(t, filepath.Join(cached, launchFile),
+		"the launch-less tree is replaced, which nothing else does")
+
+	theirs := cacheRunner(t, "runner-b", images)
+	holdsImage(t, theirs, "agent-b", "quay.io/x/mine:1")
+	theirs.publishHolders()
+	require.NoError(t, os.Remove(filepath.Join(cached, launchFile)))
+
+	require.Error(t, mine.claim(staged("incoming-again"), cached, "agent-a"),
+		"another runner's guest has this tree mounted as its root filesystem, and that claim still holds")
+}
+
 // TEST_SCENARIO: nothing else prunes the node's cache, so an image no live runner claims has to be evictable — otherwise one abandoned holders file pins a tree forever. Machines are processes of the runner that made them, so a runner that stopped refreshing has none left running and its claims are safe to drop.
 func TestAnAbandonedRunnersClaimsStopPinningImages(t *testing.T) {
 	images := t.TempDir()

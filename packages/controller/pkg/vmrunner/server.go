@@ -698,7 +698,7 @@ func (s *Server) publishHolders() {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every claim on the shared directory, this runner's included, keyed the way evictImages keys its entries. A file older than holderStale is skipped and deleted: its runner is gone, and with it the machines that were holding those images, so keeping the claims would pin images nothing can boot from. A file this runner cannot read is treated as holding everything it names nothing about — that is, skipped — because guessing narrower is what deletes somebody's rootfs.
+// UNIT_BOUNDARY_DESCRIPTION: every other runner's claims on the shared directory, keyed the way evictImages keys its entries. This runner's own file is skipped, because every caller already reads the machines on disk directly and that read is both current and able to make the exception the published snapshot cannot: a recreate excludes the machine it is bringing back, and answering it with this runner's own published claim on that same machine would refuse the image forever, on the one path that can replace a launch-less tree. Eviction loses nothing by the skip, reading the same machines unfiltered. A file older than holderStale is skipped and deleted: its runner is gone, and with it the machines that were holding those images, so keeping the claims would pin images nothing can boot from. A file this runner cannot read is treated as holding everything it names nothing about — that is, skipped — because guessing narrower is what deletes somebody's rootfs.
 func (s *Server) heldElsewhere(dir string) map[string]bool {
 	held := map[string]bool{}
 	entries, err := os.ReadDir(filepath.Join(dir, holdersDir))
@@ -707,6 +707,9 @@ func (s *Server) heldElsewhere(dir string) map[string]bool {
 	}
 	for _, e := range entries {
 		if e.IsDir() || strings.HasSuffix(e.Name(), ".new") {
+			continue
+		}
+		if s.RunnerID != "" && e.Name() == s.RunnerID {
 			continue
 		}
 		info, err := e.Info()
