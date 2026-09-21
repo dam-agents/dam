@@ -1,7 +1,12 @@
 // UNIT_BOUNDARY_DESCRIPTION: reads the Go files this crate mirrors, so a test can compare against them rather than against a copy of them made when the test was written. Deliberately not a Go parser: every reader here returns None or nothing for a shape it does not recognise, so an unfamiliar file fails the comparison that called it. A reader that guessed would agree with a file it had not understood, which is the one outcome worse than no guard at all.
 
 pub fn read(relative: &str) -> String {
-    let path = format!("../controller/pkg/vmrunner/{relative}");
+    read_in("vmrunner", relative)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a Go file from another package of the controller. Some of what this crate writes is read by something further away than the runner — the share's CA file is named in the agent's environment, a package away — and a contract is only pinned against the file that actually states it.
+pub fn read_in(package: &str, relative: &str) -> String {
+    let path = format!("../controller/pkg/{package}/{relative}");
     std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("the Go half of this contract is next door at {path}: {e}"))
 }

@@ -1,6 +1,6 @@
 use std::fs;
-use std::io;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::io::{self, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::api::MachineSpec;
@@ -14,6 +14,10 @@ pub const SHARE_DIR: &str = "share";
 pub const CA_DIR: &str = "ca";
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
+
+// UNIT_BOUNDARY_DESCRIPTION: the modes the Go runner states for the share's CA. Stated here too rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and the two runners would write one machine's share differently.
+pub const CA_DIR_MODE: u32 = 0o755;
+pub const CA_MODE: u32 = 0o644;
 
 // UNIT_BOUNDARY_DESCRIPTION: platform-init is exec'd by the guest, so the executable bit is not cosmetic: a machine handed a share whose init cannot run boots with its disk unmounted and no agent in it. The mode is set on the staged file after the copy as well as at create, because a create does not change the mode of a file that already exists — and a scratch file left behind by a killed runner is exactly the one that already exists.
 pub const INIT_MODE: u32 = 0o755;
@@ -31,9 +35,25 @@ pub fn write_share(
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let share = base.join(SHARE_DIR);
     let ca = share.join(CA_DIR);
-    fs::create_dir_all(&ca)?;
-    fs::write(ca.join(CA_FILE), spec.ca_cert.as_bytes())?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(CA_DIR_MODE)
+        .create(&ca)?;
+    write_file(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
     copy_init(init, &share.join(INIT_FILE))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes a share file and reports the close. `fs::write` drops the handle, and dropping a file discards whatever the close would have said — which is where a delayed write error surfaces, the whole class of error this matters for. Go's `os.WriteFile` returns it, so a port that swallowed it would report a share written that is not. The mode is stated rather than taken from the umask, for the same reason it is stated on the Go side.
+fn write_file(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(mode)
+        .open(path)?;
+    file.write_all(body)?;
+    file.set_permissions(fs::Permissions::from_mode(mode))?;
+    file.sync_all()
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -51,8 +71,10 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
         .truncate(true)
         .mode(INIT_MODE)
         .open(&staged)?;
+    // UNIT_BOUNDARY_DESCRIPTION: the close is part of the copy, not cleanup after it. A write that failed late is reported here and nowhere else, and renaming past it would put a truncated binary where the machine's entrypoint goes — reported as success, and found only by the guest, at its next boot. Go treats a failed close the same way.
     let copied = io::copy(&mut source, &mut destination)
-        .and_then(|_| destination.set_permissions(fs::Permissions::from_mode(INIT_MODE)));
+        .and_then(|_| destination.set_permissions(fs::Permissions::from_mode(INIT_MODE)))
+        .and_then(|()| destination.sync_all());
     drop(destination);
     if let Err(e) = copied {
         let _ = fs::remove_file(&staged);
@@ -96,6 +118,97 @@ mod tests {
             gosource::const_value(&go, "shareDir").as_deref(),
             Some(SHARE_DIR),
             "the two runners no longer write one machine's share"
+        );
+    }
+
+    // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts `/etc/platform/ca/ca.crt` in the agent's own environment as NODE_EXTRA_CA_CERTS, a package away, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate.
+    #[test]
+    fn the_ca_is_named_what_the_agents_environment_points_at() {
+        let go = gosource::read("server.go");
+        assert!(
+            go.contains(&format!(
+                "filepath.Join(share, \"{CA_DIR}\", \"{CA_FILE}\")"
+            )),
+            "the two runners no longer write one machine's CA to the same place"
+        );
+
+        let resources = gosource::read_in("reconciler", "resources.go");
+        assert!(
+            resources.contains(&format!("\"{}/{CA_FILE}\"", guest::GUEST_CA_DIR)),
+            "NODE_EXTRA_CA_CERTS no longer names {}/{CA_FILE}, so the agent trusts nothing the platform signed",
+            guest::GUEST_CA_DIR
+        );
+    }
+
+    // TEST_SCENARIO: the Go runner reports the close of both share files — `copyInit` treats a failed close as a failed copy and removes the staged file, and `os.WriteFile` returns the close error for the CA. A close is where a write that failed late is reported, so dropping it renames a truncated entrypoint into place and calls it success. This module does the same, by `sync_all` rather than a bare close; that behaviour has no test of its own, because a late write error needs a filesystem a unit test cannot make, so what is pinned here is the requirement it exists to meet.
+    #[test]
+    fn the_go_runner_treats_a_failed_close_as_a_failed_write() {
+        let go = gosource::read("server.go");
+        assert!(
+            go.contains("if err := destination.Close(); err != nil {"),
+            "copyInit no longer fails on a close, so this module is stricter than the contract it copies"
+        );
+        assert!(
+            go.contains("os.WriteFile(filepath.Join(share,"),
+            "the CA is no longer written with a call that reports its close"
+        );
+    }
+
+    // TEST_SCENARIO: the modes the share is written with, stated on both sides rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse, and would have the two runners write one machine's share differently.
+    #[test]
+    fn the_share_is_written_with_the_modes_the_go_runner_states() {
+        let go = gosource::read("server.go");
+        assert!(
+            go.contains(&format!("\"ca\"), 0o{:o})", CA_DIR_MODE)),
+            "the Go runner no longer makes the CA directory {CA_DIR_MODE:o}"
+        );
+        assert!(
+            go.contains(&format!("[]byte(spec.CACert), 0o{:o})", CA_MODE)),
+            "the Go runner no longer writes the CA {CA_MODE:o}"
+        );
+
+        let dir = TempDir::new("modes");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        write_share(
+            dir.path(),
+            "agent-a",
+            &MachineSpec {
+                ca_cert: "ca".into(),
+                ..Default::default()
+            },
+            Some(&init),
+        )
+        .unwrap();
+
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert_eq!(mode_of(&share.join(CA_DIR)), CA_DIR_MODE);
+        assert_eq!(mode_of(&share.join(CA_DIR).join(CA_FILE)), CA_MODE);
+    }
+
+    // TEST_SCENARIO: that the modes are stated and not inherited from the umask. Asserting the CA's own 0644 proves nothing on a machine whose umask is the usual 022, because that is what an unstated mode lands on anyway — so the writers are asked for a mode the umask cannot produce, and the answer has to be that mode exactly.
+    #[test]
+    fn a_share_file_gets_the_mode_it_is_given_and_not_the_umasks() {
+        let dir = TempDir::new("stated-modes");
+
+        let file = dir.path().join("stated");
+        write_file(&file, b"body", 0o600).unwrap();
+        assert_eq!(
+            mode_of(&file),
+            0o600,
+            "the mode came from the umask, which would have made this 0644"
+        );
+
+        let nested = dir.path().join("outer").join("inner");
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&nested)
+            .unwrap();
+        assert_eq!(
+            mode_of(&nested),
+            0o700,
+            "the directory mode came from the umask, which would have made this 0755"
         );
     }
 
