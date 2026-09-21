@@ -91,7 +91,7 @@ describe("onboardingBadge", () => {
     });
     expect(badge?.label).toBe("Onboarding");
     expect(badge?.variant).toBe("kit");
-    expect(badge?.title).toMatch(/schedules are held/);
+    expect(badge?.title).toMatch(/Any schedules on it are held/);
   });
 
   test("goes away once the completion mark is set", () => {

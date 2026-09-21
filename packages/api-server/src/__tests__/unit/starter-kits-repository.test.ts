@@ -526,5 +526,6 @@ describe("the shipped proof-of-concept catalog", () => {
     expect(
       kits.find((k) => k.kit.id === "openevolve")!.kit.resources,
     ).toMatchObject({ storage: "5Gi" });
+    expect(kits.every((k) => k.kit.onboarding === false)).toBe(true);
   });
 });

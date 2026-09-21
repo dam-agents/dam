@@ -209,7 +209,7 @@ export function createStarterKitsService(
     created: Agent,
     loaded: LoadedKit,
     version: string,
-    holds: boolean,
+    pending: boolean,
     harness: HarnessFamily | undefined,
   ): Promise<void> {
     const agentId = created.id;
@@ -233,7 +233,7 @@ export function createStarterKitsService(
         })),
         boundChannels: agent.channels.map((c) => c.type),
         familyTitles: await familyTitles(),
-        holds,
+        pending,
       },
       harness,
     );
@@ -335,10 +335,9 @@ export function createStarterKitsService(
         const briefs =
           kit.onboarding !== false &&
           !(kit.onboarding && "command" in kit.onboarding);
-        const holds = briefs && seeded > 0;
-        if (!holds)
+        if (!briefs)
           await deps.markAgentOnboarded(agent.id, now().toISOString());
-        await enqueueOnboardingTurn(agent, loaded, version, holds, harness);
+        await enqueueOnboardingTurn(agent, loaded, version, briefs, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch((cleanupErr: unknown) => {
           getLogger().error(

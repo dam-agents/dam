@@ -6,6 +6,8 @@ description: >-
 category: research
 icon: idea
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md
+# No intake turn — the workload takes its brief from the user's first prompt.
+onboarding: false
 image:
   ref: quay.io/dam-agents/gepa # @ci-pin gepa-image-tag
   harness: claude-code
