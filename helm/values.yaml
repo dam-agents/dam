@@ -962,10 +962,20 @@ apiServer:
   # stands for exactly one label, so `*.pkg.dev` covers
   # `us-docker.pkg.dev` but not `a.b.pkg.dev`.
   #
-  # Curated to mirror Anthropic's published default-allowed-domain list for
+  # Seeded from Anthropic's published default-allowed-domain list for
   # Claude Code so harnesses with "claude --trust-defaults" behavior keep
   # working without per-host inbox prompts:
   #   https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains
+  # and widened to the package registry / toolchain-download host of every
+  # mainstream language ecosystem, so that fetching dependencies and building
+  # never needs an egress approval. The line drawn: a registry or a vendor's
+  # own download host is in; a general-purpose object store (raw
+  # `storage.googleapis.com`, `*.blob.core.windows.net`) or a service that
+  # builds and serves arbitrary user repos (jitpack.io) is out — those are
+  # open-ended egress channels, not registries, and stay per-agent opt-in.
+  # Most entries below were captured by running the real toolchain (rustup +
+  # cargo, maven, gradle, bundler, composer, dotnet, mix, pub, cabal, cpanm,
+  # R, deno) in a sandbox and recording the DNS queries.
   #
   # Operators can append, remove, or replace entries here; rules are seeded
   # once at agent-create time, so editing this list does not retroactively
@@ -975,9 +985,14 @@ apiServer:
     - api.anthropic.com
     - statsig.anthropic.com
     - claude.ai
-    # NPM / Yarn / pnpm
+    # NPM / Yarn / pnpm / Deno / Bun
     - registry.npmjs.org
     - registry.yarnpkg.com
+    - nodejs.org
+    - jsr.io
+    - deno.land
+    - dl.deno.land
+    - bun.sh
     # Python
     - pypi.org
     - files.pythonhosted.org
@@ -1010,10 +1025,13 @@ apiServer:
     - proxy.golang.org
     - sum.golang.org
     - go.dev
-    # Rust
+    # Rust. Cargo's sparse index (the default since 1.70) lives on its own
+    # host, and rustup pulls every toolchain from static.rust-lang.org.
     - crates.io
+    - index.crates.io
     - static.crates.io
     - sh.rustup.rs
+    - static.rust-lang.org
     # CDNs commonly used by toolchains
     - cdn.jsdelivr.net
     - unpkg.com
@@ -1022,8 +1040,49 @@ apiServer:
     - cdn.mise.run
     - mise-versions.jdx.dev
     - mise-java.jdx.dev
-    # Java
+    # Java / JVM. Maven Central answers on both hostnames; Gradle serves its
+    # own distributions and resolves plugins off a separate artifact host.
     - download.java.net
+    - api.adoptium.net
+    - repo.maven.apache.org
+    - repo1.maven.org
+    - maven.google.com
+    - services.gradle.org
+    - plugins.gradle.org
+    - plugins-artifacts.gradle.org
+    # Ruby
+    - rubygems.org
+    - index.rubygems.org
+    # PHP
+    - packagist.org
+    - repo.packagist.org
+    - getcomposer.org
+    # .NET
+    - api.nuget.org
+    - dot.net
+    - builds.dotnet.microsoft.com
+    # Elixir / Erlang
+    - hex.pm
+    - repo.hex.pm
+    - builds.hex.pm
+    # Dart / Flutter
+    - pub.dev
+    # Haskell
+    - hackage.haskell.org
+    - downloads.haskell.org
+    # Perl. cpanm asks cpanmetadb for the distribution that holds a module,
+    # then fetches the tarball from a CPAN mirror.
+    - www.cpan.org
+    - cpanmetadb.plackperl.org
+    - cpan.metacpan.org
+    - fastapi.metacpan.org
+    # R
+    - cran.r-project.org
+    - cloud.r-project.org
+    # Swift
+    - download.swift.org
+    # C / C++
+    - center.conan.io
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
