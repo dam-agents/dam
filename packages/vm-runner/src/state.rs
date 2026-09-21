@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::api::MachineSpec;
@@ -11,6 +13,9 @@ pub const SPEC_FILE: &str = "spec.json";
 
 // UNIT_BOUNDARY_DESCRIPTION: the published port, kept as a file rather than in memory because the allocator reads every machine's to find a free one, and a runner that forgot them would hand out a port another machine is already published on.
 pub const PORT_FILE: &str = "port";
+
+// UNIT_BOUNDARY_DESCRIPTION: the mode the spec is written with, named because it is the exception: every other file this runner writes is world-readable, and this one is not, because its env holds the Agent's secrets in plaintext.
+pub const SPEC_MODE: u32 = 0o600;
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a name is one this runner will keep state under. Hand-written against the Go pattern and pinned to it by a test: lower-case alphanumeric to start, then lower-case alphanumeric or a dash, at most 63 characters. It is the guard that keeps an id out of the parent directory — a machine directory is this name joined to the state directory and nothing else, so a name that escaped would let a request write anywhere the runner can.
 pub fn is_machine_id(id: &str) -> bool {
@@ -71,12 +76,21 @@ pub fn is_image_ref(image: &str) -> bool {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped.
+// UNIT_BOUNDARY_DESCRIPTION: written 0600, which is the one restrictive mode the Go runner uses anywhere, and the reason is inside the file: a spec's env carries the values of the Agent's secretRef Secret, copied in whole by the controller, so this is the only piece of machine state holding secret material in plaintext. An ordinary write takes the process umask and lands 0644 — what every other file here is, and a leak in this one. The mode is set on an existing file too, where the Go runner leaves whatever it finds: the one place this port is deliberately stricter than what it copies, because a mode is not a protocol between the two runners and no reader is worse off for it being tighter.
 pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
     let dir =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let mut stored = spec.clone();
     stored.running = false;
-    fs::write(dir.join(SPEC_FILE), serde_json::to_vec(&stored)?)?;
+    let path = dir.join(SPEC_FILE);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(SPEC_MODE)
+        .open(&path)?;
+    file.write_all(&serde_json::to_vec(&stored)?)?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(SPEC_MODE))?;
     Ok(())
 }
 
@@ -214,6 +228,54 @@ mod tests {
 
         fs::write(state.join("agent-a").join(SPEC_FILE), b"not json").unwrap();
         assert!(read_spec(state, "agent-a").is_none());
+    }
+
+    // TEST_SCENARIO: a spec's env carries the values of the Agent's secretRef Secret, which the controller copies in whole, so this file holds secret material in plaintext — and it is the only piece of machine state that does. An ordinary write takes the process umask and lands world-readable, which is what every other file here is and what this one must not be. The Go runner writes it 0600 and writes nothing else in the package that way; the mode is asserted rather than assumed, because nothing downstream would notice it drifting.
+    #[test]
+    fn the_spec_is_not_readable_by_anyone_but_the_runner() {
+        let dir = TempDir::new();
+        fs::create_dir_all(dir.path().join("agent-a")).unwrap();
+
+        write_spec(
+            dir.path(),
+            "agent-a",
+            &MachineSpec {
+                image: "quay.io/x/vm:1".into(),
+                env: [("ANTHROPIC_API_KEY".to_string(), "sk-secret".to_string())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mode = fs::metadata(dir.path().join("agent-a").join(SPEC_FILE))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "the machine's secrets are readable by every uid on the node"
+        );
+    }
+
+    // TEST_SCENARIO: a spec left behind by an earlier release, or by anything else, is rewritten with the mode it should have had. The Go runner leaves an existing file's mode alone, which is the one place this port is stricter than what it copies — a tighter mode breaks no reader, and this file holds secrets.
+    #[test]
+    fn a_spec_that_was_already_world_readable_is_tightened_on_the_next_write() {
+        let dir = TempDir::new();
+        fs::create_dir_all(dir.path().join("agent-a")).unwrap();
+        let path = dir.path().join("agent-a").join(SPEC_FILE);
+        fs::write(&path, b"{}").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_spec(dir.path(), "agent-a", &MachineSpec::default()).unwrap();
+
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "a spec that was already loose stayed loose"
+        );
     }
 
     // TEST_SCENARIO: the stored spec says what shape a machine has, never whether it should be up. A runner restarting reads these files to learn what it is running, and one that believed a stale running flag would start machines their owner had stopped.
