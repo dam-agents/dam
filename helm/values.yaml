@@ -1631,15 +1631,6 @@ starterKits:
       adaevolve: { enabled: true }
       evox: { enabled: false }
       k-search: { enabled: true }
-      # Off by default, and deliberately: it asks for far more than an ordinary
-      # agent. Before enabling it, the install needs `virtualization.enabled`
-      # (it runs a cluster inside its own sandbox, which a pod cannot host), a
-      # per-user Ceiling above its 12 CPU / 16Gi Size — the defaults below are
-      # 8 CPU / 16Gi, so an agent created from it would park OverBudget and
-      # never start — and a `virtualization.runner.storage` claim with room for
-      # a 100Gi machine disk beside the image cache. With virtualization off
-      # the kit is left out of the catalog entirely, so it never reaches a UI
-      # that could not run it.
       software-developer: { enabled: false }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or

@@ -7,9 +7,6 @@ api-server. A kit that brings its own image can be pointed at another one per
 install (`starterKits.builtin.kits.<id>.image`), which is how the local cluster
 runs a workload kit on the image it built itself — the ref is swapped into the
 kit's own `image.ref` at render, nothing else about the kit changes.
-An entry that names a repository rather than a path carries its own `id`: the
-kit file lives in that repository, so there is no path to take the id from, and
-without one the per-kit switch below would silently match nothing.
 apiserver/app.yaml projects the keys back to their paths under
 /etc/platform/starter-kits, where the api-server reads the `platform` catalog
 with the same reader every other catalog gets.
