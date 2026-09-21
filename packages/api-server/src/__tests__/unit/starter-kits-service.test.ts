@@ -554,7 +554,9 @@ describe("starter kits: apply", () => {
     expect(calls.cron).toContainEqual(
       expect.objectContaining({ name: "review", precheck: "test -e new" }),
     );
-    expect(calls.rrule[0]?.precheck).toBeUndefined();
+    expect(calls.rrule.map((r) => [r.name, r.precheck])).toEqual([
+      ["benchmark", undefined],
+    ]);
   });
 
   it("rejects an override that names an rrule with no timezone", () => {

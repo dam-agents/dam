@@ -4,6 +4,7 @@ import {
   detectPreset,
   detectTimezone,
   type FrequencyPreset,
+  resolveKitSchedulePrecheck,
   type StarterKitSchedule,
   type StarterKitScheduleOverride,
 } from "api-server-api";
@@ -78,8 +79,9 @@ function declaredPrecheck(
   schedule: StarterKitSchedule,
   override: StarterKitScheduleOverride | undefined,
 ): string {
-  if (override?.precheck === null) return "";
-  return override?.precheck ?? schedule.precheck ?? "";
+  return (
+    resolveKitSchedulePrecheck(schedule.precheck, override?.precheck) ?? ""
+  );
 }
 
 const CADENCE_FIELDS = [

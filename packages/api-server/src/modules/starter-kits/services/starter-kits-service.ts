@@ -19,6 +19,7 @@ import type {
   StarterKitsService,
   StarterKitView,
 } from "api-server-api";
+import { resolveKitSchedulePrecheck } from "api-server-api";
 import {
   kitInitializationTask,
   describeAccepts,
@@ -176,8 +177,7 @@ export function createStarterKitsService(
       const o = overrides.find((x) => x.name === s.name);
       const sessionMode = o?.sessionMode ?? s.sessionMode;
       const enabled = o?.enabled ?? s.enabled;
-      const precheck =
-        o?.precheck === null ? undefined : (o?.precheck ?? s.precheck);
+      const precheck = resolveKitSchedulePrecheck(s.precheck, o?.precheck);
       const timing =
         o?.timing ??
         ("cron" in s

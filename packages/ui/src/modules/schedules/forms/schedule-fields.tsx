@@ -1,4 +1,5 @@
 import { Information } from "@carbon/icons-react";
+import { useId } from "react";
 import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
 import { Controller } from "react-hook-form";
 
@@ -325,23 +326,27 @@ export function ScheduleSessionTypeField({
   );
 }
 
-export const PRECHECK_HINT =
+const PRECHECK_HINT =
   "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
 
 const PRECHECK_PLACEHOLDER =
   "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
 
+interface PrecheckFieldProps {
+  layout: ScheduleFieldLayout;
+  register: UseFormRegister<ScheduleFormValues>;
+  errors: FieldErrors<ScheduleFormValues>;
+}
+
 export function SchedulePrecheckField({
   layout,
   register,
   errors,
-}: {
-  layout: ScheduleFieldLayout;
-  register: UseFormRegister<ScheduleFormValues>;
-  errors: FieldErrors<ScheduleFormValues>;
-}) {
+}: PrecheckFieldProps) {
+  const fieldId = useId();
   const input = (
     <Textarea
+      id={fieldId}
       className="min-h-[56px] resize-y font-mono text-xs"
       variant={errors.precheck ? "invalid" : undefined}
       placeholder={PRECHECK_PLACEHOLDER}
@@ -365,7 +370,9 @@ export function SchedulePrecheckField({
   return (
     <div className="px-4 py-3">
       <div className="mb-2 flex items-center gap-1.5">
-        <SectionLabel>Precheck (optional)</SectionLabel>
+        <label htmlFor={fieldId}>
+          <SectionLabel>Precheck (optional)</SectionLabel>
+        </label>
         <HintTooltip
           content={PRECHECK_HINT}
           label="About prechecks"

@@ -212,6 +212,7 @@ export {
   starterKitSchema,
 } from "./modules/starter-kits/schemas.js";
 export { requirementAccepts } from "./modules/starter-kits/requirements.js";
+export { resolveKitSchedulePrecheck } from "./modules/starter-kits/schedule-precheck.js";
 export type {
   KbShareCreateInput,
   KbShareDefaults,
