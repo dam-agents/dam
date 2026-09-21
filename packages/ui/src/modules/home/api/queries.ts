@@ -3,55 +3,13 @@ import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
-import {
-  useAgentLacksLiveUpdates,
-  useAgents,
-  useAgentsList,
-} from "../../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
-import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
-import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
 const ARTIFACTS_STALE_MS = 30_000;
 const TOUCH_SESSIONS_MAX = 50;
 const ATTENTION_STALE_MS = 5_000;
-const SESSIONS_STALE_MS = 5_000;
-const SESSIONS_ERROR_RETRY_MS = 15_000;
-const SESSIONS_COMPAT_POLL_MS = 15_000;
-
-export const homeKeys = {
-  sessions: (agentId: string) =>
-    [...acpSessionsKeys.agentLists(agentId), "home"] as const,
-};
-
-function agentSessionsQuery(agentId: string, compat: boolean) {
-  return {
-    queryKey: homeKeys.sessions(agentId),
-    queryFn: () => listAgentSessionsOverAcp(agentId),
-    staleTime: SESSIONS_STALE_MS,
-    retry: false,
-    refetchInterval: (query: { state: { status: string } }) =>
-      compat
-        ? SESSIONS_COMPAT_POLL_MS
-        : query.state.status === "error"
-          ? SESSIONS_ERROR_RETRY_MS
-          : false,
-  };
-}
-
-export function useAgentWorking(
-  agentId: string,
-  enabled: boolean,
-): boolean | undefined {
-  const compat = useAgentLacksLiveUpdates(agentId);
-  const { data } = useQuery({
-    ...agentSessionsQuery(agentId, compat),
-    enabled,
-  });
-  return data?.some((session) => session.running);
-}
-
 export interface ArtifactTouched {
   artifactId: string;
   touchedAt: string;

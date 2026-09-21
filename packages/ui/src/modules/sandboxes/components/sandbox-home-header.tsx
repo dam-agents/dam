@@ -22,7 +22,7 @@ import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useAgentWorking } from "../../home/api/queries.js";
+import { useFeed } from "../../home/api/queries.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 
 interface Props {
@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function SandboxHomeHeader({ agent, display }: Props) {
-  const working = useAgentWorking(agent.id, display.state === "running");
+  const working = useFeed().workingByAgent.get(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
