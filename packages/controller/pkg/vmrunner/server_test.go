@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -69,12 +68,12 @@ func claimPort(port int) net.Listener {
 	return ln
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one harness is given a range of two machines, and each machine needs two ports: the published one, which the runner binds on every interface, and the guest's at +loopbackOffset, which the fake guest binds on loopback. Each is therefore reserved on the address its eventual owner will bind — a port free on loopback can still be taken on another interface, so proving the narrower one proves less than it looks. Bases are drawn only from the first loopbackOffset ports of the range, which is what keeps one harness's guest ports out of another's published ones; and the first base tried is keyed to this process, so two test binaries at once start from different neighbourhoods instead of the same one.
+// UNIT_BOUNDARY_DESCRIPTION: one harness is given a range of two machines, and each machine needs two ports: the published one, which the runner binds on every interface, and the guest's at +loopbackOffset, which the fake guest binds on loopback. Each is therefore reserved on the address its eventual owner will bind — a port free on loopback can still be taken on another interface, so proving the narrower one proves less than it looks. Bases are drawn only from the first loopbackOffset ports of the range, which is what keeps one harness's guest ports out of another's published ones; and the first base tried is keyed to this process, walking on from there, so two test binaries at once begin at different bases rather than drawing from one distribution. An earlier version added the process id to a fresh random draw each attempt, which is uniform whatever is added to it — the keying was in the comment and not in the code.
 func freePort(t *testing.T) int {
 	t.Helper()
 	bases := loopbackOffset / portsPerHarness
 	for attempt := range 200 {
-		base := firstBase + (os.Getpid()+attempt+rand.IntN(bases))%bases*portsPerHarness
+		base := firstBase + (os.Getpid()+attempt)%bases*portsPerHarness
 		taken := make([]int, 0, portsPerHarness)
 		for _, port := range []int{base, base + 1} {
 			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -1264,4 +1263,18 @@ func TestAHarnessGuestPortsCannotBeAnotherHarnessPublishedPorts(t *testing.T) {
 		assert.GreaterOrEqual(t, base+loopbackOffset, firstBase+loopbackOffset,
 			"and the guest ports must fall outside it, where no base can reach them")
 	}
+}
+
+// TEST_SCENARIO: a request reserves the machine's memory before the operation is started, and the reservation is released by the very goroutine a closing runner refuses to start. Left behind it is a claim on memory for a machine that does not exist, which the next admission decision counts against every machine that does. Nothing reached this before the runner answered a signal; now that closing is something that happens on purpose, the refusal has to undo what the request had already put down.
+func TestARefusedOperationLeavesNoMemoryReserved(t *testing.T) {
+	h := newHarness(t)
+	h.node.Close()
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+
+	h.node.mu.Lock()
+	defer h.node.mu.Unlock()
+	assert.Empty(t, h.node.committing,
+		"the runner is still holding memory for a machine whose start it refused")
 }

@@ -956,6 +956,8 @@ func (s *Server) lock(id string) *sync.Mutex {
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
 	if s.closed {
+		// UNIT_BOUNDARY_DESCRIPTION: the caller reserved this machine's memory before asking for the operation, and the goroutine that releases the reservation is the one being refused here. Leaving it would have roomFor counting a machine that never starts, against a runner that is going away — and, on a runner that comes back to the same state, against nothing at all.
+		delete(s.committing, id)
 		s.mu.Unlock()
 		return
 	}
