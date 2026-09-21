@@ -84,6 +84,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 091 | [The vm Backend runs on a VM runner pod holding /dev/kvm, not under KubeVirt](091-vm-runner-microvms.md) |  | platform-topology | A vm agent is a persistent smolvm microVM inside one chart-rendered VM runner pod that holds /dev/kvm as a device grant and is driven through a small runner agent; KubeVirt, its containerDisk image pipeline and the virtiofs PVC sharing are removed. |
 | 092 | [Interactive artifacts delegate prompts to their host chat](092-interactive-artifact-bridge.md) |  | artifact-library | Inject a platform-owned API into sandboxed HTML artifacts and carry prompt requests over window.postMessage to the host's existing chat sender. |
 | 093 | [smolvm microVMs are the only agent runtime](093-vm-only-runtime.md) | 038, 073 | vm-runner | Every agent becomes a smolvm machine in its owner's runner pod, with a per-owner CPU and storage pool and the owner's gateway as a sidecar there; container agent pods and Kata are removed once every agent has been migrated with its HOME. |
+| 094 | [An Invocation is a durable delegation record that follows its driver](094-durable-delegation-record.md) |  | agent-lifecycle | The Invocation record outlives its target for the root driver's lifetime, carrying prompt, result and timings, and the target's conversation is copied onto the root driver's own volume before the target is deleted. |
 
 ## Superseded
 
