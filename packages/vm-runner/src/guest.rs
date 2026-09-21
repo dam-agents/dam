@@ -28,8 +28,9 @@ mod tests {
         let go = std::fs::read_to_string("../controller/pkg/vmrunner/guest.go")
             .expect("the Go half of the guest contract is next door");
 
-        for (name, value) in [
+        for (name, ours) in [
             ("SharePath", SHARE_PATH),
+            ("InitPath", INIT_PATH),
             ("ShareCADir", SHARE_CA_DIR),
             ("GuestCADir", GUEST_CA_DIR),
             ("DiskDevicePath", DISK_DEVICE_PATH),
@@ -38,34 +39,44 @@ mod tests {
             ("AgentDir", AGENT_DIR),
             ("SystemDir", SYSTEM_DIR),
         ] {
-            assert!(
-                go_const(&go, name).as_deref() == Some(value),
-                "{name} is {:?} in guest.go and {value:?} here",
-                go_const(&go, name)
+            let theirs = go_const(&go, name);
+            assert_eq!(
+                theirs.as_deref(),
+                Some(ours),
+                "{name} disagrees between guest.go and guest.rs"
             );
         }
-
-        // InitPath is written as a concatenation in Go, so it is checked as one.
-        assert!(
-            go.contains(r#"InitPath    = SharePath + "/init""#)
-                || go.contains(r#"InitPath   = SharePath + "/init""#),
-            "guest.go no longer derives InitPath from SharePath + \"/init\""
-        );
-        assert_eq!(INIT_PATH, format!("{SHARE_PATH}/init"));
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: reads one `Name = "value"` from a Go const block. Deliberately not a Go parser: it has to fail when the shape it expects is gone, because a constant it cannot find is exactly the drift it exists to catch.
+    // TEST_SCENARIO: the reader above is only worth having if a constant it cannot find fails the test rather than passing it. A Go file it cannot parse, or a name that is no longer there, must read as None and take the comparison down with it — the alternative is a guard that goes quiet exactly when the shape it depends on changes.
+    #[test]
+    fn a_constant_the_reader_cannot_find_is_not_silently_agreed_with() {
+        assert_eq!(
+            go_const("SharePath = \"/platform\"", "SharePath").as_deref(),
+            Some("/platform")
+        );
+        assert_eq!(
+            go_const("InitPath = SharePath + \"/init\"", "InitPath").as_deref(),
+            Some("/platform/init")
+        );
+        assert_eq!(go_const("SharePath = \"/platform\"", "AgentHome"), None);
+        assert_eq!(go_const("AgentHome = someCall()", "AgentHome"), None);
+        assert_eq!(go_const("InitPath = Unknown + \"/init\"", "InitPath"), None);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: reads one constant from a Go const block, in the two shapes guest.go uses: a quoted literal, and SharePath joined to a quoted suffix. Deliberately not a Go parser — anything it does not recognise is None, which fails the comparison above, because a reader that guessed at an unfamiliar shape would agree with a file it had not understood.
     fn go_const(source: &str, name: &str) -> Option<String> {
-        source.lines().find_map(|line| {
+        let value = source.lines().find_map(|line| {
             let (left, right) = line.split_once('=')?;
-            if left.trim() != name {
-                return None;
-            }
-            let quoted = right.trim();
-            quoted
-                .strip_prefix('"')
-                .and_then(|rest| rest.strip_suffix('"'))
-                .map(str::to_string)
-        })
+            (left.trim() == name).then(|| right.trim().to_string())
+        })?;
+        if let Some(suffix) = value.strip_prefix("SharePath + ") {
+            return Some(format!("{SHARE_PATH}{}", unquote(suffix)?));
+        }
+        unquote(&value).map(str::to_string)
+    }
+
+    fn unquote(value: &str) -> Option<&str> {
+        value.strip_prefix('"')?.strip_suffix('"')
     }
 }

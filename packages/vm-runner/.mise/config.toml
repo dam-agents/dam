@@ -1,7 +1,16 @@
-# Cargo reads its registry and build caches from $CARGO_HOME, so checks deny
-# only the network; the git dependency is fetched before any task runs.
+# The smolvm source is cloned just in time by fetch-smolvm and depended on by
+# path, because Cargo cannot fetch it as a git dependency — see that task.
 [tasks.check]
 depends = [":check:*"]
+
+[tasks."check:build"]
+depends = [":fetch-smolvm"]
+
+[tasks."check:clippy"]
+depends = [":fetch-smolvm"]
+
+[tasks.test]
+depends = [":fetch-smolvm"]
 
 [tasks.fix]
 depends = [":fix:*"]

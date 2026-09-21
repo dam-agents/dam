@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 # The same release the runner image installs for its assets — see the version
 # invariant in Dockerfile.vm-runner. Cargo.lock pins the commit this tag named.
-smolvm = { git = "https://github.com/smol-machines/smolvm", tag = "v1.16.0" }
+smolvm = { path = ".smolvm" }
 anyhow = "1"
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }

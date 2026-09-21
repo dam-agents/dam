@@ -1,0 +1,10 @@
+# The smolvm release this crate builds against.
+#
+# It MUST equal SMOLVM_VERSION in packages/controller/Dockerfile.vm-runner.
+# The crate is only half of what the runner needs: the same release supplies
+# the agent rootfs and the ext4 disk templates the library reaches for at
+# runtime, and a guest agent from one version talking to a library from
+# another is not a combination anybody tests. check:pin-matches-image asserts
+# the two agree so the pair cannot drift silently.
+tag=v1.16.0
+commit=e1dd54bf7be6d144ad6bdef4ebf310f57809a6a6
