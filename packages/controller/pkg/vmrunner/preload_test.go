@@ -149,3 +149,60 @@ func TestAMachineBootsFromThePreloadedTreeWithTheServiceGone(t *testing.T) {
 	assert.Equal(t, StateRunning, h.settle(t, "agent-b").State)
 	assert.FileExists(t, fetches, "and a miss is still the runner's own to fill, which is what keeps custom images working")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a crane whose first fetch stands in for one that ran long. It backdates the service's own claim exactly once, which is what the passing of more than holderStale would do while a pass was still working through its list.
+func craneAgeingTheClaim(log, holders, marker string) string {
+	return "#!/bin/sh\n" +
+		"echo \"$@\" >> " + log + "\n" +
+		"if [ \"$1\" = config ]; then\n" +
+		"  if [ -f " + holders + " ] && [ ! -f " + marker + " ]; then touch -d @1 " + holders + "; : > " + marker + "; fi\n" +
+		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\"],\"WorkingDir\":\"/app\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"d=$(mktemp -d); echo rootfs > \"$d/hello\"; tar -cf - -C \"$d\" .\n"
+}
+
+// TEST_SCENARIO: a claim is believed only while it is refreshed, and a pass is not quick — every image is allowed a whole pull timeout, so a pass over several of them can run longer than the window a runner believes a claim for. Refreshed only between passes, this service's claim would go stale during the very pass that wrote it: a peer runner would delete the file as a dead process's, and the images already preloaded would be the first thing evicted under pressure — the head start thrown away by the pass still buying it.
+func TestALongPassKeepsTheClaimItIsStillWriting(t *testing.T) {
+	images := t.TempDir()
+	scratch := t.TempDir()
+	crane := filepath.Join(scratch, "crane")
+	holders := filepath.Join(images, holdersDir, "image-cache")
+	require.NoError(t, os.WriteFile(crane, []byte(craneAgeingTheClaim(
+		filepath.Join(scratch, "log"), holders, filepath.Join(scratch, "aged"))), 0o755))
+	service := &Preloader{
+		ImageDir: images, Images: []string{"quay.io/x/first:1", "quay.io/x/second:1"},
+		ID: "image-cache", Budget: 1 << 30, Crane: crane, Every: time.Minute,
+	}
+
+	service.Sweep()
+
+	require.FileExists(t, filepath.Join(scratch, "aged"), "the pass has to have been aged mid-flight, or this proves nothing")
+	peer := &Server{ImageDir: images, RunnerID: "runner-b"}
+	held := peer.heldElsewhere(images)
+	assert.FileExists(t, holders, "a peer runner reads a stale claim as a dead process's and deletes it")
+	for _, ref := range service.Images {
+		assert.True(t, held[service.cache().cachePath(ref)],
+			"a runner wanting room must still see %s as claimed, though the pass that claimed it outlived one lease window", ref)
+	}
+}
+
+// TEST_SCENARIO: a fetch unpacks beside the entry it will become and removes that scratch tree on its way out, which a killed process never reaches — and the service is killed routinely, because a redeploy rolls the DaemonSet and a redeploy is exactly what makes it fetch new tags. What is left is worse than orphaned: its name is dot-prefixed, so neither the pattern that counts an entry against the budget nor the one that picks an entry to evict can match it, and the bytes sit in a host directory that outlives every pod. So the directory's own housekeeping has to reclaim them, while leaving alone a tree some other process on the node is still unpacking into.
+func TestTheSweepReclaimsWhatAKilledFetchLeftBehind(t *testing.T) {
+	images := t.TempDir()
+	service, _ := preloadService(t, images)
+
+	abandoned := filepath.Join(images, partialPrefix+"abandoned")
+	require.NoError(t, os.MkdirAll(abandoned, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(abandoned, "half"), make([]byte, 1<<20), 0o644))
+	old := time.Now().Add(-2 * partialStale)
+	require.NoError(t, os.Chtimes(abandoned, old, old))
+
+	running := filepath.Join(images, partialPrefix+"running")
+	require.NoError(t, os.MkdirAll(running, 0o755))
+
+	service.Sweep()
+
+	assert.NoDirExists(t, abandoned, "no fetch runs for twice its own timeout, so these bytes were nobody's and nothing else could see them")
+	assert.DirExists(t, running, "a fetch another process on this node is still unpacking into keeps its scratch tree")
+}

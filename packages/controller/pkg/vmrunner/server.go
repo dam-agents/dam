@@ -43,6 +43,9 @@ const (
 	holdersDir = ".holders"
 	// UNIT_BOUNDARY_DESCRIPTION: how long a holders file is believed after its last write. Machines are processes of the runner that made them, so a runner that stopped refreshing has no machines left running and its claims are safe to ignore — the window only has to outlast the gap between two reconciles, which the controller drives about once a minute.
 	holderStale = 30 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress is named apart from a finished entry, and dot-prefixed so the two patterns below cannot match it — a half-written tree must never be counted as one a machine can boot. Nothing finishes an unpack after twice the time one is allowed to take, so a directory older than that belonged to a process that died holding it, and the bytes are the directory's to reclaim.
+	partialPrefix = ".unpack-"
+	partialStale  = 2 * pullTimeout
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -461,7 +464,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(cached), ".unpack-*")
+	tmp, err := os.MkdirTemp(filepath.Dir(cached), partialPrefix+"*")
 	if err != nil {
 		return err
 	}
@@ -646,7 +649,7 @@ func dirSize(path string) int64 {
 	return total
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
+// UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to the byte count the install states — there is no share-of-the-volume fallback, because the cache may sit on a node directory it does not own. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
 func (s *Server) cachePath(image string) string {
 	return filepath.Join(s.ImageDir, strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(image))
 }
@@ -739,7 +742,28 @@ func (s *Server) heldElsewhere(dir string) map[string]bool {
 	return held
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a fetch unpacks beside the entry it will become and removes that scratch tree on its way out, which a process that is killed never reaches — and a node directory outlives every process that writes to it, so what a kill leaves is nobody's until something goes looking. It is invisible as well as abandoned: the patterns above cannot match a dot-prefixed name, so those bytes are neither counted against the budget nor ever chosen for eviction. Reclaiming them is therefore the first thing eviction does, before it measures anything. Only a tree older than any fetch may run is taken, so a fetch still running elsewhere on the node keeps its own.
+func prunePartialUnpacks(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), partialPrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) <= partialStale {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			slog.Warn("image cache: reclaiming what an interrupted fetch left behind", "path", e.Name(), "error", err)
+		}
+	}
+}
+
 func (s *Server) evictImages(dir, keep string, budget int64) {
+	prunePartialUnpacks(dir)
 	if budget <= 0 {
 		return
 	}
@@ -794,7 +818,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		slog.Info("image cache: evicted an image to stay inside the volume", "image", filepath.Base(a.path), "bytes", a.size)
 	}
 	if used > budget {
-		slog.Warn("image cache: over its share of the volume, and every image left is one a machine is running from",
+		slog.Warn("image cache: over its stated budget, and every image left is one a machine is running from",
 			"bytes", used, "budget", budget)
 	}
 }

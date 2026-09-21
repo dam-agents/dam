@@ -22,7 +22,7 @@ func (p *Preloader) cache() *Server {
 	return &Server{ImageDir: p.ImageDir, RunnerID: p.ID, Crane: p.Crane, ImageBudget: p.Budget, Pinned: p.Images}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: claims are published before anything is fetched, because a runner sharing this directory evicts on what it can read here and nothing else. It sweeps on every pass rather than only after a fetch: the runners tidy the directory only as a side effect of paying for a miss, so on a node whose images are all cached nothing prunes what an owner who has gone left behind.
+// UNIT_BOUNDARY_DESCRIPTION: claims are published before anything is fetched, because a runner sharing this directory evicts on what it can read here and nothing else. They are published again after each fetch, because a claim is believed only while it is being refreshed and a pass is not quick: every image is allowed a whole pull timeout, so a pass over several of them can outlast the window a runner believes a claim for. Left to the gap between passes alone, this service's own claim would go stale while the very pass that wrote it was still running, and the images it had already preloaded would be evicted by the next runner to want the room. Refreshing between images bounds the gap by one fetch instead of by the whole pass. It sweeps on every pass rather than only after a fetch: the runners tidy the directory only as a side effect of paying for a miss, so on a node whose images are all cached nothing prunes what an owner who has gone left behind.
 func (p *Preloader) Sweep() {
 	cache := p.cache()
 	cache.publishHolders()
@@ -38,11 +38,12 @@ func (p *Preloader) Sweep() {
 		if err := cache.cacheImage(ref, cached, ""); err != nil {
 			slog.Warn("image cache: preloading an image this install ships", "image", ref, "error", err)
 		}
+		cache.publishHolders()
 	}
 	cache.evictImages(p.ImageDir, "", p.Budget)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a claim is believed while it is being refreshed, so the sweep is also this service's heartbeat — stop refreshing and the images it preloaded become evictable again, which is what should happen when it is gone. The interval is the whole of the lease: it has to stay well inside the window a runner believes a claim for, and it is also how long a registry that was down is waited out.
+// UNIT_BOUNDARY_DESCRIPTION: a claim is believed while it is being refreshed, so the sweep is also this service's heartbeat — stop refreshing and the images it preloaded become evictable again, which is what should happen when it is gone. The interval bounds the gap between passes, not the lease: a pass refreshes as it goes, because it can run for longer than the window a runner believes a claim for. It is also how long a registry that was down is waited out.
 func (p *Preloader) Run(ctx context.Context) {
 	for {
 		p.Sweep()
