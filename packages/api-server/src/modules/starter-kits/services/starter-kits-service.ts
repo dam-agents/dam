@@ -168,11 +168,9 @@ export function createStarterKitsService(
     loaded: LoadedKit,
     skip: readonly string[],
     overrides: readonly StarterKitScheduleOverride[],
-  ): Promise<number> {
-    let seeded = 0;
+  ): Promise<void> {
     for (const s of loaded.kit.schedules) {
       if (skip.includes(s.name)) continue;
-      seeded += 1;
       const o = overrides.find((x) => x.name === s.name);
       const sessionMode = o?.sessionMode ?? s.sessionMode;
       const enabled = o?.enabled ?? s.enabled;
@@ -202,16 +200,15 @@ export function createStarterKitsService(
             });
       if (!enabled) await deps.schedules.toggle(created.id);
     }
-    return seeded;
   }
 
   async function enqueueOnboardingTurn(
     created: Agent,
     loaded: LoadedKit,
     version: string,
-    pending: boolean,
     harness: HarnessFamily | undefined,
   ): Promise<void> {
+    if (loaded.kit.onboarding === false) return;
     const agentId = created.id;
     const agent = (await deps.agents.get(agentId)) ?? created;
     const [schedules, agentConnections] = await Promise.all([
@@ -233,7 +230,6 @@ export function createStarterKitsService(
         })),
         boundChannels: agent.channels.map((c) => c.type),
         familyTitles: await familyTitles(),
-        pending,
       },
       harness,
     );
@@ -324,7 +320,7 @@ export function createStarterKitsService(
           ]);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
         }
-        const seeded = await seedSchedules(
+        await seedSchedules(
           agent.id,
           loaded,
           input.skipSchedules,
@@ -337,7 +333,7 @@ export function createStarterKitsService(
           !(kit.onboarding && "command" in kit.onboarding);
         if (!briefs)
           await deps.markAgentOnboarded(agent.id, now().toISOString());
-        await enqueueOnboardingTurn(agent, loaded, version, briefs, harness);
+        await enqueueOnboardingTurn(agent, loaded, version, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch((cleanupErr: unknown) => {
           getLogger().error(

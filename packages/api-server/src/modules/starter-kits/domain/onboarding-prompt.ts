@@ -11,7 +11,6 @@ export interface OnboardingFacts {
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
   familyTitles: ReadonlyMap<string, string>;
-  pending?: boolean;
 }
 
 export function describeAccepts(
@@ -83,7 +82,6 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     (kit.onboarding && "prompt" in kit.onboarding
       ? kit.onboarding.prompt
       : undefined) ?? defaultInstruction(kit);
-  const pending = facts.pending ?? true;
   return [
     `You were created from the "${kit.name}" starter kit (${facts.catalog}/${kit.id}@${facts.version}).`,
     definitionLine(kit),
@@ -94,13 +92,9 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     channelLine(facts),
     "",
     instruction,
-    ...(pending
-      ? [
-          "",
-          "Before you ask the user anything, call the set_onboarding_checklist tool with what you need FROM THE USER, so they can watch progress in the platform: one step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying a connection, writing files, registering schedules, checking the install — is not a step; do it without listing it. Three to six steps is typical. Tick each with complete_onboarding_step the moment the user has supplied it, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
-          releaseLine(facts.schedules.length > 0),
-        ]
-      : []),
+    "",
+    "Before you ask the user anything, call the set_onboarding_checklist tool with what you need FROM THE USER, so they can watch progress in the platform: one step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying a connection, writing files, registering schedules, checking the install — is not a step; do it without listing it. Three to six steps is typical. Tick each with complete_onboarding_step the moment the user has supplied it, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
+    releaseLine(facts.schedules.length > 0),
   ].join("\n");
 }
 
