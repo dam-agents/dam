@@ -30,6 +30,7 @@ maven = "latest"
 nodejs = "24"
 pinact = "latest"
 pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
+rust = "1.94" # the vm-runner crate; the Docker builder stage reads it too
 trivy = "latest"
 uv = "0.9"
 yq = "latest"

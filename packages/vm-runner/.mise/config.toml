@@ -1,0 +1,7 @@
+# Cargo reads its registry and build caches from $CARGO_HOME, so checks deny
+# only the network; the git dependency is fetched before any task runs.
+[tasks.check]
+depends = [":check:*"]
+
+[tasks.fix]
+depends = [":fix:*"]

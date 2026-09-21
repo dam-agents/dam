@@ -1,0 +1,22 @@
+[package]
+name = "vm-runner"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# The same release the runner image installs for its assets — see the version
+# invariant in Dockerfile.vm-runner. Cargo.lock pins the commit this tag named.
+smolvm = { git = "https://github.com/smol-machines/smolvm", tag = "v1.16.0" }
+anyhow = "1"
+axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[lints.clippy]
+all = "deny"
