@@ -82,6 +82,46 @@ describe("matchTurnsToReplies by the harness prompt id", () => {
     expect(matchTurnsToReplies(turns, messages).get("r1")?.turnId).toBe("p1");
   });
 
+  it("does not let the previous reply claim the next turn before its reply exists", () => {
+    /**
+     * TEST_SCENARIO: the next prompt has been sent and its turn has started, but
+     * no reply bubble exists for it yet. The still-visible previous reply is the
+     * latest exchange on the timeline, and must not pick up the new turn's cost:
+     * an exchange's claim ends where the next prompt was sent.
+     */
+    const turns = [
+      keyedTurn("p1", "2026-09-16T12:00:01.000Z"),
+      keyedTurn("p2", "2026-09-16T12:05:01.000Z"),
+    ];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1"),
+      prompt("2026-09-16T12:05:00.000Z"),
+    ];
+
+    const matched = matchTurnsToReplies(turns, messages);
+
+    expect(matched.get("r1")?.turnId).toBe("p1");
+    expect(matched.size).toBe(1);
+  });
+
+  it("keeps the upper edge tight when the next prompt is stamped ahead of the harness", () => {
+    /**
+     * TEST_SCENARIO: the sender's own bubble for the next prompt carries the
+     * browser's stamp, a couple of seconds ahead of the turn it started. The
+     * slack that tolerates that lead at the lower edge must tighten the upper
+     * edge, or the lead would let the previous reply claim the new turn.
+     */
+    const turns = [keyedTurn("p2", "2026-09-16T12:05:01.000Z")];
+    const messages = [
+      prompt("2026-09-16T12:00:00.000Z"),
+      reply("r1"),
+      prompt("2026-09-16T12:05:03.000Z"),
+    ];
+
+    expect(matchTurnsToReplies(turns, messages).size).toBe(0);
+  });
+
   it("holds a keyed reply's turn back while the reply still streams", () => {
     const turns = [keyedTurn("p1", "2026-09-16T12:00:01.000Z")];
     const messages = [

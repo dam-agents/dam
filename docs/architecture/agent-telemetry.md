@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-09-17
+Last verified: 2026-09-21
 
 ## Overview
 
@@ -17,8 +17,12 @@ spend read would misreport a bill as zero, so metrics fails closed; an empty tel
 is a legitimate answer — this agent produced no telemetry in this window — so this path
 reports availability as a value and never turns "nothing happened" into an error.
 
-The subsystem is the **api-server's** responsibility end to end. It is a thin owner-scoped
-reader in front of the telemetry store; the controller and agent-runtime do not participate.
+The read path is the **api-server's** responsibility end to end: a thin owner-scoped reader
+in front of the telemetry store, in which the controller and agent-runtime take no part. The
+one place the agent side participates is the join of a reply to its Turn, which rides the
+Session load — the harness image's session-history provider stamps each replayed reply with
+the prompt id of the message it answered, and agent-runtime replays that history
+([progressive disclosure](#progressive-disclosure)).
 
 ```mermaid
 flowchart LR
@@ -179,14 +183,17 @@ A Turn is matched to its reply **by the prompt id**, which a reply learns when t
 loaded: the history the harness replays stamps each reply with the prompt id of the message
 it answered, by position, so the join is authoritative once loaded. This is deliberately not
 attempted live off the harness's stop hook — that report names only its Session, never which
-Turn, so a report that outran its Turn would attach to the wrong reply; the runtime keeps the
-correlation to the load path, where position settles it. A reply still being watched live has
-not learned its id yet and falls back to the prompt's **time**: the Turn belongs to the
-exchange whose prompt was the latest sent at or before the Turn began, with a few seconds'
-slack for a sender's own message, which keeps the browser's stamp until the Session is
-reloaded. A keyed match is never displaced by a timed one, a reply still streaming shows
-nothing until it settles, and a reply with neither an id nor a time stays unlabelled rather
-than being lined up by position.
+Turn, so a report that outran its Turn would attach to the wrong reply; the correlation stays
+on the load path, where position settles it. A reply still being watched live has not learned
+its id yet and falls back to the prompt's **time**: the Turn belongs to the exchange whose
+prompt was the latest sent at or before the Turn began *and* whose next prompt, if one has
+been sent, came after it — bounded at both edges, so the reply to one prompt can never claim
+the Turn the next prompt started while that Turn's own reply is still on its way. A few
+seconds' slack covers a sender's own message, which keeps the browser's stamp until the
+Session is reloaded: it tolerates at the lower edge and tightens at the upper. A keyed match
+is never displaced by a timed one, a reply still streaming shows nothing until it settles,
+and a reply with neither an id nor a time stays unlabelled rather than being lined up by
+position.
 
 Session-wide access stays off the conversation: the Session's own menu exports its telemetry
 as a file. The panel is revealed by an experimental feature ([features](features.md)); the

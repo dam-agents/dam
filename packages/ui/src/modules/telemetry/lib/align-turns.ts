@@ -11,24 +11,30 @@ export interface ReplyLike {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a prompt sent and the reply it produced. Once the
- * turn has ended the reply carries the harness's own name for the prompt, and
- * that name is the join. The prompt's time is kept for the exchanges that never
- * learned it — the prompt's, not the reply's, because a user message carries
- * one from the moment it is sent while a reply gains one only as it streams.
+ * session has been loaded the reply carries the harness's own name for the
+ * prompt, and that name is the join. The prompt's time is kept for the
+ * exchanges that have not learned it — the prompt's, not the reply's, because
+ * a user message carries one from the moment it is sent while a reply gains
+ * one only as it streams — together with the time of the next prompt sent,
+ * which is where this exchange's claim on the timeline ends.
  */
 interface Exchange {
   replyId: string;
   key: string | null;
   promptAt: number | null;
+  nextPromptAt: number | null;
   pending: boolean;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the slack the time fallback allows between a
- * prompt's stamp and the start of the turn it caused. Both come from the pod's
+ * UNIT_BOUNDARY_DESCRIPTION: the slack the time fallback allows at either edge
+ * of an exchange. A prompt's stamp and a turn's start both come from the pod's
  * clock except the sender's own bubble, which keeps the browser's stamp until
- * the session is reloaded. A keyed exchange never falls back to time, so the
- * slack only governs replies from before the harness named its prompts.
+ * the session is reloaded and may run a few seconds ahead. The lower edge
+ * therefore tolerates a prompt stamped just after its turn began; the upper
+ * edge is tightened by the same amount, so a turn that began just before the
+ * next prompt's stamp is left unmatched rather than handed to the exchange it
+ * only appears to fall inside.
  */
 const PROMPT_ORDER_SLACK_MS = 5_000;
 
@@ -42,19 +48,27 @@ const isReply = (m: ReplyLike): boolean => m.role === "assistant" && !m.notice;
 
 export function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
   const exchanges: Exchange[] = [];
+  const awaitingNextPrompt: Exchange[] = [];
   let promptAt: number | null = null;
   for (const m of messages) {
     if (m.role === "user") {
       promptAt = ms(m.at);
+      if (promptAt !== null) {
+        for (const e of awaitingNextPrompt) e.nextPromptAt = promptAt;
+        awaitingNextPrompt.length = 0;
+      }
       continue;
     }
     if (!isReply(m)) continue;
-    exchanges.push({
+    const exchange: Exchange = {
       replyId: m.id,
       key: m.telemetryPromptId ?? null,
       promptAt,
+      nextPromptAt: null,
       pending: m.streaming,
-    });
+    };
+    exchanges.push(exchange);
+    awaitingNextPrompt.push(exchange);
     promptAt = null;
   }
   return exchanges;
@@ -64,13 +78,16 @@ export function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
  * UNIT_BOUNDARY_DESCRIPTION: a turn belongs to the reply that carries its
  * prompt id. A turn no keyed reply has claimed — a turn that just ended live,
  * before the load that would key its reply — falls back to the reply whose
- * prompt it followed: the latest prompt sent at or before the turn began. That
- * owning exchange is chosen over every exchange, keyed or not, so a keyed reply
- * still streaming is recognised as the owner and the turn waits for it rather
- * than sliding onto the earlier reply. The timed match is taken only when the
- * owner carries no id of its own, or the very id this turn was keyed by, so a
- * keyed match is never displaced and a reply keyed to another turn is left
- * alone.
+ * prompt it followed: the latest prompt sent at or before the turn began, and
+ * only while the turn also began before the next prompt was sent, so the reply
+ * to one prompt can never claim the turn the next prompt started while that
+ * turn's own reply is still on its way. The owning exchange is chosen over
+ * every exchange, keyed or not, so a keyed reply still streaming is recognised
+ * as the owner and the turn waits for it rather than sliding onto the earlier
+ * reply. The timed match is taken only when the owner carries no id of its own
+ * or the very id this turn was keyed by, one turn is chosen per reply, and it
+ * is written only to a reply no other match has claimed — so a keyed match is
+ * never displaced and a reply keyed to another turn is left alone.
  */
 export function matchTurnsToReplies(
   turns: readonly TurnSummary[],
@@ -99,6 +116,7 @@ export function matchTurnsToReplies(
   );
   if (timed.length === 0) return matched;
 
+  const timedMatches = new Map<string, TurnSummary>();
   for (const turn of turns) {
     if (claimed.has(turn.turnId)) continue;
     const startedAt = ms(turn.startedAt);
@@ -112,8 +130,17 @@ export function matchTurnsToReplies(
       null,
     );
     if (owner === null || owner.pending) continue;
+    if (
+      owner.nextPromptAt !== null &&
+      startedAt + PROMPT_ORDER_SLACK_MS > owner.nextPromptAt
+    ) {
+      continue;
+    }
     if (owner.key !== null && owner.key !== turn.promptId) continue;
-    matched.set(owner.replyId, turn);
+    timedMatches.set(owner.replyId, turn);
+  }
+  for (const [replyId, turn] of timedMatches) {
+    if (!matched.has(replyId)) matched.set(replyId, turn);
   }
   return matched;
 }
