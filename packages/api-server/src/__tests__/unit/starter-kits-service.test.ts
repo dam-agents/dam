@@ -98,6 +98,7 @@ function makeHarness(
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
   };
   let nextScheduleId = 0;
+  const seeded: { id: string; name: string; enabled: boolean }[] = [];
   const service = createStarterKitsService({
     owner: "user-1",
     surface: "ui",
@@ -130,21 +131,27 @@ function makeHarness(
     schedules: {
       async createCron(input) {
         calls.cron.push(input);
-        return { id: `s${++nextScheduleId}`, name: input.name } as Schedule;
+        const id = `s${++nextScheduleId}`;
+        seeded.push({ id, name: input.name, enabled: true });
+        return { id, name: input.name } as Schedule;
       },
       async createRRule(input) {
         calls.rrule.push(input);
-        return { id: `s${++nextScheduleId}`, name: input.name } as Schedule;
+        const id = `s${++nextScheduleId}`;
+        seeded.push({ id, name: input.name, enabled: true });
+        return { id, name: input.name } as Schedule;
       },
       async toggle(id) {
         calls.toggled.push(id);
+        const found = seeded.find((s) => s.id === id);
+        if (found) found.enabled = !found.enabled;
         return null;
       },
       async list() {
-        return [
-          { name: "review", spec: { enabled: true } },
-          { name: "benchmark", spec: { enabled: false } },
-        ] as Schedule[];
+        return seeded.map(({ name, enabled }) => ({
+          name,
+          spec: { enabled },
+        })) as Schedule[];
       },
     },
     connections: {
@@ -849,6 +856,7 @@ describe("starter kits: onboarding turn", () => {
       fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
     );
     const prompt = await onboardingTaskAfterApply(h);
+    expect(prompt).toContain("Every schedule on this agent is HELD");
     expect(prompt).toContain("mark_onboarding_complete");
     expect(h.calls.onboarded).toEqual([]);
 
@@ -857,7 +865,7 @@ describe("starter kits: onboarding turn", () => {
     expect(h.calls.onboarded[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  // TEST_SCENARIO: the hold is lifted by the agent calling mark_onboarding_complete, and only the composed briefing asks it to. A kit whose onboarding is a bare harness command gets a mechanical trigger with nothing to read, so holding its schedules would hold every occurrence for good — the kit's schedules would simply never fire, with nothing on screen to say why. The knowledge kits are exactly this shape.
+  // TEST_SCENARIO: onboarding is released by the agent calling mark_onboarding_complete, and only the composed briefing asks it to. A kit whose onboarding is a bare harness command gets a mechanical trigger with nothing to read, so leaving it pending would hold every occurrence of its schedules for good, with nothing on screen to say why.
   it("holds nothing for a kit whose turn cannot ask for the release", async () => {
     const h = makeHarness({
       ...LOADED,
@@ -876,13 +884,15 @@ describe("starter kits: onboarding turn", () => {
     expect(h.calls.woken).toEqual(["agent-1"]);
   });
 
-  it("a kit whose apply created no schedules is onboarded at create, and its briefing holds nothing", async () => {
+  // TEST_SCENARIO: onboarding pending says the agent has not reported itself set up; it is not a claim about schedules. A briefing kit that declares none — both knowledge kits are that shape — still gets the checklist tools and the Onboarding tag, and its briefing states what is true for it instead of naming a hold it has nothing to hold.
+  it("a kit whose apply created no schedules still onboards, without claiming a schedule hold", async () => {
     const h = makeHarness({ ...LOADED, kit: kit({ schedules: [] }) });
     const prompt = await onboardingTaskAfterApply(h);
     expect(prompt).toContain("follow ONBOARDING.md");
-    expect(prompt).not.toContain("mark_onboarding_complete");
-    expect(prompt).not.toContain("set_onboarding_checklist");
-    expect(h.calls.onboarded.map((o) => o.id)).toEqual(["agent-1"]);
+    expect(prompt).toContain("set_onboarding_checklist");
+    expect(prompt).toContain("mark_onboarding_complete");
+    expect(prompt).not.toContain("Every schedule on this agent is HELD");
+    expect(h.calls.onboarded).toEqual([]);
   });
 
   it("a kit that names a command opens its first session on it, spelled for the harness", async () => {

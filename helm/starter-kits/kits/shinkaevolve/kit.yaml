@@ -6,6 +6,8 @@ description: >-
 category: research
 icon: chart
 docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md
+# No intake turn — the workload takes its brief from the user's first prompt.
+onboarding: false
 image:
   ref: quay.io/dam-agents/shinkaevolve # @ci-pin shinkaevolve-image-tag
   harness: claude-code
