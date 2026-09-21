@@ -86,7 +86,7 @@ describe("vmDiskFromMounts", () => {
     ).toEqual({ disk: { persist: ["/data", "/home/agent"] } });
   });
 
-  // TEST_SCENARIO: mounts may nest, because each is a volume of its own on the container backend. One disk persists a path and everything under it, so the child is already covered — and the Agent resource refuses a persisted path inside another, so declaring both would fail admission at create.
+  // TEST_SCENARIO: mounts may nest, because each is a volume of its own on the container backend. One disk persists a path and everything under it, so the child is already covered and declaring both would bind the parent's own subtree onto itself. The Agent resource does not catch this — a quadratic rule is beyond the CRD's CEL cost budget — so dropping it here is the guard, alongside the controller's.
   it("drops a mount nested inside another persisted one", () => {
     expect(
       vmDiskFromMounts([

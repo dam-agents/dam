@@ -41,6 +41,17 @@ export interface AgentSpecCR {
          * Persist are absolute guest paths bind-mounted from the disk, seeded once
          * from whatever the image ships at that path. They survive a stop, an
          * in-place restart and hibernation, and go with the Agent on delete.
+         *
+         * MaxItems and items:MaxLength are what make the `..` rule above
+         * affordable: the CEL cost estimator sizes a rule from the schema's own
+         * bounds, and reads no CEL predicate, so an unbounded array is costed as
+         * if it were enormous and the rule is rejected at apply time. A path
+         * nested inside another is not rejected here — bounding that needs a rule
+         * quadratic in this list, which the estimator prices out of reach. The
+         * api-server and the controller both drop a nested path instead, since one
+         * disk persists a path and everything under it.
+         *
+         * @maxItems 24
          */
         persist?: string[];
         /**

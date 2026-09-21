@@ -167,9 +167,7 @@ type VMBackend struct {
 // time it stops, so a path that is not listed here is empty on the next boot.
 // That is the same rule the container backend states for a path with no mount,
 // which is why the vm backend needs no ephemeral list to go with this one.
-// +kubebuilder:validation:XValidation:rule="!has(self.persist) || size(self.persist) <= 16",message="a machine may persist at most 16 paths"
 // +kubebuilder:validation:XValidation:rule="!has(self.persist) || self.persist.all(p, !p.contains('..'))",message="a persisted path may not contain '..'"
-// +kubebuilder:validation:XValidation:rule="!has(self.persist) || self.persist.all(p, self.persist.all(q, p == q || !p.startsWith(q + '/')))",message="a persisted path may not nest inside another"
 type VMDisk struct {
 	// Size is the whole disk as a K8s resource Quantity (e.g. "20Gi"), rounded
 	// up to a GiB when the machine is created and grown in place — never shrunk
@@ -179,7 +177,17 @@ type VMDisk struct {
 	// Persist are absolute guest paths bind-mounted from the disk, seeded once
 	// from whatever the image ships at that path. They survive a stop, an
 	// in-place restart and hibernation, and go with the Agent on delete.
+	//
+	// MaxItems and items:MaxLength are what make the `..` rule above
+	// affordable: the CEL cost estimator sizes a rule from the schema's own
+	// bounds, and reads no CEL predicate, so an unbounded array is costed as
+	// if it were enormous and the rule is rejected at apply time. A path
+	// nested inside another is not rejected here — bounding that needs a rule
+	// quadratic in this list, which the estimator prices out of reach. The
+	// api-server and the controller both drop a nested path instead, since one
+	// disk persists a path and everything under it.
 	// +optional
+	// +kubebuilder:validation:MaxItems=24
 	// +kubebuilder:validation:items:Pattern=`^/[A-Za-z0-9._@+-][A-Za-z0-9._@/+-]*$`
 	// +kubebuilder:validation:items:MaxLength=256
 	Persist []string `json:"persist,omitempty"`
