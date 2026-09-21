@@ -19,6 +19,7 @@ export type AcpUpdate =
 export interface FrameMeta {
   replayFor?: string;
   at?: string;
+  telemetryPromptId?: string;
 }
 
 export type UpdateHandler = (

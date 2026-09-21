@@ -13,12 +13,18 @@ export function frameMetaOf(meta: unknown): FrameMeta {
   if (typeof meta !== "object" || meta === null) return {};
   const platform = (meta as Record<string, unknown>).platform;
   if (typeof platform !== "object" || platform === null) return {};
-  const { replayFor, at } = platform as Record<string, unknown>;
+  const { replayFor, at, telemetryPromptId } = platform as Record<
+    string,
+    unknown
+  >;
   const parsedAt = platformFrameMetaSchema.shape.at.safeParse(at);
   return {
     ...(typeof replayFor === "string" ? { replayFor } : {}),
     ...(parsedAt.success && parsedAt.data !== undefined
       ? { at: parsedAt.data }
+      : {}),
+    ...(typeof telemetryPromptId === "string" && telemetryPromptId !== ""
+      ? { telemetryPromptId }
       : {}),
   };
 }
