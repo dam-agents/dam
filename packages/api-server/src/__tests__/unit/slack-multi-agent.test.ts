@@ -117,6 +117,7 @@ function harness(
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     () => {},
   );
 

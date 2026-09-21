@@ -133,6 +133,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     () => {},
   );
 

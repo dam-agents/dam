@@ -827,6 +827,7 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
+        slackInstalls.canonicalWorkspaceName,
         undefined,
         DEFAULT_SETTLE_MS,
       )

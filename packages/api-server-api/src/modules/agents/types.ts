@@ -127,7 +127,9 @@ export type ConnectSlackResult =
 export type BindSlackChannelError =
   | { type: "FlowInvalid" }
   | { type: "AgentNotFound" }
-  | { type: "ChannelAlreadyBound" };
+  | { type: "ChannelAlreadyBound" }
+  | { type: "WorkspaceUnresolved" }
+  | { type: "WorkspaceUnreachable" };
 
 export type BindSlackChannelResult =
   | { ok: true; value: { slackChannelId: string; channelTitle: string | null } }

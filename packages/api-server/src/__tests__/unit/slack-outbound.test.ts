@@ -63,6 +63,7 @@ function harness(opts: {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     () => {},
   );
 

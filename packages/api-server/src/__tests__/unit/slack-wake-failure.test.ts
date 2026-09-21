@@ -66,6 +66,7 @@ function harness(
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     (e) => events.push(e),
     0,
     { patienceMs, sleep: async () => {} },

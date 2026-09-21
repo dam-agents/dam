@@ -3,6 +3,7 @@ import { createFlowStore, type FlowStore } from "./telegram-flows.js";
 
 export interface SlackPendingBind {
   slackChannelId: string;
+  teamId: string;
   slackUserId: string;
   keycloakSub: string;
   channelTitle?: string;
