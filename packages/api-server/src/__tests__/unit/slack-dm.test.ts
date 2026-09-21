@@ -157,7 +157,7 @@ describe("slack 1:1 DM", () => {
     expect(h.prompts).toHaveLength(1);
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("hello privately");
-    expect(prompt).not.toContain("<@");
+    expect(prompt).not.toContain(`<@${USER}`);
   });
 
   it("frames a DM as addressed to the agent, without claiming a mention", async () => {

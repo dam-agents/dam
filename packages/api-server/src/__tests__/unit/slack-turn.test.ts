@@ -911,6 +911,25 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain("post to Slack for it only if you're asked to");
   });
 
+  it("bans raw ids in a reply and keeps the answer in the thread", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain("never write the bare id as visible text");
+    expect(prompt).toContain("<@U024BE7LH>");
+    expect(prompt).toContain("leave alsoSendToChannel off unless");
+    expect(prompt).not.toContain(
+      "thread is old enough that people watching the channel",
+    );
+  });
+
   it("names the bot's own Slack id, so a tag of it reads as self", async () => {
     let prompt = "";
     const h = harness({
