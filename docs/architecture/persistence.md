@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-09-19
+Last verified: 2026-09-21
 
 ## Overview
 
@@ -109,7 +109,7 @@ Two domain resources are deliberately not CRDs:
 
 ### Per-Agent PVCs
 
-Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteOnce` on ordinary single-writer storage — the agent pod is the volume's only writer, so no install needs a shared filesystem class. (Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.) An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class. The pin is also honored by the warm pool and the storage migration below.
+Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteOnce` on ordinary single-writer storage, which no install needs a shared filesystem class for. `ReadWriteOnce` binds a volume to one *node*, not one pod — any number of pods on that node could mount it — so what keeps a workspace single-writer is that the platform runs exactly one writer for it, not the access mode. A second writer on another node would not be refused at admission; its pod would schedule and then hang on attach. (Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.) An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class. The pin is also honored by the warm pool and the storage migration below.
 
 A home volume mounts empty and shadows whatever the image bakes at that path, so the image's boot seeds it on the volume's first boot from the staged workspace: a no-clobber copy behind a sentinel file, run once per volume, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image. The seed lives in the image's own boot sequence — the container entrypoint, replayed by the VM boot — with no separate init container, and the Agent CR's `spec.init` field (and a Template's `init`) is retained but no longer read. Image-shipped skills are the one carve-out from this once-per-volume rule: they are seeded, updated, and retired per skill by [image-skill reconciliation](agent-skills.md#image-skill-lifecycle), so a skill added to an image reaches existing volumes too, while everything else in the workspace keeps the one-shot semantics.
 
