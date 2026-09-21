@@ -975,7 +975,6 @@ func (s *Server) lock(id string) *sync.Mutex {
 	return l
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a second operation can be queued behind the one running, so each clears only its own markers — otherwise a finishing boot erases the pending stop queued behind it and the machine reads as settled while the stop has not run.
 // UNIT_BOUNDARY_DESCRIPTION: work the runner has out that belongs to no machine — the disk-template warm-up, which is a decompression the first create would otherwise pay for. It joins the same barrier as a machine operation so that "cancels what is running and waits for it" is true of everything and not of most things: the runner's lifetime cancels it, and Close does not return while it is unwinding. A caller that arrives after Close is refused for the same reason a machine operation is, since there is nothing left to wait for it.
 func (s *Server) Background(fn func()) {
 	s.mu.Lock()
@@ -991,6 +990,7 @@ func (s *Server) Background(fn func()) {
 	}()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a second operation can be queued behind the one running, so each clears only its own markers — otherwise a finishing boot erases the pending stop queued behind it and the machine reads as settled while the stop has not run.
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
 	if s.closed {
