@@ -104,19 +104,23 @@ signal that this is an OpenShift cluster.
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
+{{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Both values back the same directory in the runner — the shared cache as a
-ReadWriteMany claim, the host path as a hostPath — and only one volume can be
-mounted there. Rather than silently preferring one, say so.
+Both values back the same directory in the runner — the node cache the runners
+on a node write to, the archive path a read-only directory staged on the host —
+and only one volume can be mounted there. Rather than silently preferring one,
+say so.
 */}}
 {{- define "platform.validate.oneBackingForTheRunnerImages" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
-{{- if and ($v.imageCache | default dict).enabled $v.runner.imageArchiveHostPath -}}
-{{- fail "virtualization.imageCache.enabled and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the shared cache, or keep the host path and turn the cache off." -}}
+{{- if and ($v.imageCache | default dict).hostPath $v.runner.imageArchiveHostPath -}}
+{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only archives staged for an install with no registry." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

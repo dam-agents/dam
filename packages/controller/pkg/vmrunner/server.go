@@ -35,11 +35,16 @@ const (
 	unhealthyRestart = 10 * time.Minute
 	pullTimeout      = 20 * time.Minute
 	maxImageConfig   = 1 << 20
-	// UNIT_BOUNDARY_DESCRIPTION: how much of the shared volume the cached images may hold. A share rather than a byte count, so nobody has to keep a second number in step with the PVC; the rest is headroom for the image being fetched and for whatever the volume is shared with.
+	// UNIT_BOUNDARY_DESCRIPTION: how much of the image directory the cached images may hold when nothing configures a budget. A share of the filesystem is the right default only where that filesystem is the runner's own claim and holds nothing else; a node directory shared with the rest of the host is not that, which is why the per-node cache is given a byte count instead.
 	cacheBudgetPercent = 80
 	rootfsDir          = "rootfs"
 	launchFile         = "launch.json"
 	shareDir           = "share"
+
+	// UNIT_BOUNDARY_DESCRIPTION: where a runner records which cached images its own machines hold, so the runners sharing a node directory can see each other's claims. A runner reads only its own machines — they are its child processes — so on a shared directory its in-use set is a third of the answer, and evicting on it alone takes a running guest's root filesystem away from a machine belonging to somebody else.
+	holdersDir = ".holders"
+	// UNIT_BOUNDARY_DESCRIPTION: how long a holders file is believed after its last write. Machines are processes of the runner that made them, so a runner that stopped refreshing has no machines left running and its claims are safe to ignore — the window only has to outlast the gap between two reconciles, which the controller drives about once a minute.
+	holderStale = 30 * time.Minute
 )
 
 var machineID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -76,6 +81,10 @@ type Server struct {
 	AllowFrom  []*net.IPNet
 	Crane      string
 	Init       string
+	// UNIT_BOUNDARY_DESCRIPTION: this runner's name in the holders directory. Empty keeps the cache private to this runner: nothing is published and nothing else's claims are read, which is what the per-owner fallback wants.
+	RunnerID string
+	// UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy. Zero falls back to a share of the filesystem.
+	ImageBudget int64
 
 	mu         sync.Mutex
 	locks      map[string]*sync.Mutex
@@ -108,6 +117,7 @@ func (s *Server) Start() error {
 			}
 		}
 	}
+	s.publishHolders()
 	return nil
 }
 
@@ -271,6 +281,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	if !machineID.MatchString(id) {
 		return fmt.Errorf("invalid machine id %q", id)
 	}
+	defer s.publishHolders()
 	state, err := s.machineState(id)
 	if err != nil {
 		return err
@@ -523,7 +534,7 @@ func (s *Server) claim(tmp, cached, forMachine string) error {
 	if complete, readErr := readLaunch(cached); readErr == nil && complete != nil {
 		return nil
 	}
-	if s.imagesInUse(forMachine)[cached] {
+	if s.imagesInUse(forMachine)[cached] || s.heldElsewhere(s.ImageDir)[cached] {
 		return fmt.Errorf("%s is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image", filepath.Base(cached))
 	}
 	if err := os.RemoveAll(cached); err != nil {
@@ -637,6 +648,9 @@ func dirSize(path string) int64 {
 
 // UNIT_BOUNDARY_DESCRIPTION: nothing else prunes this volume and every deploy adds an image under a fresh tag, so it would fill and then refuse every machine. Oldest first by modification time, down to a share of the volume rather than a configured size — one number nobody has to keep in step with the PVC. Unlinking an archive a machine is still reading is safe: the open descriptor outlives the name.
 func (s *Server) cacheBudget(dir string) int64 {
+	if s.ImageBudget > 0 {
+		return s.ImageBudget
+	}
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(dir, &stat); err != nil {
 		return 0
@@ -669,11 +683,75 @@ func (s *Server) imagesInUse(except string) map[string]bool {
 	return inUse
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: publishes what this runner's machines hold, so a runner sharing the node's image directory can be seen by the others. One file per runner rather than one per image, because it is rewritten whole from the machines on disk and a whole rewrite cannot leave a claim behind for a machine that is gone. Its mtime is the liveness signal, so a file is refreshed even when the set did not change. Failure is logged and not returned: a runner that cannot publish its claims still runs its machines, and the cost is that another runner may evict an image it holds.
+func (s *Server) publishHolders() {
+	if s.RunnerID == "" {
+		return
+	}
+	dir := filepath.Join(s.ImageDir, holdersDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+		return
+	}
+	held := s.imagesInUse("")
+	names := make([]string, 0, len(held))
+	for path := range held {
+		names = append(names, filepath.Base(path))
+	}
+	sort.Strings(names)
+	path := filepath.Join(dir, s.RunnerID)
+	staged := path + ".new"
+	if err := os.WriteFile(staged, []byte(strings.Join(names, "\n")), 0o644); err != nil {
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+		return
+	}
+	if err := os.Rename(staged, path); err != nil {
+		_ = os.Remove(staged)
+		slog.Warn("image cache: cannot publish this runner's claims", "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every claim on the shared directory, this runner's included, keyed the way evictImages keys its entries. A file older than holderStale is skipped and deleted: its runner is gone, and with it the machines that were holding those images, so keeping the claims would pin images nothing can boot from. A file this runner cannot read is treated as holding everything it names nothing about — that is, skipped — because guessing narrower is what deletes somebody's rootfs.
+func (s *Server) heldElsewhere(dir string) map[string]bool {
+	held := map[string]bool{}
+	entries, err := os.ReadDir(filepath.Join(dir, holdersDir))
+	if err != nil {
+		return held
+	}
+	for _, e := range entries {
+		if e.IsDir() || strings.HasSuffix(e.Name(), ".new") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(dir, holdersDir, e.Name())
+		if time.Since(info.ModTime()) > holderStale {
+			_ = os.Remove(path)
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, name := range strings.Split(string(body), "\n") {
+			if name = strings.TrimSpace(name); name != "" {
+				held[filepath.Join(dir, name)] = true
+			}
+		}
+	}
+	return held
+}
+
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	if budget <= 0 {
 		return
 	}
 	inUse := s.imagesInUse("")
+	for path := range s.heldElsewhere(dir) {
+		inUse[path], inUse[path+".tar"] = true, true
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -809,6 +887,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 		delete(s.listeners, id)
 	}
 	s.mu.Unlock()
+	s.publishHolders()
 	w.WriteHeader(http.StatusNoContent)
 }
 

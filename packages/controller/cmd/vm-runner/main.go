@@ -14,7 +14,9 @@ import (
 func main() {
 	listen := flag.String("listen", ":4600", "address to serve the machine API on")
 	stateDir := flag.String("state-dir", "/var/lib/platform/machines", "per-machine state: published port, applied spec, and the share each guest reads its plan, CA and platform-init from")
-	imageDir := flag.String("image-dir", "/var/lib/platform/images", "unpacked agent images and local archives, shared by every runner when the install gives them one volume")
+	imageDir := flag.String("image-dir", "/var/lib/platform/images", "unpacked agent images and local archives, shared by every runner on this node when the install gives them a host directory")
+	runnerID := flag.String("runner-id", "", "this runner's name among the runners sharing the image directory; empty keeps the cache private to this runner")
+	imageBudget := flag.Int64("image-budget-bytes", 0, "bytes the cached images may occupy; 0 uses a share of the filesystem, which is only meaningful on a volume of this runner's own")
 	smolvm := flag.String("smolvm", "smolvm", "smolvm binary")
 	crane := flag.String("crane", "crane", "crane binary, used to fetch an agent image the shared cache does not hold (empty disables the fetch)")
 	initBin := flag.String("platform-init", "/usr/local/libexec/platform-init", "platform-init binary, copied into every machine's share and run as its entrypoint")
@@ -36,7 +38,7 @@ func main() {
 	srv := &vmrunner.Server{
 		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, ImageDir: *imageDir, Runtime: &vmrunner.Smolvm{Bin: *smolvm},
 		PortMin: *portMin, PortMax: *portMax, MemoryMiB: *memory, ReserveMiB: *reserve,
-		Crane: *crane, Init: *initBin,
+		Crane: *crane, Init: *initBin, RunnerID: *runnerID, ImageBudget: *imageBudget,
 	}
 	for _, c := range strings.Split(*allowFrom, ",") {
 		if c = strings.TrimSpace(c); c != "" {

@@ -1039,3 +1039,79 @@ func TestASlowMachineOperationKeepsTheRuntimesAccountOfIt(t *testing.T) {
 	assert.NotContains(t, logged.String(), "boot: disks ready",
 		"an operation that was not slow keeps nothing, or the slow one is lost among them")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner backed by its own state directory and whichever image directory the test is about, which is the whole of what the cache logic reads.
+func cacheRunner(t *testing.T, id, images string) *Server {
+	t.Helper()
+	return &Server{StateDir: t.TempDir(), ImageDir: images, RunnerID: id}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: gives a runner a machine running from an image, and the cached tree that machine has mounted.
+func holdsImage(t *testing.T, s *Server, machine, image string) string {
+	t.Helper()
+	dir, err := s.machineDir(machine)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, s.writeSpec(machine, MachineSpec{Image: image}))
+	cached := s.cachePath(image)
+	require.NoError(t, os.MkdirAll(cached, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cached, "rootfs"), make([]byte, 4096), 0o644))
+	return cached
+}
+
+// TEST_SCENARIO: two owners' runners land on one node and share its image cache. A runner reads only its own machines — they are its child processes — so evicting on that alone would delete the tree another runner's guest has mounted as its root filesystem, which is the one thing eviction must never do. Each publishes what it holds, and the other reads it.
+func TestEvictionSparesAnImageAnotherRunnerHolds(t *testing.T) {
+	images := t.TempDir()
+	mine, theirs := cacheRunner(t, "runner-a", images), cacheRunner(t, "runner-b", images)
+
+	held := holdsImage(t, theirs, "agent-b", "quay.io/x/held:1")
+	theirs.publishHolders()
+	spare := holdsImage(t, mine, "agent-a", "quay.io/x/mine:1")
+
+	mine.evictImages(images, spare, 1)
+
+	assert.DirExists(t, held, "another runner's machine is running from this tree")
+	assert.DirExists(t, spare, "and this runner's own machine from this one")
+}
+
+// TEST_SCENARIO: nothing else prunes the node's cache, so an image no live runner claims has to be evictable — otherwise one abandoned holders file pins a tree forever. Machines are processes of the runner that made them, so a runner that stopped refreshing has none left running and its claims are safe to drop.
+func TestAnAbandonedRunnersClaimsStopPinningImages(t *testing.T) {
+	images := t.TempDir()
+	mine, gone := cacheRunner(t, "runner-a", images), cacheRunner(t, "runner-gone", images)
+
+	stranded := holdsImage(t, gone, "agent-gone", "quay.io/x/stranded:1")
+	gone.publishHolders()
+	marker := filepath.Join(images, holdersDir, "runner-gone")
+	stale := time.Now().Add(-holderStale - time.Minute)
+	require.NoError(t, os.Chtimes(marker, stale, stale))
+
+	keep := holdsImage(t, mine, "agent-a", "quay.io/x/mine:1")
+	mine.evictImages(images, keep, 1)
+
+	assert.NoDirExists(t, stranded, "no live runner claims it")
+	assert.NoFileExists(t, marker, "and the claim itself goes, rather than being re-read every eviction")
+}
+
+// TEST_SCENARIO: the per-owner fallback puts the cache on the runner's own claim, where there is nobody to tell and nobody to read. A holders file written there would be a file no one ever opens, so a runner with no identity publishes nothing.
+func TestAPrivateCacheAnnouncesNothing(t *testing.T) {
+	images := t.TempDir()
+	private := cacheRunner(t, "", images)
+	holdsImage(t, private, "agent-a", "quay.io/x/mine:1")
+
+	private.publishHolders()
+
+	assert.NoDirExists(t, filepath.Join(images, holdersDir))
+}
+
+// TEST_SCENARIO: the budget bounds a directory the install sized, not the filesystem under it — on a node that filesystem is the host's, and a share of it would let the agent images crowd out everything else the node runs.
+func TestAConfiguredBudgetIsWhatBoundsTheNodeCache(t *testing.T) {
+	images := t.TempDir()
+	s := cacheRunner(t, "runner-a", images)
+
+	assert.Equal(t, int64(0), s.ImageBudget)
+	fromFilesystem := s.cacheBudget(images)
+
+	s.ImageBudget = 7 << 30
+	assert.Equal(t, int64(7<<30), s.cacheBudget(images))
+	assert.NotEqual(t, int64(7<<30), fromFilesystem, "the fallback reads the filesystem, so the two are not the same number by accident")
+}

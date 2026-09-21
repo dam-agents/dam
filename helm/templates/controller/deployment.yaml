@@ -73,7 +73,7 @@ spec:
             # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
             {{- $r := .Values.virtualization.runner }}
             {{- $dp := .Values.virtualization.devicePlugin }}
-            {{- $cacheOn := (.Values.virtualization.imageCache | default dict).enabled | default false }}
+            {{- $cache := .Values.virtualization.imageCache | default dict }}
             {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1" (printf "%s/tun" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1" "devices.kubevirt.io/tun" "1") $dp.enabled) }}
             {{- $runner := dict
                   "image" (printf "%s:%s" $r.image.repository ($r.image.tag | default .Chart.AppVersion))
@@ -85,7 +85,7 @@ spec:
                   "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
-                  "imageCacheClaim" (ternary (printf "%s-vm-runner-images" (include "platform.fullname" .)) "" $cacheOn)
+                  "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "")
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources }}
             - name: AGENT_VM

@@ -28,10 +28,11 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
 
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: one tree, three lifetimes, each its own mount. The machine disks under disks/ are an owner's agents and outlive everything; the per-machine bookkeeping under machines/ is rebuilt from the cluster after a pod restart; the unpacked images under images/ are a cache, and the install may put them on a volume every runner shares or a node directory of read-only archives. Mounting images/ explicitly even when it falls back to this claim keeps the three separable, rather than having one appear inside another depending on configuration.
+// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged archives. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
 const (
 	vmRunnerComponent    = "vm-runner"
 	vmRunnerStatePath    = "/var/lib/platform"
@@ -243,6 +244,28 @@ func selfSignedCert(names ...string) (string, string, error) {
 	return string(certPEM), string(keyPEM), nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner publishes its claims on the cached images only where the directory is shared with other runners, which is the node cache and nothing else. On its own claim there is nobody to tell, and an identity would only make a holders file no one reads. The Deployment name is the identity because it is already unique per owner and stable across the pod restarts that recreate the same machines.
+func runnerCacheID(spec config.VMRunnerSpec, name string) string {
+	if spec.ImageCacheHostPath == "" {
+		return ""
+	}
+	return name
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a share of the filesystem is the right budget for the runner's own claim, which holds nothing else and is sized for exactly this. A node directory is not: its filesystem is the host's, so the same rule would let the agent images crowd out the kubelet. The node cache therefore carries a byte count and only the node cache does — an unparseable one is a chart the operator must fix rather than a cache that quietly eats the node, so it is refused at render, not here.
+func imageBudgetBytes(spec config.VMRunnerSpec) int64 {
+	if spec.ImageCacheHostPath == "" || spec.ImageCacheBudget == "" {
+		return 0
+	}
+	size, err := resource.ParseQuantity(spec.ImageCacheBudget)
+	if err != nil {
+		slog.Warn("vm runner: image cache budget is not a quantity, falling back to a share of the node filesystem",
+			"budget", spec.ImageCacheBudget, "error", err)
+		return 0
+	}
+	return size.Value()
+}
+
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
@@ -423,10 +446,11 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr.To[int32](0o400)}}},
 	}
 	switch {
-	case spec.ImageCacheClaim != "":
+	case spec.ImageCacheHostPath != "":
+		dir := corev1.HostPathDirectoryOrCreate
 		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath})
 		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: spec.ImageCacheClaim},
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageCacheHostPath, Type: &dir},
 		}})
 	case spec.ImageArchiveHostPath != "":
 		dir := corev1.HostPathDirectoryOrCreate
@@ -460,6 +484,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Args: []string{
 							"--state-dir=" + vmRunnerMachinesPath,
 							"--image-dir=" + vmRunnerImagesPath,
+							"--runner-id=" + runnerCacheID(spec, name),
+							fmt.Sprintf("--image-budget-bytes=%d", imageBudgetBytes(spec)),
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",

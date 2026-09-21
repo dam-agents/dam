@@ -268,18 +268,32 @@ virtualization:
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
-  # One volume every runner mounts, holding the agent images as archives. A
-  # machine may reach only its gateway, so the guest cannot pull its own image;
-  # the runner fetches it here on a miss, and every other owner then boots that
-  # image without touching the registry. Needs a ReadWriteMany class — on ODF
-  # that is `ocs-storagecluster-cephfs`. Without it each runner falls back to
-  # its own disk, which means one pull per owner for the same few images.
-  # The runner keeps the archives inside a share of this volume, evicting the
-  # least recently written first, so a tag per deploy does not fill it.
+  # A directory on each node that every runner scheduled there shares. A machine
+  # may reach only its gateway, so the guest cannot pull its own image; the
+  # runner fetches it here on a miss, and the next owner on that node boots the
+  # same image without touching the registry. Empty = each runner caches on its
+  # own claim, which means one pull per owner for the same few images.
+  #
+  # A host directory rather than a ReadWriteMany claim: RWX is the expensive
+  # class to ask an install for, and it buys cluster-wide dedup where per-node
+  # is enough. The runner already holds /dev/kvm and runs as root, so a host
+  # directory is not a privilege it did not have — but on OpenShift it still
+  # needs `runner.scc`, since the chart's own agent SCC refuses hostPath.
+  #
+  # Runners on one node evict from this directory independently, so each
+  # publishes which cached images its machines hold and reads the others'
+  # before deleting anything — otherwise one runner reclaiming space takes the
+  # root filesystem out from under another's running guest.
+  #
+  # `budget` is what the cached images may occupy, evicting least-recently-
+  # written first so a tag per deploy does not fill the node. Unlike a claim
+  # sized for this and nothing else, a node's filesystem is shared with
+  # everything else it runs, so this is a byte count rather than a share of it.
+  # Leave it empty and the runner falls back to a share, which on a node is
+  # almost certainly too much.
   imageCache:
-    enabled: false
-    storageClass: ""
-    size: 50Gi
+    hostPath: ""
+    budget: 50Gi
   devicePlugin:
     enabled: false
     image:

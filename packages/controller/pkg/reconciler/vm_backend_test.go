@@ -6,8 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -447,11 +449,11 @@ func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
 }
 
-// TEST_SCENARIO: the runner's volume holds three things with three lifetimes — the machine disks that are an owner's agents, the per-machine bookkeeping a restart rebuilds, and an image cache. Each gets its own mount, including the images when no shared volume is configured, so one never appears inside another depending on how the install is set up.
-func TestRunnerMountsEachLifetimeSeparately(t *testing.T) {
-	mounts := func(imageCacheClaim string) map[string]corev1.VolumeMount {
+// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath so the claim's root, which still holds trees from earlier releases, is never exposed.
+func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
+	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
-		r.config.VM.Runner.ImageCacheClaim = imageCacheClaim
+		configure(&r.config.VM.Runner)
 		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
@@ -460,18 +462,52 @@ func TestRunnerMountsEachLifetimeSeparately(t *testing.T) {
 		for _, m := range dep.Spec.Template.Spec.Containers[0].VolumeMounts {
 			byPath[m.MountPath] = m
 		}
-		return byPath
+		byName := map[string]corev1.Volume{}
+		for _, v := range dep.Spec.Template.Spec.Volumes {
+			byName[v.Name] = v
+		}
+		return byPath, byName
 	}
 
-	plain := mounts("")
+	plain, _ := mounts(func(*config.VMRunnerSpec) {})
 	assert.Equal(t, "disks", plain[vmRunnerDisksPath].SubPath)
 	assert.Equal(t, "machines", plain[vmRunnerMachinesPath].SubPath)
 	assert.Equal(t, "images", plain[vmRunnerImagesPath].SubPath,
-		"with no shared cache the images are still their own mount, not a directory inside another")
+		"with no node cache the images are still their own mount, not a directory inside another")
 
-	shared := mounts("platform-vm-images")
-	assert.Empty(t, shared[vmRunnerImagesPath].SubPath)
-	assert.Equal(t, "image-cache", shared[vmRunnerImagesPath].Name, "the shared volume replaces that mount rather than nesting in it")
+	node, volumes := mounts(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" })
+	assert.Empty(t, node[vmRunnerImagesPath].SubPath)
+	assert.Equal(t, "image-cache", node[vmRunnerImagesPath].Name, "the node directory replaces that mount rather than nesting in it")
+	require.NotNil(t, volumes["image-cache"].HostPath, "the node cache is a host directory, not a claim of its own")
+	assert.Equal(t, "/var/lib/platform-images", volumes["image-cache"].HostPath.Path)
+	assert.False(t, node[vmRunnerImagesPath].ReadOnly, "the runner fetches into this one, unlike the staged archives")
+}
+
+// TEST_SCENARIO: a runner only publishes its claims on the cached images where another runner could read them, which is the node cache. On its own claim there is nobody to tell. The budget goes the same way: a share of the filesystem is right for a claim sized for exactly this and wrong for a node's disk, which the agent images would otherwise crowd out.
+func TestTheRunnerAnnouncesItselfOnlyOnTheSharedCache(t *testing.T) {
+	args := func(configure func(*config.VMRunnerSpec)) string {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.VM.Runner)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return strings.Join(dep.Spec.Template.Spec.Containers[0].Args, " ")
+	}
+
+	own := args(func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
+	assert.Contains(t, own, "--runner-id= ", "a private cache has no other runner to announce to")
+	assert.Contains(t, own, "--image-budget-bytes=0", "a budget is meaningless without the shared directory it bounds")
+
+	shared := args(func(spec *config.VMRunnerSpec) {
+		spec.ImageCacheHostPath = "/var/lib/platform-images"
+		spec.ImageCacheBudget = "20Gi"
+	})
+	assert.Contains(t, shared, "--runner-id=platform-vm-runner-")
+	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
+
+	unbounded := args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" })
+	assert.Contains(t, unbounded, "--image-budget-bytes=0", "no budget falls back rather than inventing a number for somebody's node")
 }
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.
