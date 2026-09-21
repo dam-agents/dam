@@ -35,12 +35,36 @@ provision:
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
         # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
+        export INSTALL_K3S_VERSION="v1.36.1+k3s1"
+        export INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445"
         # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
         # its binary relabel step fails under set -e on a disabled-SELinux host.
         if ! { command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" != Disabled ]; }; then
           export INSTALL_K3S_SKIP_SELINUX_RPM=true
         fi
-        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.36.1+k3s1" INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
+        # Two network fetches happen here: this installer script, and the k3s
+        # release tarball it pulls from GitHub. Either one failing aborted the
+        # whole provision, and `curl | sh` hid a failed script fetch outright —
+        # sh reads empty input and exits 0, so the run continued with no k3s and
+        # died 120s later on a missing kubeconfig. Fetch to a file so the failure
+        # is visible, and retry the pair: the installer is re-runnable, and a
+        # transient GitHub error is not worth losing a cluster provision over.
+        installer=$(mktemp /tmp/k3s-install.XXXXXX)
+        attempt=1
+        while :; do
+          if curl -sfL --retry 3 --retry-delay 2 --retry-all-errors https://get.k3s.io -o "$installer" && sh "$installer"; then
+            break
+          fi
+          if [ "$attempt" -ge 4 ]; then
+            rm -f "$installer"
+            echo "k3s install failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "k3s install attempt $attempt failed; retrying in $((attempt * 10))s" >&2
+          sleep $((attempt * 10))
+          attempt=$((attempt + 1))
+        done
+        rm -f "$installer"
       fi
       mkdir -p /var/lib/rancher/k3s/server/manifests
       cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'
