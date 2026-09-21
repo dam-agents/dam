@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Clone the pinned smolvm source this crate builds against"
-#MISE sources=["smolvm.pin"]
-#MISE outputs=[".smolvm/.pinned"]
+# Run by the [deps.smolvm] provider in .mise/config.toml rather than as a task
+# of its own: it only prepares the ground, and a task that depends on it has no
+# cache key to inherit, which is what makes its dependents uncacheable.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 
 # Cargo cannot fetch smolvm as a git dependency: its .gitmodules names three
 # submodules with scp-style SSH URLs, and Cargo parses that file itself with

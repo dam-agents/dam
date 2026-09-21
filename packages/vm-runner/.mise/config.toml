@@ -1,16 +1,16 @@
-# The smolvm source is cloned just in time by fetch-smolvm and depended on by
-# path, because Cargo cannot fetch it as a git dependency — see that task.
+# Cargo cannot fetch smolvm as a git dependency, so the pinned source is cloned
+# and depended on by path — see .mise/fetch-smolvm for why. It is a dependency
+# provider and not a task: every cargo task here needs the clone present, and a
+# task that depended on it would inherit no cache key and become uncacheable.
+[deps.smolvm]
+description = "Clone the pinned smolvm source this crate builds against"
+auto = true
+sources = ["smolvm.pin"]
+outputs = [".smolvm/.pinned"]
+run = "./.mise/fetch-smolvm"
+
 [tasks.check]
 depends = [":check:*"]
-
-[tasks."check:build"]
-depends = [":fetch-smolvm"]
-
-[tasks."check:clippy"]
-depends = [":fetch-smolvm"]
-
-[tasks.test]
-depends = [":fetch-smolvm"]
 
 [tasks.fix]
 depends = [":fix:*"]
