@@ -19,22 +19,47 @@
 
 ## Setup
 
-Bringing up a new {{AGENT_NAME}} agent:
+<!-- TODO(creator): when the design ships no kit.yaml (a private definition whose kit
+     lives in the catalog repo), delete this whole catalog section, every link to
+     kit.yaml — here and under Files — and promote "Without the catalog" to be Setup. -->
+This repository is its own **Starter Kit** ([`kit.yaml`](kit.yaml)), so the normal way to
+bring up a new {{AGENT_NAME}} is to pick it from the platform's catalog:
 
-1. **Create the agent** on the DAM platform, granting the connections it needs:
-   <!-- TODO(creator): list connections (GitHub, Slack, Telegram, …) and why each. -->
-2. **Set the environment variables** — see the table below.
-3. **Grab the link to [`ONBOARDING.md`](ONBOARDING.md)** — **from the repo (or fork) you
-   actually deploy from**; the agent derives its definition repo from this URL, so a
-   fork's agent stays pinned to the fork.
-4. **Tell the agent**, in its first message:
+1. **Find it under Starter kits** and open its setup page.
+2. **Grant the connections it asks for** — the required ones are checked before anything
+   is created:
+   <!-- TODO(creator): list connections (GitHub, Slack, Telegram, …), which are required
+        vs. suggested, and why each. Keep in step with kit.yaml. -->
+3. **Name the agent and create it.** The platform seeds this definition into `$HOME` at a
+   pinned commit, creates the schedules, and opens the first session on
+   [`ONBOARDING.md`](ONBOARDING.md).
+4. **Answer the onboarding dialog.** The agent asks only for what you alone can supply and
+   ticks each item off its checklist. Its schedules are **held** until it reports itself
+   set up, so nothing runs half-configured.
 
-   > Here is a file — read it and set yourself up according to it:
-   > `https://github.com/<your-org>/{{AGENT_NAME}}/blob/main/ONBOARDING.md`
+<!-- TODO(creator): keep this paragraph only if the repo is public — a kit's repository
+     must be, since catalogs are read anonymously. -->
+Not in a catalog yet? One entry in the catalog repository's `catalog.yaml` adds it, and
+the platform's refresh job picks it up without a redeploy:
 
-The agent reads the runbook and, in one pass, checks out its definition, wires up
-`work/`, walks you through the configuration dialog, registers the schedules, and marks
-itself onboarded.
+```yaml
+kits:
+  - url: https://github.com/<your-org>/{{AGENT_NAME}}
+```
+
+### Without the catalog
+
+Create the agent on the platform by hand, grant the same connections, set the environment
+variables from the table below, then send it its first message — linking
+[`ONBOARDING.md`](ONBOARDING.md) **from the repo (or fork) you actually deploy from**,
+since the agent derives its definition repo from that URL:
+
+> Here is a file — read it and set yourself up according to it:
+> `https://github.com/<your-org>/{{AGENT_NAME}}/blob/main/ONBOARDING.md`
+
+The runbook handles both paths: it checks out the definition if the platform has not, wires
+up `work/`, walks you through the configuration dialog, creates any schedule it cannot
+find, and marks itself onboarded.
 
 ## Configuration
 
@@ -78,6 +103,8 @@ The definition is project-agnostic: everything specific to one deployment lives 
 
 ## Files
 
+- [`kit.yaml`](kit.yaml) — the Starter Kit the platform creates the agent from: seed,
+  connections, schedules, size. Read before create, never afterwards.
 - [`CLAUDE.md`](CLAUDE.md) — the slim core manual loaded on every run.
 - [`AGENTS.md`](AGENTS.md) — harness entry pointer to `CLAUDE.md`; carries no rules.
 - [`ONBOARDING.md`](ONBOARDING.md) — first-run setup runbook (also carries the `work/`

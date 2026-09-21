@@ -1,0 +1,101 @@
+# kit.yaml — the platform's Starter Kit for {{AGENT_NAME}}.
+#
+# TODO(creator): fill every TODO from the approved design and delete the fields the
+# design does not need (all of them are optional except schemaVersion/id/name/
+# description/category). Delete every TODO comment. Keep this file in step with
+# README and ONBOARDING — the schedules here and the ones ONBOARDING checks for are
+# the same schedules, by the same names.
+#
+# An optional key is either filled in or DELETED, never left bare: `tagline:` with
+# nothing after it parses as null, which the platform's schema refuses, and the kit
+# is then dropped from the catalog listing with only a server-side log to say so.
+# That is why the optional keys below start commented out.
+#
+# This repository IS the kit: the platform reads this file out of git, creates the
+# agent from it, seeds this definition into $HOME, and opens the first session on
+# ONBOARDING.md. See references/kit.md for what that leaves the runbook to do.
+
+schemaVersion: v1
+id: {{AGENT_NAME}}
+name: {{AGENT_DISPLAY_NAME}}
+description: >-
+  TODO(creator): one paragraph — what the agent does, on which unit of work, where
+  its output lands. This is the catalog's body text.
+# TODO(creator): pick the category that fits: knowledge | software | productivity | research
+category: software
+
+# TODO(creator): uncomment and fill what the catalog card should show.
+# tagline: One line — the hook, not a summary.
+# icon: robot
+# docsUrl: https://github.com/<org>/{{AGENT_NAME}}/blob/main/README.md
+
+# The definition is seeded from this very repository, at the commit the kit was read
+# at, into $HOME — never a clone, so nothing the platform put there is removed.
+# Do not add `url` or `ref`: `self` names this repository and pins it by itself.
+seed:
+  self: true
+  into: home
+
+# NOTE: no `onboarding` field, deliberately. Absent means the platform composes the
+# briefing from the live agent state and ends it with "follow ONBOARDING.md" — which
+# is what keeps the onboarding gate, the progress tools, and the hold on schedules.
+# Declaring a command here would stamp the agent onboarded at create and drop all
+# three (references/kit.md → Never declare `onboarding`).
+
+# TODO(creator): one entry per connection the design needs. `accepts` takes a family
+# (github, github-enterprise, slack, telegram, …) so any auth method satisfies it.
+# `required: true` is checked BEFORE the agent is created and refuses the apply;
+# anything gated behind an opt-in config key is `required: false`.
+connections:
+  - accepts: [github]
+    required: true
+    note: TODO(creator) — what the agent does with it, in one line.
+
+# TODO(creator): keep only when the agent listens on a channel; suggested only, a
+# channel never blocks apply. Delete the key otherwise.
+channels:
+  - type: slack
+    note: TODO(creator) — what arrives here and what the agent does with it.
+
+# TODO(creator): one entry per scheduled run type from the design, INCLUDING the
+# weekly audit. `name` carries the agent prefix — ONBOARDING checks for exactly these
+# names. `task` is the run's entry command, verbatim from CLAUDE.md's run-types table.
+# `enabled: false` makes it suggested: created switched off for the operator to turn on.
+# `precheck` declines an idle occurrence before any model is woken; drop the line for a
+# run type with no pre-flight mode (references/preflight.md → The Precheck).
+# Delete the whole key for a design with no scheduled runs (rare — the audit is
+# recommended for every agent).
+schedules:
+  - name: {{AGENT_NAME}}-<runtype>-<cadence>
+    cron: "TODO(creator) — five-field cron"
+    sessionMode: fresh
+    precheck: 'bash "$HOME/scripts/precheck.sh" <mode>'
+    task: >-
+      TODO(creator) — the task text from CLAUDE.md's run-types table, verbatim.
+
+# TODO(creator): keep only when the workload needs more than the install default.
+# Limits only — the controller derives requests. `storage` is fixed at create.
+resources:
+  cpu: "1"
+  memory: 2Gi
+  storage: 5Gi
+  note: TODO(creator) — why this size.
+
+# TODO(creator): keep only when a heartbeat fires finer than the install's idle
+# timeout — otherwise the agent is paid for a wake-up round trip every tick.
+hibernationTimeoutMin: 30
+
+# TODO(creator): keep only for values EVERY deployment shares. Anything that differs
+# between two deployments is a config key in the onboarding dialog, never here.
+env:
+  - name: TODO_CREATOR_NAME
+    value: "TODO(creator) — the fixed value"
+
+# TODO(creator): keep only when the definition bundles a skill of its own. A scan
+# root; the platform installs nothing, the harness finds it in the checkout.
+bundledSkills:
+  path: .agents/skills
+
+# TODO(creator): keep only when the design depends on a harness family's conventions
+# (hook layout, command spelling). Omit to let the operator pick any harness.
+harnesses: [claude-code]

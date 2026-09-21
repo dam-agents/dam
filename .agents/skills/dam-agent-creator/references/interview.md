@@ -47,8 +47,9 @@ re-run gating.
 - Roughly how many items per day/week? How expensive is one listing call — is there a
   single batched call that sees everything (one REST list call is the ideal)?
 
-Determines: pre-flight feasibility and cost, credentials/connections the platform must
-grant, README runtime requirements.
+Determines: pre-flight feasibility and cost, the `connections:` requirements in `kit.yaml`
+and which are `required` (a required one refuses the create when it is missing), README
+runtime requirements.
 
 ## 4. Effects (write integrations)
 
@@ -86,8 +87,9 @@ Do not assume a heartbeat. Offer the models and let the user pick what fits:
 Always recommend one scheduled run regardless of model: the **weekly audit**
 (`references/audit.md`). For a purely reactive agent it is typically the only schedule.
 
-Determines: run-types table in CLAUDE.md, ONBOARDING schedule-registration step, whether
-`scripts/preflight.sh` exists, cost envelope.
+Determines: run-types table in CLAUDE.md, the `schedules:` block in `kit.yaml` (and which
+of them ship suggested-off), ONBOARDING's check-then-create fallback, whether
+`scripts/preflight.sh` and its Precheck adapter exist, cost envelope.
 
 ## 6. People & channels
 
@@ -140,9 +142,35 @@ Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config di
 
 Determines: cadences, pre-flight scope, how much batching the design needs.
 
+## 10. Kit & catalog
+
+The definition repository is also its own Starter Kit, so a handful of answers decide what
+the operator never has to do by hand (`references/kit.md`). Most of them are already
+settled by blocks 3–8 — confirm rather than re-ask.
+
+- **Catalog presentation** — a display name, a one-line tagline, and which category the
+  agent belongs to (`knowledge` / `software` / `productivity` / `research`).
+- **Which connections are hard requirements** — those refuse the create when missing, so
+  anything behind an opt-in config key is suggested, not required.
+- **Which schedules ship switched on** — a schedule created enabled starts firing as soon
+  as onboarding completes. Anything people-facing ships suggested-off, like every other
+  proactive surface.
+- **Size and cadence** — does the workload need more than the install default (CPU, memory,
+  workspace disk, and why)? Does the heartbeat fire finer than the platform's idle timeout,
+  so the agent should hibernate later rather than pay a wake-up per tick?
+- **Publication** — the repository must be **public** to be its own kit, since catalogs are
+  read anonymously. If it cannot be, say so now: the kit then lives in the catalog
+  repository and points at the private definition, and the interview's answers are
+  unchanged.
+- **Fixed env** — anything every deployment of this agent shares (rare). Everything that
+  differs between two deployments stays a config key from block 8.
+
+Determines: `kit.yaml` in full, the Phase 6 handoff, and how much of ONBOARDING is a
+fallback path rather than the normal one.
+
 ## Wrap-up — the design brief
 
 Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle,
 integrations (read/write) with idempotency markers, run model + cadences, channels +
-proactive opt-ins + trust exceptions, state files + backup choice, config keys, cost
-notes. This brief feeds Phase 2.
+proactive opt-ins + trust exceptions, state files + backup choice, config keys, the kit
+surface, cost notes. This brief feeds Phase 2.

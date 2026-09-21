@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# precheck.sh — schedule Precheck adapter for {{AGENT_NAME}}.
+#
+# TODO(creator): keep this file verbatim except the MAX_CONTEXT note below; it has no
+# domain logic of its own. Delete it only when the design has no scheduled runs.
+#
+# The platform runs `precheck.sh <mode>` before a scheduled fire and reads the EXIT
+# CODE as the verdict — the way grep splits it:
+#
+#   0  -> run the turn. stdout (first 8 KiB) is appended to the task prompt.
+#   1  -> decline this occurrence. No model is woken; stdout is discarded.
+#   *  -> the Precheck itself broke: the platform runs the turn ANYWAY and records
+#         the reason. Fail-open by design, so a typo exiting 127 cannot silence a
+#         schedule for weeks while looking exactly like "nothing changed".
+#
+# So this script is nothing but the translation of preflight.sh's JSON into that
+# code, and it is the only place that translation lives. preflight.sh keeps its own
+# contract unchanged (one JSON object, exit 0) — it is still the fallback the agent
+# runs itself when no Precheck is attached, or when this one broke.
+#
+# Runs under `bash -lc` with the work directory as cwd, a 2-minute deadline, and
+# PLATFORM_SCHEDULE_ID / PLATFORM_FIRE_AT / PLATFORM_LAST_RUN_AT in the environment.
+# PLATFORM_LAST_RUN_AT is the last fire that ACTUALLY RAN — declined occurrences do
+# not move it, so it is the right "changed since?" watermark for a detection pass.
+
+set -u
+export LC_ALL=C
+
+MODE="${1:-}"
+HOME_DIR="${HOME:-/home/agent}"
+PREFLIGHT="$HOME_DIR/scripts/preflight.sh"
+
+# The platform appends at most 8 KiB of stdout to the prompt and truncates the rest.
+# A worklist cut mid-JSON is worse than none — the turn would parse a fragment — so
+# an oversized result is replaced by its logs plus an instruction to re-derive it.
+MAX_CONTEXT=8192
+
+allow() { [ -n "${1:-}" ] && printf '%s\n' "$1"; exit 0; }
+
+[ -n "$MODE" ] || allow "precheck: no mode given — run the pre-flight yourself."
+
+# A missing or unrunnable pre-flight degrades to a slower run, never a skipped one:
+# the same fallback the agent-side contract states for non-JSON output.
+[ -f "$PREFLIGHT" ] || allow "precheck: $PREFLIGHT is missing — fall back to the manual procedure in docs/."
+
+OUT="$(bash "$PREFLIGHT" "$MODE" 2>/dev/null)" \
+  || allow "precheck: the pre-flight exited non-zero for mode '$MODE' — fall back to the manual procedure in docs/."
+
+# One jq exec decides everything: an unparsable result is a broken pre-flight (allow),
+# a reported `error` is a failed READ (allow — see below), nothing_to_do is a decline.
+VERDICT="$(printf '%s' "$OUT" | jq -r '
+  if (.error // "") != "" then "allow-error"
+  elif .nothing_to_do == true then "decline"
+  else "allow" end' 2>/dev/null)"
+
+case "$VERDICT" in
+  decline)
+    # Nothing to do and the pre-flight is sure of it. Cheapest possible occurrence.
+    exit 1
+    ;;
+  allow | allow-error)
+    # allow-error is deliberate: a pre-flight that could not even list has NOT
+    # answered "nothing changed". Declining would hide an outage inside the decline
+    # counter, where it reads exactly like a quiet week. The turn runs, sees the
+    # error field, and reports it — a failed read is never an answer.
+    if [ "${#OUT}" -le "$MAX_CONTEXT" ]; then
+      printf '%s\n' "$OUT"
+    else
+      printf '%s' "$OUT" | jq -r '
+        "The pre-flight worklist for mode \"" + (.mode // "?") + "\" is too large to inline.",
+        "Re-run it yourself: bash \"$HOME/scripts/preflight.sh\" " + (.mode // ""),
+        "",
+        "Its log lines:",
+        ((.logs // []) | .[])' 2>/dev/null \
+        || printf 'precheck: the worklist exceeded %s bytes — re-run bash "$HOME/scripts/preflight.sh" %s yourself.\n' "$MAX_CONTEXT" "$MODE"
+    fi
+    exit 0
+    ;;
+  *)
+    # Not JSON at all. Same fallback as a missing script.
+    allow "precheck: the pre-flight emitted no parsable JSON for mode '$MODE' — fall back to the manual procedure in docs/."
+    ;;
+esac

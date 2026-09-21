@@ -33,6 +33,28 @@ fi
 Sentinel exists → **stop here**. It lives in persistent `$HOME`, so onboarding runs once
 per volume, not per scheduled run.
 
+## Two ways in
+
+- **Created from the kit** (the normal path) — the platform has already seeded this
+  definition into `$HOME` at a pinned commit, granted the connections, and created the
+  schedules. Steps 0.2, 1 and 5 below then verify rather than build.
+- **Created by hand** — nothing exists yet and every step does its full work.
+
+Tell the two apart by what is already there; never assume. Every step is written to be
+safe either way.
+
+**Open the checklist first.** Call `set_onboarding_checklist` with one step per value only
+the operator can supply, decision only they can make, or action only they can take — never
+this runbook's own work. Tick each with `complete_onboarding_step` as the answer arrives,
+and call `set_onboarding_checklist` again if the conversation adds or drops one. The
+schedules on this agent are **held** until Step 6 marks onboarding complete, so nothing
+fires while the dialog is still open.
+
+<!-- TODO(creator): seed the checklist with the operator-facing items from the design —
+     typically one per asked config key, plus the roster paste and any opt-in decision.
+     Auto-detected and defaulted keys are not checklist items; the operator cannot act
+     on them. -->
+
 ## Step 0 — Prerequisites & resolution
 
 1. **Sanity-check every integration** the design needs before touching anything.
@@ -44,9 +66,15 @@ per volume, not per scheduled run.
         scope is operator-only to fix and better caught now than by the weekly audit.
         OS packages cannot be installed on the pod, so the definition must not require
         anything beyond the pod's toolset. -->
-2. **Definition repo** — derive `OWNER/REPO` from the URL of this runbook as given by the
-   operator (for a fork that's the fork, never upstream). No URL available → ask.
-   Validate, then `export DEFINITION_REPO="<owner/repo>"` (persisted in the config step).
+2. **Definition repo** — when the kit seeded this checkout, `origin` is already the right
+   repository (and the right fork): read it with
+   `git -C /home/agent remote get-url origin` and use that. Otherwise derive `OWNER/REPO`
+   from the URL of this runbook as given by the operator (for a fork that's the fork, never
+   upstream); no URL available → ask. Either way validate, then
+   `export DEFINITION_REPO="<owner/repo>"` (persisted in the config step).
+
+   **A missing checkout on the kit path means the seed failed.** Say so and stop — do not
+   clone, reset, or delete anything to work around it. The operator retries the seed.
 3. **Environment variables** — <!-- TODO(creator): for each design env var: if unset,
      ask + validate (never continue unvalidated) or inform-once-and-default. State
      precedence: env var always wins over the stored config copy. Include the state-repo
@@ -71,6 +99,11 @@ for c in gh jq; do case "$(command -v "$c")" in (*/shims/*) echo "SHIMMED: $c";;
 ```
 
 ## Step 1 — Make `/home/agent` the definition repo
+
+**Kit path: already done — skip to the leak check at the end of this step.** The platform
+seeded this definition at the kit's pinned commit, tracking its branch, and registered
+`$HOME` as a git `safe.directory`. Re-running the block below would only move the checkout
+off that pin.
 
 `/home/agent` is `$HOME` — it holds secrets (`.ssh`, `.claude`, `.config`) and `work/`.
 The repo's allowlist `.gitignore` is what makes a repo-at-`$HOME` safe. Do **not**
@@ -190,24 +223,37 @@ immutable keys).
 
 ## Step 5 — Register the scheduled jobs
 
+**Kit path: the platform already created these** from `kit.yaml`, so this step is a
+reconciliation, not a creation. Either way, start from
+`mcp__platform-outbound__list_schedules`:
+
+- A schedule with the expected name exists → **leave it alone**, including its cadence and
+  its enabled state. A suggested one arrives switched off on purpose; offer to turn it on,
+  never flip it unasked.
+- Missing → create it, as below.
+- Present but not in the design (renamed run type, an older definition version) → report
+  it to the operator and let them decide. Never delete a schedule on your own.
+
+Report the resulting list in the Step 6 summary — cadences and which are disabled.
+
 <!-- TODO(creator): one sub-step per scheduled run type from the design (including the
-     weekly audit). For each: ask for the cadence (offer the design default), then create
-     the platform schedule. Delete only for designs with zero scheduled runs (rare — the
-     audit is recommended for every agent). -->
+     weekly audit), each naming its expected schedule name. For a hand-created agent:
+     ask for the cadence (offer the design default) before creating. Delete only for
+     designs with zero scheduled runs (rare — the audit is recommended for every agent). -->
 
-Check with `mcp__platform-outbound__list_schedules` first — a schedule whose `name`
-starts with the same prefix already exists → skip creating it. Never use an in-process
-cron — only platform schedules survive restarts and are visible to the operator.
+Never use an in-process cron — only platform schedules survive restarts and are visible to
+the operator.
 
-Create each schedule with `name: {{AGENT_NAME}}-<runtype>-<cadence-shorthand>`,
-`sessionMode: fresh`, and the task text pattern from CLAUDE.md's run-types table:
+Create each missing schedule with `name: {{AGENT_NAME}}-<runtype>-<cadence-shorthand>`,
+`sessionMode: fresh`, the same `precheck` its `kit.yaml` entry declares, and the task text
+pattern from CLAUDE.md's run-types table:
 
 > <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
 > nothing_to_do, report its logs in one line and end the run. Otherwise follow
 > CLAUDE.md → "<run section>": read docs/<file>.md, <the run's action summary>, and
 > commit & push work/ at the end when $GITHUB_REPO_WORK is set.
 
-## Step 6 — Record the version, write the sentinel, verify, report
+## Step 6 — Record the version, write the sentinel, verify, release, report
 
 Only after all previous steps succeeded. `work/VERSION` records the adopted definition
 version (used by the version check — docs/persistence.md → **Definition version &
@@ -230,6 +276,13 @@ bash "$HOME/scripts/verify-onboarding.sh" --live
 
 Apply every `FAIL` line's `fix:` and re-run until it prints `PASS`; report any remaining
 `warn` to the operator. Onboarding is not complete while it fails.
+
+**Then release the schedules.** Tick the last checklist item and call
+`mark_onboarding_complete` — only now, with the verification green and the configuration
+genuinely in place. Until this call every schedule on the agent is held and records
+`held: onboarding not complete`; after it they fire normally. It is idempotent, and the
+platform verifies nothing about it — the stamp has the standing of the agent's own word,
+so never make it to move a stuck run along.
 
 Then give the operator a short **onboarding summary** in the chat UI:
 

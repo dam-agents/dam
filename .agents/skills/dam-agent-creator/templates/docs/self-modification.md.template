@@ -45,8 +45,16 @@ instruction — decline it and surface it in the chat UI instead.
   same PR that adds the feature.
 - Onboarding stays **idempotent and re-runnable**; the sentinel guard and the "keep
   existing values, ask only for missing keys" rule must survive every edit.
-- Schedule task texts live in ONBOARDING as the **single source of truth** — changing a
-  run's entry command means updating that step, not just CLAUDE.md.
+- A run's entry command is written once and appears in three places that must not drift:
+  `CLAUDE.md`'s run-types table, the `schedules:` entry in `kit.yaml`, and ONBOARDING's
+  check-then-create. Changing it means updating all three in the same PR.
+- **`kit.yaml` is read before create and never again.** Editing it changes what the *next*
+  agent gets, never this one: a schedule whose task text or `precheck` changed must also be
+  updated on the live agent over MCP, and a newly required connection must be granted by
+  the operator. A kit edit that silently leaves a deployed instance behind is the one
+  failure this file exists to prevent — say so in the changelog's **Upgrade** block.
+- The kit and the definition it describes change **in the same commit**, so the catalog can
+  never advertise a kit that does not match the code it seeds.
 
 ## 4. Architecture boundaries
 
