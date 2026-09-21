@@ -38,6 +38,14 @@ export interface SlackWorkspaceProbeDeps {
  * something answered, the answer stands, or one permanently broken workspace
  * would turn every wrong id into "try again".
  *
+ * Every workspace is asked at once, not one after another. The order the
+ * replies arrive in does not change the answer, and the question travels to the
+ * one replica holding the Slack connection, so asking in turn would make a
+ * single bind wait out every workspace that cannot reply. That wait also splits
+ * the question in time: workspaces asked late could answer while the early ones
+ * had already given up, which reads as a definite no from workspaces nobody
+ * heard from.
+ *
  * The install that predates multi-workspace support is the empty workspace,
  * and while it is the only one no call is made at all: a single-workspace
  * install answers without ever asking Slack.
@@ -50,19 +58,22 @@ export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
       return { kind: "resolved", teamId: ORIGINAL_WORKSPACE };
     }
 
+    const asked = await Promise.allSettled(
+      candidates.map(async (teamId) => ({
+        teamId,
+        standing: await deps.conversationStanding(slackChannelId, teamId),
+      })),
+    );
+
     const members: SlackWorkspace[] = [];
     const seers: SlackWorkspace[] = [];
     let answered = 0;
-    for (const teamId of candidates) {
-      let standing: SlackConversationStanding;
-      try {
-        standing = await deps.conversationStanding(slackChannelId, teamId);
-      } catch {
-        continue;
-      }
+    for (const asking of asked) {
+      if (asking.status === "rejected") continue;
       answered += 1;
-      if (standing === "member") members.push(teamId);
-      else if (standing === "known") seers.push(teamId);
+      if (asking.value.standing === "member") members.push(asking.value.teamId);
+      else if (asking.value.standing === "known")
+        seers.push(asking.value.teamId);
     }
     const chosen = members[0] ?? seers[0];
     if (chosen !== undefined) return { kind: "resolved", teamId: chosen };

@@ -166,4 +166,31 @@ describe("slack workspace probe", () => {
 
     expect(await probe("C1")).toEqual({ kind: "unknown" });
   });
+
+  /**
+   * TEST_SCENARIO: A bind while no replica holds the Slack connection, which is
+   * what an api-server rollout leaves behind for a lease TTL. Every question
+   * then runs to the bus timeout, so asking one workspace after another makes a
+   * single bind wait out all of them in turn, and the ones asked last could be
+   * answered by the new holder while the first ones had already given up —
+   * a definite no from workspaces nobody heard from. Asking together is what
+   * prevents that, so here no workspace answers until every one of them has
+   * been asked: a probe that asks in turn never gets past the first.
+   */
+  it("asks every workspace at once", async () => {
+    const candidateCount = 3;
+    const waiting: Array<() => void> = [];
+
+    const probe = createSlackWorkspaceProbe({
+      listInstalledWorkspaces: async () => ["T2", "T3"],
+      conversationStanding: (_channel: string, teamId: string) =>
+        new Promise<SlackConversationStanding>((resolve) => {
+          waiting.push(() => resolve(teamId === "T3" ? "member" : "unknown"));
+          if (waiting.length === candidateCount)
+            for (const answer of waiting) answer();
+        }),
+    });
+
+    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "T3" });
+  });
 });
