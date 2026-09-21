@@ -753,20 +753,24 @@ describe("reading one turn", () => {
 
     expect(seen.logFilter).toEqual({
       fromIso: "2026-09-16T11:59:58.000Z",
-      toIso: "2026-09-16T12:00:07.000Z",
+      toIso: "2026-09-16T12:00:07.001Z",
       sessionId: "s1",
       promptId: "p-1",
     });
     expect(seen.spanWindow).toEqual({
       fromIso: "2026-09-16T11:59:58.000Z",
-      toIso: "2026-09-16T12:00:07.000Z",
+      toIso: "2026-09-16T12:00:07.001Z",
       sessionId: "s1",
     });
     expect(result.available && result.turn.turnId).toBe("p-1");
     expect(result.available && result.turn.promptId).toBe("p-1");
   });
 
-  it("reads an unkeyed turn by its exact time range", async () => {
+  it("reads an unkeyed turn one millisecond past the end the listing gave it", async () => {
+    /**
+     * TEST_SCENARIO: the listing truncated the last record's nanoseconds to a
+     * millisecond, so a window ending exactly there would drop that record.
+     */
     const { reader, seen } = capturingReader();
     const service = createTelemetryService({
       reader,
@@ -784,7 +788,7 @@ describe("reading one turn", () => {
 
     expect(seen.logFilter).toEqual({
       fromIso: "2026-09-16T12:00:00.000Z",
-      toIso: "2026-09-16T12:00:05.000Z",
+      toIso: "2026-09-16T12:00:05.001Z",
       sessionId: "s1",
     });
     expect(result.available && result.turn.turnId).toBe(

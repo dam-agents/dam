@@ -18,7 +18,10 @@ function keepUnlessUnavailable<T extends { available: boolean }>(
  * polling. `live` is the caller's read of the conversation — a reply streaming,
  * or one that settled within the last few minutes — so the poll keeps running
  * while the store ingests an exchange that just finished, even before its first
- * turn has landed, and stops once the conversation goes quiet.
+ * turn has landed, and stops once the conversation goes quiet. Nothing is kept
+ * across a change of session: the previous session's turns would sit under the
+ * next session's replies until its own turns arrived, and a reply recorded
+ * before replies were keyed would take one by time.
  */
 export function useTurns(
   agentId: string | null,
@@ -33,7 +36,6 @@ export function useTurns(
     staleTime: 2_000,
     refetchInterval: live ? LIVE_POLL_MS : false,
     retry: false,
-    placeholderData: keepUnlessUnavailable,
   });
 }
 

@@ -50,15 +50,11 @@ A **Turn** is everything one exchange produced: the records the harness stamped 
 prompt id, and the spans that belong with them. It is deliberately **not** the OpenTelemetry
 trace.
 
-The trace is the obvious unit and the wrong one, because what a trace contains is the
-harness's business and it varies turn to turn. Observed on one live install inside a single
-session: one exchange emitted records carrying **no trace identifier at all** alongside a
-span that had one of its own; the next emitted a tidy interaction root with a model-call
-child; the third emitted records and no spans whatever. Grouping on the trace identifier
-turns that into three rows of three different shapes — one of them invisible — for three
-exchanges that a reader watching the conversation would call the same kind of thing.
+What a trace holds is the harness's business and varies from one exchange to the next —
+sometimes a whole exchange, sometimes one model call, sometimes nothing at all — so grouping
+on it gives one exchange several shapes and another none.
 
-Keying on the **prompt id** survives all three. The harness assigns every prompt an
+Keying on the **prompt id** needs none of that structure. The harness assigns every prompt an
 identifier and stamps it on each log record that prompt causes until the next one; every
 record carrying the same id is one Turn, whatever the harness did or did not span in
 between, and the id is the Turn's identity — stable across polls, where a start time would
@@ -89,8 +85,7 @@ Two facts make that harder than it looks, and together they decide the design:
 - The record's own span identifier is **unreliable and often absent**. Where it is set it
   names the *enclosing* span — the turn, or the tool being run — rather than the model call,
   because the harness creates the call span without making it the active one. Where no
-  enclosing span exists it is empty. Observed on a live install: most per-call records carry
-  no span identifier at all, and none of them resolved to a span.
+  enclosing span exists it is empty.
 
 The join therefore prefers a **request identifier** the harness stamps identically on the
 record and on the call span. Attachment resolves in three steps and every step renders:

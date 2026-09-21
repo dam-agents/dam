@@ -38,19 +38,24 @@ const shiftIso = (iso: string, deltaMs: number): string => {
   return Number.isNaN(ms) ? iso : new Date(ms + deltaMs).toISOString();
 };
 
+const END_TRUNCATION_MS = 1;
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a turn addressed by its prompt id is read through
- * a window padded by the marker slack on both sides. The prompt id already
- * narrows the records to the one turn, so the padding cannot admit a
- * neighbour's records; what it admits is the turn's own root span, which opens
- * a few milliseconds before the first record, and the last record itself,
- * which the listing's half-open end would otherwise exclude.
+ * UNIT_BOUNDARY_DESCRIPTION: the window one turn is read through. The listing
+ * reports a turn's end at millisecond precision while the store keeps
+ * nanoseconds, so a half-open window ending exactly there drops the turn's own
+ * last record; every window therefore runs one millisecond past the end it was
+ * given, which reaches that record and nothing later — turns are cut seconds
+ * apart. A turn addressed by its prompt id is padded further, by the marker
+ * slack on both sides: the id already narrows the records to the one turn, so
+ * the padding cannot admit a neighbour's, and what it admits is the turn's own
+ * root span, which opens a few milliseconds before the first record.
  */
 export function turnWindow(query: TelemetryTurnQuery): TelemetryWindow {
-  const padMs = query.promptId === undefined ? 0 : BOUNDARY_DEBOUNCE_MS;
+  const markerPadMs = query.promptId === undefined ? 0 : BOUNDARY_DEBOUNCE_MS;
   return {
-    fromIso: shiftIso(query.from, -padMs),
-    toIso: shiftIso(query.to, padMs),
+    fromIso: shiftIso(query.from, -markerPadMs),
+    toIso: shiftIso(query.to, markerPadMs + END_TRUNCATION_MS),
     sessionId: query.sessionId,
   };
 }

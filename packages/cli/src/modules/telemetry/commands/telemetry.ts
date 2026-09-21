@@ -35,16 +35,21 @@ class InvalidSinceError extends Error {}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: read the shared `--since` option once. An omitted
- * value takes the command's default; a value that is not a positive number is
- * refused here rather than reaching the wire as NaN, where the server would
- * reject it with a less legible error.
+ * value takes the command's default; a value that is not a positive number of
+ * hours within the store's retention is refused here, with the ceiling the help
+ * text states, rather than reaching the wire where the server would reject it
+ * with a less legible error.
  */
 function sinceHoursOf(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
   const hours = Number(raw);
-  if (!Number.isFinite(hours) || hours <= 0) {
+  if (
+    !Number.isFinite(hours) ||
+    hours <= 0 ||
+    hours > TELEMETRY_MAX_SINCE_HOURS
+  ) {
     throw new InvalidSinceError(
-      `--since must be a positive number, got "${raw}"`,
+      `--since must be a positive number of hours up to ${TELEMETRY_MAX_SINCE_HOURS}, got "${raw}"`,
     );
   }
   return hours;
@@ -94,7 +99,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
     .requiredOption("--session <id>", "the session to read")
     .option(
       "--since <hours>",
-      `lookback window in hours (max 720; default ${DEFAULT_SINCE_HOURS})`,
+      `lookback window in hours (max ${TELEMETRY_MAX_SINCE_HOURS}; default ${DEFAULT_SINCE_HOURS})`,
     )
     .option(
       "--server <url>",
@@ -188,7 +193,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
     .option("--signal <signal>", "'logs' or 'spans' (default: logs)", "logs")
     .option(
       "--since <hours>",
-      `lookback window in hours (max 720; default ${EXPORT_SINCE_HOURS})`,
+      `lookback window in hours (max ${TELEMETRY_MAX_SINCE_HOURS}; default ${EXPORT_SINCE_HOURS})`,
     )
     .option(
       "--server <url>",
