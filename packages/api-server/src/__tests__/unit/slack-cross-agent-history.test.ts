@@ -210,7 +210,14 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain("not yours unless you recognise it as your own");
   });
 
-  it("omits the legend when history has no agent-authored messages", async () => {
+  /**
+   * TEST_SCENARIO: The legend is an authorship key for prefixes only an agent's
+   * own posts produce, so an all-human window needs none. What that window does
+   * still need is the framing that says what the block is — without it the
+   * agent is handed a bare block of channel traffic and nothing telling it not
+   * to answer the traffic.
+   */
+  it("frames an all-human window but omits the authorship legend it has nothing to explain", async () => {
     const h = harness();
     h.gw.setHistory([{ ts: "0.1", user: "U999", text: "just humans here" }]);
 
@@ -226,9 +233,58 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain(
       `U999 [${formatSlackTs("0.1")}]: just humans here`,
     );
+    expect(prompt).toContain("several separate topics may be interleaved");
     expect(prompt).not.toContain("In the conversation history below");
     expect(prompt).not.toContain("(this agent):");
     expect(prompt).not.toContain("(another agent)");
+  });
+
+  /**
+   * TEST_SCENARIO: The two shapes of injected history mean different things. A
+   * thread is one conversation, so its history is the context for the answer. A
+   * top-level message is handed the channel's recent window instead, which
+   * carries whatever unrelated things people raised outside threads — so it is
+   * background, and answering it is the failure to prevent.
+   */
+  it("frames a channel window as several topics and a thread as one conversation", async () => {
+    const channel = harness();
+    channel.gw.setHistory([
+      { ts: "0.1", user: "U999", text: "staging deploy is broken" },
+      { ts: "0.2", user: "U888", text: "anyone up for lunch" },
+    ]);
+    await channel.worker.connect();
+    await channel.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const topLevel = String(channel.prompts[0]);
+    expect(topLevel).toContain("not a single discussion");
+    expect(topLevel).toContain("several separate topics may be interleaved");
+    expect(topLevel).toContain("Answer what follows the history");
+
+    const thread = harness();
+    thread.gw.setHistory([
+      { ts: "0.1", user: "U999", text: "staging deploy is broken" },
+      { ts: "0.2", user: "U888", text: "rolled it back" },
+    ]);
+    await thread.worker.connect();
+    await thread.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      threadTs: "0.1",
+      text: "hey agent",
+    });
+
+    const inThread = String(thread.prompts[0]);
+    expect(inThread).toContain("the thread this turn was posted into");
+    expect(inThread).toContain("Answer what follows the history");
+    expect(inThread).not.toContain(
+      "several separate topics may be interleaved",
+    );
   });
 
   it("points the legend and the turn contract at describe_channel_users by default (scopes unknown)", async () => {

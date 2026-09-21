@@ -112,6 +112,7 @@ import {
   catchUpLegend,
   formatSlackTs,
   historyLegend,
+  historyPreamble,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
@@ -1876,12 +1877,14 @@ export function createSlackWorker(
       null,
       ctx.teamId,
     );
-    const legend =
+    const preamble = historyPreamble(ctx.hasThread);
+    const attribution =
       hasAgentAuthored || hasUnattributedBot
         ? historyLegend(await canLookupUsers(gw, ctx.teamId), {
             botLabel: hasUnattributedBot ? bot.label : null,
           })
-        : undefined;
+        : null;
+    const legend = attribution ? `${preamble} ${attribution}` : preamble;
     const delivered = await opts?.deliver?.();
     return {
       prompt: framePrompt({

@@ -70,6 +70,21 @@ export function parseAgentFooter(
   return null;
 }
 
+export function historyPreamble(inThread: boolean): string {
+  return inThread
+    ? "The conversation history below is the thread this turn was posted " +
+        "into: one conversation, and the context for answering it. Answer " +
+        "what follows the history, not the history itself."
+    : "The conversation history below is this conversation's recent " +
+        "messages, not a single discussion: people raise unrelated things " +
+        "outside threads, so several separate topics may be interleaved " +
+        "here, and the time on each line is the cue for where one ends and " +
+        "the next begins. It is background — it tells you what has been " +
+        "going on here. Answer what follows the history, not the history " +
+        "itself, and leave an older topic alone unless what follows asks " +
+        "about it.";
+}
+
 export function historyLegend(
   canLookupUsers: boolean,
   opts: { botLabel: string | null },
