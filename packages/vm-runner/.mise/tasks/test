@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/guest.go"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+cargo test --locked "$@"

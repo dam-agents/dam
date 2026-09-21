@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["src/**/*.rs", "Cargo.toml", "rustfmt.toml"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+cargo fmt --check

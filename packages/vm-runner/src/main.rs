@@ -27,7 +27,10 @@ struct Args {
     #[arg(long, default_value = "crane")]
     crane: String,
     // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the Go binary that mounts the agent's home inside the guest, which is why this runner being Rust does not move it.
-    #[arg(long = "platform-init", default_value = "/usr/local/libexec/platform-init")]
+    #[arg(
+        long = "platform-init",
+        default_value = "/usr/local/libexec/platform-init"
+    )]
     platform_init: PathBuf,
     #[arg(long = "port-min", default_value_t = 31000)]
     port_min: u16,

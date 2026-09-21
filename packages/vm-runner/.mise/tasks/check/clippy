@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+cargo clippy --all-targets --locked -- -D warnings
