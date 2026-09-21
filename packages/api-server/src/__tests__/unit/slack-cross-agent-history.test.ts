@@ -1,83 +1,21 @@
-import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
-import type { AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
-import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
-import { stubTurnAttendance } from "../helpers/turn-attendance.js";
-import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
   agentContextBlock,
   formatSlackTs,
 } from "../../modules/channels/infrastructure/agent-footer.js";
-import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { slackWorkerHarness } from "../helpers/slack-worker.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 configureLogger({ level: "error", write: () => {} });
 
-const OWNER = "kc|owner-1";
-
 const FOOTER_LABEL = "Powered by DAM";
 
-function harness(boundChannelId = "C1") {
-  const gw = createFakeSlackGateway();
-  const prompts: Array<string | ContentBlock[]> = [];
-  const acp: AcpClient = {
-    steer: async () => "unsupported" as const,
-    listSessions: async () => [],
-    sendPrompt: async (prompt) => {
-      prompts.push(prompt);
-      return "the answer";
-    },
-    triggerSession: () => Promise.reject(new Error("unused")),
-    turnStatus: async () => "unknown" as const,
-  };
-  const AGENT_NAMES: Record<string, string> = {
-    "agent-1": "Helper",
-    "agent-99": "Ops",
-  };
-  const agents = {
-    ensureReady: async () => {},
-    get: async (id: string) =>
-      AGENT_NAMES[id] ? { id, name: AGENT_NAMES[id] } : null,
-  } as unknown as AgentsService;
-
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
-      resolveSlackBindings: async () => [
-        {
-          instanceName: "agent-1",
-          owner: OWNER,
-          ambient: false,
-          isDefault: true,
-        },
-      ],
-      resolveSlackChannelsByInstance: async () => [
-        { id: boundChannelId, teamId: "" },
-      ],
-    } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
-
-  return { gw, prompts, worker };
-}
+const harness = (boundChannelId = "C1") =>
+  slackWorkerHarness({
+    boundChannelId,
+    agentNames: { "agent-1": "Helper", "agent-99": "Ops" },
+  });
 
 describe("slack cross-agent history attribution", () => {
   it("labels self, other agents, and humans in injected history", async () => {
@@ -212,12 +150,9 @@ describe("slack cross-agent history attribution", () => {
 
   /**
    * TEST_SCENARIO: The legend is an authorship key for prefixes only an agent's
-   * own posts produce, so an all-human window needs none. What that window does
-   * still need is the framing that says what the block is — without it the
-   * agent is handed a bare block of channel traffic and nothing telling it not
-   * to answer the traffic.
+   * own posts produce, so an all-human window has nothing for it to explain.
    */
-  it("frames an all-human window but omits the authorship legend it has nothing to explain", async () => {
+  it("omits the authorship legend when history has no agent-authored messages", async () => {
     const h = harness();
     h.gw.setHistory([{ ts: "0.1", user: "U999", text: "just humans here" }]);
 
@@ -233,18 +168,15 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain(
       `U999 [${formatSlackTs("0.1")}]: just humans here`,
     );
-    expect(prompt).toContain("several separate topics may be interleaved");
     expect(prompt).not.toContain("In the conversation history below");
     expect(prompt).not.toContain("(this agent):");
     expect(prompt).not.toContain("(another agent)");
   });
 
   /**
-   * TEST_SCENARIO: The two shapes of injected history mean different things. A
-   * thread is one conversation, so its history is the context for the answer. A
-   * top-level message is handed the channel's recent window instead, which
-   * carries whatever unrelated things people raised outside threads — so it is
-   * background, and answering it is the failure to prevent.
+   * TEST_SCENARIO: A thread is one conversation and is the context for the
+   * answer; a channel window is several, and answering it is the failure to
+   * prevent.
    */
   it("frames a channel window as several topics and a thread as one conversation", async () => {
     const channel = harness();

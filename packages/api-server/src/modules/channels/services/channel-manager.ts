@@ -79,6 +79,17 @@ export interface MessageReactionsResult {
   messageTs: string;
 }
 
+export interface ThreadQuery {
+  threadTs: string;
+}
+
+export interface ThreadResult {
+  messages: string[];
+  conversationId: string;
+  threadTs: string;
+  hasMore: boolean;
+}
+
 interface Worker {
   type: ChannelType;
   stopAll(): Promise<void>;
@@ -115,6 +126,10 @@ interface Worker {
   resolveConversationNames?(
     refs: SlackConversationRef[],
   ): Promise<SlackConversationName[]>;
+  readThread?(
+    instanceName: string,
+    query: ThreadQuery,
+  ): Promise<ThreadResult | { error: string }>;
 }
 
 export interface ChannelManager {
@@ -170,6 +185,11 @@ export interface ChannelManager {
     slackChannelId: string,
     teamId: string,
   ): Promise<SlackConversationStanding>;
+  readThread(
+    instanceName: string,
+    channelType: ChannelType,
+    query: ThreadQuery,
+  ): Promise<ThreadResult | { error: string }>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -184,6 +204,7 @@ export const channelRpcRequestSchema = z.object({
     "describeMessageReactions",
     "resolveConversationNames",
     "slackConversationStanding",
+    "readThread",
   ]),
   args: z.array(z.unknown()),
 });
@@ -205,6 +226,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   describeMessageReactions: forInstance.rest(z.unknown()),
   resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
+  readThread: forInstance.rest(z.unknown()),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -261,6 +283,15 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     slackConversationRefSchema.extend({ name: z.string().nullable() }),
   ),
   slackConversationStanding: z.enum(["member", "known", "unknown"]),
+  readThread: z.union([
+    z.object({
+      messages: z.array(z.string()),
+      conversationId: z.string(),
+      threadTs: z.string(),
+      hasMore: z.boolean(),
+    }),
+    z.object({ error: z.string() }),
+  ]),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -488,6 +519,18 @@ export function createChannelManager(deps: {
       deps.slackWorker
         ? deps.slackWorker.conversationStanding(slackChannelId, teamId)
         : Promise.reject(new Error("slack worker not available")),
+    readThread: (
+      instanceName: string,
+      channelType: ChannelType,
+      query: ThreadQuery,
+    ) => {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.readThread)
+        return Promise.resolve({
+          error: `thread reads are not supported on ${channelType}`,
+        });
+      return worker.readThread(instanceName, query);
+    },
   } as const;
 
   subscriptions.push(
@@ -658,6 +701,14 @@ export function createChannelManager(deps: {
         "slackConversationStanding",
         [slackChannelId, teamId],
         () => localHandlers.slackConversationStanding(slackChannelId, teamId),
+      );
+    },
+
+    readThread(instanceName, channelType, query) {
+      return dispatchResult(
+        "readThread",
+        [instanceName, channelType, query],
+        () => localHandlers.readThread(instanceName, channelType, query),
       );
     },
   };

@@ -148,6 +148,7 @@ describe("agent footer", () => {
 });
 
 describe("labelHistoryMessage", () => {
+  const MARKERS = { showThreadMarkers: true };
   const human: SlackMessage = { text: "hey", user: "U123" };
   const mine: SlackMessage = { text: "on it" };
   const theirs: SlackMessage = { text: "already handled" };
@@ -159,6 +160,7 @@ describe("labelHistoryMessage", () => {
         { agentId: footer.agentId, name: "Helper" },
         footer.agentId,
         NO_BOT,
+        MARKERS,
       ),
     ).toBe("you (this agent): on it");
   });
@@ -170,6 +172,7 @@ describe("labelHistoryMessage", () => {
         { agentId: "agent-other", name: "Ops" },
         footer.agentId,
         NO_BOT,
+        MARKERS,
       ),
     ).toBe("Ops (another agent): already handled");
   });
@@ -185,21 +188,22 @@ describe("labelHistoryMessage", () => {
         { agentId: "agent-other", name: "" },
         footer.agentId,
         NO_BOT,
+        MARKERS,
       ),
     ).toBe("agent-other (another agent): already handled");
   });
 
   it("keeps humans as their Slack id", () => {
-    expect(labelHistoryMessage(human, null, footer.agentId, NO_BOT)).toBe(
-      "U123: hey",
-    );
+    expect(
+      labelHistoryMessage(human, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("U123: hey");
   });
 
   it("includes a human-readable timestamp when the message carries one", () => {
     const withTs: SlackMessage = { ts: "0.1", text: "hey", user: "U123" };
-    expect(labelHistoryMessage(withTs, null, footer.agentId, NO_BOT)).toBe(
-      `U123 [${formatSlackTs("0.1")}]: hey`,
-    );
+    expect(
+      labelHistoryMessage(withTs, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe(`U123 [${formatSlackTs("0.1")}]: hey`);
   });
 
   it("marks a message Slack reports as edited", () => {
@@ -209,9 +213,9 @@ describe("labelHistoryMessage", () => {
       user: "U123",
       edited: true,
     };
-    expect(labelHistoryMessage(edited, null, footer.agentId, NO_BOT)).toBe(
-      `U123 [${formatSlackTs("0.1")}]: hey (edited)`,
-    );
+    expect(
+      labelHistoryMessage(edited, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe(`U123 [${formatSlackTs("0.1")}]: hey (edited)`);
   });
 });
 

@@ -63,6 +63,10 @@ function toSlackMessage(m: {
   text?: string;
   blocks?: unknown;
   edited?: unknown;
+  thread_ts?: string;
+  reply_count?: number;
+  latest_reply?: string;
+  subtype?: string;
 }): SlackMessage {
   return {
     ts: m.ts,
@@ -70,6 +74,10 @@ function toSlackMessage(m: {
     text: m.text,
     blocks: m.blocks as SlackMessage["blocks"],
     ...(m.edited ? { edited: true } : {}),
+    ...(m.thread_ts ? { threadTs: m.thread_ts } : {}),
+    ...(m.reply_count ? { replyCount: m.reply_count } : {}),
+    ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
+    ...(m.subtype ? { subtype: m.subtype } : {}),
   };
 }
 

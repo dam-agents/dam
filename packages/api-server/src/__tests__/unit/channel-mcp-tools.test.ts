@@ -10,6 +10,8 @@ import type {
   ChannelReply,
   MessageReactionsResult,
   ReactionsQuery,
+  ThreadQuery,
+  ThreadResult,
 } from "../../modules/channels/services/channel-manager.js";
 
 const { auditLines } = vi.hoisted(() => ({
@@ -27,9 +29,11 @@ vi.mock("../../core/security-log.js", () => ({
 
 async function mcpHarness(opts?: {
   reactions?: MessageReactionsResult | { error: string };
+  thread?: ThreadResult | { error: string };
 }) {
   const replies: ChannelReply[] = [];
   const reactionQueries: ReactionsQuery[] = [];
+  const threadQueries: ThreadQuery[] = [];
   const channelManager = {
     reply: vi.fn(
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
@@ -49,6 +53,19 @@ async function mcpHarness(opts?: {
         );
       },
     ),
+    readThread: vi.fn(
+      async (_agentId: string, _type: ChannelType, query: ThreadQuery) => {
+        threadQueries.push(query);
+        return (
+          opts?.thread ?? {
+            messages: ["U999 [Wed 2026-09-17 09:12 UTC]: the question"],
+            conversationId: "C-BOUND",
+            threadTs: query.threadTs,
+            hasMore: false,
+          }
+        );
+      },
+    ),
   };
 
   const session = createMcpSession("agent-1", {
@@ -63,7 +80,7 @@ async function mcpHarness(opts?: {
   const client = new Client({ name: "test-harness", version: "1.0.0" });
   await client.connect(clientTransport);
 
-  return { client, replies, reactionQueries, channelManager };
+  return { client, replies, reactionQueries, threadQueries, channelManager };
 }
 
 describe("reply MCP tool — broadcast to channel (#2973)", () => {
@@ -254,5 +271,72 @@ describe("describe_message_reactions MCP tool", () => {
     );
     expect(lookups).toHaveLength(1);
     expect(lookups[0].detail).toEqual({ messageTs: "9.9" });
+  });
+});
+
+describe("read_thread MCP tool", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: The tool as the agent meets it over MCP. It reads message
+   * bodies the agent was not otherwise given, so an unlogged read is the one
+   * an operator cannot reconstruct later.
+   */
+  it("advertises itself, passes the query through, and logs what it read", async () => {
+    const h = await mcpHarness();
+
+    const tools = (await h.client.listTools()).tools;
+    expect(tools.some((t) => t.name === "read_thread")).toBe(true);
+
+    const result = await h.client.callTool({
+      name: "read_thread",
+      arguments: {
+        channel: ChannelType.Slack,
+        threadTs: "1758100320.000000",
+      },
+    });
+
+    expect(h.threadQueries).toEqual([{ threadTs: "1758100320.000000" }]);
+    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual(
+      {
+        messages: ["U999 [Wed 2026-09-17 09:12 UTC]: the question"],
+        conversationId: "C-BOUND",
+        threadTs: "1758100320.000000",
+        hasMore: false,
+      },
+    );
+    expect(auditLines).toEqual([
+      {
+        event: "channel.thread_read",
+        detail: {
+          conversationId: "C-BOUND",
+          threadTs: "1758100320.000000",
+          messages: 1,
+          hasMore: false,
+        },
+      },
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A refused read still has to leave a trail — the offer
+   * registry is what stops an agent reading a thread it was never shown.
+   */
+  it("surfaces a refusal to the agent and records the reason", async () => {
+    const h = await mcpHarness({
+      thread: { error: "not a thread you were shown" },
+    });
+
+    const result = await h.client.callTool({
+      name: "read_thread",
+      arguments: { channel: ChannelType.Slack, threadTs: "1.1" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(auditLines).toEqual([
+      { event: "channel.thread_read", detail: { threadTs: "1.1" } },
+    ]);
   });
 });
