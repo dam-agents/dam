@@ -77,6 +77,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Fetch the browser and its OS libraries before there is a cluster to disturb.
+# The Playwright run task pulls this in as a dependency, which would otherwise
+# put it here — after the cluster is up — and on Linux it is `apt-get install`,
+# whose service-restart trigger takes k3s with it. The control plane then goes
+# down under the suite: the first spec fails at the transport layer, with no
+# tRPC envelope to read a code from, and the rest never run. Ordering it here
+# leaves the second, dependency-driven invocation a no-op that installs nothing
+# and so restarts nothing.
+mise run //packages/e2e/playwright:install-browsers
+
 # Nuke any pre-existing cluster before provisioning. A previous run may have
 # died before its own teardown fired, and a CI runner is not guaranteed to be
 # ephemeral — the same host has served two jobs in a row, the second starting
