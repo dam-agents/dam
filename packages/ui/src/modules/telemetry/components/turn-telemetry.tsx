@@ -60,7 +60,7 @@ export function TurnTelemetry({
   );
 
   return (
-    <div className="mt-1">
+    <div className="-mt-7">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

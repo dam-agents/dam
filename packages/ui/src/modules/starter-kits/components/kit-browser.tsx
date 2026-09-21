@@ -13,6 +13,7 @@ import {
   CATEGORY_LABEL,
   kitBadges,
   matchesSearch,
+  sortKits,
 } from "../lib/catalog-cards.js";
 import { kitIcon } from "../lib/kit-icon.js";
 
@@ -115,10 +116,12 @@ export function useKitFilter(
 
   const shown = useMemo(
     () =>
-      kits.filter(
-        (kit) =>
-          (filter === "all" || kit.category === filter) &&
-          matchesSearch(kit, query),
+      sortKits(
+        kits.filter(
+          (kit) =>
+            (filter === "all" || kit.category === filter) &&
+            matchesSearch(kit, query),
+        ),
       ),
     [kits, filter, query],
   );

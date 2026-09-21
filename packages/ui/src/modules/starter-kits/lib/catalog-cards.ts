@@ -4,9 +4,16 @@ import { connectionRequirements, describeAccepts } from "./setup.js";
 
 export const VM_BACKEND_LABEL = "New sandbox runtime";
 
+export const CATEGORY_ORDER: StarterKitView["category"][] = [
+  "software",
+  "knowledge",
+  "productivity",
+  "research",
+];
+
 export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
-  knowledge: "Knowledge",
   software: "Software",
+  knowledge: "Knowledge",
   productivity: "Productivity",
   research: "Research",
 };
@@ -89,11 +96,13 @@ export function matchesSearch(kit: StarterKitView, query: string): boolean {
 export function categoriesPresent(
   kits: readonly StarterKitView[],
 ): StarterKitView["category"][] {
-  const order: StarterKitView["category"][] = [
-    "software",
-    "knowledge",
-    "productivity",
-    "research",
-  ];
-  return order.filter((c) => kits.some((k) => k.category === c));
+  return CATEGORY_ORDER.filter((c) => kits.some((k) => k.category === c));
+}
+
+export function sortKits(kits: readonly StarterKitView[]): StarterKitView[] {
+  return [...kits].sort(
+    (a, b) =>
+      CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
 }
