@@ -78,7 +78,7 @@ func main() {
 		slog.Error("reading the machines already in the state dir", "error", err)
 		os.Exit(1)
 	}
-	go srv.Runtime.WarmTemplates()
+	srv.Background(srv.Runtime.WarmTemplates)
 	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin)
 
 	// UNIT_BOUNDARY_DESCRIPTION: a runner that ignores SIGTERM is killed where it stands, thirty seconds later and without warning, and everything it was part-way through is abandoned as it lies — a fetch unpacking into a scratch directory leaves that directory behind, in a node directory that outlives every pod and where nothing counts it against the image budget or ever evicts it. Answering the signal is what lets the runner close itself: its in-flight work is cancelled rather than severed, and each operation unwinds its own cleanup on the way out.

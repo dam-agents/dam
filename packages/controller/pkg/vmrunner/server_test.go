@@ -1226,6 +1226,40 @@ func TestNothingIsStillRunningWhenCloseReturns(t *testing.T) {
 		"the cancelled start recorded itself anyway, so it outlived the Close that was supposed to have ended it: %q", string(state))
 }
 
+// TEST_SCENARIO: the runner has work out that belongs to no machine — the disk-template warm-up — and the shutdown says it cancels what is running and waits for it. On a bare goroutine that was true of most things rather than everything: Close cancelled the decompression and returned while it was still unwinding, so the process could exit part-way through the cleanup that removes the half-expanded template. Whatever else the runner starts has to join the same barrier for that sentence to be worth anything.
+func TestCloseWaitsForWorkThatBelongsToNoMachine(t *testing.T) {
+	h := newHarness(t)
+
+	running := make(chan struct{})
+	finished := false
+	h.node.Background(func() {
+		close(running)
+		time.Sleep(50 * time.Millisecond)
+		finished = true
+	})
+	<-running
+
+	h.node.Close()
+
+	assert.True(t, finished, "Close returned while work it had out was still unwinding")
+}
+
+// TEST_SCENARIO: the same guard a machine operation gets. Work started after Close would outlive the wait that was supposed to cover it, and there is nothing left to wait for it.
+func TestNoBackgroundWorkStartsAfterClose(t *testing.T) {
+	h := newHarness(t)
+	h.node.Close()
+
+	started := make(chan struct{})
+	h.node.Background(func() { close(started) })
+
+	h.node.Close()
+	select {
+	case <-started:
+		t.Fatal("work started after the runner closed")
+	default:
+	}
+}
+
 // TEST_SCENARIO: once the runner is closing, a machine operation started anyway would outlive the wait that was supposed to cover it — the whole point of which is that nothing is still writing when Close returns. So a request that arrives after Close starts no work.
 func TestNoOperationStartsAfterClose(t *testing.T) {
 	h := newHarness(t)
