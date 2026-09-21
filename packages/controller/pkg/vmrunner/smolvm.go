@@ -31,10 +31,19 @@ var errImageLaunchUnknown = errors.New("this image names no entrypoint, so a mac
 
 type Smolvm struct {
 	Bin string
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's lifetime, which every smolvm invocation is a child of. Nil means none, and each call is then bounded only by its own timeout — which is what a Preloader gets, having no runner to belong to. The Server sets it so that closing the runner ends the calls it has out, rather than leaving them to a timeout measured in minutes.
+	Lifetime context.Context
+}
+
+func (r *Smolvm) lifetime() context.Context {
+	if r.Lifetime == nil {
+		return context.Background()
+	}
+	return r.Lifetime
 }
 
 func (r *Smolvm) State(id string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.lifetime(), 30*time.Second)
 	defer cancel()
 	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, "machine", "status", "-n", id, "--json").Output()
@@ -218,7 +227,7 @@ func (r *Smolvm) run(secrets []string, args ...string) error {
 }
 
 func (r *Smolvm) runReporting(report bool, secrets []string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+	ctx, cancel := context.WithTimeout(r.lifetime(), opTimeout)
 	defer cancel()
 	started := time.Now()
 	out, err := exec.CommandContext(ctx, r.Bin, args...).CombinedOutput()
@@ -282,7 +291,7 @@ func (r *Smolvm) WarmTemplates() {
 		slog.Info("no disk templates to warm", "dir", dir)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), warmTimeout)
+	ctx, cancel := context.WithTimeout(r.lifetime(), warmTimeout)
 	defer cancel()
 	for _, packed := range packedAll {
 		target := strings.TrimSuffix(packed, ".zst")

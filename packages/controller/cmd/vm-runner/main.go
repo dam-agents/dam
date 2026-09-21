@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
@@ -75,11 +80,39 @@ func main() {
 	}
 	go srv.Runtime.WarmTemplates()
 	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin)
-	if *tlsCert != "" {
-		err = http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, srv.Handler())
-	} else {
-		err = http.ListenAndServe(*listen, srv.Handler())
+
+	// UNIT_BOUNDARY_DESCRIPTION: a runner that ignores SIGTERM is killed where it stands, thirty seconds later and without warning, and everything it was part-way through is abandoned as it lies — a fetch unpacking into a scratch directory leaves that directory behind, in a node directory that outlives every pod and where nothing counts it against the image budget or ever evicts it. Answering the signal is what lets the runner close itself: its in-flight work is cancelled rather than severed, and each operation unwinds its own cleanup on the way out.
+	stopping := make(chan os.Signal, 1)
+	signal.Notify(stopping, syscall.SIGTERM, syscall.SIGINT)
+
+	api := &http.Server{Addr: *listen, Handler: srv.Handler()}
+	serving := make(chan error, 1)
+	go func() {
+		if *tlsCert != "" {
+			serving <- api.ListenAndServeTLS(*tlsCert, *tlsKey)
+			return
+		}
+		serving <- api.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serving:
+		slog.Error("serving", "error", err)
+		srv.Close()
+		os.Exit(1)
+	case sig := <-stopping:
+		slog.Info("VM runner stopping", "signal", sig.String())
 	}
-	slog.Error("serving", "error", err)
-	os.Exit(1)
+
+	// UNIT_BOUNDARY_DESCRIPTION: the API goes first so nothing new is admitted, then the runner, which cancels what is running and waits for it. The machines themselves are not stopped: they are smolvm's processes and they outlive this one on purpose, which is what lets a runner be replaced without every agent on the node going down with it.
+	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
+	defer done()
+	if err := api.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Warn("the machine API did not shut down cleanly", "error", err)
+	}
+	srv.Close()
+	slog.Info("VM runner stopped")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API is given to finish the requests it already has. Comfortably inside the thirty seconds kubelet allows before it escalates to SIGKILL, so the runner's own close still gets a turn after it.
+const shutdownGrace = 5 * time.Second

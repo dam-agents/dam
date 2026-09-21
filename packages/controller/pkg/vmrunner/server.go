@@ -93,6 +93,10 @@ type Server struct {
 	// UNIT_BOUNDARY_DESCRIPTION: how a machine's published port is opened, nil being net.Listen. It exists so a caller that has already bound the port can hand that listener over rather than release it and hope: between releasing a port and this binding it, anything on the host may take it, and the machine then fails to publish for a reason that has nothing to do with it.
 	Listen func(network, address string) (net.Listener, error)
 
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's own lifetime, written once by Start and cancelled by Close, so every fetch and every smolvm call is a child of it. Without one they are children of nothing and outlive the runner by up to their own timeout — twenty minutes for a pull — which is how a killed process leaves a half-unpacked tree its own deferred cleanup never reached.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	mu sync.Mutex
 	// UNIT_BOUNDARY_DESCRIPTION: operations started and not yet finished. A machine operation runs on its own goroutine and writes to the state and image directories throughout, so a process that stops without waiting for them leaves work running against directories its caller believes are finished with — which is how a test's temporary directory is removed out from under a fetch still unpacking into it.
 	work       sync.WaitGroup
@@ -111,7 +115,21 @@ type Server struct {
 	startedAt  map[string]time.Time
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it, and its own pass is bounded by the interval it sweeps on.
+func (s *Server) lifetime() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
+}
+
 func (s *Server) Start() error {
+	if s.ctx == nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+	}
+	if s.Runtime != nil && s.Runtime.Lifetime == nil {
+		s.Runtime.Lifetime = s.ctx
+	}
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
@@ -140,6 +158,11 @@ func (s *Server) Close() {
 		delete(s.listeners, id)
 	}
 	s.mu.Unlock()
+
+	// UNIT_BOUNDARY_DESCRIPTION: cancelling before waiting is what makes the wait short. An operation inside a pull is allowed twenty minutes on its own; as a child of this it ends now, unwinds its own deferred cleanup, and the scratch tree it was unpacking into goes with it rather than being left for the directory's housekeeping to find later.
+	if s.cancel != nil {
+		s.cancel()
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -463,7 +486,7 @@ func (s *Server) launchFromRegistry(ref string) (*ImageLaunch, error) {
 	if s.Crane == "" {
 		return nil, fmt.Errorf("%w: %s names no cached image and this runner cannot read one from the registry", errImageLaunchUnknown, ref)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
 	if err != nil {
@@ -501,7 +524,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
 	started := time.Now()
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
