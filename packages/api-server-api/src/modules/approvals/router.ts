@@ -9,11 +9,16 @@ import {
   approvalApprovePermanentInputSchema,
   approvalDenyForeverInputSchema,
   approvalDismissInputSchema,
+  approvalGetInputSchema,
   approvalListForInstanceInputSchema,
   approvalListForOwnerInputSchema,
 } from "./schemas.js";
 
 export const approvalsRouter = t.router({
+  get: operateAgentsProcedure
+    .input(approvalGetInputSchema)
+    .query(({ ctx, input }) => ctx.approvals.get(input.id)),
+
   listForOwner: operateAgentsProcedure
     .input(approvalListForOwnerInputSchema)
     .query(({ ctx, input }) => ctx.approvals.listForOwner(input)),

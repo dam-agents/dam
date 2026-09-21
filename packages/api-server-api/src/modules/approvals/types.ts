@@ -5,7 +5,7 @@ import type {
   approvalStatusSchema,
 } from "./schemas.js";
 
-export type ApprovalType = "ext_authz" | "acp_native";
+export type ApprovalType = "ext_authz" | "acp_native" | "satellite_job";
 
 export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
@@ -38,7 +38,18 @@ export interface AcpNativePayload {
   options?: AcpPermissionOption[];
 }
 
-export type ApprovalPayload = ExtAuthzPayload | AcpNativePayload;
+export interface SatelliteJobPayload {
+  kind: "satellite_job";
+  satellite: string;
+  sequence: number;
+  ref: string;
+  cmd: string[];
+}
+
+export type ApprovalPayload =
+  | ExtAuthzPayload
+  | AcpNativePayload
+  | SatelliteJobPayload;
 
 export interface ApprovalView {
   id: string;
@@ -58,6 +69,7 @@ export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 export type ApprovalActionOutcome = z.infer<typeof approvalActionOutcomeSchema>;
 
 export interface ApprovalsService {
+  get(id: string): Promise<ApprovalView | null>;
   listForOwner(opts?: ApprovalListOptions): Promise<ApprovalView[]>;
   listForInstance(
     agentId: string,

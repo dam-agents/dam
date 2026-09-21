@@ -3,8 +3,10 @@ import type {
   ApprovalVerdict,
   ApprovalView,
   ApprovalsService,
+  SatelliteJobPayload,
   EgressRuleSource,
 } from "api-server-api";
+import { acceptsPermanentVerdict } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
@@ -64,6 +66,11 @@ export interface CreateApprovalsServiceDeps {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
+  onSatelliteVerdict(
+    payload: SatelliteJobPayload,
+    owner: string,
+    allowed: boolean,
+  ): Promise<void>;
 }
 
 function matchesBinding(
@@ -181,6 +188,13 @@ export function createApprovalsService(
   deps: CreateApprovalsServiceDeps,
 ): ApprovalsService {
   return {
+    async get(id) {
+      const row = await loadOwned(deps, id);
+      return row && matchesBinding(deps.agentBinding, row.agentId)
+        ? toView(row)
+        : null;
+    },
+
     async listForOwner(opts) {
       const rows = await deps.repo.listPendingForOwner(deps.ownerSub, opts);
       const visible = rows.filter((r) =>
@@ -211,6 +225,8 @@ export function createApprovalsService(
         });
         return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
+      if (row.type === "satellite_job")
+        return resolveSatelliteJob(deps, row, "allow_once");
       const casWon = await resolveAndDeliverAcpNative(deps, row, "allow_once");
       return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
@@ -218,6 +234,7 @@ export function createApprovalsService(
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (!acceptsPermanentVerdict(row.type)) return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const rule = {
           host: row.payload.host,
@@ -317,6 +334,7 @@ export function createApprovalsService(
     async denyForever(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (!acceptsPermanentVerdict(row.type)) return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const rule = {
           host: row.payload.host,
@@ -382,10 +400,40 @@ export function createApprovalsService(
         });
         return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
+      if (row.type === "satellite_job")
+        return resolveSatelliteJob(deps, row, "deny_once");
       const casWon = await resolveAndDeliverAcpNative(deps, row, "deny_once");
       return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
   };
+}
+
+async function resolveSatelliteJob(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: Extract<ApprovalVerdict, "allow_once" | "deny_once">,
+): Promise<ApprovalActionOutcome> {
+  if (row.payload.kind !== "satellite_job") return NOT_ACTIONABLE;
+  const casWon = await deps.repo.resolvePending(
+    row.id,
+    verdict,
+    deps.ownerSub,
+    {
+      markDelivered: true,
+    },
+  );
+  if (!casWon) return NOT_ACTIONABLE;
+  emitResolved(row);
+  auditVerdict(deps, row, verdict === "allow_once" ? "allow" : "deny", {
+    verdict,
+    satellite: row.payload.satellite,
+  });
+  await deps.onSatelliteVerdict(
+    row.payload,
+    row.ownerSub,
+    verdict === "allow_once",
+  );
+  return { outcome: "applied", rule: null };
 }
 
 async function resolveAndDeliverAcpNative(

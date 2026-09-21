@@ -231,6 +231,13 @@ import {
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import {
+  composeSatellitesModule,
+  createOutcomeDelivery,
+  createOutcomeWakeRetry,
+  createSatelliteApprovalRequester,
+} from "./modules/satellites/index.js";
+import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -443,6 +450,9 @@ export async function bootstrap() {
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
 
+  let deliverSatelliteOutcome: (
+    agentId: string,
+  ) => Promise<boolean> = async () => false;
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -471,6 +481,63 @@ export async function bootstrap() {
     runtimeDelivery.sweep.tick(),
   );
   const onboardingChecklists = createOnboardingChecklistRepository(db);
+
+  const satellitesApprovals = createApprovalsRepository(db);
+  const satellitesBoot = composeSatellitesModule({
+    db,
+    maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
+    ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    isAgentOwnedBy: (agentId, ownerSub) =>
+      agentsRepo.isOwnedBy(agentId, ownerSub),
+    requestApproval: createSatelliteApprovalRequester({
+      approvals: satellitesApprovals,
+    }),
+    retireApproval: (approvalId) =>
+      satellitesApprovals.expirePending(approvalId),
+    spillLog: async (agentId, ref, output) => {
+      try {
+        return await createAgentWorkspaceFiles(
+          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+        ).write({
+          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+          bytes: Buffer.from(output, "utf8"),
+          contentType: "text/plain",
+        });
+      } catch {
+        return null;
+      }
+    },
+    deliverOutcome: async ({ agentId }) => {
+      await deliverSatelliteOutcome(agentId);
+    },
+  });
+
+  const outcomeDeliveryDeps = {
+    repo: satellitesBoot.repo,
+    bump: (
+      agentId: string,
+      events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
+    ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId: string) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    spillLog: satellitesBoot.spillLog,
+    log: (msg: string) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  };
+  deliverSatelliteOutcome = createOutcomeDelivery(outcomeDeliveryDeps);
+  await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
+    satellitesBoot.sweepLeases().then(() => undefined),
+  );
+  const retrySatelliteOutcomes = createOutcomeWakeRetry(
+    outcomeDeliveryDeps,
+    deliverSatelliteOutcome,
+  );
+  await periodicJobs.register("satellite-outcome-wake-retry", 3_600_000, () =>
+    retrySatelliteOutcomes().then(() => undefined),
+  );
+
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
@@ -932,6 +999,16 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
+    onApprovalExpired: async (row) => {
+      if (row.payload.kind !== "satellite_job") return;
+      await satellitesBoot.applyVerdict(
+        row.ownerSub,
+        row.payload.satellite,
+        row.payload.sequence,
+        false,
+        "nobody answered the approval before it expired",
+      );
+    },
     identityResolver: {
       resolve: async (agentId) => {
         const rootId = await invocationDriverResolution.resolveRoot(agentId);
@@ -1026,6 +1103,11 @@ export async function bootstrap() {
       name: "connection-grants",
       listAgentIds: () => listConnectionGrantAgentIds(db),
       cleanup: createConnectionGrantsCleanupHook(db),
+    },
+    {
+      name: "satellite-grants",
+      listAgentIds: () => satellitesBoot.listAgentIds(),
+      cleanup: satellitesBoot.onAgentDeleted,
     },
     {
       name: "agent-env",
@@ -1342,6 +1424,7 @@ export async function bootstrap() {
     reposService,
     userDirectory,
     apiKeysModule,
+    satellitesBoot,
     auth,
     jwksWarmup,
     surfaceAttribution,
@@ -1351,6 +1434,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    satellitesBoot,
     agentStateCache,
     config,
     api,

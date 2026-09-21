@@ -80,6 +80,7 @@ function makeService(seed: PendingApprovalRow) {
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
     agentBinding: "*",
+    onSatelliteVerdict: async () => {},
   });
   return { rows, service, inserts };
 }

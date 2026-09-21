@@ -70,6 +70,14 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
         });
       }
 
+      if (input.scopes.includes("satellites:serve") && input.agentIds !== "*") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "satellites:serve keys must be unrestricted — a satellite runs work queued by any agent granted to it, so a binding would not hold. Remove the agent binding or drop satellites:serve.",
+        });
+      }
+
       const agentIds: readonly string[] | null =
         input.agentIds === "*" ? null : input.agentIds;
 

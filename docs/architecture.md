@@ -9,6 +9,7 @@ flowchart LR
   user[browser user]
   slack-user[Slack user]
   cli[dam CLI]
+  satellite[dam satellite worker]
   llm[LLM APIs]
   github[GitHub]
 
@@ -35,6 +36,7 @@ flowchart LR
   slack-user <-->|Slack API| api-server
 
   cli -->|tRPC + WS| api-server
+  satellite -->|polls for approved commands| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api
@@ -66,6 +68,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated surface, reached from the Slack Agent Footer: a conversion page that names a channel-bound Agent and its owner, rather than a dead end.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
+- [satellites](architecture/satellites.md) — command surfaces on machines outside the cluster: a polled queue, a usage-line grammar that bounds what may run, and the jobs an agent starts and is woken with.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
 - [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs, never from cluster state.

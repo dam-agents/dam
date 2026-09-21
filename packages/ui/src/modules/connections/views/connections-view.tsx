@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { SatellitesSection } from "../../satellites/components/satellites-section.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionGroupCard } from "../components/connection-group-card.js";
@@ -79,6 +80,8 @@ export function ConnectionsView() {
           </Inset>
         </>
       )}
+
+      <SatellitesSection />
 
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />

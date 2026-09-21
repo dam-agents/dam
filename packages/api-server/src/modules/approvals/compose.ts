@@ -3,6 +3,7 @@ import type { ApprovalsService } from "api-server-api";
 import { createApprovalsRepository } from "./infrastructure/approvals-repository.js";
 import {
   createApprovalsService,
+  type CreateApprovalsServiceDeps,
   type EgressRuleWriter,
   type WrapperFrameSender,
 } from "./services/approvals-service.js";
@@ -19,6 +20,7 @@ import {
 } from "./services/ext-authz-gate.js";
 import {
   createDeliverySweeper,
+  type CreateDeliverySweeperDeps,
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
 import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
@@ -34,6 +36,7 @@ export interface ComposeApprovalsServiceDeps {
   egressRuleWriter: EgressRuleWriter;
   bus: RedisBus;
   wrapperFrameSender: WrapperFrameSender;
+  onSatelliteVerdict: CreateApprovalsServiceDeps["onSatelliteVerdict"];
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -47,11 +50,13 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
     agentBinding: deps.agentBinding,
+    onSatelliteVerdict: deps.onSatelliteVerdict,
   });
   return { service };
 }
 
 export interface ComposeApprovalsSystemDeps {
+  onApprovalExpired: CreateDeliverySweeperDeps["onExpired"];
   db: Db;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
@@ -85,6 +90,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     platformAllowedHosts: deps.platformAllowedHosts,
   });
   const sweeper = createDeliverySweeper({
+    onExpired: deps.onApprovalExpired,
     repo,
     wrapperFrameSender: deps.wrapperFrameSender,
     staleMs: deps.sweep?.staleMs ?? 30_000,
