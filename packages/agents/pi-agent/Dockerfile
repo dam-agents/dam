@@ -15,6 +15,8 @@ RUN --mount=type=cache,target=/tmp/npm-cache,uid=65532 \
 
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
+# Which harness family this image runs; kit bootstraps and pod shells read it.
+ENV PLATFORM_HARNESS=pi
 RUN ln -s /etc/AGENTS.md /app/working-dir/AGENTS.md &&\
 mkdir -p /app/working-dir/.pi/agent &&\
 ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills

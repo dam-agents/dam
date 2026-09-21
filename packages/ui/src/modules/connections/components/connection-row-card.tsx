@@ -17,6 +17,7 @@ interface Props {
   onDelete?: () => void;
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
+  onRemove?: () => void;
 }
 
 export function ConnectionRowCard({
@@ -27,6 +28,7 @@ export function ConnectionRowCard({
   onDelete,
   deleting,
   maintenance,
+  onRemove,
 }: Props) {
   const needsInstall = activeInstallUrl(connection) !== null;
   return (
@@ -46,6 +48,7 @@ export function ConnectionRowCard({
         onDelete={onDelete}
         deleting={deleting}
         maintenance={maintenance}
+        onRemove={onRemove}
       />
     </div>
   );

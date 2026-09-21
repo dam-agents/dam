@@ -1,4 +1,4 @@
-import type { PromptBlock } from "api-server-api";
+import type { PromptBlock, ProviderPresetType } from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
@@ -98,14 +98,21 @@ export interface TemplateView {
   name: string;
   image: string;
   description?: string;
-  category: "harness" | "preconfigured";
+  category: "harness";
   harness?: HarnessFamily;
+  providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
   size?: { cpu?: string; memory?: string };
+}
+
+export interface OnboardingStep {
+  id: string;
+  label: string;
+  done: boolean;
 }
 
 export type AgentState =
@@ -139,9 +146,21 @@ export interface AgentView {
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
+  workspaceFailures: {
+    kind: string;
+    error: string;
+    settled: boolean;
+    attempts: number;
+    maxAttempts: number;
+  }[];
   channels: SlackChannel[];
   kbTemplateId: string | null;
+  kbShareRoots?: string[];
+  starterKit: string | null;
+  starterKitOnboarded: string | null;
+  onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
+  vm: boolean;
   kind?: AgentKind;
 }
 

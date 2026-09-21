@@ -18,6 +18,7 @@
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
+#   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
@@ -49,6 +50,10 @@ AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
+# Components whose chart or kit tag is rewritten from a source sha by pin-tags:
+# the harnesses, keycloak and every workload, since a starter kit names its
+# image directly and its tag has to be pinned the same way a Template's is.
+PINNED_TAGS="keycloak $AGENTS $WORKLOADS"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -208,8 +213,9 @@ case "${1:-}" in
   gha-outputs)    gha_outputs ;;
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
+  list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac

@@ -6,7 +6,6 @@ import {
   agentCardStatus,
   chatInput,
   gotoAgentChat,
-  readChatMessages,
   sendMessageToAgent,
   setMockAgentReply,
   setMockReplyWithMidTurnUserPrompt,
@@ -32,7 +31,7 @@ test("exchange messages with the agent", async ({ page }) => {
   await setMockAgentReply(api, agentId, scriptedReply);
 
   await test.step("open the agent chat from the agent list", async () => {
-    await page.goto(`${baseUrl}/coding-agents`);
+    await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
 
     await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
@@ -68,33 +67,37 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
     tail: offsetReplyTail,
   });
 
-  await test.step("open the agent chat", async () => {
-    await page.goto(`${baseUrl}/coding-agents`);
-    await expect(page.getByTestId("app-sidebar")).toBeVisible();
-    await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
-    await gotoAgentChat(page, agentName, agentId);
-    await expect(chatInput(page)).toBeVisible();
-  });
-
-  await test.step("send a prompt and let the interleaved turn stream", async () => {
-    await sendMessageToAgent(page, offsetUserPrompt);
-    await expect(page.getByText(offsetReplyTail)).toBeVisible({
-      timeout: 30_000,
+  try {
+    await test.step("open the agent chat", async () => {
+      await page.goto(baseUrl);
+      await expect(page.getByTestId("app-sidebar")).toBeVisible();
+      await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
+      await gotoAgentChat(page, agentName, agentId);
+      await expect(chatInput(page)).toBeVisible();
     });
-    await expect(page.getByText(offsetBackgroundPrompt)).toBeVisible();
-  });
 
-  await test.step("the full reply stays paired with the user prompt", async () => {
-    const rows = await readChatMessages(page);
+    await test.step("the interleaved reply stays paired with the user prompt", async () => {
+      await sendMessageToAgent(page, offsetUserPrompt);
+      const userMessage = page.getByTestId("chat-message").filter({
+        has: page.getByText(offsetUserPrompt, { exact: true }),
+      });
+      await expect(userMessage).toBeVisible();
+      await expect(userMessage).toHaveAttribute("data-role", "user");
 
-    const userIdx = rows.findIndex(
-      (r) => r.role === "user" && r.text.includes(offsetUserPrompt),
-    );
-    expect(userIdx).toBeGreaterThanOrEqual(0);
+      const reply = userMessage.locator(
+        'xpath=following-sibling::*[@data-testid="chat-message"][1]',
+      );
+      await expect(reply).toHaveAttribute("data-role", "assistant");
+      await expect(reply).toContainText(offsetReplyHead.trim());
+      await expect(reply).toContainText(offsetReplyTail, { timeout: 30_000 });
 
-    const reply = rows[userIdx + 1];
-    expect(reply?.role).toBe("assistant");
-    expect(reply?.text).toContain(offsetReplyHead.trim());
-    expect(reply?.text).toContain(offsetReplyTail);
-  });
+      const backgroundPrompt = reply.locator(
+        'xpath=following-sibling::*[@data-testid="chat-message"][1]',
+      );
+      await expect(backgroundPrompt).toHaveAttribute("data-role", "user");
+      await expect(backgroundPrompt).toContainText(offsetBackgroundPrompt);
+    });
+  } finally {
+    await setMockAgentReply(api, agentId, scriptedReply);
+  }
 });

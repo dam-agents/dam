@@ -10,11 +10,18 @@ else
 fi
 
 # Rebuild only the agents the cluster has deployed — their entries in the
-# agent-templates ConfigMap (one CM keyed by "<name>.yaml"). Capture
-# first so a kubectl failure aborts rather than looking like "nothing deployed".
-DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
-  | yq -r '.items[] | select(.metadata.name | test("-agent-templates$"))
+# harness-templates ConfigMap (one CM keyed by "<name>.yaml"), plus the
+# built-in kits in the starter-kits ConfigMap whose image is a local
+# `platform-*` tag. Capture first so a kubectl failure aborts rather than
+# looking like "nothing deployed".
+DEPLOYED_CMS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml)
+DEPLOYED_AGENTS=$(printf '%s\n' "$DEPLOYED_CMS" \
+  | yq -r '.items[] | select(.metadata.name | test("-harness-templates$"))
            | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
+DEPLOYED_KITS=$(printf '%s\n' "$DEPLOYED_CMS" \
+  | yq -r '.items[] | select(.metadata.name | test("-starter-kits$"))
+           | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
+           | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
 AGENT_TASKS=()
 AGENT_IMAGES=()
 SEEN_COMPONENTS=()
@@ -42,7 +49,7 @@ while IFS=$'\t' read -r name image; do
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
   fi
-done <<< "$DEPLOYED_AGENTS"
+done <<< "$DEPLOYED_AGENTS"$'\n'"$DEPLOYED_KITS"
 
 if [ -z "${AGENT_IMAGES[*]:-}" ]; then
   echo "No agent templates deployed — nothing to build."

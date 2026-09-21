@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS base
+FROM quay.io/fedora/fedora:44 AS base
 
 USER root
 WORKDIR /app
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node && \
-    MISE_CACHE_DIR=/root/.cache/mise mise install "npm:pnpm"
+    MISE_CACHE_DIR=/root/.cache/mise mise install pnpm
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
@@ -63,73 +63,13 @@ RUN set -eu; \
     printf '#!/bin/sh\nexec "$(dirname -- "$(realpath -- "$0")")/python3" -m pip "$@"\n' > "$W/bin/$b"; \
     chmod 755 "$W/bin/$b"; \
     done
-# node 24.19.0's bundled npm ships vulnerable brace-expansion 5.0.7, ip-address
-# 10.2.0, tar 7.5.19 and undici 6.27.0; self-upgrade until a node release
-# bundles npm >= 11.19.1. Not npm 12: 12.0.2 predates the 11.19.1 dep bumps and
-# still carries all four.
+# Still needed as of node 24.21.0, which bundles npm 11.19.0 and with it
+# vulnerable brace-expansion 5.0.7, ip-address 10.2.0, tar 7.5.19 and undici
+# 6.27.0. 11.19.1 is the release that bumps all four, so self-upgrade until a
+# node release bundles >= 11.19.1 — re-check by reading npm --version out of a
+# stock node:<version> image, not out of this one. Not npm 12: 12.0.2 predates
+# the same dep bumps and still carries all four.
 RUN mise exec node -- npm install -g npm@11.19.1
-
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
-USER root
-RUN dnf install \
-    -y \
-    --installroot=/sysroot \
-    --use-host-config \
-    --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
-    --setopt=install_weak_deps=0 \
-    catatonit \
-    curl \
-    diffutils \
-    file \
-    gawk \
-    git \
-    gzip \
-    hostname \
-    openssh-server \
-    openssl \
-    patch \
-    procps-ng \
-    tar \
-    unzip \
-    which \
-    xz-libs \
-    zip \
-    &&\
-    rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
-
-# A process supervisor for the vm Backend. k3s and anything else installed the
-# distro way refuses to install without one: its installer looks for systemd,
-# then for /sbin/openrc-run, and gives up. The image's init is catatonit and
-# openrc is not packaged for this distro, so it is built here.
-#
-# openrc-run is staged under libexec rather than left on PATH, because that one
-# path is the probe every such installer makes. Only a machine's boot links it
-# in, so a container agent — which cannot supervise anything — keeps failing
-# that probe immediately instead of installing a service it can never start.
-#
-# The stock runlevels are emptied because a guest is already booted by the time
-# openrc exists: its boot services would re-wipe /tmp (where the agent's cache
-# lives) and re-link /var out from under a running userspace. openrc is here to
-# supervise what the agent registers, nothing else. The scripts stay in
-# /etc/init.d for anything that asks for them by name.
-FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS openrc
-USER root
-ARG OPENRC_VERSION=0.64
-ARG OPENRC_SHA256=f52dd53d6bd798476f8f0b74c5722afa1a59e408a4ec49c1333e5a152a25440d
-RUN set -eu; \
-    dnf install -y -q --setopt=install_weak_deps=0 meson ninja-build gcc pkgconf-pkg-config libcap-devel tar gzip; \
-    curl -sSLo /tmp/openrc.tar.gz "https://github.com/OpenRC/openrc/archive/refs/tags/${OPENRC_VERSION}.tar.gz"; \
-    echo "${OPENRC_SHA256}  /tmp/openrc.tar.gz" | sha256sum -c -; \
-    tar -xf /tmp/openrc.tar.gz -C /tmp; \
-    cd "/tmp/openrc-${OPENRC_VERSION}"; \
-    meson setup build -Dprefix=/usr -Dsysconfdir=/etc -Dbindir=/usr/bin -Dsbindir=/usr/bin \
-    -Daudit=disabled -Dselinux=disabled \
-    -Dpam=false -Dsysvinit=false -Dbash-completions=false -Dzsh-completions=false -Dnewnet=false; \
-    ninja -C build; \
-    DESTDIR=/out ninja -C build install; \
-    mv /out/usr/bin/openrc-run /out/usr/libexec/openrc-run; \
-    find /out/etc/runlevels -mindepth 2 -delete; \
-    rm -rf /out/usr/include
 
 FROM base AS builder
 
@@ -165,7 +105,7 @@ RUN npm_config_inject_workspace_packages=true \
     cp packages/agent-runtime/package.json /deploy/package.json &&\
     (cd /deploy && pnpm pkg delete devDependencies)
 
-FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
+FROM quay.io/fedora/fedora:44 AS runner
 
 USER root
 WORKDIR /app
@@ -182,11 +122,30 @@ WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_PROVENANCE_API_FAILURES_FATAL=false \
     MISE_NODE_VERIFY=false \
-    PATH="/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
+    PATH="/usr/local/share/tool-shims:/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
-COPY --from=sysroot /sysroot/usr/ /usr/
-COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
-COPY --from=openrc /out/ /
+# An agent installing a package at runtime goes out through the egress
+# allowlist, and Fedora's default metalink hands back a different set of mirror
+# hosts on every call — nothing an allowlist can name. Pin the two enabled repos
+# to Fedora's own host, so a runtime `dnf install` reaches exactly the one host
+# helm/values.yaml lists. openh264 is disabled rather than pinned: it lives on a
+# third host and nothing here wants it.
+RUN set -eu; \
+    sed -i -e 's|^metalink=|#metalink=|' \
+    -e 's|^#baseurl=http://download.example|baseurl=https://dl.fedoraproject.org|' \
+    /etc/yum.repos.d/fedora.repo /etc/yum.repos.d/fedora-updates.repo; \
+    sed -i 's|^enabled=1|enabled=0|' /etc/yum.repos.d/fedora-cisco-openh264.repo
+
+# The runtime image has dnf, so the sandbox's own tools are installed here
+# rather than composed in a sysroot stage and copied in — and, the point of the
+# whole exercise, an agent can install what it needs at runtime too.
+#
+# iptables is not here for us: the CNI plugins a cluster loads shell out to it,
+# and the shared containerd does not put the copies k3s bundles on their PATH.
+RUN dnf install -y --setopt=install_weak_deps=False \
+    catatonit curl diffutils file gawk git gzip hostname iptables-nft openssh-server \
+    openssl patch procps-ng tar unzip which xz-libs zip \
+    && dnf clean all && rm -rf /var/cache/dnf
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base --chown=65532:0 /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
@@ -200,18 +159,34 @@ COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
 RUN chmod 0755 /usr/local/lib/platform-python
 RUN set -eu; \
-    install -d -o 65532 /usr/local/share/tool-bin; \
-    mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
-    tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
-    chmod 755 "$bin"; \
-    done
-# /etc/logrotate.d is empty but not optional: a service installer writes its
-# rotation config straight into it, and this base ships no logrotate at all, so
-# the directory is missing. k3s does that write with a bare `tee` under `set -e`
-# and dies there — after installing its binary and service file, before enabling
-# them — so the whole install fails on a log config nothing here even reads.
+    install -d -o 65532 /usr/local/share/tool-bin /usr/local/share/lazy-tools; \
+    mkdir -p /usr/local/share/tool-shims /var/log/dam/install /var/cache/dam; \
+    chown 65532 /var/log/dam/install /var/cache/dam
+# Two shim directories, and one rule decides which one a tool lands in: whether
+# the shim still has work to do once the tool is installed.
+#
+# docker and k3s do, so they go here, ahead of the binary they install. The
+# docker one starts a daemon no init system is going to start; the k3s one
+# supplies the --data-dir and --container-runtime-endpoint a sandbox cluster
+# cannot work without. Left last on PATH, each would be shadowed by the binary
+# it had just installed and would never run a second time. Everything in
+# lazy-tools has no such job, so it sits last and any real binary wins.
+#
+# Both are shims rather than tools in the image because an agent that never runs
+# a container should not carry 270 MB of runtime it will not use, and one that
+# wants a container should not have to be told how to get it. dam-tool-real
+# resolves past both directories.
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-tool-real /usr/local/bin/dam-tool-real
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-auto-install /usr/local/bin/dam-auto-install
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-containerd /usr/local/bin/dam-containerd
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-lazy-tool /usr/local/bin/dam-lazy-tool
+COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/tool-shims/docker
+COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/tool-shims/k3s
+
+# /etc/logrotate.d is empty but not optional: a service installer an agent runs
+# writes its rotation config straight into it, typically with a bare `tee` under
+# `set -e`, and this base ships no logrotate at all — so without the directory
+# the install dies partway, on a log config nothing here ever reads.
 RUN mkdir -p /home/agent /etc/logrotate.d /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
     chown 65532 /app &&\
     chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
@@ -221,6 +196,12 @@ RUN mkdir -p /home/agent /etc/logrotate.d /etc/pki/ca-trust/source/anchors /etc/
     sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
     echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
 
+# The eager set is named here; the lazy set is whatever the mise config declares
+# that this did not install, so a tool is named once and cannot be both. That is
+# what python used to be: installed eagerly and also given shims, four places
+# behind the real one on PATH, where they could never run.
+#
+# k3s is skipped because it has a shim of its own under the rule above.
 USER 65532
 RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh uv; \
@@ -228,7 +209,20 @@ RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node; \
     test -x /usr/local/share/tool-bin/uv && test -x /usr/local/share/tool-bin/uvx; \
     pip --version | grep -q "^pip "; \
-    pip list >/dev/null
+    pip list >/dev/null; \
+    cd /usr/local/share/lazy-tools; \
+    MISE_CACHE_DIR=/tmp/mise-cache mise ls --json \
+    | jq -r 'to_entries[] | select(.value[0].installed | not) | .key' \
+    | while read -r tool; do \
+    case "$tool" in k3s) continue ;; esac; \
+    bin="${tool##*/}"; bin="${bin##*:}"; \
+    case "$tool" in "npm:@googleworkspace/cli") bin=gws ;; esac; \
+    printf '#!/bin/sh\nexec dam-lazy-tool %s %s "$@"\n' "$tool" "$bin" > "$bin"; \
+    chmod 755 "$bin"; \
+    done; \
+    test -n "$(ls -A /usr/local/share/lazy-tools)"; \
+    for f in /usr/local/share/lazy-tools/*; do test -x "$f"; done; \
+    ls /usr/local/share/lazy-tools
 
 COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat

@@ -16,6 +16,7 @@ import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentsRepository,
   ContributionsProgressPort,
+  OnboardingChecklistReader,
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -49,6 +50,7 @@ import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import type { MetricsReader } from "../../modules/metrics/index.js";
 import type { SessionDirectory } from "../../modules/session-directory/index.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
+import type { StarterKitsRepository } from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
 import type { Config } from "../../config.js";
 import type {
@@ -93,6 +95,7 @@ export interface ApiServerDeps {
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
+  onboardingChecklists: OnboardingChecklistReader;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
@@ -112,6 +115,7 @@ export interface ApiServerDeps {
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
+  starterKitsRepo: StarterKitsRepository;
   reposService: ReposService;
   userDirectory: KeycloakUserDirectory;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;

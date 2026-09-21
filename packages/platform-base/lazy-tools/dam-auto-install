@@ -1,0 +1,36 @@
+#!/bin/sh
+# dam-auto-install <name> <command...>
+#
+# Runs an install on first use of a tool the image does not ship. The output
+# goes to a log either way and to the terminal only when there is one: an agent
+# reads stdout as the command's own output, so install chatter there would be
+# indistinguishable from the answer it asked for. On failure the tail of the log
+# is printed, because an agent cannot go and read a file it was never told about.
+#
+# The lock is not reentrant, so it is taken only at the outermost call: an
+# install may invoke another shim that installs something in turn, and that
+# nested call must not wait for a lock its own parent is holding.
+#
+# -o is what keeps a daemon from taking the lock with it. An install here may
+# end by starting a long-lived process — containerd, dockerd — which would
+# otherwise inherit the open lock descriptor and hold it for its whole life,
+# deadlocking every install that came after it.
+set -eu
+name=$1
+shift
+log=/var/log/dam/install/$name.log
+mkdir -p "$(dirname "$log")" /var/cache/dam 2>/dev/null || true
+
+printf 'Installing %s...\n' "$name" >&2
+[ -t 2 ] && tty=/dev/stderr || tty=/dev/null
+[ -n "${DAM_INSTALLING:-}" ] || set -- flock -o /var/cache/dam/.install.lock env DAM_INSTALLING=1 "$@"
+
+if { "$@" 2>&1; echo $? >"$log.rc"; } | tee -a "$log" >"$tty" && [ "$(cat "$log.rc")" = 0 ]; then
+    rm -f "$log.rc"
+    printf 'Installed %s\n' "$name" >&2
+else
+    rm -f "$log.rc"
+    printf 'Failed to install %s; log at %s\n' "$name" "$log" >&2
+    [ -t 2 ] || tail -n 30 "$log" >&2
+    exit 1
+fi

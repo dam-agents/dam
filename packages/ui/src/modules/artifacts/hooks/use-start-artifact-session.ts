@@ -4,7 +4,6 @@ import { useCallback } from "react";
 import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
-import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { artifactSessionPrefill } from "../lib/session-prefill.js";
 
 export interface StartArtifactSession {
@@ -26,7 +25,6 @@ export function useStartArtifactSession(
   const agents = useAgentsList();
   const appendNewSessionDraft = useStore((s) => s.appendNewSessionDraft);
   const selectAgent = useStore((s) => s.selectAgent);
-  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const confirmDiscard = useDockDraftGuard();
 
@@ -36,15 +34,13 @@ export function useStartArtifactSession(
     if (!artifact || !agent) return;
     if (!(await confirmDiscard())) return;
     appendNewSessionDraft(agent.id, artifactSessionPrefill(artifact));
-    if (isKnowledgeBase(agent)) openKnowledgeBase(agent.id);
-    else selectAgent(agent.id);
+    selectAgent(agent.id);
     setMobileScreen("chat");
   }, [
     artifact,
     agent,
     confirmDiscard,
     appendNewSessionDraft,
-    openKnowledgeBase,
     selectAgent,
     setMobileScreen,
   ]);

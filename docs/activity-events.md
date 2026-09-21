@@ -14,7 +14,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | --- | --- | --- |
 | `UserAuthenticated` | `auth` | admission/auth |
 | `AgentCreated` | _elsewhere_ | agents |
-| `AgentUpdated` | _elsewhere_ | agents |
+| `AgentUpdated` | _elsewhere_ | agents, runtime-delivery, starter-kits |
 | `AgentDeleted` | _elsewhere_ | agents, agent-artifacts-sweeper |
 | `AgentRestarted` | _elsewhere_ | agents |
 | `AgentWoken` | _elsewhere_ | agents |
@@ -52,7 +52,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SkillPublished` | `skill_published` | skills |
 | `SkillSetSaved` | `skill_set_saved` | skills |
 | `SkillSetDeleted` | `skill_set_deleted` | skills |
-| `KindedAgentCreated` | `kinded_agent_created` | agents |
+| `KindedAgentCreated` | `kinded_agent_created` | agents, starter-kits |
 | `InvocationSpawned` | `invocation_spawned` | invocations |
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
 | `ApiKeyChanged` | `api_key_<action>` | api-keys |

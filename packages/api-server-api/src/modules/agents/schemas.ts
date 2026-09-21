@@ -31,12 +31,23 @@ export const agentSizeSchema = z.object({
   memory: memoryQuantitySchema.optional(),
 });
 
+export const storageQuantitySchema = z
+  .string()
+  .regex(/^\d+(Mi|Gi)$/, "storage must look like '512Mi' or '10Gi'")
+  .refine((v) => toMemoryMi(v) >= 1024, {
+    message: "storage must be at least 1Gi",
+  });
+
 export const agentGetInputSchema = idSchema;
 export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
 export const agentStopInputSchema = idSchema;
+export const agentRetryWorkspaceInputSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["workspace-seed", "workspace-command"]),
+});
 export const agentPauseInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
@@ -49,6 +60,7 @@ export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
 
 export const agentCreateInputSchema = z
   .object({
+    kbShareRoots: z.array(z.string().min(1)).min(1).max(20).optional(),
     name: z
       .string()
       .min(1)
@@ -70,11 +82,19 @@ export const agentCreateInputSchema = z
     egressPreset: egressPresetSchema.optional(),
     hibernationTimeoutMin: z.number().int().min(0).optional(),
     gitRepo: z
-      .object({ url: z.url(), ref: z.string().min(1).optional() })
+      .object({
+        url: z.url(),
+        ref: z.string().min(1).optional(),
+        commit: z.string().min(1).optional(),
+        branch: z.string().min(1).optional(),
+        into: z.enum(["work", "home"]).optional(),
+      })
       .optional(),
     connectionIds: z.array(z.string()).optional(),
+    providerConnectionId: z.string().min(1).optional(),
     size: agentSizeSchema.optional(),
     vm: z.boolean().optional(),
+    storage: storageQuantitySchema.optional(),
     sweepable: z.boolean().optional(),
     lifetimeMs: z.number().int().min(0).optional(),
   })

@@ -1,6 +1,8 @@
 package reconciler
 
 import (
+	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -56,7 +58,7 @@ func TestFilterByGrants_AbsentAnnotationsGrantNothing(t *testing.T) {
 		ownerSecret("platform-cred-bbb", "generic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
-	got := filterByGrants(secrets, nil, nil)
+	got := filterByGrants("agent-absent-annotations", secrets, nil, nil)
 	assert.Empty(t, got)
 }
 
@@ -65,7 +67,7 @@ func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants(secrets, []string{"aaa"}, nil)
+	got := filterByGrants("agent-selective-secrets", secrets, []string{"aaa"}, nil)
 	assert.Equal(t, []string{"platform-cred-aaa"}, names(got))
 }
 
@@ -74,7 +76,7 @@ func TestFilterByGrants_EmptySecretListGrantsNothing(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants(secrets, []string{}, nil)
+	got := filterByGrants("agent-empty-secret-list", secrets, []string{}, nil)
 	assert.Empty(t, got)
 }
 
@@ -83,10 +85,10 @@ func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants(secrets, nil, []string{"github"})
+	got := filterByGrants("agent-connection-grants", secrets, nil, []string{"github"})
 	assert.Equal(t, []string{"platform-conn-github"}, names(got))
 
-	got = filterByGrants(secrets, nil, []string{})
+	got = filterByGrants("agent-connection-grants", secrets, nil, []string{})
 	assert.Empty(t, got)
 }
 
@@ -97,10 +99,10 @@ func TestFilterByGrants_AllowOnlyPassesThroughUngranted(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
 
-	got := filterByGrants(secrets, nil, nil)
+	got := filterByGrants("agent-allow-only", secrets, nil, nil)
 	assert.Equal(t, []string{"platform-allow-abc12345-api-example-com"}, names(got))
 
-	got = filterByGrants(secrets, []string{"aaa"}, []string{"github"})
+	got = filterByGrants("agent-allow-only", secrets, []string{"aaa"}, []string{"github"})
 	assert.ElementsMatch(t,
 		[]string{"platform-allow-abc12345-api-example-com", "platform-cred-aaa", "platform-conn-github"},
 		names(got))
@@ -113,8 +115,143 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants(secrets, []string{"aaa"}, []string{"slack"})
+	got := filterByGrants("agent-independent-axes", secrets, []string{"aaa"}, []string{"slack"})
 	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-conn-slack"}, names(got))
+}
+
+type capturedWarning struct {
+	message       string
+	agent         string
+	unresolvedIDs []string
+}
+
+type warningCapture struct {
+	records *[]capturedWarning
+}
+
+func (h warningCapture) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h warningCapture) Handle(_ context.Context, rec slog.Record) error {
+	w := capturedWarning{message: rec.Message}
+	rec.Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "agent":
+			w.agent = a.Value.String()
+		case "unresolvedIds":
+			if ids, ok := a.Value.Any().([]string); ok {
+				w.unresolvedIDs = ids
+			}
+		}
+		return true
+	})
+	*h.records = append(*h.records, w)
+	return nil
+}
+
+func (h warningCapture) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h warningCapture) WithGroup(string) slog.Handler { return h }
+
+func captureWarnings(t *testing.T) *[]capturedWarning {
+	t.Helper()
+	records := &[]capturedWarning{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(warningCapture{records: records}))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return records
+}
+
+func warningMessages(in []capturedWarning) []string {
+	out := make([]string, 0, len(in))
+	for _, w := range in {
+		out = append(out, w.message)
+	}
+	return out
+}
+
+const unresolvedConnectionMessage = "granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing"
+
+const unresolvedSecretMessage = "granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing"
+
+// TEST_SCENARIO: the owner Secret behind a granted connection is gone and nothing in the cluster changes. Every reconcile recomputes the same unresolved id, so the controller must report it on the first pass only — the log stays readable while the grant stays broken.
+func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
+	warnings := captureWarnings(t)
+	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
+
+	for range 5 {
+		got := filterByGrants("agent-steady", secrets, nil, []string{"github", "conn-gone"})
+		assert.Equal(t, []string{"platform-conn-github"}, names(got))
+	}
+
+	require.Len(t, *warnings, 1)
+	assert.Equal(t, unresolvedConnectionMessage, (*warnings)[0].message)
+	assert.Equal(t, "agent-steady", (*warnings)[0].agent)
+	assert.Equal(t, []string{"conn-gone"}, (*warnings)[0].unresolvedIDs)
+}
+
+// TEST_SCENARIO: a second grant goes unresolvable after the first was already reported. The set of unresolved ids differs from what was last reported, so the operator hears about the new id instead of it hiding behind the old report.
+func TestFilterByGrants_ChangedUnresolvedSetWarnsAgain(t *testing.T) {
+	warnings := captureWarnings(t)
+
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone", "conn-also-gone"})
+
+	require.Len(t, *warnings, 2)
+	assert.Equal(t, []string{"conn-gone"}, (*warnings)[0].unresolvedIDs)
+	assert.Equal(t, []string{"conn-also-gone", "conn-gone"}, (*warnings)[1].unresolvedIDs)
+}
+
+// TEST_SCENARIO: the owner Secret is recreated and then disappears again. Resolving the condition drops what was remembered, so a later recurrence of the same id is a first report again rather than silence.
+func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
+	warnings := captureWarnings(t)
+	restored := []corev1.Secret{ownerSecret("platform-conn-restored", "connection", "conn-flapping")}
+
+	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", restored, nil, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
+
+	require.Len(t, *warnings, 2)
+	assert.Equal(t, []string{"conn-flapping"}, (*warnings)[0].unresolvedIDs)
+	assert.Equal(t, []string{"conn-flapping"}, (*warnings)[1].unresolvedIDs)
+}
+
+// TEST_SCENARIO: two agents name the same dead connection id. The memory is keyed per agent, so one agent reconciling in a loop cannot swallow the other agent's first report.
+func TestFilterByGrants_EachAgentGetsItsOwnFirstReport(t *testing.T) {
+	warnings := captureWarnings(t)
+
+	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
+
+	require.Len(t, *warnings, 2)
+	assert.Equal(t, "agent-one", (*warnings)[0].agent)
+	assert.Equal(t, "agent-two", (*warnings)[1].agent)
+}
+
+// TEST_SCENARIO: one agent has an unresolvable secret grant and an unresolvable connection grant at once. The two grant kinds are remembered apart, so both are reported once and neither masks the other.
+func TestFilterByGrants_BothGrantKindsReportIndependently(t *testing.T) {
+	warnings := captureWarnings(t)
+
+	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
+	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
+
+	require.Len(t, *warnings, 2)
+	assert.ElementsMatch(t,
+		[]string{unresolvedSecretMessage, unresolvedConnectionMessage},
+		warningMessages(*warnings))
+}
+
+// TEST_SCENARIO: an Agent is deleted while one of its grants is still unresolvable. Deletion forgets what was reported for that agent, so the memory does not grow for agents that no longer exist, and an agent recreated under the same name reports again.
+func TestFilterByGrants_DeletingAgentForgetsWhatWasReported(t *testing.T) {
+	warnings := captureWarnings(t)
+
+	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+	unresolvedGrants.forget("agent-deleted")
+	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+
+	require.Len(t, *warnings, 2)
 }
 
 var bootstrapTestCfg = &config.Config{

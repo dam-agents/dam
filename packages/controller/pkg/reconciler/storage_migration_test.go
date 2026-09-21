@@ -202,6 +202,8 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.Equal(t, migrationServiceAccount, job.Spec.Template.Spec.ServiceAccountName)
 	require.NotNil(t, job.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *job.Spec.Template.Spec.AutomountServiceAccountToken)
+	require.NotNil(t, job.Spec.Template.Spec.EnableServiceLinks)
+	assert.False(t, *job.Spec.Template.Spec.EnableServiceLinks)
 
 	copyScript := job.Spec.Template.Spec.Containers[0].Command[2]
 	var cmds strings.Builder

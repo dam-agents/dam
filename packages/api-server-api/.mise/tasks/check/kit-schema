@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Fail if the committed kit JSON Schema is stale vs the Zod schema (drift gate). Generates to a temp dir and diffs; never rewrites the committed files."
+#MISE sources=["src/modules/starter-kits/schemas.ts", "scripts/gen-kit-schema.ts", "{{vars.repo_root}}/helm/starter-kits/kit.schema.json", "{{vars.repo_root}}/helm/starter-kits/catalog.schema.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -eo pipefail
+tmp="$(TMPDIR=/tmp mktemp -d)"
+pnpm exec tsx scripts/gen-kit-schema.ts "$tmp"
+for f in kit.schema.json catalog.schema.json; do
+  if ! diff -u "$MISE_CONFIG_ROOT/../../helm/starter-kits/$f" "$tmp/$f"; then
+    echo "$f is stale — run: mise run //packages/api-server-api:gen:kit-schema" >&2
+    exit 1
+  fi
+done

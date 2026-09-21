@@ -98,4 +98,68 @@ describe("runtime-channel event loop", () => {
     }
     expect(d.calls()).toBe(0);
   });
+
+  // TEST_SCENARIO: a failed workspace mutation is reported with its reason and holds the events queued behind it — an initialization session must not open on a seed that has not happened — while a failed trigger neither reports nor halts.
+  it("halts behind a failed workspace mutation and reports it", async () => {
+    const s = store();
+    const invoked: string[] = [];
+    const d: EventDispatcher = {
+      invoke: async (kind) => {
+        invoked.push(kind);
+        if (kind === "workspace-seed") throw new Error("clone refused");
+      },
+    };
+    const reports: { id: string; message: string }[] = [];
+    const settled = await processEvents(
+      [
+        {
+          id: "workspace-seed:agent-1:1000",
+          kind: "workspace-seed",
+          version: 6,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          payload: { url: "https://github.com/acme/def" },
+        },
+        {
+          id: "initialization:agent-1:1001",
+          kind: "initialization",
+          version: 7,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          payload: { task: "hello" },
+        },
+      ],
+      d,
+      s,
+      () => {},
+      async (e, message) => {
+        reports.push({ id: e.id, message });
+      },
+    );
+    expect(settled).toEqual([]);
+    expect(invoked).toEqual(["workspace-seed"]);
+    expect(reports).toEqual([
+      { id: "workspace-seed:agent-1:1000", message: "clone refused" },
+    ]);
+  });
+
+  it("keeps going past a failed trigger without reporting", async () => {
+    const s = store();
+    const reports: string[] = [];
+    const d: EventDispatcher = {
+      invoke: async (_kind, _payload, id) => {
+        if (id === "sched-1:1000") throw new Error("busy");
+      },
+    };
+    const second: Event = { ...trigger(2000, 7), id: "sched-2:2000" };
+    const settled = await processEvents(
+      [trigger(1000, 6), second],
+      d,
+      s,
+      () => {},
+      async (e) => {
+        reports.push(e.id);
+      },
+    );
+    expect(settled).toEqual(["sched-2:2000"]);
+    expect(reports).toEqual([]);
+  });
 });

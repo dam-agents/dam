@@ -43,6 +43,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 		ServiceAccountName:            agentName,
 		TerminationGracePeriodSeconds: &gracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
+		EnableServiceLinks:            &falseVal,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}

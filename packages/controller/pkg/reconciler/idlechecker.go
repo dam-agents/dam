@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,12 +21,19 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
 )
 
+const (
+	idleSweepsPerTimeout = 6
+	minIdleCheckInterval = 15 * time.Second
+	maxIdleCheckInterval = 5 * time.Minute
+)
+
 type IdleChecker struct {
-	client    kubernetes.Interface
-	dynamic   dynamic.Interface
-	config    *config.Config
-	halt      MachineHalt
-	busyProbe func(ctx context.Context, agentName string) bool
+	client                  kubernetes.Interface
+	dynamic                 dynamic.Interface
+	config                  *config.Config
+	halt                    MachineHalt
+	busyProbe               func(ctx context.Context, agentName string) bool
+	shortestObservedTimeout atomic.Int64
 }
 
 func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
@@ -40,14 +48,11 @@ func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *con
 }
 
 func (c *IdleChecker) RunLoop(ctx context.Context) {
-	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
-	if timeout <= 0 {
-		slog.Info("idle checker disabled (timeout <= 0)")
-		return
-	}
+	c.check(ctx)
 
 	interval := c.checkInterval()
-	slog.Info("idle checker started", "timeout", timeout, "interval", interval)
+	slog.Info("idle checker started",
+		"timeout", c.config.AgentBase.IdleTimeout.AsDuration(), "interval", interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -57,17 +62,35 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			c.check(ctx)
+			if next := c.checkInterval(); next != interval {
+				interval = next
+				ticker.Reset(interval)
+				slog.Info("idle checker interval adjusted", "interval", interval)
+			}
 		}
 	}
 }
 
-func (c *IdleChecker) checkInterval() time.Duration {
-	d := c.config.AgentBase.IdleTimeout.AsDuration() / 6
-	if d < 30*time.Second {
-		d = 30 * time.Second
+func (c *IdleChecker) shortestEffectiveTimeout() time.Duration {
+	global := c.config.AgentBase.IdleTimeout.AsDuration()
+	observed := time.Duration(c.shortestObservedTimeout.Load())
+	if observed > 0 && (global <= 0 || observed < global) {
+		return observed
 	}
-	if d > 5*time.Minute {
-		d = 5 * time.Minute
+	return global
+}
+
+func (c *IdleChecker) checkInterval() time.Duration {
+	timeout := c.shortestEffectiveTimeout()
+	if timeout <= 0 {
+		return maxIdleCheckInterval
+	}
+	d := timeout / idleSweepsPerTimeout
+	if d < minIdleCheckInterval {
+		d = minIdleCheckInterval
+	}
+	if d > maxIdleCheckInterval {
+		d = maxIdleCheckInterval
 	}
 	return d
 }
@@ -88,10 +111,15 @@ func (c *IdleChecker) check(ctx context.Context) {
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
 	atZero := c.agentsAtZero(ctx)
 	hibernated := 0
+	shortest := time.Duration(0)
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
-		if shouldRun(agent.GetAnnotations(), effectiveIdleTimeout(hibernationOverride(agent), timeout), now) {
+		effective := effectiveIdleTimeout(hibernationOverride(agent), timeout)
+		if effective > 0 && (shortest == 0 || effective < shortest) {
+			shortest = effective
+		}
+		if shouldRun(agent.GetAnnotations(), effective, now) {
 			continue
 		}
 
@@ -111,6 +139,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 		hibernated++
 	}
+	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }

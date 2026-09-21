@@ -1,10 +1,10 @@
 import {
-  Book,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
-  Code,
   Folders,
+  Gift,
+  Help,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -15,6 +15,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { DOCS_URL } from "../constants.js";
 import { useStore } from "../store.js";
 
 interface Destination {
@@ -24,6 +25,7 @@ interface Destination {
   active: boolean;
   badge: number;
   navigate: () => void;
+  tone?: "kit";
 }
 
 export function IconRail({
@@ -36,7 +38,6 @@ export function IconRail({
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
 
   const sandboxes: Destination = {
     label: "Home",
@@ -45,20 +46,17 @@ export function IconRail({
     badge: 0,
     navigate: () => setView("home"),
   };
-  const codingAgents: Destination = {
-    label: "Coding agents",
-    icon: Code,
-    active: view === "coding-agents",
+  const starterKits: Destination = {
+    label: "Starter Kits",
+    shortLabel: "Kits",
+    icon: Gift,
+    tone: "kit",
+    active:
+      view === "starter-kits" ||
+      view === "starter-kit" ||
+      view === "starter-kit-new",
     badge: 0,
-    navigate: () => setView("coding-agents"),
-  };
-  const knowledgeBases: Destination = {
-    label: "Knowledge base agents",
-    shortLabel: "Knowledge",
-    icon: Book,
-    active: view === "knowledge-bases" || view === "knowledge-base-chat",
-    badge: 0,
-    navigate: navigateToKnowledgeBases,
+    navigate: () => setView("starter-kits"),
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -67,6 +65,13 @@ export function IconRail({
     badge: 0,
     navigate: () => setView("artifacts"),
   };
+  const docs: Destination = {
+    label: "Documentation",
+    icon: Help,
+    active: false,
+    badge: 0,
+    navigate: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer"),
+  };
   const settings: Destination = {
     label: "Settings",
     icon: Settings,
@@ -74,6 +79,9 @@ export function IconRail({
     badge: 0,
     navigate: () => navigateToSettings(),
   };
+
+  const primary: Destination[] = [sandboxes, artifacts, starterKits];
+  const secondary: Destination[] = [docs, settings];
 
   return (
     <>
@@ -133,24 +141,31 @@ export function IconRail({
           </Tooltip>
         </div>
         <div className="mt-px flex flex-col gap-px">
-          <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...codingAgents} expanded={expandedNav} />
-          <RailItem {...knowledgeBases} expanded={expandedNav} />
+          {primary.map((destination) => (
+            <RailItem
+              key={destination.label}
+              {...destination}
+              expanded={expandedNav}
+            />
+          ))}
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
-          <RailItem {...artifacts} expanded={expandedNav} />
-          <RailItem {...settings} expanded={expandedNav} />
+          {secondary.map((destination) => (
+            <RailItem
+              key={destination.label}
+              {...destination}
+              expanded={expandedNav}
+            />
+          ))}
         </div>
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, codingAgents, knowledgeBases, artifacts, settings].map(
-            (destination) => (
-              <BottomBarItem key={destination.label} {...destination} />
-            ),
-          )}
+          {[...primary, ...secondary].map((destination) => (
+            <BottomBarItem key={destination.label} {...destination} />
+          ))}
         </nav>
       )}
     </>
@@ -164,6 +179,7 @@ function RailItem({
   badge,
   navigate,
   expanded,
+  tone,
 }: Destination & { expanded: boolean }) {
   const button = (
     <button
@@ -175,9 +191,13 @@ function RailItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
-        active
-          ? "text-primary bg-muted"
-          : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        tone === "kit"
+          ? active
+            ? "bg-kit-tint text-kit"
+            : "text-kit hover:bg-kit-tint"
+          : active
+            ? "text-primary bg-muted"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} size={16} />

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-15
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -553,9 +553,12 @@ the calling Agent is already proven cryptographically. The handler
 parses the Agent ID from the gRPC `:authority`, looks up the matching
 egress rule, and either allows the request, denies it, or holds it open
 while the user makes a verdict on Home.
+
+At most three rules speak for a host — itself, its `*.parent` wildcard,
+and the bare `*` — most specific first; a wildcard covers the one label
+its SNI chain and SAN do.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets
-403, no approval prompt. The pod-IP resolver and the `x-platform-agent`
-header are gone.
+403, no approval prompt.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
@@ -620,9 +623,7 @@ The in-pod `dam-run` CLI is a compatibility shim that runs its command
 as a regular local process in the same pod (see
 [agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)). It adds
 no privilege: the command runs inside the agent's existing sandbox, with
-the agent's existing egress boundary. The earlier remote-executor
-machinery (ephemeral `Run` pods borrowing the parent's gateway) was
-removed.
+the agent's existing egress boundary.
 
 ## Intra-cluster identity and admission
 

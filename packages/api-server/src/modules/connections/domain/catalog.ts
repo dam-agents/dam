@@ -19,6 +19,14 @@ import type {
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
 } from "./connection-template.js";
+import {
+  CUSTOM_HEADER_FAMILY,
+  GITHUB_ENTERPRISE_FAMILY,
+  GITHUB_FAMILY,
+  KUBERNETES_FAMILY,
+  MCP_SERVER_FAMILY,
+  MODAL_FAMILY,
+} from "./families.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
 
 function envContributions(mappings: EnvMapping[]): Contribution[] {
@@ -78,6 +86,7 @@ const ANTHROPIC: HeaderConnectionTemplate = {
 
 const KUBERNETES: HeaderConnectionTemplate = {
   id: KUBERNETES_TEMPLATE_ID,
+  family: KUBERNETES_FAMILY,
   name: "Kubernetes / OpenShift",
   category: "app",
   isCustom: false,
@@ -234,6 +243,7 @@ const MODAL_HOST = "api.modal.com";
 
 const MODAL: HeaderConnectionTemplate = {
   id: "modal",
+  family: MODAL_FAMILY,
   name: "Modal",
   category: "app",
   isCustom: false,
@@ -273,6 +283,7 @@ const MODAL: HeaderConnectionTemplate = {
 function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "github",
+    family: GITHUB_FAMILY,
     name: "GitHub",
     category: "app",
     isCustom: false,
@@ -317,6 +328,7 @@ function githubEnterprise(
 ): OAuthConnectionTemplate {
   return {
     id: "github-enterprise",
+    family: GITHUB_ENTERPRISE_FAMILY,
     name: "GitHub Enterprise",
     category: "app",
     isCustom: false,
@@ -650,6 +662,7 @@ function googleService(
 
 const GITHUB_PAT: HeaderConnectionTemplate = {
   id: "github-pat",
+  family: GITHUB_FAMILY,
   name: "GitHub (Personal Access Token)",
   category: "app",
   isCustom: false,
@@ -686,6 +699,7 @@ const GITHUB_PAT: HeaderConnectionTemplate = {
 
 const GITHUB_APP: GitHubAppConnectionTemplate = {
   id: "github-app",
+  family: GITHUB_FAMILY,
   name: "GitHub App (installation)",
   category: "app",
   isCustom: false,
@@ -724,6 +738,7 @@ function githubEnterprisePat(
 ): HeaderConnectionTemplate {
   return {
     id: "github-enterprise-pat",
+    family: GITHUB_ENTERPRISE_FAMILY,
     name: "GitHub Enterprise (Personal Access Token)",
     category: "app",
     isCustom: false,
@@ -745,6 +760,7 @@ function githubEnterpriseApp(
 ): GitHubAppConnectionTemplate {
   return {
     id: "github-enterprise-app",
+    family: GITHUB_ENTERPRISE_FAMILY,
     name: "GitHub Enterprise (App installation)",
     category: "app",
     isCustom: false,
@@ -762,6 +778,7 @@ function githubEnterpriseApp(
 
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
+  family: CUSTOM_HEADER_FAMILY,
   name: "Custom header credential",
   category: "other",
   isCustom: true,
@@ -790,6 +807,7 @@ const CUSTOM_CLIENT_CREDENTIALS: ClientCredentialsConnectionTemplate = {
 
 const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   id: "custom-mcp-oauth",
+  family: MCP_SERVER_FAMILY,
   name: "Custom MCP server (OAuth)",
   category: "mcp",
   isCustom: true,
@@ -803,6 +821,7 @@ const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
 
 const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   id: "custom-mcp-none",
+  family: MCP_SERVER_FAMILY,
   name: "Custom MCP server (no auth)",
   category: "mcp",
   isCustom: true,

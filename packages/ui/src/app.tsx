@@ -2,18 +2,20 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { DocsLauncher } from "./components/docs-launcher.js";
-import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { StarterKitSetupView } from "./modules/agents/views/agent-create-view.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
-import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import {
+  NotificationsBell,
+  NotificationsPanel,
+} from "./modules/home/components/notifications-panel.js";
+import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
+import { usePodSessionsWatch } from "./modules/home/hooks/use-pod-sessions-watch.js";
 import { HomeView } from "./modules/home/views/home-view.js";
-import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
-import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
@@ -22,6 +24,8 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
+import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
+import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
@@ -53,16 +57,17 @@ export default function App() {
   return <MainApp />;
 }
 
-const SETUP_VIEWS = new Set<Route["view"]>([
-  "coding-agent-new",
-  "knowledge-base-new",
-]);
+const SETUP_VIEWS = new Set<Route["view"]>(["agent-new", "starter-kit-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
+  const activityOpen = useStore((s) => s.activityOpen);
+  const setActivityOpen = useStore((s) => s.setActivityOpen);
 
   useLiveEvents();
   useAgentCrashToasts();
+  useApprovalToasts();
+  usePodSessionsWatch();
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -86,20 +91,26 @@ function MainApp() {
     }
   }, []);
 
-  if (view === "chat" || view === "knowledge-base-chat")
+  if (view === "chat")
     return (
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
           <IconRail hideMobileBar />
           <div className="relative z-content flex-1 min-w-0">
+            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
+              <div className="pointer-events-auto">
+                <NotificationsBell onOpen={() => setActivityOpen(true)} />
+              </div>
+            </div>
             <ChatView />
           </div>
         </div>
+        {activityOpen && (
+          <NotificationsPanel onClose={() => setActivityOpen(false)} />
+        )}
         <DialogOverlay />
         <PendingBindModal />
         <ConnectionBanner />
-        <FloatingApprovalsPill />
-        <DocsLauncher />
       </>
     );
 
@@ -108,27 +119,37 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
+          <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
+            <div className="pointer-events-auto">
+              <NotificationsBell onOpen={() => setActivityOpen(true)} />
+            </div>
+          </div>
           {view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : (
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "home" ||
+                  view === "starter-kits" ||
+                  view === "starter-kit"
+                  ? "max-w-[1200px]"
+                  : "max-w-[960px]",
               )}
             >
               {view === "home" ? (
                 <HomeView />
-              ) : view === "coding-agent-new" ? (
+              ) : view === "agent-new" ? (
                 <CodingAgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "coding-agents" ? (
-                <CodingAgentsView />
-              ) : view === "knowledge-base-new" ? (
-                <KnowledgeBaseSetupView />
-              ) : view === "knowledge-bases" ? (
-                <KnowledgeBasesListView />
+              ) : view === "starter-kits" || view === "starter-kit" ? (
+                <>
+                  <StarterKitsView />
+                  {view === "starter-kit" && <StarterKitDetailView />}
+                </>
+              ) : view === "starter-kit-new" ? (
+                <StarterKitSetupView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
@@ -138,11 +159,12 @@ function MainApp() {
           )}
         </main>
       </div>
+      {activityOpen && (
+        <NotificationsPanel onClose={() => setActivityOpen(false)} />
+      )}
       <DialogOverlay />
       <PendingBindModal />
       <ConnectionBanner />
-      <FloatingApprovalsPill />
-      <DocsLauncher />
     </div>
   );
 }

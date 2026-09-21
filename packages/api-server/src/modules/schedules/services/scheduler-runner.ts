@@ -36,6 +36,7 @@ export interface SchedulerRunnerDeps {
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
+  onboardingPending?: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
   triggerTtlSeconds?: number;
@@ -66,6 +67,15 @@ export function createSchedulerRunner(
     }
     if (!sched.spec.enabled) {
       log(`fire: schedule ${scheduleId} disabled; dropping`);
+      return;
+    }
+    if (await deps.onboardingPending?.(sched.agentId)) {
+      log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
+      const after = nextFireAt(sched.spec, now());
+      await deps.repo
+        .recordFire(scheduleId, "held: onboarding not complete", after)
+        .catch(() => {});
+      if (after) await deps.queue.enqueue(scheduleId, after, now());
       return;
     }
 

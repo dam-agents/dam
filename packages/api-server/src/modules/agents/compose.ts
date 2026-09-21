@@ -18,6 +18,7 @@ import {
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsProgressPort,
+  type OnboardingChecklistReader,
   type ResizeGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
@@ -84,6 +85,7 @@ export function composeAgentsModule(deps: {
   cleanupHooks: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
+  onboardingChecklists: OnboardingChecklistReader;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   resolveSlackChannelNames?: (
@@ -92,6 +94,7 @@ export function composeAgentsModule(deps: {
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
+      providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
@@ -124,6 +127,7 @@ export function composeAgentsModule(deps: {
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
+      onboardingChecklists: deps.onboardingChecklists,
       podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),

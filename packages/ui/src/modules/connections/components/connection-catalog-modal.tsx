@@ -1,5 +1,5 @@
 import type { ConnectionView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
@@ -15,6 +15,7 @@ import {
   type CatalogProviderGroup,
   type CatalogTab,
   catalogTabCounts,
+  filterGroupsByAccepts,
 } from "../lib/catalog-providers.js";
 import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
@@ -37,6 +38,11 @@ interface Props {
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
   onGoToChannels?: () => void;
+  initialProviderId?: string;
+  initialTemplateId?: string;
+  accepts?: readonly string[];
+  title?: string;
+  subtitle?: string;
 }
 
 export function ConnectionCatalogModal({
@@ -44,6 +50,11 @@ export function ConnectionCatalogModal({
   sandbox,
   oauthReturnView,
   onGoToChannels,
+  initialProviderId,
+  initialTemplateId,
+  accepts,
+  title,
+  subtitle,
 }: Props) {
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -51,9 +62,11 @@ export function ConnectionCatalogModal({
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
-  const { byTab, templateById } = useCatalogGroups(
-    connectionsQ.data ?? NO_CONNECTIONS,
-  );
+  const {
+    byTab,
+    templateById,
+    loading: loadingCatalog,
+  } = useCatalogGroups(connectionsQ.data ?? NO_CONNECTIONS);
   const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
   const catalogTabs = useMemo<TabDef<CatalogTab>[]>(
     () =>
@@ -66,6 +79,28 @@ export function ConnectionCatalogModal({
     [counts],
   );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
+  const narrowed = useMemo(
+    () => (accepts ? filterGroupsByAccepts(allGroups, accepts) : null),
+    [allGroups, accepts],
+  );
+
+  const openedInitial = useRef(false);
+  useEffect(() => {
+    if (openedInitial.current || (!initialProviderId && !initialTemplateId))
+      return;
+    const group = allGroups.find(
+      (g) =>
+        g.provider.id === initialProviderId ||
+        g.templates.some((t) => t.id === initialTemplateId),
+    );
+    if (!group) return;
+    openedInitial.current = true;
+    setPane(
+      group.provider.id === MCP_PROVIDER_ID
+        ? { kind: "create-mcp" }
+        : { kind: "create", providerId: group.provider.id },
+    );
+  }, [allGroups, initialProviderId, initialTemplateId]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
@@ -91,7 +126,7 @@ export function ConnectionCatalogModal({
   };
 
   const groupById = (providerId: string) =>
-    allGroups.find((g) => g.provider.id === providerId);
+    (narrowed ?? allGroups).find((g) => g.provider.id === providerId);
 
   if (maintenance.updating || maintenance.editingScope) {
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
@@ -100,28 +135,37 @@ export function ConnectionCatalogModal({
   return (
     <Modal widthClass="w-[860px] max-w-full h-[85vh]">
       <DialogHeader
-        title="Connection catalogue"
-        subtitle="Manage and create new connections your agents can use"
+        title={title ?? "Connection catalogue"}
+        subtitle={
+          subtitle ?? "Manage and create new connections your agents can use"
+        }
         onClose={onClose}
         closeTestId="catalog-close"
       />
       <div className="flex min-h-0 flex-1">
-        <Tabs
-          ariaLabel="Connection categories"
-          tabs={catalogTabs}
-          value={pane.kind === "browse" ? activeTab : null}
-          onValueChange={(tab) => {
-            setActiveTab(tab);
-            setPane({ kind: "browse" });
-          }}
-          variant="pill"
-          orientation="vertical"
-          className="w-[200px] shrink-0 border-r border-border p-3"
-        />
+        {!narrowed && (
+          <Tabs
+            ariaLabel="Connection categories"
+            tabs={catalogTabs}
+            value={pane.kind === "browse" ? activeTab : null}
+            onValueChange={(tab) => {
+              setActiveTab(tab);
+              setPane({ kind: "browse" });
+            }}
+            variant="pill"
+            orientation="vertical"
+            className="w-[200px] shrink-0 border-r border-border p-3"
+          />
+        )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              {(byTab.get(activeTab) ?? []).map((group) => (
+              {narrowed?.length === 0 && !loadingCatalog && (
+                <p className="text-sm text-muted-foreground">
+                  Nothing this install offers satisfies this requirement.
+                </p>
+              )}
+              {(narrowed ?? byTab.get(activeTab) ?? []).map((group) => (
                 <CatalogProviderCard
                   key={group.provider.id}
                   group={group}
@@ -143,6 +187,7 @@ export function ConnectionCatalogModal({
                 <CatalogCreatePane
                   group={group}
                   oauthReturnView={oauthReturnView}
+                  initialTemplateId={initialTemplateId}
                   onBack={() => setPane({ kind: "browse" })}
                   onCreated={onCreated}
                 />

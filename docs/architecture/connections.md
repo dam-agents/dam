@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-10
+Last verified: 2026-09-18
 
 ## Overview
 
@@ -34,7 +34,7 @@ There are two rails. `egress-allow` and `egress-inject` Contributions sync into 
 
 A code-level catalog entry. Premade templates (GitHub, Anthropic, Spotify, Linear MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions. Custom templates (Custom MCP, Custom OAuth, Custom Header) ship the *shape* but leave the integration's identity for the user to fill in.
 
-Two display-axis attributes drive UI grouping:
+Three display-axis attributes drive UI grouping. `category` and `isCustom` place a template in a section; an optional **family** (`github`, `github-enterprise`, `kubernetes`, `modal`, `mcp-server`, `custom-header`) groups templates the catalog shows as one connect page with several methods, and is what a [starter kit](starter-kits.md) names when it accepts any method of a provider. Families are declared on the templates themselves and carried on the template view, so nothing else keeps a copy of the membership.
 
 | `category` | `isCustom` | Where the user encounters it |
 |---|---|---|
@@ -56,6 +56,8 @@ Some templates (Spotify, YouTube, Google services, and the custom client-credent
 A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the recorded inputs (the user's own, kept for re-render, plus any platform-derived facts the Connection is identified or labelled by), the auth credential state, and the projected contributions.
 
 The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and tokens minted from it), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — client credentials' JWT-signed counterpart), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
+
+Agent creation can designate a Connection as its model provider. The Connections service validates ownership, provider type, and active status before the Agent is persisted; agent-management permission is sufficient to use a known provider id. Browsing Connections still requires credential-read permission. Other initial grants remain separate from the provider selection.
 
 Credentials carry their own lifecycle. A stored one can be **updated in place** — the injected value, the client secret, or the GitHub App private key, whichever the auth mode holds. The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted. A rotation rewrites the credential and its SDS onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side via SDS, no Agent-spec patch or pod roll is needed. An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then. A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it. A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action. A failure that is not a rejection parks nothing and instead defers the next attempt on a widening backoff held on the Connection itself, so a renewal that keeps failing is not re-attempted every sweep; any successful credential write clears both records. Credential writers — refresh, rotation, re-consent, and the re-point of a shared knowledge base onto a fresh link — serialize per Connection across replicas with an in-lock re-read that stands down if the state already advanced; grant fan-out serializes per Agent. Past its token horizon a Connection also reads expired, since a healthy one is renewed well ahead of it; a provider issuing non-expiring tokens has no horizon and stays active.
 

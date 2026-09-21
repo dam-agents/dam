@@ -733,6 +733,9 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
 	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
 	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
+	require.NotNil(t, dep.Spec.Template.Spec.EnableServiceLinks)
+	assert.False(t, *dep.Spec.Template.Spec.EnableServiceLinks,
+		"service links would inject one env var set per sibling agent Service; the runner reads none of them")
 }
 
 // TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.

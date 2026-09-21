@@ -9,6 +9,9 @@ import {
   type ChannelConfig,
   type ContributionKind,
   type DriverFailure,
+  type WorkspaceFailure,
+  type OnboardingStep,
+  type WorkspaceMutationKind,
   type BindTelegramChatResult,
   type BindSlackChannelResult,
   type ConnectSlackResult,
@@ -36,9 +39,11 @@ import {
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
+  ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
+  ANN_STARTER_KIT,
 } from "../infrastructure/labels.js";
 import {
   seedTelemetryIdentity,
@@ -48,7 +53,10 @@ import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import {
+  type RuntimeMutator,
+  workspaceSeedEvent,
+} from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -59,6 +67,7 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  workspaceFailures: WorkspaceFailure[];
   features: RuntimeFeatures;
   unsupportedKinds: ContributionKind[];
 }
@@ -74,9 +83,17 @@ export interface ContributionsProgressPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
   progress(agentId: string): Promise<ContributionsProgress>;
+  retryWorkspaceMutation(
+    agentId: string,
+    kind: WorkspaceMutationKind,
+  ): Promise<boolean>;
 }
 
 export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
+
+export interface OnboardingChecklistReader {
+  readMany(agentIds: readonly string[]): Promise<Map<string, OnboardingStep[]>>;
+}
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
@@ -477,6 +494,7 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
+  onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -485,6 +503,7 @@ export function createAgentsService(deps: {
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
+      providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
@@ -543,6 +562,7 @@ export function createAgentsService(deps: {
         settled: true,
         failures: [],
         preparingWorkspace: false,
+        workspaceFailures: [],
         features: runtimeFeaturesOf(null),
         unsupportedKinds: [],
       };
@@ -601,12 +621,14 @@ export function createAgentsService(deps: {
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, status, userEnv, templateUpdate] = await Promise.all([
-      namedChannelsOf(infra.id),
-      safeStatus(infra.id),
-      deps.agentEnvRepo.list(infra.id),
-      templateUpdateFor(infra),
-    ]);
+    const [channels, status, userEnv, templateUpdate, checklists] =
+      await Promise.all([
+        namedChannelsOf(infra.id),
+        safeStatus(infra.id),
+        deps.agentEnvRepo.list(infra.id),
+        templateUpdateFor(infra),
+        deps.onboardingChecklists.readMany([infra.id]),
+      ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
       channels,
@@ -616,6 +638,8 @@ export function createAgentsService(deps: {
       templateUpdate,
       status.features,
       status.unsupportedKinds,
+      status.workspaceFailures,
+      checklists.get(infra.id),
     );
   }
 
@@ -715,6 +739,8 @@ export function createAgentsService(deps: {
         templateUpdate,
         status.features,
         status.unsupportedKinds,
+        status.workspaceFailures,
+        (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
   };
@@ -741,13 +767,15 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap, channelNames] = await Promise.all([
-        deps.contributionsProgress
-          .statusMany([...infraIds])
-          .catch(() => new Map<string, ContributionsStatus>()),
-        deps.agentEnvRepo.listMany([...infraIds]),
-        slackChannelNames([...channelMap.values()]),
-      ]);
+      const [failuresMap, envMap, channelNames, checklistMap] =
+        await Promise.all([
+          deps.contributionsProgress
+            .statusMany([...infraIds])
+            .catch(() => new Map<string, ContributionsStatus>()),
+          deps.agentEnvRepo.listMany([...infraIds]),
+          slackChannelNames([...channelMap.values()]),
+          deps.onboardingChecklists.readMany([...infraIds]),
+        ]);
 
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
@@ -776,6 +804,8 @@ export function createAgentsService(deps: {
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
+          status?.workspaceFailures ?? [],
+          checklistMap.get(infra.id),
         );
       });
     },
@@ -805,7 +835,12 @@ export function createAgentsService(deps: {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
-          { description: input.description, size: input.size, vm: input.vm },
+          {
+            description: input.description,
+            size: input.size,
+            storage: input.storage,
+            vm: input.vm,
+          },
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
@@ -816,6 +851,7 @@ export function createAgentsService(deps: {
             image: input.image,
             description: input.description,
             size: input.size,
+            storage: input.storage,
             vm: input.vm,
           },
           deps.agentDefaultLimits,
@@ -842,7 +878,21 @@ export function createAgentsService(deps: {
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
 
-      const grantSel = { connectionIds: input.connectionIds ?? [] };
+      const grantSel = {
+        connectionIds: Array.from(
+          new Set([
+            ...(input.connectionIds ?? []),
+            ...(input.providerConnectionId ? [input.providerConnectionId] : []),
+          ]),
+        ),
+        providerConnectionId: input.providerConnectionId,
+      };
+      if (input.providerConnectionId && !deps.grantProvisioner) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "provider validation is unavailable",
+        });
+      }
       const hasInitialGrants = grantSel.connectionIds.length > 0;
       if (deps.grantProvisioner && hasInitialGrants) {
         const g = await deps.grantProvisioner.resolveSpecGrants(grantSel);
@@ -875,8 +925,10 @@ export function createAgentsService(deps: {
           createAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
       }
       if (input.kind) createAnnotations[ANN_AGENT_KIND] = input.kind;
-      if (input.kbTemplateId)
-        createAnnotations[ANN_KB_TEMPLATE] = input.kbTemplateId;
+      if (input.kbShareRoots && input.kbShareRoots.length > 0)
+        createAnnotations[ANN_KB_SHARE_ROOTS] = input.kbShareRoots.join(",");
+      if (input.starterKit)
+        createAnnotations[ANN_STARTER_KIT] = input.starterKit;
 
       let infra: InfraAgent;
       try {
@@ -924,12 +976,12 @@ export function createAgentsService(deps: {
         infra.id,
         input.gitRepo
           ? [
-              {
-                id: `workspace-seed:${infra.id}:${Date.now()}`,
-                kind: "workspace-seed",
-                payload: { url: input.gitRepo.url, ref: input.gitRepo.ref },
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-              },
+              workspaceSeedEvent(
+                "workspace-seed",
+                infra.id,
+                input.gitRepo,
+                new Date(),
+              ),
             ]
           : [],
       );
@@ -946,6 +998,7 @@ export function createAgentsService(deps: {
         false,
         undefined,
         runtimeFeaturesOf(null),
+        [],
         [],
       );
       securityLog("info", "agent.create", {
@@ -1048,7 +1101,11 @@ export function createAgentsService(deps: {
         });
       }
 
-      emit({ type: EventType.AgentUpdated, agentId: input.id });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: input.id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
       return project(infra);
     },
 
@@ -1124,6 +1181,35 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
+    async retryWorkspace(id, kind) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.retryWorkspace" },
+        });
+        return null;
+      }
+      const infra = await deps.repo.get(id);
+      if (!infra) return null;
+      if (!(await deps.contributionsProgress.retryWorkspaceMutation(id, kind)))
+        return null;
+      await deps.repo.wakeIfHibernated(id);
+      securityLog("info", "agent.workspace_retry", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+        detail: { kind },
+      });
+      return project((await deps.repo.get(id)) ?? infra);
+    },
+
     async stop(id) {
       if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
         securityLog("warn", "authz.owner_mismatch", {
@@ -1192,7 +1278,11 @@ export function createAgentsService(deps: {
           deps.repo.updateSpec(agentId, deps.owner, { image }),
       })(id, expectedToImage);
       if (!result.ok) return result;
-      emit({ type: EventType.AgentUpdated, agentId: id });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
       return ok(await project(result.value));
     },
 

@@ -2,6 +2,7 @@ import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
+import type { OnboardingStep } from "../starter-kits/types.js";
 import type {
   agentCreateInputSchema,
   agentKindSchema,
@@ -47,6 +48,16 @@ export interface TemplateUpdate {
   toImage: string;
 }
 
+export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
+
+export interface WorkspaceFailure {
+  kind: WorkspaceMutationKind;
+  error: string;
+  settled: boolean;
+  attempts: number;
+  maxAttempts: number;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -63,16 +74,21 @@ export interface Agent {
   podTerminationReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
+  workspaceFailures: WorkspaceFailure[];
   channels: ChannelConfig[];
   kind?: AgentKind;
   kbTemplateId?: string;
+  kbShareRoots?: string[];
+  starterKit?: string;
+  starterKitOnboarded?: string;
+  onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
-  kbTemplateId?: string;
+  starterKit?: string;
   id?: string;
   telemetryAttributionId?: string;
 };
@@ -157,6 +173,10 @@ export interface AgentsService {
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;
   stop: (id: string) => Promise<Agent | null>;
+  retryWorkspace: (
+    id: string,
+    kind: WorkspaceMutationKind,
+  ) => Promise<Agent | null>;
   pause: (id: string) => Promise<Agent | null>;
   upgrade: (
     id: string,

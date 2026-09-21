@@ -4,7 +4,7 @@ import {
   manageAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
-import { toAgentView } from "../agents/router.js";
+import { toAgentView } from "../agents/view.js";
 import {
   experimentIdInputSchema,
   experimentSandboxCreateInputSchema,

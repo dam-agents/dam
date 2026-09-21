@@ -40,6 +40,7 @@ export {
   invocations,
   kbShares,
   agentCaseStudies,
+  starterKitCatalogEntries,
 } from "./schema.js";
 export {
   eq,
@@ -57,5 +58,7 @@ export {
   lt,
   lte,
   ne,
+  not,
+  notInArray,
   sql,
 } from "drizzle-orm";

@@ -51,10 +51,15 @@ import {
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
+import {
+  agentFailures,
+  ContributionFailuresBadge,
+} from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
+import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
+import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -62,7 +67,10 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
-import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
+import {
+  isExperimentSandbox,
+  sharesKnowledgeBase,
+} from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
@@ -71,15 +79,11 @@ import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
-import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
-import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
-import { resolveAgentHarness } from "../../knowledge-bases/lib/resolve-agent-harness.js";
-import { useTemplates } from "../../templates/api/queries.js";
+import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -100,6 +104,7 @@ import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
   pushSessionPath,
@@ -196,7 +201,6 @@ export function ChatView() {
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const setView = useStore((s) => s.setView);
   const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
   const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
@@ -253,20 +257,6 @@ export function ChatView() {
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
-  const templatesQuery = useTemplates();
-  useKnowledgeBaseGreeting({
-    agentId: selectedAgent,
-    active: view === "knowledge-base-chat",
-    idle: chatIdle,
-    harness: resolveAgentHarness(agentView?.templateId ?? null, templatesQuery),
-    sendPrompt,
-  });
-  useExperimentGreeting({
-    agentId: selectedAgent,
-    active: agentView !== null && isExperimentSandbox(agentView),
-    idle: chatIdle,
-    sendPrompt,
-  });
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -384,6 +374,12 @@ export function ChatView() {
     resumeSession,
   ]);
 
+  useOpenInitializationSession({
+    agentId: selectedAgent,
+    active: view === "chat" && agentView !== null,
+    idle: chatIdle,
+    resumeSession,
+  });
   const pushSessionUrl = useCallback(
     (sid: string | null, mode: SessionMode | null) => {
       if (view !== "chat" || !selectedAgent) return;
@@ -454,22 +450,15 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const isKnowledgeBaseView = view === "knowledge-base-chat";
-  const surfaceCopy = isKnowledgeBaseView
-    ? {
-        actionsAria: "Knowledge base actions",
-        configure: "Configure knowledge base",
-        delete: "Delete Knowledge Base",
-        modelSubject: "knowledge base",
-        modelSettings: null,
-      }
-    : {
-        actionsAria: "Agent actions",
-        configure: "Configure agent",
-        delete: "Delete Agent",
-        modelSubject: "agent",
-        modelSettings: "Agent Setup",
-      };
+  const canShareKnowledge =
+    agentView !== null && sharesKnowledgeBase(agentView);
+  const surfaceCopy = {
+    actionsAria: "Agent actions",
+    configure: "Configure agent",
+    delete: "Delete Agent",
+    modelSubject: "agent",
+    modelSettings: "Agent Setup",
+  };
 
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
@@ -487,26 +476,15 @@ export function ChatView() {
 
   const handleDeleteSandbox = useCallback(async () => {
     if (!selectedAgent) return;
-    const ok = isKnowledgeBaseView
-      ? await confirmDeleteKnowledgeBase(showConfirm, selectedAgentName ?? "")
-      : await showConfirm(
-          "Delete this agent? This also deletes all persistent data and cannot be undone.",
-          "Delete Agent",
-          { kind: "destructive" },
-        );
+    const ok = await showConfirm(
+      "Delete this agent? This also deletes all persistent data and cannot be undone.",
+      "Delete Agent",
+      { kind: "destructive" },
+    );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
-    if (isKnowledgeBaseView) navigateToKnowledgeBases();
-    else setView("home");
-  }, [
-    selectedAgent,
-    selectedAgentName,
-    isKnowledgeBaseView,
-    showConfirm,
-    deleteAgent,
-    navigateToKnowledgeBases,
-    setView,
-  ]);
+    setView("home");
+  }, [selectedAgent, selectedAgentName, showConfirm, deleteAgent, setView]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -548,6 +526,7 @@ export function ChatView() {
           <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
+          {agentView && <VmRuntimeBadge agent={agentView} />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -562,7 +541,7 @@ export function ChatView() {
               <DropdownMenuItem onSelect={handleConfigureSandbox}>
                 {surfaceCopy.configure}
               </DropdownMenuItem>
-              {isKnowledgeBaseView && (
+              {canShareKnowledge && (
                 <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
                   Share knowledge base
                 </DropdownMenuItem>
@@ -601,6 +580,7 @@ export function ChatView() {
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
+          <WorkspaceFailureNotice agentId={selectedAgent} />
           <SessionsSidebar
             open={sessionsSectionOpen}
             onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
@@ -762,6 +742,10 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
+                <OnboardingBar
+                  key={selectedAgent ?? "none"}
+                  agentId={selectedAgent}
+                />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -887,7 +871,7 @@ function ChatHeaderStatus({
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (
         <>
-          <ContributionFailuresBadge failures={agent.contributionFailures} />
+          <ContributionFailuresBadge failures={agentFailures(agent)} />
           <UnsupportedContributionsBadge agent={agent} />
         </>
       )}

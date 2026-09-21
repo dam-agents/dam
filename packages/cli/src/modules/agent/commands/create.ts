@@ -1,10 +1,11 @@
 import { Command } from "commander";
-import { agentCreateInputSchema } from "api-server-api";
+import { agentCreateInputSchema, PROVIDER_TEMPLATE_IDS } from "api-server-api";
+import { CONNECTION_ID_PREFIX } from "../../connection/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
@@ -45,6 +46,10 @@ export function buildCreateCommand(deps: {
     )
     .option("--description <text>", "free-form description")
     .option(
+      "--provider <id-or-name>",
+      "model-provider connection id or unique name (required; see `dam connection list`)",
+    )
+    .option(
       "--env <KEY=VAL>",
       "env var, repeatable",
       (val: string, prev: string[]) => [...prev, val],
@@ -61,9 +66,9 @@ export function buildCreateCommand(deps: {
       [
         "",
         "Examples:",
-        "  dam agent create my-agent --template claude-code",
-        "  dam agent create my-agent --template claude-code --wait",
-        '  dam agent create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description "Coding helper"',
+        "  dam agent create my-agent --template claude-code --provider conn-123",
+        '  dam agent create my-agent --template claude-code --provider "My provider" --wait',
+        '  dam agent create my-agent --template pi-agent --provider conn-123 --description "Coding helper"',
         "",
       ].join("\n"),
     )
@@ -73,6 +78,7 @@ export function buildCreateCommand(deps: {
         opts: {
           server?: string;
           template?: string;
+          provider?: string;
           description?: string;
           env?: string[];
           wait?: boolean;
@@ -92,6 +98,7 @@ async function runCreate(
   opts: {
     server?: string;
     template?: string;
+    provider?: string;
     description?: string;
     env?: string[];
     wait?: boolean;
@@ -119,6 +126,13 @@ async function runCreate(
     process.exit(EXIT_INVALID_INPUT);
   }
   const template = opts.template;
+
+  if (!opts.provider) {
+    process.stderr.write(
+      "error: `--provider <id-or-name>` is required; run `dam connection list` to choose a model provider, or `dam agent create-interactive` to add one\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
 
   const envResult = parseEnvFlag(opts.env ?? []);
   if (!envResult.ok) {
@@ -161,8 +175,8 @@ async function runCreate(
     printServiceError(tmplResult.error, host);
     process.exit(EXIT_RUNTIME_FAILURE);
   }
-  const match = tmplResult.value.find((t) => t.id === template);
-  if (!match) {
+  const selectedTemplate = tmplResult.value.find((t) => t.id === template);
+  if (!selectedTemplate) {
     process.stderr.write(
       `error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`,
     );
@@ -170,11 +184,38 @@ async function runCreate(
   }
 
   const trpc = deps.createTrpcClient(host);
+  let providerConnectionId = opts.provider;
+  if (!providerConnectionId.startsWith(CONNECTION_ID_PREFIX)) {
+    const connections = await trpcCall(() => trpc.connections.list.query());
+    if (!connections.ok) {
+      printServiceError(connections.error, host);
+      process.stderr.write(
+        "hint: provider name lookup requires credentials:read; pass --provider <connection-id> to create with agents:manage alone\n",
+      );
+      process.exit(EXIT_RUNTIME_FAILURE);
+    }
+    const matches = connections.value.filter(
+      (connection) =>
+        PROVIDER_TEMPLATE_IDS.has(connection.templateId) &&
+        connection.name === opts.provider,
+    );
+    if (matches.length !== 1) {
+      process.stderr.write(
+        matches.length === 0
+          ? `error: no model-provider connection matches '${opts.provider}'; run \`dam connection list\` to choose a provider, or \`dam agent create-interactive\` to add one\n`
+          : `error: multiple model-provider connections are named '${opts.provider}'; pass a connection id from \`dam connection list\`\n`,
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+    providerConnectionId = matches[0]!.id;
+  }
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     {
       name,
       templateId: template,
+      connectionIds: [providerConnectionId],
+      providerConnectionId,
       description: opts.description,
       env: env.length > 0 ? env : undefined,
     },
@@ -184,6 +225,12 @@ async function runCreate(
   try {
     agent = await trpc.agents.create.mutate(createInput);
   } catch (e) {
+    if ((e as any)?.data?.code === "BAD_REQUEST") {
+      process.stderr.write(
+        `error: failed to create agent: ${errorReason(e)}\n`,
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
     if ((e as any)?.data?.code === "NOT_FOUND") {
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,

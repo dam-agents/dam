@@ -6,7 +6,6 @@ import {
   sizeInMi,
   type SlotUnit,
 } from "../../budgets/lib/slots.js";
-import { kbTemplateName } from "../../knowledge-bases/lib/kb-templates.js";
 
 export interface SandboxSubtitleLookup {
   templateNameById: ReadonlyMap<string, string>;
@@ -41,13 +40,6 @@ export function sandboxSubtitle(
   if (agent.kind === "experiment") {
     const kinded = joinSubtitleSegments([
       experimentCountLabel(extras?.experimentCount),
-      catalogConnectionsLabel(agent, lookup),
-    ]);
-    return kinded || sandboxSubtitleParts(agent, lookup).harness;
-  }
-  if (agent.kind === "knowledge-base") {
-    const kinded = joinSubtitleSegments([
-      kbTemplateName(agent.kbTemplateId),
       catalogConnectionsLabel(agent, lookup),
     ]);
     return kinded || sandboxSubtitleParts(agent, lookup).harness;

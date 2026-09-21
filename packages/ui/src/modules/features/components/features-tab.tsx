@@ -1,16 +1,21 @@
 import type { FeatureId } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import { useFeatures, useSetFeature } from "../api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+  useSetFeature,
+} from "../api/queries.js";
 
 interface FeatureRow {
   id: FeatureId;
   label: string;
-  description: string;
+  description: ReactNode;
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
@@ -28,9 +33,23 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "vm-sandboxes",
-    label: "VM sandboxes",
-    description:
-      "Adds the isolation choice to the coding agent’s setup, so an image can be booted as a machine of its own rather than as a pod, with container engines and Kubernetes able to run inside it.",
+    label: "New sandbox runtime",
+    description: (
+      <>
+        Use a new sandbox runtime based on{" "}
+        <a
+          href="https://github.com/smol-machines/smolvm"
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-foreground"
+          onClick={(event) => event.stopPropagation()}
+        >
+          smolvm
+        </a>
+        . Starts much faster, and supports running containers (Docker,
+        Kubernetes).
+      </>
+    ),
   },
   {
     id: "session-costs",
@@ -43,10 +62,12 @@ const FEATURE_ROWS: FeatureRow[] = [
 function FeatureRowCard({
   row,
   enabled,
+  unsupported,
   onToggle,
 }: {
   row: FeatureRow;
   enabled: boolean;
+  unsupported?: string;
   onToggle: (enabled: boolean) => void;
 }) {
   return (
@@ -63,6 +84,11 @@ function FeatureRowCard({
         <span className="mt-0.5 block text-sm text-muted-foreground">
           {row.description}
         </span>
+        {unsupported && (
+          <span className="mt-1 block text-sm text-warning-fg">
+            {unsupported}
+          </span>
+        )}
       </span>
       <Switch checked={enabled} onCheckedChange={onToggle} />
     </label>
@@ -71,6 +97,7 @@ function FeatureRowCard({
 
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
+  const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
   return (
@@ -86,6 +113,11 @@ export function FeaturesTab() {
             key={row.id}
             row={row}
             enabled={flags?.[row.id] ?? false}
+            unsupported={
+              row.id === "vm-sandboxes" && install?.virtualization === false
+                ? "This install cannot run the new sandbox runtime, so agents keep the current one until an administrator enables virtualization."
+                : undefined
+            }
             onToggle={(enabled) =>
               setFeature.mutate({ feature: row.id, enabled })
             }

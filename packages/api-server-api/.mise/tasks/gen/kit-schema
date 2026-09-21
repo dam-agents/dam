@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate the published JSON Schema for kit.yaml and catalog.yaml from the Zod schemas. Catalog repositories validate against these and editors read them for autocomplete, so the Zod schema stays the single source."
+#MISE sources=["src/modules/starter-kits/schemas.ts", "scripts/gen-kit-schema.ts", "{{vars.repo_root}}/pnpm-lock.yaml"]
+#MISE outputs=["{{vars.repo_root}}/helm/starter-kits/kit.schema.json", "{{vars.repo_root}}/helm/starter-kits/catalog.schema.json"]
+set -euo pipefail
+pnpm exec tsx scripts/gen-kit-schema.ts "$MISE_CONFIG_ROOT/../../helm/starter-kits" "$@"
