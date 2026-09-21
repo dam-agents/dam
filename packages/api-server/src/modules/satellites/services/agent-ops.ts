@@ -6,14 +6,7 @@ import {
   type JobStarted,
   type SatelliteView,
 } from "api-server-api";
-import { argvRefusal, regexSources } from "api-server-api";
-import { admit, compileCommands, isOnline } from "../domain/admission.js";
-import {
-  createRegexEvaluator,
-  RegexBusyError,
-  RegexDeadlineError,
-  type RegexEvaluator,
-} from "../infrastructure/regex-worker.js";
+import { admit, isOnline } from "../domain/admission.js";
 import { isTerminal, type JobRow, type SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
@@ -26,21 +19,12 @@ const AWAIT_LEASE_MS = POLL_INTERVAL_MS * 4;
 export interface AgentOpsDeps {
   repo: SatellitesRepository;
   ownerOf: (agentId: string) => Promise<string | null>;
-  requestApproval: (input: {
-    agentId: string;
-    owner: string;
-    satellite: string;
-    sequence: number;
-    ref: string;
-    cmd: string[];
-  }) => Promise<string>;
   spillLog: (
     agentId: string,
     ref: string,
     output: string,
   ) => Promise<string | null>;
   retireApproval: (approvalId: string) => Promise<void>;
-  regexEvaluator?: RegexEvaluator;
   now?: () => Date;
 }
 
@@ -56,7 +40,7 @@ function view(
     online: isOnline(satellite, now),
     draining: satellite.draining,
     lastSeenAt: satellite.lastSeenAt?.toISOString() ?? null,
-    commands: satellite.commands,
+    tools: satellite.tools,
     maxConcurrent: satellite.maxConcurrent,
     activeJobs: active,
     grantedAgentIds: [],
@@ -65,7 +49,6 @@ function view(
 
 export function createSatelliteAgentOps(deps: AgentOpsDeps) {
   const now = deps.now ?? (() => new Date());
-  const evaluator = deps.regexEvaluator ?? createRegexEvaluator();
 
   async function resolve(
     agentId: string,
@@ -100,6 +83,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
     return {
       ref,
       status: job.status,
+      isError: job.isError,
       exitCode: job.exitCode,
       output,
       outputPath,
@@ -141,58 +125,22 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
     async start(
       agentId: string,
       name: string,
-      cmd: string[],
+      tool: string,
+      args: Record<string, unknown>,
     ): Promise<JobStarted> {
-      const oversize = argvRefusal(cmd);
-      if (oversize !== null)
-        throw new TRPCError({ code: "BAD_REQUEST", message: oversize });
-
       const at = now();
       const { owner, satellite } = await resolve(agentId, name);
-      const compiled = compileCommands(satellite.commands);
-      if (!compiled.ok)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `${name}'s command patterns do not parse: ${compiled.error}`,
-        });
 
       const active = await deps.repo.activeJobs(owner, name);
-      const byPattern = new Map<string, number>();
+      const byTool = new Map<string, number>();
       for (const job of active)
-        byPattern.set(job.pattern, (byPattern.get(job.pattern) ?? 0) + 1);
-
-      let oracle;
-      try {
-        oracle = await evaluator.oracleFor(
-          regexSources(compiled.commands.map((c) => c.parsed)),
-          cmd,
-        );
-      } catch (err) {
-        if (err instanceof RegexDeadlineError)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `${name} has a command pattern whose regex takes too long on this command — narrow the pattern`,
-          });
-        if (err instanceof RegexBusyError)
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message:
-              "the command matcher is busy checking another command — try again",
-          });
-        console.error("[satellites] regex evaluation failed", err);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "could not check this command against the manifest",
-        });
-      }
+        byTool.set(job.tool, (byTool.get(job.tool) ?? 0) + 1);
 
       const verdict = admit(
         satellite,
-        compiled.commands,
-        cmd,
-        { total: active.length, byPattern },
+        tool,
+        { total: active.length, byTool },
         at,
-        oracle,
       );
       if (!verdict.ok)
         throw new TRPCError({ code: "BAD_REQUEST", message: verdict.reason });
@@ -201,12 +149,12 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         owner,
         satellite: name,
         agentId,
-        cmd,
-        pattern: verdict.pattern,
-        status: verdict.status,
+        tool,
+        args,
+        status: "queued",
         expiresAt: new Date(at.getTime() + JOB_TTL_MS),
         maxConcurrent: satellite.maxConcurrent,
-        patternMax: verdict.patternMax,
+        toolMax: verdict.toolMax,
       });
       if ("full" in inserted)
         throw new TRPCError({
@@ -214,27 +162,13 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           message:
             inserted.total >= satellite.maxConcurrent
               ? `${name} is running ${inserted.total} jobs (max ${satellite.maxConcurrent}) — wait for one to finish`
-              : `${verdict.pattern} already has ${inserted.forPattern} running (max ${verdict.patternMax}) — wait for one to finish`,
+              : `${tool} already has ${inserted.forTool} running (max ${verdict.toolMax}) — wait for one to finish`,
         });
-      const job = inserted;
-      const ref = formatJobRef(name, job.sequence);
-      if (verdict.status === "pending-approval") {
-        const approvalId = await deps.requestApproval({
-          agentId,
-          owner,
-          satellite: name,
-          sequence: job.sequence,
-          ref,
-          cmd,
-        });
-        await deps.repo.setApprovalId(owner, name, job.sequence, approvalId);
-      }
       return {
-        ref,
+        ref: formatJobRef(name, inserted.sequence),
         satellite: name,
-        sequence: job.sequence,
-        status:
-          verdict.status === "pending-approval" ? "pending-approval" : "queued",
+        sequence: inserted.sequence,
+        status: "queued",
       };
     },
 

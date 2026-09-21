@@ -66,7 +66,7 @@ export function createSatellitesService(
           online: isOnline(row, at),
           draining: row.draining,
           lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
-          commands: row.commands,
+          tools: row.tools,
           maxConcurrent: row.maxConcurrent,
           activeJobs: (await deps.repo.activeJobs(deps.owner, row.name)).length,
           grantedAgentIds: (
@@ -110,7 +110,8 @@ export function createSatellitesService(
           sequence: job.sequence,
           ref: formatJobRef(job.satellite, job.sequence),
           agentId: job.agentId,
-          cmd: job.cmd,
+          tool: job.tool,
+          args: job.args,
           status: job.status,
           exitCode: job.exitCode,
           startedAt: job.startedAt?.toISOString() ?? null,

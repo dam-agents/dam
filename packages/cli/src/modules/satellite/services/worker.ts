@@ -1,27 +1,16 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { StringDecoder } from "node:string_decoder";
-import {
-  MAX_JOB_OUTPUT_BYTES,
-  localOracle,
-  matchCommand,
-  type WorkItem,
+import type {
+  SatelliteManifest,
+  SatelliteTool,
+  WorkItem,
 } from "api-server-api";
-import type { LocalCommand, LocalManifest } from "../domain/manifest.js";
+import type { SatelliteBackend } from "./backend.js";
 
-export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
-
-function describeTimeout(ms: number | undefined): string {
-  if (ms === undefined) return "configured";
-  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
-  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
-  return `${Math.round(ms / 1000)}s`;
-}
 const HEARTBEAT_MS = 20_000;
 const CLAIM_WAIT_MS = 25_000;
 const IDLE_MS = 1000;
 
 export interface WorkerTransport {
-  connect(manifest: LocalManifest["pushed"], host: string): Promise<void>;
+  connect(manifest: SatelliteManifest, host: string): Promise<void>;
   claim(input: {
     satellite: string;
     capacity: number;
@@ -32,14 +21,21 @@ export interface WorkerTransport {
     satellite: string;
     sequence: number;
     outcome:
-      | { status: "done"; exitCode: number; output: string; truncated: boolean }
+      | {
+          status: "done";
+          isError: boolean;
+          exitCode: number | null;
+          output: string;
+          truncated: boolean;
+        }
       | { status: "cancelled"; output?: string; truncated?: boolean }
       | {
           status: "interrupted";
           reason: string;
           output?: string;
           truncated?: boolean;
-        };
+        }
+      | { status: "needs-approval"; reason: string };
   }): Promise<void>;
   drain(satellite: string): Promise<void>;
 }
@@ -48,193 +44,82 @@ export interface WorkerLog {
   line(text: string): void;
 }
 
-type KillReason = "cancel" | "timeout" | "shutdown";
-
-interface RunningJob {
-  child: ChildProcess;
-  timer: NodeJS.Timeout | null;
-  killedAs: KillReason | null;
-}
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A command is spawned in its own process group, so a
- * script that starts children can be stopped whole. Signalling the direct child
- * alone leaves those children running on the user's machine with nothing left to
- * report them.
+ * UNIT_BOUNDARY_DESCRIPTION: The loop between the platform queue and whatever
+ * this machine exposes. It knows nothing about commands — a work item is an MCP
+ * tool call, and the backend decides what that means and whether it may run.
  */
-function signalGroup(entry: RunningJob, signal: NodeJS.Signals): void {
-  const pid = entry.child.pid;
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    entry.child.kill(signal);
-  }
-}
-
-function resolveCommand(
-  manifest: LocalManifest,
-  cmd: string[],
-): LocalCommand | string {
-  const matched = matchCommand(
-    manifest.commands.map((c) => c.parsed),
-    cmd,
-    localOracle,
-  );
-  if (!matched.ok) return matched.reason;
-  return manifest.commands[matched.index]!;
-}
-
 export function createWorker(deps: {
-  manifest: LocalManifest;
+  name: string;
+  maxConcurrent: number;
+  description?: string;
+  backend: SatelliteBackend;
   transport: WorkerTransport;
   log: WorkerLog;
   host: string;
 }) {
-  const running = new Map<number, RunningJob>();
+  const { name, backend, transport, log } = deps;
+  const running = new Set<number>();
   const reporting = new Set<Promise<void>>();
+  let draining = false;
+  let stopped = false;
+
   const report = (input: Parameters<WorkerTransport["report"]>[0]): void => {
-    const sent = deps.transport
+    const sent = transport
       .report(input)
       .catch((err: unknown) => {
-        deps.log.line(
+        log.line(
           `could not report ${name}#${input.sequence}, leaving it to the lease: ${String(err)}`,
         );
       })
       .finally(() => reporting.delete(sent));
     reporting.add(sent);
   };
+
   const settleReports = async (): Promise<void> => {
     while (reporting.size > 0) await Promise.all([...reporting]);
   };
-  const name = deps.manifest.pushed.name;
-  let manifest = deps.manifest;
-  let draining = false;
-  let stopped = false;
+
+  const manifest = (tools: SatelliteTool[]): SatelliteManifest => ({
+    name,
+    ...(deps.description === undefined
+      ? {}
+      : { description: deps.description }),
+    maxConcurrent: deps.maxConcurrent,
+    tools,
+  });
 
   function startJob(item: WorkItem): void {
-    const command = resolveCommand(manifest, item.cmd);
-    if (typeof command === "string") {
-      deps.log.line(`REFUSED ${name}#${item.sequence}: ${command}`);
-      report({
-        satellite: name,
+    running.add(item.sequence);
+    void backend
+      .call({
         sequence: item.sequence,
-        outcome: {
-          status: "interrupted",
-          reason: `refused locally: ${command}`,
-        },
-      });
-      return;
-    }
-
-    const [program, ...args] = item.cmd;
-    const cwd = command.cwd ?? manifest.cwd;
-    const timeoutMs = command.timeoutMs ?? manifest.timeoutMs;
-    const startedAt = Date.now();
-    deps.log.line(`START ${name}#${item.sequence}: ${item.cmd.join(" ")}`);
-
-    let output = "";
-    let truncated = false;
-    const append = (text: string): void => {
-      if (truncated || text === "") return;
-      const room = OUTPUT_CAP_BYTES - output.length;
-      if (text.length > room) {
-        output += text.slice(0, room);
-        truncated = true;
-        return;
-      }
-      output += text;
-    };
-
-    const child = spawn(program!, args, {
-      cwd,
-      shell: false,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    for (const stream of [child.stdout, child.stderr]) {
-      if (!stream) continue;
-      const decoder = new StringDecoder("utf8");
-      stream.on("data", (chunk: Buffer) => append(decoder.write(chunk)));
-      stream.on("end", () => append(decoder.end()));
-    }
-
-    const settle = (exitCode: number, signal: NodeJS.Signals | null): void => {
-      const entry = running.get(item.sequence);
-      if (entry?.timer) clearTimeout(entry.timer);
-      running.delete(item.sequence);
-      const killedAs = entry?.killedAs ?? null;
-      const elapsed = Math.round((Date.now() - startedAt) / 1000);
-
-      if (killedAs !== null) {
-        deps.log.line(
-          `${killedAs.toUpperCase()} ${name}#${item.sequence} after ${elapsed}s`,
-        );
+        tool: item.tool,
+        args: item.args,
+        approved: item.approved,
+      })
+      .then((outcome) => {
+        report({ satellite: name, sequence: item.sequence, outcome });
+      })
+      .catch((err: unknown) => {
         report({
           satellite: name,
           sequence: item.sequence,
-          outcome:
-            killedAs === "cancel"
-              ? { status: "cancelled", output, truncated }
-              : {
-                  status: "interrupted",
-                  reason:
-                    killedAs === "timeout"
-                      ? `stopped at its ${describeTimeout(timeoutMs)} timeout`
-                      : "the satellite was stopped while this job was running",
-                  output,
-                  truncated,
-                },
+          outcome: {
+            status: "interrupted",
+            reason: String(err).slice(0, 280),
+          },
         });
-        return;
-      }
-
-      deps.log.line(
-        `EXIT ${name}#${item.sequence}: code ${exitCode} in ${elapsed}s`,
-      );
-      report({
-        satellite: name,
-        sequence: item.sequence,
-        outcome: {
-          status: "done",
-          exitCode,
-          output,
-          truncated,
-        },
-      });
-      if (signal !== null)
-        deps.log.line(`${name}#${item.sequence} ended on ${signal}`);
-    };
-
-    child.on("error", (err) => {
-      running.delete(item.sequence);
-      deps.log.line(`FAILED ${name}#${item.sequence}: ${err.message}`);
-      report({
-        satellite: name,
-        sequence: item.sequence,
-        outcome: {
-          status: "interrupted",
-          reason: `could not start the command: ${err.message}`,
-        },
-      });
-    });
-    child.on("close", (code, signal) => settle(code ?? 1, signal));
-
-    const entry: RunningJob = { child, timer: null, killedAs: null };
-    if (timeoutMs !== undefined)
-      entry.timer = setTimeout(() => {
-        entry.killedAs = "timeout";
-        signalGroup(entry, "SIGKILL");
-      }, timeoutMs);
-    running.set(item.sequence, entry);
+      })
+      .finally(() => running.delete(item.sequence));
   }
 
-  function cancel(sequence: number): void {
-    const entry = running.get(sequence);
-    if (entry === undefined) return;
-    deps.log.line(`CANCEL ${name}#${sequence}`);
-    entry.killedAs = "cancel";
-    signalGroup(entry, "SIGTERM");
+  function announce(prefix: string): void {
+    log.line(`${prefix} — tools:`);
+    for (const tool of backend.tools)
+      log.line(
+        `  ${tool.name}${tool.title === undefined ? "" : ` — ${tool.title}`}`,
+      );
   }
 
   return {
@@ -242,36 +127,21 @@ export function createWorker(deps: {
       return running.size;
     },
 
-    cancel,
+    announce,
 
-    refusesReload(next: LocalManifest): string | null {
-      return next.pushed.name === name
-        ? null
-        : `the name changed from "${name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`;
-    },
-
-    reload(next: LocalManifest): void {
-      manifest = next;
-      deps.log.line("reload applied — permitted commands:");
-      for (const command of manifest.commands)
-        deps.log.line(
-          `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
-        );
+    async push(tools: SatelliteTool[]): Promise<void> {
+      await transport.connect(manifest(tools), deps.host);
     },
 
     async start(): Promise<void> {
-      await deps.transport.connect(manifest.pushed, deps.host);
-      deps.log.line(`connected as "${name}" — permitted commands:`);
-      for (const command of manifest.commands)
-        deps.log.line(
-          `  ${command.run}${command.approval === "always" ? "   [needs approval]" : ""}`,
-        );
+      await transport.connect(manifest(backend.tools), deps.host);
+      announce(`connected as "${name}"`);
 
       const heartbeat = setInterval(() => {
-        void deps.transport
-          .heartbeat({ satellite: name, running: [...running.keys()] })
+        void transport
+          .heartbeat({ satellite: name, running: [...running] })
           .catch((err: unknown) =>
-            deps.log.line(`heartbeat failed: ${String(err)}`),
+            log.line(`heartbeat failed: ${String(err)}`),
           );
       }, HEARTBEAT_MS);
 
@@ -282,37 +152,40 @@ export function createWorker(deps: {
             await new Promise((r) => setTimeout(r, 500));
             continue;
           }
-          const capacity = manifest.pushed.maxConcurrent - running.size;
+          const capacity = deps.maxConcurrent - running.size;
           try {
-            const items = await deps.transport.claim({
+            const items = await transport.claim({
               satellite: name,
               capacity: Math.max(capacity, 0),
               waitMs: CLAIM_WAIT_MS,
             });
             let started = 0;
             for (const item of items)
-              if (item.kind === "cancel") cancel(item.sequence);
-              else {
+              if (item.kind === "cancel") {
+                log.line(`CANCEL ${name}#${item.sequence}`);
+                backend.cancel(item.sequence);
+              } else {
                 startJob(item);
                 started++;
               }
             if (started === 0 && !stopped && !draining)
               await new Promise((r) => setTimeout(r, IDLE_MS));
           } catch (err) {
-            deps.log.line(`claim failed, retrying: ${String(err)}`);
+            log.line(`claim failed, retrying: ${String(err)}`);
             await new Promise((r) => setTimeout(r, 2000));
           }
         }
       } finally {
         clearInterval(heartbeat);
         await settleReports();
+        await backend.close().catch(() => {});
       }
     },
 
     async drain(): Promise<void> {
       draining = true;
-      await deps.transport.drain(name).catch(() => {});
-      deps.log.line(
+      await transport.drain(name).catch(() => {});
+      log.line(
         running.size === 0
           ? "draining — nothing running, exiting"
           : `draining — waiting for ${running.size} job(s); interrupt again to kill them`,
@@ -321,11 +194,9 @@ export function createWorker(deps: {
 
     async forceStop(): Promise<void> {
       stopped = true;
-      for (const [sequence, entry] of running) {
-        entry.killedAs = "shutdown";
-        signalGroup(entry, "SIGKILL");
-        if (entry.timer) clearTimeout(entry.timer);
-        await deps.transport
+      backend.killAll();
+      for (const sequence of running)
+        await transport
           .report({
             satellite: name,
             sequence,
@@ -335,9 +206,9 @@ export function createWorker(deps: {
             },
           })
           .catch(() => {});
-      }
       running.clear();
       await settleReports();
+      await backend.close().catch(() => {});
     },
   };
 }

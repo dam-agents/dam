@@ -86,7 +86,7 @@ export function buildListCommand(deps: ManageDeps): Command {
       return writeStdoutAndExit(`${JSON.stringify(rows)}\n`, EXIT_SUCCESS);
     if (rows.length === 0) {
       process.stderr.write(
-        "No satellites. Start one with `dam satellite serve ./satellite.toml`.\n",
+        "No satellites. Start one with `dam satellite connect ./satellite.toml`.\n",
       );
       return process.exit(EXIT_SUCCESS);
     }
@@ -94,13 +94,13 @@ export function buildListCommand(deps: ManageDeps): Command {
       row.name,
       row.draining ? "draining" : row.online ? "online" : "offline",
       row.host ?? "—",
-      String(row.commands.length),
+      String(row.tools.length),
       String(row.activeJobs),
       String(row.grantedAgentIds.length),
     ]);
     return writeStdoutAndExit(
       renderTable([
-        ["NAME", "STATE", "HOST", "COMMANDS", "ACTIVE", "AGENTS"],
+        ["NAME", "STATE", "HOST", "TOOLS", "ACTIVE", "AGENTS"],
         ...table,
       ]),
       EXIT_SUCCESS,
@@ -126,13 +126,13 @@ export function buildJobsCommand(deps: ManageDeps): Command {
     }
     return writeStdoutAndExit(
       renderTable([
-        ["JOB", "STATUS", "EXIT", "AGENT", "COMMAND"],
+        ["JOB", "STATUS", "EXIT", "AGENT", "CALL"],
         ...rows.map((row) => [
           row.ref,
           row.status,
           row.exitCode === null ? "—" : String(row.exitCode),
           row.agentId,
-          row.cmd.join(" "),
+          `${row.tool} ${JSON.stringify(row.args)}`,
         ]),
       ]),
       EXIT_SUCCESS,

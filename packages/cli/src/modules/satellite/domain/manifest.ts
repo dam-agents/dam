@@ -1,11 +1,6 @@
 import { parse as parseToml } from "smol-toml";
-import {
-  DEFAULT_MAX_CONCURRENT,
-  parseCommandPattern,
-  satelliteManifestSchema,
-  type ParsedPattern,
-  type SatelliteManifest,
-} from "api-server-api";
+import { DEFAULT_MAX_CONCURRENT, satelliteNameSchema } from "api-server-api";
+import { parseCommandPattern, type ParsedPattern } from "./command-pattern.js";
 
 export interface LocalCommand {
   run: string;
@@ -17,8 +12,14 @@ export interface LocalCommand {
   parsed: ParsedPattern;
 }
 
+export interface ManifestIdentity {
+  name: string;
+  description?: string;
+  maxConcurrent: number;
+}
+
 export interface LocalManifest {
-  pushed: SatelliteManifest;
+  pushed: ManifestIdentity;
   commands: LocalCommand[];
   cwd?: string;
   timeoutMs?: number;
@@ -109,40 +110,39 @@ export function parseManifest(text: string): ManifestResult {
     });
   }
 
-  const pushed = {
-    name,
-    description:
-      typeof root.description === "string" ? root.description : undefined,
-    maxConcurrent:
-      typeof root.max_concurrent === "number"
-        ? root.max_concurrent
-        : DEFAULT_MAX_CONCURRENT,
-    commands: commands.map((c) => ({
-      run: c.run,
-      ...(c.about !== undefined ? { about: c.about } : {}),
-      ...(c.approval !== undefined ? { approval: c.approval } : {}),
-      ...(c.maxConcurrent !== undefined
-        ? { maxConcurrent: c.maxConcurrent }
-        : {}),
-    })),
-  };
-
-  const validated = satelliteManifestSchema.safeParse(pushed);
-  if (!validated.success) {
-    const first = validated.error.issues[0];
+  const parsedName = satelliteNameSchema.safeParse(name);
+  if (!parsedName.success)
     return {
       ok: false,
-      error:
-        first === undefined
-          ? "manifest is not valid"
-          : `${first.path.join(".") || "manifest"}: ${first.message}`,
+      error: `name: ${parsedName.error.issues[0]?.message ?? "invalid"}`,
     };
-  }
+
+  const maxConcurrent =
+    typeof root.max_concurrent === "number"
+      ? root.max_concurrent
+      : DEFAULT_MAX_CONCURRENT;
+  if (
+    !Number.isInteger(maxConcurrent) ||
+    maxConcurrent < 1 ||
+    maxConcurrent > 1024
+  )
+    return {
+      ok: false,
+      error: "max_concurrent must be a whole number between 1 and 1024",
+    };
+
+  const pushed: ManifestIdentity = {
+    name: parsedName.data,
+    ...(typeof root.description === "string"
+      ? { description: root.description }
+      : {}),
+    maxConcurrent,
+  };
 
   return {
     ok: true,
     value: {
-      pushed: validated.data,
+      pushed,
       commands,
       cwd: typeof root.cwd === "string" ? root.cwd : undefined,
       timeoutMs: satelliteTimeout > 0 ? satelliteTimeout : undefined,

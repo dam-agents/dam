@@ -855,43 +855,24 @@ export type {
 } from "./modules/telemetry/types.js";
 
 export {
-  MAX_ARG_LENGTH,
-  MAX_ARGV_LENGTH,
-  MAX_MANIFEST_TOKENS,
-  MAX_MATCH_STEPS,
-  MAX_REPEAT,
-  argvRefusal,
-  countTokens,
-  localOracle,
-  matchCommand,
-  parseCommandPattern,
-  regexSources,
-} from "./modules/satellites/command-pattern.js";
-export type {
-  CommandMatch,
-  CommandRefusal,
-  ParsedPattern,
-  ParseResult,
-  RegexOracle,
-} from "./modules/satellites/command-pattern.js";
-
-export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
   MAX_JOB_OUTPUT_BYTES,
+  MAX_TOOL_ARGS_BYTES,
   claimInputSchema,
-  commandArgvSchema,
   formatJobRef,
   heartbeatInputSchema,
   jobRefSchema,
   jobStatusSchema,
   reportInputSchema,
-  satelliteCommandSchema,
   satelliteConnectInputSchema,
   satelliteGrantInputSchema,
   satelliteManifestSchema,
   satelliteNameSchema,
+  satelliteToolNameSchema,
+  satelliteToolSchema,
   startJobInputSchema,
+  toolArgsSchema,
 } from "./modules/satellites/schemas.js";
 export type {
   ClaimInput,
@@ -902,8 +883,8 @@ export type {
   JobView,
   ReportInput,
   SatelliteAgentOps,
-  SatelliteCommand,
   SatelliteManifest,
+  SatelliteTool,
   SatelliteView,
   SatelliteWorkerOps,
   SatellitesService,

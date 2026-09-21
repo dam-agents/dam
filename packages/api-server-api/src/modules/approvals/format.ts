@@ -13,7 +13,7 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
     };
   }
   if (payload.kind === "satellite_job")
-    return { title: payload.ref, subtitle: payload.cmd.join(" ") };
+    return { title: payload.ref, subtitle: payload.reason };
   return { title: payload.toolName ?? "tool call", subtitle: "" };
 }
 

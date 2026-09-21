@@ -8,7 +8,7 @@ import { harnessName } from "../../lib/fixtures.js";
 /**
  * TEST_OVERVIEW: Satellites against a real cluster, driven from the worker's
  * side — the test process plays the machine outside the platform. Covers the
- * half that unit tests cannot reach: real auth and scopes, the manifest landing
+ * half that unit tests cannot reach: real auth and scopes, the snapshot landing
  * in Postgres as a parsed snapshot, grants moving an agent in and out of a
  * satellite's reach, draining, and removal. A command pattern the grammar
  * rejects must be refused at connect rather than stored half-valid, because a
@@ -29,9 +29,17 @@ const MANIFEST = {
   name: SATELLITE,
   description: "e2e satellite",
   maxConcurrent: 4,
-  commands: [
-    { run: "/bin/echo (hello|goodbye)", about: "Say something" },
-    { run: "/bin/sleep ^[1-9]$", approval: "always" as const },
+  tools: [
+    {
+      name: "run",
+      title: "Run an approved command",
+      description: "/bin/echo (hello|goodbye)",
+      inputSchema: {
+        type: "object",
+        properties: { cmd: { type: "array", items: { type: "string" } } },
+        required: ["cmd"],
+      },
+    },
   ],
 };
 
@@ -61,8 +69,8 @@ test.describe("satellites", () => {
     ).toBeDefined();
     expect(satellite?.online).toBe(true);
     expect(satellite?.host).toBe("e2e-host");
-    expect(satellite?.commands.map((c) => c.run)).toEqual(
-      MANIFEST.commands.map((c) => c.run),
+    expect(satellite?.tools.map((t) => t.name)).toEqual(
+      MANIFEST.tools.map((t) => t.name),
     );
     expect(satellite?.grantedAgentIds).toEqual([]);
 
@@ -100,18 +108,14 @@ test.describe("satellites", () => {
     ).toBe(false);
   });
 
-  test("a manifest the grammar rejects is refused rather than stored", async () => {
+  test("a snapshot the contract rejects is refused rather than stored", async () => {
     const token = await getAccessToken();
     const api = createApiClient(token);
     await acceptTerms(api);
 
     await expect(
       api.satellites.connect.mutate({
-        manifest: {
-          ...MANIFEST,
-          name: `${SATELLITE}-bad`,
-          commands: [{ run: "*" }],
-        },
+        manifest: { ...MANIFEST, name: `${SATELLITE}-bad`, tools: [] },
       }),
     ).rejects.toThrow();
 

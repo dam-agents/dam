@@ -196,6 +196,6 @@ function scopeDescription(scope: Scope): string {
     case "credentials:manage":
       return "Create, update, and delete connections and secrets.";
     case "satellites:serve":
-      return "Run a satellite: claim approved commands for a machine outside the platform and report their outcomes. Cannot operate agents, and cannot be bound to one — a satellite serves every agent granted to it.";
+      return "Run a satellite: claim tool calls for a machine outside the platform and report their outcomes. Cannot operate agents, and cannot be bound to one — a satellite serves every agent granted to it.";
   }
 }

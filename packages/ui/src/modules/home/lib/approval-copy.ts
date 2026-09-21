@@ -11,6 +11,6 @@ export function approvalDetail(approval: ApprovalView): string {
   const payload = approval.payload;
   if (payload.kind === "ext_authz")
     return `${payload.method} ${payload.host}${payload.path}`;
-  if (payload.kind === "satellite_job") return payload.cmd.join(" ");
+  if (payload.kind === "satellite_job") return payload.reason;
   return payload.toolName;
 }

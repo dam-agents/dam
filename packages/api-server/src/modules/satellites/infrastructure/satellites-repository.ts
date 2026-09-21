@@ -15,8 +15,8 @@ import {
 } from "db";
 import type {
   JobStatus,
-  SatelliteCommand,
   SatelliteManifest,
+  SatelliteTool,
 } from "api-server-api";
 import type { JobRow, SatelliteRow } from "../domain/types.js";
 import { TERMINAL_STATUSES } from "../domain/types.js";
@@ -28,7 +28,7 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
     description: r.description,
     host: r.host,
     maxConcurrent: r.maxConcurrent,
-    commands: r.commands as SatelliteCommand[],
+    tools: r.tools as SatelliteTool[],
     draining: r.draining,
     lastSeenAt: r.lastSeenAt,
   };
@@ -40,10 +40,12 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     satellite: r.satellite,
     sequence: r.sequence,
     agentId: r.agentId,
-    cmd: r.cmd as string[],
-    pattern: r.pattern,
+    tool: r.tool,
+    args: r.args as Record<string, unknown>,
     status: r.status as JobStatus,
     approvalId: r.approvalId,
+    approved: r.approved,
+    isError: r.isError,
     exitCode: r.exitCode,
     output: r.output,
     truncated: r.truncated,
@@ -76,7 +78,7 @@ export function createSatellitesRepository(db: Db) {
           description: manifest.description ?? null,
           host,
           maxConcurrent,
-          commands: manifest.commands,
+          tools: manifest.tools,
           draining: false,
           lastSeenAt: new Date(),
         })
@@ -86,7 +88,7 @@ export function createSatellitesRepository(db: Db) {
             description: manifest.description ?? null,
             host,
             maxConcurrent,
-            commands: manifest.commands,
+            tools: manifest.tools,
             lastSeenAt: new Date(),
           },
         });
@@ -220,13 +222,13 @@ export function createSatellitesRepository(db: Db) {
       owner: string;
       satellite: string;
       agentId: string;
-      cmd: string[];
-      pattern: string;
+      tool: string;
+      args: Record<string, unknown>;
       status: JobStatus;
       expiresAt: Date;
       maxConcurrent: number;
-      patternMax: number | null;
-    }): Promise<JobRow | { full: true; total: number; forPattern: number }> {
+      toolMax: number | null;
+    }): Promise<JobRow | { full: true; total: number; forTool: number }> {
       return db.transaction(async (tx) => {
         const [locked] = await tx
           .select({ next: satellites.nextSequence })
@@ -244,7 +246,7 @@ export function createSatellitesRepository(db: Db) {
         const live = await tx
           .select({
             status: satelliteJobs.status,
-            pattern: satelliteJobs.pattern,
+            tool: satelliteJobs.tool,
           })
           .from(satelliteJobs)
           .where(
@@ -254,14 +256,12 @@ export function createSatellitesRepository(db: Db) {
               notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             ),
           );
-        const forPattern = live.filter(
-          (row) => row.pattern === input.pattern,
-        ).length;
+        const forTool = live.filter((row) => row.tool === input.tool).length;
         if (
           live.length >= input.maxConcurrent ||
-          (input.patternMax !== null && forPattern >= input.patternMax)
+          (input.toolMax !== null && forTool >= input.toolMax)
         )
-          return { full: true as const, total: live.length, forPattern };
+          return { full: true as const, total: live.length, forTool };
 
         await tx
           .update(satellites)
@@ -273,9 +273,9 @@ export function createSatellitesRepository(db: Db) {
             ),
           );
         const sequence = locked.next;
-        const { maxConcurrent, patternMax, ...values } = input;
+        const { maxConcurrent, toolMax, ...values } = input;
         void maxConcurrent;
-        void patternMax;
+        void toolMax;
         const [row] = await tx
           .insert(satelliteJobs)
           .values({ ...values, sequence })
@@ -414,6 +414,7 @@ export function createSatellitesRepository(db: Db) {
       sequence: number,
       patch: {
         status: JobStatus;
+        isError?: boolean;
         exitCode?: number | null;
         output?: string | null;
         truncated?: boolean;
@@ -448,7 +449,7 @@ export function createSatellitesRepository(db: Db) {
     ): Promise<void> {
       await db
         .update(satelliteJobs)
-        .set({ status: "queued" })
+        .set({ status: "queued", approved: true, leaseUntil: null })
         .where(
           and(
             eq(satelliteJobs.owner, owner),
@@ -457,6 +458,26 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.status, "pending-approval"),
           ),
         );
+    },
+
+    async hold(
+      owner: string,
+      satellite: string,
+      sequence: number,
+    ): Promise<JobRow | null> {
+      const rows = await db
+        .update(satelliteJobs)
+        .set({ status: "pending-approval", leaseUntil: null, startedAt: null })
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
+            eq(satelliteJobs.status, "running"),
+          ),
+        )
+        .returning();
+      return rows[0] ? toJob(rows[0]) : null;
     },
 
     async requestCancel(

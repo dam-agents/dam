@@ -24,10 +24,12 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     satellite: "gpu-box",
     sequence: 7,
     agentId: "agent-1",
-    cmd: ["./process.sh", "sales.db"],
-    pattern: "./process.sh (sales.db|events.db)",
+    tool: "run",
+    args: { cmd: ["./process.sh", "sales.db"] },
     status: "done",
     approvalId: null,
+    approved: false,
+    isError: false,
     exitCode: 0,
     output: "all good",
     truncated: false,
@@ -226,6 +228,7 @@ describe("reporting an outcome reaches the wake", () => {
     const workerOps = createSatelliteWorkerOps({
       repo: repo as never,
       maxConcurrentCeiling: 64,
+      requestApproval: async () => "appr-1",
       deliverOutcome: async ({ agentId }) => {
         await deliver(agentId);
       },
@@ -234,7 +237,13 @@ describe("reporting an outcome reaches the wake", () => {
     await workerOps.report("alice", {
       satellite: "gpu-box",
       sequence: 7,
-      outcome: { status: "done", exitCode: 0, output: "ok", truncated: false },
+      outcome: {
+        status: "done",
+        isError: false,
+        exitCode: 0,
+        output: "ok",
+        truncated: false,
+      },
     });
 
     expect(

@@ -44,7 +44,7 @@ export function composeSatellitesModule(deps: {
   maxConcurrentCeiling: number;
   ownerOf: AgentOpsDeps["ownerOf"];
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
-  requestApproval: AgentOpsDeps["requestApproval"];
+  requestApproval: WorkerOpsDeps["requestApproval"];
   spillLog: AgentOpsDeps["spillLog"];
   retireApproval: AgentOpsDeps["retireApproval"];
   deliverOutcome: WorkerOpsDeps["deliverOutcome"];
@@ -76,6 +76,7 @@ export function composeSatellitesModule(deps: {
   const workerDeps: WorkerOpsDeps = {
     repo,
     maxConcurrentCeiling: deps.maxConcurrentCeiling,
+    requestApproval: deps.requestApproval,
     deliverOutcome: deps.deliverOutcome,
   };
 
@@ -85,7 +86,6 @@ export function composeSatellitesModule(deps: {
     agentOps: createSatelliteAgentOps({
       repo,
       ownerOf: deps.ownerOf,
-      requestApproval: deps.requestApproval,
       spillLog: deps.spillLog,
       retireApproval: deps.retireApproval,
     }),

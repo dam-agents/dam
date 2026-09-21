@@ -1,5 +1,5 @@
 {
-  "id": "a3d0c2f0-3059-4574-94f3-0028421daab4",
+  "id": "d596ee12-c6f2-4e50-b03c-e646ab09b723",
   "prevId": "da32cd27-6ae7-4eeb-b132-9a2225b3cc9e",
   "version": "7",
   "dialect": "postgresql",
@@ -3238,15 +3238,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "cmd": {
-          "name": "cmd",
-          "type": "jsonb",
+        "tool": {
+          "name": "tool",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "pattern": {
-          "name": "pattern",
-          "type": "text",
+        "args": {
+          "name": "args",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -3261,6 +3261,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "approved": {
+          "name": "approved",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_error": {
+          "name": "is_error",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "exit_code": {
           "name": "exit_code",
@@ -3459,8 +3473,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "commands": {
-          "name": "commands",
+        "tools": {
+          "name": "tools",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true

@@ -1,43 +1,7 @@
-import {
-  countTokens,
-  formatJobRef,
-  MAX_MANIFEST_TOKENS,
-  matchCommand,
-  parseCommandPattern,
-  type JobStatus,
-  type ParsedPattern,
-  type RegexOracle,
-  type SatelliteCommand,
-} from "api-server-api";
+import { formatJobRef, type SatelliteTool } from "api-server-api";
 import type { SatelliteRow } from "./types.js";
 
 export const OFFLINE_AFTER_MS = 90_000;
-
-export interface CompiledCommand {
-  command: SatelliteCommand;
-  parsed: ParsedPattern;
-}
-
-export type Compiled =
-  | { ok: true; commands: CompiledCommand[] }
-  | { ok: false; error: string };
-
-export function compileCommands(commands: SatelliteCommand[]): Compiled {
-  const compiled: CompiledCommand[] = [];
-  for (const command of commands) {
-    const parsed = parseCommandPattern(command.run);
-    if (!parsed.ok)
-      return { ok: false, error: `"${command.run}": ${parsed.error}` };
-    compiled.push({ command, parsed: parsed.value });
-  }
-  const tokens = countTokens(compiled.map((c) => c.parsed));
-  if (tokens > MAX_MANIFEST_TOKENS)
-    return {
-      ok: false,
-      error: `these patterns hold ${tokens} tokens (max ${MAX_MANIFEST_TOKENS}) — a manifest this large costs the server more per command than it is worth`,
-    };
-  return { ok: true, commands: compiled };
-}
 
 export function isOnline(satellite: SatelliteRow, now: Date): boolean {
   if (satellite.lastSeenAt === null) return false;
@@ -45,21 +9,26 @@ export function isOnline(satellite: SatelliteRow, now: Date): boolean {
 }
 
 export type Admission =
-  | { ok: true; pattern: string; status: JobStatus; patternMax: number | null }
+  | { ok: true; tool: SatelliteTool; toolMax: number | null }
   | { ok: false; reason: string };
 
 export interface ActiveCounts {
   total: number;
-  byPattern: Map<string, number>;
+  byTool: Map<string, number>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a tool call may become a Job. The platform
+ * decides only what it can know from the Snapshot — that the machine is there,
+ * is not shutting down, offers this tool and has room for another call. What the
+ * arguments mean, and whether this particular call needs a human, is the
+ * machine's own question, answered when it picks the work up.
+ */
 export function admit(
   satellite: SatelliteRow,
-  compiled: CompiledCommand[],
-  cmd: string[],
+  tool: string,
   active: ActiveCounts,
   now: Date,
-  oracle: RegexOracle,
 ): Admission {
   if (satellite.draining)
     return { ok: false, reason: `${satellite.name} is shutting down` };
@@ -72,42 +41,33 @@ export function admit(
           : `${satellite.name} is offline (last seen ${describeAge(now.getTime() - satellite.lastSeenAt.getTime())} ago)`,
     };
 
-  const matched = matchCommand(
-    compiled.map((c) => c.parsed),
-    cmd,
-    oracle,
-  );
-  if (!matched.ok)
+  const entry = satellite.tools.find((candidate) => candidate.name === tool);
+  if (entry === undefined)
     return {
       ok: false,
-      reason: matched.closest
-        ? `${matched.reason}. Closest permitted command: ${matched.closest}`
-        : matched.reason,
+      reason:
+        satellite.tools.length === 0
+          ? `${satellite.name} offers no tools`
+          : `${satellite.name} has no tool called "${tool}" — it offers ${satellite.tools.map((t) => t.name).join(", ")}`,
     };
 
-  const entry = compiled[matched.index]!;
   if (active.total >= satellite.maxConcurrent)
     return {
       ok: false,
       reason: `${satellite.name} is running ${active.total} jobs (max ${satellite.maxConcurrent}) — wait for one to finish`,
     };
 
-  const perCommand = entry.command.maxConcurrent;
-  if (perCommand !== undefined) {
-    const running = active.byPattern.get(entry.command.run) ?? 0;
-    if (running >= perCommand)
+  const perTool = entry.maxConcurrent;
+  if (perTool !== undefined) {
+    const running = active.byTool.get(entry.name) ?? 0;
+    if (running >= perTool)
       return {
         ok: false,
-        reason: `${entry.command.run} already has ${running} running (max ${perCommand}) — wait for one to finish`,
+        reason: `${entry.name} already has ${running} running (max ${perTool}) — wait for one to finish`,
       };
   }
 
-  return {
-    ok: true,
-    pattern: entry.command.run,
-    status: entry.command.approval === "always" ? "pending-approval" : "queued",
-    patternMax: perCommand ?? null,
-  };
+  return { ok: true, tool: entry, toolMax: perTool ?? null };
 }
 
 function describeAge(ms: number): string {

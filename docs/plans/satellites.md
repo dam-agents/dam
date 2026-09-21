@@ -2,7 +2,26 @@
 
 A **Satellite** is a command surface running on the user's own machine, reached by an outbound connection the machine initiates, that lets an Agent trigger a finite, pre-declared set of commands on a host the Agent has no other access to.
 
-**Status: grilled and built.** Contract grammar, api-server module, MCP tools, CLI worker, wake on finish, the UI section and an e2e spec all exist and are tested.
+**Status: built, then amended.** Contract, api-server module, MCP tools, CLI worker, wake on finish, the UI section and an e2e spec all exist and are tested.
+
+> **Amendment — a Satellite is an MCP server.** This page records the design as
+> first built, where a Satellite was a command surface and the api-server matched
+> every command against the Manifest before a Job existed. It since changed in
+> three ways, and [`docs/architecture/satellites.md`](../architecture/satellites.md)
+> is the current description:
+>
+> - `dam satellite serve <manifest>` became **`dam satellite connect`**, which
+>   takes either a Manifest or a stdio MCP server to run.
+> - A Satellite is an **MCP server** to the transport and to the platform. A
+>   Manifest becomes a one-tool server whose `run` tool takes the command, so
+>   there is one shape rather than two.
+> - **Matching moved entirely to the machine.** The api-server no longer parses
+>   a command or evaluates a pattern's regex, and the grammar moved to the CLI;
+>   a Command Pattern that needs a human is reported back as `needs-approval`
+>   rather than decided at admission.
+>
+> Everything else below — the queue, no-backlog admission, wake on finish, the
+> lease, the grammar itself — still holds.
 
 ## Problem
 

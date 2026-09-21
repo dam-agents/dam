@@ -66,18 +66,18 @@ export function SatelliteCard({ satellite }: { satellite: SatelliteView }) {
       </div>
 
       <ul className="mt-3 space-y-1">
-        {satellite.commands.map((command, index) => (
-          <li key={`${index}-${command.run}`} className="text-xs">
-            <code className="text-foreground/80">{command.run}</code>
-            {command.approval === "always" && (
-              <span className="ml-2 text-foreground/50">needs approval</span>
+        {satellite.tools.map((tool) => (
+          <li key={tool.name} className="text-xs">
+            <code className="text-foreground/80">{tool.name}</code>
+            {tool.title !== undefined && (
+              <span className="ml-2 text-foreground/50">{tool.title}</span>
             )}
           </li>
         ))}
       </ul>
       <p className="mt-2 text-xs text-foreground/50">
-        These commands are what the machine reported. The platform stores them,
-        it does not verify them.
+        These tools are what the machine reported. The platform stores them, it
+        does not verify them.
       </p>
 
       <SatelliteGrants satellite={satellite} />

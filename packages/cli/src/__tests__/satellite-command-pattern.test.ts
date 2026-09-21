@@ -4,7 +4,7 @@ import {
   matchCommand,
   parseCommandPattern,
   type ParsedPattern,
-} from "api-server-api";
+} from "../modules/satellite/domain/command-pattern.js";
 
 /**
  * TEST_OVERVIEW: The Command Pattern grammar, which decides what a Satellite is

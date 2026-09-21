@@ -43,7 +43,9 @@ export interface SatelliteJobPayload {
   satellite: string;
   sequence: number;
   ref: string;
-  cmd: string[];
+  tool: string;
+  args: Record<string, unknown>;
+  reason: string;
 }
 
 export type ApprovalPayload =

@@ -19,7 +19,9 @@ export function createSatelliteApprovalRequester(deps: {
     satellite: string;
     sequence: number;
     ref: string;
-    cmd: string[];
+    tool: string;
+    args: Record<string, unknown>;
+    reason: string;
   }): Promise<string> => {
     const id = randomUUID();
     await deps.approvals.insertPending({
@@ -33,7 +35,9 @@ export function createSatelliteApprovalRequester(deps: {
         satellite: input.satellite,
         sequence: input.sequence,
         ref: input.ref,
-        cmd: input.cmd,
+        tool: input.tool,
+        args: input.args,
+        reason: input.reason,
       },
       expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
     });

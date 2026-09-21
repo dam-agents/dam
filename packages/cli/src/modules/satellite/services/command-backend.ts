@@ -1,0 +1,331 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
+import { MAX_JOB_OUTPUT_BYTES, type SatelliteTool } from "api-server-api";
+import { localOracle, matchCommand } from "../domain/command-pattern.js";
+import type { LocalCommand, LocalManifest } from "../domain/manifest.js";
+import type { CallOutcome, SatelliteBackend } from "./backend.js";
+
+export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
+export const RUN_TOOL = "run";
+
+type KillReason = "cancel" | "timeout" | "shutdown";
+
+interface RunningJob {
+  child: ChildProcess;
+  timer: NodeJS.Timeout | null;
+  killedAs: KillReason | null;
+  command: LocalCommand;
+}
+
+function describeTimeout(ms: number | undefined): string {
+  if (ms === undefined) return "configured";
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+  return `${Math.round(ms / 1000)}s`;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A command is spawned in its own process group, so a
+ * script that starts children can be stopped whole. Signalling the direct child
+ * alone leaves those children running on the user's machine with nothing left to
+ * report them.
+ */
+function signalGroup(entry: RunningJob, signal: NodeJS.Signals): void {
+  const pid = entry.child.pid;
+  if (pid === undefined) return;
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    entry.child.kill(signal);
+  }
+}
+
+export function describeManifest(manifest: LocalManifest): string[] {
+  return manifest.commands.map(
+    (command) =>
+      `  ${command.run}` +
+      (command.about === undefined ? "" : `\n      ${command.about}`) +
+      (command.approval === "always" ? "   [needs approval]" : ""),
+  );
+}
+
+/**
+ * The one tool a Manifest-backed Satellite advertises. The permitted shapes ride
+ * in the description as the same usage lines the Manifest is written in, rather
+ * than as a JSON Schema: a model reads one usage line more reliably than a large
+ * anyOf, and the machine re-matches every call anyway, so the description
+ * informs but never decides.
+ */
+export function runTool(manifest: LocalManifest): SatelliteTool {
+  const lines = manifest.commands.map(
+    (command) =>
+      `  ${command.run}` +
+      [
+        command.about,
+        command.approval === "always" ? "needs your human's approval" : null,
+      ]
+        .filter(Boolean)
+        .map((note) => `\n      ${note}`)
+        .join(""),
+  );
+  return {
+    name: RUN_TOOL,
+    title: `Run an approved command on ${manifest.pushed.name}`,
+    description: [
+      `Run one of the commands ${manifest.pushed.name} permits.`,
+      "Each line below is a permitted command shape. Literals must match exactly;",
+      "(a|b) is a closed choice; [x] is optional; (x)... repeats;",
+      "* stands for one filename-like argument or part of one, ** for a path-like one,",
+      "and ^…$ is a regex matching a whole argument.",
+      "Anything not matching a line is refused — the refusal says which line came closest.",
+      "",
+      ...lines,
+    ].join("\n"),
+    inputSchema: {
+      type: "object",
+      properties: {
+        cmd: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          description:
+            'The command as an argument list, exactly as it would be typed: ["./process.sh", "sales.db", "-n", "50"].',
+        },
+      },
+      required: ["cmd"],
+      additionalProperties: false,
+    },
+  };
+}
+
+function resolveCommand(
+  manifest: LocalManifest,
+  cmd: string[],
+): LocalCommand | string {
+  const matched = matchCommand(
+    manifest.commands.map((c) => c.parsed),
+    cmd,
+    localOracle,
+  );
+  if (!matched.ok)
+    return matched.closest
+      ? `${matched.reason}. Closest permitted command: ${matched.closest}`
+      : matched.reason;
+  return manifest.commands[matched.index]!;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A Manifest served as a one-tool MCP server. Its
+ * `run` tool takes the command, and this is where the allowlist is enforced —
+ * the platform forwards the call without reading it, so nothing else checks.
+ *
+ * A per-command `max_concurrent` is counted here rather than at admission,
+ * because the platform sees one tool and cannot tell two commands apart. The
+ * ceiling: a refusal costs the Agent a turn where admission would have cost
+ * nothing. The upgrade path is a tool per command, which the single-tool shape
+ * rules out on purpose.
+ */
+export function createCommandBackend(
+  initial: LocalManifest,
+  log: { line: (text: string) => void },
+): SatelliteBackend & {
+  reload(next: LocalManifest): void;
+  refusesReload(next: LocalManifest): string | null;
+} {
+  let manifest = initial;
+  const running = new Map<number, RunningJob>();
+
+  function call(input: {
+    sequence: number;
+    tool: string;
+    args: Record<string, unknown>;
+    approved: boolean;
+  }): Promise<CallOutcome> {
+    const { sequence, approved } = input;
+    if (input.tool !== RUN_TOOL)
+      return Promise.resolve({
+        status: "interrupted",
+        reason: `this satellite has no tool called "${input.tool}"`,
+        output: "",
+        truncated: false,
+      });
+
+    const cmd = input.args.cmd;
+    if (!Array.isArray(cmd) || cmd.some((a) => typeof a !== "string"))
+      return Promise.resolve({
+        status: "interrupted",
+        reason: "cmd must be an array of strings",
+        output: "",
+        truncated: false,
+      });
+    const argv = cmd as string[];
+
+    const command = resolveCommand(manifest, argv);
+    if (typeof command === "string") {
+      log.line(`REFUSED #${sequence}: ${command}`);
+      return Promise.resolve({
+        status: "interrupted",
+        reason: `refused locally: ${command}`,
+        output: "",
+        truncated: false,
+      });
+    }
+
+    // Per-command concurrency is counted here rather than on the platform: the
+    // platform sees one tool and cannot tell two commands apart. Ceiling: a
+    // refusal costs the Agent a turn where admission would have cost nothing.
+    // Upgrade path is a tool per command, which the single-tool shape rules out.
+    if (command.maxConcurrent !== undefined) {
+      const active = [...running.values()].filter(
+        (entry) => entry.command === command,
+      ).length;
+      if (active >= command.maxConcurrent)
+        return Promise.resolve({
+          status: "interrupted",
+          reason: `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`,
+          output: "",
+          truncated: false,
+        });
+    }
+
+    if (command.approval === "always" && !approved) {
+      log.line(`HOLD #${sequence}: ${command.run} needs approval`);
+      return Promise.resolve({
+        status: "needs-approval",
+        reason: `${command.run} needs your approval before it runs`,
+      });
+    }
+
+    return spawnCommand(sequence, argv, command);
+  }
+
+  function spawnCommand(
+    sequence: number,
+    argv: string[],
+    command: LocalCommand,
+  ): Promise<CallOutcome> {
+    const [program, ...args] = argv;
+    const cwd = command.cwd ?? manifest.cwd;
+    const timeoutMs = command.timeoutMs ?? manifest.timeoutMs;
+    const startedAt = Date.now();
+    log.line(`START #${sequence}: ${argv.join(" ")}`);
+
+    let output = "";
+    let truncated = false;
+    const append = (text: string): void => {
+      if (truncated || text === "") return;
+      const room = OUTPUT_CAP_BYTES - output.length;
+      if (text.length > room) {
+        output += text.slice(0, room);
+        truncated = true;
+        return;
+      }
+      output += text;
+    };
+
+    return new Promise<CallOutcome>((settle) => {
+      const child = spawn(program!, args, {
+        cwd,
+        shell: false,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      for (const stream of [child.stdout, child.stderr]) {
+        if (!stream) continue;
+        const decoder = new StringDecoder("utf8");
+        stream.on("data", (chunk: Buffer) => append(decoder.write(chunk)));
+        stream.on("end", () => append(decoder.end()));
+      }
+
+      const entry: RunningJob = { child, timer: null, killedAs: null, command };
+      if (timeoutMs !== undefined)
+        entry.timer = setTimeout(() => {
+          entry.killedAs = "timeout";
+          signalGroup(entry, "SIGKILL");
+        }, timeoutMs);
+      running.set(sequence, entry);
+
+      let done = false;
+      const finish = (outcome: CallOutcome): void => {
+        if (done) return;
+        done = true;
+        if (entry.timer) clearTimeout(entry.timer);
+        running.delete(sequence);
+        settle(outcome);
+      };
+
+      child.on("error", (err) => {
+        log.line(`FAILED #${sequence}: ${err.message}`);
+        finish({
+          status: "interrupted",
+          reason: `could not start the command: ${err.message}`,
+          output,
+          truncated,
+        });
+      });
+
+      child.on("close", (code, signal) => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        if (entry.killedAs !== null) {
+          log.line(
+            `${entry.killedAs.toUpperCase()} #${sequence} after ${elapsed}s`,
+          );
+          finish(
+            entry.killedAs === "cancel"
+              ? { status: "cancelled", output, truncated }
+              : {
+                  status: "interrupted",
+                  reason:
+                    entry.killedAs === "timeout"
+                      ? `stopped at its ${describeTimeout(timeoutMs)} timeout`
+                      : "the satellite was stopped while this job was running",
+                  output,
+                  truncated,
+                },
+          );
+          return;
+        }
+        const exitCode = code ?? 1;
+        log.line(`EXIT #${sequence}: code ${exitCode} in ${elapsed}s`);
+        if (signal !== null) log.line(`#${sequence} ended on ${signal}`);
+        finish({
+          status: "done",
+          isError: exitCode !== 0,
+          exitCode,
+          output,
+          truncated,
+        });
+      });
+    });
+  }
+
+  return {
+    get tools(): SatelliteTool[] {
+      return [runTool(manifest)];
+    },
+    call,
+    cancel(sequence: number): void {
+      const entry = running.get(sequence);
+      if (entry === undefined) return;
+      log.line(`CANCEL #${sequence}`);
+      entry.killedAs = "cancel";
+      signalGroup(entry, "SIGTERM");
+    },
+    killAll(): void {
+      for (const entry of running.values()) {
+        entry.killedAs = "shutdown";
+        signalGroup(entry, "SIGKILL");
+        if (entry.timer) clearTimeout(entry.timer);
+      }
+    },
+    close: () => Promise.resolve(),
+    refusesReload(next: LocalManifest): string | null {
+      return next.pushed.name === manifest.pushed.name
+        ? null
+        : `the name changed from "${manifest.pushed.name}" to "${next.pushed.name}" — that is a different satellite, so restart to serve it`;
+    },
+    reload(next: LocalManifest): void {
+      manifest = next;
+    },
+  };
+}

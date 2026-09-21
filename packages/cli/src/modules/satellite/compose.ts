@@ -13,7 +13,7 @@ import {
   buildListCommand,
   buildRemoveCommand,
 } from "./commands/manage.js";
-import { buildServeCommand } from "./commands/serve.js";
+import { buildConnectCommand } from "./commands/connect.js";
 
 export interface SatelliteModuleOptions {
   tokenProvider: TokenProvider;
@@ -34,10 +34,18 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
     createTrpc,
   };
 
-  const parent = new Command("satellite").description(
-    "Run and manage satellites — machines outside the platform that expose a fixed set of commands",
-  );
-  parent.addCommand(buildServeCommand(shared));
+  const parent = new Command("satellite")
+    .description(
+      "[experimental] Run and manage satellites — machines outside the platform that expose tools to an agent",
+    )
+    .addHelpText(
+      "after",
+      "\nSatellites are experimental: the commands work, but the shape of a\n" +
+        "manifest, the tools an agent sees and the contract between them may\n" +
+        "change without a deprecation. Turn on the Satellites experimental\n" +
+        "feature to see them in the web UI as well.\n",
+    );
+  parent.addCommand(buildConnectCommand(shared));
   parent.addCommand(buildListCommand(shared));
   parent.addCommand(buildJobsCommand(shared));
   parent.addCommand(buildGrantCommand(shared, false));

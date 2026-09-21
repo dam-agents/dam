@@ -1,4 +1,4 @@
-import type { JobStatus, SatelliteCommand } from "api-server-api";
+import type { JobStatus, SatelliteTool } from "api-server-api";
 
 export interface SatelliteRow {
   owner: string;
@@ -6,7 +6,7 @@ export interface SatelliteRow {
   description: string | null;
   host: string | null;
   maxConcurrent: number;
-  commands: SatelliteCommand[];
+  tools: SatelliteTool[];
   draining: boolean;
   lastSeenAt: Date | null;
 }
@@ -16,10 +16,12 @@ export interface JobRow {
   satellite: string;
   sequence: number;
   agentId: string;
-  cmd: string[];
-  pattern: string;
+  tool: string;
+  args: Record<string, unknown>;
   status: JobStatus;
   approvalId: string | null;
+  approved: boolean;
+  isError: boolean;
   exitCode: number | null;
   output: string | null;
   truncated: boolean;

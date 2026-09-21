@@ -4,11 +4,11 @@ import type {
   heartbeatInputSchema,
   jobStatusSchema,
   reportInputSchema,
-  satelliteCommandSchema,
   satelliteManifestSchema,
+  satelliteToolSchema,
 } from "./schemas.js";
 
-export type SatelliteCommand = z.infer<typeof satelliteCommandSchema>;
+export type SatelliteTool = z.infer<typeof satelliteToolSchema>;
 export type SatelliteManifest = z.infer<typeof satelliteManifestSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type ClaimInput = z.infer<typeof claimInputSchema>;
@@ -22,7 +22,7 @@ export interface SatelliteView {
   online: boolean;
   draining: boolean;
   lastSeenAt: string | null;
-  commands: SatelliteCommand[];
+  tools: SatelliteTool[];
   maxConcurrent: number;
   activeJobs: number;
   grantedAgentIds: string[];
@@ -33,7 +33,8 @@ export interface JobView {
   sequence: number;
   ref: string;
   agentId: string;
-  cmd: string[];
+  tool: string;
+  args: Record<string, unknown>;
   status: JobStatus;
   exitCode: number | null;
   startedAt: string | null;
@@ -51,6 +52,7 @@ export interface JobStarted {
 export interface JobOutcome {
   ref: string;
   status: JobStatus;
+  isError: boolean;
   exitCode: number | null;
   output: string | null;
   outputPath: string | null;
@@ -59,10 +61,11 @@ export interface JobOutcome {
 }
 
 export interface WorkItem {
-  kind: "run" | "cancel";
+  kind: "call" | "cancel";
   sequence: number;
-  cmd: string[];
-  timeoutMs: number | null;
+  tool: string;
+  args: Record<string, unknown>;
+  approved: boolean;
 }
 
 export interface SatellitesService {
@@ -76,7 +79,12 @@ export interface SatellitesService {
 
 export interface SatelliteAgentOps {
   granted(agentId: string): Promise<SatelliteView[]>;
-  start(agentId: string, satellite: string, cmd: string[]): Promise<JobStarted>;
+  start(
+    agentId: string,
+    satellite: string,
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<JobStarted>;
   read(
     agentId: string,
     satellite: string,

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { localOracle, type SatelliteCommand } from "api-server-api";
+import type { SatelliteTool } from "api-server-api";
 import {
   admit,
-  compileCommands,
   isOnline,
   OFFLINE_AFTER_MS,
 } from "../../modules/satellites/domain/admission.js";
@@ -11,23 +10,21 @@ import { createSatelliteWorkerOps } from "../../modules/satellites/services/work
 import { composeSatellitesModule } from "../../modules/satellites/compose.js";
 
 /**
- * TEST_OVERVIEW: Admission — whether a start becomes a Job at all. It is
- * deliberately all-or-nothing, because start reports the Job as running and that
- * has to be true: a Job is accepted only when a worker will pick it up within a
- * poll interval, and anything else is refused with a reason the model can act
- * on. The specs cover a command the Manifest permits, one it does not, a
- * Satellite that is offline or draining, the Satellite's own concurrency limit,
- * and a per-command limit that blocks one command while others still start.
- * A command marked approval = always is admitted as pending-approval rather than
- * queued, so a human decides before the machine runs anything.
+ * TEST_OVERVIEW: Admission — whether a tool call becomes a Job at all. It is
+ * deliberately all-or-nothing, because a call reports the Job as running and
+ * that has to be true: a Job is accepted only when a worker will pick it up
+ * within a poll interval, and anything else is refused with a reason the model
+ * can act on. Admission now decides only what the platform can know from the
+ * Snapshot — that the machine is there, is not shutting down, offers this tool
+ * and has room. What the arguments mean, and whether this call needs a human,
+ * are the machine's questions, so no spec here asserts on either.
  */
 
 const NOW = new Date("2026-09-17T12:00:00Z");
 
-const COMMANDS: SatelliteCommand[] = [
-  { run: "./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]" },
-  { run: "./train.sh ./data/**/*.db", maxConcurrent: 1 },
-  { run: "git -C /srv/repo (pull|status)", approval: "always" },
+const TOOLS: SatelliteTool[] = [
+  { name: "run", inputSchema: { type: "object" } },
+  { name: "train", inputSchema: { type: "object" }, maxConcurrent: 1 },
 ];
 
 function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
@@ -37,136 +34,62 @@ function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
     description: null,
     host: "gpu-box.internal",
     maxConcurrent: 16,
-    commands: COMMANDS,
+    tools: TOOLS,
     draining: false,
     lastSeenAt: new Date(NOW.getTime() - 1000),
     ...patch,
   };
 }
 
-function compiled() {
-  const result = compileCommands(COMMANDS);
-  if (!result.ok) throw new Error(result.error);
-  return result.commands;
-}
-
-const NO_ACTIVE = { total: 0, byPattern: new Map<string, number>() };
+const NO_ACTIVE = { total: 0, byTool: new Map<string, number>() };
 
 describe("admission", () => {
-  it("admits a command the manifest permits", () => {
-    const verdict = admit(
-      satellite(),
-      compiled(),
-      ["./process.sh", "sales.db"],
-      NO_ACTIVE,
-      NOW,
-      localOracle,
-    );
+  it("admits a call to a tool the satellite offers", () => {
+    const verdict = admit(satellite(), "run", NO_ACTIVE, NOW);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
-    expect(verdict.status).toBe("queued");
+    expect(verdict.tool.name).toBe("run");
   });
 
-  it("holds a command that asks for approval", () => {
-    const verdict = admit(
-      satellite(),
-      compiled(),
-      ["git", "-C", "/srv/repo", "pull"],
-      NO_ACTIVE,
-      NOW,
-      localOracle,
-    );
-    expect(verdict.ok).toBe(true);
-    if (!verdict.ok) return;
-    expect(verdict.status).toBe("pending-approval");
-  });
-
-  it("refuses a command no pattern permits, and says what came closest", () => {
-    const verdict = admit(
-      satellite(),
-      compiled(),
-      ["./process.sh", "/etc/shadow"],
-      NO_ACTIVE,
-      NOW,
-      localOracle,
-    );
+  it("refuses a tool the snapshot does not list, and says what it does offer", () => {
+    const verdict = admit(satellite(), "rm", NO_ACTIVE, NOW);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect(verdict.reason).toContain("./process.sh");
+    expect(verdict.reason).toContain("run, train");
   });
 
   it("refuses while the satellite is offline rather than queueing", () => {
     const stale = satellite({
       lastSeenAt: new Date(NOW.getTime() - OFFLINE_AFTER_MS - 1),
     });
-    const verdict = admit(
-      stale,
-      compiled(),
-      ["./process.sh", "sales.db"],
-      NO_ACTIVE,
-      NOW,
-      localOracle,
-    );
+    const verdict = admit(stale, "run", NO_ACTIVE, NOW);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toContain("offline");
   });
 
   it("refuses while draining", () => {
-    const verdict = admit(
-      satellite({ draining: true }),
-      compiled(),
-      ["./process.sh", "sales.db"],
-      NO_ACTIVE,
-      NOW,
-      localOracle,
+    expect(admit(satellite({ draining: true }), "run", NO_ACTIVE, NOW).ok).toBe(
+      false,
     );
-    expect(verdict.ok).toBe(false);
   });
 
   it("refuses at the satellite's concurrency limit", () => {
     const verdict = admit(
       satellite({ maxConcurrent: 2 }),
-      compiled(),
-      ["./process.sh", "sales.db"],
-      { total: 2, byPattern: new Map() },
+      "run",
+      { total: 2, byTool: new Map() },
       NOW,
-      localOracle,
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toContain("max 2");
   });
 
-  it("refuses at a command's own limit while others still run", () => {
-    const active = {
-      total: 1,
-      byPattern: new Map([["./train.sh ./data/**/*.db", 1]]),
-    };
-    const exclusive = admit(
-      satellite(),
-      compiled(),
-      ["./train.sh", "./data/a.db"],
-      active,
-      NOW,
-      localOracle,
-    );
-    expect(exclusive.ok).toBe(false);
-
-    const other = admit(
-      satellite(),
-      compiled(),
-      ["./process.sh", "sales.db"],
-      active,
-      NOW,
-      localOracle,
-    );
-    expect(other.ok).toBe(true);
-  });
-
-  it("refuses a manifest whose patterns do not parse", () => {
-    const broken = compileCommands([{ run: "*" }]);
-    expect(broken.ok).toBe(false);
+  it("refuses at a tool's own limit while others still start", () => {
+    const active = { total: 1, byTool: new Map([["train", 1]]) };
+    expect(admit(satellite(), "train", active, NOW).ok).toBe(false);
+    expect(admit(satellite(), "run", active, NOW).ok).toBe(true);
   });
 });
 
@@ -201,6 +124,7 @@ describe("draining", () => {
     const ops = createSatelliteWorkerOps({
       repo: repo as never,
       maxConcurrentCeiling: 64,
+      requestApproval: async () => "appr-1",
       deliverOutcome: async () => {},
     });
 

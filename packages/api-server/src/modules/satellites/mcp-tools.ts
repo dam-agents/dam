@@ -1,17 +1,22 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { commandArgvSchema, type SatelliteView } from "api-server-api";
+import type { JobOutcome, SatelliteTool, SatelliteView } from "api-server-api";
+import { isTerminal } from "./domain/types.js";
 import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Registers the four satellite tools on the platform
- * MCP server, and only for an Agent that holds at least one Satellite Grant.
- * The permitted commands travel in the tool description as the same usage lines
- * the Manifest is written in, not as a JSON Schema: a model reads one usage line
- * more reliably than a large anyOf, and the server matches every start against
- * the stored Snapshot anyway, so the description informs but never decides.
+ * UNIT_BOUNDARY_DESCRIPTION: Re-exposes each granted Satellite's own tools on
+ * the platform MCP server, plus the three job verbs that make a long call
+ * survivable. Every name is scoped to its Satellite — `gpu_box__run`,
+ * `gpu_box__wait` — so two machines offering a tool of the same name stay
+ * distinct and the model never has to pass a satellite argument.
+ *
+ * The platform never reads inside a tool's `inputSchema`: only the machine knows
+ * what its arguments mean, and it re-checks every call before it runs anything.
  */
 export const DEFAULT_SATELLITE_WAIT_MS = 300_000;
+
+const INLINE_WAIT_MS = 30_000;
 
 interface ToolContent {
   content: { type: "text"; text: string }[];
@@ -19,8 +24,11 @@ interface ToolContent {
   [key: string]: unknown;
 }
 
-function json(value: unknown): ToolContent {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
+function json(value: unknown, isError = false): ToolContent {
+  return {
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+    ...(isError ? { isError: true } : {}),
+  };
 }
 
 async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
@@ -39,37 +47,30 @@ async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
   }
 }
 
-function describeSatellites(satellites: SatelliteView[]): string {
-  return satellites
-    .map((satellite) => {
-      const header = [
-        `## ${satellite.name}`,
-        satellite.description ? ` — ${satellite.description}` : "",
-        satellite.online ? "" : " (OFFLINE — starting a job will be refused)",
-      ].join("");
-      const commands = satellite.commands
-        .map((command) => {
-          const notes = [
-            command.about,
-            command.approval === "always"
-              ? "needs your human's approval"
-              : null,
-          ].filter(Boolean);
-          return `  ${command.run}${notes.length > 0 ? `\n      ${notes.join("; ")}` : ""}`;
-        })
-        .join("\n");
-      return `${header}\n${commands}`;
-    })
-    .join("\n\n");
+function outcomeContent(outcome: JobOutcome): ToolContent {
+  return json(outcome, outcome.isError || outcome.status === "interrupted");
 }
 
-const GRAMMAR_NOTE = [
-  "Each line below is a permitted command shape. Literals must match exactly;",
-  "(a|b) is a closed choice; [x] is optional; (x)... repeats;",
-  "* stands for one filename-like argument or part of one, ** for a path-like one,",
-  "and ^…$ is a regex matching a whole argument.",
-  "Anything not matching a line is refused — the refusal says which line came closest.",
-].join(" ");
+export function scopedName(satellite: string, tool: string): string {
+  return `${satellite.replaceAll("-", "_")}__${tool}`;
+}
+
+function inputSchemaFor(tool: SatelliteTool): z.ZodType {
+  try {
+    return z.fromJSONSchema(tool.inputSchema as never) as z.ZodType;
+  } catch {
+    return z.looseObject({});
+  }
+}
+
+function describe(satellite: SatelliteView, tool: SatelliteTool): string {
+  const where = `Runs on ${satellite.name}${satellite.description === null ? "" : ` — ${satellite.description}`}, a machine outside the platform.`;
+  const deferred = `The call returns the result if it finishes quickly, and otherwise a job reference; use ${scopedName(satellite.name, "wait")} to keep waiting, and you will be woken with the outcome either way.`;
+  const offline = satellite.online
+    ? ""
+    : `\n\n(${satellite.name} is OFFLINE — starting a job will be refused.)`;
+  return `${[tool.description ?? tool.title ?? tool.name, "", where, deferred].join("\n")}${offline}`;
+}
 
 export function registerSatelliteTools(
   server: McpServer,
@@ -80,66 +81,78 @@ export function registerSatelliteTools(
     waitDeadlineMs: number;
   },
 ): void {
-  const names = deps.satellites.map((s) => s.name) as [string, ...string[]];
+  for (const satellite of deps.satellites) {
+    const name = satellite.name;
 
-  server.tool(
-    "start_satellite_job",
-    [
-      "Run an approved command on one of this agent's satellites — machines outside the platform that expose a fixed set of commands.",
-      "Starts the job and returns immediately with a job reference; the result arrives later, and you will be woken with it when it finishes.",
-      GRAMMAR_NOTE,
-      "",
-      describeSatellites(deps.satellites),
-    ].join("\n"),
-    {
-      satellite: z.enum(names).describe("Which satellite to run on."),
-      cmd: commandArgvSchema.describe(
-        'The command as an argument list, exactly as it would be typed: ["./process.sh", "sales.db", "-n", "50"].',
-      ),
-    },
-    ({ satellite, cmd }) =>
-      run(async () => json(await deps.ops.start(deps.agentId, satellite, cmd))),
-  );
+    for (const tool of satellite.tools)
+      server.registerTool(
+        scopedName(name, tool.name),
+        {
+          ...(tool.title === undefined ? {} : { title: tool.title }),
+          description: describe(satellite, tool),
+          inputSchema: inputSchemaFor(tool),
+        },
+        (args) =>
+          run(async () => {
+            const started = await deps.ops.start(
+              deps.agentId,
+              name,
+              tool.name,
+              (args ?? {}) as Record<string, unknown>,
+            );
+            const settled = await deps.ops.wait(
+              deps.agentId,
+              name,
+              started.sequence,
+              INLINE_WAIT_MS,
+            );
+            return isTerminal(settled.status)
+              ? outcomeContent(settled)
+              : json({
+                  ...started,
+                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or wait to be woken.`,
+                });
+          }),
+      );
 
-  server.tool(
-    "wait_for_satellite_job",
-    "Block until a satellite job finishes. May return with status 'running' if it takes too long — just call this again.",
-    {
-      satellite: z.enum(names),
+    const jobArg = {
       job: z
         .number()
         .int()
         .positive()
-        .describe("The job number, e.g. 7 for gpu-box#7."),
-    },
-    ({ satellite, job }) =>
-      run(async () =>
-        json(
-          await deps.ops.wait(
-            deps.agentId,
-            satellite,
-            job,
-            deps.waitDeadlineMs,
+        .describe(`The job number, e.g. 7 for ${name}#7.`),
+    };
+
+    server.tool(
+      scopedName(name, "wait"),
+      `Block until a job on ${name} finishes. May return with status 'running' if it takes too long — just call this again.`,
+      jobArg,
+      ({ job }) =>
+        run(async () =>
+          outcomeContent(
+            await deps.ops.wait(deps.agentId, name, job, deps.waitDeadlineMs),
           ),
         ),
-      ),
-  );
+    );
 
-  server.tool(
-    "get_satellite_job",
-    "Read a satellite job's current state without waiting. Large output is written into your own workspace and reported as a path you can grep, tail or read.",
-    { satellite: z.enum(names), job: z.number().int().positive() },
-    ({ satellite, job }) =>
-      run(async () => json(await deps.ops.read(deps.agentId, satellite, job))),
-  );
+    server.tool(
+      scopedName(name, "get"),
+      `Read a job on ${name} without waiting. Large output is written into your own workspace and reported as a path you can grep, tail or read.`,
+      jobArg,
+      ({ job }) =>
+        run(async () =>
+          outcomeContent(await deps.ops.read(deps.agentId, name, job)),
+        ),
+    );
 
-  server.tool(
-    "cancel_satellite_job",
-    "Ask a satellite to stop a job. Cancellation is cooperative — a job already running may still finish.",
-    { satellite: z.enum(names), job: z.number().int().positive() },
-    ({ satellite, job }) =>
-      run(async () =>
-        json(await deps.ops.cancel(deps.agentId, satellite, job)),
-      ),
-  );
+    server.tool(
+      scopedName(name, "cancel"),
+      `Ask ${name} to stop a job. Cancellation is cooperative — a job already running may still finish.`,
+      jobArg,
+      ({ job }) =>
+        run(async () =>
+          outcomeContent(await deps.ops.cancel(deps.agentId, name, job)),
+        ),
+    );
+  }
 }

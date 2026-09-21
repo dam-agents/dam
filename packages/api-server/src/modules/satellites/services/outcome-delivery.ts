@@ -36,7 +36,7 @@ async function describe(
 ): Promise<string> {
   const ref = formatJobRef(job.satellite, job.sequence);
   const lines = [
-    `${ref} (${job.cmd.join(" ")}) — ${job.status}${
+    `${ref} (${job.tool} ${JSON.stringify(job.args)}) — ${job.status}${
       job.exitCode === null ? "" : `, exit ${job.exitCode}`
     }`,
   ];
