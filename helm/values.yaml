@@ -267,11 +267,6 @@ virtualization:
     # addresses. It does not separate one owner's gateways from another's:
     # gateway pods carry no owner label, so the rule admits them as a class.
     egressExceptCidrs: []
-  # A device plugin of our own (squat's generic-device-plugin) advertising
-  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
-  # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
-  # privileged (kubelet socket dir + /dev from the host), so keep it on the
-  # KVM-capable pool via nodeSelector/tolerations.
   # A directory on each node that every runner scheduled there shares. A machine
   # may reach only its gateway, so the guest cannot pull its own image; the
   # runner fetches it here on a miss, and the next owner on that node boots the
@@ -295,9 +290,63 @@ virtualization:
   # shared with everything else the node runs, and `runner.storage` is shared
   # with the machine disks, so a share of either would let the images eat
   # space that is not theirs. Keep it well under whichever it sits on.
+  #
+  # `preload` is the per-node service that fills this directory before anyone
+  # needs it. A runner exists only once one of its owner's agents needs one,
+  # so without it nothing on the node can fetch an image ahead of the user
+  # waiting for it — and a release pins a new tag, so that wait is paid again
+  # on every node after every deploy. The service is a DaemonSet that fetches
+  # every enabled `harnessTemplates` image at deploy time and claims them the
+  # way a runner claims its machines' images, which is what stops eviction
+  # taking an image nobody is running yet — it is held by nobody and it is the
+  # oldest write, so it would otherwise go first. It also sweeps this
+  # directory on its own schedule: a runner tidies it only as a side effect of
+  # paying for a miss, and a host directory outlives every runner on the node,
+  # so images an owner who has gone left behind are reclaimed by nothing else.
+  #
+  # It only applies where `hostPath` above names a node directory: a runner's
+  # own claim is reachable by nothing but that runner, so there is nowhere
+  # else for the service to put anything.
+  #
+  # It is not in the boot path. With it down, a cached image still boots (the
+  # runner reads the tree from the directory) and a miss is still the runner's
+  # own to fetch — which is also the only path a custom agent image can take,
+  # since nothing can know about one at deploy time. Fetches are anonymous
+  # here exactly as they are on the runner: no pull secret reaches either, so
+  # a private harness image is not preloaded, and fails on demand exactly as
+  # it does today.
+  #
+  # Size `budget` to hold the preloaded set with room to spare: those images
+  # are pinned, so a budget below their total leaves the cache permanently
+  # over it and saying so in its log.
   imageCache:
     hostPath: ""
     budget: 50Gi
+    preload:
+      enabled: true
+      # How often claims are refreshed, a failed fetch retried and the
+      # directory swept. It is the lease on those claims, so it has to stay
+      # well inside the half hour a runner believes one for.
+      interval: 5m
+      # Placement. Empty falls back to `runner.nodeSelector` /
+      # `runner.tolerations` — preloading is worth nothing on a node no runner
+      # can land on.
+      nodeSelector: {}
+      tolerations: []
+      # Unpacking is I/O rather than CPU, and the tree is streamed rather than
+      # held, so this is small on purpose. Leave the CPU limit unset: a
+      # throttled unpack is the slow first boot this exists to remove.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 1Gi
+  # A device plugin of our own (squat's generic-device-plugin) advertising
+  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
+  # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
+  # privileged (kubelet socket dir + /dev from the host), so keep it on the
+  # KVM-capable pool via nodeSelector/tolerations.
   devicePlugin:
     enabled: false
     image:

@@ -1,0 +1,142 @@
+{{- $v := .Values.virtualization }}
+{{- if and $v.enabled $v.imageCache.hostPath $v.imageCache.preload.enabled }}
+{{- /*
+The per-node image cache service. A runner exists only once one of its
+owner's agents needs one, so nothing on the node can fetch an image before a
+user is already waiting for it — and every release pins a new tag, so that
+wait is paid again on every node after every deploy. This DaemonSet is the
+part of the cache that exists at deploy time: it owns the node directory the
+runners share, fetches the harness images this install ships into it, and
+keeps them there.
+
+Keeping them is the part that needs a claim. Eviction spares images some
+machine is running and takes the oldest write first, so an image preloaded
+for nobody would be the first thing deleted. The service therefore publishes
+its claims into the same holders directory the runners publish theirs, on the
+same lease: a claim is believed while it is refreshed, so the images stay
+pinned exactly as long as this pod runs, and become evictable once it does
+not. That is why the images are arguments here rather than read from the
+cluster — a redeploy rolls this DaemonSet, and the new tags are pinned from
+its first pass while the old ones are let go.
+
+Rendered only where `imageCache.hostPath` names a node directory. Without one
+each runner caches on its own claim, which no other pod can reach, so there
+is nowhere for this service to put anything.
+
+It is not in the boot path: machines read the tree out of the directory
+itself, and a runner still fetches an image nobody preloaded. A node with
+this DaemonSet down is a node behaving as it did before it existed.
+*/}}
+{{- $name := printf "%s-vm-image-cache" (include "platform.fullname" .) }}
+{{- $preload := $v.imageCache.preload }}
+{{- $images := list }}
+{{- range $key, $tmpl := .Values.harnessTemplates }}
+{{- if and $tmpl $tmpl.enabled }}
+{{- $images = append $images (printf "%s:%s" $tmpl.image.repository ($tmpl.image.tag | default $.Chart.AppVersion)) }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-image-cache
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vm-image-cache
+        istio.io/dataplane-mode: none
+    spec:
+      enableServiceLinks: false
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ $name }}
+      {{- /*
+      It holds no cluster credential: what to fetch is rendered onto its
+      command line, so there is nothing for it to read from the API.
+      */}}
+      automountServiceAccountToken: false
+      {{- /*
+      The runner's own resolver policy, because this reaches the same
+      registries by the same route — the cluster's DNS is a Service backed by
+      pods, which a confined runner cannot reach, so `Default` is the node's
+      resolver and `ClusterFirst` is for an install whose registry is inside
+      the cluster.
+      */}}
+      dnsPolicy: {{ $v.runner.dnsPolicy | default "Default" }}
+      {{- with ($preload.nodeSelector | default $v.runner.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with ($preload.tolerations | default $v.runner.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vm-image-cache
+          image: "{{ $v.runner.image.repository }}:{{ $v.runner.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $v.runner.image.pullPolicy | default "IfNotPresent" }}
+          {{- /*
+          The runner image, whose ENTRYPOINT starts a runner — replaced here,
+          not extended. Both halves of the cache ship in it so they cannot
+          disagree about what a cache entry is.
+          */}}
+          command: ["vm-image-cache"]
+          args:
+            - --image-dir=/var/lib/platform/images
+            - --cache-id={{ $name }}
+            - --image-budget={{ $v.imageCache.budget }}
+            - --interval={{ $preload.interval }}
+            - --images={{ join "," $images }}
+          securityContext:
+            {{- /*
+            Exactly what the runner asks for to unpack an image, and for the
+            same reason: a rootfs carries the owners and modes its files were
+            built with, so tar chowns each entry (CHOWN), sets a mode on a
+            file it has just given away (FOWNER), and keeps writing into
+            directories that are read-only or no longer its own
+            (DAC_OVERRIDE). NET_ADMIN is the one runner capability missing
+            here — it belongs to the per-machine NAT, and this pod runs no
+            machines. The profile matches the runner's for the same unpack.
+            */}}
+            runAsUser: 0
+            capabilities:
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+            appArmorProfile:
+              type: Unconfined
+          resources:
+            {{- toYaml $preload.resources | nindent 12 }}
+          volumeMounts:
+            - name: image-cache
+              mountPath: /var/lib/platform/images
+      volumes:
+        - name: image-cache
+          hostPath:
+            path: {{ $v.imageCache.hostPath }}
+            type: DirectoryOrCreate
+{{- with $v.runner.scc }}
+---
+{{- /*
+The same SCC the node cache already obliges an OpenShift install to name for
+its runners: this pod mounts that same host directory and runs as uid 0, and
+the chart's own agent SCC refuses a hostPath.
+*/}}
+{{ include "platform.sccRoleBinding" (dict "root" $ "name" $name "component" "vm-image-cache" "scc" .) }}
+{{- end }}
+{{- end }}
