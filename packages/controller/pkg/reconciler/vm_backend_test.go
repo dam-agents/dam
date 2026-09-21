@@ -449,6 +449,45 @@ func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
 }
 
+// TEST_SCENARIO: a mount's own size wins over the Agent's storageSize on the container backend, so a spec that asks for 50Gi there must not quietly get the chart's default here. The machine has one disk, so the largest thing any persisted mount asks for is what it is sized to — the one field of Mount this backend could still drop without saying so.
+func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
+	disk := func(configure func(*apiv1.AgentSpec)) int {
+		agent := vmAgentCR()
+		configure(&agent.Spec)
+		r, node, _ := setupVMReconciler(t, agent)
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+		return node.spec("my-agent").StorageGiB
+	}
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
+	}), "the mount's own size raises the disk rather than being dropped")
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.StorageSize = "20Gi"
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
+	}), "a mount that asks for more than storageSize wins, as it does on the container backend")
+
+	assert.Equal(t, 20, disk(func(spec *apiv1.AgentSpec) {
+		spec.StorageSize = "20Gi"
+		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}}
+	}), "a mount asking for less never shrinks the disk below what the Agent itself declared")
+
+	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{
+			{Path: "/home/agent", Persist: true, Size: "50Gi"},
+			{Path: "/home/agent/work", Persist: true, Size: "30Gi"},
+		}
+	}), "nested mounts share the one disk, so it is the largest of them and not their sum")
+
+	assert.Equal(t, 10, disk(func(spec *apiv1.AgentSpec) {
+		spec.Mounts = []apiv1.Mount{
+			{Path: "/home/agent", Persist: true},
+			{Path: "/tmp", Persist: false, Size: "80Gi"},
+		}
+	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
+}
+
 // TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath so the claim's root, which still holds trees from earlier releases, is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {

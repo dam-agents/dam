@@ -278,7 +278,7 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
 func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
 	for _, m := range resolveSpecMounts(spec, defaults) {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {
@@ -293,6 +293,18 @@ func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaul
 	quantity, err := resource.ParseQuantity(size)
 	if err != nil {
 		return 0, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
+	}
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if !m.Persist || m.Size == "" {
+			continue
+		}
+		asked, err := resource.ParseQuantity(m.Size)
+		if err != nil {
+			return 0, fmt.Errorf("the size %q of the persisted mount %s is not a quantity: %w", m.Size, m.Path, err)
+		}
+		if asked.Value() > quantity.Value() {
+			quantity = asked
+		}
 	}
 	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
 }
