@@ -1,36 +1,45 @@
-import { SessionMode } from "api-server-api";
+import type { AttentionItem } from "api-server-api";
 
 import type { SessionView } from "../../../types.js";
+
+function laterThanSeen(
+  activityAt: string | null | undefined,
+  seenAt: string | null | undefined,
+): boolean {
+  if (!activityAt) return false;
+  if (!seenAt) return true;
+  return Date.parse(activityAt) > Date.parse(seenAt);
+}
 
 export function isUnreadSession(
   session: SessionView,
   options?: { open?: boolean },
 ): boolean {
   if (options?.open) return false;
-  if (session.mode === SessionMode.Terminal) return false;
-  if (!session.seenAt || !session.updatedAt) return false;
-  return Date.parse(session.updatedAt) > Date.parse(session.seenAt);
+  return laterThanSeen(session.updatedAt, session.seenAt);
+}
+
+export function isUnreadAttention(item: AttentionItem): boolean {
+  return laterThanSeen(item.activityAt, item.seenAt);
 }
 
 export const FEED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function isFeedableSession(
-  session: SessionView,
+export function isFeedableAttention(
+  item: AttentionItem,
   now: number = Date.now(),
 ): boolean {
-  if (session.mode === SessionMode.Terminal) return false;
-  const at = session.updatedAt ?? session.createdAt;
-  if (!at) return false;
+  const at = item.activityAt ?? item.createdAt;
   return now - Date.parse(at) <= FEED_WINDOW_MS;
 }
 
 export function isUnreadItem(item: {
   kind: string;
-  session?: SessionView;
+  session?: AttentionItem;
 }): boolean {
   return (
     item.kind === "unread" &&
     item.session !== undefined &&
-    isUnreadSession(item.session)
+    isUnreadAttention(item.session)
   );
 }

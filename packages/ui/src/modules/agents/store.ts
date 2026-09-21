@@ -1,3 +1,4 @@
+import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
@@ -26,7 +27,11 @@ export interface AgentsSlice {
   deletedAgents: ReadonlySet<string>;
   markAgentDeleted: (id: string) => void;
   selectAgent: (id: string) => void;
-  openAgentSession: (agentId: string, sessionId: string) => void;
+  openAgentSession: (
+    agentId: string,
+    sessionId: string,
+    mode?: SessionMode,
+  ) => void;
   goBack: () => void;
 }
 
@@ -103,7 +108,7 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
-  openAgentSession: (agentId, sessionId) => {
+  openAgentSession: (agentId, sessionId, mode) => {
     history.pushState(
       null,
       "",
@@ -115,6 +120,7 @@ export const createAgentsSlice: StateCreator<
       view: "chat",
       mobileScreen: "chat",
       pendingResumeSessionId: sessionId,
+      pendingResumeSessionMode: mode ?? null,
     });
   },
 

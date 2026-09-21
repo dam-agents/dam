@@ -362,15 +362,25 @@ export function ChatView() {
   const setPendingResumeSessionId = useStore(
     (s) => s.setPendingResumeSessionId,
   );
+  const pendingResumeSessionMode = useStore((s) => s.pendingResumeSessionMode);
   useEffect(() => {
     if (!selectedAgent || !pendingResumeSessionId) return;
     const sid = pendingResumeSessionId;
+    const mode = pendingResumeSessionMode;
     setPendingResumeSessionId(null);
+    if (mode === SessionMode.Terminal) {
+      setSessionMode(mode);
+      setSessionId(sid);
+      return;
+    }
     resumeSession(sid);
   }, [
     selectedAgent,
     pendingResumeSessionId,
+    pendingResumeSessionMode,
     setPendingResumeSessionId,
+    setSessionMode,
+    setSessionId,
     resumeSession,
   ]);
 

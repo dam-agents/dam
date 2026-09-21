@@ -47,6 +47,11 @@ export function hintFor(
         ownerSub: event.ownerSub,
         hint: { topic: "harnessConfig", agentId: event.agentId },
       };
+    case EventType.AttentionChanged:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "attention", agentId: event.agentId },
+      };
     case EventType.ArtifactCreated:
     case EventType.ArtifactUpdated:
     case EventType.ArtifactDeleted:

@@ -66,8 +66,7 @@ export function channelTypeFor(
   if (session.scheduleId || session.type === SessionType.ScheduleCron)
     return "schedule";
   if (session.mode === SessionMode.Terminal) return "terminal";
-  if (session.type === SessionType.ChannelSlack || session.threadTs)
-    return "slack";
+  if (session.type === SessionType.ChannelSlack) return "slack";
   if (session.type === SessionType.ChannelTelegram) return "telegram";
   const agent = agents.find((candidate) => candidate.id === item.agentId);
   if (agent?.channels.some((channel) => channel.type === "slack"))

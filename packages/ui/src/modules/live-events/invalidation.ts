@@ -20,6 +20,7 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   kbShares: () => [trpc.kbShares.pathKey()],
   experiments: () => [trpc.experiments.pathKey()],
   artifacts: () => [trpc.artifactLibrary.pathKey()],
+  attention: () => [trpc.attention.pathKey()],
 };
 
 export function invalidateForLiveEvent(event: LiveEvent): void {

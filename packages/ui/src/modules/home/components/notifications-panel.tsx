@@ -174,9 +174,9 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
               <FeedList
                 items={shown}
                 agents={agents}
-                onOpenSession={(agentId, sessionId) => {
+                onOpenSession={(agentId, sessionId, mode) => {
                   onClose();
-                  openAgentSession(agentId, sessionId);
+                  openAgentSession(agentId, sessionId, mode);
                 }}
                 onDismiss={(item) => {
                   sticky.drop(item.id);

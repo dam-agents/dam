@@ -311,9 +311,12 @@ interface PtySlot {
   graceTimer: ReturnType<typeof setTimeout> | null;
   lastOutputAt: number;
   lastSeenStampAt: number;
+  lastActivityStampAt: number;
   lastBusyAt: number;
   lastInputAt: number;
   sawInput: boolean;
+  detachedAt: number;
+  dying: boolean;
 }
 
 const ptySlots = new Map<string, PtySlot>();
@@ -357,16 +360,34 @@ sessionChanges.onDemand({
 });
 
 const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
+const PTY_ACTIVITY_STAMP_DEBOUNCE_MS = 10_000;
+const PTY_DETACH_SETTLE_MS = 2_000;
 
 function markTerminalSeen(sessionId: string): void {
   if (sessionMetadata.get(sessionId)) sessionMetadata.recordSeen(sessionId);
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Stamps activity for output produced while nobody is
+ * attached, which is what makes a terminal session unread. A terminal admits one
+ * viewer at a time, so an absent client is an unambiguous "not watching" — while
+ * one is attached the seen stamp above covers it, and stamping both would race.
+ * Output within PTY_DETACH_SETTLE_MS of a detach is the shell repainting after
+ * the viewer's parting resize, and output from a slot being torn down is the
+ * harness dying on SIGHUP, which can take seconds. Neither is activity or busy.
+ */
+function markTerminalActivity(sessionId: string): void {
+  if (!sessionMetadata.get(sessionId))
+    sessionMetadata.set(sessionId, { mode: "terminal" });
+  sessionMetadata.recordActivity(sessionId);
+}
+
 function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot) return;
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
+  slot.dying = true;
   try {
     slot.pty?.kill();
   } catch {}
@@ -402,6 +423,7 @@ function attachPty(
     const slot = ptySlots.get(sessionId);
     if (!slot || slot.client !== ws) return;
     slot.client = null;
+    slot.detachedAt = Date.now();
     markTerminalSeen(sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
@@ -440,6 +462,7 @@ function attachPty(
           existing.client.close(1000, "replaced by new connection");
         }
         existing.client = ws;
+        existing.detachedAt = 0;
         markTerminalSeen(sessionId);
         existing.lastInputAt = Date.now();
         existing.headless.resize(cols, rows);
@@ -485,10 +508,13 @@ function attachPty(
         client: ws,
         graceTimer: null,
         lastOutputAt: Date.now(),
+        lastActivityStampAt: 0,
         lastSeenStampAt: Date.now(),
         lastBusyAt: 0,
         lastInputAt: 0,
         sawInput: false,
+        detachedAt: 0,
+        dying: false,
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
@@ -497,7 +523,14 @@ function attachPty(
       pty.onData((data) => {
         const now = Date.now();
         slot.lastOutputAt = now;
-        if (slot.sawInput && now - slot.lastInputAt > PTY_INPUT_ECHO_MS)
+        const settling =
+          slot.dying ||
+          (slot.detachedAt > 0 && now - slot.detachedAt < PTY_DETACH_SETTLE_MS);
+        if (
+          !settling &&
+          slot.sawInput &&
+          now - slot.lastInputAt > PTY_INPUT_ECHO_MS
+        )
           slot.lastBusyAt = now;
         if (
           slot.client &&
@@ -505,6 +538,14 @@ function attachPty(
         ) {
           slot.lastSeenStampAt = now;
           markTerminalSeen(sessionId);
+        }
+        if (
+          !slot.client &&
+          !settling &&
+          now - slot.lastActivityStampAt > PTY_ACTIVITY_STAMP_DEBOUNCE_MS
+        ) {
+          slot.lastActivityStampAt = now;
+          markTerminalActivity(sessionId);
         }
         slot.headless.write(data);
         if (slot.client?.readyState === 1)

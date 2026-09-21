@@ -28,6 +28,8 @@ import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { composeAttentionService } from "../../../modules/attention/compose.js";
+import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
@@ -76,7 +78,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
-    podSessions,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -276,6 +277,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
+    const attention = composeAttentionService({
+      db,
+      ownerSub: user.sub,
+      ownsApproval: async (approvalId) =>
+        (await createApprovalsRepository(db).getPending(approvalId))
+          ?.ownerSub === user.sub,
+    });
     const files = composeFilesModule(
       api,
       config.namespace,
@@ -350,6 +358,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connections,
       skills,
       approvals,
+      attention,
       egressRules,
       experiments,
       invocationsQuery,
@@ -362,7 +371,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       harnessConfig,
       links: config.links,
       liveEvents,
-      podSessions,
       metrics,
       terms,
       usage: composeUsageForOwner(user.sub),

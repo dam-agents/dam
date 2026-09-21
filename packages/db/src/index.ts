@@ -40,6 +40,8 @@ export {
   invocations,
   kbShares,
   agentCaseStudies,
+  attentionRecords,
+  attentionState,
   starterKitCatalogEntries,
 } from "./schema.js";
 export {

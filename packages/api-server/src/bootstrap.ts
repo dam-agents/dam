@@ -99,6 +99,12 @@ import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
+import {
+  composeAttentionRetention,
+  composeSessionWatcher,
+  createAttentionCleanupHook,
+  listAttentionAgentIds,
+} from "./modules/attention/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import {
@@ -642,19 +648,31 @@ export async function bootstrap() {
   });
   const metricsReader = composeMetricsReader(config);
 
+  const sessionWatcher = composeSessionWatcher({
+    db,
+    namespace: config.namespace,
+    listAgents: () => agentsRepo.list(),
+    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
+    log: (m) => getLogger().warn(`[attention] ${m}`),
+  });
+
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
-    namespace: config.namespace,
-    agentsRepo,
-    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
+    onAgentChanged: () => sessionWatcher.agentsChanged(),
   });
   liveEventsModule.start();
   const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
     onAcquired: () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
+  };
+
+  const sessionWatcherRole: LeaderRole = {
+    name: "attention-watcher",
+    onAcquired: () => sessionWatcher.start(),
+    onLost: () => sessionWatcher.stop(),
   };
 
   const { agents: systemAgents } = composeAgentsModule({
@@ -885,6 +903,7 @@ export async function bootstrap() {
         onLost: () => channelManager.standDown(),
       },
       agentWatchRole,
+      sessionWatcherRole,
     ],
     log: (m) => getLogger().info(`[leader] ${m}`),
   });
@@ -1039,6 +1058,11 @@ export async function bootstrap() {
       name: "api-keys",
       listAgentIds: () => listApiKeyAgentIds(db),
       cleanup: createApiKeysCleanupHook(db),
+    },
+    {
+      name: "attention",
+      listAgentIds: () => listAttentionAgentIds(db),
+      cleanup: createAttentionCleanupHook(db),
     },
     {
       name: "channels",
@@ -1244,6 +1268,12 @@ export async function bootstrap() {
     () => sessionDirectoryRetentionTick(),
   );
 
+  const { retentionTick: attentionRetentionTick } =
+    composeAttentionRetention(db);
+  await periodicJobs.register("attention-retention", 24 * 60 * 60 * 1000, () =>
+    attentionRetentionTick(),
+  );
+
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
     periodicJobs,
@@ -1287,7 +1317,6 @@ export async function bootstrap() {
     e2e: e2eService,
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
-    podSessions: liveEventsModule.podSessions,
     k8sClient,
     agentsRepo,
     connectionsBoot,

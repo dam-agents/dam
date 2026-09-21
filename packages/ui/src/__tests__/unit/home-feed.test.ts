@@ -1,3 +1,4 @@
+import type { AttentionItem } from "api-server-api";
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -11,17 +12,22 @@ import {
   type FeedItem,
   sortFeedItems,
 } from "../../modules/home/lib/feed-item.js";
-import type { SessionView } from "../../types.js";
 
 // TEST_OVERVIEW: the activity feed's ordering and filtering rules, kept pure so they can be pinned here. The panel filters by the channel an item arrived through and by its state, so both halves are covered.
 
-function session(overrides: Partial<SessionView> = {}): SessionView {
+function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
     sessionId: "s-1",
     agentId: "a-1",
     type: SessionType.Regular,
     mode: SessionMode.Chat,
+    title: null,
+    scheduleId: null,
+    experimentId: null,
     createdAt: "2026-08-19T10:00:00Z",
+    activityAt: null,
+    seenAt: null,
+    working: false,
     ...overrides,
   };
 }
@@ -40,7 +46,7 @@ function unread(
       sessionId: id,
       type,
       seenAt: "2026-08-19T07:00:00Z",
-      updatedAt: at ?? "2026-08-19T10:00:00Z",
+      activityAt: at ?? "2026-08-19T10:00:00Z",
     }),
   };
 }
@@ -90,7 +96,7 @@ describe("the activity filters", () => {
       id: "run",
       agentId: "a-1",
       at: "2026-08-19T11:00:00Z",
-      session: session({ sessionId: "run", running: true }),
+      session: session({ sessionId: "run", working: true }),
     },
     unread("chat", "2026-08-19T10:00:00Z"),
     unread("sched", "2026-08-19T09:00:00Z", SessionType.ScheduleCron),
