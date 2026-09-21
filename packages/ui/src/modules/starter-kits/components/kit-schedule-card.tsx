@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { QuietHoursEditor } from "../../schedules/forms/quiet-hours-editor.js";
 import {
+  SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleSessionTypeField,
 } from "../../schedules/forms/schedule-fields.js";
@@ -112,6 +113,11 @@ export function KitScheduleCard({
             <Badge variant="kit" size="sm">
               Starter Kit
             </Badge>
+            {values.precheck.trim() !== "" && (
+              <Badge variant="muted" size="sm">
+                Precheck
+              </Badge>
+            )}
             {modified && !skipped && (
               <Badge variant="muted" size="sm">
                 Modified
@@ -198,6 +204,11 @@ export function KitScheduleCard({
               layout="rows"
               control={control}
               accentClassName="bg-kit text-white"
+            />
+            <SchedulePrecheckField
+              layout="rows"
+              register={register}
+              errors={errors}
             />
             <div className="px-4 py-3">
               <QuietHoursEditor

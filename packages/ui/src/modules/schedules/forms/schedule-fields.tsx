@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
+import { FormField } from "../../../components/form-field.js";
 import {
   DAYS_ISO,
   formatTime12,
@@ -320,5 +322,61 @@ export function ScheduleSessionTypeField({
         )}
       />
     </Field>
+  );
+}
+
+export const PRECHECK_HINT =
+  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
+
+const PRECHECK_PLACEHOLDER =
+  "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
+
+export function SchedulePrecheckField({
+  layout,
+  register,
+  errors,
+}: {
+  layout: ScheduleFieldLayout;
+  register: UseFormRegister<ScheduleFormValues>;
+  errors: FieldErrors<ScheduleFormValues>;
+}) {
+  const input = (
+    <Textarea
+      className="min-h-[56px] resize-y font-mono text-xs"
+      variant={errors.precheck ? "invalid" : undefined}
+      placeholder={PRECHECK_PLACEHOLDER}
+      rows={2}
+      {...register("precheck")}
+    />
+  );
+
+  if (layout === "stacked")
+    return (
+      <FormField
+        label="Precheck (optional)"
+        error={errors.precheck?.message}
+        hint={PRECHECK_HINT}
+        disableInset
+      >
+        {input}
+      </FormField>
+    );
+
+  return (
+    <div className="px-4 py-3">
+      <div className="mb-2 flex items-center gap-1.5">
+        <SectionLabel>Precheck (optional)</SectionLabel>
+        <HintTooltip
+          content={PRECHECK_HINT}
+          label="About prechecks"
+          side="top"
+          className="text-muted-foreground"
+        >
+          <Information size={14} />
+        </HintTooltip>
+      </div>
+      {input}
+      <FormError message={errors.precheck?.message} />
+    </div>
   );
 }

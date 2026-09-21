@@ -24,6 +24,7 @@ import {
 } from "../api/mutations.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
 import {
+  SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
@@ -33,9 +34,6 @@ import {
   scheduleFormSchema,
   type ScheduleFormValues,
 } from "./schedule-form-schema.js";
-
-const PRECHECK_HINT =
-  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
 
 interface Props {
   agentId?: string;
@@ -181,20 +179,11 @@ export function ScheduleFormModal({
             />
           </FormField>
 
-          <FormField
-            label="Precheck (optional)"
-            error={errors.precheck?.message}
-            hint={PRECHECK_HINT}
-            disableInset
-          >
-            <Textarea
-              className="min-h-[56px] resize-y font-mono text-xs"
-              variant={errors.precheck ? "invalid" : undefined}
-              placeholder="git fetch -q && git log --oneline HEAD..origin/main | grep -q ."
-              rows={2}
-              {...register("precheck")}
-            />
-          </FormField>
+          <SchedulePrecheckField
+            layout="stacked"
+            register={register}
+            errors={errors}
+          />
 
           <ScheduleSessionTypeField layout="stacked" control={control} />
         </DialogBody>

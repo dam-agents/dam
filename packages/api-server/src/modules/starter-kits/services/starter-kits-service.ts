@@ -176,6 +176,8 @@ export function createStarterKitsService(
       const o = overrides.find((x) => x.name === s.name);
       const sessionMode = o?.sessionMode ?? s.sessionMode;
       const enabled = o?.enabled ?? s.enabled;
+      const precheck =
+        o?.precheck === null ? undefined : (o?.precheck ?? s.precheck);
       const timing =
         o?.timing ??
         ("cron" in s
@@ -190,6 +192,7 @@ export function createStarterKitsService(
               cron: timing.cron,
               task: s.task,
               sessionMode,
+              ...(precheck ? { precheck } : {}),
             })
           : await deps.schedules.createRRule({
               name: s.name,
@@ -198,6 +201,7 @@ export function createStarterKitsService(
               timezone: timing.timezone,
               task: s.task,
               sessionMode,
+              ...(precheck ? { precheck } : {}),
               ...(o?.quietHours ? { quietHours: o.quietHours } : {}),
             });
       if (!enabled) await deps.schedules.toggle(created.id);

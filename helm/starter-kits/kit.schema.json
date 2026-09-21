@@ -288,6 +288,11 @@
                   "fresh"
                 ]
               },
+              "precheck": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
               "cron": {
                 "type": "string",
                 "minLength": 1
@@ -320,6 +325,11 @@
                   "continuous",
                   "fresh"
                 ]
+              },
+              "precheck": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
               },
               "rrule": {
                 "type": "string",
