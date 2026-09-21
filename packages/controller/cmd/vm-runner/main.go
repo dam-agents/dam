@@ -16,7 +16,7 @@ func main() {
 	stateDir := flag.String("state-dir", "/var/lib/platform/machines", "per-machine state: published port, applied spec, and the share each guest reads its plan, CA and platform-init from")
 	imageDir := flag.String("image-dir", "/var/lib/platform/images", "unpacked agent images and local archives, shared by every runner on this node when the install gives them a host directory")
 	runnerID := flag.String("runner-id", "", "this runner's name among the runners sharing the image directory; empty keeps the cache private to this runner")
-	imageBudget := flag.Int64("image-budget-bytes", 0, "bytes the cached images may occupy; 0 uses a share of the filesystem, which is only meaningful on a volume of this runner's own")
+	imageBudget := flag.Int64("image-budget-bytes", 0, "bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget")
 	smolvm := flag.String("smolvm", "smolvm", "smolvm binary")
 	crane := flag.String("crane", "crane", "crane binary, used to fetch an agent image the shared cache does not hold (empty disables the fetch)")
 	initBin := flag.String("platform-init", "/usr/local/libexec/platform-init", "platform-init binary, copied into every machine's share and run as its entrypoint")
