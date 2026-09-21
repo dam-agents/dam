@@ -200,8 +200,12 @@ virtualization:
     # recreated with empty disks, and the bytes stay until the owner's last vm
     # agent goes and the claim is deleted with the runner. Delete the runner
     # PVCs before the upgrade to reclaim them at once.
-    # Set once: a later change only grows the claim, and only on a class
-    # that allows expansion.
+    # Raising this reaches the claims that already exist, not only the next
+    # owner's: the controller applies the larger size in place. It needs a
+    # class that allows volume expansion — one that does not refuses the
+    # resize, which costs a warning in the controller log and leaves that
+    # runner at the size it has, rather than failing its reconcile.
+    # Lowering it changes nothing: Kubernetes never shrinks a claim.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
