@@ -29,7 +29,7 @@ function fakeSlackWorker(): SlackWorker {
   return {
     type: ChannelType.Slack,
     connect: vi.fn(async () => {}),
-    standingIn: vi.fn(async () => "unknown" as const),
+    conversationStanding: vi.fn(async () => "unknown" as const),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -362,6 +362,91 @@ describe("channel outbound across replicas", () => {
       await follower.reply("agent-1", ChannelType.Slack, { text: "hi" }),
     ).toEqual({ error: expect.stringMatching(/timed out/) });
     expect(leaderWorker.reply).not.toHaveBeenCalled();
+
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+});
+
+describe("asking Slack which workspace sees a conversation", () => {
+  /**
+   * TEST_SCENARIO: the question reaches the replica that can actually ask it.
+   * Only the lease holder opens the Slack socket, but a bind can be served by
+   * any replica, so a follower has to forward the question rather than answer
+   * from a connection it does not have.
+   */
+  it("forwards the question from a follower to the leader's worker", async () => {
+    const bus = fakeBus();
+    const leaderWorker = fakeSlackWorker();
+    vi.mocked(leaderWorker.conversationStanding).mockResolvedValue("member");
+
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => true,
+    });
+    const followerWorker = fakeSlackWorker();
+    const follower = createChannelManager({
+      slackWorker: followerWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+
+    expect(await follower.slackConversationStanding("C-1", "T-1")).toBe(
+      "member",
+    );
+    expect(leaderWorker.conversationStanding).toHaveBeenCalledWith(
+      "C-1",
+      "T-1",
+    );
+    expect(followerWorker.conversationStanding).not.toHaveBeenCalled();
+
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+
+  /**
+   * TEST_SCENARIO: with no leader to forward to, the question fails rather
+   * than resolving. The caller reads a returned standing as Slack's own
+   * answer about the conversation, so an inability to ask must not arrive
+   * looking like "no workspace can see it" — that indicts a conversation id
+   * that was never in question.
+   */
+  it("fails rather than answering when no leader can be reached", async () => {
+    const bus = fakeBus();
+    const leaderWorker = fakeSlackWorker();
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+        timeoutMs: 20,
+      }),
+      isLeader: () => false,
+    });
+
+    await leader.bootstrap(new Map());
+    await leader.standDown();
+
+    await expect(
+      follower.slackConversationStanding("C-1", "T-1"),
+    ).rejects.toThrow();
+    expect(leaderWorker.conversationStanding).not.toHaveBeenCalled();
 
     await leader.stopAll();
     await follower.stopAll();

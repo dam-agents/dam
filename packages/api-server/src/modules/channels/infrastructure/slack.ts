@@ -681,7 +681,7 @@ export interface ChannelRegistry {
 export interface SlackWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
-  standingIn(
+  conversationStanding(
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
@@ -3413,12 +3413,12 @@ export function createSlackWorker(
       gateway = null;
     },
 
-    async standingIn(
+    async conversationStanding(
       slackChannelId: string,
       teamId: SlackWorkspace,
     ): Promise<SlackConversationStanding> {
       const gw = await ensureGateway();
-      if (!gw) return "unknown";
+      if (!gw) throw new Error("slack gateway is not connected here");
       const info = await gw.getConversationInfo(slackChannelId, teamId);
       if (!info) return "unknown";
       return info.isMember ? "member" : "known";

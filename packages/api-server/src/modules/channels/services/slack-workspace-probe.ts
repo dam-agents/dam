@@ -12,7 +12,7 @@ export type SlackWorkspaceResolution =
 
 export interface SlackWorkspaceProbeDeps {
   listInstalledWorkspaces: () => Promise<SlackWorkspace[]>;
-  standingIn: (
+  conversationStanding: (
     slackChannelId: string,
     teamId: SlackWorkspace,
   ) => Promise<SlackConversationStanding>;
@@ -56,7 +56,7 @@ export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
     for (const teamId of candidates) {
       let standing: SlackConversationStanding;
       try {
-        standing = await deps.standingIn(slackChannelId, teamId);
+        standing = await deps.conversationStanding(slackChannelId, teamId);
       } catch {
         continue;
       }

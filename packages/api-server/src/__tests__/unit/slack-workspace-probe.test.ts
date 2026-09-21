@@ -27,7 +27,7 @@ describe("slack workspace probe", () => {
   it("answers for a lone install without asking Slack", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => [],
-      standingIn: NEVER_ASKED,
+      conversationStanding: NEVER_ASKED,
     });
 
     expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "" });
@@ -41,7 +41,7 @@ describe("slack workspace probe", () => {
   it("resolves to the installed workspace that has the conversation", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async (_channel: string, teamId: string) =>
+      conversationStanding: async (_channel: string, teamId: string) =>
         teamId === "T2" ? "member" : "unknown",
     });
 
@@ -57,7 +57,7 @@ describe("slack workspace probe", () => {
   it("reports the original workspace as the empty workspace", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async (_channel: string, teamId: string) =>
+      conversationStanding: async (_channel: string, teamId: string) =>
         teamId === "" ? "member" : "unknown",
     });
 
@@ -74,7 +74,7 @@ describe("slack workspace probe", () => {
   it("settles a conversation shared into several workspaces", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2", "T3"],
-      standingIn: async () => "member" as const,
+      conversationStanding: async () => "member" as const,
     });
 
     expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "" });
@@ -88,7 +88,7 @@ describe("slack workspace probe", () => {
   it("prefers a workspace the bot belongs to over one that only sees it", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async (_channel: string, teamId: string) =>
+      conversationStanding: async (_channel: string, teamId: string) =>
         teamId === "T2" ? "member" : "known",
     });
 
@@ -103,7 +103,7 @@ describe("slack workspace probe", () => {
   it("refuses a conversation no workspace can see", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async () => "unknown" as const,
+      conversationStanding: async () => "unknown" as const,
     });
 
     expect(await probe("C1")).toEqual({ kind: "unknown" });
@@ -117,7 +117,7 @@ describe("slack workspace probe", () => {
   it("treats a workspace that cannot answer as not having it", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async (
+      conversationStanding: async (
         _channel: string,
         teamId: string,
       ): Promise<SlackConversationStanding> => {
@@ -138,7 +138,7 @@ describe("slack workspace probe", () => {
   it("separates being unable to ask from nobody being able to see it", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async () => {
+      conversationStanding: async () => {
         throw new Error("missing_scope");
       },
     });
@@ -155,7 +155,7 @@ describe("slack workspace probe", () => {
   it("keeps a definite answer when only one workspace cannot be asked", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => ["T2"],
-      standingIn: async (
+      conversationStanding: async (
         _channel: string,
         teamId: string,
       ): Promise<SlackConversationStanding> => {

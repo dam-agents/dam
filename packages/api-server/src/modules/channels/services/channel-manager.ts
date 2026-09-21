@@ -14,6 +14,7 @@ import type {
   SlackConversationName,
   SlackConversationRef,
 } from "../infrastructure/slack-gateway.js";
+import type { SlackConversationStanding } from "./slack-workspace-probe.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
@@ -165,6 +166,10 @@ export interface ChannelManager {
   resolveSlackConversationNames(
     refs: SlackConversationRef[],
   ): Promise<SlackConversationName[]>;
+  slackConversationStanding(
+    slackChannelId: string,
+    teamId: string,
+  ): Promise<SlackConversationStanding>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -178,6 +183,7 @@ export const channelRpcRequestSchema = z.object({
     "describeUsers",
     "describeMessageReactions",
     "resolveConversationNames",
+    "slackConversationStanding",
   ]),
   args: z.array(z.unknown()),
 });
@@ -198,6 +204,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
   resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
+  slackConversationStanding: z.tuple([z.string(), z.string()]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -253,6 +260,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   resolveConversationNames: z.array(
     slackConversationRefSchema.extend({ name: z.string().nullable() }),
   ),
+  slackConversationStanding: z.enum(["member", "known", "unknown"]),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -473,6 +481,13 @@ export function createChannelManager(deps: {
     },
     resolveConversationNames: (refs: SlackConversationRef[]) =>
       slackWorker?.resolveConversationNames?.(refs) ?? Promise.resolve([]),
+    slackConversationStanding: (
+      slackChannelId: string,
+      teamId: string,
+    ): Promise<SlackConversationStanding> =>
+      deps.slackWorker
+        ? deps.slackWorker.conversationStanding(slackChannelId, teamId)
+        : Promise.reject(new Error("slack worker not available")),
   } as const;
 
   subscriptions.push(
@@ -635,6 +650,14 @@ export function createChannelManager(deps: {
             channelType,
             query,
           ),
+      );
+    },
+
+    slackConversationStanding(slackChannelId, teamId) {
+      return dispatch(
+        "slackConversationStanding",
+        [slackChannelId, teamId],
+        () => localHandlers.slackConversationStanding(slackChannelId, teamId),
       );
     },
   };
