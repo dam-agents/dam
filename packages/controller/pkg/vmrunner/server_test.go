@@ -356,7 +356,12 @@ func TestPortsAreUniqueAndDeleteWaitsForInFlightWork(t *testing.T) {
 	t.Setenv("FAKE_START_SLEEP", "0.3")
 	_, err = c.Ensure(t.Context(), "agent-c", spec(true))
 	require.NoError(t, err)
-	time.Sleep(50 * time.Millisecond)
+	// UNIT_BOUNDARY_DESCRIPTION: Ensure returns as soon as the operation is queued, so the delete has to arrive while the start is genuinely running or it has nothing to wait for and the test measures its own scheduling instead. smolvm is told what it was asked to do before it sleeps, so its own log says when the start is in flight — which a fixed pause only guessed at, and guessed wrong on a runner slow enough to schedule the goroutine late.
+	inFlight := time.Now().Add(5 * time.Second)
+	for !strings.Contains(h.calls(), "machine start -n agent-c") {
+		require.True(t, time.Now().Before(inFlight), "the start never reached smolvm")
+		time.Sleep(time.Millisecond)
+	}
 	blocked := time.Now()
 	require.NoError(t, c.Delete(t.Context(), "agent-c"))
 	assert.Greater(t, time.Since(blocked), 200*time.Millisecond,
