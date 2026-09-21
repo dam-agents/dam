@@ -104,7 +104,7 @@ func main() {
 		slog.Info("VM runner stopping", "signal", sig.String())
 	}
 
-	// UNIT_BOUNDARY_DESCRIPTION: the API goes first so nothing new is admitted, then the runner, which cancels what is running and waits for it. The machines themselves are not stopped: they are smolvm's processes and they outlive this one on purpose, which is what lets a runner be replaced without every agent on the node going down with it.
+	// UNIT_BOUNDARY_DESCRIPTION: the API goes first so nothing new is admitted, then the runner, which cancels what is running and waits for it. The machines are not stopped here and they do not survive either: they are smolvm's processes in this pod's namespace, so the pod going away takes them with it and the controller's sweep starts them again. What this sequence is for is the runner's own half-finished work — a scratch tree being unpacked, a machine directory being written — which a SIGKILL would leave for the next start to find.
 	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
 	defer done()
 	if err := api.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {

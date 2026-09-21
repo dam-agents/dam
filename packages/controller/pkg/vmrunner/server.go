@@ -115,7 +115,7 @@ type Server struct {
 	startedAt  map[string]time.Time
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it, and its own pass is bounded by the interval it sweeps on.
+// UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it. Nothing here bounds a pass of its own — its interval bounds the gap between passes, not a pass — so a fetch it starts ends at the pull timeout and at nothing else.
 func (s *Server) lifetime() context.Context {
 	if s.ctx == nil {
 		return context.Background()
@@ -149,7 +149,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: stops taking new machine operations, drops the published ports, and waits for the operations already running — which is the part that was missing. Those goroutines fetch images and drive smolvm against the state and image directories, so returning while they run hands the caller a runner that is still writing. The wait is bounded because an operation may be inside a pull that is allowed twenty minutes, and a shutdown that can hang that long behind one slow registry is its own failure; going on without them is reported rather than silent. Bounding it is not the same as cancelling it — nothing here interrupts a fetch, which stays a gap.
+// UNIT_BOUNDARY_DESCRIPTION: stops taking new machine operations, drops the published ports, and waits for the operations already running — which is the part that was missing. Those goroutines fetch images and drive smolvm against the state and image directories, so returning while they run hands the caller a runner that is still writing. The wait is bounded because an operation may be inside a pull that is allowed twenty minutes, and a shutdown that can hang that long behind one slow registry is its own failure; going on without them is reported rather than silent. The bound is a backstop rather than the mechanism: the operations are cancelled before the wait, so what the grace actually covers is work that does not answer cancellation.
 func (s *Server) Close() {
 	s.mu.Lock()
 	s.closed = true
