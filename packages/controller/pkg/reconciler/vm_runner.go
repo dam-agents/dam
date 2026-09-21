@@ -73,7 +73,7 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 	}}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Secret, PVC and Service are created once and never re-applied, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
+// UNIT_BOUNDARY_DESCRIPTION: the Secret and Service are created once and never re-applied, and the PVC's spec is touched only to raise its size, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
 func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.ObjectMeta, update func() error) error {
 	if len(meta.OwnerReferences) > 0 {
 		return nil

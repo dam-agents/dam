@@ -719,7 +719,7 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
 
-// TEST_SCENARIO: a runner built before the controller owned its objects; the Secret, PVC and Service are created once and never re-applied, so an upgrade would leave exactly the objects holding that owner's disk and credentials with no owner, and uninstall would strand them.
+// TEST_SCENARIO: a runner built before the controller owned its objects; the Secret and Service are created once and never re-applied, and the PVC's spec is touched only to raise its size, so an upgrade would leave exactly the objects holding that owner's disk and credentials with no owner, and uninstall would strand them.
 func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
