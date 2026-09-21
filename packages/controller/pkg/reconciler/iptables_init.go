@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const iptablesInitContainerName = "egress-lockdown"

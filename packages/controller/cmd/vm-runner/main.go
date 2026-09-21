@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 func main() {

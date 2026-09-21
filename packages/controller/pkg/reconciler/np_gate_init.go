@@ -5,7 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const npGateInitContainerName = "np-gate"

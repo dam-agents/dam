@@ -10,7 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 func idlePeer(name, cpu, memory string, idleFor time.Duration, extra map[string]string) (*apiv1.Agent, *appsv1.StatefulSet) {

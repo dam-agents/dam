@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 func idleCheckerCfg(timeout time.Duration) *config.Config {

@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 var testConfig = &config.Config{

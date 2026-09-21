@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 func TestBuildNPGateInitContainer_DisabledReturnsNil(t *testing.T) {

@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/util/retry"
 	"log/slog"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
-	"github.com/kagenti/platform/packages/controller/pkg/vmrunner"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/types"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 type AgentReconciler struct {

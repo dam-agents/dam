@@ -7,7 +7,7 @@ import (
 
 	sigsyaml "sigs.k8s.io/yaml"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 type ev = map[string]any

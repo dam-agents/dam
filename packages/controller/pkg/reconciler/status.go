@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, mutate func(*apiv1.AgentStatus)) error {

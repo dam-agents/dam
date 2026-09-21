@@ -4,8 +4,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {

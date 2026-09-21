@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 const budgetOwner = "f47ac10b-58cc-4372-a567-0e02b2c3d479"

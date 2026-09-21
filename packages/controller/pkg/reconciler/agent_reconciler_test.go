@@ -20,8 +20,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}

@@ -1,4 +1,4 @@
-module github.com/kagenti/platform/packages/controller
+module github.com/dam-agents/dam/packages/controller
 
 go 1.25.0
 

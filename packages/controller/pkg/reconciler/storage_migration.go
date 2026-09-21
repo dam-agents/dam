@@ -18,8 +18,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
-	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const (

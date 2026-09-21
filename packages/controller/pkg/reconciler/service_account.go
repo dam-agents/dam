@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 
-	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 func BuildServiceAccount(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.ServiceAccount {

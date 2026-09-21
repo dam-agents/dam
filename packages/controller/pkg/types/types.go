@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	sigsyaml "sigs.k8s.io/yaml"
 
-	v1 "github.com/kagenti/platform/packages/controller/api/v1"
+	v1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 type (
