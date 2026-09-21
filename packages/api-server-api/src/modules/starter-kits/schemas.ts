@@ -4,7 +4,7 @@ import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
-import { quietWindowSchema } from "../schedules/schemas.js";
+import { precheckSchema, quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
 export const starterKitIdSchema = z
@@ -37,6 +37,7 @@ const scheduleCommon = {
   task: z.string().min(1),
   enabled: z.boolean().default(true),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
+  precheck: precheckSchema.optional(),
 };
 
 export const starterKitCronScheduleSchema = z.object({
@@ -187,6 +188,7 @@ export const starterKitScheduleOverrideSchema = z.object({
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   enabled: z.boolean().optional(),
   quietHours: z.array(quietWindowSchema).optional(),
+  precheck: precheckSchema.nullable().optional(),
 });
 
 export const starterKitApplyInputSchema = z.object({

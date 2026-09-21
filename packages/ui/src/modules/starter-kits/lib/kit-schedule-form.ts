@@ -4,6 +4,7 @@ import {
   detectPreset,
   detectTimezone,
   type FrequencyPreset,
+  resolveKitSchedulePrecheck,
   type StarterKitSchedule,
   type StarterKitScheduleOverride,
 } from "api-server-api";
@@ -70,8 +71,17 @@ export function kitScheduleFormValues(
         ? preset.rrule
         : "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30",
     quietHours: override?.quietHours ?? [],
-    precheck: "",
+    precheck: declaredPrecheck(schedule, override),
   };
+}
+
+function declaredPrecheck(
+  schedule: StarterKitSchedule,
+  override: StarterKitScheduleOverride | undefined,
+): string {
+  return (
+    resolveKitSchedulePrecheck(schedule.precheck, override?.precheck) ?? ""
+  );
 }
 
 const CADENCE_FIELDS = [
@@ -115,6 +125,16 @@ export type KitScheduleFormOverride = Omit<
   "name" | "timing"
 > & { timing: { rrule: string; timezone: string } | undefined };
 
+export function precheckFromForm(
+  schedule: StarterKitSchedule,
+  values: ScheduleFormValues,
+): string | null | undefined {
+  const declared = schedule.precheck ?? "";
+  const edited = values.precheck.trim();
+  if (edited === declared.trim()) return undefined;
+  return edited === "" ? null : edited;
+}
+
 export function overrideFromForm(
   schedule: StarterKitSchedule,
   values: ScheduleFormValues,
@@ -122,6 +142,7 @@ export function overrideFromForm(
 ): KitScheduleFormOverride | null {
   const { body, error } = buildRRuleParts(values);
   if (error) return null;
+  const precheck = precheckFromForm(schedule, values);
   return {
     timing: keepsDeclaredTiming(schedule, values)
       ? undefined
@@ -129,6 +150,7 @@ export function overrideFromForm(
     sessionMode: values.sessionMode,
     enabled,
     quietHours: values.quietHours,
+    ...(precheck === undefined ? {} : { precheck }),
   };
 }
 
@@ -142,5 +164,6 @@ export function kitScheduleModified(
   if (override.enabled !== schedule.enabled) return true;
   if (override.sessionMode !== (schedule.sessionMode ?? "fresh")) return true;
   if ((override.quietHours ?? []).length > 0) return true;
+  if (precheckFromForm(schedule, values) !== undefined) return true;
   return override.timing !== undefined;
 }

@@ -77,6 +77,29 @@ describe("a kit schedule on the setup form", () => {
     ).toBe(true);
   });
 
+  // TEST_SCENARIO: the precheck a kit declares is the user's to keep, replace or drop on the setup form. Only "drop" needs to travel as an explicit null — an absent field means the kit's own command, so clearing the box has to say so or the schedule is created with a check the user removed.
+  it("keeps, replaces and drops the declared precheck", () => {
+    const withPrecheck: StarterKitSchedule = {
+      ...cronSchedule,
+      precheck: "test -e new",
+    };
+    const values = kitScheduleFormValues(withPrecheck, undefined);
+    expect(values.precheck).toBe("test -e new");
+    expect(
+      overrideFromForm(withPrecheck, values, true)?.precheck,
+    ).toBeUndefined();
+    expect(kitScheduleModified(withPrecheck, values, true)).toBe(false);
+
+    const cleared = { ...values, precheck: "  " };
+    expect(overrideFromForm(withPrecheck, cleared, true)?.precheck).toBeNull();
+    expect(kitScheduleModified(withPrecheck, cleared, true)).toBe(true);
+
+    const replaced = { ...values, precheck: "test -e other" };
+    expect(overrideFromForm(withPrecheck, replaced, true)?.precheck).toBe(
+      "test -e other",
+    );
+  });
+
   // TEST_SCENARIO: a user retimes a schedule, then puts it back to the cadence the kit declared. What the apply carries has to follow them back, or the agent is created on a cadence the user withdrew, with the form showing the kit's own time.
   it("drops a stored cadence when the user reverts to the kit's own", () => {
     const values = kitScheduleFormValues(rruleSchedule, undefined);

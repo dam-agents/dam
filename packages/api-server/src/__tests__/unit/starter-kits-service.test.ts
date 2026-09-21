@@ -34,13 +34,19 @@ function kit(overrides: Partial<ResolvedStarterKit> = {}): ResolvedStarterKit {
       { accepts: ["slack"], note: "Nudges." },
     ],
     schedules: [
-      { name: "review", cron: "*/5 8-21 * * 1-5", task: "Review." },
+      {
+        name: "review",
+        cron: "*/5 8-21 * * 1-5",
+        task: "Review.",
+        precheck: "test -e new",
+      },
       {
         name: "benchmark",
         rrule: "FREQ=MONTHLY;BYMONTHDAY=1",
         timezone: "Europe/Prague",
         task: "Benchmark.",
         enabled: false,
+        precheck: "test -e bench",
       },
     ],
     ...overrides,
@@ -91,8 +97,18 @@ function makeHarness(
     onboarded: [] as { id: string; at: string }[],
     bumped: [] as { agentId: string; events: BumpedEvent[] }[],
     enqueued: [] as string[],
-    cron: [] as { name: string; agentId: string; cron: string }[],
-    rrule: [] as { name: string; rrule: string; timezone: string }[],
+    cron: [] as {
+      name: string;
+      agentId: string;
+      cron: string;
+      precheck?: string;
+    }[],
+    rrule: [] as {
+      name: string;
+      rrule: string;
+      timezone: string;
+      precheck?: string;
+    }[],
     toggled: [] as string[],
     slack: [] as { agentId: string; channel: string; ambient?: boolean }[],
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
@@ -282,6 +298,7 @@ describe("starter kits: apply", () => {
         cron: "*/5 8-21 * * 1-5",
         task: "Review.",
         sessionMode: undefined,
+        precheck: "test -e new",
       },
     ]);
     expect(calls.rrule).toMatchObject([
@@ -526,6 +543,27 @@ describe("starter kits: apply", () => {
       }),
     );
     expect(calls.cron.map((c) => c.name)).not.toContain("review");
+  });
+
+  // TEST_SCENARIO: a kit declares the shell check that decides its own fires, so a schedule it creates must carry it — and a user who clears it on the setup form must get a schedule with none, not the kit's command back.
+  it("carries the declared precheck, and drops it when the user clears it", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      templateId: "claude-code",
+      connectionIds: ["c-gh"],
+      skipSchedules: [],
+      scheduleOverrides: [{ name: "benchmark", precheck: null }],
+    });
+
+    expect(calls.cron).toContainEqual(
+      expect.objectContaining({ name: "review", precheck: "test -e new" }),
+    );
+    expect(calls.rrule.map((r) => [r.name, r.precheck])).toEqual([
+      ["benchmark", undefined],
+    ]);
   });
 
   it("rejects an override that names an rrule with no timezone", () => {
