@@ -410,7 +410,7 @@ export function createMcpSession(
         .boolean()
         .optional()
         .describe(
-          'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Use it when the thread is old enough that people watching the channel would otherwise miss the reply; leave it off for ordinary back-and-forth, which would spam the channel.',
+          'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Leave it off: the answer to a turn belongs in its thread, and broadcasting ordinary back-and-forth spams the channel. Set it only when you were asked to surface the answer to the whole channel.',
         ),
     },
     async ({ text, attachment, threadTs, alsoSendToChannel }) => {
