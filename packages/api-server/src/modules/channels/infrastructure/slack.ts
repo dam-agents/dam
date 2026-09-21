@@ -681,7 +681,7 @@ export interface ChannelRegistry {
 export interface SlackWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
-  standingIn(
+  conversationStanding(
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
@@ -726,6 +726,7 @@ export interface SlackWorker {
 export interface SlackOAuthPending {
   slackUserId: string;
   channelId: string;
+  teamId: string;
   codeVerifier: string;
   intent: "login" | "bind";
   createdAt: number;
@@ -977,6 +978,7 @@ export function createSlackWorker(
   uiBaseUrl: string,
   attendance: ChannelTurnAttendance,
   workspaceFiles: AgentWorkspaceFilesFactory,
+  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace,
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
@@ -2041,12 +2043,14 @@ export function createSlackWorker(
   async function mintBindInvitation(
     slackUserId: string,
     channelId: string,
+    teamId: SlackWorkspace,
   ): Promise<string> {
     const roster = await resolveRoster(channelId);
     const { state, codeVerifier, codeChallenge } = generatePkce();
     await pendingOAuthFlows.set(state, {
       slackUserId,
       channelId,
+      teamId: canonicalWorkspace(teamId),
       codeVerifier,
       intent: "bind",
       createdAt: Date.now(),
@@ -2067,7 +2071,11 @@ export function createSlackWorker(
     await gateway.postEphemeral({
       channel: event.channel,
       user: event.inviter,
-      text: await mintBindInvitation(event.inviter, event.channel),
+      text: await mintBindInvitation(
+        event.inviter,
+        event.channel,
+        event.teamId,
+      ),
       teamId: event.teamId,
     });
   }
@@ -2137,6 +2145,7 @@ export function createSlackWorker(
         await pendingOAuthFlows.set(state, {
           slackUserId: command.userId,
           channelId: command.channelId,
+          teamId: canonicalWorkspace(command.teamId),
           codeVerifier,
           intent: "login",
           createdAt: Date.now(),
@@ -2159,7 +2168,11 @@ export function createSlackWorker(
       })
       .with("bind", async () => {
         await ack({
-          text: await mintBindInvitation(command.userId, command.channelId),
+          text: await mintBindInvitation(
+            command.userId,
+            command.channelId,
+            command.teamId,
+          ),
         });
       })
       .with("unbind", async () => {
@@ -3400,12 +3413,12 @@ export function createSlackWorker(
       gateway = null;
     },
 
-    async standingIn(
+    async conversationStanding(
       slackChannelId: string,
       teamId: SlackWorkspace,
     ): Promise<SlackConversationStanding> {
       const gw = await ensureGateway();
-      if (!gw) return "unknown";
+      if (!gw) throw new Error("slack gateway is not connected here");
       const info = await gw.getConversationInfo(slackChannelId, teamId);
       if (!info) return "unknown";
       return info.isMember ? "member" : "known";

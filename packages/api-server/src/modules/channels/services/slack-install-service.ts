@@ -42,6 +42,7 @@ export interface SlackInstallServiceDeps {
 export interface SlackInstallService {
   resolveBotToken: SlackTokenResolver;
   setOriginalWorkspace: (teamId: SlackWorkspace) => void;
+  canonicalWorkspaceName: (teamId: SlackWorkspace) => SlackWorkspace;
   record: (install: SlackInstallRecord) => Promise<string>;
   markRejected: (teamId: string) => Promise<void>;
 }
@@ -62,7 +63,10 @@ export interface SlackInstallService {
  * platform could connect a second workspace say the empty string; Slack says
  * the real team id on every event it sends; both resolve to the same row, so
  * re-authorizing that workspace takes effect and it is never served by two
- * credentials at once.
+ * credentials at once. The same rule is offered outward as the workspace's
+ * canonical name, so anything that records a workspace writes the empty string
+ * for the original one — were each surface to write the name it happened to
+ * hear, one workspace's records would split across its two names.
  *
  * While that workspace is unknown the empty string names nothing, and nothing
  * is what it is answered with. Answering it with the operator's credential
@@ -104,6 +108,10 @@ export function createSlackInstallService(
     setOriginalWorkspace(teamId: SlackWorkspace): void {
       originalTeamId = teamId;
       tokens.clear();
+    },
+
+    canonicalWorkspaceName(teamId: SlackWorkspace): SlackWorkspace {
+      return teamId === originalTeamId ? ORIGINAL_WORKSPACE : teamId;
     },
 
     async resolveBotToken(teamId: SlackWorkspace): Promise<string | null> {

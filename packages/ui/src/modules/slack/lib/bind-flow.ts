@@ -62,6 +62,18 @@ export function bindErrorCopy(
         hint: "Pick a different agent.",
         terminal: false,
       };
+    case "UNPROCESSABLE_CONTENT":
+      return {
+        title: "Couldn't tell which Slack workspace this conversation is in",
+        hint: `Run \`/${brandShort} bind\` in the conversation again — a fresh link carries its workspace.`,
+        terminal: true,
+      };
+    case "SERVICE_UNAVAILABLE":
+      return {
+        title: "Slack couldn't be reached to check this conversation",
+        hint: "The link is still good — try again in a moment.",
+        terminal: false,
+      };
     default:
       return {
         title: "Something went wrong",

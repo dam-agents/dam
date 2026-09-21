@@ -72,6 +72,7 @@ function harness(boundChannelId = "C1") {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     () => {},
   );
 

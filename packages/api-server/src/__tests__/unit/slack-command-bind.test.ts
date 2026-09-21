@@ -6,6 +6,10 @@ import {
   type SlackOAuthPending,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import {
+  createSlackInstallService,
+  type SlackInstallServiceDeps,
+} from "../../modules/channels/services/slack-install-service.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
@@ -24,6 +28,7 @@ function harness(opts: {
   binding: Binding;
   linkedSub?: string | null;
   agentOwner?: string | null;
+  canonicalWorkspace?: (teamId: string) => string;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -77,6 +82,7 @@ function harness(opts: {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    opts.canonicalWorkspace ?? ((teamId) => teamId),
     (e) => events.push(e),
   );
 
@@ -86,9 +92,14 @@ function harness(opts: {
     pending,
     pendingMap,
     unbindCalls,
-    async command(text: string, userId = "U-1", channelId = "C-1") {
+    async command(
+      text: string,
+      userId = "U-1",
+      channelId = "C-1",
+      teamId?: string,
+    ) {
       await worker.connect();
-      return gw.fireCommand({ text, userId, channelId });
+      return gw.fireCommand({ text, userId, channelId, teamId });
     },
   };
 }
@@ -123,6 +134,36 @@ describe("slack /bind command", () => {
     expect(ack).toContain("Already connected here");
     expect(ack).toContain("joins them rather than replacing them");
     expect(h.pendingMap.size).toBe(1);
+  });
+
+  /**
+   * TEST_SCENARIO: the flow is minted under the workspace's canonical name.
+   * Slack puts the real team id on the command, while every binding row names
+   * the original workspace by the empty string; the flow is the value the bind
+   * later writes, so it must be minted canonical here — the one place that
+   * always knows the answer, because the gateway learns it before opening the
+   * socket that commands arrive on. Consumers of the flow run on any replica
+   * and none of them can tell the two names apart. The naming rule is the
+   * install service's own, not a stand-in that could drift from it.
+   */
+  it("mints the flow under the canonical workspace name", async () => {
+    const installs = createSlackInstallService({
+      envBotToken: null,
+      now: () => 0,
+    } as unknown as SlackInstallServiceDeps);
+    installs.setOriginalWorkspace("T-ORIGINAL");
+    const h = harness({
+      binding: null,
+      canonicalWorkspace: installs.canonicalWorkspaceName,
+    });
+
+    await h.command("bind", "U-7", "C-9", "T-ORIGINAL");
+    await h.command("bind", "U-7", "C-8", "T-SECOND");
+
+    const flows = [...h.pendingMap.values()];
+    expect(flows).toHaveLength(2);
+    expect(flows.find((f) => f.channelId === "C-9")?.teamId).toBe("");
+    expect(flows.find((f) => f.channelId === "C-8")?.teamId).toBe("T-SECOND");
   });
 });
 

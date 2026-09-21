@@ -31,6 +31,11 @@ describe("slack bind flow helpers", () => {
       "Pick a different agent",
     );
     expect(bindErrorCopy("NOT_FOUND", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy("UNPROCESSABLE_CONTENT", BRAND).terminal).toBe(true);
+    expect(bindErrorCopy("UNPROCESSABLE_CONTENT", BRAND).hint).toContain(
+      `/${BRAND} bind`,
+    );
+    expect(bindErrorCopy("SERVICE_UNAVAILABLE", BRAND).terminal).toBe(false);
     expect(bindErrorCopy(undefined, BRAND).terminal).toBe(false);
   });
 

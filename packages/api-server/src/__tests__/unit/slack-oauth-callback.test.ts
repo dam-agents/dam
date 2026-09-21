@@ -38,6 +38,7 @@ function makeHarness(opts: {
   pendingFlowsMap.set("state-1", {
     slackUserId: SLACK_USER_ID,
     channelId: "C-123",
+    teamId: "T-WORKSPACE",
     codeVerifier: "verifier",
     intent: opts.intent,
     createdAt: opts.pendingCreatedAt ?? Date.now(),
@@ -82,6 +83,7 @@ describe("slack oauth callback — bind intent", () => {
     const flowId = new URL(location).searchParams.get("flow")!;
     expect(await h.bindFlows.peek(flowId)).toMatchObject({
       slackChannelId: "C-123",
+      teamId: "T-WORKSPACE",
       slackUserId: SLACK_USER_ID,
       keycloakSub: KEYCLOAK_SUB,
     });

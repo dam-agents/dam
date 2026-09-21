@@ -230,6 +230,18 @@ export const agentsRouter = t.router({
             code: "CONFLICT",
             message: "That agent is already connected to this channel",
           });
+        case "WorkspaceUnresolved":
+          throw new TRPCError({
+            code: "UNPROCESSABLE_CONTENT",
+            message:
+              "Could not work out which Slack workspace this conversation belongs to",
+          });
+        case "WorkspaceUnreachable":
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "Slack could not be asked which workspace this conversation belongs to",
+          });
       }
     }),
 

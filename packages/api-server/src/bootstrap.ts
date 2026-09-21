@@ -827,6 +827,7 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
+        slackInstalls.canonicalWorkspaceName,
         undefined,
         DEFAULT_SETTLE_MS,
       )
@@ -837,8 +838,8 @@ export async function bootstrap() {
       (await listSlackInstalls(db)())
         .filter((i) => i.credentialState === "active")
         .map((i) => i.teamId),
-    standingIn: async (slackChannelId, teamId) =>
-      slackWorker ? slackWorker.standingIn(slackChannelId, teamId) : "unknown",
+    conversationStanding: async (slackChannelId, teamId) =>
+      channelManager.slackConversationStanding(slackChannelId, teamId),
   });
 
   const telegramWorker =

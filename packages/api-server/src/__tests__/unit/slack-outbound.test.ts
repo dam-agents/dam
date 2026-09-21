@@ -63,6 +63,7 @@ function harness(opts: {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     () => {},
   );
 
@@ -107,6 +108,20 @@ describe("slack outbound — cross-workspace reach", () => {
       gatewayDown: true,
     });
     expect(await h.post("hi")).toEqual({ error: "slack bot not running" });
+  });
+
+  /**
+   * TEST_SCENARIO: a worker with no Slack connection refuses the
+   * which-workspace-sees-this question instead of answering it. The answer is
+   * read as Slack's own word on the conversation, so "I cannot ask" arriving
+   * as "unknown" would report a conversation nobody could see — indicting a
+   * conversation id that was never in question, on every replica that does
+   * not hold the lease.
+   */
+  it("refuses the standing question when the gateway is not connected here", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+
+    await expect(h.worker.conversationStanding(BOUND, "")).rejects.toThrow();
   });
 
   // TEST_SCENARIO: an outbound call racing a lease stand-down must not resurrect the gateway on the ex-leader — that would be a second install-wide Slack consumer.

@@ -92,6 +92,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
+    (teamId) => teamId,
     (e) => events.push(e),
     opts.settleMs ?? 0,
   );

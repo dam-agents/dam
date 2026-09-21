@@ -93,6 +93,7 @@ export function createSlackOAuthRoutes(deps: {
     if (isBind) {
       const flowId = await deps.bindFlows.create({
         slackChannelId: pending.channelId,
+        teamId: pending.teamId,
         slackUserId: pending.slackUserId,
         keycloakSub: result.keycloakSub,
       });

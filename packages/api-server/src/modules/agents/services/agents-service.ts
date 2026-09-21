@@ -313,6 +313,7 @@ function withinBudget<T>(
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
+    teamId: string;
     slackUserId: string;
     keycloakSub: string;
     channelTitle?: string;
@@ -334,6 +335,7 @@ export function executeSlackBind(deps: {
   connectShared: (
     agentId: string,
     slackChannelId: string,
+    teamId: string,
   ) => Promise<ConnectSlackResult>;
   binding: SlackBindingPort;
 }) {
@@ -363,9 +365,24 @@ export function executeSlackBind(deps: {
     if (existing.some((b) => b.agentId === agentId))
       return err({ type: "ChannelAlreadyBound" as const });
 
-    const connected = await deps.connectShared(agentId, flow.slackChannelId);
+    const connected = await deps.connectShared(
+      agentId,
+      flow.slackChannelId,
+      flow.teamId,
+    );
     if (!connected.ok) {
-      return err({ type: "ChannelAlreadyBound" as const });
+      switch (connected.error.type) {
+        case "WorkspaceUnresolved":
+          return err({ type: "WorkspaceUnresolved" as const });
+        case "WorkspaceUnreachable":
+          return err({ type: "WorkspaceUnreachable" as const });
+        case "AgentNotFound":
+          return err({ type: "AgentNotFound" as const });
+        case "ChannelAlreadyBound":
+          return err({ type: "ChannelAlreadyBound" as const });
+        default:
+          return connected.error satisfies never;
+      }
     }
 
     await deps.binding.consumeFlow(flowId);
@@ -647,21 +664,25 @@ export function createAgentsService(deps: {
     id: string,
     slackChannelId: string,
     ambient?: boolean,
+    knownWorkspace?: string,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
-    const existing = (await deps.findSlackBindings(slackChannelId)).find(
-      (b) => b.agentId === id,
-    );
-
-    const workspace = await deps.resolveSlackWorkspace(slackChannelId);
+    const workspace =
+      knownWorkspace === undefined
+        ? await deps.resolveSlackWorkspace(slackChannelId)
+        : ({ kind: "resolved", teamId: knownWorkspace } as const);
     if (workspace.kind === "unreachable") {
       return err({ type: "WorkspaceUnreachable" as const });
     }
     if (workspace.kind !== "resolved") {
       return err({ type: "WorkspaceUnresolved" as const });
     }
+
+    const existing = (await deps.findSlackBindings(slackChannelId)).find(
+      (b) => b.agentId === id,
+    );
 
     const requestedAmbient = ambient === true;
 
@@ -1404,8 +1425,8 @@ export function createAgentsService(deps: {
           return infra ? { id: infra.id, name: infra.name } : null;
         },
         findChannelBindings: deps.findSlackBindings,
-        connectShared: (id, slackChannelId) =>
-          connectSlackImpl(id, slackChannelId),
+        connectShared: (id, slackChannelId, teamId) =>
+          connectSlackImpl(id, slackChannelId, undefined, teamId),
         binding,
       })(agentId, flowId);
     },
