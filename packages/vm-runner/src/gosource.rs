@@ -96,8 +96,45 @@ pub fn regexp_source(source: &str, name: &str) -> Option<String> {
 
 // UNIT_BOUNDARY_DESCRIPTION: the argument list of a Go call inside one named function, as written. Scoped to the function because a call this common appears more than once in a file — an earlier version of this took the first line in the file that contained it and read a log sanitiser's replacements as the cache's, which is the whole failure this module exists to avoid: agreeing confidently with something it had not located.
 pub fn call_args_in(source: &str, function: &str, call: &str) -> Option<String> {
-    let body = source.split_once(&format!("func {function}"))?.1;
-    let body = body.split_once("\n}")?.0;
-    let after = body.split_once(call)?.1;
+    let after = function_body(source, function)?
+        .split_once(call)?
+        .1
+        .to_string();
     Some(after.split_once(')')?.0.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every double-quoted Go string literal inside one named function, in order and unescaped only as far as recognising where each one ends. Needed because the argument reader below stops at the first `)`, and the messages this crate has to match word for word contain their own parentheses — reading one with that reader returns half a sentence and compares it confidently.
+pub fn literals_in(source: &str, function: &str) -> Vec<String> {
+    let Some(body) = function_body(source, function) else {
+        return Vec::new();
+    };
+    let mut literals = Vec::new();
+    let mut chars = body.chars();
+    while let Some(c) = chars.next() {
+        if c != '"' {
+            continue;
+        }
+        let mut literal = String::new();
+        loop {
+            match chars.next() {
+                Some('\\') => match chars.next() {
+                    Some(escaped) => {
+                        literal.push('\\');
+                        literal.push(escaped);
+                    }
+                    None => break,
+                },
+                Some('"') | None => break,
+                Some(c) => literal.push(c),
+            }
+        }
+        literals.push(literal);
+    }
+    literals
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the text of one Go function, ending at the first line that is a closing brace in the first column. Used where the shape being compared is a literal the function contains rather than an argument list a reader can take apart — a containment check against the whole file would find the same words somewhere else and agree with the wrong function.
+pub fn function_body<'a>(source: &'a str, function: &str) -> Option<&'a str> {
+    let body = source.split_once(&format!("func {function}"))?.1;
+    Some(body.split_once("\n}")?.0)
 }
