@@ -30,38 +30,7 @@ export interface AgentSpecCR {
     /**
      * VM carries vm-backend props; present only when type == "vm".
      */
-    vm?: {
-      /**
-       * Disk describes the machine's one storage disk. Omitted, the controller
-       * derives it from the Agent's Mounts, which is how an Agent written by a
-       * caller that only knows the container backend still boots.
-       */
-      disk?: {
-        /**
-         * Persist are absolute guest paths bind-mounted from the disk, seeded once
-         * from whatever the image ships at that path. They survive a stop, an
-         * in-place restart and hibernation, and go with the Agent on delete.
-         *
-         * MaxItems and items:MaxLength are what make the `..` rule above
-         * affordable: the CEL cost estimator sizes a rule from the schema's own
-         * bounds, and reads no CEL predicate, so an unbounded array is costed as
-         * if it were enormous and the rule is rejected at apply time. A path
-         * nested inside another is not rejected here — bounding that needs a rule
-         * quadratic in this list, which the estimator prices out of reach. The
-         * api-server and the controller both drop a nested path instead, since one
-         * disk persists a path and everything under it.
-         *
-         * @maxItems 24
-         */
-        persist?: string[];
-        /**
-         * Size is the whole disk as a K8s resource Quantity (e.g. "20Gi"), rounded
-         * up to a GiB when the machine is created and grown in place — never shrunk
-         * — when it rises. Empty inherits StorageSize, then the chart default.
-         */
-        size?: string;
-      };
-    };
+    vm?: {};
   };
   /**
    * Description is an optional human-readable description.

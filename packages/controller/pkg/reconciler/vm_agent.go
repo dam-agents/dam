@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
@@ -82,7 +81,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 
-	disk, err := resolveVMDisk(spec, defaults)
+	storageGiB, err := resolveVMDiskGiB(spec, defaults)
 	if err != nil {
 		return vmrunner.MachineStatus{}, err
 	}
@@ -100,8 +99,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
 		MemoryMiB:  max(int(mem.Value()>>20), 1),
-		StorageGiB: disk.gibibytes,
-		Persist:    disk.persist,
+		StorageGiB: storageGiB,
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
@@ -280,54 +278,21 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 	return false
 }
 
-type vmDisk struct {
-	gibibytes int
-	persist   []string
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk and a set of paths on it, which is why the vm backend states it separately from Mounts. A pod attaches one volume per path, so on the container backend a mount is a size and a placement at once; a machine has a single disk, so summing the mounts' sizes produced a number no path was held to — two 10Gi mounts bought 20Gi that either path could eat — and rounding each one up to a GiB first paid for that rounding once per mount. The size is one quantity here, rounded once. An Agent written without the block still boots: its persisted mounts name the paths and its own storage size is the disk, which is what the default template already meant.
-func resolveVMDisk(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (vmDisk, error) {
-	declared := spec.Backend.VM.GetDisk()
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops.
+func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {
+			return 0, fmt.Errorf("the vm backend persists only %s, so this Agent's persisted mount %s would be lost at the first stop; move it under %s or run this Agent on the container backend",
+				agentHomeDir, m.Path, agentHomeDir)
+		}
+	}
 	size := defaults.StorageSize
 	if spec.StorageSize != "" {
 		size = spec.StorageSize
 	}
-	if declared != nil && declared.Size != "" {
-		size = declared.Size
-	}
 	quantity, err := resource.ParseQuantity(size)
 	if err != nil {
-		return vmDisk{}, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
+		return 0, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
 	}
-
-	var persist []string
-	if declared != nil {
-		persist = slices.Clone(declared.Persist)
-	} else {
-		for _, m := range resolveSpecMounts(spec, defaults) {
-			if m.Persist {
-				persist = append(persist, m.Path)
-			}
-		}
-	}
-	persist = outermost(persist)
-
-	return vmDisk{
-		gibibytes: max(int((quantity.Value()+(1<<30)-1)>>30), 1),
-		persist:   persist,
-	}, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: one disk persists a path and everything under it, so a declared path inside another is already covered by its parent and binding it again would mount the parent's own subtree onto itself. Mounts may nest — each is a volume of its own on the container backend, and a template that nested two has always been legal — so the nesting is resolved here rather than refused, and the list is sorted so that reordering it is not a restart.
-func outermost(paths []string) []string {
-	slices.Sort(paths)
-	paths = slices.Compact(paths)
-	kept := paths[:0]
-	for _, path := range paths {
-		if len(kept) > 0 && strings.HasPrefix(path, kept[len(kept)-1]+"/") {
-			continue
-		}
-		kept = append(kept, path)
-	}
-	return kept
+	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
 }

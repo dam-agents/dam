@@ -1,8 +1,7 @@
-// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, applies the mount plan its runner wrote, and execs the image's own entrypoint. It exists so persistence is the platform's to guarantee rather than the image's to implement: the shell that did this before lived in the agent base image, so a machine booted from any other image came up with its disk unmounted and lost every byte the first time it stopped — silently, because the check that would have caught it lived in the same entrypoint that was missing. The runner supplies this binary along with the plan, so an image that has never heard of this platform still persists exactly what its Agent declared.
+// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, mounts the agent's home from it, and execs the image's own entrypoint. It exists so persistence is the platform's to guarantee rather than the image's to implement: the shell that did this before lived in the agent base image, so a machine booted from any other image came up with its disk unmounted and lost every byte the first time it stopped — silently, because the check that would have caught it lived in the same entrypoint that was missing. The runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop.
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -38,15 +37,12 @@ func main() {
 	}
 	command := os.Args[1:]
 
-	plan := readPlan()
 	root := claimDisk()
 	openBootLog(root)
 
 	logf("storage disk claimed at %s", root)
 	bindCA()
-	for _, path := range plan.Persist {
-		persist(root, path)
-	}
+	persistHome(root)
 	offerTrustCache(root)
 
 	binary, err := lookPath(command[0])
@@ -59,19 +55,7 @@ func main() {
 	}
 }
 
-func readPlan() vmrunner.Plan {
-	encoded, err := os.ReadFile(vmrunner.PlanPath)
-	if err != nil {
-		fatal("reading the mount plan at %s: %v", vmrunner.PlanPath, err)
-	}
-	var plan vmrunner.Plan
-	if err := json.Unmarshal(encoded, &plan); err != nil {
-		fatal("parsing the mount plan: %v", err)
-	}
-	return plan
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a disk that failed to attach leaves an ordinary directory of the root overlay in its place, which would take every write the plan makes and discard it at the next stop — so the device is checked before anything is mounted onto it. The move that follows is what leaves the disk reachable by exactly one name: left where the VMM put it, its root is writable under a name that means something else here, and anything written straight to it persists outside the plan. A kernel that refuses the move still has a working disk, which is worth a line in the log and not a failed boot.
+// UNIT_BOUNDARY_DESCRIPTION: a disk that failed to attach leaves an ordinary directory of the root overlay in its place, which would take every write the agent's home makes and discard it at the next stop — so the device is checked before anything is mounted onto it. The move that follows is what leaves the disk reachable by exactly one name: left where the VMM put it, its root is writable under a name that means something else here, and anything written straight to it persists outside the agent's home. A kernel that refuses the move still has a working disk, which is worth a line in the log and not a failed boot.
 func claimDisk() string {
 	device, err := os.Stat(vmrunner.DiskDevicePath)
 	if err != nil {
@@ -183,9 +167,10 @@ func offerTrustCache(root string) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the first boot seeds a declared path from whatever the image ships there, so a home an image baked is the home the agent starts from. The copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
-func persist(root, path string) {
-	store := vmrunner.AgentStore(root, path)
+// UNIT_BOUNDARY_DESCRIPTION: the first boot seeds the home from whatever the image ships there, so a home an image baked is the home the agent starts from. The copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
+func persistHome(root string) {
+	path := vmrunner.AgentHome
+	store := vmrunner.AgentStore(root)
 	_, err := os.Stat(store)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

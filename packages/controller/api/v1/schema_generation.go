@@ -31,11 +31,7 @@ const (
 	// controller reads the Secret and folds its keys into the machine's env.
 	// Agent gen 11: the vm backend now rejects nodeSelector too — it places a
 	// pod, and a vm agent's machine is placed with its owner's VM runner.
-	// Agent gen 12: backend.vm.disk added — the vm backend's own storage
-	// model. A machine has one disk, so its size is stated once and the
-	// persisted paths are placements on it, rather than mounts that are a
-	// volume and a size each.
-	AgentSchemaGeneration = 12
+	AgentSchemaGeneration = 11
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

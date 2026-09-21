@@ -3,7 +3,6 @@ import type { TemplateSpec } from "api-server-api";
 import {
   assembleSpecFromTemplate,
   concreteResources,
-  vmDiskFromMounts,
 } from "../../modules/agents/domain/spec-assembly.js";
 
 const baseTemplate: TemplateSpec = {
@@ -46,13 +45,13 @@ describe("assembleSpecFromTemplate", () => {
       { vm: true },
       defaultLimits,
     );
-    expect(spec.backend).toEqual({ type: "vm", vm: undefined });
+    expect(spec.backend).toEqual({ type: "vm" });
     expect(spec.runtimeClassName).toBeUndefined();
     expect(spec.nodeSelector).toBeUndefined();
   });
 
-  // TEST_SCENARIO: a machine has one disk, so the template's mounts become a list of paths on it. The disk's size is not copied here — it stays the agent's own storageSize, which the controller already reads, so the number cannot drift between two places.
-  it("turns a template's persisted mounts into the machine's disk", () => {
+  // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the vm backend carries no storage block of its own and the mounts travel unchanged. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
+  it("carries the template's mounts unchanged and invents no vm storage block", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       {
@@ -66,48 +65,12 @@ describe("assembleSpecFromTemplate", () => {
       { vm: true },
       defaultLimits,
     );
-    expect(spec.backend).toEqual({
-      type: "vm",
-      vm: { disk: { persist: ["/home/agent"] } },
-    });
+    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.mounts).toEqual([
+      { path: "/home/agent", persist: true },
+      { path: "/tmp", persist: false },
+    ]);
     expect(spec.storageSize).toBe("20Gi");
-  });
-});
-
-describe("vmDiskFromMounts", () => {
-  // TEST_SCENARIO: a machine discards its whole root every time it stops, so a path with no place on the disk is already empty on the next boot. A non-persisted mount therefore needs no counterpart here — unlike a container, where it is an emptyDir of its own.
-  it("keeps only the paths that persist, in a stable order", () => {
-    expect(
-      vmDiskFromMounts([
-        { path: "/home/agent", persist: true },
-        { path: "/tmp", persist: false },
-        { path: "/data", persist: true },
-      ]),
-    ).toEqual({ disk: { persist: ["/data", "/home/agent"] } });
-  });
-
-  // TEST_SCENARIO: mounts may nest, because each is a volume of its own on the container backend. One disk persists a path and everything under it, so the child is already covered and declaring both would bind the parent's own subtree onto itself. The Agent resource does not catch this — a quadratic rule is beyond the CRD's CEL cost budget — so dropping it here is the guard, alongside the controller's.
-  it("drops a mount nested inside another persisted one", () => {
-    expect(
-      vmDiskFromMounts([
-        { path: "/home/agent/work", persist: true },
-        { path: "/home/agent", persist: true },
-        { path: "/data", persist: true },
-      ]),
-    ).toEqual({ disk: { persist: ["/data", "/home/agent"] } });
-  });
-
-  // TEST_SCENARIO: a template with no mounts says nothing about the disk, which is not the same as saying nothing persists. Leaving the block off is what tells the controller to fall back to the chart's default mounts; an empty list would be taken at its word and the agent would lose its home.
-  it("declares nothing when the template declares no mounts", () => {
-    expect(vmDiskFromMounts(undefined)).toBeUndefined();
-    expect(vmDiskFromMounts([])).toBeUndefined();
-  });
-
-  // TEST_SCENARIO: a template whose mounts are all ephemeral does mean "persist nothing", and says so — the block is present with an empty list, which the controller takes literally rather than falling back.
-  it("declares an empty disk when every mount is ephemeral", () => {
-    expect(vmDiskFromMounts([{ path: "/tmp", persist: false }])).toEqual({
-      disk: { persist: [] },
-    });
   });
 
   it("leaves the agent on a container when the caller asks for nothing", () => {

@@ -155,8 +155,7 @@ func (h *harness) settle(t *testing.T, id string) MachineStatus {
 
 func spec(running bool) MachineSpec {
 	return MachineSpec{Image: "quay.io/x/vm:1", CPUs: 2, MemoryMiB: 2048, StorageGiB: 5, Running: running, Revision: "r1",
-		Persist: []string{"/home/agent"},
-		Env:     map[string]string{"HTTPS_PROXY": "http://10.0.0.1:10000", "A": "b"}, CACert: "PEM", AllowCIDRs: []string{"10.0.0.1/32"}}
+		Env: map[string]string{"HTTPS_PROXY": "http://10.0.0.1:10000", "A": "b"}, CACert: "PEM", AllowCIDRs: []string{"10.0.0.1/32"}}
 }
 
 // TEST_SCENARIO: the controller is the only caller; a request without its token gets nothing, not even a status.
@@ -260,9 +259,6 @@ func TestCreatesAndStartsAnAbsentMachine(t *testing.T) {
 	ca, err := os.ReadFile(filepath.Join(share, "ca", "ca.crt"))
 	require.NoError(t, err)
 	assert.Equal(t, "PEM", string(ca))
-	plan, err := os.ReadFile(filepath.Join(share, "plan.json"))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"persist":["/home/agent"]}`, string(plan), "the guest is told what to mount rather than the image deciding")
 	info, err := os.Stat(filepath.Join(share, "init"))
 	require.NoError(t, err)
 	assert.NotZero(t, info.Mode().Perm()&0o111, "platform-init is copied into the share executable")

@@ -18,6 +18,7 @@ import (
 
 const AgentContainerName = "agent"
 
+// UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. platform-init needs it too and is a guest binary that pulls in no Kubernetes libraries at all, so it reads its own copy from the machine contract rather than this package — and a test here asserts the two agree, because nothing else would notice them drifting.
 const agentHomeDir = "/home/agent"
 
 func portInt32(p int) int32 {

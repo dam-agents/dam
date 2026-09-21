@@ -13,7 +13,6 @@ type MachineSpec struct {
 	CPUs       int               `json:"cpus"`
 	MemoryMiB  int               `json:"memoryMiB"`
 	StorageGiB int               `json:"storageGiB"`
-	Persist    []string          `json:"persist,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
 	CACert     string            `json:"caCert,omitempty"`
 	AllowCIDRs []string          `json:"allowCidrs,omitempty"`

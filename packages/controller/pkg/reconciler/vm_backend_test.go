@@ -253,7 +253,6 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
 	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
 	assert.Equal(t, spec.Env["NO_PROXY"], spec.Env["no_proxy"], "clients reading either casing see the same list")
-	assert.Equal(t, []string{"/home/agent"}, spec.Persist, "the runner is told what the disk holds; the image is not asked")
 	assert.Equal(t, "7", spec.Revision, "the restart verb's roll revision reaches the machine")
 	assert.Equal(t, "my-agent", spec.Env["PLATFORM_AGENT_ID"])
 
@@ -398,7 +397,7 @@ func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 // TEST_SCENARIO: the disk carries a size that does not parse; the reconcile fails instead of booting the guest on the 1 GiB floor, which would look healthy and run out of disk later.
 func TestVMBackendRefusesADiskSizeItCannotParse(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{Size: "5GG", Persist: []string{"/home/agent"}}}
+	agent.Spec.StorageSize = "5GG"
 	r, node, _ := setupVMReconciler(t, agent)
 
 	err := r.Reconcile(context.Background(), agent)
@@ -407,24 +406,21 @@ func TestVMBackendRefusesADiskSizeItCannotParse(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
 }
 
-// TEST_SCENARIO: a machine has one disk, so the Agent says how big it is once and which paths live on it. The container backend's mounts cannot say that — each is a volume with a size of its own — so summing them bought a number no single path was held to, and rounding each up to a GiB first paid for that rounding once per mount. Here two persisted paths of 4Gi each are one 10Gi disk: the Agent's own storage size, stated once.
+// TEST_SCENARIO: a machine has one disk, so the Agent's own storage size is the whole of it. The container backend's mounts cannot say that — each is a volume with a size of its own — so summing them bought a number no single path was held to, and rounding each up to a GiB first paid for that rounding once per mount. Here two persisted mounts of 4Gi each are one 10Gi disk.
 func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{Persist: []string{"/home/agent", "/data"}}}
 	agent.Spec.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true, Size: "4Gi"},
-		{Path: "/data", Persist: true, Size: "4Gi"},
+		{Path: "/home/agent/work", Persist: true, Size: "4Gi"},
 	}
 	r, node, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
-	spec := node.spec("my-agent")
-	assert.Equal(t, 10, spec.StorageGiB, "the Agent's storage size, not 4+4")
-	assert.Equal(t, []string{"/data", "/home/agent"}, spec.Persist, "sorted, so reordering the list is not a restart")
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
 }
 
-// TEST_SCENARIO: an Agent written by a caller that only knows the container backend carries mounts and no disk block. Its persisted mounts still name the paths and its own storage size is still the disk, so it boots with exactly what the default template has always meant — a non-persisted mount contributes nothing, because a machine discards its whole root at every stop and a path with no place on the disk is already empty on the next boot.
-func TestVMBackendDerivesTheDiskFromMountsWhenNoneIsDeclared(t *testing.T) {
+// TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
+func TestVMBackendAcceptsTheDefaultMounts(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
@@ -433,34 +429,22 @@ func TestVMBackendDerivesTheDiskFromMountsWhenNoneIsDeclared(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
-	spec := node.spec("my-agent")
-	assert.Equal(t, []string{"/home/agent"}, spec.Persist)
-	assert.Equal(t, 10, spec.StorageGiB)
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB)
 }
 
-// TEST_SCENARIO: mounts may nest — each is a volume of its own on the container backend — but one disk persists a path and everything under it, so the child is already covered and binding it again would mount the parent's own subtree onto itself.
-func TestVMBackendDropsAPersistedPathInsideAnother(t *testing.T) {
+// TEST_SCENARIO: a machine keeps HOME and nothing else, so a mount asking to persist a path outside it cannot be honoured. Dropping it silently is the failure this backend exists to stop being possible — the agent would run, look healthy, and lose that path the first time it stopped — so the reconcile fails and says where the path would have to move.
+func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.Mounts = []apiv1.Mount{
-		{Path: "/home/agent/work", Persist: true},
 		{Path: "/home/agent", Persist: true},
 		{Path: "/data", Persist: true},
 	}
 	r, node, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.Reconcile(context.Background(), agent))
 
-	assert.Equal(t, []string{"/data", "/home/agent"}, node.spec("my-agent").Persist)
-}
-
-// TEST_SCENARIO: a disk block that lists nothing is an Agent that persists nothing, which is not the same as an Agent that declared no block at all — the second falls back to its mounts, the first is taken at its word.
-func TestVMBackendHonoursAnEmptyPersistList(t *testing.T) {
-	agent := vmAgentCR()
-	agent.Spec.Backend.VM = &apiv1.VMBackend{Disk: &apiv1.VMDisk{}}
-	agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true}}
-	r, node, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-
-	assert.Empty(t, node.spec("my-agent").Persist)
+	err := r.Reconcile(context.Background(), agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "/data")
+	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
 }
 
 // TEST_SCENARIO: the runner's volume holds three things with three lifetimes — the machine disks that are an owner's agents, the per-machine bookkeeping a restart rebuilds, and an image cache. Each gets its own mount, including the images when no shared volume is configured, so one never appears inside another depending on how the install is set up.
@@ -887,4 +871,9 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "info", env["RUST_LOG"],
 		"or a slow boot reports no phases, and debug would bury them under every status call")
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
+}
+
+// TEST_SCENARIO: the agent home is one path on both backends, but it is written down twice — here, and in the machine contract platform-init reads. The guest binary carries no Kubernetes libraries and this package pulls in nearly three hundred, so it cannot import its way to one copy. Nothing but this would notice the two drifting, and a machine would then bind-mount a home the controller never set.
+func TestTheAgentHomeAgreesWithTheMachineContract(t *testing.T) {
+	assert.Equal(t, agentHomeDir, vmrunner.AgentHome)
 }

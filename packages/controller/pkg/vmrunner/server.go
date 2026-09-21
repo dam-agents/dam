@@ -252,7 +252,7 @@ func (s *Server) deadForLong(id string) bool {
 func needsRestart(applied, desired MachineSpec) bool {
 	return applied.Revision != desired.Revision || applied.CACert != desired.CACert || applied.CPUs != desired.CPUs ||
 		applied.MemoryMiB != desired.MemoryMiB || applied.StorageGiB < desired.StorageGiB ||
-		!reflect.DeepEqual(applied.Env, desired.Env) || !reflect.DeepEqual(applied.Persist, desired.Persist)
+		!reflect.DeepEqual(applied.Env, desired.Env)
 }
 
 func createOnlyDrift(applied, desired MachineSpec) string {
@@ -723,7 +723,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, the mount plan it applies and the CA the guest must trust, and it is rewritten on every ensure so a plan the controller has changed is the plan the next boot applies — the share is a live host directory, while the command line that names it is fixed at create. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init and the CA the guest must trust, and it is rewritten on every ensure so a CA the controller has rotated is the CA the next boot trusts — the share is a live host directory, while the command line that names it is fixed at create. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
 func (s *Server) writeShare(id string, spec MachineSpec) error {
 	base, err := s.machineDir(id)
 	if err != nil {
@@ -734,13 +734,6 @@ func (s *Server) writeShare(id string, spec MachineSpec) error {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(share, "ca", "ca.crt"), []byte(spec.CACert), 0o644); err != nil {
-		return err
-	}
-	plan, err := json.Marshal(Plan{Persist: spec.Persist})
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(share, "plan.json"), plan, 0o644); err != nil {
 		return err
 	}
 	return s.copyInit(filepath.Join(share, "init"))
