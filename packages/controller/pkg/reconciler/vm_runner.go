@@ -256,13 +256,43 @@ func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 	return size.Value(), nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an owner's whole vm fleet lives on this one claim — every machine disk, and the image cache unless the install moved it — so the size an install states is the ceiling on how many agents that owner can keep, and raising it is the only remedy there is. A claim already bound is therefore grown to a raised size rather than left at what the first agent of that owner happened to create it with, which is the same rule the machine disks on it already follow: a size that rises is applied in place, a size that falls is ignored because Kubernetes refuses to shrink a claim at all.
+// UNIT_BOUNDARY_DESCRIPTION: a class without volume expansion rejects that update, and so does a size the install mistyped — neither is worth the owner's runner, which serves every one of their agents and works exactly as before at the size it has. Both are reported and reconciliation continues, so a values typo costs a warning in the controller log rather than a fleet that no longer reconciles.
+func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim *corev1.PersistentVolumeClaim) {
+	size, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
+	if err != nil {
+		slog.Warn("vm runner: the configured storage is not a quantity, the claim keeps the size it has", "owner", owner, "storage", r.config.VM.Runner.Storage, "error", err)
+		return
+	}
+	current := claim.Spec.Resources.Requests[corev1.ResourceStorage]
+	if size.Cmp(current) <= 0 {
+		return
+	}
+	if claim.Spec.Resources.Requests == nil {
+		claim.Spec.Resources.Requests = corev1.ResourceList{}
+	}
+	claim.Spec.Resources.Requests[corev1.ResourceStorage] = size
+	if _, err := r.client.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(ctx, claim, metav1.UpdateOptions{}); err != nil {
+		slog.Warn("vm runner: the claim was not grown, the runner keeps the size it has", "owner", owner, "from", current.String(), "to", size.String(), "error", err)
+		return
+	}
+	slog.Info("vm runner: grew the claim", "owner", owner, "from", current.String(), "to", size.String())
+}
+
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-			_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
+		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
+			adopted, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
+			if err == nil {
+				existing = adopted
+			}
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		r.growRunnerPVC(ctx, owner, existing)
+		return nil
 	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
