@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -47,25 +48,83 @@ type harness struct {
 	init  string
 }
 
-// TEST_OVERVIEW: a machine needs two ports — the published one and the guest's at +loopbackOffset — so the harness holds both before claiming either, or a parallel test binary takes the second one. The base is drawn below the ephemeral range: an ephemeral port near the top of it has no room for its pair.
+// UNIT_BOUNDARY_DESCRIPTION: ports this test binary has bound and not yet handed to the code under test. They are held rather than probed: a port proven free and then released is only a port that used to be free, and in between the runner's own published port can be taken by anything else on the host — which reads as a machine that failed to boot rather than as a test that lost a race. Whoever needs one claims the listener itself, so the port is never unbound in between.
+const (
+	firstBase = 20000
+	// UNIT_BOUNDARY_DESCRIPTION: published ports per harness — one per machine of the two its range allows.
+	portsPerHarness = 2
+)
+
+var reservations = struct {
+	sync.Mutex
+	held map[int]net.Listener
+}{held: map[int]net.Listener{}}
+
+// UNIT_BOUNDARY_DESCRIPTION: takes the reservation for a port, or nothing if this binary never held it — code asking for an unreserved port binds it the ordinary way, which is what the runner does in production.
+func claimPort(port int) net.Listener {
+	reservations.Lock()
+	defer reservations.Unlock()
+	ln := reservations.held[port]
+	delete(reservations.held, port)
+	return ln
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one harness is given a range of two machines, and each machine needs two ports: the published one, which the runner binds on every interface, and the guest's at +loopbackOffset, which the fake guest binds on loopback. Each is therefore reserved on the address its eventual owner will bind — a port free on loopback can still be taken on another interface, so proving the narrower one proves less than it looks. Bases are drawn only from the first loopbackOffset ports of the range, which is what keeps one harness's guest ports out of another's published ones; and the first base tried is keyed to this process, so two test binaries at once start from different neighbourhoods instead of the same one.
 func freePort(t *testing.T) int {
 	t.Helper()
-	for range 200 {
-		base := 20000 + rand.IntN(20000)
-		published, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", base))
-		if err != nil {
+	bases := loopbackOffset / portsPerHarness
+	for attempt := range 200 {
+		base := firstBase + (os.Getpid()+attempt+rand.IntN(bases))%bases*portsPerHarness
+		taken := make([]int, 0, portsPerHarness)
+		for _, port := range []int{base, base + 1} {
+			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+			if err != nil {
+				break
+			}
+			reservations.Lock()
+			reservations.held[port] = ln
+			reservations.Unlock()
+			taken = append(taken, port)
+		}
+		if len(taken) < portsPerHarness || !guestPortsFree(base) {
+			releasePorts(taken)
 			continue
 		}
-		guest, guestErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", base+loopbackOffset))
-		require.NoError(t, published.Close())
-		if guestErr != nil {
-			continue
-		}
-		require.NoError(t, guest.Close())
+		t.Cleanup(func() { releasePorts(taken) })
 		return base
 	}
-	t.Fatal("no free port pair for the harness")
+	t.Fatal("no free port block for the harness")
 	return 0
+}
+
+func portOf(t *testing.T, address string) int {
+	t.Helper()
+	_, portText, err := net.SplitHostPort(address)
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portText)
+	require.NoError(t, err)
+	return port
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the guest ports of a base, checked the way a port has to be checked when it cannot be held: bound and let go. Holding one is what the published ports do and it is wrong here — a held listener still completes a connection, into a backlog nothing is serving, and the runner's own readiness check dials exactly this port. It would read a reservation as a guest that had answered, and hand the connection to the fake guest when it took the listener over. So this is a probe, with the race a probe carries; the fake guest binds for real and fails loudly if it lost, rather than flaking.
+func guestPortsFree(base int) bool {
+	for _, port := range []int{base + loopbackOffset, base + 1 + loopbackOffset} {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			return false
+		}
+		ln.Close()
+	}
+	return true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: closes whatever of a reservation is still held. A port already claimed is not closed here, because the code under test owns it by then and closes it itself.
+func releasePorts(ports []int) {
+	for _, port := range ports {
+		if ln := claimPort(port); ln != nil {
+			ln.Close()
+		}
+	}
 }
 
 // TEST_OVERVIEW: stands in for a guest listening on its loopback port, so a test can tell "the runner refused this source" apart from "nothing was listening" — the two look identical from the client end.
@@ -113,6 +172,12 @@ func newHarness(t *testing.T) *harness {
 	h.node = &Server{
 		Token: "secret", StateDir: filepath.Join(dir, "machines"), ImageDir: filepath.Join(dir, "images"), Runtime: &Smolvm{Bin: bin},
 		PortMin: first, PortMax: first + 1, MemoryMiB: 1 << 20, Init: init, Crane: crane,
+	}
+	h.node.Listen = func(network, address string) (net.Listener, error) {
+		if ln := claimPort(portOf(t, address)); ln != nil {
+			return ln, nil
+		}
+		return net.Listen(network, address)
 	}
 	require.NoError(t, h.node.Start())
 	t.Cleanup(h.node.Close)
@@ -1140,4 +1205,63 @@ func TestTheCacheIsBoundedByItsBudgetAndNothingElse(t *testing.T) {
 
 	assert.DirExists(t, keep, "this runner's own machine is running from it")
 	assert.NoDirExists(t, stale, "nothing claims this one and the budget is spent")
+}
+
+// TEST_SCENARIO: a machine operation runs on its own goroutine and writes to the state and image directories for as long as it takes — a fetch may be unpacking an image when the runner is told to stop. Close used to drop the published ports and return while all of that was still running, which hands the caller a runner it believes is finished with and is not: the directories keep changing, and a caller that removes them, as every test does, removes them out from under a live fetch. So Close waits, and a start still sleeping when it is called has finished by the time it returns.
+func TestCloseWaitsForTheOperationsStillRunning(t *testing.T) {
+	t.Setenv("FAKE_START_SLEEP", "1")
+	h := newHarness(t)
+
+	st, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.Equal(t, StateCreating, st.State, "the start is still running, which is what makes this a wait and not a no-op")
+
+	h.node.Close()
+
+	state, err := os.ReadFile(filepath.Join(h.state, "agent-a"))
+	require.NoError(t, err, "the fake runtime records what it did, and it is still inside the temporary directory")
+	assert.Equal(t, "running\n", string(state), "Close returned before the start it was waiting for had finished")
+}
+
+// TEST_SCENARIO: once the runner is closing, a machine operation started anyway would outlive the wait that was supposed to cover it — the whole point of which is that nothing is still writing when Close returns. So a request that arrives after Close starts no work.
+func TestNoOperationStartsAfterClose(t *testing.T) {
+	h := newHarness(t)
+	h.node.Close()
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+
+	// UNIT_BOUNDARY_DESCRIPTION: closing again waits for anything the request did start, so the check below is not merely reading the directory before a goroutine got to it.
+	h.node.Close()
+
+	_, err = os.Stat(filepath.Join(h.state, "agent-a"))
+	assert.True(t, os.IsNotExist(err), "a machine was created by an operation that started after the runner closed")
+}
+
+// TEST_SCENARIO: the harness used to prove its ports free and then let them go, leaving the runner to bind them again later — so anything on the host could take one in between, and a machine then failed to publish for a reason that had nothing to do with the test. The reservation is held instead and handed over, so there is no moment in which the port is free: this asserts the port cannot be taken while the harness holds it, and that the machine still publishes on exactly that port.
+func TestThePublishedPortIsNeverUnboundBeforeTheRunnerTakesIt(t *testing.T) {
+	h := newHarness(t)
+
+	blocked, err := net.Listen("tcp", fmt.Sprintf(":%d", h.node.PortMin))
+	if err == nil {
+		blocked.Close()
+		t.Fatalf("port %d was free before the runner published on it, so the harness released it", h.node.PortMin)
+	}
+
+	st, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	st = h.settle(t, "agent-a")
+	require.Equal(t, StateRunning, st.State, "the runner published on the port the harness was holding for it")
+	assert.Equal(t, h.node.PortMin, st.Port)
+}
+
+// TEST_SCENARIO: the published ports are bound on every interface, as the runner binds them, and the guest ports only on loopback, as the fake guest binds them. A base whose guest ports fall inside another harness's published range would hand two harnesses the same port under different names, so the bases are drawn from a window narrow enough that the two ranges cannot meet.
+func TestAHarnessGuestPortsCannotBeAnotherHarnessPublishedPorts(t *testing.T) {
+	for range 50 {
+		base := freePort(t)
+		assert.Less(t, base+portsPerHarness-1, firstBase+loopbackOffset,
+			"published ports must stay inside the first loopbackOffset of the range")
+		assert.GreaterOrEqual(t, base+loopbackOffset, firstBase+loopbackOffset,
+			"and the guest ports must fall outside it, where no base can reach them")
+	}
 }
