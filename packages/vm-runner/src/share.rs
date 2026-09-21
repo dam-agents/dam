@@ -1,9 +1,10 @@
 use std::fs;
-use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::io;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::api::MachineSpec;
+use crate::files;
 use crate::state::machine_dir;
 
 // UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, and the CA the guest must trust. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
@@ -35,25 +36,9 @@ pub fn write_share(
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let share = base.join(SHARE_DIR);
     let ca = share.join(CA_DIR);
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(CA_DIR_MODE)
-        .create(&ca)?;
-    write_file(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
+    files::create_dir(&ca, CA_DIR_MODE)?;
+    files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
     copy_init(init, &share.join(INIT_FILE))
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: writes a share file and reports the close. `fs::write` drops the handle, and dropping a file discards whatever the close would have said — which is where a delayed write error surfaces, the whole class of error this matters for. Go's `os.WriteFile` returns it, so a port that swallowed it would report a share written that is not. The mode is stated rather than taken from the umask, for the same reason it is stated on the Go side.
-fn write_file(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(mode)
-        .open(path)?;
-    file.write_all(body)?;
-    file.set_permissions(fs::Permissions::from_mode(mode))?;
-    file.sync_all()
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -184,32 +169,6 @@ mod tests {
         let share = dir.path().join("agent-a").join(SHARE_DIR);
         assert_eq!(mode_of(&share.join(CA_DIR)), CA_DIR_MODE);
         assert_eq!(mode_of(&share.join(CA_DIR).join(CA_FILE)), CA_MODE);
-    }
-
-    // TEST_SCENARIO: that the modes are stated and not inherited from the umask. Asserting the CA's own 0644 proves nothing on a machine whose umask is the usual 022, because that is what an unstated mode lands on anyway — so the writers are asked for a mode the umask cannot produce, and the answer has to be that mode exactly.
-    #[test]
-    fn a_share_file_gets_the_mode_it_is_given_and_not_the_umasks() {
-        let dir = TempDir::new("stated-modes");
-
-        let file = dir.path().join("stated");
-        write_file(&file, b"body", 0o600).unwrap();
-        assert_eq!(
-            mode_of(&file),
-            0o600,
-            "the mode came from the umask, which would have made this 0644"
-        );
-
-        let nested = dir.path().join("outer").join("inner");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&nested)
-            .unwrap();
-        assert_eq!(
-            mode_of(&nested),
-            0o700,
-            "the directory mode came from the umask, which would have made this 0755"
-        );
     }
 
     // TEST_SCENARIO: what a machine is given. The CA is what the controller sent, and init is a copy of the configured binary that the guest can actually exec — the mode is asserted because nothing on this side would notice it missing, and the machine that does notice comes up with its disk unmounted.
