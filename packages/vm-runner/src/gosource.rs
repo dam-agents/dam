@@ -19,6 +19,35 @@ pub fn unquote(value: &str) -> Option<&str> {
     value.strip_prefix('"')?.strip_suffix('"')
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one `Name = 30 * time.Minute` from a Go const block, as a Duration. Only the `count * unit` form is recognised, where the unit is a `time.` constant or another const in the same file — which is every window this crate has to agree with the Go runner about. A bare `time.Second`, an added expression, anything else: None, so the comparison that asked fails rather than passes on a shape this reader did not understand.
+pub fn duration_value(source: &str, name: &str) -> Option<std::time::Duration> {
+    duration_within(source, name, 4)
+}
+
+fn duration_within(source: &str, name: &str, depth: u8) -> Option<std::time::Duration> {
+    if depth == 0 {
+        return None;
+    }
+    let raw = source.lines().find_map(|line| {
+        let (left, right) = line.split_once('=')?;
+        (left.trim() == name).then(|| right.trim().to_string())
+    })?;
+    let expression = raw.split("//").next()?.trim();
+    let (count, unit) = expression.split_once('*')?;
+    let count: u32 = count.trim().parse().ok()?;
+    let unit = unit.trim();
+    let one = match unit {
+        "time.Nanosecond" => std::time::Duration::from_nanos(1),
+        "time.Microsecond" => std::time::Duration::from_micros(1),
+        "time.Millisecond" => std::time::Duration::from_millis(1),
+        "time.Second" => std::time::Duration::from_secs(1),
+        "time.Minute" => std::time::Duration::from_secs(60),
+        "time.Hour" => std::time::Duration::from_secs(60 * 60),
+        named => duration_within(source, named, depth - 1)?,
+    };
+    one.checked_mul(count)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one field of a Go struct as the wire sees it — the JSON name it is written under, and whether Go leaves it out when it holds the zero value. Both halves matter: a name decides whether the other side finds the field at all, and omitempty decides whether it appears when unset, which a reader that treats absent and zero differently can tell apart.
 #[derive(Debug, PartialEq, Eq)]
 pub struct GoField {

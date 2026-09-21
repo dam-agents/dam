@@ -1,7 +1,0 @@
-# smolvm's .gitmodules names its submodules with scp-style SSH URLs
-# (git@github.com:...). Cargo's built-in libgit2 cannot parse those, so a plain
-# `cargo build` fails before it ever reaches the network. Shelling out to the
-# git CLI lets git parse them, and lets an `insteadOf` rewrite point them at
-# HTTPS — see the toolchain note in the package README.
-[net]
-git-fetch-with-cli = true

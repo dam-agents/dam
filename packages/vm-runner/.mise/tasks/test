@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/guest.go"]
+# The suite reads the Go runner as its source of truth, so every Go file in
+# that package is an input: a cache hit on a stale key would replay a pass the
+# drift tests never ran, exactly when a Go change is what they exist to catch.
+# The whole directory is declared rather than the three files read today, so a
+# test added later cannot silently fall outside the key.
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail

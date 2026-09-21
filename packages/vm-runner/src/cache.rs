@@ -249,6 +249,73 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: the three windows are what each process believes about the other's claims, and nothing relates the two copies at compile time. Shorten holderStale in server.go alone and the Go runner starts deleting claim files this runner still believes — one process then evicts an unpacked tree the other's guest is running from, which is the harm the module comment names. The names were compared here from the start and the windows were not, though the scenario above said both were.
+    #[test]
+    fn the_go_runner_waits_the_same_lengths_of_time() {
+        let go = gosource::read("server.go");
+
+        for (name, ours, what) in [
+            ("holderStale", HOLDER_STALE, "how long a claim is believed"),
+            ("pullTimeout", PULL_TIMEOUT, "how long one fetch may run"),
+            (
+                "partialStale",
+                PARTIAL_STALE,
+                "when a scratch tree is somebody's abandoned work",
+            ),
+        ] {
+            assert_eq!(
+                gosource::duration_value(&go, name),
+                Some(ours),
+                "{name} — {what} — is no longer the same on both sides"
+            );
+        }
+    }
+
+    // TEST_SCENARIO: the window reader is only worth having if a declaration it cannot parse fails the comparison rather than passing it. Go writes these as expressions, not literals, so the shapes it accepts and refuses are the whole guarantee — a reader that returned something plausible for a form it had not understood would agree with a file it never read.
+    #[test]
+    fn a_window_the_reader_cannot_parse_is_not_silently_agreed_with() {
+        let minutes = |n: u64| Duration::from_secs(n * 60);
+
+        assert_eq!(
+            gosource::duration_value("\tholderStale = 30 * time.Minute", "holderStale"),
+            Some(minutes(30))
+        );
+        assert_eq!(
+            gosource::duration_value(
+                "\tpullTimeout = 20 * time.Minute\n\tpartialStale = 2 * pullTimeout",
+                "partialStale"
+            ),
+            Some(minutes(40)),
+            "one window stated in terms of another"
+        );
+
+        assert_eq!(
+            gosource::duration_value("\tholderStale = 30 * time.Minute", "pullTimeout"),
+            None,
+            "a window that is not there"
+        );
+        assert_eq!(
+            gosource::duration_value("\tstateTTL = time.Second", "stateTTL"),
+            None,
+            "a bare unit is a form this reader does not claim to understand"
+        );
+        assert_eq!(
+            gosource::duration_value("\tholderStale = 30 * time.Fortnight", "holderStale"),
+            None,
+            "an unknown unit is refused rather than guessed at"
+        );
+        assert_eq!(
+            gosource::duration_value("\tholderStale = quietWindow", "holderStale"),
+            None,
+            "and so is an alias with no count"
+        );
+        assert_eq!(
+            gosource::duration_value("\ta = 2 * b\n\tb = 2 * a", "a"),
+            None,
+            "a pair that refer to each other ends rather than runs forever"
+        );
+    }
+
     // TEST_SCENARIO: the entry patterns decide what is counted against the budget and what may be evicted, so a matcher that admits one name more or less than the Go one is a matcher that deletes something the other side is protecting. It is hand-written here, which is only safe while the pattern it was written against is still the pattern in force.
     #[test]
     fn the_entry_patterns_are_the_ones_this_matcher_was_written_against() {
