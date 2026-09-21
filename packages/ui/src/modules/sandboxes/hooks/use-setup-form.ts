@@ -72,6 +72,7 @@ export function useSetupForm(
   defaults: Partial<SetupForm> = {},
   returnPath?: string,
   scope?: string,
+  kitName?: string | null,
 ): SetupFormState {
   const key = scope
     ? `platform-setup-${flow}:${scope}`
@@ -112,7 +113,7 @@ export function useSetupForm(
   );
 
   const setName = useCallback((name: string) => update({ name }), [update]);
-  usePrefilledSandboxName(flow, form.name, setName);
+  usePrefilledSandboxName(flow, form.name, setName, kitName);
 
   const reset = useCallback(() => {
     try {

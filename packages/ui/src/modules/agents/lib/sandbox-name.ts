@@ -1,23 +1,28 @@
 export type SandboxNameKind = "coding-agent" | "experiment" | "starter-kit";
 
-const PREFIX: Record<SandboxNameKind, string> = {
-  "coding-agent": "codingagent",
+const BASE_BY_KIND: Record<SandboxNameKind, string> = {
+  "coding-agent": "agent",
   experiment: "experiment",
-  "starter-kit": "starterkit",
+  "starter-kit": "agent",
 };
 
-export function nextSandboxName(
+export function sandboxNameBase(
   kind: SandboxNameKind,
+  kitName?: string | null,
+): string {
+  const kit = kitName?.trim();
+  return kit ? kit : BASE_BY_KIND[kind];
+}
+
+export function nextSandboxName(
+  base: string,
   takenNames: Iterable<string>,
 ): string {
-  const prefix = PREFIX[kind];
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-  let highest = 0;
-  for (const taken of takenNames) {
-    const match = pattern.exec(taken.trim().toLowerCase());
-    if (!match) continue;
-    const ordinal = Number(match[1]);
-    if (Number.isSafeInteger(ordinal) && ordinal > highest) highest = ordinal;
-  }
-  return `${prefix}-${highest + 1}`;
+  const taken = new Set<string>();
+  for (const name of takenNames) taken.add(name.trim().toLowerCase());
+  const root = base.toLowerCase();
+  if (!taken.has(root)) return base;
+  let ordinal = 2;
+  while (taken.has(`${root}-${ordinal}`)) ordinal += 1;
+  return `${base}-${ordinal}`;
 }

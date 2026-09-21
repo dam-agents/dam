@@ -127,9 +127,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     : routeToPath({ view: "agent-new" });
   const { form, update, toggleConnection, reset } = useSetupForm(
     kit ? "starter-kit" : "coding-agent",
-    kit ? { name: kit.id } : {},
+    {},
     returnPath,
     kit ? `${kit.catalog}/${kit.id}` : undefined,
+    kit?.id,
   );
   const vmRuntime = useVmRuntime();
   const agentsQ = useAgents();

@@ -1,35 +1,30 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { useAgents } from "../api/queries.js";
-import { nextSandboxName, type SandboxNameKind } from "../lib/sandbox-name.js";
 import {
-  isCodingAgent,
-  isExperimentSandbox,
-  isStarterKitAgent,
-} from "../utils/agent-kind.js";
+  nextSandboxName,
+  sandboxNameBase,
+  type SandboxNameKind,
+} from "../lib/sandbox-name.js";
 
-const MATCHES_KIND = {
-  "coding-agent": isCodingAgent,
-  experiment: isExperimentSandbox,
-  "starter-kit": isStarterKitAgent,
-} as const;
-
-function useDefaultSandboxName(kind: SandboxNameKind): string {
+function useDefaultSandboxName(
+  kind: SandboxNameKind,
+  kitName?: string | null,
+): string {
   const { data } = useAgents();
   return useMemo(() => {
-    const taken = (data?.list ?? [])
-      .filter(MATCHES_KIND[kind])
-      .map((a) => a.name);
-    return nextSandboxName(kind, taken);
-  }, [data, kind]);
+    const taken = (data?.list ?? []).map((a) => a.name);
+    return nextSandboxName(sandboxNameBase(kind, kitName), taken);
+  }, [data, kind, kitName]);
 }
 
 export function usePrefilledSandboxName(
   kind: SandboxNameKind,
   name: string,
   setName: (name: string) => void,
+  kitName?: string | null,
 ): void {
-  const suggestion = useDefaultSandboxName(kind);
+  const suggestion = useDefaultSandboxName(kind, kitName);
   const suggested = useRef<string | null>(null);
   useEffect(() => {
     const stillOurs =
