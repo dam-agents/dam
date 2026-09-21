@@ -24,6 +24,21 @@ pub fn unquote(value: &str) -> Option<&str> {
     value.strip_prefix('"')?.strip_suffix('"')
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one `Name = 1 << 20` or `Name = 4096` from a Go const block, as a number. A shift and a plain decimal are the two forms the sizes this crate copies are written in; anything else is None, so a const restated in a form this reader does not know fails the comparison that asked rather than passing it.
+pub fn int_value(source: &str, name: &str) -> Option<u64> {
+    let raw = source.lines().find_map(|line| {
+        let (left, right) = line.split_once('=')?;
+        (left.trim() == name).then(|| right.trim().to_string())
+    })?;
+    let expression = raw.split("//").next()?.trim();
+    if let Some((base, shift)) = expression.split_once("<<") {
+        let base: u64 = base.trim().parse().ok()?;
+        let shift: u32 = shift.trim().parse().ok()?;
+        return base.checked_shl(shift);
+    }
+    expression.parse().ok()
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one `Name = 30 * time.Minute` from a Go const block, as a Duration. Only the `count * unit` form is recognised, where the unit is a `time.` constant or another const in the same file — which is every window this crate has to agree with the Go runner about. A bare `time.Second`, an added expression, anything else: None, so the comparison that asked fails rather than passes on a shape this reader did not understand.
 pub fn duration_value(source: &str, name: &str) -> Option<std::time::Duration> {
     duration_within(source, name, 4)
