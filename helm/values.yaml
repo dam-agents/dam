@@ -985,17 +985,24 @@ apiServer:
     - api.anthropic.com
     - statsig.anthropic.com
     - claude.ai
-    # NPM / Yarn / pnpm / Deno / Bun
+    # NPM / Yarn / pnpm / Deno / Bun. Plain `npm install` only needs the
+    # registry; the other three are mise's npm backend, which lists versions
+    # off api.npmjs.org, resolves JSR's npm-compat registry and checks the
+    # package against the OSV vulnerability database.
     - registry.npmjs.org
     - registry.yarnpkg.com
     - nodejs.org
     - jsr.io
+    - npm.jsr.io
+    - api.npmjs.org
+    - api.osv.dev
     - deno.land
     - dl.deno.land
     - bun.sh
     # Python
     - pypi.org
     - files.pythonhosted.org
+    - conda.anaconda.org
     # GitHub
     - github.com
     - api.github.com
@@ -1035,11 +1042,21 @@ apiServer:
     # CDNs commonly used by toolchains
     - cdn.jsdelivr.net
     - unpkg.com
-    # Mise (toolchain manager)
+    # Mise (toolchain manager). Every mise backend was exercised against this
+    # list: core/aqua/ubi/github/vfox/packslip/spm/asdf resolve through
+    # github.com + api.github.com, and cargo/gem/go/npm/pypi/dotnet through
+    # the registry their ecosystem already lists above. dist.pkgx.dev, the
+    # forge hosts and conda.anaconda.org are what the remaining backends add.
+    # The `http` and `s3` backends take an arbitrary URL — by construction no
+    # allowlist can cover them, and they stay per-agent opt-in.
     - mise.jdx.dev
     - cdn.mise.run
     - mise-versions.jdx.dev
     - mise-java.jdx.dev
+    - dist.pkgx.dev
+    # Other code-hosting forges (mise `gitlab:` / `forgejo:` backends)
+    - gitlab.com
+    - codeberg.org
     # Java / JVM. Maven Central answers on both hostnames; Gradle serves its
     # own distributions and resolves plugins off a separate artifact host.
     - download.java.net
@@ -1083,6 +1100,9 @@ apiServer:
     - download.swift.org
     # C / C++
     - center.conan.io
+    # Zig. Official host only: zig's downloads rotate over community mirrors
+    # whose hostnames change, so a mirrored fetch still needs an approval.
+    - ziglang.org
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
