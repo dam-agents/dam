@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::api::ImageLaunch;
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Three sources, in the order the runner reaches for them: the record kept beside an unpacked tree, the config inside an archive an earlier release cached, and a config fetched from the registry.
+// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an earlier release cached. The third, a config fetched from the registry when neither exists, needs a registry client and is not ported yet.
 
 // UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree. Read by whichever runner boots a machine from that tree next, which during a rollout is the other implementation, so the name and the field spellings are the Go runner's.
 pub const LAUNCH_FILE: &str = "launch.json";
