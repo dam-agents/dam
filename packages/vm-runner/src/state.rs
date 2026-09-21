@@ -104,6 +104,8 @@ pub fn port(state_dir: &Path, id: &str) -> u16 {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: gives a machine a port from the runner's range and writes it down, or returns the one it already has. Which ports are taken is read from the other machines' files rather than from memory, for the same reason as everything else here: the runner is restarted and they are not, and one that allocated from an empty memory would publish two machines on one port.
+// UNIT_BOUNDARY_DESCRIPTION: the caller must hold a lock across this, and this function cannot check that it does. Reading which ports are taken and writing the chosen one are two steps, so two allocations that interleave choose the same free port and both write it — two machines published on one port, and the second one unreachable. The Go runner holds the runner-wide mutex around the whole of allocatePort; the layer that owns that lock is not ported yet, which is the only reason this is safe today: nothing but a test calls it.
+// UNIT_BOUNDARY_DESCRIPTION: the machine's directory has to exist already, as it does for the Go runner — `ensure` writes the share first, and that is what creates it. Creating it here instead would let a caller that never set the machine up leave a directory behind that `machine_ids` reads as a machine and the allocator counts, holding a port for something that does not exist.
 pub fn allocate_port(
     state_dir: &Path,
     id: &str,
@@ -123,7 +125,6 @@ pub fn allocate_port(
         .into_iter()
         .find(|candidate| !taken.contains(candidate))
         .ok_or_else(|| anyhow::anyhow!("no free machine port"))?;
-    fs::create_dir_all(&dir)?;
     files::write(&dir.join(PORT_FILE), free.to_string().as_bytes(), PORT_MODE)?;
     Ok(free)
 }
@@ -372,6 +373,22 @@ mod tests {
             allocate_port(state, "agent-c", 31000..=31001).is_err(),
             "a full range is refused rather than doubling up on a published port"
         );
+    }
+
+    // TEST_SCENARIO: a port belongs to a machine that exists. The Go runner writes the share before it ever allocates, so the directory is always there by then; a port file written into a directory this function had created itself would leave something `machine_ids` reads as a machine — holding a port, counted by the allocator, with no spec and no share behind it.
+    #[test]
+    fn a_machine_that_was_never_set_up_gets_no_port_and_no_directory() {
+        let dir = TempDir::new();
+
+        assert!(
+            allocate_port(dir.path(), "agent-a", 31000..=31001).is_err(),
+            "a port was allocated for a machine that does not exist"
+        );
+        assert!(
+            !dir.path().join("agent-a").exists(),
+            "and the allocation invented the machine's directory"
+        );
+        assert!(machine_ids(dir.path()).unwrap().is_empty());
     }
 
     // TEST_SCENARIO: a runner reads its machines off the disk, so whatever else is in the state directory must not read as one. That includes the names it would itself refuse, which is what stops a stray directory becoming a machine nothing can address.
