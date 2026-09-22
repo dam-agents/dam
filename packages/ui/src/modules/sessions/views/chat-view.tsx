@@ -52,6 +52,7 @@ import {
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -568,6 +569,7 @@ export function ChatView() {
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
           />
+          {agentView && <AgentAvatar seed={agentView.avatar} size={28} />}
           <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
@@ -758,6 +760,8 @@ export function ChatView() {
                         <Fragment key={item.message.id}>
                           <ChatMessage
                             message={item.message}
+                            agentName={agentView?.name}
+                            agentAvatar={agentView?.avatar}
                             isLast={item.index === messages.length - 1}
                             {...timeProps(item.message.at, now)}
                             hasPendingPermission={hasPendingPermission}

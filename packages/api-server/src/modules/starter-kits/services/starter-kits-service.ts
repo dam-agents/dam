@@ -299,6 +299,7 @@ export function createStarterKitsService(
           : undefined);
       const createInput: AgentCreateInput = {
         name: input.name,
+        ...(input.avatar ? { avatar: input.avatar } : {}),
         ...(kit.image
           ? { image: kit.image.ref }
           : { templateId: input.templateId }),

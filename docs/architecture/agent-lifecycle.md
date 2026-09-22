@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-21
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -60,7 +60,9 @@ Creation is per-purpose: the plain create picks an image, a [starter kit](starte
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate. On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](platform-topology.md#vm-runner), holding HOME and nothing else ([persistence](persistence.md)), and the agent Service selects that runner rather than a pod of its own.
 
-When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller then lists that Secret first on the pod's `imagePullSecrets`, ahead of any install-wide default. The kubelet consumes it to pull the image — it never enters the pod, and a stuck pull surfaces as an image-pull failure on the pod rather than a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
+A private-registry credential on the create becomes an agent-scoped pull Secret, written before the Agent CR and rolled back if that write fails ([security-and-credentials](security-and-credentials.md#image-pull-credentials)).
+
+A create also picks the Agent's **avatar**: a robot head the UI draws from a short seed, offered five at a time with a reroll, and changeable later in the Agent's settings. The seed is presentation only, so it lives in Postgres rather than on the Agent CR, and an Agent created without one draws from its own id, so none needs backfilling ([persistence](persistence.md#postgres)).
 
 The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
 
@@ -69,7 +71,7 @@ Pod env at start is composed by the controller from platform wiring only — las
 1. **platform envs** — proxy + auth wiring rendered by the controller (`HTTPS_PROXY`, harness URL, ext-authz routing, etc.).
 2. **chart-level platform defaults** — any `env` the install declares as defaults.
 
-Everything tied to an Agent's *configuration* rides the runtime channel as contributions instead, never the pod spec: connection-derived env (credential placeholders the gateway swaps on the wire), user-typed env (the Environment editor), template env, and file contributions. The api-server stores user-typed and template env in Postgres `agent_env` and delivers all configuration at the next idle turn with no pod roll, ordering user env ahead of connection/secret env so it wins on a name collision. Template env is seeded into `agent_env` at create time only, so editing a Template never re-flows into a running Agent. The Agent CR's `spec.env` field is retained but no longer read. See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
+Everything tied to an Agent's *configuration* rides the runtime channel as contributions instead, never the pod spec: connection-derived env (credential placeholders the gateway swaps on the wire), user-typed env (the Environment editor), template env, and file contributions. The api-server stores user-typed and template env in Postgres `agent_env` and delivers all configuration at the next idle turn with no pod roll, ordering user env ahead of connection/secret env so it wins on a name collision. Template env is seeded into `agent_env` at create time only, so editing a Template never re-flows into a running Agent. See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 
 ### Template upgrade
 

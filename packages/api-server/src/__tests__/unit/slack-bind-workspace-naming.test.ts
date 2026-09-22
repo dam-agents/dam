@@ -51,6 +51,7 @@ function harness(flowTeamId: string) {
     readTemplateSpec: async () => null,
     contributionsProgress: unused(),
     onboardingChecklists: { readMany: async () => new Map() },
+    avatars: { readMany: async () => new Map(), set: async () => {} },
     unitOfWork: ((fn: (tx: unknown) => unknown) =>
       fn(unused())) as AgentsDeps["unitOfWork"],
     channelsTxRepo: {

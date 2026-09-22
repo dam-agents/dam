@@ -5,6 +5,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     spawnedBy,
     id: agent.id,
     name: agent.name,
+    avatar: agent.avatar,
     createdAt: agent.createdAt,
     templateId: agent.templateId ?? null,
     templateUpdate: agent.templateUpdate ?? null,

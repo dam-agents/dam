@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  agentAvatarSchema,
   agentNameSchema,
   agentSizeSchema,
   storageQuantitySchema,
@@ -201,6 +202,7 @@ export const starterKitApplyInputSchema = z.object({
   catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
   name: agentNameSchema,
+  avatar: agentAvatarSchema.optional(),
   templateId: z.string().min(1).optional(),
   connectionIds: z.array(z.string().min(1)).default([]),
   slackChannelId: z.string().min(1).optional(),

@@ -15,6 +15,7 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
@@ -78,6 +79,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
 
   return (
     <PageHeader
+      leading={<AgentAvatar seed={agent.avatar} size={44} />}
       title={agent.name}
       adornment={
         <StatusBadge

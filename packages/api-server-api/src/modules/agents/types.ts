@@ -61,6 +61,7 @@ export interface WorkspaceFailure {
 export interface Agent {
   id: string;
   name: string;
+  avatar: string;
   createdAt?: string;
   templateId?: string;
   templateUpdate?: TemplateUpdate;

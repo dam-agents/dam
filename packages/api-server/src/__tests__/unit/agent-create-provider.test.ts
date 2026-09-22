@@ -118,6 +118,7 @@ function setup(rows: Connection[] = [provider]) {
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    avatars: unused(),
   });
   const ctx = unused<ApiContext>({
     agents,

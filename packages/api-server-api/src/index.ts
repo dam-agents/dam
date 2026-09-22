@@ -98,6 +98,7 @@ export {
   agentConnectSlackInputSchema,
   AGENT_ID_RE,
   agentNameSchema,
+  agentAvatarSchema,
   agentCreateInputSchema,
   agentKindSchema,
   agentDeleteInputSchema,

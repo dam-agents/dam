@@ -29,6 +29,7 @@ function agentView(annotations: Record<string, string>) {
     {} as RuntimeFeatures,
     [],
     [],
+    undefined,
   );
 }
 

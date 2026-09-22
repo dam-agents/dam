@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
@@ -18,6 +19,8 @@ type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
+  agentName?: string;
+  agentAvatar?: string;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -80,6 +83,8 @@ function LoadOlderMarker({
 
 export const ChatMessage = memo(function ChatMessage({
   message,
+  agentName,
+  agentAvatar,
   isLast,
   timeLabel,
   timeTitle,
@@ -121,9 +126,12 @@ export const ChatMessage = memo(function ChatMessage({
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <div className="flex items-baseline gap-1.5 mb-0.5">
+      <div className="flex items-center gap-1.5 mb-0.5">
+        {isAssistant && agentAvatar && (
+          <AgentAvatar seed={agentAvatar} size={20} />
+        )}
         <span className="text-[11px] font-medium text-muted-foreground">
-          {isAssistant ? "Agent" : "You"}
+          {isAssistant ? (agentName ?? "Agent") : "You"}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>

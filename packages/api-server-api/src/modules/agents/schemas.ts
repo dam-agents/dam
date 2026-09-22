@@ -67,10 +67,18 @@ export const agentNameSchema = z
     message: "agent name cannot have the shape of an agent ID",
   });
 
+export const agentAvatarSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9-]{1,64}$/,
+    "avatar must be 1-64 lowercase letters, digits or dashes",
+  );
+
 export const agentCreateInputSchema = z
   .object({
     kbShareRoots: z.array(z.string().min(1)).min(1).max(20).optional(),
     name: agentNameSchema,
+    avatar: agentAvatarSchema.optional(),
     templateId: z.string().optional(),
     image: z.string().optional(),
     description: z.string().optional(),
@@ -109,6 +117,7 @@ export const agentCreateInputSchema = z
 export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(255).optional(),
+  avatar: agentAvatarSchema.optional(),
   description: z.string().optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),

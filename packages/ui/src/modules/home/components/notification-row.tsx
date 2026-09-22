@@ -3,6 +3,7 @@ import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import type { ArtifactTouched } from "../api/queries.js";
 import { channelTypeFor } from "../lib/activity-filter.js";
 import type { FeedItem } from "../lib/feed-item.js";
@@ -49,6 +50,7 @@ function rowIcon(kind: RowKind) {
 export function NotificationRow({
   item,
   agentName,
+  agentAvatar,
   agents,
   meta,
   artifacts,
@@ -58,6 +60,7 @@ export function NotificationRow({
 }: {
   item: Extract<FeedItem, { kind: "unread" | "in-progress" }>;
   agentName: string;
+  agentAvatar: string;
   agents: readonly AgentView[];
   meta: string;
   artifacts: readonly ArtifactTouched[];
@@ -108,13 +111,18 @@ export function NotificationRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="min-w-0 truncate text-sm leading-snug">
-          <span className={cn("text-foreground", !running && "font-semibold")}>
-            {agentName}
-          </span>
-          <span className="text-muted-foreground">
-            {" "}
-            {item.session.title ?? "Session"}
+        <p className="flex min-w-0 items-center gap-1.5 text-sm leading-snug">
+          <AgentAvatar seed={agentAvatar} size={18} />
+          <span className="min-w-0 truncate">
+            <span
+              className={cn("text-foreground", !running && "font-semibold")}
+            >
+              {agentName}
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              {item.session.title ?? "Session"}
+            </span>
           </span>
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>

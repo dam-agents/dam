@@ -6,6 +6,7 @@ const envVarSchema = z.object({ name: z.string(), value: z.string() });
 
 export const settingsSchema = z.object({
   name: z.string().trim().min(1, "Required"),
+  avatar: z.string().min(1),
   assignedAppIds: z.array(z.string()),
   envVars: z
     .array(envVarSchema)

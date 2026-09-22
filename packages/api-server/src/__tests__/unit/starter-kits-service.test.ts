@@ -57,6 +57,7 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
   return {
     id,
     name: "reviewer",
+    avatar: id,
     spec: { name: "reviewer", image: "quay.io/example/claude-code:latest" },
     state: "starting",
     effectiveHibernationTimeoutMin: 30,
@@ -478,6 +479,16 @@ describe("starter kits: apply", () => {
     });
     expect(pinned.calls.created[0].templateId).toBeUndefined();
     expect(pinned.calls.created[0].image).toBe("quay.io/acme/nous:1.0.0");
+  });
+
+  // TEST_SCENARIO: The kit setup page lets the user pick an avatar. The apply must hand that seed to agent create unchanged.
+  it("passes the chosen avatar to create", async () => {
+    const own = makeHarness(LOADED);
+    await own.service.apply({
+      ...APPLY,
+      avatar: "k3v9x2qa",
+    });
+    expect(own.calls.created[0].avatar).toBe("k3v9x2qa");
   });
 
   it("passes the kit's declared size and disk to create, image or harness", async () => {

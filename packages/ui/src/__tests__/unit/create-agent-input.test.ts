@@ -68,6 +68,7 @@ describe("buildCreateAgentInput", () => {
 
 const setup: CodingAgentSetupDraft = {
   name: "velvet-comet",
+  avatar: "k3v9x2qa",
   templateId: "claude-code",
   customImage: "",
   providerRef: { id: "conn-provider" },
@@ -127,6 +128,7 @@ describe("buildCodingAgentSetupInput", () => {
       buildCodingAgentSetupInput({ ...setup, name: " velvet-comet " }),
     ).toEqual({
       name: "velvet-comet",
+      avatar: "k3v9x2qa",
       egressPreset: "trusted",
       hibernationTimeoutMin: 60,
       templateId: "claude-code",
@@ -142,6 +144,7 @@ describe("buildCodingAgentSetupInput", () => {
     };
     expect(buildCodingAgentSetupInput(custom)).toEqual({
       name: "velvet-comet",
+      avatar: "k3v9x2qa",
       egressPreset: "trusted",
       hibernationTimeoutMin: 60,
       image: "ghcr.io/org/agent:latest",
