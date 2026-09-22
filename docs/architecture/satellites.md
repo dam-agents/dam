@@ -8,7 +8,27 @@ A **Satellite** is an MCP server on a machine outside the cluster, reached throu
 
 The machine polls; nothing is pushed to it. The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back. The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-`dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` runs any stdio MCP server and offers its tools as they come, bar a name the contract refuses. The platform forwards a tool call and stores an outcome; what the arguments mean is the machine's business alone, and it never reads inside a tool's schema.
+Two verbs start a worker, and **nothing above it can tell them apart**:
+
+- `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any stdio MCP server, whose tools are offered as they come, bar a name the contract refuses.
+- `dam satellite commands --name gpu-box "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
+
+Two verbs rather than one flag because the two are different things to set up, not two ways of saying one thing, and an explicit verb cannot be misread the way a selector flag can.
+
+Making the Command Surface a degenerate MCP server rather than a parallel concept is what keeps the platform out of the business of understanding commands. It forwards a tool call and stores an outcome; the machine alone reads the arguments.
+
+The Command Surface is **text the user passes, not a file the worker reads**. It comes as one argument or on stdin, which is what a heredoc wants:
+
+```
+dam satellite commands --name gpu-box --cwd /srv --timeout 6h <<'EOF'
+./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]  # Process a database
+./train.sh ./data/**/*.db    # Train      [max=1 timeout=2h]
+EOF
+```
+
+A `#` opens a description, and only where a shell would see one — at the start of a line or after whitespace — so an anchored regex may hold a bare `#` without escaping. A trailing `[…]` group inside the description carries the few per-command settings: `max=N`, `timeout=D`, `cwd=PATH`. An option the parser does not know is refused rather than ignored — a setting that silently did nothing is the one mistake this format must not make.
+
+Having no file is the point. Nothing can drift between what the user wrote and what the machine enforces, there is no path to get wrong, and the surface is visible in the shell history that started the worker. It costs the ability to reload: changing what may run means restarting the worker, which drains first.
 
 ```mermaid
 sequenceDiagram
@@ -42,9 +62,26 @@ MCP is the *contract* between Platform and a Satellite, but not the *transport*:
 ## Concepts
 
 - **Satellite** — a named, owner-scoped tool surface, identified by `(owner, name)`. Durable: the record outlives any connection, and its tools stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one worker each, so every call stays attributable to a real person's key. Platform's sharing model lends *Agents*, never resources ([multi-player](../strategy/multi-player.md)).
+- **Command Surface** — the text declaring a Satellite's Command Patterns and their settings, passed to `dam satellite commands`. Read only by the worker; the platform never sees it. An MCP-server Satellite has none.
 - **Snapshot** — the server's copy of the Satellite's **tool list**, replaced on each connect, and what the Agent's tools are built from. It is a *claim by the Satellite*, not a platform guarantee: identity is the name, so a worker reconnecting from a different checkout serves the same name backed by different tools.
 - **Job** — one tool call, identified by `(satellite, sequence)` and rendered `gpu-box#7`. The sequence is minted server-side, since the id must return before any worker has seen the Job.
+- **Command Pattern** — one permitted command shape (below). A Command Surface concept only, enforced entirely on the machine.
 - **Satellite Grant** — the per-Agent permission to reach a Satellite. The granted set decides whether the tools are registered at all.
+
+## Command Patterns
+
+These apply to a Command Surface, and live entirely on the machine: the platform stores a tool, not a grammar, and never parses an argument. A pattern is a usage line, and the grammar is the security boundary. Seven forms, no sub-syntax: literals, `(a|b)` for a closed set, `[…]` optional, `(…)...` repeating, `*` for one filename-like argument or part of one, `**` for a path-like one, and `^…$` for a regex covering a **whole** argument.
+
+The **first token must be a literal**. A pattern that lets the caller choose the program is a shell, not an allowlist, and that is the one thing the parser refuses outright.
+
+There are deliberately no named slots: names were read by nothing, and saying what to pass is the command's description. A regex covers a whole argument rather than part of one, which reads like a restriction and is not — the argument *is* the whole thing, so `^--limit=[1-9][0-9]?$` constrains a flag's value, and a regex is equally the way to write a literal `*`, `(` or `[`, which are structural everywhere else.
+
+Two rules constrain what a match may carry, and both are about the value rather than how the pattern is written:
+
+- **A matched argument may not begin with `-`** where the caller chose its first character, unless it follows a literal `--`. `--limit=*` pins that dash itself, and a whole-argument regex has named every character the argument may hold, so neither is second-guessed. This protects only as far as the target script honors `--`, which the platform cannot verify.
+- **No matched argument may carry a `..` segment**, whatever matched it and with no normalization. A regex may widen what an argument *says*; it can never widen where it *points*.
+
+A user-authored regex meeting model-supplied input is a ReDoS, so per-argument length and argv count are capped before matching starts. Because matching now happens only on the machine, that cost falls where the pattern was written rather than on a shared api-server thread — which is what let the server-side regex worker, its deadline, its one-at-a-time queue and the manifest token budget all be deleted. A pattern that backtracks slows its own machine and nobody else's.
 
 ## Admission
 
@@ -52,7 +89,7 @@ A Job is accepted only when a worker will pick it up within a poll interval. The
 
 The count and the insert share one transaction, so two calls arriving together cannot both read a count under the limit and both land. A per-tool limit works the same way, for the tool that must not run beside itself.
 
-Admission decides only what the platform can know from the Snapshot: that the Satellite is **online** and not **draining**, that it offers the named tool, and that there is room. It does not read the arguments — a call whose arguments the machine will refuse is admitted, dispatched and refused there, one round trip later. That is the price of the platform not understanding what its Satellites do, and it is paid in a wasted poll rather than in a wrong answer.
+Admission decides only what the platform can know from the Snapshot: that the Satellite is **online** and not **draining**, that it offers the named tool, and that there is room. It does not read the arguments — a call whose arguments the machine will refuse is admitted, dispatched and refused there, one round trip later. That is the price of the platform not understanding what its Satellites do, and it is paid in a wasted poll rather than in a wrong answer. A per-command limit inside a Command Surface is counted on the machine for the same reason: the platform sees one `run` tool and cannot tell two commands apart.
 
 `--max-concurrent` is clamped to an operator ceiling. Everywhere else the machine's own declaration governs and wins; here the queue is Platform's storage, so a Satellite may ask for less than the ceiling and never for more.
 
@@ -82,7 +119,7 @@ Output is captured with stdout and stderr merged in terminal order. Under a few 
 
 ## Trust boundary
 
-**The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean. The MCP server inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
+**The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean. The worker matches every call against the Command Surface it was started with before spawning. Execution takes the pattern's own literals, the surface's working directory, and no caller-supplied value beyond a matched argument. It is never a shell, so nothing in an argument is expanded or interpreted. The command — or the MCP server — inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any. What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
 
@@ -96,7 +133,7 @@ Revoking a grant, deleting a Satellite and deleting an Agent share one rule, and
 
 Satellites are a pre-release surface. There is no browser surface yet; the CLI and an Agent's tools are the whole of it, and the tools appear only for an Agent that holds a grant, which is deliberate to give.
 
-The CLI is at parity plus `dam satellite mcp`, whose **log is the interface**: the tools print at startup and every Job start and exit is one line. Shutdown drains on the first interrupt and forces on the second. There is no reload: the tool list is whatever the server reports at connect, so changing it means restarting.
+The CLI is at parity plus `dam satellite mcp` and `dam satellite commands`, whose **log is the interface**: the parsed Command Patterns print at startup, every refused command names the pattern it came closest to, and every Job start and exit is one line. A parse error names the line it is on, since the text the user just typed is the whole allowlist. Shutdown drains on the first interrupt and forces on the second. There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
