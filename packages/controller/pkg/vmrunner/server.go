@@ -365,7 +365,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			errEgressChanged, applied.AllowCIDRs, spec.AllowCIDRs)
 	}
 	if applied != nil && imageChanged(*applied, spec) {
-		return s.recreate(id, spec, state)
+		return s.recreate(id, spec, *applied, state)
 	}
 	if p := s.port(id); p != 0 {
 		if err := s.forward(id, p); err != nil {
@@ -405,8 +405,9 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	return s.boot(id, spec, port, image, launch)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the new image is fetched and its launch read while the old machine still runs, so the agent is down only for the stop, the recreate and the boot, and not for a pull. A pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image is still held while this runs, because the machine's stored spec names it until the new machine has booted; the stored spec is rewritten only after that, and the holders published after it release the old image.
-func (s *Server) recreate(id string, spec MachineSpec, state string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the new image is fetched and its launch read while the old machine still runs, so the agent is down only for the stop, the recreate and the boot, and not for a pull. A pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The machine is created at the disk size it already has: a kept qcow2 disk is opened as it is and never grown at start, so a larger size would be recorded and not given. The stored spec keeps that size, and the next reconcile grows the disk with the in-place update like any other resize. The old image is still held while this runs, because the machine's stored spec names it until the new machine has booted; the stored spec is rewritten only after that, and the holders published after it release the old image.
+func (s *Server) recreate(id string, spec, applied MachineSpec, state string) error {
+	spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)
 	port, image, launch, err := s.resolve(id, spec)
 	if err != nil {
 		return err

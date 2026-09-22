@@ -647,6 +647,34 @@ func TestANewImageRecreatesTheMachineAroundItsStorageDisk(t *testing.T) {
 	assert.NotContains(t, h.calls()[before:], "machine", "once on the new image there is nothing left to do")
 }
 
+// TEST_SCENARIO: one spec moves the image and grows the disk. smolvm opens a kept qcow2 disk as it is and never grows it at start, so creating the new machine at the larger size would record a size the disk does not have. The machine is recreated at the size it has, and the next reconcile grows the disk with the in-place update, which is how every other resize happens.
+func TestANewImageAndALargerDiskAreAppliedOneAfterTheOther(t *testing.T) {
+	h := newHarness(t)
+	h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	before := len(h.calls())
+	upgraded := spec(true)
+	upgraded.Image, upgraded.StorageGiB = "quay.io/x/vm:2", 8
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Regexp(t, `machine create -n m1 -I \S+quay.io_x_vm_2/rootfs .*--storage 5 `, h.calls()[before:], "recreated at the size its disk has")
+	assert.Equal(t, 5, h.node.readSpec("m1").StorageGiB)
+
+	before = len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	calls := h.calls()[before:]
+	assert.Contains(t, calls, "machine update -n m1 --cpus 2 --mem 2048 --storage 8", "and then grown in place")
+	assert.NotContains(t, calls, "machine delete")
+	assert.Equal(t, 8, h.node.readSpec("m1").StorageGiB)
+}
+
 // TEST_SCENARIO: a hibernated agent is upgraded and later woken. Its machine is already stopped, so there is nothing to stop: the wake itself recreates the machine on the new image and starts it on the disk it had.
 func TestAStoppedMachineWakesOnItsNewImage(t *testing.T) {
 	h := newHarness(t)
