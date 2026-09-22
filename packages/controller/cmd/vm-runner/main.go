@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
@@ -73,13 +78,41 @@ func main() {
 		slog.Error("reading the machines already in the state dir", "error", err)
 		os.Exit(1)
 	}
-	go srv.Runtime.WarmTemplates()
+	srv.Background(srv.Runtime.WarmTemplates)
 	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin)
-	if *tlsCert != "" {
-		err = http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, srv.Handler())
-	} else {
-		err = http.ListenAndServe(*listen, srv.Handler())
+
+	// UNIT_BOUNDARY_DESCRIPTION: a runner that ignores SIGTERM is killed where it stands, thirty seconds later and without warning, and everything it was part-way through is abandoned as it lies — a fetch unpacking into a scratch directory leaves that directory behind, in a node directory that outlives every pod and where nothing counts it against the image budget or ever evicts it. Answering the signal is what lets the runner close itself: its in-flight work is cancelled rather than severed, and each operation unwinds its own cleanup on the way out.
+	stopping := make(chan os.Signal, 1)
+	signal.Notify(stopping, syscall.SIGTERM, syscall.SIGINT)
+
+	api := &http.Server{Addr: *listen, Handler: srv.Handler()}
+	serving := make(chan error, 1)
+	go func() {
+		if *tlsCert != "" {
+			serving <- api.ListenAndServeTLS(*tlsCert, *tlsKey)
+			return
+		}
+		serving <- api.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serving:
+		slog.Error("serving", "error", err)
+		srv.Close()
+		os.Exit(1)
+	case sig := <-stopping:
+		slog.Info("VM runner stopping", "signal", sig.String())
 	}
-	slog.Error("serving", "error", err)
-	os.Exit(1)
+
+	// UNIT_BOUNDARY_DESCRIPTION: the API goes first so nothing new is admitted, then the runner, which cancels what is running and waits for it. The machines are not stopped here and they do not survive either: they are smolvm's processes in this pod's namespace, so the pod going away takes them with it and the controller's sweep starts them again. What this sequence is for is the runner's own half-finished work — a scratch tree being unpacked, a machine directory being written — which a SIGKILL would leave for the next start to find.
+	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
+	defer done()
+	if err := api.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Warn("the machine API did not shut down cleanly", "error", err)
+	}
+	srv.Close()
+	slog.Info("VM runner stopped")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API is given to finish the requests it already has. Comfortably inside the thirty seconds kubelet allows before it escalates to SIGKILL, so the runner's own close still gets a turn after it.
+const shutdownGrace = 5 * time.Second

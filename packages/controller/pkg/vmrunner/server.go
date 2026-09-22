@@ -93,6 +93,10 @@ type Server struct {
 	// UNIT_BOUNDARY_DESCRIPTION: how a machine's published port is opened, nil being net.Listen. It exists so a caller that has already bound the port can hand that listener over rather than release it and hope: between releasing a port and this binding it, anything on the host may take it, and the machine then fails to publish for a reason that has nothing to do with it.
 	Listen func(network, address string) (net.Listener, error)
 
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's own lifetime, written once by Start and cancelled by Close, so every fetch and every smolvm call is a child of it. Without one they are children of nothing and outlive the runner by up to their own timeout — twenty minutes for a pull — which is how a killed process leaves a half-unpacked tree its own deferred cleanup never reached.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	mu sync.Mutex
 	// UNIT_BOUNDARY_DESCRIPTION: operations started and not yet finished. A machine operation runs on its own goroutine and writes to the state and image directories throughout, so a process that stops without waiting for them leaves work running against directories its caller believes are finished with — which is how a test's temporary directory is removed out from under a fetch still unpacking into it.
 	work       sync.WaitGroup
@@ -111,7 +115,21 @@ type Server struct {
 	startedAt  map[string]time.Time
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it. Nothing here bounds a pass of its own — its interval bounds the gap between passes, not a pass — so a fetch it starts ends at the pull timeout and at nothing else.
+func (s *Server) lifetime() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
+}
+
 func (s *Server) Start() error {
+	if s.ctx == nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+	}
+	if s.Runtime != nil && s.Runtime.Lifetime == nil {
+		s.Runtime.Lifetime = s.ctx
+	}
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
@@ -131,7 +149,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: stops taking new machine operations, drops the published ports, and waits for the operations already running — which is the part that was missing. Those goroutines fetch images and drive smolvm against the state and image directories, so returning while they run hands the caller a runner that is still writing. The wait is bounded because an operation may be inside a pull that is allowed twenty minutes, and a shutdown that can hang that long behind one slow registry is its own failure; going on without them is reported rather than silent. Bounding it is not the same as cancelling it — nothing here interrupts a fetch, which stays a gap.
+// UNIT_BOUNDARY_DESCRIPTION: stops taking new machine operations, drops the published ports, and waits for the operations already running — which is the part that was missing. Those goroutines fetch images and drive smolvm against the state and image directories, so returning while they run hands the caller a runner that is still writing. The wait is bounded because an operation may be inside a pull that is allowed twenty minutes, and a shutdown that can hang that long behind one slow registry is its own failure; going on without them is reported rather than silent. The bound is a backstop rather than the mechanism: the operations are cancelled before the wait, so what the grace actually covers is work that does not answer cancellation.
 func (s *Server) Close() {
 	s.mu.Lock()
 	s.closed = true
@@ -140,6 +158,11 @@ func (s *Server) Close() {
 		delete(s.listeners, id)
 	}
 	s.mu.Unlock()
+
+	// UNIT_BOUNDARY_DESCRIPTION: cancelling before waiting is what makes the wait short. An operation inside a pull is allowed twenty minutes on its own; as a child of this it ends now, unwinds its own deferred cleanup, and the scratch tree it was unpacking into goes with it rather than being left for the directory's housekeeping to find later.
+	if s.cancel != nil {
+		s.cancel()
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -463,7 +486,7 @@ func (s *Server) launchFromRegistry(ref string) (*ImageLaunch, error) {
 	if s.Crane == "" {
 		return nil, fmt.Errorf("%w: %s names no cached image and this runner cannot read one from the registry", errImageLaunchUnknown, ref)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
 	if err != nil {
@@ -501,7 +524,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
+	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
 	started := time.Now()
 	config, err := exec.CommandContext(ctx, s.Crane, "config", ref).Output()
@@ -950,6 +973,21 @@ func (s *Server) lock(id string) *sync.Mutex {
 		s.locks[id] = l
 	}
 	return l
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: work the runner has out that belongs to no machine — the disk-template warm-up, which is a decompression the first create would otherwise pay for. It joins the same barrier as a machine operation so that "cancels what is running and waits for it" is true of everything and not of most things: the runner's lifetime cancels it, and Close does not return while it is unwinding. A caller that arrives after Close is refused for the same reason a machine operation is, since there is nothing left to wait for it.
+func (s *Server) Background(fn func()) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.work.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.work.Done()
+		fn()
+	}()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a second operation can be queued behind the one running, so each clears only its own markers — otherwise a finishing boot erases the pending stop queued behind it and the machine reads as settled while the stop has not run.

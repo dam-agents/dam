@@ -4,6 +4,7 @@ package vmrunner
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1206,20 +1207,57 @@ func TestTheCacheIsBoundedByItsBudgetAndNothingElse(t *testing.T) {
 	assert.NoDirExists(t, stale, "nothing claims this one and the budget is spent")
 }
 
-// TEST_SCENARIO: a machine operation runs on its own goroutine and writes to the state and image directories for as long as it takes — a fetch may be unpacking an image when the runner is told to stop. Close used to drop the published ports and return while all of that was still running, which hands the caller a runner it believes is finished with and is not: the directories keep changing, and a caller that removes them, as every test does, removes them out from under a live fetch. So Close waits, and a start still sleeping when it is called has finished by the time it returns.
-func TestCloseWaitsForTheOperationsStillRunning(t *testing.T) {
-	t.Setenv("FAKE_START_SLEEP", "1")
+// TEST_SCENARIO: a machine operation runs on its own goroutine and writes to the state and image directories for as long as it takes, and a caller that closes the runner is usually about to remove those directories. What has to hold is that none of that work is still running when Close returns. Close could once only get there by waiting an operation out; it ends it instead, so the operation does not finish its job — it finishes unwinding, which is the part that matters. Both halves are asserted here: that Close came back before the start it cancelled could have completed, and that the start never got to record itself, which it cannot do later because Close does not return until its goroutine is done.
+func TestNothingIsStillRunningWhenCloseReturns(t *testing.T) {
+	t.Setenv("FAKE_START_SLEEP", "10")
 	h := newHarness(t)
 
 	st, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
 	require.NoError(t, err)
-	require.Equal(t, StateCreating, st.State, "the start is still running, which is what makes this a wait and not a no-op")
+	require.Equal(t, StateCreating, st.State, "the start is still running, which is what makes this a cancellation and not a no-op")
+
+	start := time.Now()
+	h.node.Close()
+	took := time.Since(start)
+
+	assert.Less(t, took, 10*time.Second, "Close waited the start out rather than cancelling it")
+	state, err := os.ReadFile(filepath.Join(h.state, "agent-a"))
+	assert.True(t, os.IsNotExist(err),
+		"the cancelled start recorded itself anyway, so it outlived the Close that was supposed to have ended it: %q", string(state))
+}
+
+// TEST_SCENARIO: the runner has work out that belongs to no machine — the disk-template warm-up — and the shutdown says it cancels what is running and waits for it. On a bare goroutine that was true of most things rather than everything: Close cancelled the decompression and returned while it was still unwinding, so the process could exit part-way through the cleanup that removes the half-expanded template. Whatever else the runner starts has to join the same barrier for that sentence to be worth anything.
+func TestCloseWaitsForWorkThatBelongsToNoMachine(t *testing.T) {
+	h := newHarness(t)
+
+	running := make(chan struct{})
+	finished := false
+	h.node.Background(func() {
+		close(running)
+		time.Sleep(50 * time.Millisecond)
+		finished = true
+	})
+	<-running
 
 	h.node.Close()
 
-	state, err := os.ReadFile(filepath.Join(h.state, "agent-a"))
-	require.NoError(t, err, "the fake runtime records what it did, and it is still inside the temporary directory")
-	assert.Equal(t, "running\n", string(state), "Close returned before the start it was waiting for had finished")
+	assert.True(t, finished, "Close returned while work it had out was still unwinding")
+}
+
+// TEST_SCENARIO: the same guard a machine operation gets. Work started after Close would outlive the wait that was supposed to cover it, and there is nothing left to wait for it.
+func TestNoBackgroundWorkStartsAfterClose(t *testing.T) {
+	h := newHarness(t)
+	h.node.Close()
+
+	started := make(chan struct{})
+	h.node.Background(func() { close(started) })
+
+	h.node.Close()
+	select {
+	case <-started:
+		t.Fatal("work started after the runner closed")
+	default:
+	}
 }
 
 // TEST_SCENARIO: once the runner is closing, a machine operation started anyway would outlive the wait that was supposed to cover it — the whole point of which is that nothing is still writing when Close returns. So a request that arrives after Close starts no work.
@@ -1277,4 +1315,68 @@ func TestARefusedOperationLeavesNoMemoryReserved(t *testing.T) {
 	defer h.node.mu.Unlock()
 	assert.Empty(t, h.node.committing,
 		"the runner is still holding memory for a machine whose start it refused")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a crane whose export blocks until it is killed, announcing first that it has started. It stands in for the slow half of a real fetch — the part a runner is most likely to be inside when the node tells it to stop.
+func craneThatHangsExporting(log, started string) string {
+	return "#!/bin/sh\n" +
+		"echo \"$@\" >> " + log + "\n" +
+		"if [ \"$1\" = config ]; then\n" +
+		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\"],\"WorkingDir\":\"/app\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		": > " + started + "\n" +
+		"exec sleep 120\n"
+}
+
+func partialUnpacks(t *testing.T, dir string) []string {
+	t.Helper()
+	found, err := filepath.Glob(filepath.Join(dir, partialPrefix+"*"))
+	require.NoError(t, err)
+	return found
+}
+
+// TEST_SCENARIO: an image is unpacked into a scratch directory beside the entry it will become, and removed by a deferred cleanup the fetch reaches on its way out. A fetch is allowed twenty minutes, so a runner that is closed while inside one either waits out the pull or abandons it — and abandoning it leaves that directory in a place nothing else can see: the cache patterns cannot match a dot-prefixed name, so those bytes are counted against no budget and chosen for no eviction. Cancelling instead of abandoning is what lets the fetch unwind its own cleanup, so closing the runner both returns promptly and leaves nothing behind.
+func TestClosingCancelsAFetchInsteadOfAbandoningIt(t *testing.T) {
+	h := newHarness(t)
+	scratch := t.TempDir()
+	started := filepath.Join(scratch, "export-started")
+	crane := filepath.Join(scratch, "crane")
+	require.NoError(t, os.WriteFile(crane, []byte(craneThatHangsExporting(filepath.Join(scratch, "log"), started)), 0o755))
+	h.node.Crane = crane
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", spec(true))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	}, 10*time.Second, 10*time.Millisecond, "the fetch has to be in flight, or this proves nothing")
+	require.NotEmpty(t, partialUnpacks(t, h.node.ImageDir), "and it has to have a scratch tree open")
+
+	closed := make(chan time.Duration, 1)
+	go func() {
+		start := time.Now()
+		h.node.Close()
+		closed <- time.Since(start)
+	}()
+
+	select {
+	case took := <-closed:
+		assert.Less(t, took, closeGrace, "Close waited out the grace instead of cancelling the fetch")
+	case <-time.After(closeGrace + 5*time.Second):
+		t.Fatal("Close did not return: the fetch was neither cancelled nor waited out")
+	}
+
+	assert.Empty(t, partialUnpacks(t, h.node.ImageDir),
+		"the cancelled fetch left its scratch tree behind, where the budget cannot see it and eviction will not take it")
+}
+
+// TEST_SCENARIO: the runtime's calls are the runner's other child processes, and a smolvm invocation is allowed minutes of its own. They belong to the same lifetime for the same reason the fetches do — a runner that has been told to stop should not be held open by one.
+func TestTheRuntimeSharesTheRunnersLifetime(t *testing.T) {
+	h := newHarness(t)
+	require.NotNil(t, h.node.Runtime.Lifetime, "Start gives the runtime the runner's lifetime")
+
+	require.NoError(t, h.node.Runtime.Lifetime.Err(), "which is live while the runner is")
+	h.node.Close()
+	assert.ErrorIs(t, h.node.Runtime.Lifetime.Err(), context.Canceled, "and cancelled once it closes")
 }
