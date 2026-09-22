@@ -294,6 +294,7 @@ provenance = "github-attestations"
 [[tools.rust]]
 version = "1.94.1"
 backend = "core:rust"
+specifiers = ["1.94"]
 
 [tools.rust.options]
 components = "clippy,rustfmt"

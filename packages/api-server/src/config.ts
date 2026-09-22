@@ -124,7 +124,7 @@ const configSchema = z.object({
     .positive()
     .default(50 * 1024 * 1024),
   satelliteMaxConcurrentCeiling: z.coerce.number().int().positive().default(64),
-  satelliteWaitDeadlineMs: z.coerce.number().int().positive().default(300_000),
+  satelliteWaitDeadlineMs: z.coerce.number().int().positive().default(240_000),
   objectStorageEndpoint: z.url().optional(),
   objectStorageAgentEndpoint: z.url().optional(),
   objectStoragePublicEndpoint: z.url().optional(),

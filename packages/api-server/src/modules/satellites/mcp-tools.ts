@@ -1,6 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { JobOutcome, SatelliteTool, SatelliteView } from "api-server-api";
+import {
+  RESERVED_TOOL_NAMES,
+  toolArgsSchema,
+  type JobOutcome,
+  type SatelliteTool,
+  type SatelliteView,
+} from "api-server-api";
 import { isTerminal } from "./domain/types.js";
 import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
 
@@ -13,8 +19,20 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  *
  * The platform never reads inside a tool's `inputSchema`: only the machine knows
  * what its arguments mean, and it re-checks every call before it runs anything.
+ * It does bound the arguments' size, since they are stored before anything on
+ * the machine has seen them.
+ *
+ * A Satellite may not name a tool `wait`, `get` or `cancel` — the contract
+ * refuses that at connect. A Snapshot stored before the rule, or one this
+ * replica has not re-read, is still skipped rather than registered twice: a
+ * duplicate registration fails the whole session, so one machine would take down
+ * an Agent's entire tool surface.
+ *
+ * The default wait deadline sits under Node's own 300s request timeout, which
+ * the harness server does not override. A wait running the full 300s would have
+ * its socket torn down instead of answering "still running".
  */
-export const DEFAULT_SATELLITE_WAIT_MS = 300_000;
+export const DEFAULT_SATELLITE_WAIT_MS = 240_000;
 
 const INLINE_WAIT_MS = 30_000;
 
@@ -65,7 +83,7 @@ function inputSchemaFor(tool: SatelliteTool): z.ZodType {
 
 function describe(satellite: SatelliteView, tool: SatelliteTool): string {
   const where = `Runs on ${satellite.name}${satellite.description === null ? "" : ` — ${satellite.description}`}, a machine outside the platform.`;
-  const deferred = `The call returns the result if it finishes quickly, and otherwise a job reference; use ${scopedName(satellite.name, "wait")} to keep waiting, and you will be woken with the outcome either way.`;
+  const deferred = `The call returns the result if it finishes quickly, and otherwise a job reference; use ${scopedName(satellite.name, "wait")} to keep waiting, or ${scopedName(satellite.name, "get")} to check without waiting.`;
   const offline = satellite.online
     ? ""
     : `\n\n(${satellite.name} is OFFLINE — starting a job will be refused.)`;
@@ -84,7 +102,10 @@ export function registerSatelliteTools(
   for (const satellite of deps.satellites) {
     const name = satellite.name;
 
-    for (const tool of satellite.tools)
+    const taken = new Set<string>(RESERVED_TOOL_NAMES);
+    for (const tool of satellite.tools) {
+      if (taken.has(tool.name)) continue;
+      taken.add(tool.name);
       server.registerTool(
         scopedName(name, tool.name),
         {
@@ -94,11 +115,19 @@ export function registerSatelliteTools(
         },
         (args) =>
           run(async () => {
+            const parsed = toolArgsSchema.safeParse(args ?? {});
+            if (!parsed.success)
+              return json(
+                {
+                  error: parsed.error.issues[0]?.message ?? "invalid arguments",
+                },
+                true,
+              );
             const started = await deps.ops.start(
               deps.agentId,
               name,
               tool.name,
-              (args ?? {}) as Record<string, unknown>,
+              parsed.data,
             );
             const settled = await deps.ops.wait(
               deps.agentId,
@@ -114,6 +143,7 @@ export function registerSatelliteTools(
                 });
           }),
       );
+    }
 
     const jobArg = {
       job: z

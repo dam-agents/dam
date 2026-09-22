@@ -2,7 +2,7 @@
 
 A **Satellite** is a command surface running on the user's own machine, reached by an outbound connection the machine initiates, that lets an Agent trigger a finite, pre-declared set of commands on a host the Agent has no other access to.
 
-**Status: built, then amended.** Contract, api-server module, MCP tools, CLI worker, wake on finish, the UI section and an e2e spec all exist and are tested.
+**Status: built, then amended, and landing as a five-part stack.** This part carries the contract, the api-server module, the MCP tools, the CLI worker and an e2e spec. Wake on finish, the command surface, approval and the UI section follow behind it.
 
 > **Amendment — a Satellite is an MCP server.** This page records the design as
 > first built, where a Satellite was a command surface and the api-server matched

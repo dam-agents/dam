@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-09-21
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -16,7 +16,7 @@ sequenceDiagram
   participant AS as api-server
   participant PG as Postgres
   participant SAT as satellite worker
-  participant P as the command
+  participant P as the tool
 
   SAT->>AS: claim (long-poll, outbound HTTPS)
   RT->>AS: gpu_box__run
@@ -24,7 +24,7 @@ sequenceDiagram
   AS->>PG: insert the Job
   AS-->>RT: the result, or gpu-box#7
   AS-->>SAT: work item (tool + arguments)
-  SAT->>P: match, then execFile in its own process group
+  SAT->>P: call the tool
   SAT->>AS: heartbeat, renewing the lease
   P-->>SAT: exit
   SAT->>AS: report the outcome
@@ -62,9 +62,10 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 
 | State | Meaning |
 |---|---|
+| pending-approval | held for a human; counts against the limit though it consumes nothing. No path reaches it yet — the column and the state ship with the Job model, and what drives them comes later |
 | queued | accepted; no worker has claimed it yet |
 | running | claimed, under a lease the worker renews |
-| done | terminal: exit code and captured output |
+| done | terminal: the tool's result, and its exit code where the tool has one |
 | interrupted | the worker stopped renewing, or it was killed — the outcome is unknowable |
 | cancelled | terminal after a cancellation or the Satellite's removal |
 
@@ -86,7 +87,7 @@ Output is captured with stdout and stderr merged in terminal order. Under a few 
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any. What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
 
-Anything an Agent can call is callable by a **prompt-injected** Agent. That is the whole exposure surface, and it is why the grammar cannot express an unbounded argument and why the concurrency limit is enforced in the same transaction that inserts. Connecting an arbitrary MCP server widens that surface to whatever the server exposes, which is the user's call to make and the reason grants stay deliberate. Every call, verdict and outcome is recorded on the Job row itself — the tool, its arguments, the exit and the captured output — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself. The rows are the whole of it: they are purged with the retention sweep a week after the Job started, so a longer-lived trail would have to be added on purpose.
+Anything an Agent can call is callable by a **prompt-injected** Agent. That is the whole exposure surface, and it is why a tool call is bounded before it is stored — arguments are capped, and the concurrency limit is enforced in the same transaction that inserts. Connecting an arbitrary MCP server widens that surface to whatever the server exposes, which is the user's call to make and the reason grants stay deliberate. Every call, verdict and outcome is recorded on the Job row itself — the tool, its arguments and the result — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself. The rows are the whole of it: they are purged with the retention sweep a week after the Job started, so a longer-lived trail would have to be added on purpose.
 
 A worker authenticates with an API key carrying the **serve scope**, which covers only what serving needs: registering a tool surface, claiming the work approved for it, heartbeating, reporting what came back, and declaring itself draining. It confers no scope over Agents or credentials, but it is not agent-scoped either, and the difference matters: a Satellite serves every Agent granted to it, so a worker claims work queued by any of them and the text it reports becomes that Agent's next turn. Narrowing the key to one Agent would therefore be a promise the surface cannot keep, so a serve key must be an unrestricted principal and an agent-bound one is refused outright. Read that as the cost of the surface: a serve key is trusted by every Agent granted to any Satellite of that owner, which is the reason to mint one per machine and to keep the grants deliberate. Nothing stops an owner minting a key that holds *more* than that scope — the platform cannot tell which key a machine will be given — so the guidance is the narrow key, and what the platform guarantees is only that the scope itself buys nothing else. That is what keeps the long-lived key a machine outside the cluster must hold from being worth more than the machine.
 
@@ -94,13 +95,11 @@ Revoking a grant, deleting a Satellite and deleting an Agent share one rule, and
 
 ## Surfaces
 
-Satellites are a pre-release surface behind a per-user [experimental feature flag](features.md), default off. The flag is disclosure, not authorization: it decides whether the section renders, while `dam satellite` and an Agent's tools work regardless — the agent surface needs no separate gate, since the tools appear only for an Agent that holds a grant, and granting one is deliberate.
-
-The Satellites section sits inside the Connections tab — adjacent because "a thing my agent can reach, granted per Agent" is the same shelf to a user, separate because a Satellite is not a Connection: it carries no credential, and the grant is a server-side read rather than a Contribution.
+Satellites are a pre-release surface. There is no browser surface yet; the CLI and an Agent's tools are the whole of it, and the tools appear only for an Agent that holds a grant, which is deliberate to give.
 
 The CLI is at parity plus `dam satellite mcp`, whose **log is the interface**: the tools print at startup and every Job start and exit is one line. Shutdown drains on the first interrupt and forces on the second. There is no reload: the tool list is whatever the server reports at connect, so changing it means restarting.
 
-`dam satellite` marks itself **experimental** in its description and help text. The UI gates on the feature flag; the CLI has no flag to read, so it says so where a user meets it. A reload is refused for three reasons, and each keeps the running Manifest rather than silently disabling the machine: it does not parse, it renames the Satellite — identity is the name, so a rename is a different machine and needs a restart — or the machine is already draining, where widening what may run is the wrong answer. A reload whose push to the platform fails keeps the running Manifest too, for the same reason. An accepted reload reaches the Snapshot first and the worker second, so the machine never enforces a Manifest the server has not taken.
+`dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
 A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has. Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
@@ -110,5 +109,4 @@ Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`,
 
 - Contract and router: [`packages/api-server-api/src/modules/satellites/`](../../packages/api-server-api/src/modules/satellites/)
 - Implementation: [`packages/api-server/src/modules/satellites/`](../../packages/api-server/src/modules/satellites/)
-- Worker, grammar and CLI: [`packages/cli/src/modules/satellite/`](../../packages/cli/src/modules/satellite/)
-- UI section: [`packages/ui/src/modules/satellites/`](../../packages/ui/src/modules/satellites/)
+- Worker and CLI: [`packages/cli/src/modules/satellite/`](../../packages/cli/src/modules/satellite/)

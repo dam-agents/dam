@@ -871,6 +871,7 @@ export {
   satelliteGrantInputSchema,
   satelliteManifestSchema,
   satelliteNameSchema,
+  RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   satelliteToolSchema,
   startJobInputSchema,

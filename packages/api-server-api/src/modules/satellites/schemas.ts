@@ -12,6 +12,8 @@ export const satelliteNameSchema = z
     "a satellite name is lowercase letters, digits and dashes",
   );
 
+export const RESERVED_TOOL_NAMES = ["wait", "get", "cancel"] as const;
+
 export const satelliteToolNameSchema = z
   .string()
   .min(1)
@@ -19,6 +21,10 @@ export const satelliteToolNameSchema = z
   .regex(
     /^[a-zA-Z0-9_-]+$/,
     "a tool name is letters, digits, underscores and dashes",
+  )
+  .refine(
+    (name) => !RESERVED_TOOL_NAMES.includes(name as never),
+    `a tool may not be named ${RESERVED_TOOL_NAMES.join(", ")} — the platform registers those beside your tools`,
   );
 
 /**

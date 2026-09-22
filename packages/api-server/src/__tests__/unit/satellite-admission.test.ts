@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SatelliteTool } from "api-server-api";
+import {
+  RESERVED_TOOL_NAMES,
+  satelliteToolNameSchema,
+  type SatelliteTool,
+} from "api-server-api";
 import {
   admit,
   isOnline,
@@ -274,5 +278,25 @@ describe("a job that finishes while its agent is waiting", () => {
       calls[0],
       "the lease must be taken before the first read, or the report path claims the outcome first",
     ).toBe("markAwaited");
+  });
+});
+
+describe("a satellite's own tool names", () => {
+  /**
+   * TEST_SCENARIO: The platform registers wait, get and cancel beside a
+   * Satellite's tools under the same scoped prefix. A Satellite offering one of
+   * those would register a name the platform has already taken, and a duplicate
+   * registration fails the whole MCP session — so one machine could take down an
+   * Agent's entire tool surface. The name is refused when the machine connects,
+   * where the error reaches the person who can rename it.
+   */
+  it("may not take a name the platform registers beside them", () => {
+    for (const reserved of RESERVED_TOOL_NAMES)
+      expect(
+        satelliteToolNameSchema.safeParse(reserved).success,
+        `${reserved} is the platform's own verb`,
+      ).toBe(false);
+    expect(satelliteToolNameSchema.safeParse("waiting").success).toBe(true);
+    expect(satelliteToolNameSchema.safeParse("run").success).toBe(true);
   });
 });
