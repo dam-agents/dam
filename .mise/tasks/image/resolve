@@ -65,9 +65,9 @@ own_paths() {
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
     # The runner is the Rust crate, whole: its source, its lockfile, the pin
     # naming the smolvm tree it builds against and the script that fetches it.
-    # Beside it ship two Go binaries; check:vm-runner-source fails when a Go
-    # import escapes the list, or when the crate is missing from it.
-    vm-runner) echo "packages/vm-runner packages/controller/cmd/vm-image-cache packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
+    # Beside it ships platform-init, in Go; check:vm-runner-source fails when a
+    # Go import escapes the list, or when the crate is missing from it.
+    vm-runner) echo "packages/vm-runner packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
