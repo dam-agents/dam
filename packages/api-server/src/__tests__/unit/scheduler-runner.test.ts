@@ -48,6 +48,7 @@ function makeSchedule(
 
 function makeDeps(opts?: {
   wakeError?: Error;
+  bumpError?: Error;
   storedNextRun?: string;
   cron?: string;
   precheck?: string;
@@ -58,6 +59,7 @@ function makeDeps(opts?: {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
   const nextRuns: (Date | null)[] = [];
+  const stampedFires: string[] = [];
   const enqueued: Date[] = [];
   const ensured: Date[] = [];
   const events: string[] = [];
@@ -88,6 +90,9 @@ function makeDeps(opts?: {
     async setNextRun(_id: string, nextRun: Date | null) {
       nextRuns.push(nextRun);
     },
+    async stampFire(_id: string, result: string) {
+      stampedFires.push(result);
+    },
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);
     },
@@ -110,6 +115,7 @@ function makeDeps(opts?: {
   const runtimeMutator: RuntimeMutator = {
     async bump(agentId, evts) {
       calls.push(`bump:${agentId}`);
+      if (opts?.bumpError) throw opts.bumpError;
       for (const e of evts) {
         events.push(e.id);
         expiries.push(e.expiresAt);
@@ -147,6 +153,7 @@ function makeDeps(opts?: {
     calls,
     fires,
     nextRuns,
+    stampedFires,
     enqueued,
     ensured,
     events,
@@ -498,30 +505,25 @@ describe("scheduler-runner runNow", () => {
 
   // TEST_SCENARIO: a run that happened is what the Precheck's "anything new since last time?" measures from, so an on-demand run stamps the last-run pair like any other run — otherwise the next Precheck is told work happened longer ago than it did and finds the same work twice.
   it("stamps the run as the last run when there is no precheck", async () => {
-    const { runner, patches, fires } = makeDeps();
+    const { runner, stampedFires, fires, nextRuns } = makeDeps();
 
     await runner.runNow(SCHEDULE_ID);
 
+    expect(stampedFires).toEqual(["success"]);
     expect(fires).toEqual([]);
-    expect(patches).toEqual([
-      {
-        lastFiredAt: new Date("2026-06-12T10:30:00Z"),
-        lastFiredResult: "success",
-        lastDeclinedAt: null,
-        declinedCount: { kind: "set", value: 0 },
-        lastPrecheckError: null,
-        precheckFailedCount: { kind: "set", value: 0 },
-      },
-    ]);
+    expect(nextRuns).toEqual([]);
   });
 
   // TEST_SCENARIO: only the pod knows a Precheck's verdict, so claiming a run at send time would make an on-demand fire that declines read like one that ran — the same reason a scheduled prechecked fire records nothing until the report lands.
   it("leaves a prechecked run to its own verdict report", async () => {
-    const { runner, patches } = makeDeps({ precheck: "test -f /tmp/ready" });
+    const { runner, patches, stampedFires } = makeDeps({
+      precheck: "test -f /tmp/ready",
+    });
 
     await runner.runNow(SCHEDULE_ID);
 
     expect(patches).toEqual([]);
+    expect(stampedFires).toEqual([]);
   });
 
   // TEST_SCENARIO: the stamp the poke wrote is keyed by event id, so a declined on-demand run must restore activity the same way a declined occurrence does — otherwise trying a Schedule out holds its Agent awake.
@@ -553,8 +555,24 @@ describe("scheduler-runner runNow", () => {
   });
 
   // TEST_SCENARIO: a fire that never committed is not a run, so it must leave the last-run record of the previous one standing — the user learns it failed from the error, not from a status the next Precheck would then measure from.
-  it("reports a failed delivery without recording a run", async () => {
-    const { runner, patches, fires, nextRuns } = makeDeps({
+  it("records nothing when the outbox commit itself fails", async () => {
+    const { runner, stampedFires, patches, fires, nextRuns } = makeDeps({
+      bumpError: new Error("postgres unreachable"),
+    });
+
+    await expect(runner.runNow(SCHEDULE_ID)).rejects.toThrow(
+      "postgres unreachable",
+    );
+
+    expect(stampedFires).toEqual([]);
+    expect(patches).toEqual([]);
+    expect(fires).toEqual([]);
+    expect(nextRuns).toEqual([]);
+  });
+
+  // TEST_SCENARIO: once the event is committed the task runs when the Agent is Ready, so a poke that fails afterwards is still a run. Leaving it unstamped would make the next Precheck measure from the older stamp and re-cover a window this run already processed — the gap the scheduled path does not have, because its own failure path writes the stamp too.
+  it("stamps the run when the poke fails after the commit, and reports the poke", async () => {
+    const { runner, stampedFires, nextRuns } = makeDeps({
       wakeError: new Error("k8s api unreachable"),
     });
 
@@ -562,8 +580,21 @@ describe("scheduler-runner runNow", () => {
       "k8s api unreachable",
     );
 
-    expect(patches).toEqual([]);
-    expect(fires).toEqual([]);
+    expect(stampedFires).toEqual(["k8s api unreachable"]);
     expect(nextRuns).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a prechecked fire normally leaves the stamp to its verdict report, but a failed poke may mean no report ever arrives — so the failure is recorded against the fire rather than lost, exactly as a scheduled fire records its own.
+  it("records a failed poke on a prechecked schedule too", async () => {
+    const { runner, stampedFires } = makeDeps({
+      precheck: "test -f /tmp/ready",
+      wakeError: new Error("k8s api unreachable"),
+    });
+
+    await expect(runner.runNow(SCHEDULE_ID)).rejects.toThrow(
+      "k8s api unreachable",
+    );
+
+    expect(stampedFires).toEqual(["k8s api unreachable"]);
   });
 });
