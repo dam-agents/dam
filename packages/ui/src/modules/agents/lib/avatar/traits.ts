@@ -91,7 +91,7 @@ export type HeadShape = (typeof HEAD_SHAPES)[number];
 
 export type Face = "eyes" | "visor" | "happy" | "wink" | "blank";
 export type Sides = "none" | "block" | "round" | "wings";
-export type Top = "none" | "antenna" | "twin" | "bolt" | "cap" | "bug-eyes";
+export type Top = "none" | "hat" | "bolt" | "cap" | "bug-eyes";
 export type Banding = "none" | "chin" | "bands";
 export type Bottom = "none" | "neck" | "stripes";
 export type Mouth = "none" | "line" | "smile" | "o";
@@ -269,12 +269,11 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
 }
 
 const TOP_WEIGHTS: readonly (readonly [Top, number])[] = [
-  ["none", 14],
-  ["antenna", 18],
-  ["twin", 18],
-  ["bolt", 12],
-  ["cap", 16],
-  ["bug-eyes", 16],
+  ["none", 16],
+  ["hat", 22],
+  ["bolt", 14],
+  ["cap", 18],
+  ["bug-eyes", 22],
 ];
 
 const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [

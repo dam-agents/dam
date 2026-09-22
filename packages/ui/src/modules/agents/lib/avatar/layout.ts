@@ -234,6 +234,34 @@ function outerTangent(
   return [tip[0] + reach * Math.cos(a), tip[1] + reach * Math.sin(a)];
 }
 
+export const IMAGE_TOP = -4;
+const BRIM_HEIGHT = 6.5;
+const BRIM_HALF_WIDTH = 21;
+const CROWN_HALF_WIDTH = 12;
+const CROWN_MAX_HEIGHT = 13;
+
+export function hatLayout(head: HeadGeometry): { brim: Box; crown: Box } {
+  const brimY = head.top - AVATAR_GAP - BRIM_HEIGHT;
+  const crownBottom = brimY - AVATAR_GAP;
+  const crownHeight = Math.min(CROWN_MAX_HEIGHT, crownBottom - IMAGE_TOP - 1);
+  return {
+    brim: {
+      x: AVATAR_CENTER - BRIM_HALF_WIDTH,
+      y: brimY,
+      width: BRIM_HALF_WIDTH * 2,
+      height: BRIM_HEIGHT,
+      rx: BRIM_HEIGHT / 2,
+    },
+    crown: {
+      x: AVATAR_CENTER - CROWN_HALF_WIDTH,
+      y: crownBottom - crownHeight,
+      width: CROWN_HALF_WIDTH * 2,
+      height: crownHeight,
+      rx: 4,
+    },
+  };
+}
+
 export const BUG_EYE_SPREAD = 11;
 
 export function bugEyeCenter(

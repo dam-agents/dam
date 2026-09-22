@@ -15,6 +15,7 @@ import {
   capEdge,
   chinCurve,
   chinEdge,
+  hatLayout,
   MOUTH_Y,
   placeEyes,
   visorBox,
@@ -26,7 +27,6 @@ import { type AvatarTraits, avatarTraits, type Look } from "./traits.js";
 type Attrs = Record<string, string | number>;
 
 const SIDES = [-1, 1] as const;
-const STICK = 4.5;
 const CACHE_LIMIT = 512;
 
 function num(value: number): string {
@@ -100,33 +100,10 @@ function top(t: AvatarTraits, head: HeadGeometry): string {
     case "none":
     case "cap":
       return "";
-    case "antenna":
-      return (
-        el("rect", {
-          x: AVATAR_CENTER - STICK / 2,
-          y: head.top - 13,
-          width: STICK,
-          height: 13 - AVATAR_GAP,
-          rx: STICK / 2,
-          fill,
-        }) + el("circle", { cx: AVATAR_CENTER, cy: head.top - 14, r: 6, fill })
-      );
-    case "twin":
-      return SIDES.map((side) => {
-        const x = AVATAR_CENTER + side * 16;
-        const y = head.top - 12;
-        return (
-          el("line", {
-            x1: AVATAR_CENTER + side * 9,
-            y1: clear - 2.5,
-            x2: x,
-            y2: y,
-            stroke: AVATAR_STICK,
-            "stroke-width": STICK,
-            "stroke-linecap": "round",
-          }) + el("circle", { cx: x, cy: y, r: 5.5, fill })
-        );
-      }).join("");
+    case "hat": {
+      const { brim, crown } = hatLayout(head);
+      return rect(brim, t.colors.cap) + rect(crown, fill);
+    }
     case "bolt":
       return el("rect", {
         x: AVATAR_CENTER - 8,

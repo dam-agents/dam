@@ -9,6 +9,8 @@ import {
   bugEyeCenter,
   EDGE_MARGIN,
   gapRanges,
+  hatLayout,
+  IMAGE_TOP,
   MOUTH_Y,
   mouthFits,
   placeEyes,
@@ -65,7 +67,7 @@ describe("avatarTraits", () => {
       expect(pairs.has(`${head}:bands`)).toBe(true);
     }
     expect(pairs.has("capsule:block")).toBe(true);
-    expect(pairs.has("capsule:antenna")).toBe(true);
+    expect(pairs.has("capsule:hat")).toBe(true);
   });
 
   // TEST_SCENARIO: Colour variety comes from combining palettes. An avatar's parts draw on more than its head colour.
@@ -220,13 +222,17 @@ describe("face layout", () => {
     }
   });
 
-  // TEST_SCENARIO: The image is a fixed 100-unit square starting 4 units above zero. Stacked parts below the head, and ornaments above it, must not be cut off at its edges.
+  // TEST_SCENARIO: The image is a fixed 100-unit square starting 4 units above zero. Stacked parts below the head, and the hat or bug eyes above it, must not be cut off at its edges, and the hat keeps a gap between brim, crown and head.
   it("keeps parts above and below every head inside the image", () => {
     for (const shape of HEAD_SHAPES) {
       const head = HEAD_GEOMETRY[shape];
       const stripesBottom = head.bottom + AVATAR_GAP * 2 + 5.5 * 2;
       expect(stripesBottom, shape).toBeLessThanOrEqual(96);
-      expect(head.top - 14 - 6, shape).toBeGreaterThanOrEqual(-4);
+      const { brim, crown } = hatLayout(head);
+      expect(crown.y, shape).toBeGreaterThanOrEqual(IMAGE_TOP);
+      expect(crown.height, shape).toBeGreaterThanOrEqual(10);
+      expect(brim.y - crown.y - crown.height, shape).toBeCloseTo(AVATAR_GAP);
+      expect(head.top - brim.y - brim.height, shape).toBeCloseTo(AVATAR_GAP);
       expect(head.top - AVATAR_GAP - 1 - 8.5 * 2, shape).toBeGreaterThanOrEqual(
         -4,
       );
