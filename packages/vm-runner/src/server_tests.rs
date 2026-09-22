@@ -362,6 +362,33 @@ async fn a_stop_issued_while_booting_is_honoured() {
     assert_eq!(h.fake.calls(), vec!["create m1", "start m1", "stop m1"]);
 }
 
+// TEST_SCENARIO: operations run in the order they were queued, whichever worker thread starts first. Many alternating starts and stops queued at once must end in the state the last one asked for, with the runtime called in exactly the queued order.
+#[tokio::test(flavor = "multi_thread")]
+async fn operations_run_in_the_order_they_were_queued() {
+    let h = Harness::new("order");
+    *locked(&h.fake.start_delay) = Duration::from_millis(20);
+    let lock = h.server.lock("m1");
+    let mut queued = Vec::new();
+    {
+        let _held = locked(&lock);
+        for i in 0..20u64 {
+            let fake = h.fake.clone();
+            let label = format!("op {i}");
+            queued.push(label.clone());
+            h.server.spawn("m1", STATE_STARTING, move || {
+                fake.record(label);
+                Ok(())
+            });
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while h.fake.calls().len() < queued.len() {
+        assert!(Instant::now() < deadline, "the queue never drained");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.fake.calls(), queued);
+}
+
 // TEST_SCENARIO: the image is fixed at create, so a spec with a different image is reported in the machine's message and the rest of the spec still applies. The machine keeps booting the image it has.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_image_is_reported_and_does_not_block_the_rest() {
