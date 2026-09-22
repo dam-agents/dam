@@ -377,12 +377,12 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}},
-			Egress: runnerEgress(ns, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, owner, egress, exceptCIDRs),
 		},
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 // UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
 func containedIn(cidr string, except []string) []string {
 	block, err := netip.ParsePrefix(cidr)
@@ -400,7 +400,7 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
-func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
+func runnerEgress(agentNS, owner string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
 	}
@@ -411,7 +411,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	}, {
 		To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
-			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
 	}}
 	for _, cidr := range cidrs {

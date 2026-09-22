@@ -263,6 +263,10 @@ func TestReconcile_CreateResources(t *testing.T) {
 	assert.Equal(t, "my-agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 
+	gwNP, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+	require.NoError(t, err, "per-pair gateway ingress NetworkPolicy must be created")
+	assert.Equal(t, "gateway", gwNP.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
+
 	assert.Equal(t, "my-agent", ss.Spec.Template.Spec.ServiceAccountName,
 		"agent pod must run as the per-agent SA")
 	assert.Equal(t, "my-agent", gws.Spec.Template.Spec.ServiceAccountName,

@@ -125,6 +125,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("egressNetworkPolicy")
+	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM(), r.config, ownerRef)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+	timer.mark("gatewayIngressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
 	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
@@ -242,7 +246,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		timer.mark("agentService")
 	}
 
-	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	stampRollRev(gatewaySS, rollRev)
 	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
