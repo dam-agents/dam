@@ -25,6 +25,10 @@ pub trait Runtime: Send + Sync {
     fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: removes a disk kept by an interrupted recreate, for a machine that is being deleted outright.
     fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk the Go runner made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
+    fn storage_growable(&self, _id: &str) -> bool {
+        true
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a cached archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.

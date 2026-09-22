@@ -22,6 +22,7 @@ struct Fake {
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
     discarded: Mutex<Vec<String>>,
+    ungrowable: AtomicBool,
 }
 
 impl Fake {
@@ -94,6 +95,10 @@ impl Runtime for Fake {
     fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()> {
         locked(&self.discarded).push(id.to_string());
         Ok(())
+    }
+
+    fn storage_growable(&self, _id: &str) -> bool {
+        !self.ungrowable.load(Ordering::SeqCst)
     }
 }
 
@@ -831,4 +836,56 @@ fn write_archive(path: &Path, config: &str) {
         builder.append_data(&mut header, name, body).unwrap();
     }
     builder.finish().unwrap();
+}
+
+// TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disk_that_cannot_grow_is_not_resized_under_a_running_machine() {
+    let h = Harness::new("ungrowable");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut bigger = spec(true);
+    bigger.storage_gib += 10;
+    h.server.put("m1", bigger).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
+    );
+}
+
+// TEST_SCENARIO: an image upgrade that also asks for more storage on a disk that cannot grow is refused before the old machine is stopped, so the agent keeps running on its old image rather than being recreated at a size it will never have.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_with_a_size_the_disk_cannot_take_is_refused_before_the_recreate() {
+    let h = Harness::new("ungrowable-recreate");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    upgraded.storage_gib += 10;
+    h.server.put("m1", upgraded).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:1"
+    );
 }
