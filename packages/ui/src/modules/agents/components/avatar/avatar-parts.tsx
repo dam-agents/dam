@@ -1,26 +1,20 @@
+import type { ReactNode } from "react";
+
 import type { HeadGeometry } from "../../lib/avatar/geometry.js";
 import {
   AVATAR_CENTER,
   capEdge,
   chinEdge,
-  STRIPE_HEIGHT,
-  STRIPE_INSET,
-  STRIPE_ROWS,
   visorBox,
 } from "../../lib/avatar/layout.js";
-import {
-  AVATAR_GAP,
-  AVATAR_INK,
-  AVATAR_SCLERA,
-  type AvatarTraits,
-} from "../../lib/avatar/traits.js";
+import { AVATAR_GAP, type AvatarTraits } from "../../lib/avatar/traits.js";
 
 interface PartProps {
   traits: AvatarTraits;
   head: HeadGeometry;
 }
 
-const OUTSIDE_INK = "text-[#1b2a4a] dark:text-[#aebbd3]";
+const OUTSIDE_INK = "text-[#4a5160] dark:text-[#b3bac7]";
 
 export function AvatarEars({ traits, head }: PartProps) {
   const left = AVATAR_CENTER - head.halfWidth - AVATAR_GAP;
@@ -45,6 +39,42 @@ export function AvatarEars({ traits, head }: PartProps) {
   }
 }
 
+const STICK = 4.5;
+
+function Stalk({
+  side,
+  base,
+  tip,
+  className,
+  children,
+}: {
+  side: -1 | 1;
+  base: readonly [number, number];
+  tip: readonly [number, number];
+  className?: string;
+  children: (x: number, y: number) => ReactNode;
+}) {
+  const x1 = AVATAR_CENTER + side * base[0];
+  const x2 = AVATAR_CENTER + side * tip[0];
+  return (
+    <g>
+      <line
+        x1={x1}
+        y1={base[1]}
+        x2={x2}
+        y2={tip[1]}
+        className={className}
+        stroke="currentColor"
+        strokeWidth={STICK}
+        strokeLinecap="round"
+      />
+      {children(x2, tip[1])}
+    </g>
+  );
+}
+
+const SIDES = [-1, 1] as const;
+
 export function AvatarTop({ traits, head }: PartProps) {
   const { top } = head;
   const clear = top - AVATAR_GAP;
@@ -56,44 +86,29 @@ export function AvatarTop({ traits, head }: PartProps) {
       return (
         <g fill={traits.accent}>
           <rect
-            x={AVATAR_CENTER - 1.75}
-            y={top - 12}
-            width={3.5}
-            height={12 - AVATAR_GAP}
-            rx={1.75}
+            x={AVATAR_CENTER - STICK / 2}
+            y={top - 13}
+            width={STICK}
+            height={13 - AVATAR_GAP}
+            rx={STICK / 2}
           />
-          <circle cx={AVATAR_CENTER} cy={top - 14.5} r={5.5} />
+          <circle cx={AVATAR_CENTER} cy={top - 14} r={6} />
         </g>
       );
     case "twin":
       return (
         <g>
-          <g
-            className={OUTSIDE_INK}
-            stroke="currentColor"
-            strokeWidth={3}
-            strokeLinecap="round"
-          >
-            {[-1, 1].map((side) => (
-              <line
-                key={side}
-                x1={AVATAR_CENTER + side * 9}
-                y1={clear}
-                x2={AVATAR_CENTER + side * 15}
-                y2={top - 10}
-              />
-            ))}
-          </g>
-          <g fill={traits.accent}>
-            {[-1, 1].map((side) => (
-              <circle
-                key={side}
-                cx={AVATAR_CENTER + side * 16}
-                cy={top - 13}
-                r={4.5}
-              />
-            ))}
-          </g>
+          {SIDES.map((side) => (
+            <Stalk
+              key={side}
+              side={side}
+              base={[9, clear - 1]}
+              tip={[16, top - 12]}
+              className={OUTSIDE_INK}
+            >
+              {(x, y) => <circle cx={x} cy={y} r={5.5} fill={traits.accent} />}
+            </Stalk>
+          ))}
         </g>
       );
     case "bolt":
@@ -106,42 +121,6 @@ export function AvatarTop({ traits, head }: PartProps) {
           rx={2.5}
           fill={traits.palette.shade}
         />
-      );
-    case "stalks":
-      return (
-        <g>
-          <g
-            stroke={traits.palette.light}
-            strokeWidth={3}
-            strokeLinecap="round"
-          >
-            {[-1, 1].map((side) => (
-              <line
-                key={side}
-                x1={AVATAR_CENTER + side * 8}
-                y1={clear}
-                x2={AVATAR_CENTER + side * 15}
-                y2={top - 8}
-              />
-            ))}
-          </g>
-          {traits.stalkLooks.map((look, i) => {
-            const cx = AVATAR_CENTER + (i === 0 ? -18 : 18);
-            const cy = top - 12;
-            return (
-              <g key={i}>
-                <circle cx={cx} cy={cy} r={8} fill={traits.accent} />
-                <circle cx={cx} cy={cy} r={5.4} fill={AVATAR_SCLERA} />
-                <circle
-                  cx={cx + look.dx * 2.2}
-                  cy={cy + look.dy * 2.2}
-                  r={2.6}
-                  fill={AVATAR_INK}
-                />
-              </g>
-            );
-          })}
-        </g>
       );
   }
 }
@@ -169,15 +148,15 @@ export function AvatarBottom({ traits, head }: PartProps) {
             x={AVATAR_CENTER - 21}
             y={below}
             width={42}
-            height={4.5}
-            rx={2.25}
+            height={5.5}
+            rx={2.75}
           />
           <rect
             x={AVATAR_CENTER - 16}
-            y={below + 4.5 + AVATAR_GAP}
+            y={below + 5.5 + AVATAR_GAP}
             width={32}
-            height={4.5}
-            rx={2.25}
+            height={5.5}
+            rx={2.75}
           />
         </g>
       );
@@ -237,20 +216,6 @@ export function AvatarGapLines({ traits, head }: PartProps) {
         <path d={`M0,${chin} Q${AVATAR_CENTER},${chin - 5} 100,${chin}`} />
       )}
       {hasVisor && ring(visorBox(head))}
-      {traits.face === "stripes" &&
-        STRIPE_ROWS.flatMap((y) =>
-          [y - AVATAR_GAP / 2, y + STRIPE_HEIGHT + AVATAR_GAP / 2].map(
-            (edge) => (
-              <line
-                key={edge}
-                x1={AVATAR_CENTER - head.halfWidth * STRIPE_INSET}
-                y1={edge}
-                x2={AVATAR_CENTER + head.halfWidth * STRIPE_INSET}
-                y2={edge}
-              />
-            ),
-          ),
-        )}
     </g>
   );
 }

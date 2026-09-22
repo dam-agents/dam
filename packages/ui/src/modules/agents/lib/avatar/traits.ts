@@ -1,4 +1,4 @@
-export const AVATAR_INK = "#1b2a4a";
+export const AVATAR_INK = "#4a5160";
 export const AVATAR_SCLERA = "#fffdf8";
 export const AVATAR_GAP = 3.2;
 
@@ -39,18 +39,18 @@ export const HEAD_SHAPES = [
 ] as const;
 export type HeadShape = (typeof HEAD_SHAPES)[number];
 
-export type Face = "eyes" | "visor" | "happy" | "wink" | "stripes";
+export type Face = "eyes" | "visor" | "happy" | "wink" | "bee";
 
 export const EARS = ["none", "block", "round"] as const;
 export type Ears = (typeof EARS)[number];
 
 export const TOPS = ["none", "antenna", "twin", "cap", "bolt"] as const;
-export type Top = (typeof TOPS)[number] | "stalks";
+export type Top = (typeof TOPS)[number];
 
 export const BOTTOMS = ["neck", "stripes", "chin"] as const;
 export type Bottom = (typeof BOTTOMS)[number];
 
-export const MOUTHS = ["none", "line", "grille"] as const;
+export const MOUTHS = ["none", "line", "smile", "o"] as const;
 export type Mouth = (typeof MOUTHS)[number];
 
 export interface EyeSpec {
@@ -74,6 +74,11 @@ export const DERPS = [
 ] as const;
 export type Derp = (typeof DERPS)[number];
 
+export interface BeeEye {
+  r: number;
+  look: EyeSpec["look"];
+}
+
 export interface AvatarTraits {
   palette: AvatarPalette;
   capColor: string;
@@ -82,7 +87,8 @@ export interface AvatarTraits {
   face: Face;
   derp: Derp | null;
   eyes: EyeSpec[];
-  stalkLooks: [EyeSpec["look"], EyeSpec["look"]];
+  beeEyes: [BeeEye, BeeEye];
+  wingColor: string;
   ears: Ears;
   top: Top;
   bottom: Bottom;
@@ -143,7 +149,7 @@ const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
   ["visor", 10],
   ["happy", 8],
   ["wink", 6],
-  ["stripes", 10],
+  ["bee", 10],
 ];
 
 function pickWeighted<T>(
@@ -223,13 +229,15 @@ export function avatarTraits(seed: string): AvatarTraits {
   const face = pickWeighted(random, FACE_WEIGHTS);
   const derp = face === "eyes" ? pickFrom(random, DERPS) : null;
   const eyes = derp ? derpEyes(derp, random) : [];
-  const stalkLooks: AvatarTraits["stalkLooks"] = [
-    randomLook(random),
-    randomLook(random),
+  const beeMismatch = random() < 0.35;
+  const beeBigLeft = random() < 0.5;
+  const beeEyes: AvatarTraits["beeEyes"] = [
+    { r: beeMismatch ? (beeBigLeft ? 8.5 : 5.5) : 7, look: randomLook(random) },
+    { r: beeMismatch ? (beeBigLeft ? 5.5 : 8.5) : 7, look: randomLook(random) },
   ];
+  const wingColor = pickFrom(random, others).shade;
   const ears = pickFrom(random, EARS);
-  const pickedTop = pickFrom(random, TOPS);
-  const top: Top = face === "stripes" ? "stalks" : pickedTop;
+  const top = pickFrom(random, TOPS);
   const bottom = pickFrom(random, BOTTOMS);
   const pickedMouth = pickFrom(random, MOUTHS);
   const lowestEye = Math.max(0, ...eyes.map((e) => e.y + e.r));
@@ -245,7 +253,8 @@ export function avatarTraits(seed: string): AvatarTraits {
     face,
     derp,
     eyes,
-    stalkLooks,
+    beeEyes,
+    wingColor,
     ears,
     top,
     bottom,

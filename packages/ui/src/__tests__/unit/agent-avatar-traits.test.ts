@@ -1,9 +1,11 @@
 // TEST_OVERVIEW: An agent avatar is a robot head drawn from a hash of the agent's name, so nothing is stored. The same name must always draw the same head on every client, and every eye variation must fit inside every head shape.
 import { describe, expect, it } from "vitest";
 
+import { BEE_TOP } from "../../modules/agents/lib/avatar/bee.js";
 import { HEAD_GEOMETRY } from "../../modules/agents/lib/avatar/geometry.js";
 import { eyeScale } from "../../modules/agents/lib/avatar/layout.js";
 import {
+  AVATAR_GAP,
   avatarTraits,
   derpEyes,
   DERPS,
@@ -34,11 +36,17 @@ describe("avatarTraits", () => {
     expect(new Set(withEyes.map((t) => t.derp))).toEqual(new Set(DERPS));
   });
 
-  // TEST_SCENARIO: Bee stripes cover the face, so the eyes move up onto stalks. A striped head with no eyes would read as a blank robot.
-  it("gives a striped face its eyes on stalks", () => {
-    const striped = NAMES.map(avatarTraits).filter((t) => t.face === "stripes");
-    expect(striped.length).toBeGreaterThan(0);
-    expect(striped.every((t) => t.top === "stalks")).toBe(true);
+  // TEST_SCENARIO: A bee is its own body, drawn without a robot head. Its two eyes float above the body and must stay inside the drawing area, even when one of them is the big one.
+  it("keeps a bee's eyes above its body and inside the avatar", () => {
+    const bees = NAMES.map(avatarTraits).filter((t) => t.face === "bee");
+    expect(bees.length).toBeGreaterThan(0);
+    for (const bee of bees) {
+      for (const eye of bee.beeEyes) {
+        const top = BEE_TOP - AVATAR_GAP - eye.r * 2;
+        expect(top).toBeGreaterThanOrEqual(-3);
+      }
+      expect(bee.mouth).toBe("none");
+    }
   });
 
   // TEST_SCENARIO: A mouth is drawn below the eyes. A chin plate or a low eye would cover it, so the head then goes without one.

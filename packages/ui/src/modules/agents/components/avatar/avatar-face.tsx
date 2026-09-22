@@ -1,11 +1,5 @@
 import type { HeadGeometry } from "../../lib/avatar/geometry.js";
-import {
-  AVATAR_CENTER,
-  eyeScale,
-  STRIPE_HEIGHT,
-  STRIPE_ROWS,
-  visorBox,
-} from "../../lib/avatar/layout.js";
+import { AVATAR_CENTER, eyeScale, visorBox } from "../../lib/avatar/layout.js";
 import {
   AVATAR_INK,
   AVATAR_SCLERA,
@@ -55,7 +49,7 @@ function Visor({ traits, head }: PartProps) {
       <g
         fill="none"
         stroke={traits.palette.light}
-        strokeWidth={3.2}
+        strokeWidth={4.2}
         strokeLinecap="round"
       >
         {[-1, 1].map((side) => (
@@ -114,14 +108,8 @@ export function AvatarFace({ traits, head }: PartProps) {
           <rect x={AVATAR_CENTER + 5} y={45.5} width={14} height={5} rx={2.5} />
         </g>
       );
-    case "stripes":
-      return (
-        <g fill={AVATAR_INK}>
-          {STRIPE_ROWS.map((y) => (
-            <rect key={y} x={0} y={y} width={100} height={STRIPE_HEIGHT} />
-          ))}
-        </g>
-      );
+    case "bee":
+      return null;
   }
 }
 
@@ -136,27 +124,24 @@ export function AvatarMouth({ traits }: PartProps) {
           x={AVATAR_CENTER - 8}
           y={y}
           width={16}
-          height={4.5}
-          rx={2.25}
+          height={5.5}
+          rx={2.75}
           fill={AVATAR_INK}
         />
       );
-    case "grille":
+    case "smile":
       return (
-        <g>
-          <rect
-            x={AVATAR_CENTER - 10}
-            y={y - 1}
-            width={20}
-            height={7}
-            rx={3}
-            fill={AVATAR_INK}
-          />
-          <g fill={traits.palette.base}>
-            <rect x={AVATAR_CENTER - 4} y={y} width={2} height={5} rx={1} />
-            <rect x={AVATAR_CENTER + 2} y={y} width={2} height={5} rx={1} />
-          </g>
-        </g>
+        <path
+          d={`M${AVATAR_CENTER - 7},${y} Q${AVATAR_CENTER},${y + 7} ${AVATAR_CENTER + 7},${y}`}
+          fill="none"
+          stroke={AVATAR_INK}
+          strokeWidth={4.5}
+          strokeLinecap="round"
+        />
+      );
+    case "o":
+      return (
+        <circle cx={AVATAR_CENTER} cy={y + 2.5} r={3.8} fill={AVATAR_INK} />
       );
   }
 }

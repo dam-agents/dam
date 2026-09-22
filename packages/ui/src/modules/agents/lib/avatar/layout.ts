@@ -11,7 +11,7 @@ export interface Box {
 }
 
 export function visorBox(head: HeadGeometry): Box {
-  const halfWidth = head.halfWidth - 6;
+  const halfWidth = head.halfWidth - 8.5;
   return {
     x: AVATAR_CENTER - halfWidth,
     y: 39,
@@ -19,15 +19,6 @@ export function visorBox(head: HeadGeometry): Box {
     height: 20,
     rx: 10,
   };
-}
-
-export const STRIPE_ROWS: readonly number[] = [36, 46.5, 57];
-export const STRIPE_HEIGHT = 6.5;
-export const STRIPE_INSET = 0.84;
-
-export function stripeTransform(head: HeadGeometry): string {
-  const midY = (head.top + head.bottom) / 2;
-  return `translate(${AVATAR_CENTER} ${midY}) scale(${STRIPE_INSET} 1) translate(${-AVATAR_CENTER} ${-midY})`;
 }
 
 export function capEdge(head: HeadGeometry): number {

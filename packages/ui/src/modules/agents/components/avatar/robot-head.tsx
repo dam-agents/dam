@@ -3,7 +3,6 @@ import { useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 import { HEAD_GEOMETRY } from "../../lib/avatar/geometry.js";
-import { stripeTransform } from "../../lib/avatar/layout.js";
 import { avatarTraits } from "../../lib/avatar/traits.js";
 import { AvatarFace, AvatarMouth } from "./avatar-face.js";
 import {
@@ -13,6 +12,7 @@ import {
   AvatarOverlays,
   AvatarTop,
 } from "./avatar-parts.js";
+import { BeeFigure } from "./bee-figure.js";
 
 interface Props {
   seed: string;
@@ -41,9 +41,6 @@ export function RobotHead({ seed, size = 24, label, className }: Props) {
         <clipPath id={`${id}-head`}>
           <path d={head.path} />
         </clipPath>
-        <clipPath id={`${id}-inset`}>
-          <path d={head.path} transform={stripeTransform(head)} />
-        </clipPath>
         <mask
           id={`${id}-gaps`}
           maskUnits="userSpaceOnUse"
@@ -56,23 +53,21 @@ export function RobotHead({ seed, size = 24, label, className }: Props) {
           <AvatarGapLines {...parts} />
         </mask>
       </defs>
-      <g mask={`url(#${id}-gaps)`}>
-        <AvatarTop {...parts} />
-        <AvatarBottom {...parts} />
-        <AvatarEars {...parts} />
-        <path d={head.path} fill={traits.palette.base} />
-        <g clipPath={`url(#${id}-head)`}>
-          <AvatarOverlays {...parts} />
-          <g
-            clipPath={
-              traits.face === "stripes" ? `url(#${id}-inset)` : undefined
-            }
-          >
+      {traits.face === "bee" ? (
+        <BeeFigure traits={traits} />
+      ) : (
+        <g mask={`url(#${id}-gaps)`}>
+          <AvatarTop {...parts} />
+          <AvatarBottom {...parts} />
+          <AvatarEars {...parts} />
+          <path d={head.path} fill={traits.palette.base} />
+          <g clipPath={`url(#${id}-head)`}>
+            <AvatarOverlays {...parts} />
             <AvatarFace {...parts} />
+            <AvatarMouth {...parts} />
           </g>
-          <AvatarMouth {...parts} />
         </g>
-      </g>
+      )}
     </svg>
   );
 }
