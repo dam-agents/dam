@@ -8,7 +8,7 @@ A **Satellite** is an MCP server on a machine outside the cluster, reached throu
 
 The machine polls; nothing is pushed to it. The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back. The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-`dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` runs any stdio MCP server and offers its tools verbatim. The platform forwards a tool call and stores an outcome; what the arguments mean is the machine's business alone, and it never reads inside a tool's schema.
+`dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` runs any stdio MCP server and offers its tools as they come, bar a name the contract refuses. The platform forwards a tool call and stores an outcome; what the arguments mean is the machine's business alone, and it never reads inside a tool's schema.
 
 ```mermaid
 sequenceDiagram
@@ -41,7 +41,7 @@ MCP is the *contract* between Platform and a Satellite, but not the *transport*:
 
 ## Concepts
 
-- **Satellite** — a named, owner-scoped command surface, identified by `(owner, name)`. Durable: the record outlives any connection, and its commands stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one worker each, so every call stays attributable to a real person's key. Platform's sharing model lends *Agents*, never resources ([multi-player](../strategy/multi-player.md)).
+- **Satellite** — a named, owner-scoped tool surface, identified by `(owner, name)`. Durable: the record outlives any connection, and its tools stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one worker each, so every call stays attributable to a real person's key. Platform's sharing model lends *Agents*, never resources ([multi-player](../strategy/multi-player.md)).
 - **Snapshot** — the server's copy of the Satellite's **tool list**, replaced on each connect, and what the Agent's tools are built from. It is a *claim by the Satellite*, not a platform guarantee: identity is the name, so a worker reconnecting from a different checkout serves the same name backed by different tools.
 - **Job** — one tool call, identified by `(satellite, sequence)` and rendered `gpu-box#7`. The sequence is minted server-side, since the id must return before any worker has seen the Job.
 - **Satellite Grant** — the per-Agent permission to reach a Satellite. The granted set decides whether the tools are registered at all.
@@ -103,7 +103,7 @@ The CLI is at parity plus `dam satellite mcp`, whose **log is the interface**: t
 
 A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has. Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
-Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`. Two machines offering a tool of the same name stay distinct, and no tool needs a `satellite` argument the model could get wrong. A proxied call blocks briefly and returns the outcome if it is quick, and a job reference otherwise, so the common short call costs one tool call rather than two.
+Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`. A tool needs no `satellite` argument the model could get wrong. Two machines can still render one registered name — a tool name may hold the separator — and the second is dropped rather than registered twice, which would fail the whole session. A proxied call blocks briefly and returns the outcome if it is quick, and a job reference otherwise, so the common short call costs one tool call rather than two.
 
 ## Where the code lives
 

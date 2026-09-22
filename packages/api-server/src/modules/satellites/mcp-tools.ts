@@ -14,8 +14,7 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * UNIT_BOUNDARY_DESCRIPTION: Re-exposes each granted Satellite's own tools on
  * the platform MCP server, plus the three job verbs that make a long call
  * survivable. Every name is scoped to its Satellite — `gpu_box__run`,
- * `gpu_box__wait` — so two machines offering a tool of the same name stay
- * distinct and the model never has to pass a satellite argument.
+ * `gpu_box__wait` — so the model never has to pass a satellite argument.
  *
  * The platform never reads inside a tool's `inputSchema`: only the machine knows
  * what its arguments mean, and it re-checks every call before it runs anything.
@@ -23,12 +22,14 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * the machine has seen them.
  *
  * A Satellite may not name a tool `wait`, `get` or `cancel` — the contract
- * refuses that at connect. A Snapshot stored before the rule, or one this
- * replica has not re-read, is still skipped rather than registered twice: a
- * duplicate registration fails the whole session, so one machine would take down
- * an Agent's entire tool surface. That guard spans every Satellite rather than
- * one, because a tool name may itself hold the scope separator: `gpu` offering
- * `box__run` and `gpu--box` offering `run` both render `gpu__box__run`.
+ * refuses that at connect. Registration guards the names anyway, and every name
+ * it registers goes through the same claim, the three verbs included: a
+ * duplicate registration throws, and one machine would take down an Agent's
+ * whole tool surface. The guard spans every Satellite rather than one, because a
+ * tool name may itself hold the scope separator — `gpu` offering `box__run` and
+ * `gpu--box` offering `run` both render `gpu__box__run`, and so does
+ * `gpu--box`'s own `wait` against `gpu`'s `box__wait`. A lost claim drops the
+ * name rather than failing the session.
  *
  * The default wait deadline sits under Node's own 300s request timeout, which
  * the harness server does not override. A wait running the full 300s would have
@@ -107,7 +108,6 @@ export function registerSatelliteTools(
 
   for (const satellite of deps.satellites) {
     const name = satellite.name;
-    for (const verb of RESERVED_TOOL_NAMES) claim(scopedName(name, verb));
 
     for (const tool of satellite.tools) {
       if (!claim(scopedName(name, tool.name))) continue;
@@ -158,36 +158,39 @@ export function registerSatelliteTools(
         .describe(`The job number, e.g. 7 for ${name}#7.`),
     };
 
-    server.tool(
-      scopedName(name, "wait"),
-      `Block until a job on ${name} finishes. May return with status 'running' if it takes too long — just call this again.`,
-      jobArg,
-      ({ job }) =>
-        run(async () =>
-          outcomeContent(
-            await deps.ops.wait(deps.agentId, name, job, deps.waitDeadlineMs),
+    if (claim(scopedName(name, "wait")))
+      server.tool(
+        scopedName(name, "wait"),
+        `Block until a job on ${name} finishes. May return with status 'running' if it takes too long — just call this again.`,
+        jobArg,
+        ({ job }) =>
+          run(async () =>
+            outcomeContent(
+              await deps.ops.wait(deps.agentId, name, job, deps.waitDeadlineMs),
+            ),
           ),
-        ),
-    );
+      );
 
-    server.tool(
-      scopedName(name, "get"),
-      `Read a job on ${name} without waiting. Large output is written into your own workspace and reported as a path you can grep, tail or read.`,
-      jobArg,
-      ({ job }) =>
-        run(async () =>
-          outcomeContent(await deps.ops.read(deps.agentId, name, job)),
-        ),
-    );
+    if (claim(scopedName(name, "get")))
+      server.tool(
+        scopedName(name, "get"),
+        `Read a job on ${name} without waiting. Large output is written into your own workspace and reported as a path you can grep, tail or read.`,
+        jobArg,
+        ({ job }) =>
+          run(async () =>
+            outcomeContent(await deps.ops.read(deps.agentId, name, job)),
+          ),
+      );
 
-    server.tool(
-      scopedName(name, "cancel"),
-      `Ask ${name} to stop a job. Cancellation is cooperative — a job already running may still finish.`,
-      jobArg,
-      ({ job }) =>
-        run(async () =>
-          outcomeContent(await deps.ops.cancel(deps.agentId, name, job)),
-        ),
-    );
+    if (claim(scopedName(name, "cancel")))
+      server.tool(
+        scopedName(name, "cancel"),
+        `Ask ${name} to stop a job. Cancellation is cooperative — a job already running may still finish.`,
+        jobArg,
+        ({ job }) =>
+          run(async () =>
+            outcomeContent(await deps.ops.cancel(deps.agentId, name, job)),
+          ),
+      );
   }
 }

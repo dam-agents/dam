@@ -10,10 +10,9 @@ import { harnessName } from "../../lib/fixtures.js";
  * side — the test process plays the machine outside the platform. Covers the
  * half that unit tests cannot reach: real auth and scopes, the snapshot landing
  * in Postgres as a parsed snapshot, grants moving an agent in and out of a
- * satellite's reach, draining, and removal. A command pattern the grammar
- * rejects must be refused at connect rather than stored half-valid, because a
- * stored-but-unparseable manifest would fail every later start instead of the
- * one bad line.
+ * satellite's reach, draining, and removal. A snapshot the contract rejects must
+ * be refused at connect rather than stored half-valid, because a stored-but-
+ * invalid tool list would fail every later start instead of the one bad tool.
  *
  * Deliberately not covered here: an agent actually starting a job. That path
  * runs through the platform MCP server on the in-cluster harness port, which no

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
   MAX_JOB_OUTPUT_BYTES,
-  RESERVED_TOOL_NAMES,
+  satelliteToolSchema,
   type SatelliteTool,
 } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
@@ -17,10 +17,11 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
  * command does, so what the user exported when they started the worker is what
  * it sees.
  *
- * A tool named `wait`, `get` or `cancel` is refused here rather than forwarded:
- * the platform registers those beside a Satellite's own tools, so the contract
- * rejects them. Catching it at the machine turns a schema error about someone
- * else's server into a sentence naming the tool the user has to rename.
+ * Every listed tool is parsed against the contract's own schema here rather than
+ * forwarded: a name the platform reserves, one that is too long, or one holding
+ * a character the contract refuses would otherwise surface as a schema error
+ * about someone else's server. Catching it at the machine turns that into a
+ * sentence naming the tool the user has to rename.
  */
 
 interface McpContent {
@@ -67,25 +68,25 @@ export async function createMcpBackend(
   await client.connect(transport);
 
   const listed = await client.listTools();
-  const clashing = listed.tools
-    .map((tool) => tool.name)
-    .filter((name) => RESERVED_TOOL_NAMES.includes(name as never));
-  if (clashing.length > 0) {
-    await client.close().catch(() => {});
-    throw new Error(
-      `that MCP server offers ${clashing.join(", ")}, and the platform registers ${RESERVED_TOOL_NAMES.join(", ")} beside a satellite's own tools. Rename the tool on the server, or expose it through a different one.`,
-    );
+  const tools: SatelliteTool[] = [];
+  for (const tool of listed.tools) {
+    const candidate = {
+      name: tool.name,
+      ...(tool.title === undefined ? {} : { title: tool.title }),
+      ...(tool.description === undefined
+        ? {}
+        : { description: tool.description.slice(0, 4096) }),
+      inputSchema: tool.inputSchema as Record<string, unknown>,
+    };
+    const parsed = satelliteToolSchema.safeParse(candidate);
+    if (!parsed.success) {
+      await client.close().catch(() => {});
+      throw new Error(
+        `that MCP server's tool "${tool.name}" is not one a satellite can offer: ${parsed.error.issues[0]?.message ?? "invalid"}. Rename it on the server, or expose it through a different one.`,
+      );
+    }
+    tools.push(parsed.data);
   }
-
-  const tools: SatelliteTool[] = listed.tools.map((tool) => ({
-    name: tool.name,
-    ...(tool.title === undefined ? {} : { title: tool.title }),
-    ...(tool.description === undefined
-      ? {}
-      : { description: tool.description.slice(0, 4096) }),
-    inputSchema: tool.inputSchema as Record<string, unknown>,
-  }));
-
   const inFlight = new Map<number, AbortController>();
 
   return {

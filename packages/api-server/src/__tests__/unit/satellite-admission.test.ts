@@ -353,6 +353,23 @@ describe("the tool names the platform registers", () => {
     expect(names).toContain("gpu__box__run");
   });
 
+  /**
+   * TEST_SCENARIO: The platform's own verbs collide the same way a tool does.
+   * `gpu` offering `box__wait` registers `gpu__box__wait`, which is exactly what
+   * `gpu--box`'s own wait verb renders. Guarding only the tools left the verbs
+   * throwing out of the route handler, so every registered name goes through one
+   * claim.
+   */
+  it("never registers a verb that a tool on another satellite already took", () => {
+    const names = registered([
+      view("gpu", ["box__wait"]),
+      view("gpu--box", ["run"]),
+    ]);
+    expect(new Set(names).size, `duplicate in ${names.join(", ")}`).toBe(
+      names.length,
+    );
+  });
+
   it("keeps its own verbs, and drops a satellite tool that would shadow one", () => {
     const names = registered([view("box", ["run"])]);
     expect(names).toEqual(["box__run", "box__wait", "box__get", "box__cancel"]);
