@@ -9,7 +9,7 @@ set -euo pipefail
 module=github.com/dam-agents/dam/packages/controller
 declared="$(.mise/tasks/image/resolve paths vm-runner)"
 status=0
-for pkg in $(go list -C packages/controller -deps ./cmd/vm-image-cache ./cmd/platform-init | grep "^$module/"); do
+for pkg in $(go list -C packages/controller -deps ./cmd/platform-init | grep "^$module/"); do
   dir="packages/controller/${pkg#"$module"/}"
   covered=
   for path in $declared; do

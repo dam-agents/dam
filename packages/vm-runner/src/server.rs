@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -13,12 +13,12 @@ use crate::api::{
     MachineSpec, MachineStatus, REASON_OUT_OF_CAPACITY, STATE_ABSENT, STATE_RESTARTING,
     STATE_RUNNING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
-use crate::cache::{self, cache_path, PARTIAL_PREFIX};
 use crate::capacity::Capacity;
 use crate::embedded::STORAGE_NOT_GROWABLE;
 use crate::fetch::{self, egress_changed, failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
-use crate::launch::{launch_from_archive, launch_from_config, read_launch, LAUNCH_FILE};
+use crate::imagecache::ImageCache;
+use crate::launch::{launch_from_archive, read_launch};
 use crate::plan::{self, admissible, create_only_drift, needs_restart, reads_ready, Health};
 use crate::runtime::{grown_storage, Machine, Runtime};
 use crate::share::{write_share, SHARE_DIR};
@@ -32,7 +32,7 @@ pub const STATE_TTL: Duration = Duration::from_secs(1);
 // UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the operations already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
-pub const ROOTFS_DIR: &str = "rootfs";
+pub use crate::imagecache::ROOTFS_DIR;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start. The same values as the Go runner's flags, which the controller sets on the runner's Deployment.
 pub struct Config {
@@ -74,6 +74,7 @@ struct Inner {
 
 pub struct Server {
     config: Config,
+    cache: ImageCache,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
     inner: Mutex<Inner>,
@@ -119,15 +120,25 @@ impl Server {
             config.allow_from.clone(),
             config.listen.clone(),
         );
+        let lifetime = CancellationToken::new();
+        let cache = ImageCache {
+            dir: config.image_dir.clone(),
+            owner: config.runner_id.clone(),
+            budget: config.image_budget,
+            crane: config.crane.clone(),
+            pinned: config.pinned.clone(),
+            lifetime: lifetime.clone(),
+        };
         let server = Arc::new(Self {
             config,
+            cache,
             runtime,
             forwarder,
             inner: Mutex::new(Inner::default()),
             turns: Condvar::new(),
             locks: Mutex::new(HashMap::new()),
             ports: Mutex::new(()),
-            lifetime: CancellationToken::new(),
+            lifetime,
             work: TaskTracker::new(),
         });
         for id in state::machine_ids(&server.config.state_dir)? {
@@ -448,14 +459,18 @@ impl Server {
         if !is_image_ref(&image) || image.contains("..") {
             anyhow::bail!("invalid image reference {image:?}");
         }
-        let base = cache_path(&self.config.image_dir, &image);
+        let base = self.cache.entry(&image);
         let archive = PathBuf::from(format!("{}.tar", base.display()));
         let mut launch = read_launch(&base)?;
         let mut cached: Option<PathBuf> = None;
         if launch.is_none() {
             let archived = archive.exists();
             if !self.config.crane.is_empty() {
-                match self.cache_image(&image, &base, id) {
+                match self.cache.fetch(
+                    &image,
+                    &self.images_in_use(Some(id)),
+                    &self.images_in_use(None),
+                ) {
                     Ok(()) => launch = read_launch(&base)?,
                     Err(e) if archived => {
                         tracing::warn!(image = %image, error = %format!("{e:#}"), "image cache: keeping the archive after a failed unpack");
@@ -497,75 +512,6 @@ impl Server {
         self.runtime.start(id)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the shared cache and unpacks it once, for every machine of that image to boot. What the image says to run is read with it and written beside the tree, because the tree carries files and not the entrypoint; the record's presence is also what marks the entry complete. The unpack goes to a scratch directory beside the entry and is claimed by rename, then the cache is trimmed to its budget.
-    fn cache_image(&self, reference: &str, cached: &Path, for_machine: &str) -> anyhow::Result<()> {
-        let parent = cached.parent().ok_or_else(|| {
-            anyhow::anyhow!(
-                "the image cache entry {} has no directory",
-                cached.display()
-            )
-        })?;
-        fs::create_dir_all(parent)?;
-        let scratch = Scratch::new(parent)?;
-        fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
-        let started = Instant::now();
-        let config = fetch::read_config(&self.config.crane, reference, &self.lifetime)
-            .inspect_err(|_| {
-                tracing::warn!(
-                    image = reference,
-                    duration_ms = elapsed_ms(started),
-                    "image config fetch failed"
-                );
-            })?;
-        let launch = launch_from_config(&config)
-            .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))?;
-        fetch::unpack(
-            &self.config.crane,
-            reference,
-            &scratch.path().join(ROOTFS_DIR),
-            &self.lifetime,
-        )?;
-        fs::write(
-            scratch.path().join(LAUNCH_FILE),
-            serde_json::to_vec(&launch)?,
-        )?;
-        tracing::info!(
-            image = reference,
-            duration_ms = elapsed_ms(started),
-            bytes = cache::dir_size(scratch.path()),
-            "image unpacked into the shared cache"
-        );
-        self.claim(scratch.path(), cached, for_machine)?;
-        self.evict_images(parent, Some(cached));
-        Ok(())
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Runners on one node directory may unpack the same image at once, so a loser that finds a complete entry keeps it — both wrote the same image. An entry with no launch record is from a release that stored none, and is replaced unless another machine is running from it. The machine being recreated does not count as another: a restarted runner recreates machines whose specs it still holds.
-    fn claim(&self, scratch: &Path, cached: &Path, for_machine: &str) -> anyhow::Result<()> {
-        match fs::rename(scratch, cached) {
-            Ok(()) => return Ok(()),
-            Err(e) if !matches!(e.raw_os_error(), Some(libc::EEXIST) | Some(libc::ENOTEMPTY)) => {
-                return Err(e.into());
-            }
-            Err(_) => {}
-        }
-        if matches!(read_launch(cached), Ok(Some(_))) {
-            return Ok(());
-        }
-        if self.images_in_use(Some(for_machine)).contains(cached)
-            || cache::held_elsewhere(&self.config.image_dir, &self.config.runner_id)
-                .contains(cached)
-        {
-            anyhow::bail!(
-                "{} is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image",
-                cached.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-            );
-        }
-        fs::remove_dir_all(cached)?;
-        fs::rename(scratch, cached)?;
-        Ok(())
-    }
-
     // UNIT_BOUNDARY_DESCRIPTION: the cache entries this runner's machines hold, read from their specs on disk rather than tracked alongside them, because a spec outlives the process that wrote it. Both names of each image are held, the tree and the archive an earlier release cached.
     fn images_in_use(&self, except: Option<&str>) -> BTreeSet<PathBuf> {
         let mut in_use = BTreeSet::new();
@@ -579,52 +525,13 @@ impl Server {
             if spec.image.is_empty() {
                 continue;
             }
-            let base = cache_path(&self.config.image_dir, &spec.image);
-            in_use.insert(PathBuf::from(format!("{}.tar", base.display())));
-            in_use.insert(base);
+            in_use.extend(self.cache.both_names(&spec.image));
         }
         in_use
     }
 
-    fn pinned_images(&self) -> BTreeSet<PathBuf> {
-        let mut pinned = BTreeSet::new();
-        for reference in &self.config.pinned {
-            if !is_image_ref(reference) || reference.contains("..") {
-                continue;
-            }
-            let base = cache_path(&self.config.image_dir, reference);
-            pinned.insert(PathBuf::from(format!("{}.tar", base.display())));
-            pinned.insert(base);
-        }
-        pinned
-    }
-
     pub fn publish_holders(&self) {
-        let mut held = self.images_in_use(None);
-        held.extend(self.pinned_images());
-        cache::publish_holders(&self.config.image_dir, &self.config.runner_id, &held);
-    }
-
-    fn evict_images(&self, dir: &Path, keep: Option<&Path>) {
-        let mut own = self.images_in_use(None);
-        own.extend(self.pinned_images());
-        let spared = cache::spared(&own, &cache::held_elsewhere(dir, &self.config.runner_id));
-        for evicted in cache::evict(dir, keep, self.config.image_budget, &spared) {
-            tracing::info!(
-                image = %evicted.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                "image cache: evicted an image to stay inside the volume"
-            );
-        }
-        if self.config.image_budget > 0 {
-            let used: u64 = cache::entries(dir).iter().map(|e| e.size).sum();
-            if used > self.config.image_budget as u64 {
-                tracing::warn!(
-                    bytes = used,
-                    budget = self.config.image_budget,
-                    "image cache: over its stated budget, and every image left is one a machine is running from"
-                );
-            }
-        }
+        self.cache.publish(&self.images_in_use(None));
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being created, which have no spec on disk yet. Running is read through the state cache, so admitting one machine costs no probe per machine when the controller has just asked.
@@ -741,44 +648,6 @@ impl Drop for Turn<'_> {
             .served
             .insert(self.id.clone(), self.ticket);
         self.server.turns.notify_all();
-    }
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from any finished entry and dot-prefixed so the cache patterns never count it. It removes itself when dropped — on every path out of a fetch, including a cancelled one — and a tree a killed process left is reclaimed by eviction once it is older than any fetch may run.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new(parent: &Path) -> anyhow::Result<Self> {
-        for attempt in 0..100u32 {
-            let nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos())
-                .unwrap_or_default();
-            let path = parent.join(format!(
-                "{PARTIAL_PREFIX}{}-{nanos:x}-{attempt}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e.into()),
-            }
-        }
-        anyhow::bail!("no free scratch directory in {}", parent.display())
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
