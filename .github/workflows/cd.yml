@@ -57,14 +57,17 @@ jobs:
       # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
       # shape as the Go cache below, for the same reason.
       #
-      # `mise.lock` is in the key because it pins the Rust toolchain and cargo
-      # fingerprints every unit by the compiler that built it. On `Cargo.lock`
-      # and the pin alone a toolchain bump would leave the exact key hitting and
-      # the save skipped, so `target/` would hold units the new rustc rejects and
-      # rebuilds on every run, with nothing able to rewrite the entry until a
-      # dependency happened to move. `smolvm.pin` is there because it decides
-      # which tree `.smolvm` holds, and a path dependency leaves no trace of that
-      # in `Cargo.lock`.
+      # An exact hit skips the save, so everything the entry must follow has to
+      # be in the key, and `Cargo.lock` alone follows almost none of it. Cargo
+      # fingerprints every unit by the compiler that built it, so `mise.lock` is
+      # here for pinning the Rust toolchain: without it a toolchain bump leaves
+      # the exact key hitting and the save skipped, and `target/` holds units the
+      # new rustc rejects and rebuilds on every run, with nothing able to rewrite
+      # the entry until a dependency happens to move. `Cargo.toml` is here for
+      # the same reason one level down — it carries the edition and the crate's
+      # lint levels, both of which reach rustc per unit and neither of which the
+      # lock records. And `smolvm.pin` decides which tree `.smolvm` holds, which
+      # a path dependency leaves no trace of in the lock at all.
       - id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +75,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
           restore-keys: |
             rust-${{ runner.os }}-${{ github.job }}-
             rust-${{ runner.os }}-
@@ -134,7 +137,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   test:
     name: mise test
@@ -170,14 +173,17 @@ jobs:
       # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
       # shape as the Go cache below, for the same reason.
       #
-      # `mise.lock` is in the key because it pins the Rust toolchain and cargo
-      # fingerprints every unit by the compiler that built it. On `Cargo.lock`
-      # and the pin alone a toolchain bump would leave the exact key hitting and
-      # the save skipped, so `target/` would hold units the new rustc rejects and
-      # rebuilds on every run, with nothing able to rewrite the entry until a
-      # dependency happened to move. `smolvm.pin` is there because it decides
-      # which tree `.smolvm` holds, and a path dependency leaves no trace of that
-      # in `Cargo.lock`.
+      # An exact hit skips the save, so everything the entry must follow has to
+      # be in the key, and `Cargo.lock` alone follows almost none of it. Cargo
+      # fingerprints every unit by the compiler that built it, so `mise.lock` is
+      # here for pinning the Rust toolchain: without it a toolchain bump leaves
+      # the exact key hitting and the save skipped, and `target/` holds units the
+      # new rustc rejects and rebuilds on every run, with nothing able to rewrite
+      # the entry until a dependency happens to move. `Cargo.toml` is here for
+      # the same reason one level down — it carries the edition and the crate's
+      # lint levels, both of which reach rustc per unit and neither of which the
+      # lock records. And `smolvm.pin` decides which tree `.smolvm` holds, which
+      # a path dependency leaves no trace of in the lock at all.
       - id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -185,7 +191,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
           restore-keys: |
             rust-${{ runner.os }}-${{ github.job }}-
             rust-${{ runner.os }}-
@@ -247,7 +253,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   appversion:
     name: derive app version
