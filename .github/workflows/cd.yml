@@ -421,7 +421,10 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
 
   build-agents:
-    needs: [merge-platform-base, changes]
+    # From build-platform-base's digest, not merge-platform-base's tag: the
+    # tag waits on `check`, which is not what an agent build depends on.
+    # merge-agents keeps the `check` gate on publishing.
+    needs: [build-platform-base, changes]
     if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 45
@@ -433,6 +436,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: needs.changes.outputs.platform_base == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: digests-platform-base-${{ matrix.arch }}
+          path: /tmp/base-digest
+      - id: base
+        env:
+          BUILT: ${{ needs.changes.outputs.platform_base }}
+          TAG: ${{ needs.changes.outputs.platform_base_tag }}
+        run: |
+          set -euo pipefail
+          if [ "$BUILT" = true ]; then ref="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/base-digest)"; else ref="$IMAGE_PREFIX/platform-base:$TAG"; fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -445,19 +461,25 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          # A PR builds its agents only to prove they build: e2e runs the mock,
+          # and nothing reads a PR's agent tags. Exporting is most of the cost —
+          # k-search spent 9 of its 10 minutes compressing, re-timestamping and
+          # pushing layers after a one-minute build — so a PR exports nothing.
+          outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true', env.IMAGE_PREFIX, matrix.component) }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
+            BASE_IMAGE=${{ steps.base.outputs.ref }}
           # Registry buildcache only: see build-images.
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || '' }}
       - name: Export digest
+        if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
           touch "/tmp/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-${{ matrix.component }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -466,8 +488,8 @@ jobs:
 
   merge-agents:
     name: merge multi-arch agent manifests
-    needs: [build-agents, appversion, changes]
-    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    needs: [build-agents, appversion, changes, check]
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
