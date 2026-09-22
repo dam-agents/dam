@@ -13,6 +13,7 @@ interface PartProps {
 }
 
 const CENTER = 50;
+const OUTSIDE_INK = "text-[#13254b] dark:text-[#aebbd3]";
 const EYE_Y = 48;
 
 export function AvatarEars({ traits, head }: PartProps) {
@@ -227,7 +228,12 @@ export function AvatarTop({ traits, head }: PartProps) {
     case "twin":
       return (
         <g>
-          <g stroke={AVATAR_INK} strokeWidth={3} strokeLinecap="round">
+          <g
+            className={OUTSIDE_INK}
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+          >
             <line x1={CENTER - 9} y1={top + 3} x2={CENTER - 15} y2={top - 10} />
             <line x1={CENTER + 9} y1={top + 3} x2={CENTER + 15} y2={top - 10} />
           </g>
@@ -288,7 +294,8 @@ export function AvatarBottom({ traits, head }: PartProps) {
           width={22}
           height={9}
           rx={2}
-          fill={AVATAR_INK}
+          className={OUTSIDE_INK}
+          fill="currentColor"
         />
       );
     case "stripes":
