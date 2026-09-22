@@ -30,7 +30,12 @@ import {
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
-import { precheckAlert, scheduleCadenceText } from "../lib/schedule-format.js";
+import {
+  precheckAlert,
+  runNowConfirmText,
+  runNowStartedText,
+  scheduleCadenceText,
+} from "../lib/schedule-format.js";
 import { ScheduleDetails } from "./schedule-details.js";
 
 interface Props {
@@ -48,7 +53,7 @@ export function ScheduleCard({
   onEdit,
   onViewResults,
 }: Props) {
-  const { id, name, enabled, precheck, sessionMode, status } = schedule;
+  const { id, name, enabled, sessionMode, status } = schedule;
   const showConfirm = useStore((s) => s.showConfirm);
   const sandboxName = useAgentDisplayName(schedule.agentId);
   const toggleSchedule = useToggleSchedule();
@@ -76,19 +81,10 @@ export function ScheduleCard({
   };
 
   const handleRunNow = async () => {
-    const whatHappens = precheck
-      ? "The precheck decides it first, just as it would on a scheduled occurrence."
-      : "The task runs once, just as it would on a scheduled occurrence.";
     if (
-      await showConfirm(
-        `Run "${name}" now? ${whatHappens} ${
-          enabled
-            ? "The next run is not moved."
-            : "The schedule stays paused afterwards."
-        }`,
-        "Run now",
-        { confirmLabel: "Run now" },
-      )
+      await showConfirm(runNowConfirmText(schedule), "Run now", {
+        confirmLabel: "Run now",
+      })
     )
       runScheduleNow.mutate(
         { id },
@@ -96,7 +92,7 @@ export function ScheduleCard({
           onSuccess: () =>
             emitToast({
               kind: "success",
-              message: `Started "${name}" — the run appears under View results.`,
+              message: runNowStartedText(schedule),
             }),
         },
       );

@@ -95,7 +95,7 @@ export function createSchedulerRunner(
     }
   }
 
-  async function deliverTrigger(
+  async function commitTrigger(
     sched: Schedule,
     eventId: string,
     payload: Record<string, unknown>,
@@ -105,6 +105,9 @@ export function createSchedulerRunner(
       { id: eventId, kind: "trigger", payload, expiresAt },
     ]);
     await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
+  }
+
+  async function pokeAgent(sched: Schedule, eventId: string): Promise<void> {
     const stamp = await deps.wakeAgent(sched.agentId);
     if (stamp && sched.spec.precheck && deps.activityStamps)
       await deps.activityStamps
@@ -114,6 +117,16 @@ export function createSchedulerRunner(
             `fire: stamp stash failed: ${err.message}; no restore on decline`,
           ),
         );
+  }
+
+  async function deliverTrigger(
+    sched: Schedule,
+    eventId: string,
+    payload: Record<string, unknown>,
+    expiresAt: Date,
+  ): Promise<void> {
+    await commitTrigger(sched, eventId, payload, expiresAt);
+    await pokeAgent(sched, eventId);
   }
 
   async function fire(
@@ -218,7 +231,7 @@ export function createSchedulerRunner(
       );
 
       try {
-        await deliverTrigger(
+        await commitTrigger(
           sched,
           eventId,
           triggerPayload(sched, firedAt),
@@ -226,17 +239,24 @@ export function createSchedulerRunner(
         );
       } catch (err) {
         log(
-          `run-now: schedule ${scheduleId} failed: ${(err as Error).message}`,
+          `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
         throw err;
       }
 
+      try {
+        await pokeAgent(sched, eventId);
+      } catch (err) {
+        const result = (err as Error).message ?? String(err);
+        log(`run-now: schedule ${scheduleId} poke failed: ${result}`);
+        await deps.repo.stampFire(scheduleId, result).catch(() => {});
+        await emitFired(sched, "failure");
+        throw err;
+      }
+
       if (!sched.spec.precheck)
-        await deps.repo.applyStatusPatch(
-          scheduleId,
-          statusForVerdict("allowed", firedAt, null),
-        );
+        await deps.repo.stampFire(scheduleId, "success");
       await emitFired(sched, "success");
       return "started";
     },
