@@ -108,7 +108,6 @@ type Server struct {
 	failures   map[string]failure
 	listeners  map[string]net.Listener
 	gens       map[string]uint64
-	drift      map[string]string
 	restarts   map[string]int32
 	health     map[string]health
 	lastState  map[string]cachedState
@@ -131,7 +130,7 @@ func (s *Server) Start() error {
 		s.Runtime.Lifetime = s.ctx
 	}
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
-	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
+	s.gens, s.health = map[string]uint64{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
 	s.lastState, s.startedAt = map[string]cachedState{}, map[string]time.Time{}
 	ids, err := s.machineIDs()
@@ -296,7 +295,7 @@ func (s *Server) plan(id string, spec MachineSpec, st MachineStatus) (string, bo
 	case StateStopped:
 		return StateStarting, false
 	case StateRunning:
-		if applied == nil || needsRestart(*applied, spec) {
+		if applied == nil || needsRestart(*applied, spec) || imageChanged(*applied, spec) {
 			return StateRestarting, false
 		}
 		if !st.Ready && s.deadForLong(id) {
@@ -319,11 +318,9 @@ func needsRestart(applied, desired MachineSpec) bool {
 		!reflect.DeepEqual(applied.Env, desired.Env)
 }
 
-func createOnlyDrift(applied, desired MachineSpec) string {
-	if applied.Image == desired.Image {
-		return ""
-	}
-	return fmt.Sprintf("the image is fixed at create, so this machine keeps what it has (recreate the agent to change it): image is %s, wanted %s", applied.Image, desired.Image)
+// UNIT_BOUNDARY_DESCRIPTION: a new image is a restart like a resize, but smolvm cannot apply it in place, so the machine is recreated around the same storage disk. Nothing else needs to survive: the root is the cached image tree plus an overlay that every stop discards, so everything the agent keeps is on that disk.
+func imageChanged(applied, desired MachineSpec) bool {
+	return applied.Image != desired.Image
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those — a machine still holding an address its gateway no longer owns may be pointing at another owner's gateway, so it is stopped rather than run on.
@@ -367,19 +364,8 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		return fmt.Errorf("%w: this machine may only reach %v, but its gateway is now %v — recreate the agent",
 			errEgressChanged, applied.AllowCIDRs, spec.AllowCIDRs)
 	}
-	if applied != nil {
-		drift := createOnlyDrift(*applied, spec)
-		s.mu.Lock()
-		if drift == "" {
-			delete(s.drift, id)
-		} else {
-			s.drift[id] = drift
-		}
-		s.mu.Unlock()
-		if drift != "" {
-			slog.Warn("machine spec differs in a create-only field", "machine", id, "detail", strings.NewReplacer("\n", " ", "\r", " ").Replace(drift))
-			spec.Image = applied.Image
-		}
+	if applied != nil && imageChanged(*applied, spec) {
+		return s.recreate(id, spec, state)
 	}
 	if p := s.port(id); p != 0 {
 		if err := s.forward(id, p); err != nil {
@@ -412,21 +398,54 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 }
 
 func (s *Server) create(id string, spec MachineSpec) error {
-	port, err := s.allocatePort(id)
+	port, image, launch, err := s.resolve(id, spec)
 	if err != nil {
 		return err
 	}
-	image := spec.Image
+	return s.boot(id, spec, port, image, launch)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the new image is fetched and its launch read while the old machine still runs, so the agent is down only for the stop, the recreate and the boot, and not for a pull. A pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image is still held while this runs, because the machine's stored spec names it until the new machine has booted; the stored spec is rewritten only after that, and the holders published after it release the old image.
+func (s *Server) recreate(id string, spec MachineSpec, state string) error {
+	port, image, launch, err := s.resolve(id, spec)
+	if err != nil {
+		return err
+	}
+	s.forgetState(id)
+	if state == StateRunning {
+		if err := s.Runtime.Stop(id); err != nil {
+			return err
+		}
+	}
+	if err := s.Runtime.DeleteKeepingStorage(id); err != nil {
+		return err
+	}
+	if err := s.boot(id, spec, port, image, launch); err != nil {
+		return err
+	}
+	return s.writeSpec(id, spec)
+}
+
+func (s *Server) resolve(id string, spec MachineSpec) (int, string, *ImageLaunch, error) {
+	port, err := s.allocatePort(id)
+	if err != nil {
+		return 0, "", nil, err
+	}
+	image, launch, err := s.imageSource(id, spec.Image)
+	return port, image, launch, err
+}
+
+func (s *Server) imageSource(id, image string) (string, *ImageLaunch, error) {
 	if !imageRef.MatchString(image) {
-		return fmt.Errorf("invalid image reference %q", image)
+		return "", nil, fmt.Errorf("invalid image reference %q", image)
 	}
 	if strings.Contains(image, "..") {
-		return fmt.Errorf("invalid image reference %q", image)
+		return "", nil, fmt.Errorf("invalid image reference %q", image)
 	}
 	base := s.cachePath(image)
 	launch, err := readLaunch(base)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	cached := ""
 	// UNIT_BOUNDARY_DESCRIPTION: an archive an earlier release cached still boots, but it boots the slow way — unpacked again into every machine's own disk, which is the thirty seconds and the gigabyte the shared tree exists to stop paying. Holding it would mean an install that already ran an image never gets the faster path for it, however long it keeps running that image, so the tree is built once and the archive kept only for the case that cannot: no crane to fetch with, or a fetch that failed while the archive on disk would still have started a machine.
@@ -438,17 +457,17 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		if s.Crane != "" {
 			if err := s.cacheImage(image, base, id); err != nil {
 				if !archived {
-					return err
+					return "", nil, err
 				}
 				slog.Warn("image cache: keeping the archive after a failed unpack", "image", image, "error", err)
 			} else if launch, err = readLaunch(base); err != nil {
-				return err
+				return "", nil, err
 			}
 		}
 		if launch == nil && archived {
 			cached = base + ".tar"
 			if launch, err = launchFromArchive(cached); err != nil {
-				return fmt.Errorf("%w: %w", errImageUnusable, err)
+				return "", nil, fmt.Errorf("%w: %w", errImageUnusable, err)
 			}
 		}
 	}
@@ -457,7 +476,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	}
 	if launch == nil {
 		if launch, err = s.launchFromRegistry(image); err != nil {
-			return err
+			return "", nil, err
 		}
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
@@ -466,6 +485,10 @@ func (s *Server) create(id string, spec MachineSpec) error {
 			image = cached
 		}
 	}
+	return image, launch, nil
+}
+
+func (s *Server) boot(id string, spec MachineSpec, port int, image string, launch *ImageLaunch) error {
 	dir, err := s.machineDir(id)
 	if err != nil {
 		return err
@@ -939,6 +962,10 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := s.Runtime.DiscardKeptStorage(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	dir, err := s.machineDir(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -950,7 +977,6 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	delete(s.failures, id)
-	delete(s.drift, id)
 	delete(s.restarts, id)
 	delete(s.health, id)
 	delete(s.lastState, id)
@@ -1066,13 +1092,10 @@ func (s *Server) machineState(id string) (string, error) {
 
 func (s *Server) status(id string) MachineStatus {
 	s.mu.Lock()
-	pending, drift, restarts := s.pending[id], s.drift[id], s.restarts[id]
+	pending, restarts := s.pending[id], s.restarts[id]
 	failed := s.failures[id]
 	lastErr, reason := failed.message, failed.reason
 	s.mu.Unlock()
-	if lastErr == "" {
-		lastErr = drift
-	}
 	st := MachineStatus{State: StateAbsent, Reason: reason, Restarts: restarts, Port: s.port(id), Message: lastErr}
 	s.mu.Lock()
 	startedAt := s.startedAt[id]

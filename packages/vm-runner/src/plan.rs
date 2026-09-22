@@ -95,7 +95,9 @@ pub fn plan(
         STATE_ABSENT => doing(STATE_CREATING),
         STATE_STOPPED => doing(STATE_STARTING),
         STATE_RUNNING => {
-            if applied.is_none_or(|applied| needs_restart(applied, desired)) {
+            if applied.is_none_or(|applied| {
+                needs_restart(applied, desired) || image_changed(applied, desired)
+            }) {
                 return doing(STATE_RESTARTING);
             }
             if !ready && dead_for_long {
@@ -120,15 +122,9 @@ pub fn needs_restart(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.env != desired.env
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one difference the runner reports and does not act on. The image is fixed when the machine is created, because changing it would mean a new root filesystem under the disk the agent's work lives on — so a changed image is said out loud, in the machine's status, rather than silently kept or silently applied.
-pub fn create_only_drift(applied: &MachineSpec, desired: &MachineSpec) -> Option<String> {
-    if applied.image == desired.image {
-        return None;
-    }
-    Some(format!(
-        "the image is fixed at create, so this machine keeps what it has (recreate the agent to change it): image is {}, wanted {}",
-        applied.image, desired.image
-    ))
+// UNIT_BOUNDARY_DESCRIPTION: a new image restarts the machine like a resize does. It is its own check and not part of `needs_restart` because smolvm cannot apply it in place: the machine is recreated on the new image around the same storage disk. Nothing else has to survive that, because the root is the cached image tree plus an overlay every stop discards, and everything the agent keeps is on the disk.
+pub fn image_changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
+    applied.image != desired.image
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those — a machine still holding an address its gateway no longer owns may be pointing at another owner's gateway, so it is stopped rather than run on.
@@ -169,31 +165,10 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: these three strings leave the runner. The drift message is written into the machine's status and reaches a person reading why their agent still runs the old image; the two refusals are the body of a 400 the controller surfaces. A rollout answers the same request with either runner, so two wordings for one condition is a support question that starts with which runner answered.
+    // TEST_SCENARIO: these two strings leave the runner as the body of a 400 the controller surfaces. A rollout answers the same request with either runner, so two wordings for one condition is a support question that starts with which runner answered.
     #[test]
-    fn the_refusals_and_the_drift_message_read_as_the_go_runners_do() {
+    fn the_refusals_read_as_the_go_runners_do() {
         let go = gosource::read("server.go");
-
-        let drift: Vec<String> = gosource::literals_in(&go, "createOnlyDrift")
-            .into_iter()
-            .filter(|literal| literal.contains("%s"))
-            .collect();
-        let [format] = drift.as_slice() else {
-            panic!(
-                "createOnlyDrift no longer holds exactly one message with a verb in it: {drift:?}"
-            )
-        };
-        let theirs = format
-            .replacen("%s", "quay.io/x/vm:1", 1)
-            .replacen("%s", "quay.io/x/vm:2", 1);
-        assert_eq!(
-            create_only_drift(
-                &spec_with_image("quay.io/x/vm:1"),
-                &spec_with_image("quay.io/x/vm:2")
-            ),
-            Some(theirs),
-            "the two runners explain a changed image differently"
-        );
 
         let put = gosource::literals_in(&go, "(s *Server) put");
         for refusal in [REQUIRED, BAD_IMAGE] {
@@ -371,7 +346,45 @@ mod tests {
         let other_image = spec_with_image("quay.io/x/other:1");
         assert!(
             !needs_restart(&applied, &other_image),
-            "the image is fixed at create and must never be a reason to restart"
+            "a new image cannot be applied in place, so it is not an in-place restart"
+        );
+    }
+
+    // TEST_SCENARIO: a template upgrade gives a vm agent a new harness image. A running machine restarts onto it and a stopped one starts onto it, so an upgrade never waits for the agent to be recreated. During a rollout both runners see the same machines, so the Go runner must make the same decision on the same comparison, or one of them upgrades a machine the other keeps on its old image.
+    #[test]
+    fn a_new_image_restarts_a_running_machine_and_starts_a_stopped_one_on_it() {
+        let applied = running_spec();
+        let upgraded = spec_with_image("quay.io/x/vm:2");
+
+        assert!(image_changed(&applied, &upgraded));
+        assert!(!image_changed(&applied, &applied));
+        assert_eq!(
+            plan(Some(&applied), &upgraded, STATE_RUNNING, true, false),
+            Some(Plan {
+                op: STATE_RESTARTING,
+                unhealthy: false
+            }),
+            "a running machine kept its old image"
+        );
+        assert_eq!(
+            plan(Some(&applied), &upgraded, STATE_STOPPED, false, false).map(|p| p.op),
+            Some(STATE_STARTING)
+        );
+
+        let go = gosource::read("server.go");
+        assert!(
+            gosource::function_body(&go, "imageChanged")
+                .is_some_and(|body| body.contains("applied.Image != desired.Image")),
+            "the Go runner no longer compares images the same way"
+        );
+        assert!(
+            gosource::function_body(&go, "(s *Server) plan")
+                .is_some_and(|body| body.contains("imageChanged(*applied, spec)")),
+            "the Go runner no longer restarts a running machine for a new image"
+        );
+        assert!(
+            gosource::function_body(&go, "createOnlyDrift").is_none(),
+            "the Go runner still reports a new image as fixed at create"
         );
     }
 
