@@ -7,9 +7,8 @@ export interface ThreadEntry<T> {
 export interface CatchUpSelection {
   readingAgentId: string;
   since: string;
-  triggeringTs: string;
   until: string;
-  batchTs?: string[];
+  batchTs: string[];
 }
 
 export function isAfterTs(candidate: string, floor: string): boolean {
@@ -21,6 +20,16 @@ export function isAfterTs(candidate: string, floor: string): boolean {
 
 export function laterTs(a: string, b: string): string {
   return isAfterTs(a, b) ? a : b;
+}
+
+export function earlierTs(a: string, b: string): string {
+  return isAfterTs(a, b) ? b : a;
+}
+
+export function newestOf(tss: readonly string[]): string | null {
+  let found: string | null = null;
+  for (const ts of tss) found = found === null ? ts : laterTs(found, ts);
+  return found;
 }
 
 export function lastOwnPostTs<T>(
@@ -48,11 +57,15 @@ export function nextBoundary(
   read: {
     hasMore: boolean;
     newestReadTs: string | null;
-    triggeringTs: string;
+    coveredUpTo: string;
   },
   stored: string | null,
 ): string | null {
-  const reached = read.hasMore ? read.newestReadTs : read.triggeringTs;
+  const capped =
+    read.newestReadTs === null
+      ? null
+      : earlierTs(read.newestReadTs, read.coveredUpTo);
+  const reached = read.hasMore ? capped : read.coveredUpTo;
   if (reached === null) return stored;
   if (stored === null) return reached;
   return laterTs(stored, reached);
@@ -92,10 +105,7 @@ export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,
 ): ThreadEntry<T>[] {
-  const carried = new Set([
-    selection.triggeringTs,
-    ...(selection.batchTs ?? []),
-  ]);
+  const carried = new Set(selection.batchTs);
   return entries.filter(
     (entry) =>
       !!entry.ts &&

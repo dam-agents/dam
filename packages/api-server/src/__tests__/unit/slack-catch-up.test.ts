@@ -29,16 +29,15 @@ function countAcross(prompts: Array<unknown>, sub: string): number {
 
 /**
  * TEST_OVERVIEW: The seen-boundary bookkeeping behind the "You were away"
- * catch-up. The away block must cover only messages the conversation's session
- * would otherwise never receive: nothing queued for its own turn may appear in
- * it, a delivered batch advances the boundary to its newest send-ts whatever
- * order Slack delivered it in, a message steered into a delivered turn counts
- * as seen, and a turn that failed leaves the boundary alone so its messages
- * are recovered by the next turn's catch-up.
+ * catch-up. The away block may only hold messages the session would otherwise
+ * never receive. So a message still queued for its own turn never appears in
+ * it; a delivered batch moves the boundary to its newest send time, whatever
+ * order Slack delivered the events in; a message steered into a delivered turn
+ * counts as seen; a failed turn leaves the boundary where it was, so the next
+ * turn shows its messages again; and a read that hits its limit never moves
+ * the boundary past the messages the turn was shown.
  */
-const harness = (
-  opts: Parameters<typeof slackWorkerHarness>[0] = {},
-): ReturnType<typeof slackWorkerHarness> =>
+const harness = (opts: Parameters<typeof slackWorkerHarness>[0] = {}) =>
   slackWorkerHarness({
     boundChannelId: BOUND,
     channels: [{ id: BOUND, name: "general", botIsMember: true }],
@@ -85,10 +84,10 @@ function gatedAcp(opts: {
 
 describe("channel catch-up stays behind the delivered batch", () => {
   /**
-   * TEST_SCENARIO: A message already visible in channel history but queued for
-   * its own later turn is the future, not a gap. The turn answering the
-   * earlier message must not present it as missed — it arrives untainted as
-   * the next turn, and no prompt carries the away legend.
+   * TEST_SCENARIO: A message can already be in the channel history while it is
+   * still queued for its own turn. The turn answering an earlier message must
+   * not show it as missed: it is delivered a moment later as its own turn, so
+   * showing it twice would ask the agent to answer it twice.
    */
   it("does not present a queued newer message as missed", async () => {
     const h = harness({ ambient: true });
@@ -167,9 +166,60 @@ describe("channel catch-up stays behind the delivered batch", () => {
   });
 
   /**
-   * TEST_SCENARIO: An agent that was genuinely away — events never delivered,
-   * no turn carried them — still gets the gap under the away legend. The
-   * bounds added for live traffic must not eat the rescue.
+   * TEST_SCENARIO: A read that hits its limit must not move the boundary past
+   * what the turn was shown. Slack returns the newest messages of a channel,
+   * so the newest message in that window can be newer than the delivered
+   * batch, and the prompt leaves those out on purpose. If the boundary took
+   * the window's newest message, the ones left out would count as seen and no
+   * later turn would ever show them.
+   */
+  it("keeps the boundary behind a capped read's unshown tail", async () => {
+    const gate = gatedAcp({ blockCall: 2 });
+    const h = harness({ ambient: true });
+    h.gw.setHistory([{ ts: T1, user: "U9", text: ALPHA }]);
+    await h.worker.connect();
+
+    await h.gw.fireMessage({ user: "U9", channel: BOUND, ts: T1, text: ALPHA });
+    expect(await h.settled(() => h.prompts.length === 1)).toBe(true);
+
+    const flood = Array.from({ length: 520 }, (_, i) => ({
+      ts: `${1000 + i}.000000`,
+      user: "U7",
+      text: `flood ${i}`,
+    }));
+    h.gw.setHistory([
+      { ts: T1, user: "U9", text: ALPHA },
+      { ts: T2, user: "U9", text: BRAVO },
+      ...flood,
+    ]);
+    await h.gw.fireMessage({ user: "U9", channel: BOUND, ts: T2, text: BRAVO });
+    expect(await h.settled(() => h.prompts.length === 2)).toBe(true);
+    expect(String(h.prompts[1])).not.toContain("flood 519");
+    expect(gate.steers.length).toBe(0);
+
+    h.gw.setHistory([
+      { ts: T1, user: "U9", text: ALPHA },
+      { ts: T2, user: "U9", text: BRAVO },
+      ...flood,
+      { ts: "9000.000000", user: "U9", text: DELTA },
+    ]);
+    await h.gw.fireMessage({
+      user: "U9",
+      channel: BOUND,
+      ts: "9000.000000",
+      text: DELTA,
+    });
+    expect(await h.settled(() => h.prompts.length === 3)).toBe(true);
+
+    const caught = String(h.prompts[2]);
+    expect(caught).toContain(AWAY);
+    expect(caught).toContain("flood 519");
+  });
+
+  /**
+   * TEST_SCENARIO: Messages that no turn ever carried, because the agent was
+   * away when they arrived, must still be shown under the away legend. The
+   * limits added for live traffic must not stop this recovery.
    */
   it("still hands a genuine gap to the agent under the away legend", async () => {
     const h = harness({ ambient: true });
@@ -270,10 +320,10 @@ describe("steered messages and the boundary", () => {
   });
 
   /**
-   * TEST_SCENARIO: The boundary only advances with a delivered turn. When the
-   * turn a message was steered into dies, that message reached nobody — the
-   * next turn's catch-up must bring back both the failed batch and what was
-   * steered into it.
+   * TEST_SCENARIO: The boundary only advances when a turn is delivered. If the
+   * turn a message was steered into fails, no one received that message, so
+   * the next turn's catch-up must show both the failed batch and the steered
+   * message again.
    */
   it("recovers the batch and its steered messages when the turn fails", async () => {
     const gate = gatedAcp({
@@ -343,9 +393,10 @@ describe("selectUnseen bounds", () => {
   });
 
   /**
-   * TEST_SCENARIO: The selection window is (since, until]: what the boundary
-   * already covers stays out, what was sent after the delivered batch stays
-   * out, and the batch itself is carried by the turn rather than the gap.
+   * TEST_SCENARIO: Only messages between the boundary and the delivered batch
+   * are a gap. Messages at or below the boundary were seen before, messages
+   * above the batch are still to be delivered, and the batch itself is already
+   * in the turn's own text.
    */
   it("keeps the gap and drops the boundary, the batch, and the future", () => {
     const picked = selectUnseen(
@@ -353,7 +404,6 @@ describe("selectUnseen bounds", () => {
       {
         readingAgentId: "agent-1",
         since: "100.1",
-        triggeringTs: "100.3",
         until: "100.3",
         batchTs: ["100.3"],
       },
