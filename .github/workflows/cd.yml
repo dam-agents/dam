@@ -26,7 +26,14 @@ jobs:
   check:
     name: mise check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Twenty minutes, not ten. A cold run installs its tools, compiles smolvm
+    # from source and then has caches to write back, and a run measured at
+    # 10m04s was killed in that tail after `mise run check` had already passed —
+    # which reports as cancelled and reads as a red PR. Since #3857 a PR run
+    # never saves, so a branch cannot warm itself: if main's entry is missing or
+    # its key has moved, every PR pays the full cold cost until the next main
+    # push rewrites it. That run is the one this budget has to fit.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,7 +140,14 @@ jobs:
     name: mise test
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Twenty minutes, not ten. A cold run installs its tools, compiles smolvm
+    # from source and then has caches to write back, and a run measured at
+    # 10m04s was killed in that tail after `mise run check` had already passed —
+    # which reports as cancelled and reads as a red PR. Since #3857 a PR run
+    # never saves, so a branch cannot warm itself: if main's entry is missing or
+    # its key has moved, every PR pays the full cold cost until the next main
+    # push rewrites it. That run is the one this budget has to fit.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
