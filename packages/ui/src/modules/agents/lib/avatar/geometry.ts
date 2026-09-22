@@ -7,6 +7,27 @@ export interface HeadGeometry {
   bottom: number;
 }
 
+type Point = readonly [number, number];
+
+function roundedPolygon(points: readonly Point[], radius: number): string {
+  const n = points.length;
+  const segments = points.map((corner, i) => {
+    const prev = points[(i + n - 1) % n]!;
+    const next = points[(i + 1) % n]!;
+    const toward = (target: Point): Point => {
+      const dx = target[0] - corner[0];
+      const dy = target[1] - corner[1];
+      const length = Math.hypot(dx, dy);
+      const t = Math.min(radius, length / 2) / length;
+      return [corner[0] + dx * t, corner[1] + dy * t];
+    };
+    const start = toward(prev);
+    const end = toward(next);
+    return `${i === 0 ? "M" : "L"}${start[0]},${start[1]} Q${corner[0]},${corner[1]} ${end[0]},${end[1]}`;
+  });
+  return `${segments.join(" ")} Z`;
+}
+
 function roundedRect(
   x: number,
   y: number,
@@ -14,18 +35,15 @@ function roundedRect(
   h: number,
   r: number,
 ): string {
-  return [
-    `M${x + r},${y}`,
-    `H${x + w - r}`,
-    `Q${x + w},${y} ${x + w},${y + r}`,
-    `V${y + h - r}`,
-    `Q${x + w},${y + h} ${x + w - r},${y + h}`,
-    `H${x + r}`,
-    `Q${x},${y + h} ${x},${y + h - r}`,
-    `V${y + r}`,
-    `Q${x},${y} ${x + r},${y}`,
-    "Z",
-  ].join(" ");
+  return roundedPolygon(
+    [
+      [x, y],
+      [x + w, y],
+      [x + w, y + h],
+      [x, y + h],
+    ],
+    r,
+  );
 }
 
 export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
@@ -36,13 +54,25 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
     bottom: 77,
   },
   squircle: {
-    path: roundedRect(22, 22, 56, 54, 16),
+    path: roundedRect(22, 22, 56, 54, 22),
     halfWidth: 28,
     top: 22,
     bottom: 76,
   },
   octagon: {
-    path: "M37,22 H63 L78,37 V61 L63,76 H37 L22,61 V37 Z",
+    path: roundedPolygon(
+      [
+        [37, 22],
+        [63, 22],
+        [78, 37],
+        [78, 61],
+        [63, 76],
+        [37, 76],
+        [22, 61],
+        [22, 37],
+      ],
+      7,
+    ),
     halfWidth: 28,
     top: 22,
     bottom: 76,
@@ -54,13 +84,13 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
     bottom: 76,
   },
   box: {
-    path: roundedRect(17, 28, 66, 46, 9),
+    path: roundedRect(17, 27, 66, 48, 16),
     halfWidth: 33,
-    top: 28,
-    bottom: 74,
+    top: 27,
+    bottom: 75,
   },
   bell: {
-    path: "M22,68 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V68 Q78,76 70,76 H30 Q22,76 22,68 Z",
+    path: "M22,64 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V64 Q78,76 66,76 H34 Q22,76 22,64 Z",
     halfWidth: 28,
     top: 21,
     bottom: 76,

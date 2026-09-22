@@ -95,11 +95,6 @@ export interface OnboardingChecklistReader {
   readMany(agentIds: readonly string[]): Promise<Map<string, OnboardingStep[]>>;
 }
 
-export interface AgentAvatarPort {
-  readMany(agentIds: readonly string[]): Promise<Map<string, string>>;
-  set(agentId: string, seed: string): Promise<void>;
-}
-
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
 }
@@ -517,7 +512,6 @@ export function createAgentsService(deps: {
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
-  avatars: AgentAvatarPort;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -644,14 +638,13 @@ export function createAgentsService(deps: {
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, status, userEnv, templateUpdate, checklists, avatars] =
+    const [channels, status, userEnv, templateUpdate, checklists] =
       await Promise.all([
         namedChannelsOf(infra.id),
         safeStatus(infra.id),
         deps.agentEnvRepo.list(infra.id),
         templateUpdateFor(infra),
         deps.onboardingChecklists.readMany([infra.id]),
-        deps.avatars.readMany([infra.id]),
       ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
@@ -663,7 +656,6 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
-      avatars.get(infra.id),
       checklists.get(infra.id),
     );
   }
@@ -753,11 +745,10 @@ export function createAgentsService(deps: {
     }
 
     const boundChannels = txResult.value.channels;
-    const [status, channelNames, templateUpdate, avatars] = await Promise.all([
+    const [status, channelNames, templateUpdate] = await Promise.all([
       safeStatus(id),
       slackChannelNames([boundChannels]),
       templateUpdateFor(infra),
-      deps.avatars.readMany([id]),
     ]);
     return ok(
       assembleAgent(
@@ -770,7 +761,6 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
-        avatars.get(id),
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -798,7 +788,7 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap, channelNames, checklistMap, avatarMap] =
+      const [failuresMap, envMap, channelNames, checklistMap] =
         await Promise.all([
           deps.contributionsProgress
             .statusMany([...infraIds])
@@ -806,7 +796,6 @@ export function createAgentsService(deps: {
           deps.agentEnvRepo.listMany([...infraIds]),
           slackChannelNames([...channelMap.values()]),
           deps.onboardingChecklists.readMany([...infraIds]),
-          deps.avatars.readMany([...infraIds]),
         ]);
 
       const templateIds = [
@@ -837,7 +826,6 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
-          avatarMap.get(infra.id),
           checklistMap.get(infra.id),
         );
       });
@@ -996,8 +984,6 @@ export function createAgentsService(deps: {
       );
       if (userEnv.length > 0)
         await deps.agentEnvRepo.replace(infra.id, userEnv);
-      if (input.avatar !== undefined)
-        await deps.avatars.set(infra.id, input.avatar);
 
       if (deps.presetSeeder) {
         await deps.presetSeeder.seed(
@@ -1035,7 +1021,6 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
-        input.avatar,
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1102,9 +1087,6 @@ export function createAgentsService(deps: {
         ? await gateLiveResize(applyPatch)
         : await applyPatch();
       if (!infra) return null;
-
-      if (input.avatar !== undefined)
-        await deps.avatars.set(input.id, input.avatar);
 
       let env = input.env;
       if (env !== undefined) {

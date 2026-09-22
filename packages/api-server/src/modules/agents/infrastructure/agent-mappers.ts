@@ -245,13 +245,11 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
-  avatarSeed: string | undefined,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
     id: infra.id,
     name: infra.name,
-    avatar: avatarSeed ?? infra.id,
     ...(infra.createdAt ? { createdAt: infra.createdAt } : {}),
     templateId: infra.templateId,
     templateUpdate,

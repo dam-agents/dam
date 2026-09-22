@@ -13,7 +13,6 @@ import {
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
-import { createAgentAvatarRepository } from "./infrastructure/agent-avatar-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -129,7 +128,6 @@ export function composeAgentsModule(deps: {
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
-      avatars: createAgentAvatarRepository(deps.db),
       podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),

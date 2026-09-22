@@ -18,7 +18,6 @@ export {
   agentEnv,
   agentSessions,
   agentPublicProfiles,
-  agentAvatars,
   egressRules,
   pendingApprovals,
   connections,

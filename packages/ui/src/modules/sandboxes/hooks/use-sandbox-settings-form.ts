@@ -65,7 +65,6 @@ export function useSandboxSettingsForm() {
     mode: "onChange",
     defaultValues: {
       name: "",
-      avatar: "",
       assignedAppIds: [],
       envVars: [],
       hibernationTimeoutMin: 60,
@@ -94,7 +93,6 @@ export function useSandboxSettingsForm() {
     baselinedRef.current = true;
     reset({
       name: agent.name,
-      avatar: agent.avatar,
       assignedAppIds: connectionsQuery.data.connections
         .map((c) => c.connectionId)
         .sort(),

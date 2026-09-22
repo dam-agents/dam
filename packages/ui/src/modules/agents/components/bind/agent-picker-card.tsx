@@ -35,7 +35,7 @@ export function AgentPickerCard({
       onClick={onSelect}
       className="flex w-full items-start justify-between gap-4 p-5"
     >
-      <AgentAvatar seed={agent.avatar} size={40} />
+      <AgentAvatar name={name} size={40} />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           <span className="truncate text-base font-semibold text-foreground">

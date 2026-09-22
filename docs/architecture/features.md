@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-21
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -8,8 +8,10 @@ Last verified: 2026-09-21
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, session costs and agent telemetry (a per-reply timeline
-in the conversation). Graduating a feature to always-on is deletion: drop its
+interactive artifacts, session costs, agent telemetry (a per-reply timeline
+in the conversation) and agent avatars (a robot head drawn in the browser from
+a hash of the agent's name, so nothing is stored and renaming an agent changes
+its face). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Experiments, Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).

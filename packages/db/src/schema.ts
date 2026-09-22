@@ -345,14 +345,6 @@ export const agentPublicProfiles = pgTable("agent_public_profiles", {
     .notNull(),
 });
 
-export const agentAvatars = pgTable("agent_avatars", {
-  agentId: text("agent_id").primaryKey(),
-  seed: text("seed").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
 export const termsAcceptances = pgTable(
   "terms_acceptances",
   {

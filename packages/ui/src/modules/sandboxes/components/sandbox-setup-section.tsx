@@ -8,7 +8,6 @@ import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
-import { AvatarSection } from "../../agents/components/avatar/avatar-section.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
@@ -49,18 +48,6 @@ export function SandboxSetupSection({ f }: Props) {
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
-
-      <Controller
-        control={f.control}
-        name="avatar"
-        render={({ field }) => (
-          <AvatarSection
-            value={field.value || agent.avatar}
-            onChange={field.onChange}
-            disabled={f.saving}
-          />
-        )}
-      />
 
       <SandboxSizeSection
         sizeCpuMilli={f.sizeCpuMilli}

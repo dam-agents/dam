@@ -63,7 +63,6 @@ const owned = [
 
 const complete: StarterKitSetupDraft = {
   name: " reviewer ",
-  avatar: "k3v9x2qa",
   templateId: "claude-code",
   providerRef: { id: "c-llm" } as StarterKitSetupDraft["providerRef"],
   connectionIds: ["c-gh"],
@@ -159,7 +158,6 @@ describe("buildStarterKitApplyInput", () => {
       catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
-      avatar: "k3v9x2qa",
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",

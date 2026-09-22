@@ -12,7 +12,6 @@ import {
   composePublicAgentPage,
   createAgentsRepository,
   createAgentEnvRepository,
-  createAgentAvatarRepository,
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
   allChannelAgentIds,
@@ -321,7 +320,6 @@ export async function bootstrap() {
     createLiveAgentStateCache(k8sClient),
   );
   const agentEnvRepo = createAgentEnvRepository(db);
-  const agentAvatarRepo = createAgentAvatarRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const resolvedCatalog = createResolvedCatalogRepository(db);
@@ -1098,11 +1096,6 @@ export async function bootstrap() {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
-    },
-    {
-      name: "agent-avatars",
-      listAgentIds: () => agentAvatarRepo.listAgentIds(),
-      cleanup: (agentId: string) => agentAvatarRepo.deleteForAgent(agentId),
     },
     {
       name: "schedules",

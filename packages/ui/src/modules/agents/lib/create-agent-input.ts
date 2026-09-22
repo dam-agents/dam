@@ -39,7 +39,6 @@ export function buildCreateAgentInput(
 
 export interface CodingAgentSetupDraft {
   name: string;
-  avatar: string;
   templateId: string | null;
   customImage: string;
   providerRef: ProviderRef | null;
@@ -85,7 +84,6 @@ export function buildCodingAgentSetupInput(
   const credential = draft.registryCredential;
   return {
     name: draft.name.trim(),
-    avatar: draft.avatar,
     egressPreset: "trusted",
     ...(draft.vm ? { vm: true } : {}),
     ...(draft.hibernationTimeoutMin === null

@@ -103,7 +103,6 @@ export function useSandboxSettingsSave({
       if (
         dirtyFields.envVars ||
         dirtyFields.name ||
-        dirtyFields.avatar ||
         dirtyFields.hibernationTimeoutMin ||
         sizeDirty
       ) {
@@ -113,7 +112,6 @@ export function useSandboxSettingsSave({
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
-          ...(dirtyFields.avatar ? { avatar: values.avatar } : {}),
           ...(dirtyFields.hibernationTimeoutMin
             ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
             : {}),
@@ -164,7 +162,6 @@ export function useSandboxSettingsSave({
       harnessDraft.commit();
       reset({
         name: values.name.trim(),
-        avatar: values.avatar,
         assignedAppIds: savedAppIds,
         envVars: values.envVars,
         hibernationTimeoutMin: values.hibernationTimeoutMin,

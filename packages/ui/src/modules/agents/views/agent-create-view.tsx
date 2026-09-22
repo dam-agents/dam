@@ -73,7 +73,6 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
-import { AvatarSection } from "../components/avatar/avatar-section.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -206,7 +205,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
   const draft: StarterKitSetupDraft = {
     name: form.name,
-    avatar: form.avatar,
     templateId: form.templateId,
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
@@ -270,7 +268,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
   const plainDraft: CodingAgentSetupDraft = {
     name: form.name,
-    avatar: form.avatar,
     vm: vmRuntime.vm,
     templateId: form.templateId,
     customImage: form.customImage,
@@ -448,10 +445,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       )}
 
       <NameSection value={form.name} onChange={(name) => update({ name })} />
-      <AvatarSection
-        value={form.avatar}
-        onChange={(avatar) => update({ avatar })}
-      />
 
       {!kit && (
         <ImageSection

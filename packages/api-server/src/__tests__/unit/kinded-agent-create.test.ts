@@ -8,7 +8,6 @@ function fakeAgent(id: string): Agent {
   return {
     id,
     name: "my-experiments",
-    avatar: id,
     spec: { name: "my-experiments", image: "quay.io/example/claude-code" },
     state: "starting",
     effectiveHibernationTimeoutMin: 30,

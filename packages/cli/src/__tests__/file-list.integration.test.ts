@@ -66,7 +66,6 @@ describe("dam file list (integration)", () => {
         get: async (): Promise<Agent> => ({
           id: "agent-0000000000000001",
           name: "demo",
-          avatar: "agent-0000000000000001",
           templateId: "claude-code",
           spec: { name: "demo", image: "" },
           state: "running",

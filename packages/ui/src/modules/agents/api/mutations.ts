@@ -31,7 +31,6 @@ const invalidatesAgentsAndBudget = {
 
 export interface CreateAgentInput {
   name: string;
-  avatar?: string;
   templateId?: string;
   image?: string;
   description?: string;

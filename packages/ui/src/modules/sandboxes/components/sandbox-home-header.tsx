@@ -79,7 +79,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
 
   return (
     <PageHeader
-      leading={<AgentAvatar seed={agent.avatar} size={44} />}
+      leading={<AgentAvatar name={agent.name} size={44} />}
       title={agent.name}
       adornment={
         <StatusBadge

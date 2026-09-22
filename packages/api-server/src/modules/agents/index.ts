@@ -17,10 +17,6 @@ export {
   type AgentEnvRepository,
 } from "./infrastructure/agent-env-repository.js";
 export {
-  createAgentAvatarRepository,
-  type AgentAvatarRepository,
-} from "./infrastructure/agent-avatar-repository.js";
-export {
   createAgentRegistrySecretPort,
   type AgentRegistrySecretPort,
 } from "./infrastructure/agent-registry-secret-port.js";

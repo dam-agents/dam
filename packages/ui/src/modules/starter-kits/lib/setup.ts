@@ -17,7 +17,6 @@ import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 
 export interface StarterKitSetupDraft {
   name: string;
-  avatar: string;
   templateId: string | null;
   providerRef: ProviderRef | null;
   connectionIds: string[];
@@ -114,7 +113,6 @@ export function buildStarterKitApplyInput(
     catalog: kit.catalog,
     kitId: kit.id,
     name: draft.name.trim(),
-    avatar: draft.avatar,
     connectionIds: draftConnectionIds(draft),
     ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),

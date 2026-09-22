@@ -28,7 +28,6 @@ const agent = (
 ): AgentView => ({
   id,
   name: id,
-  avatar: id,
   templateId: null,
   templateUpdate: null,
   features: { liveUpdates: true },

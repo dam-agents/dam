@@ -4,13 +4,11 @@ import { z } from "zod";
 
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
-import { randomAvatarSeed } from "../../agents/lib/avatar/random-seed.js";
 
 export type SetupFlow = "coding-agent" | "experiment" | "starter-kit";
 
 export const setupFormSchema = z.object({
   name: z.string(),
-  avatar: z.string().default(randomAvatarSeed),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),

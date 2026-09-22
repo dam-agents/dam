@@ -1,7 +1,15 @@
-import type { ReactNode } from "react";
-
 import type { HeadGeometry } from "../../lib/avatar/geometry.js";
 import {
+  AVATAR_CENTER,
+  capEdge,
+  chinEdge,
+  STRIPE_HEIGHT,
+  STRIPE_INSET,
+  STRIPE_ROWS,
+  visorBox,
+} from "../../lib/avatar/layout.js";
+import {
+  AVATAR_GAP,
   AVATAR_INK,
   AVATAR_SCLERA,
   type AvatarTraits,
@@ -12,208 +20,34 @@ interface PartProps {
   head: HeadGeometry;
 }
 
-const CENTER = 50;
-const OUTSIDE_INK = "text-[#13254b] dark:text-[#aebbd3]";
-const EYE_Y = 48;
+const OUTSIDE_INK = "text-[#1b2a4a] dark:text-[#aebbd3]";
 
 export function AvatarEars({ traits, head }: PartProps) {
-  const fill = traits.palette.shade;
-  const left = CENTER - head.halfWidth;
-  const right = CENTER + head.halfWidth;
+  const left = AVATAR_CENTER - head.halfWidth - AVATAR_GAP;
+  const right = AVATAR_CENTER + head.halfWidth + AVATAR_GAP;
   switch (traits.ears) {
     case "none":
       return null;
     case "block":
       return (
-        <g fill={fill}>
-          <rect x={left - 8} y={39} width={11} height={22} rx={4} />
-          <rect x={right - 3} y={39} width={11} height={22} rx={4} />
+        <g fill={traits.palette.shade}>
+          <rect x={left - 8.5} y={39} width={8.5} height={22} rx={4} />
+          <rect x={right} y={39} width={8.5} height={22} rx={4} />
         </g>
       );
     case "round":
       return (
-        <g fill={fill}>
-          <circle cx={left + 1} cy={50} r={10} />
-          <circle cx={right - 1} cy={50} r={10} />
+        <g fill={traits.palette.shade}>
+          <path d={`M${left},40 A10,10 0 0 0 ${left},60 Z`} />
+          <path d={`M${right},40 A10,10 0 0 1 ${right},60 Z`} />
         </g>
       );
   }
-}
-
-function Eye({
-  cx,
-  cy,
-  r,
-  gaze,
-}: {
-  cx: number;
-  cy: number;
-  r: number;
-  gaze: AvatarTraits["gaze"];
-}) {
-  const pupil = r * 0.47;
-  const reach = (r - pupil) * 0.45;
-  return (
-    <>
-      <circle cx={cx} cy={cy} r={r} fill={AVATAR_SCLERA} />
-      <circle
-        cx={cx + (gaze.dx / 3) * reach}
-        cy={cy + (gaze.dy / 2) * reach}
-        r={pupil}
-        fill={AVATAR_INK}
-      />
-    </>
-  );
-}
-
-function Visor({ head, children }: PartProps & { children: ReactNode }) {
-  const inset = 5;
-  const width = (head.halfWidth - inset) * 2;
-  return (
-    <>
-      <rect
-        x={CENTER - width / 2}
-        y={38}
-        width={width}
-        height={22}
-        rx={11}
-        fill={AVATAR_INK}
-      />
-      {children}
-    </>
-  );
-}
-
-export function AvatarFace({ traits, head }: PartProps) {
-  const spread = Math.min(15, head.halfWidth - 14);
-  const shift = traits.gaze.dx;
-  switch (traits.face) {
-    case "eyes":
-      return (
-        <>
-          <Eye
-            cx={CENTER - spread}
-            cy={EYE_Y}
-            r={11 * traits.eyeSizes.left}
-            gaze={traits.gaze}
-          />
-          <Eye
-            cx={CENTER + spread}
-            cy={EYE_Y}
-            r={11 * traits.eyeSizes.right}
-            gaze={traits.gaze}
-          />
-        </>
-      );
-    case "cyclops":
-      return <Eye cx={CENTER} cy={47} r={16} gaze={traits.gaze} />;
-    case "visor":
-      return (
-        <Visor traits={traits} head={head}>
-          <g fill={traits.palette.light}>
-            <circle cx={CENTER - spread + shift} cy={49} r={5.5} />
-            <circle cx={CENTER + spread + shift} cy={49} r={5.5} />
-          </g>
-        </Visor>
-      );
-    case "happy":
-      return (
-        <Visor traits={traits} head={head}>
-          <g
-            fill="none"
-            stroke={traits.palette.light}
-            strokeWidth={3.5}
-            strokeLinecap="round"
-          >
-            <path d={`M${CENTER - spread - 6},53 a6,6 0 0 1 12,0`} />
-            <path d={`M${CENTER + spread - 6},53 a6,6 0 0 1 12,0`} />
-          </g>
-        </Visor>
-      );
-    case "wink":
-      return (
-        <g fill={AVATAR_INK}>
-          <circle cx={CENTER - spread} cy={EYE_Y} r={6.5} />
-          <rect
-            x={CENTER + spread - 8}
-            y={EYE_Y - 2.5}
-            width={16}
-            height={5}
-            rx={2.5}
-          />
-        </g>
-      );
-    case "stripes":
-      return (
-        <g fill={AVATAR_INK}>
-          {[35, 46, 57].map((y) => (
-            <rect key={y} x={0} y={y} width={100} height={6.5} />
-          ))}
-        </g>
-      );
-  }
-}
-
-export function AvatarMouth({ traits }: PartProps) {
-  const y = traits.face === "cyclops" ? 67 : 64;
-  switch (traits.mouth) {
-    case "none":
-      return null;
-    case "line":
-      return (
-        <rect
-          x={CENTER - 9}
-          y={y}
-          width={18}
-          height={4.5}
-          rx={2.25}
-          fill={AVATAR_INK}
-        />
-      );
-    case "grille":
-      return (
-        <g>
-          <rect
-            x={CENTER - 11}
-            y={y - 1}
-            width={22}
-            height={7}
-            rx={2.5}
-            fill={AVATAR_INK}
-          />
-          <g fill={traits.palette.base}>
-            <rect x={CENTER - 4.5} y={y} width={2} height={5} />
-            <rect x={CENTER + 2.5} y={y} width={2} height={5} />
-          </g>
-        </g>
-      );
-  }
-}
-
-export function AvatarCapOverlay({ traits, head }: PartProps) {
-  if (traits.top !== "cap") return null;
-  const edge = head.top + 14;
-  return (
-    <path
-      d={`M0,0 H100 V${edge} Q${CENTER},${edge + 7} 0,${edge} Z`}
-      fill={traits.capColor}
-    />
-  );
-}
-
-export function AvatarChinOverlay({ traits, head }: PartProps) {
-  if (traits.bottom !== "chin") return null;
-  const edge = head.bottom - 12;
-  return (
-    <path
-      d={`M0,${edge} Q${CENTER},${edge - 5} 100,${edge} V100 H0 Z`}
-      fill={traits.palette.shade}
-    />
-  );
 }
 
 export function AvatarTop({ traits, head }: PartProps) {
   const { top } = head;
+  const clear = top - AVATAR_GAP;
   switch (traits.top) {
     case "none":
     case "cap":
@@ -221,8 +55,14 @@ export function AvatarTop({ traits, head }: PartProps) {
     case "antenna":
       return (
         <g fill={traits.accent}>
-          <rect x={CENTER - 1.75} y={top - 11} width={3.5} height={13} />
-          <circle cx={CENTER} cy={top - 13} r={5.5} />
+          <rect
+            x={AVATAR_CENTER - 1.75}
+            y={top - 12}
+            width={3.5}
+            height={12 - AVATAR_GAP}
+            rx={1.75}
+          />
+          <circle cx={AVATAR_CENTER} cy={top - 14.5} r={5.5} />
         </g>
       );
     case "twin":
@@ -234,23 +74,36 @@ export function AvatarTop({ traits, head }: PartProps) {
             strokeWidth={3}
             strokeLinecap="round"
           >
-            <line x1={CENTER - 9} y1={top + 3} x2={CENTER - 15} y2={top - 10} />
-            <line x1={CENTER + 9} y1={top + 3} x2={CENTER + 15} y2={top - 10} />
+            {[-1, 1].map((side) => (
+              <line
+                key={side}
+                x1={AVATAR_CENTER + side * 9}
+                y1={clear}
+                x2={AVATAR_CENTER + side * 15}
+                y2={top - 10}
+              />
+            ))}
           </g>
           <g fill={traits.accent}>
-            <circle cx={CENTER - 15} cy={top - 12} r={5} />
-            <circle cx={CENTER + 15} cy={top - 12} r={5} />
+            {[-1, 1].map((side) => (
+              <circle
+                key={side}
+                cx={AVATAR_CENTER + side * 16}
+                cy={top - 13}
+                r={4.5}
+              />
+            ))}
           </g>
         </g>
       );
     case "bolt":
       return (
         <rect
-          x={CENTER - 8}
-          y={top - 7}
+          x={AVATAR_CENTER - 8}
+          y={clear - 7}
           width={16}
-          height={10}
-          rx={2}
+          height={7}
+          rx={2.5}
           fill={traits.palette.shade}
         />
       );
@@ -262,38 +115,49 @@ export function AvatarTop({ traits, head }: PartProps) {
             strokeWidth={3}
             strokeLinecap="round"
           >
-            <line x1={CENTER - 8} y1={top + 4} x2={CENTER - 16} y2={top - 7} />
-            <line x1={CENTER + 8} y1={top + 4} x2={CENTER + 16} y2={top - 7} />
-          </g>
-          {[CENTER - 18, CENTER + 18].map((cx) => (
-            <g key={cx}>
-              <circle cx={cx} cy={top - 11} r={8} fill={traits.accent} />
-              <circle cx={cx} cy={top - 11} r={5} fill={AVATAR_SCLERA} />
-              <circle
-                cx={cx + traits.gaze.dx * 0.6}
-                cy={top - 11 + traits.gaze.dy * 0.6}
-                r={2.5}
-                fill={AVATAR_INK}
+            {[-1, 1].map((side) => (
+              <line
+                key={side}
+                x1={AVATAR_CENTER + side * 8}
+                y1={clear}
+                x2={AVATAR_CENTER + side * 15}
+                y2={top - 8}
               />
-            </g>
-          ))}
+            ))}
+          </g>
+          {traits.stalkLooks.map((look, i) => {
+            const cx = AVATAR_CENTER + (i === 0 ? -18 : 18);
+            const cy = top - 12;
+            return (
+              <g key={i}>
+                <circle cx={cx} cy={cy} r={8} fill={traits.accent} />
+                <circle cx={cx} cy={cy} r={5.4} fill={AVATAR_SCLERA} />
+                <circle
+                  cx={cx + look.dx * 2.2}
+                  cy={cy + look.dy * 2.2}
+                  r={2.6}
+                  fill={AVATAR_INK}
+                />
+              </g>
+            );
+          })}
         </g>
       );
   }
 }
 
 export function AvatarBottom({ traits, head }: PartProps) {
-  const { bottom } = head;
+  const below = head.bottom + AVATAR_GAP;
   switch (traits.bottom) {
     case "neck":
     case "chin":
       return (
         <rect
-          x={CENTER - 11}
-          y={bottom - 1}
+          x={AVATAR_CENTER - 11}
+          y={below}
           width={22}
-          height={9}
-          rx={2}
+          height={7}
+          rx={3}
           className={OUTSIDE_INK}
           fill="currentColor"
         />
@@ -301,9 +165,92 @@ export function AvatarBottom({ traits, head }: PartProps) {
     case "stripes":
       return (
         <g fill={traits.palette.shade}>
-          <rect x={CENTER - 22} y={bottom + 3} width={44} height={4} rx={2} />
-          <rect x={CENTER - 18} y={bottom + 10} width={36} height={4} rx={2} />
+          <rect
+            x={AVATAR_CENTER - 21}
+            y={below}
+            width={42}
+            height={4.5}
+            rx={2.25}
+          />
+          <rect
+            x={AVATAR_CENTER - 16}
+            y={below + 4.5 + AVATAR_GAP}
+            width={32}
+            height={4.5}
+            rx={2.25}
+          />
         </g>
       );
   }
+}
+
+export function AvatarOverlays({ traits, head }: PartProps) {
+  const cap = capEdge(head);
+  const chin = chinEdge(head);
+  return (
+    <>
+      {traits.top === "cap" && (
+        <path
+          d={`M0,0 H100 V${cap} Q${AVATAR_CENTER},${cap + 7} 0,${cap} Z`}
+          fill={traits.capColor}
+        />
+      )}
+      {traits.bottom === "chin" && (
+        <path
+          d={`M0,${chin} Q${AVATAR_CENTER},${chin - 5} 100,${chin} V100 H0 Z`}
+          fill={traits.palette.shade}
+        />
+      )}
+    </>
+  );
+}
+
+function ring(box: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rx: number;
+}) {
+  const half = AVATAR_GAP / 2;
+  return (
+    <rect
+      x={box.x - half}
+      y={box.y - half}
+      width={box.width + AVATAR_GAP}
+      height={box.height + AVATAR_GAP}
+      rx={box.rx + half}
+    />
+  );
+}
+
+export function AvatarGapLines({ traits, head }: PartProps) {
+  const cap = capEdge(head);
+  const chin = chinEdge(head);
+  const hasVisor = traits.face === "visor" || traits.face === "happy";
+  return (
+    <g fill="none" stroke="black" strokeWidth={AVATAR_GAP}>
+      {traits.top === "cap" && (
+        <path d={`M0,${cap} Q${AVATAR_CENTER},${cap + 7} 100,${cap}`} />
+      )}
+      {traits.bottom === "chin" && (
+        <path d={`M0,${chin} Q${AVATAR_CENTER},${chin - 5} 100,${chin}`} />
+      )}
+      {hasVisor && ring(visorBox(head))}
+      {traits.face === "stripes" &&
+        STRIPE_ROWS.flatMap((y) =>
+          [y - AVATAR_GAP / 2, y + STRIPE_HEIGHT + AVATAR_GAP / 2].map(
+            (edge) => (
+              <line
+                key={edge}
+                x1={AVATAR_CENTER - head.halfWidth * STRIPE_INSET}
+                y1={edge}
+                x2={AVATAR_CENTER + head.halfWidth * STRIPE_INSET}
+                y2={edge}
+              />
+            ),
+          ),
+        )}
+    </g>
+  );
 }
