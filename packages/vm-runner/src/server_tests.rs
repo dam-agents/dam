@@ -22,6 +22,7 @@ struct Fake {
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
     console: Mutex<String>,
+    ungrowable: AtomicBool,
 }
 
 impl Fake {
@@ -87,6 +88,10 @@ impl Runtime for Fake {
 
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
+    }
+
+    fn storage_growable(&self, _id: &str) -> bool {
+        !self.ungrowable.load(Ordering::SeqCst)
     }
 }
 
@@ -849,5 +854,32 @@ async fn a_scrape_counts_what_a_create_did() {
     assert!(
         !scrape.contains("m1") && !scrape.contains("quay.io"),
         "{scrape}"
+    );
+}
+
+// TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disk_that_cannot_grow_is_not_resized_under_a_running_machine() {
+    let h = Harness::new("ungrowable");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut bigger = spec(true);
+    bigger.storage_gib += 10;
+    h.server.put("m1", bigger).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
     );
 }

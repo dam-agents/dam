@@ -16,13 +16,14 @@ use crate::api::{
 };
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::embedded::STORAGE_NOT_GROWABLE;
 use crate::fetch::{self, egress_changed, failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::ImageCache;
 use crate::launch::{launch_from_archive, read_launch};
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{self, admissible, create_only_drift, needs_restart, reads_ready, Health};
-use crate::runtime::{redact, Machine, Runtime};
+use crate::runtime::{grown_storage, redact, Machine, Runtime};
 use crate::share::{write_share, SHARE_DIR};
 use crate::state::{self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec};
 
@@ -437,6 +438,9 @@ impl Server {
                     applied.allow_cidrs.join(" "),
                     spec.allow_cidrs.join(" ")
                 )));
+            }
+            if grown_storage(Some(applied), spec).is_some() && !self.runtime.storage_growable(id) {
+                anyhow::bail!("{STORAGE_NOT_GROWABLE}");
             }
             let drift = create_only_drift(applied, spec);
             {
