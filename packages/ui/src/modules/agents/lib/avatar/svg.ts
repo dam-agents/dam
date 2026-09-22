@@ -7,6 +7,7 @@ import {
 import { HEAD_GEOMETRY, type HeadGeometry } from "./geometry.js";
 import {
   AVATAR_CENTER,
+  AVATAR_VIEWBOX,
   bandEdges,
   type Box,
   bugEyeCenter,
@@ -14,10 +15,11 @@ import {
   capEdge,
   chinCurve,
   chinEdge,
-  faceCenterY,
+  MOUTH_Y,
   placeEyes,
   visorBox,
   wingPath,
+  winkLayout,
 } from "./layout.js";
 import { type AvatarTraits, avatarTraits, type Look } from "./traits.js";
 
@@ -45,7 +47,7 @@ function rect(box: Box, fill: string): string {
 
 function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
   const size = r * ratio;
-  const reach = r - size - r * 0.1;
+  const reach = r - size - Math.max(r * 0.16, 1.2);
   return el("circle", {
     cx: cx + look.dx * reach,
     cy: cy + look.dy * reach,
@@ -116,7 +118,7 @@ function top(t: AvatarTraits, head: HeadGeometry): string {
         return (
           el("line", {
             x1: AVATAR_CENTER + side * 9,
-            y1: clear - 1,
+            y1: clear - 2.5,
             x2: x,
             y2: y,
             stroke: AVATAR_STICK,
@@ -161,25 +163,25 @@ function bottom(t: AvatarTraits, head: HeadGeometry): string {
         rx: 3,
         fill: t.colors.neck ?? AVATAR_STICK,
       });
-    case "stripes":
-      return (
-        el("rect", {
-          x: AVATAR_CENTER - 21,
-          y: below,
-          width: 42,
-          height: 5.5,
-          rx: 2.75,
-          fill: t.colors.bottom,
-        }) +
-        el("rect", {
-          x: AVATAR_CENTER - 16,
-          y: below + 5.5 + AVATAR_GAP,
-          width: 32,
-          height: 5.5,
-          rx: 2.75,
-          fill: t.colors.bottom,
-        })
-      );
+    case "stripes": {
+      const wide = Math.min(21, head.halfWidth - 2);
+      const narrow = wide - 5;
+      return [
+        [wide, below],
+        [narrow, below + 5.5 + AVATAR_GAP],
+      ]
+        .map(([half, y]) =>
+          el("rect", {
+            x: AVATAR_CENTER - half!,
+            y: y!,
+            width: half! * 2,
+            height: 5.5,
+            rx: 2.75,
+            fill: t.colors.bottom,
+          }),
+        )
+        .join("");
+    }
   }
 }
 
@@ -254,30 +256,17 @@ function face(t: AvatarTraits, head: HeadGeometry): string {
     case "happy":
       return visor(t, head);
     case "wink": {
-      const y = faceCenterY(t, head);
-      const squeeze = Math.min(1, (head.halfWidth - 3) / 19);
+      const wink = winkLayout(t, head);
       return (
-        el("circle", {
-          cx: AVATAR_CENTER - 12 * squeeze,
-          cy: y,
-          r: 6,
-          fill: AVATAR_INK,
-        }) +
-        el("rect", {
-          x: AVATAR_CENTER + 12 * squeeze - 7,
-          y: y - 2.75,
-          width: 14,
-          height: 5.5,
-          rx: 2.75,
-          fill: AVATAR_INK,
-        })
+        el("circle", { ...wink.dot, fill: AVATAR_INK }) +
+        rect(wink.dash, AVATAR_INK)
       );
     }
   }
 }
 
 function mouth(t: AvatarTraits): string {
-  const y = 65;
+  const y = MOUTH_Y;
   switch (t.mouth) {
     case "none":
       return "";
@@ -370,7 +359,7 @@ export function avatarSvg(seed: string): string {
     );
   return el(
     "svg",
-    { xmlns: "http://www.w3.org/2000/svg", viewBox: "3 -3 94 96" },
+    { xmlns: "http://www.w3.org/2000/svg", viewBox: AVATAR_VIEWBOX },
     el("defs", {}, defs) + el("g", { mask: "url(#g)" }, figure),
   );
 }

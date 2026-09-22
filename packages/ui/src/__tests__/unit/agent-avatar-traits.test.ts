@@ -1,18 +1,27 @@
 // TEST_OVERVIEW: An agent avatar is a figure drawn from a hash of the agent's name, so nothing is stored. The same name must always draw the same figure; its parts mix freely across head shapes; and no eye or visor may sit on a gap between parts, or reach past the head.
 import { describe, expect, it } from "vitest";
 
-import { HEAD_GEOMETRY } from "../../modules/agents/lib/avatar/geometry.js";
+import {
+  clearance,
+  HEAD_GEOMETRY,
+} from "../../modules/agents/lib/avatar/geometry.js";
 import {
   bugEyeCenter,
+  EDGE_MARGIN,
   gapRanges,
+  MOUTH_Y,
+  mouthFits,
   placeEyes,
   visorBox,
+  wingPath,
+  winkLayout,
 } from "../../modules/agents/lib/avatar/layout.js";
 import {
   AVATAR_GAP,
   type AvatarTraits,
   avatarTraits,
   DERPS,
+  HEAD_SHAPES,
 } from "../../modules/agents/lib/avatar/traits.js";
 
 const NAMES = Array.from({ length: 1000 }, (_, i) => `agent-${i}`);
@@ -75,42 +84,130 @@ describe("avatarTraits", () => {
 });
 
 describe("face layout", () => {
-  // TEST_SCENARIO: A gap cuts a figure into parts. An eye sitting across a gap reads as broken, so eyes are fitted between the gaps, and inside the head.
-  it("never puts an eye on a gap or past the head", () => {
+  // TEST_SCENARIO: A gap cuts a figure into parts. An eye sitting across a gap, or pressed against the head's outline, reads as broken, so eyes keep clear of both.
+  it("keeps every eye clear of gaps and of the head's outline", () => {
     for (const { name, traits } of ALL) {
       const head = HEAD_GEOMETRY[traits.head];
       for (const e of placeEyes(traits, head)) {
-        expect(overlaps(e.y - e.r, e.y + e.r, traits), name).toBe(false);
-        expect(Math.abs(e.x - 50) + e.r, name).toBeLessThanOrEqual(
-          head.halfWidth,
+        expect(overlaps(e.y - e.r - 2, e.y + e.r + 2, traits), name).toBe(
+          false,
         );
-        expect(e.y - e.r, name).toBeGreaterThanOrEqual(head.top + 4);
-        expect(e.y + e.r, name).toBeLessThanOrEqual(head.bottom - 4);
+        expect(clearance(head, e.x, e.y) - e.r, name).toBeGreaterThanOrEqual(
+          EDGE_MARGIN - 0.01,
+        );
       }
     }
   });
 
-  // TEST_SCENARIO: A visor carries its own gap ring. That ring must not run into the cap, chin or band gaps.
-  it("keeps the visor and its ring clear of other gaps", () => {
+  // TEST_SCENARIO: Eyes may sit close for a derpy look, but two eyes that touch read as one blob.
+  it("keeps eyes apart from each other", () => {
+    for (const { name, traits } of ALL) {
+      const eyes = placeEyes(traits, HEAD_GEOMETRY[traits.head]);
+      for (let i = 0; i < eyes.length; i++)
+        for (let j = i + 1; j < eyes.length; j++) {
+          const a = eyes[i]!;
+          const b = eyes[j]!;
+          const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+          expect(gap, name).toBeGreaterThanOrEqual(2.5);
+        }
+    }
+  });
+
+  // TEST_SCENARIO: A mouth under the eyes needs a clear line between them, and must sit inside the head.
+  it("keeps the mouth clear of the eyes and the outline", () => {
+    for (const { name, traits } of ALL) {
+      if (traits.mouth === "none") continue;
+      const head = HEAD_GEOMETRY[traits.head];
+      expect(mouthFits(head), name).toBe(true);
+      for (const e of placeEyes(traits, head))
+        expect(MOUTH_Y - 2.5 - (e.y + e.r), name).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  // TEST_SCENARIO: On a narrow head the wink's dot and dash must still keep a margin from the outline.
+  it("fits the wink inside the head", () => {
+    for (const { name, traits } of ALL) {
+      if (traits.face !== "wink") continue;
+      const head = HEAD_GEOMETRY[traits.head];
+      const { dot, dash } = winkLayout(traits, head);
+      expect(
+        overlaps(dot.cy - dot.r - 2, dot.cy + dot.r + 2, traits),
+        name,
+      ).toBe(false);
+      expect(
+        clearance(head, dot.cx, dot.cy) - dot.r,
+        name,
+      ).toBeGreaterThanOrEqual(EDGE_MARGIN - 0.01);
+      expect(
+        clearance(head, dash.x + dash.width - dash.rx, dash.y + dash.rx) -
+          dash.rx,
+        name,
+      ).toBeGreaterThanOrEqual(EDGE_MARGIN - 0.01);
+    }
+  });
+
+  // TEST_SCENARIO: A visor carries its own gap ring. That ring must not run into the cap, chin or band gaps, nor into the head's outline.
+  it("keeps the visor and its ring clear of other gaps and the outline", () => {
     for (const { name, traits } of ALL) {
       if (traits.face !== "visor" && traits.face !== "happy") continue;
-      const box = visorBox(traits, HEAD_GEOMETRY[traits.head]);
+      const head = HEAD_GEOMETRY[traits.head];
+      const box = visorBox(traits, head);
       expect(box.height, name).toBeGreaterThan(8);
       expect(
         overlaps(box.y - AVATAR_GAP, box.y + box.height + AVATAR_GAP, traits),
         name,
       ).toBe(false);
+      const corner = clearance(head, box.x + box.rx, box.y + box.rx);
+      expect(corner - box.rx - AVATAR_GAP, name).toBeGreaterThanOrEqual(1.9);
     }
   });
 
-  // TEST_SCENARIO: Bug eyes float above the head. Even the big one must stay inside the drawing area.
-  it("keeps bug eyes inside the avatar", () => {
+  // TEST_SCENARIO: Bug eyes float above the head. They stay inside the drawing area and apart from each other.
+  it("keeps bug eyes inside the avatar and apart", () => {
     for (const { traits } of ALL) {
       if (traits.top !== "bug-eyes") continue;
-      traits.bugEyes.forEach((bug, i) => {
-        const [, cy] = bugEyeCenter(HEAD_GEOMETRY[traits.head], i, bug.r);
-        expect(cy - bug.r).toBeGreaterThanOrEqual(-3);
-      });
+      const head = HEAD_GEOMETRY[traits.head];
+      const [a, b] = traits.bugEyes.map((bug, i) => ({
+        r: bug.r,
+        c: bugEyeCenter(head, i, bug.r),
+      }));
+      for (const eye of [a!, b!])
+        expect(eye.c[1] - eye.r).toBeGreaterThanOrEqual(-4);
+      expect(a!.c[0] + a!.r + 4).toBeLessThanOrEqual(b!.c[0] - b!.r);
+    }
+  });
+
+  // TEST_SCENARIO: Wings attach with a vertical inner edge a clear gap from the body, and stay inside the drawing area.
+  it("attaches wings with a vertical inner edge clear of the head", () => {
+    for (const shape of HEAD_SHAPES) {
+      const head = HEAD_GEOMETRY[shape];
+      for (const side of [-1, 1] as const) {
+        const d = wingPath(head, side);
+        const [x1, y1, x2, y2] = d
+          .match(/-?\d*\.?\d+/g)!
+          .slice(0, 4)
+          .map(Number) as [number, number, number, number];
+        expect(Math.abs(x1 - x2), shape).toBeLessThan(0.01);
+        expect(y2).toBeGreaterThan(y1);
+        for (let y = y1; y <= y2; y += 1)
+          expect(clearance(head, x1, y), shape).toBeLessThanOrEqual(-4);
+        const xs = d.match(/-?\d*\.?\d+/g)!.map(Number);
+        expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
+        expect(Math.max(...xs)).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  // TEST_SCENARIO: The image is a fixed 100-unit square starting 4 units above zero. Stacked parts below the head, and ornaments above it, must not be cut off at its edges.
+  it("keeps parts above and below every head inside the image", () => {
+    for (const shape of HEAD_SHAPES) {
+      const head = HEAD_GEOMETRY[shape];
+      const stripesBottom = head.bottom + AVATAR_GAP * 2 + 5.5 * 2;
+      expect(stripesBottom, shape).toBeLessThanOrEqual(96);
+      expect(head.top - 14 - 6, shape).toBeGreaterThanOrEqual(-4);
+      expect(head.top - AVATAR_GAP - 1 - 8.5 * 2, shape).toBeGreaterThanOrEqual(
+        -4,
+      );
     }
   });
 });

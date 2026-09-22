@@ -1,5 +1,11 @@
 import { HEAD_GEOMETRY } from "./geometry.js";
-import { placeEyes, visorBox } from "./layout.js";
+import {
+  faceZone,
+  mouthFits,
+  placeEyes,
+  visorBox,
+  WINK_HEIGHT,
+} from "./layout.js";
 
 export { AVATAR_GAP, AVATAR_INK, AVATAR_SCLERA } from "./constants.js";
 
@@ -163,48 +169,53 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
   switch (derp) {
     case "side-eye": {
       const look = sideLook(random, side);
-      return [eye(-13, 48, 10, look), eye(13, 48, 10, look)];
+      return [eye(-12.5, 48, 9.5, look), eye(12.5, 48, 9.5, look)];
     }
     case "wonky":
       return [
-        eye(-13, 48, 10, randomLook(random)),
-        eye(13, 48, 10, randomLook(random)),
+        eye(-12.5, 48, 9.5, randomLook(random)),
+        eye(12.5, 48, 9.5, randomLook(random)),
       ];
     case "mismatched": {
-      const big = between(random, 11.5, 13);
-      const small = between(random, 6.5, 8);
-      return [
-        eye(-12, 48, side < 0 ? big : small, randomLook(random)),
-        eye(14, 49, side < 0 ? small : big, randomLook(random)),
-      ];
+      const big = between(random, 11, 12);
+      const small = between(random, 6.5, 7.5);
+      return side < 0
+        ? [
+            eye(-10, 48, big, randomLook(random)),
+            eye(13.5, 49, small, randomLook(random)),
+          ]
+        : [
+            eye(-13.5, 49, small, randomLook(random)),
+            eye(10, 48, big, randomLook(random)),
+          ];
     }
     case "uneven": {
       const lift = between(random, 4, 7) * side;
       const look = randomLook(random);
-      return [eye(-13, 48 - lift, 9.5, look), eye(13, 48 + lift, 9.5, look)];
+      return [eye(-12.5, 48 - lift, 9, look), eye(12.5, 48 + lift, 9, look)];
     }
     case "googly":
       return [
-        eye(-12.5, 47, 12, randomLook(random), 0.38),
-        eye(12.5, 47, 12, randomLook(random), 0.38),
+        eye(-12.5, 47, 10.5, randomLook(random), 0.38),
+        eye(12.5, 47, 10.5, randomLook(random), 0.38),
       ];
     case "cyclops":
-      return [eye(0, 47, 14, randomLook(random), 0.5)];
+      return [eye(0, 47, 13, randomLook(random), 0.5)];
     case "huge-cyclops":
-      return [eye(0, 50, 18, sideLook(random, side), 0.44)];
+      return [eye(0, 49, 17, sideLook(random, side), 0.44)];
     case "triple":
       return [
-        eye(-14, 44, 7, randomLook(random)),
-        eye(14, 44, 7, randomLook(random)),
-        eye(0, 56, 9, randomLook(random)),
+        eye(-12, 42, 6.5, randomLook(random)),
+        eye(12, 42, 6.5, randomLook(random)),
+        eye(0, 57, 8, randomLook(random)),
       ];
     case "trio-row": {
       const look = random() < 0.5 ? sideLook(random, side) : null;
-      return [-16, 0, 16].map((x, i) =>
+      return [-17, 0, 17].map((x, i) =>
         eye(
           x,
           49 + (i === 1 ? -3 : 0),
-          i === 1 ? 8.5 : 6.5,
+          i === 1 ? 7.5 : 5.5,
           look ?? randomLook(random),
         ),
       );
@@ -293,7 +304,10 @@ export function avatarTraits(seed: string): AvatarTraits {
   const banding = pickWeighted(random, BANDING_WEIGHTS);
   const bottom = pickFrom(random, BOTTOMS);
   const pickedMouth = pickFrom(random, MOUTHS);
-  const mouthFits = (face === "eyes" || face === "blank") && banding === "none";
+  const hasMouth =
+    (face === "eyes" || face === "blank") &&
+    banding === "none" &&
+    mouthFits(HEAD_GEOMETRY[head]);
   return makeRoomForFace({
     colors,
     head,
@@ -305,17 +319,21 @@ export function avatarTraits(seed: string): AvatarTraits {
     top,
     banding,
     bottom,
-    mouth: mouthFits ? pickedMouth : "none",
+    mouth: hasMouth ? pickedMouth : "none",
   });
 }
 
 const MIN_VISOR_HEIGHT = 14;
-const MIN_EYE_SCALE = 0.6;
+const MIN_EYE_SCALE = 0.65;
 
 function faceFits(traits: AvatarTraits): boolean {
   const head = HEAD_GEOMETRY[traits.head];
   if (traits.face === "visor" || traits.face === "happy")
     return visorBox(traits, head).height >= MIN_VISOR_HEIGHT;
+  if (traits.face === "wink") {
+    const zone = faceZone(traits, head);
+    return zone.bottom - zone.top >= WINK_HEIGHT;
+  }
   const placed = placeEyes(traits, head);
   return placed.every((e, i) => e.r >= traits.eyes[i]!.r * MIN_EYE_SCALE);
 }

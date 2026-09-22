@@ -1,13 +1,14 @@
 import type { HeadShape } from "./traits.js";
 
+export type Point = readonly [number, number];
+
 export interface HeadGeometry {
   path: string;
   halfWidth: number;
   top: number;
   bottom: number;
+  outline: readonly Point[];
 }
-
-type Point = readonly [number, number];
 
 function roundedPolygon(points: readonly Point[], radius: number): string {
   const n = points.length;
@@ -46,7 +47,7 @@ function roundedRect(
   );
 }
 
-export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
+const SHAPES: Record<HeadShape, Omit<HeadGeometry, "outline">> = {
   circle: {
     path: "M22,49 A28,28 0 1,0 78,49 A28,28 0 1,0 22,49 Z",
     halfWidth: 28,
@@ -90,10 +91,10 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
     bottom: 75,
   },
   capsule: {
-    path: roundedRect(30, 24, 40, 58, 20),
+    path: roundedRect(30, 22, 40, 56, 20),
     halfWidth: 20,
-    top: 24,
-    bottom: 82,
+    top: 22,
+    bottom: 78,
   },
   bell: {
     path: "M22,64 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V64 Q78,76 66,76 H34 Q22,76 22,64 Z",
@@ -103,18 +104,125 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
   },
 };
 
-export function teardrop(tip: Point, center: Point, radius: number): string {
-  const dx = center[0] - tip[0];
-  const dy = center[1] - tip[1];
-  const distance = Math.hypot(dx, dy);
-  const angle = Math.atan2(dy, dx);
-  const spread = Math.asin(radius / distance);
-  const reach = Math.sqrt(distance * distance - radius * radius);
-  const tangent = (a: number): Point => [
-    tip[0] + reach * Math.cos(a),
-    tip[1] + reach * Math.sin(a),
-  ];
-  const [x1, y1] = tangent(angle - spread);
-  const [x2, y2] = tangent(angle + spread);
-  return `M${tip[0]},${tip[1]} L${x1},${y1} A${radius},${radius} 0 1 1 ${x2},${y2} Z`;
+const CURVE_STEPS = 12;
+
+function samplePath(d: string): Point[] {
+  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+/g) ?? [];
+  const points: Point[] = [];
+  let i = 0;
+  let command = "";
+  let cursor: Point = [0, 0];
+  const read = () => Number(tokens[i++]);
+  const push = (p: Point) => {
+    points.push(p);
+    cursor = p;
+  };
+  while (i < tokens.length) {
+    if (/[A-Za-z]/.test(tokens[i]!)) command = tokens[i++]!;
+    switch (command) {
+      case "M":
+      case "L":
+        push([read(), read()]);
+        break;
+      case "H":
+        push([read(), cursor[1]]);
+        break;
+      case "V":
+        push([cursor[0], read()]);
+        break;
+      case "Q": {
+        const from = cursor;
+        const c: Point = [read(), read()];
+        const to: Point = [read(), read()];
+        for (let k = 1; k <= CURVE_STEPS; k++) {
+          const t = k / CURVE_STEPS;
+          const u = 1 - t;
+          push([
+            u * u * from[0] + 2 * u * t * c[0] + t * t * to[0],
+            u * u * from[1] + 2 * u * t * c[1] + t * t * to[1],
+          ]);
+        }
+        break;
+      }
+      case "C": {
+        const from = cursor;
+        const c1: Point = [read(), read()];
+        const c2: Point = [read(), read()];
+        const to: Point = [read(), read()];
+        for (let k = 1; k <= CURVE_STEPS; k++) {
+          const t = k / CURVE_STEPS;
+          const u = 1 - t;
+          push([
+            u * u * u * from[0] +
+              3 * u * u * t * c1[0] +
+              3 * u * t * t * c2[0] +
+              t * t * t * to[0],
+            u * u * u * from[1] +
+              3 * u * u * t * c1[1] +
+              3 * u * t * t * c2[1] +
+              t * t * t * to[1],
+          ]);
+        }
+        break;
+      }
+      case "Z":
+        i++;
+        break;
+      default:
+        i++;
+    }
+  }
+  return points;
+}
+
+function circleOutline(cx: number, cy: number, r: number): Point[] {
+  return Array.from({ length: 72 }, (_, k) => {
+    const a = (k / 72) * Math.PI * 2;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as const;
+  });
+}
+
+function traced(geometry: Omit<HeadGeometry, "outline">): HeadGeometry {
+  return { ...geometry, outline: samplePath(geometry.path) };
+}
+
+export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
+  circle: { ...SHAPES.circle, outline: circleOutline(50, 49, 28) },
+  squircle: traced(SHAPES.squircle),
+  octagon: traced(SHAPES.octagon),
+  egg: traced(SHAPES.egg),
+  box: traced(SHAPES.box),
+  bell: traced(SHAPES.bell),
+  capsule: traced(SHAPES.capsule),
+};
+
+function segmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const length = dx * dx + dy * dy;
+  const t =
+    length === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length),
+        );
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+export function clearance(head: HeadGeometry, x: number, y: number): number {
+  const { outline } = head;
+  let inside = false;
+  let nearest = Infinity;
+  for (let k = 0, j = outline.length - 1; k < outline.length; j = k++) {
+    const a = outline[j]!;
+    const b = outline[k]!;
+    if (
+      a[1] > y !== b[1] > y &&
+      x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]
+    )
+      inside = !inside;
+    nearest = Math.min(nearest, segmentDistance([x, y], a, b));
+  }
+  return inside ? nearest : -nearest;
 }
