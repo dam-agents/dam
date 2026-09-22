@@ -5,14 +5,14 @@ WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
 # Keep in step with MISE_VERSION in .github/workflows/cd.yml.
-ARG MISE_VERSION=v2026.9.3
+ARG MISE_VERSION=v2026.9.12
 # `set -eu` first, or a failed step exits 0 via the trailing `rm` and caches a
 # mise-less layer; `mise --version` last so the layer can't lie about it.
 RUN set -eu; \
     dnf install -y git tar gzip; dnf clean all; \
     case "$(uname -m)" in \
-    x86_64) arch=x64 sha=72de46e58238e3ae860e449adb9a35f4aba53679621c214dec03d68955fa4de8 ;; \
-    aarch64) arch=arm64 sha=d1918155164a7e4ae4ae306e259b186065c0cfc1b993a954d6e033af0fa4fc5a ;; \
+    x86_64) arch=x64 sha=b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff ;; \
+    aarch64) arch=arm64 sha=e4a0921da0a76ce4666832d5b57b6f0eb9f22d149ba92845ebae4c38638c6775 ;; \
     *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
