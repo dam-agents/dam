@@ -35,24 +35,67 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Restored on every run,
+      # saved only from main — see the Go cache below for why.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Go build/module caches: without them build, vet, staticcheck and test
+      # each compile the controller from scratch — measured 296 s for
+      # staticcheck and 276 s for vet, the whole tail of this job.
+      #
+      # Restore always, save only from a main push. GitHub scopes a cache entry
+      # to the branch that wrote it: what a PR run saves is readable by that one
+      # PR and by nothing else, yet it still counts against the 10 GB the
+      # repository gets and that GitHub evicts from, oldest first. These entries
+      # are ~600 MB each, so PR runs writing them evicted the main entries that
+      # every job actually reads — measured on main itself, all three restore
+      # keys missed and the job then wrote 580 MB nothing would read.
+      #
+      # An exact hit skips the save, so whatever the entry must follow has to be
+      # in the key. Both caches are keyed internally by the version that wrote
+      # them — go-build by the toolchain id, staticcheck by its own version —
+      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
+      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
+      # hitting and the save still skipped, holding objects the new compiler
+      # cannot use: the 296 s and 276 s tails back on every run, with nothing
+      # able to rewrite the entry until a dependency happened to move. go.sum
+      # stays in the key so the hash is never empty, which is what hashFiles
+      # returns when nothing matches. A restore-keys hit can still land a
+      # stale-toolchain entry; that is a miss on the exact key, so the next
+      # main push rewrites it.
+      # First-party packages recompile regardless — the dependency and stdlib
+      # objects that dominate the tail are what this keeps.
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
-            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
             go-${{ runner.os }}-${{ github.job }}-
+            go-${{ runner.os }}-
       - run: mise run check
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
 
   test:
     name: mise test
@@ -66,24 +109,67 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # mise's task artifact cache: a check/test whose declared inputs match a
+      # previous run is replayed instead of re-run. Restored on every run,
+      # saved only from main — see the Go cache below for why.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Go build/module caches: without them build, vet, staticcheck and test
+      # each compile the controller from scratch — measured 296 s for
+      # staticcheck and 276 s for vet, the whole tail of this job.
+      #
+      # Restore always, save only from a main push. GitHub scopes a cache entry
+      # to the branch that wrote it: what a PR run saves is readable by that one
+      # PR and by nothing else, yet it still counts against the 10 GB the
+      # repository gets and that GitHub evicts from, oldest first. These entries
+      # are ~600 MB each, so PR runs writing them evicted the main entries that
+      # every job actually reads — measured on main itself, all three restore
+      # keys missed and the job then wrote 580 MB nothing would read.
+      #
+      # An exact hit skips the save, so whatever the entry must follow has to be
+      # in the key. Both caches are keyed internally by the version that wrote
+      # them — go-build by the toolchain id, staticcheck by its own version —
+      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
+      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
+      # hitting and the save still skipped, holding objects the new compiler
+      # cannot use: the 296 s and 276 s tails back on every run, with nothing
+      # able to rewrite the entry until a dependency happened to move. go.sum
+      # stays in the key so the hash is never empty, which is what hashFiles
+      # returns when nothing matches. A restore-keys hit can still land a
+      # stale-toolchain entry; that is a miss on the exact key, so the next
+      # main push rewrites it.
+      # First-party packages recompile regardless — the dependency and stdlib
+      # objects that dominate the tail are what this keeps.
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
-            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
             go-${{ runner.os }}-${{ github.job }}-
+            go-${{ runner.os }}-
       - run: mise run test
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
 
   appversion:
     name: derive app version
@@ -194,10 +280,17 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
+          # Only the registry buildcache. A gha cache export was also written
+          # here, on PR runs, with mode=max — every intermediate layer of every
+          # component, gigabytes per run, into the 10 GB GitHub gives the whole
+          # repository and evicts from oldest first. A PR run can read back
+          # only what it wrote itself, so those gigabytes bought re-push hits
+          # on one PR and in exchange evicted the Go, mise-tool and Playwright
+          # caches that every run reads. The registry buildcache has no such
+          # cap, is written by main and is readable from every PR, so PR runs
+          # read it and write nothing.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || '' }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -278,10 +371,9 @@ jobs:
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
-            type=gha,scope=platform-base-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || format('type=gha,mode=max,scope=platform-base-{0}', matrix.arch) }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || '' }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -362,10 +454,9 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || '' }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -451,10 +542,9 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || '' }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -549,10 +639,9 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.ref }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
-            type=gha,scope=mock
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || 'type=gha,mode=max,scope=mock' }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || '' }}
 
   e2e:
     name: mise e2e
@@ -584,12 +673,24 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # Platform images by the digest build-images pushed (untagged until
+          # merge-images; Quay keeps untagged manifests for hours, this gap is
+          # minutes). mock is pushed with its sha tag directly.
+          # Pulled concurrently: one pull at a time left the link idle and cost
+          # 56 s at the head of the job, all of it on the critical path to the
+          # suite. Each pid is waited on separately so a failed pull still
+          # fails the step — a bare `wait` returns 0 however the pulls went.
+          pids=()
           for c in controller api-server ui keycloak; do
-            d="$(ls "/tmp/digests/digests-$c-amd64")"
-            docker pull "$IMAGE_PREFIX/$c@sha256:$d"
-            docker tag "$IMAGE_PREFIX/$c@sha256:$d" "platform-$c:latest"
+            docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
+            pids+=($!)
           done
-          docker pull "$IMAGE_PREFIX/mock:$SHA"
+          docker pull "$IMAGE_PREFIX/mock:$SHA" &
+          pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          for c in controller api-server ui keycloak; do
+            docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" "platform-$c:latest"
+          done
           docker tag "$IMAGE_PREFIX/mock:$SHA" "platform-mock:latest"
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
