@@ -71,9 +71,9 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 
 **Interruption is detected by lease expiry, not reported.** A worker that dies cannot file a report about itself, so a Job whose lease lapses is swept into *interrupted*. A worker that knows it is dying reports directly, which is faster and says why.
 
-**Cancellation is cooperative and travels on the poll.** The worker signals the process *group*, not the child alone — a script that starts children would otherwise leave them running with nothing left to report them. A Job still queued settles server-side with no worker involved.
+**Cancellation is cooperative and travels on the poll.** How a machine stops its own work is its business; the platform asks and records what comes back. A Job still queued settles server-side with no worker involved.
 
-**Jobs are never retried.** The commands are not idempotent and nothing can judge one safe to repeat.
+**Jobs are never retried.** A tool call is not assumed idempotent and nothing can judge one safe to repeat.
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.
 

@@ -1,6 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { MAX_JOB_OUTPUT_BYTES, type SatelliteTool } from "api-server-api";
+import {
+  MAX_JOB_OUTPUT_BYTES,
+  RESERVED_TOOL_NAMES,
+  type SatelliteTool,
+} from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 /**
@@ -12,6 +16,11 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
  * The server inherits the worker's own environment, exactly as a Command Surface
  * command does, so what the user exported when they started the worker is what
  * it sees.
+ *
+ * A tool named `wait`, `get` or `cancel` is refused here rather than forwarded:
+ * the platform registers those beside a Satellite's own tools, so the contract
+ * rejects them. Catching it at the machine turns a schema error about someone
+ * else's server into a sentence naming the tool the user has to rename.
  */
 
 interface McpContent {
@@ -58,6 +67,16 @@ export async function createMcpBackend(
   await client.connect(transport);
 
   const listed = await client.listTools();
+  const clashing = listed.tools
+    .map((tool) => tool.name)
+    .filter((name) => RESERVED_TOOL_NAMES.includes(name as never));
+  if (clashing.length > 0) {
+    await client.close().catch(() => {});
+    throw new Error(
+      `that MCP server offers ${clashing.join(", ")}, and the platform registers ${RESERVED_TOOL_NAMES.join(", ")} beside a satellite's own tools. Rename the tool on the server, or expose it through a different one.`,
+    );
+  }
+
   const tools: SatelliteTool[] = listed.tools.map((tool) => ({
     name: tool.name,
     ...(tool.title === undefined ? {} : { title: tool.title }),

@@ -26,7 +26,9 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * refuses that at connect. A Snapshot stored before the rule, or one this
  * replica has not re-read, is still skipped rather than registered twice: a
  * duplicate registration fails the whole session, so one machine would take down
- * an Agent's entire tool surface.
+ * an Agent's entire tool surface. That guard spans every Satellite rather than
+ * one, because a tool name may itself hold the scope separator: `gpu` offering
+ * `box__run` and `gpu--box` offering `run` both render `gpu__box__run`.
  *
  * The default wait deadline sits under Node's own 300s request timeout, which
  * the harness server does not override. A wait running the full 300s would have
@@ -99,13 +101,16 @@ export function registerSatelliteTools(
     waitDeadlineMs: number;
   },
 ): void {
+  const taken = new Set<string>();
+  const claim = (registered: string): boolean =>
+    taken.has(registered) ? false : (taken.add(registered), true);
+
   for (const satellite of deps.satellites) {
     const name = satellite.name;
+    for (const verb of RESERVED_TOOL_NAMES) claim(scopedName(name, verb));
 
-    const taken = new Set<string>(RESERVED_TOOL_NAMES);
     for (const tool of satellite.tools) {
-      if (taken.has(tool.name)) continue;
-      taken.add(tool.name);
+      if (!claim(scopedName(name, tool.name))) continue;
       server.registerTool(
         scopedName(name, tool.name),
         {
@@ -139,7 +144,7 @@ export function registerSatelliteTools(
               ? outcomeContent(settled)
               : json({
                   ...started,
-                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or wait to be woken.`,
+                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or ${scopedName(name, "get")} to check back later.`,
                 });
           }),
       );

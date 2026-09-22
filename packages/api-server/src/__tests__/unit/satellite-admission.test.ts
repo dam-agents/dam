@@ -3,7 +3,9 @@ import {
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   type SatelliteTool,
+  type SatelliteView,
 } from "api-server-api";
+import { registerSatelliteTools } from "../../modules/satellites/mcp-tools.js";
 import {
   admit,
   isOnline,
@@ -298,5 +300,61 @@ describe("a satellite's own tool names", () => {
       ).toBe(false);
     expect(satelliteToolNameSchema.safeParse("waiting").success).toBe(true);
     expect(satelliteToolNameSchema.safeParse("run").success).toBe(true);
+  });
+});
+
+describe("the tool names the platform registers", () => {
+  function registered(satellites: SatelliteView[]): string[] {
+    const names: string[] = [];
+    const server = {
+      registerTool: (n: string) => names.push(n),
+      tool: (n: string) => names.push(n),
+    };
+    registerSatelliteTools(server as never, {
+      ops: {} as never,
+      agentId: "agent-1",
+      satellites,
+      waitDeadlineMs: 1000,
+    });
+    return names;
+  }
+
+  function view(name: string, tools: string[]): SatelliteView {
+    return {
+      name,
+      description: null,
+      host: null,
+      online: true,
+      draining: false,
+      lastSeenAt: null,
+      tools: tools.map((t) => ({ name: t, inputSchema: { type: "object" } })),
+      maxConcurrent: 16,
+      activeJobs: 0,
+      grantedAgentIds: [],
+    };
+  }
+
+  /**
+   * TEST_SCENARIO: A tool name may itself hold the scope separator, so two
+   * different Satellites can render the same registered name — `gpu` offering
+   * `box__run` and `gpu--box` offering `run` both give `gpu__box__run`. MCP
+   * fails the whole session on a duplicate registration, so one machine would
+   * take an Agent's entire tool surface down. Deduplication therefore has to be
+   * across every Satellite, not within one.
+   */
+  it("never registers one name twice, even across two satellites", () => {
+    const names = registered([
+      view("gpu", ["box__run"]),
+      view("gpu--box", ["run"]),
+    ]);
+    expect(new Set(names).size, `duplicate in ${names.join(", ")}`).toBe(
+      names.length,
+    );
+    expect(names).toContain("gpu__box__run");
+  });
+
+  it("keeps its own verbs, and drops a satellite tool that would shadow one", () => {
+    const names = registered([view("box", ["run"])]);
+    expect(names).toEqual(["box__run", "box__wait", "box__get", "box__cancel"]);
   });
 });
