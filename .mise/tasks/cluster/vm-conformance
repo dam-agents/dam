@@ -54,8 +54,8 @@ CONTROLLER_REPLICAS="${CONTROLLER_REPLICAS:-1}"
 cleanup() {
   local code=$?
   if [ -n "$FORWARD_PID" ]; then
-    kill "$FORWARD_PID" 2>/dev/null || true
     pkill -P "$FORWARD_PID" 2>/dev/null || true
+    kill "$FORWARD_PID" 2>/dev/null || true
   fi
   echo "Restoring the controller..."
   kubectl -n "$RELEASE_NS" scale deploy -l "$CONTROLLER_SELECTOR" --replicas="$CONTROLLER_REPLICAS" || true

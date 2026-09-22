@@ -1,5 +1,6 @@
 // TEST_OVERVIEW: an agent on the vm backend is an agent like any other to its user. Created with the vm backend, it boots as a microVM on its owner's VM runner, reaches running, and holds a conversation through the same chat as a pod; stopped, it hibernates, and woken, it comes back on its runner and answers again. The spec needs an install with virtualization enabled — a host with KVM — and is skipped on any other, which is every CI runner.
 import { expect, test } from "@playwright/test";
+import type { AgentState } from "api-server-api";
 
 import { baseUrl } from "../../config.js";
 import {
@@ -21,7 +22,7 @@ const secondReply = "vm-reply-after-wake";
 async function waitState(
   api: ApiClient,
   agentId: string,
-  state: string,
+  state: AgentState,
 ): Promise<void> {
   await expect
     .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
