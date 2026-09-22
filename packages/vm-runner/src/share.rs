@@ -56,7 +56,7 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
         .truncate(true)
         .mode(INIT_MODE)
         .open(&staged)?;
-    // UNIT_BOUNDARY_DESCRIPTION: the close is part of the copy, not cleanup after it. A write that failed late is reported here and nowhere else, and renaming past it would put a truncated binary where the machine's entrypoint goes — reported as success, and found only by the guest, at its next boot. Go treats a failed close the same way.
+    // UNIT_BOUNDARY_DESCRIPTION: reporting a write that failed late is part of the copy, not cleanup after it: renaming past it would put a truncated binary where the machine's entrypoint goes — reported as success, and found only by the guest, at its next boot. Go's `copyInit` checks its close for this and removes the staged file when it fails; Rust's close reports nothing, so `sync_all` stands in for it here, one leg stricter because it also waits for the bytes to reach the disk.
     let copied = io::copy(&mut source, &mut destination)
         .and_then(|_| destination.set_permissions(fs::Permissions::from_mode(INIT_MODE)))
         .and_then(|()| destination.sync_all());
