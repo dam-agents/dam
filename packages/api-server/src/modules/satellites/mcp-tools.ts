@@ -88,7 +88,7 @@ function inputSchemaFor(tool: SatelliteTool): z.ZodType {
 
 function describe(satellite: SatelliteView, tool: SatelliteTool): string {
   const where = `Runs on ${satellite.name}${satellite.description === null ? "" : ` — ${satellite.description}`}, a machine outside the platform.`;
-  const deferred = `The call returns the result if it finishes quickly, and otherwise a job reference; use ${scopedName(satellite.name, "wait")} to keep waiting, or ${scopedName(satellite.name, "get")} to check without waiting.`;
+  const deferred = `The call returns the result if it finishes quickly, and otherwise a job reference; use ${scopedName(satellite.name, "wait")} to keep waiting, and you will be woken with the outcome either way.`;
   const offline = satellite.online
     ? ""
     : `\n\n(${satellite.name} is OFFLINE — starting a job will be refused.)`;
@@ -150,7 +150,7 @@ export function registerSatelliteTools(
               ? outcomeContent(settled)
               : json({
                   ...started,
-                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or ${scopedName(name, "get")} to check back later.`,
+                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or get on with something else and you will be woken when it finishes.`,
                 });
           }),
       );

@@ -768,13 +768,12 @@ export function createSatellitesRepository(db: Db) {
     },
 
     /**
-     * UNIT_BOUNDARY_DESCRIPTION: Retires Jobs past their TTL. Everything
-     * terminal goes, read or not: nothing announces an outcome in this part of
-     * the stack, so keeping an unread one would keep its arguments and up to a
-     * megabyte of output for ever. Once a wake exists, an outcome the Agent has
-     * not been told about has to survive its TTL instead — deleting it would
-     * drop the one turn it is owed — and this predicate tightens then. A running
-     * Job is never touched, since the machine still holds it.
+     * UNIT_BOUNDARY_DESCRIPTION: Retires Jobs past their TTL. An outcome the
+     * Agent has not been told about is kept regardless of age: deleting it would
+     * drop the one turn it is owed, and the hourly wake retry is what eventually
+     * clears it. Told about means woken, not merely claimed for delivery — a row
+     * a delivery claimed and did not finish is exactly what the retry comes back
+     * for. A running Job is never touched, since the machine still holds it.
      */
     async purgeExpired(now: Date): Promise<void> {
       await db
@@ -783,6 +782,8 @@ export function createSatellitesRepository(db: Db) {
           and(
             lt(satelliteJobs.expiresAt, now),
             ne(satelliteJobs.status, "running"),
+            sql`${satelliteJobs.deliveredAt} is not null`,
+            sql`${satelliteJobs.wokeAt} is not null`,
           ),
         );
     },
