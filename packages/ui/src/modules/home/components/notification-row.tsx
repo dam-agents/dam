@@ -3,7 +3,7 @@ import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
-import { RobotHead } from "../../agents/components/avatar/robot-head.js";
+import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
 import { channelTypeFor } from "../lib/activity-filter.js";
@@ -83,7 +83,7 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <RobotHead seed={agentName} size={46} className="-m-[3px]" />
+      <LazyRobotHead seed={agentName} size={46} className="-m-[3px]" />
       {kind !== "agent" && (
         <span
           className={cn(

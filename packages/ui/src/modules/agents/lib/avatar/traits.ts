@@ -264,7 +264,7 @@ function pickColors(random: Random): AvatarColors {
     ornament: either(tertiary.base, tertiary.shade),
     cap: either(secondary.base, tertiary.base),
     chin: either(primary.shade, secondary.base),
-    band: either(primary.base, secondary.base),
+    band: either(secondary.base, tertiary.base),
     bottom: either(secondary.shade, tertiary.base),
     neck: random() < 0.5 ? null : tertiary.shade,
     glow: either(primary.light, tertiary.light),

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { RobotHead } from "../../agents/components/avatar/robot-head.js";
+import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
@@ -126,7 +126,7 @@ export const ChatMessage = memo(function ChatMessage({
     >
       <div className="flex items-center gap-1.5 mb-0.5">
         {isAssistant && avatarAgentName !== undefined && (
-          <RobotHead seed={avatarAgentName} size={20} />
+          <LazyRobotHead seed={avatarAgentName} size={20} />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
           {isAssistant ? (avatarAgentName ?? "Agent") : "You"}
