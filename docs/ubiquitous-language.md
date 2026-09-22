@@ -244,7 +244,7 @@ A Satellite is an MCP server running on the user's own machine, reached by a que
 
 | Term | Definition |
 |------|-----------|
-| Satellite | A named, owner-scoped command surface on a machine outside the cluster, identified by `(owner, name)`. Durable: the record outlives any connection, and its commands stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one Satellite each, so every call stays attributable to a real person's key |
+| Satellite | A named, owner-scoped tool surface on a machine outside the cluster, identified by `(owner, name)`. Durable: the record outlives any connection, and its tools stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one Satellite each, so every call stays attributable to a real person's key |
 | Worker | The `dam satellite mcp` or `dam satellite commands` process that claims Work Items and calls the local tool. Holds no inbound connection: it polls. Deliberately never called an Agent, which it is not |
 | Snapshot | The server's copy of a Satellite's tool list, replaced on each connect. The source for the tools an Agent sees, so they stay visible while the Satellite is offline. A claim by the Satellite, never a platform guarantee — identity is the name, so a reconnect may back it with different tools |
 | Job | One tool call on a Satellite, identified by `(satellite, sequence)` and rendered `gpu-box#7`. Always asynchronous: starting returns the id and the outcome is read back separately. The sequence is minted server-side, since the Satellite has not seen the job when the id must be returned |
