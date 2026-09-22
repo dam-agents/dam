@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Everything the vm-runner image compiles in is declared as its source in image:resolve"
 #MISE dir="{{vars.repo_root}}"
-#MISE sources=["packages/controller/cmd/**/*.go", "packages/controller/pkg/**/*.go", "packages/controller/go.mod", "packages/controller/go.sum", ".mise/tasks/image/resolve"]
+#MISE sources=["packages/controller/cmd/**/*.go", "packages/controller/pkg/**/*.go", "packages/controller/go.mod", "packages/controller/go.sum", "packages/controller/Dockerfile.vm-runner", ".mise/tasks/image/resolve"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 module=github.com/dam-agents/dam/packages/controller
 declared="$(.mise/tasks/image/resolve paths vm-runner)"
 status=0
-for pkg in $(go list -C packages/controller -deps ./cmd/vm-runner ./cmd/vm-image-cache ./cmd/platform-init | grep "^$module/"); do
+for pkg in $(go list -C packages/controller -deps ./cmd/vm-image-cache ./cmd/platform-init | grep "^$module/"); do
   dir="packages/controller/${pkg#"$module"/}"
   covered=
   for path in $declared; do
@@ -20,4 +20,15 @@ for pkg in $(go list -C packages/controller -deps ./cmd/vm-runner ./cmd/vm-image
     status=1
   fi
 done
+# The runner binary is Rust, copied from the `vm-runner` build context, which go
+# list cannot see. Whatever that context is, the crate has to be declared whole.
+if grep -q -- '--from=vm-runner' packages/controller/Dockerfile.vm-runner; then
+  case " $declared " in
+    *" packages/vm-runner "*) ;;
+    *)
+      echo "vm-runner-source: the image builds packages/vm-runner but \`mise run image:resolve -- paths vm-runner\` does not declare it, so a change to the runner would not repin the published chart." >&2
+      status=1
+      ;;
+  esac
+fi
 exit $status
