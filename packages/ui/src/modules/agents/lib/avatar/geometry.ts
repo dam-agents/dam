@@ -72,7 +72,7 @@ const SHAPES: Record<HeadShape, Omit<HeadGeometry, "outline">> = {
         [22, 61],
         [22, 37],
       ],
-      7,
+      3,
     ),
     halfWidth: 28,
     top: 22,
