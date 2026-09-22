@@ -5,6 +5,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -838,8 +840,12 @@ func TestTheRunnerFetchesAnImageOnceForEveryMachineThatWantsIt(t *testing.T) {
 		"the second machine boots from the tree the first left behind: %s", pulled)
 	assert.Equal(t, 1, strings.Count(string(pulled), "config "),
 		"and its config was read once, with the tree, rather than per machine: %s", pulled)
+	assert.Equal(t, 1, strings.Count(string(pulled), "digest "),
+		"and the tag was resolved once: the second create inside the window trusts the index: %s", pulled)
+	assert.Contains(t, string(pulled), "export quay.io/x/vm@"+fakeDigest(spec(true).Image),
+		"the fetch names the digest, so the tree is that image even if the tag moves while it runs")
 
-	cached := filepath.Join(h.node.ImageDir, "quay.io_x_vm_1")
+	cached := digestTree(h.node, spec(true).Image)
 	unpacked, err := os.ReadFile(filepath.Join(cached, "rootfs", "hello"))
 	require.NoError(t, err, "the tree every machine of this image shares")
 	assert.Equal(t, "rootfs\n", string(unpacked))
@@ -906,7 +912,7 @@ func TestSecretValuesAreRedactedWhateverShapeTheyArePrintedIn(t *testing.T) {
 	assert.Equal(t, "a=1", redact("a=1", []string{"1"}), "a value too short to be a secret is left alone, so output stays readable")
 }
 
-// TEST_SCENARIO: an image is unpacked once and every machine of it boots that one tree, which is what the sharing is for — but a tree alone names no entrypoint, so what the image says to run is read with it and kept beside it. A tree left by the release that stored only files has no such record, and a machine booted from one starts and runs nothing; it is replaced rather than trusted. An archive an earlier release cached still boots, since smolvm reads the image out of it.
+// TEST_SCENARIO: an image is unpacked once and every machine of it boots that one tree, which is what the sharing is for — but a tree alone names no entrypoint, so what the image says to run is read with it and kept beside it. A tree left by the release that stored only files has no such record, and a machine booted from one starts and runs nothing; it is never booted, and the image is fetched into the digest root instead. An archive an earlier release cached is passed over the same way whenever the digest can be fetched.
 func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 	h := newHarness(t)
 	images := h.node.ImageDir
@@ -924,7 +930,7 @@ func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 	assert.NotContains(t, h.calls(), "-I "+tree+" ",
 		"a tree with no launch beside it names no entrypoint, so a machine booted from one would start and never run the harness")
 	assert.FileExists(t, fetches, "so the image is fetched again rather than the bare tree being trusted")
-	assert.Contains(t, h.calls(), "-I "+filepath.Join(tree, "rootfs"), "and the machine boots what that fetch wrote")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(digestTree(h.node, spec(true).Image), "rootfs"), "and the machine boots what that fetch wrote")
 
 	legacy := filepath.Join(images, "quay.io_x_old_9.tar")
 	require.NoError(t, os.WriteFile(legacy, []byte("tar"), 0o644))
@@ -933,8 +939,8 @@ func TestATreeWithNoLaunchBesideItIsNotBootedFrom(t *testing.T) {
 	_, err = h.client().Ensure(t.Context(), "agent-b", s)
 	require.NoError(t, err)
 	h.settle(t, "agent-b")
-	assert.Contains(t, h.calls(), "-I "+filepath.Join(images, "quay.io_x_old_9", "rootfs"),
-		"an archive still on disk is upgraded rather than kept, or an install that already ran an image would never get the faster path for it")
+	assert.Contains(t, h.calls(), "-I "+filepath.Join(digestTree(h.node, s.Image), "rootfs"),
+		"an archive still on disk is not what a machine boots when the digest can be fetched, or an install that already ran an image would never get the faster path for it")
 }
 
 // TEST_OVERVIEW: the shape `docker save` writes — layers, the image config, and a manifest naming which document is that config. The layer is larger than any config so the reader has something it must skip by size, and the manifest comes last, where docker puts it, so the config is only resolvable once the whole archive has been read.
@@ -1023,15 +1029,32 @@ func TestAFailingUnpackReportsLittleEnoughToBeStored(t *testing.T) {
 	assert.Equal(t, "boom", firstLines("  boom  "), "output that already fits is passed through, trimmed")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a real crane answers two questions about an image and the runner asks both — what it says to run, and what its filesystem holds. A fake that answers only one would let a change that stopped asking the other pass.
+// UNIT_BOUNDARY_DESCRIPTION: a real crane answers three questions about an image and the runner asks all of them — which digest a reference names, what the image says to run, and what its filesystem holds. A fake that skipped one would let a change that stopped asking it pass. The digest is a hash of the reference, the same one fakeDigest computes, so two tags of one image are two images here unless a test says otherwise.
 func fakeCrane(log string) string {
 	return "#!/bin/sh\n" +
 		"echo \"$@\" >> " + log + "\n" +
+		answersDigest +
 		"if [ \"$1\" = config ]; then\n" +
 		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\",\"A=image\"],\"WorkingDir\":\"/app\"}}'\n" +
 		"  exit 0\n" +
 		"fi\n" +
 		"d=$(mktemp -d); echo rootfs > \"$d/hello\"; tar -cf - -C \"$d\" .\n"
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the digest answer every fake crane gives, so a fake written for one scenario still resolves a tag the way fakeDigest predicts.
+const answersDigest = "if [ \"$1\" = digest ]; then\n" +
+	"  printf 'sha256:%s' \"$(printf '%s' \"$2\" | sha256sum | cut -c1-64)\"\n" +
+	"  exit 0\n" +
+	"fi\n"
+
+func fakeDigest(ref string) string {
+	sum := sha256.Sum256([]byte(ref))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where the fake crane's image for a reference is unpacked: the digest entry, since this release names an entry by the image it holds.
+func digestTree(s *Server, ref string) string {
+	return s.digestPath(fakeDigest(ref))
 }
 
 // TEST_SCENARIO: an unpacked image is not a spare a machine consumes at create — it is the read-only lower layer every machine of that image keeps mounted for as long as it runs. Evicting one to make room therefore takes a running guest's filesystem away from it, and the machine does not fail at the moment of the deletion but the next time it reads a file it no longer has. The cache reads the machines' own stored specs to find which images are spoken for, and goes over its budget rather than free one of them.
@@ -1046,7 +1069,7 @@ func TestTheImageCacheNeverEvictsAnImageAMachineIsRunning(t *testing.T) {
 	h.settle(t, "agent-a")
 
 	dir := h.node.ImageDir
-	booted := filepath.Join(dir, "quay.io_x_vm_1")
+	booted := digestTree(h.node, spec(true).Image)
 	require.DirExists(t, booted, "the tree agent-a is running from")
 	old := time.Now().Add(-9 * time.Hour)
 	require.NoError(t, os.Chtimes(booted, old, old))
@@ -1072,8 +1095,8 @@ func TestARestartedRunnerCanRecreateTheMachineThatOwnsTheImage(t *testing.T) {
 	s := spec(true)
 	require.NoError(t, os.MkdirAll(filepath.Join(h.node.StateDir, "agent-a"), 0o755))
 	require.NoError(t, h.node.writeSpec("agent-a", s), "the spec a restart leaves behind")
-	stale := filepath.Join(h.node.ImageDir, "quay.io_x_vm_1")
-	require.NoError(t, os.MkdirAll(filepath.Join(stale, "usr"), 0o755), "and a tree from the release that stored no launch")
+	stale := digestTree(h.node, s.Image)
+	require.NoError(t, os.MkdirAll(filepath.Join(stale, "usr"), 0o755), "and a tree that stored no launch")
 
 	_, err := h.client().Ensure(t.Context(), "agent-a", s)
 	require.NoError(t, err)
@@ -1321,6 +1344,7 @@ func TestARefusedOperationLeavesNoMemoryReserved(t *testing.T) {
 func craneThatHangsExporting(log, started string) string {
 	return "#!/bin/sh\n" +
 		"echo \"$@\" >> " + log + "\n" +
+		answersDigest +
 		"if [ \"$1\" = config ]; then\n" +
 		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\"],\"WorkingDir\":\"/app\"}}'\n" +
 		"  exit 0\n" +
@@ -1333,7 +1357,9 @@ func partialUnpacks(t *testing.T, dir string) []string {
 	t.Helper()
 	found, err := filepath.Glob(filepath.Join(dir, partialPrefix+"*"))
 	require.NoError(t, err)
-	return found
+	versioned, err := filepath.Glob(filepath.Join(dir, digestRoot, partialPrefix+"*"))
+	require.NoError(t, err)
+	return append(found, versioned...)
 }
 
 // TEST_SCENARIO: an image is unpacked into a scratch directory beside the entry it will become, and removed by a deferred cleanup the fetch reaches on its way out. A fetch is allowed twenty minutes, so a runner that is closed while inside one either waits out the pull or abandons it — and abandoning it leaves that directory in a place nothing else can see: the cache patterns cannot match a dot-prefixed name, so those bytes are counted against no budget and chosen for no eviction. Cancelling instead of abandoning is what lets the fetch unwind its own cleanup, so closing the runner both returns promptly and leaves nothing behind.

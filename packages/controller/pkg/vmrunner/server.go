@@ -423,39 +423,23 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	base := s.cachePath(image)
-	launch, err := readLaunch(base)
-	if err != nil {
-		return err
-	}
-	cached := ""
-	// UNIT_BOUNDARY_DESCRIPTION: an archive an earlier release cached still boots, but it boots the slow way — unpacked again into every machine's own disk, which is the thirty seconds and the gigabyte the shared tree exists to stop paying. Holding it would mean an install that already ran an image never gets the faster path for it, however long it keeps running that image, so the tree is built once and the archive kept only for the case that cannot: no crane to fetch with, or a fetch that failed while the archive on disk would still have started a machine.
+	digest := s.resolveDigest(image, refFresh)
+	cached, launch, fetchErr := s.digestImage(id, image, digest)
 	if launch == nil {
-		archived := false
-		if _, err := os.Stat(base + ".tar"); err == nil {
-			archived = true
+		if cached, launch, err = s.legacyImage(image); err != nil {
+			return err
 		}
-		if s.Crane != "" {
-			if err := s.cacheImage(image, base, id); err != nil {
-				if !archived {
-					return err
-				}
-				slog.Warn("image cache: keeping the archive after a failed unpack", "image", image, "error", err)
-			} else if launch, err = readLaunch(base); err != nil {
-				return err
-			}
-		}
-		if launch == nil && archived {
-			cached = base + ".tar"
-			if launch, err = launchFromArchive(cached); err != nil {
-				return fmt.Errorf("%w: %w", errImageUnusable, err)
-			}
+		if launch != nil {
+			digest = ""
 		}
 	}
-	if launch != nil && cached == "" {
-		cached = filepath.Join(base, rootfsDir)
+	if launch == nil && fetchErr != nil {
+		return fetchErr
 	}
 	if launch == nil {
+		if digest != "" {
+			image = repository(image) + "@" + digest
+		}
 		if launch, err = s.launchFromRegistry(image); err != nil {
 			return err
 		}
@@ -465,6 +449,9 @@ func (s *Server) create(id string, spec MachineSpec) error {
 		if _, err := os.Stat(cached); err == nil {
 			image = cached
 		}
+	}
+	if err := s.recordDigest(id, digest); err != nil {
+		return err
 	}
 	dir, err := s.machineDir(id)
 	if err != nil {
@@ -550,7 +537,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := s.claim(tmp, cached, forMachine); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(cached), cached, s.ImageBudget)
+	s.evictImages(s.ImageDir, cached, s.ImageBudget)
 	return nil
 }
 
@@ -716,6 +703,9 @@ func (s *Server) imagesInUse(except string) map[string]bool {
 		if id == except {
 			continue
 		}
+		if digest := s.recordedDigest(id); digest != "" {
+			inUse[s.digestPath(digest)] = true
+		}
 		spec := s.readSpec(id)
 		if spec == nil || spec.Image == "" {
 			continue
@@ -742,7 +732,9 @@ func (s *Server) publishHolders() {
 	}
 	names := make([]string, 0, len(held))
 	for path := range held {
-		names = append(names, filepath.Base(path))
+		if name, err := filepath.Rel(s.ImageDir, path); err == nil && !strings.HasPrefix(name, "..") {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	path := filepath.Join(dir, s.RunnerID)
@@ -815,6 +807,8 @@ func prunePartialUnpacks(dir string) {
 
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	prunePartialUnpacks(dir)
+	prunePartialUnpacks(filepath.Join(dir, digestRoot))
+	defer pruneRefs(dir)
 	if budget <= 0 {
 		return
 	}
@@ -851,6 +845,17 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		default:
 			continue
 		}
+		used += size
+		all = append(all, archive{path, size, info.ModTime()})
+	}
+	digests, _ := os.ReadDir(filepath.Join(dir, digestRoot))
+	for _, e := range digests {
+		info, err := e.Info()
+		if err != nil || !e.IsDir() || !digestEntry.MatchString(e.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, digestRoot, e.Name())
+		size := dirSize(path)
 		used += size
 		all = append(all, archive{path, size, info.ModTime()})
 	}
