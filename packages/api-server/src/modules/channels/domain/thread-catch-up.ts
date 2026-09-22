@@ -8,6 +8,7 @@ export interface CatchUpSelection {
   readingAgentId: string;
   since: string;
   triggeringTs: string;
+  until: string;
   batchTs?: string[];
 }
 
@@ -100,6 +101,7 @@ export function selectUnseen<T>(
       !!entry.ts &&
       !carried.has(entry.ts) &&
       entry.authorAgentId !== selection.readingAgentId &&
-      isAfterTs(entry.ts, selection.since),
+      isAfterTs(entry.ts, selection.since) &&
+      !isAfterTs(entry.ts, selection.until),
   );
 }

@@ -23,6 +23,7 @@ export function slackWorkerHarness(
     agentNames?: Record<string, string>;
     channels?: FakeSlackChannel[];
     ambient?: boolean;
+    makeAcp?: (base: AcpClient) => AcpClient;
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";
@@ -31,7 +32,7 @@ export function slackWorkerHarness(
   if (opts.channels) gw.setChannels(opts.channels);
   const prompts: Array<string | ContentBlock[]> = [];
   const created: AcpSessionInfo[] = [];
-  const acp: AcpClient = {
+  const baseAcp: AcpClient = {
     steer: async () => "unsupported" as const,
     listSessions: async () => [...created],
     sendPrompt: async (prompt, sendOpts) => {
@@ -47,6 +48,7 @@ export function slackWorkerHarness(
     triggerSession: () => Promise.reject(new Error("unused")),
     turnStatus: async () => "unknown" as const,
   };
+  const acp = opts.makeAcp?.(baseAcp) ?? baseAcp;
   const agents = {
     ensureReady: async () => {},
     get: async (id: string) =>

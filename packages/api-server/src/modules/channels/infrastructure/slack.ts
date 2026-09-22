@@ -13,7 +13,6 @@ import { match, P } from "ts-pattern";
 import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
 import {
   ambientThreadKey,
-  isAmbientThreadKey,
   slackThreadKey,
   ChannelType,
   SessionType,
@@ -574,6 +573,14 @@ async function readConversation(
 }
 
 const NO_COMMIT = (): void => {};
+
+function seenUpTo(
+  deliveredUpTo: string,
+  steeredUpTo?: () => string | null,
+): string {
+  const steered = steeredUpTo?.() ?? null;
+  return steered === null ? deliveredUpTo : laterTs(deliveredUpTo, steered);
+}
 
 interface CatchUpFrame {
   frame: { context?: string[]; contextLegend?: string };
@@ -1633,6 +1640,14 @@ export function createSlackWorker(
     const batched = ctx.messages.length > 1;
     const lastMessage = ctx.messages.at(-1)!;
     const eventTs = lastMessage.eventTs;
+    const deliveredUpTo = ctx.messages
+      .map((m) => m.eventTs)
+      .reduce((a, b) => laterTs(a, b), eventTs);
+    const steeredUpTo = (): string | null => {
+      const steered = ctx.siblingRefs?.() ?? [];
+      if (steered.length === 0) return null;
+      return steered.map((ref) => ref.eventTs).reduce((a, b) => laterTs(a, b));
+    };
     const droppedNote = renderWithheldNote(
       (ctx.droppedFiles ?? []).map((name) => ({
         name,
@@ -1782,7 +1797,9 @@ export function createSlackWorker(
           const caught = await buildCatchUp(gw, {
             ...ctx,
             eventTs,
-            threadKey,
+            seenKey: threadKey,
+            deliveredUpTo,
+            steeredUpTo,
             batchTs: ctx.messages.map((m) => m.eventTs),
           });
           return {
@@ -1800,7 +1817,15 @@ export function createSlackWorker(
         buildFreshPrompt: () =>
           buildThreadPrompt(
             gw,
-            { ...ctx, eventTs, text, threadKey },
+            {
+              ...ctx,
+              eventTs,
+              text,
+              seenKey: threadKey,
+              ambientRead: false,
+              deliveredUpTo,
+              steeredUpTo,
+            },
             contract,
             {
               guidance,
@@ -1931,7 +1956,10 @@ export function createSlackWorker(
       eventTs: string;
       text: string;
       hasThread: boolean;
-      threadKey: string;
+      seenKey: string;
+      ambientRead: boolean;
+      deliveredUpTo: string;
+      steeredUpTo?: () => string | null;
       teamId: SlackWorkspace;
       images: FetchedImage[];
     },
@@ -1991,17 +2019,14 @@ export function createSlackWorker(
       commit: () =>
         noteThreadSeen(
           ctx.instanceName,
-          ctx.threadKey,
+          ctx.seenKey,
           nextBoundary(
             {
-              hasMore:
-                ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
-                  ? readHasMore
-                  : false,
+              hasMore: ctx.hasThread || ctx.ambientRead ? readHasMore : false,
               newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
+              triggeringTs: seenUpTo(ctx.deliveredUpTo, ctx.steeredUpTo),
             },
-            readThreadSeen(ctx.instanceName, ctx.threadKey),
+            readThreadSeen(ctx.instanceName, ctx.seenKey),
           ),
         ),
     };
@@ -2013,11 +2038,11 @@ export function createSlackWorker(
       instanceName: string;
       channel: string;
       conversationTs: string | undefined;
-      threadKey: string;
+      seenKey: string;
       teamId: SlackWorkspace;
     },
   ): Promise<string> {
-    const remembered = readThreadSeen(ctx.instanceName, ctx.threadKey);
+    const remembered = readThreadSeen(ctx.instanceName, ctx.seenKey);
     if (remembered) return remembered;
     const tail =
       ctx.conversationTs !== undefined
@@ -2057,19 +2082,21 @@ export function createSlackWorker(
       threadTs: string;
       eventTs: string;
       hasThread: boolean;
-      threadKey: string;
+      seenKey: string;
+      deliveredUpTo: string;
+      steeredUpTo?: () => string | null;
       teamId: SlackWorkspace;
       batchTs: string[];
     },
   ): Promise<CatchUpFrame> {
-    const { threadKey } = ctx;
+    const { seenKey } = ctx;
     const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
     try {
       const since = await catchUpSince(gw, {
         instanceName: ctx.instanceName,
         channel: ctx.channel,
         conversationTs,
-        threadKey,
+        seenKey,
         teamId: ctx.teamId,
       });
       const bot = {
@@ -2095,6 +2122,7 @@ export function createSlackWorker(
           readingAgentId: ctx.instanceName,
           since,
           triggeringTs: ctx.eventTs,
+          until: ctx.deliveredUpTo,
           batchTs: ctx.batchTs,
         },
         ctx.teamId,
@@ -2102,14 +2130,14 @@ export function createSlackWorker(
       const commit = () =>
         noteThreadSeen(
           ctx.instanceName,
-          threadKey,
+          seenKey,
           nextBoundary(
             {
               hasMore: readHasMore,
               newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
+              triggeringTs: seenUpTo(ctx.deliveredUpTo, ctx.steeredUpTo),
             },
-            readThreadSeen(ctx.instanceName, threadKey),
+            readThreadSeen(ctx.instanceName, seenKey),
           ),
         );
       if (lines.length === 0) return { frame: {}, commit };
@@ -3095,6 +3123,9 @@ export function createSlackWorker(
     if (!gateway) return { posted: false, replyText: null };
     const gw = gateway;
 
+    const deliveredUpTo = args.messages
+      .map((m) => m.eventTs)
+      .reduce((a, b) => laterTs(a, b), args.eventTs);
     const multi = args.messages.length > 1;
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
@@ -3176,7 +3207,8 @@ export function createSlackWorker(
             threadTs: args.replyThreadTs,
             eventTs: args.eventTs,
             hasThread: args.hasThread,
-            threadKey: args.threadKey,
+            seenKey: args.threadKey,
+            deliveredUpTo,
             batchTs: args.messages.map((m) => m.eventTs),
           });
           return {
@@ -3202,7 +3234,9 @@ export function createSlackWorker(
               text,
               teamId: args.teamId,
               hasThread: args.hasThread,
-              threadKey: args.threadKey,
+              seenKey: args.threadKey,
+              ambientRead: true,
+              deliveredUpTo,
               images: args.images,
             },
             contract,
