@@ -49,17 +49,28 @@ jobs:
       # each compile the controller from scratch — measured 296 s for
       # staticcheck and 276 s for vet, the whole tail of this job.
       #
-      # Restore always, save only from a main push, and key on go.sum alone.
-      # GitHub scopes a cache entry to the branch that wrote it: what a PR run
-      # saves is readable by that one PR and by nothing else, yet it still
-      # counts against the 10 GB the repository gets and that GitHub evicts
-      # from, oldest first. These entries are ~600 MB each, so PR runs writing
-      # them evicted the main entries that every job actually reads — measured
-      # on main itself, all three restore-keys missed and the job then wrote
-      # 580 MB nothing would read. Keying on go.sum alone makes an unchanged
-      # dependency set an exact hit, which skips the save entirely; only a
-      # go.sum change rewrites the entry. First-party packages still recompile,
-      # the dependency and stdlib objects that dominate the tail do not.
+      # Restore always, save only from a main push. GitHub scopes a cache entry
+      # to the branch that wrote it: what a PR run saves is readable by that one
+      # PR and by nothing else, yet it still counts against the 10 GB the
+      # repository gets and that GitHub evicts from, oldest first. These entries
+      # are ~600 MB each, so PR runs writing them evicted the main entries that
+      # every job actually reads — measured on main itself, all three restore
+      # keys missed and the job then wrote 580 MB nothing would read.
+      #
+      # An exact hit skips the save, so whatever the entry must follow has to be
+      # in the key. Both caches are keyed internally by the version that wrote
+      # them — go-build by the toolchain id, staticcheck by its own version —
+      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
+      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
+      # hitting and the save still skipped, holding objects the new compiler
+      # cannot use: the 296 s and 276 s tails back on every run, with nothing
+      # able to rewrite the entry until a dependency happened to move. Both
+      # lockfile paths are hashed so the key keeps tracking the toolchain if the
+      # lockfile moves to the repo root, and go.sum keeps the hash non-empty
+      # either way. A restore-keys hit can still land a stale-toolchain entry;
+      # that is a miss on the exact key, so the next main push rewrites it.
+      # First-party packages recompile regardless — the dependency and stdlib
+      # objects that dominate the tail are what this keeps.
       - id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -67,7 +78,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-${{ github.job }}-
             go-${{ runner.os }}-
@@ -84,7 +95,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
 
   test:
     name: mise test
@@ -112,17 +123,28 @@ jobs:
       # each compile the controller from scratch — measured 296 s for
       # staticcheck and 276 s for vet, the whole tail of this job.
       #
-      # Restore always, save only from a main push, and key on go.sum alone.
-      # GitHub scopes a cache entry to the branch that wrote it: what a PR run
-      # saves is readable by that one PR and by nothing else, yet it still
-      # counts against the 10 GB the repository gets and that GitHub evicts
-      # from, oldest first. These entries are ~600 MB each, so PR runs writing
-      # them evicted the main entries that every job actually reads — measured
-      # on main itself, all three restore-keys missed and the job then wrote
-      # 580 MB nothing would read. Keying on go.sum alone makes an unchanged
-      # dependency set an exact hit, which skips the save entirely; only a
-      # go.sum change rewrites the entry. First-party packages still recompile,
-      # the dependency and stdlib objects that dominate the tail do not.
+      # Restore always, save only from a main push. GitHub scopes a cache entry
+      # to the branch that wrote it: what a PR run saves is readable by that one
+      # PR and by nothing else, yet it still counts against the 10 GB the
+      # repository gets and that GitHub evicts from, oldest first. These entries
+      # are ~600 MB each, so PR runs writing them evicted the main entries that
+      # every job actually reads — measured on main itself, all three restore
+      # keys missed and the job then wrote 580 MB nothing would read.
+      #
+      # An exact hit skips the save, so whatever the entry must follow has to be
+      # in the key. Both caches are keyed internally by the version that wrote
+      # them — go-build by the toolchain id, staticcheck by its own version —
+      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
+      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
+      # hitting and the save still skipped, holding objects the new compiler
+      # cannot use: the 296 s and 276 s tails back on every run, with nothing
+      # able to rewrite the entry until a dependency happened to move. Both
+      # lockfile paths are hashed so the key keeps tracking the toolchain if the
+      # lockfile moves to the repo root, and go.sum keeps the hash non-empty
+      # either way. A restore-keys hit can still land a stale-toolchain entry;
+      # that is a miss on the exact key, so the next main push rewrites it.
+      # First-party packages recompile regardless — the dependency and stdlib
+      # objects that dominate the tail are what this keeps.
       - id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -130,7 +152,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-${{ github.job }}-
             go-${{ runner.os }}-
@@ -147,7 +169,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
 
   appversion:
     name: derive app version
@@ -656,7 +678,7 @@ jobs:
           # Pulled concurrently: one pull at a time left the link idle and cost
           # 56 s at the head of the job, all of it on the critical path to the
           # suite. Each pid is waited on separately so a failed pull still
-          # fails the step — a bare `wait` reports only the last one.
+          # fails the step — a bare `wait` returns 0 however the pulls went.
           pids=()
           for c in controller api-server ui keycloak; do
             docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
