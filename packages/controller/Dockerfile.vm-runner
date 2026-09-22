@@ -2,6 +2,28 @@
 # pod that holds /dev/kvm (a device-plugin resource, or privileged locally) and
 # hosts vm-backend agents as microVMs. Same image everywhere; only the pod's
 # device grant differs per cluster.
+#
+# The runner itself is the Rust crate in packages/vm-runner, which drives smolvm
+# through its embedding API rather than forking the CLI. It is a second build
+# context, named `vm-runner`: this Dockerfile's own context stays
+# packages/controller for the two Go binaries that ship beside it.
+#   docker build --build-context vm-runner=packages/vm-runner \
+#     -f packages/controller/Dockerfile.vm-runner packages/controller
+
+# Built for the target platform rather than cross-compiled: CI builds each
+# architecture on a runner of that architecture, and a native build needs no
+# cross linker. smolvm is cloned at the commit smolvm.pin names by the crate's
+# own fetch script, the same one the crate's checks run.
+FROM registry.access.redhat.com/hi/rust:1.94-builder AS rust-builder
+WORKDIR /src
+COPY --from=vm-runner smolvm.pin Cargo.toml Cargo.lock ./
+COPY --from=vm-runner .mise/fetch-smolvm .mise/fetch-smolvm
+RUN ./.mise/fetch-smolvm
+COPY --from=vm-runner src src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked && cp target/release/vm-runner /vm-runner
+
 FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS builder
 
 ENV GOTOOLCHAIN=auto
@@ -13,8 +35,6 @@ COPY . .
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -o /vm-runner ./cmd/vm-runner && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /vm-image-cache ./cmd/vm-image-cache && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
@@ -54,7 +74,11 @@ RUN set -eu; \
     rm /tmp/crane.tar.gz; \
     chmod 0755 /opt/smolvm/agent-rootfs/usr/local/bin/crane /usr/local/bin/crane
 
-COPY --from=builder /vm-runner /usr/local/bin/vm-runner
+# Run once at build time: the binary links the builder's glibc dynamically, and
+# a dependency that needs a newer glibc than this base ships fails the image
+# build here rather than the runner pod at start.
+COPY --from=rust-builder /vm-runner /usr/local/bin/vm-runner
+RUN vm-runner --help >/dev/null
 
 # The per-node image cache service runs from this same image, as the DaemonSet's
 # own command rather than this ENTRYPOINT: it needs the crane and tar this image
@@ -73,7 +97,8 @@ COPY --from=builder /platform-init /usr/local/libexec/platform-init
 # smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
 # chart mounts the disks: one of three mounts under /var/lib/platform, beside the
 # per-machine bookkeeping and the image cache, each with a lifetime of its own.
-# catatonit reaps the guest processes smolvm leaves behind when it gives up on a
-# boot.
+# catatonit reaps whatever is orphaned to PID 1; the runner reaps the VMMs it
+# spawned itself. --smolvm names the release's launcher, beside which the runner
+# finds the libraries its VMMs load, the guest agent and the disk templates.
 ENV HOME=/var/lib/platform/disks
 ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm"]
