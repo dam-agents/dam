@@ -35,14 +35,14 @@ function makeService(stub: {
 }
 
 describe("agent-resolver", () => {
-  describe("ID branch (ref starts with 'agent-')", () => {
+  describe("ID branch (ref has the shape of an agent ID)", () => {
     it("returns the agent on a happy-path ID lookup", async () => {
-      const agent = makeAgent({ id: "agent-42", name: "prod" });
+      const agent = makeAgent({ id: "agent-000000000000002a", name: "prod" });
       const resolver = createAgentResolver({
         agentService: makeService({ get: () => ok(agent) }),
       });
 
-      const result = await resolver.resolve("agent-42");
+      const result = await resolver.resolve("agent-000000000000002a");
 
       expect(result).toEqual({ ok: true, value: agent });
     });
@@ -52,16 +52,16 @@ describe("agent-resolver", () => {
         agentService: makeService({ get: () => ok(null) }),
       });
 
-      const result = await resolver.resolve("agent-missing");
+      const result = await resolver.resolve("agent-00000000deadbeef");
 
       expect(result).toEqual({
         ok: false,
-        error: { kind: "not-found", ref: "agent-missing", via: "id" },
+        error: { kind: "not-found", ref: "agent-00000000deadbeef", via: "id" },
       });
     });
   });
 
-  describe("name branch (ref does not start with 'agent-')", () => {
+  describe("name branch (ref is not an agent ID)", () => {
     it("returns the single matching agent", async () => {
       const agent = makeAgent({ name: "prod" });
       const resolver = createAgentResolver({

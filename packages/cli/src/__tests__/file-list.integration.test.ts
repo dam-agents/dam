@@ -64,7 +64,7 @@ describe("dam file list (integration)", () => {
       invocationsQuery: { listTargets: async () => [] },
       agents: {
         get: async (): Promise<Agent> => ({
-          id: "agent-1",
+          id: "agent-0000000000000001",
           name: "demo",
           templateId: "claude-code",
           spec: { name: "demo", image: "" },
@@ -107,9 +107,11 @@ describe("dam file list (integration)", () => {
         return;
       }
       const request = new Request(`http://localhost${req.url}`);
-      const response = req.url?.startsWith("/api/agents/agent-1/trpc/")
+      const response = req.url?.startsWith(
+        "/api/agents/agent-0000000000000001/trpc/",
+      )
         ? await fetchRequestHandler({
-            endpoint: "/api/agents/agent-1/trpc",
+            endpoint: "/api/agents/agent-0000000000000001/trpc",
             req: request,
             router: runtimeRouter,
             createContext: () => runtimeContext,
@@ -138,7 +140,15 @@ describe("dam file list (integration)", () => {
     try {
       const result = await exec(
         process.execPath,
-        [BIN_PATH, "file", "list", "agent-1", "--server", host, ...args],
+        [
+          BIN_PATH,
+          "file",
+          "list",
+          "agent-0000000000000001",
+          "--server",
+          host,
+          ...args,
+        ],
         {
           env: {
             HOME: home,

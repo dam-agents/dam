@@ -142,7 +142,7 @@ async function startFixture(opts: {
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
-    id: "agent-1",
+    id: "agent-0000000000000001",
     name: "demo",
     templateId: "claude-code",
     spec: {
@@ -185,7 +185,7 @@ describe("dam agent get (integration)", () => {
 
   it("get by id: prints the vertical layout, exit 0", async () => {
     const agent = makeAgent({
-      id: "agent-42",
+      id: "agent-0000000000000042",
       name: "prod",
       templateId: "claude-code",
       spec: {
@@ -195,12 +195,12 @@ describe("dam agent get (integration)", () => {
       },
     });
     const fixture = await startFixture({
-      get: async (id) => (id === "agent-42" ? agent : null),
+      get: async (id) => (id === "agent-0000000000000042" ? agent : null),
     });
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["agent", "get", "agent-42"], {
+      const r = await runDam(["agent", "get", "agent-0000000000000042"], {
         HOME: home,
         PATH: process.env.PATH ?? "",
         DAM_TOKEN: "test-token",
@@ -208,7 +208,7 @@ describe("dam agent get (integration)", () => {
 
       expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
       expect(r.stdout).toMatch(/^NAME:\s+prod$/m);
-      expect(r.stdout).toMatch(/^ID:\s+agent-42$/m);
+      expect(r.stdout).toMatch(/^ID:\s+agent-0000000000000042$/m);
       expect(r.stdout).toMatch(/^TEMPLATE:\s+claude-code$/m);
       expect(r.stdout).toMatch(
         /^IMAGE:\s+registry\.example\.com\/claude-code:latest$/m,
@@ -221,7 +221,7 @@ describe("dam agent get (integration)", () => {
   });
 
   it("get by name: same output, resolver picks the right agent", async () => {
-    const agent = makeAgent({ id: "agent-77", name: "staging" });
+    const agent = makeAgent({ id: "agent-0000000000000077", name: "staging" });
     const fixture = await startFixture({
       list: async () => [makeAgent({ id: "agent-99", name: "prod" }), agent],
     });
@@ -236,7 +236,7 @@ describe("dam agent get (integration)", () => {
 
       expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
       expect(r.stdout).toMatch(/^NAME:\s+staging$/m);
-      expect(r.stdout).toMatch(/^ID:\s+agent-77$/m);
+      expect(r.stdout).toMatch(/^ID:\s+agent-0000000000000077$/m);
     } finally {
       await fixture.close();
     }
@@ -249,14 +249,14 @@ describe("dam agent get (integration)", () => {
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["agent", "get", "agent-nope"], {
+      const r = await runDam(["agent", "get", "agent-00000000deadbeef"], {
         HOME: home,
         PATH: process.env.PATH ?? "",
         DAM_TOKEN: "test-token",
       });
 
       expect(r.exitCode).toBe(5);
-      expect(r.stderr).toContain("no agent with id `agent-nope`");
+      expect(r.stderr).toContain("no agent with id `agent-00000000deadbeef`");
     } finally {
       await fixture.close();
     }
@@ -311,22 +311,28 @@ describe("dam agent get (integration)", () => {
   });
 
   it("--json output: raw agent on stdout", async () => {
-    const agent = makeAgent({ id: "agent-42", name: "prod" });
+    const agent = makeAgent({ id: "agent-0000000000000042", name: "prod" });
     const fixture = await startFixture({
       get: async () => agent,
     });
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["agent", "get", "agent-42", "--json"], {
-        HOME: home,
-        PATH: process.env.PATH ?? "",
-        DAM_TOKEN: "test-token",
-      });
+      const r = await runDam(
+        ["agent", "get", "agent-0000000000000042", "--json"],
+        {
+          HOME: home,
+          PATH: process.env.PATH ?? "",
+          DAM_TOKEN: "test-token",
+        },
+      );
 
       expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
       const parsed = JSON.parse(r.stdout) as { id: string; name: string };
-      expect(parsed).toMatchObject({ id: "agent-42", name: "prod" });
+      expect(parsed).toMatchObject({
+        id: "agent-0000000000000042",
+        name: "prod",
+      });
     } finally {
       await fixture.close();
     }

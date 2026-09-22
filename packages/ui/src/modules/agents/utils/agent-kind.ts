@@ -11,14 +11,6 @@ export function isExperimentSandbox(agent: AgentView): boolean {
   return agent.kind === "experiment";
 }
 
-export function isCodingAgent(agent: AgentView): boolean {
-  return !agent.kind;
-}
-
-export function isStarterKitAgent(agent: AgentView): boolean {
-  return agent.starterKit !== null;
-}
-
 export interface AgentKindBadge {
   label: string;
   variant: "accent" | "template" | "muted" | "warning" | "kit";

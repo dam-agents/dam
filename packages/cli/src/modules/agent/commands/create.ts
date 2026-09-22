@@ -109,9 +109,9 @@ async function runCreate(
 ): Promise<void> {
   const nameCheck = validateAgentName(name);
   if (!nameCheck.ok) {
-    if (nameCheck.error === "reserved-prefix") {
+    if (nameCheck.error === "id-shape") {
       process.stderr.write(
-        `error: agent name \`${name}\` cannot start with \`agent-\` (reserved for IDs)\n`,
+        `error: agent name \`${name}\` has the shape of an agent ID (\`agent-\` and 16 hex characters)\n`,
       );
     } else {
       process.stderr.write("error: agent name cannot be empty\n");
