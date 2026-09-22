@@ -2708,6 +2708,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -3049,6 +3050,7 @@ dependencies = [
  "smolvm",
  "tar",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
