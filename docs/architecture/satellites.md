@@ -72,6 +72,8 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 
 **Cancellation is cooperative and travels on the poll.** How a machine stops its own work is its business; the platform asks and records what comes back. A Job still queued settles server-side with no worker involved.
 
+**Nothing announces an outcome yet.** A terminal Job is recorded and readable — `get` and `wait` both return it — but no Agent is woken about one it did not ask for, so a Job that outlives the turn that started it is only found by asking. Everything terminal is therefore purged at its TTL, read or not. Wake on finish, and the retention rule that protects an unread outcome from its own TTL, arrive with it.
+
 **Jobs are never retried.** A tool call is not assumed idempotent and nothing can judge one safe to repeat.
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.

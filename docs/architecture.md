@@ -36,7 +36,7 @@ flowchart LR
   slack-user <-->|Slack API| api-server
 
   cli -->|tRPC + WS| api-server
-  satellite -->|polls for approved commands| api-server
+  satellite -->|polls for tool calls| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api

@@ -48,13 +48,22 @@ async function removeIfPresent(api: ApiClient): Promise<void> {
     await api.satellites.remove.mutate(SATELLITE);
 }
 
+let createdAgentId: string | null = null;
+
+/**
+ * TEST_SCENARIO: The agent this suite brings up is taken down however the run
+ * ends. Left behind it is an extra StatefulSet competing for a small cluster's
+ * CPU for the rest of the suite, and the specs that need an agent to answer are
+ * the ones that pay — so the cleanup cannot sit on the passing path, where a
+ * failed assertion skips it.
+ */
+test.afterAll(async () => {
+  if (createdAgentId === null) return;
+  const api = createApiClient(await getAccessToken());
+  await api.agents.delete.mutate({ id: createdAgentId }).catch(() => {});
+});
+
 test.describe("satellites", () => {
-  /**
-   * TEST_SCENARIO: The whole worker-side lifecycle against a real cluster. The
-   * agent it brings up is deleted at the end: left running it is an extra
-   * StatefulSet competing for a small cluster's CPU for the rest of the suite,
-   * and the specs that need an agent to answer are the ones that pay for it.
-   */
   test("a machine registers, is granted to an agent, drains and is removed", async () => {
     const token = await getAccessToken();
     const api = createApiClient(token);
@@ -81,6 +90,7 @@ test.describe("satellites", () => {
 
     await ensureAgentExists(api, AGENT_NAME, harnessName);
     const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    createdAgentId = agentId;
 
     await api.satellites.grant.mutate({ satellite: SATELLITE, agentId });
     expect(
@@ -111,8 +121,6 @@ test.describe("satellites", () => {
     expect(
       (await api.satellites.list.query()).some((s) => s.name === SATELLITE),
     ).toBe(false);
-
-    await api.agents.delete.mutate({ id: agentId }).catch(() => {});
   });
 
   test("a snapshot the contract rejects is refused rather than stored", async () => {
