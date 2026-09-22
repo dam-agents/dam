@@ -499,20 +499,31 @@ else
   [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
   echo "Loading images into k3s..."
-  tar="/tmp/platform-images.tar"
   PLATFORM_IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest)
   [ -n "$VIRT_ENABLED" ] && PLATFORM_IMAGES+=(platform-vm-runner:latest)
-  docker save -o "$tar" "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}"
   if [ -n "${IS_SANDBOX:-}" ]; then
-    sudo k3s ctr images import "$tar"
+    # Sandbox has no guest to copy into: k3s runs on this host, against this
+    # filesystem. So containerd reads the stream as docker writes it and the
+    # archive never lands on disk. Staging it cost 40 s of the e2e job —
+    # 16 s writing the tar, then `Importing elapsed: 23.6s` reading it back —
+    # plus the peak disk for a multi-GiB copy of every image on a runner that
+    # already holds them once in the daemon. pipefail (set at the top) is what
+    # makes a failed save fail the task rather than importing a truncated
+    # stream.
+    docker save "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}" | sudo k3s ctr images import -
   else
+    # Local dev spans two VMs with separate disks — the docker daemon's and the
+    # k3s guest's — so here the archive has to exist as a file to be copied
+    # across. There is nothing to stream into.
+    tar="/tmp/platform-images.tar"
+    docker save -o "$tar" "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}"
     limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
     # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
     # so without this a stale multi-GiB tar is left behind in the VM.
     limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+    rm -f "$tar"
   fi
-  rm -f "$tar"
 fi
 
 # 4. Helm install or upgrade.
