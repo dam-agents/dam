@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
-// UNIT_BOUNDARY_DESCRIPTION: how this runner writes a file another process will be judged by — a machine's spec, its published port, the CA a guest must trust, the entrypoint it execs. Two things `fs::write` does not do, and the Go runner's `os.WriteFile` does. It reports the close, which is where a write that failed late is reported and the only place it ever will be: dropping a handle discards that, so the runner would call a truncated file written. And it states the mode rather than taking the process umask, so the file lands the same way whatever umask the runner was started with, and the same way under both runners.
+// UNIT_BOUNDARY_DESCRIPTION: how this runner writes a file another process will be judged by — a machine's spec, its published port, the CA a guest must trust, the entrypoint it execs. Two things `fs::write` does not do, and the Go runner's `os.WriteFile` does. It reports a write that failed late, which `fs::write` never does: it drops the handle, and a dropped handle discards whatever the close would have said, so the runner would call a truncated file written. `sync_all` is what reports it here rather than the close, because Rust's close returns nothing to check — and it is the stronger of the two, since it also waits for the bytes to reach the disk instead of only surfacing errors already known. And it states the mode rather than taking the process umask, so the file lands the same way whatever umask the runner was started with, and the same way under both runners.
 pub fn write(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
