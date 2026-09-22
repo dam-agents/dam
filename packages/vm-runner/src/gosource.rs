@@ -148,8 +148,38 @@ pub fn literals_in(source: &str, function: &str) -> Vec<String> {
     literals
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the text of one Go function, ending at the first line that is a closing brace in the first column. Used where the shape being compared is a literal the function contains rather than an argument list a reader can take apart — a containment check against the whole file would find the same words somewhere else and agree with the wrong function.
+// UNIT_BOUNDARY_DESCRIPTION: the text of one Go function, found by its declaration up to and including the opening parenthesis of its parameter list, and ending at the first line that is a closing brace in the first column. Used where the shape being compared is a literal the function contains rather than an argument list a reader can take apart — a containment check against the whole file would find the same words somewhere else and agree with the wrong function. The parenthesis is what makes the name exact: without it `writeSpec` also matches a `writeSpecSomething` declared later, so a rename would silently hand back the wrong body instead of failing.
 pub fn function_body<'a>(source: &'a str, function: &str) -> Option<&'a str> {
-    let body = source.split_once(&format!("func {function}"))?.1;
+    let body = source.split_once(&format!("func {function}("))?.1;
     Some(body.split_once("\n}")?.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TEST_SCENARIO: a reader that locates the wrong function is worse than no reader, because every guard built on it then compares the right shape against the wrong body and agrees. `function_body` finds a declaration by name, and a name is a prefix of every longer name — so `writeSpec` would also select a `writeSpecAndIndex` declared later, and a rename that should fail a drift guard would instead hand back a body that still happens to match. The declaration is matched up to its opening parenthesis for that reason, and this is the test that keeps it there.
+    #[test]
+    fn a_function_name_does_not_select_a_longer_one() {
+        let source = "\
+func writeSpecAndIndex(a int) error {
+\tsentinel: longer name
+}
+
+func writeSpec(a int) error {
+\tsentinel: exact name
+}
+";
+        assert!(
+            function_body(source, "writeSpec")
+                .expect("the exactly named function is there")
+                .contains("sentinel: exact name"),
+            "function_body selected a function whose name merely starts with the one it was asked for"
+        );
+        assert_eq!(
+            function_body(source, "writeSpe"),
+            None,
+            "a name that is only a prefix of a real declaration must not resolve at all"
+        );
+    }
 }
