@@ -204,11 +204,34 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, and a delete arrives with only the agent's name — so it is offered to every runner, each of which ignores a machine it does not have.
-func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
+// UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first because resolving a client mints a runner's Secret when there is none, which would leave credentials for a runner that does not exist. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
+func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) {
 	if !r.config.VM.Enabled {
 		return
 	}
+	if owner == "" {
+		r.deleteMachineEverywhere(ctx, name)
+		return
+	}
+	_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return
+	}
+	if err != nil {
+		slog.Warn("deleting machine: reading the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
+		return
+	}
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		slog.Warn("deleting machine: reaching the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
+		return
+	}
+	if err := client.Delete(ctx, name); err != nil {
+		slog.Warn("deleting machine", "agent", name, "owner", owner, "error", err)
+	}
+}
+
+func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
 	runners, err := r.knownRunners(ctx)
 	if err != nil {
 		slog.Warn("deleting machine: listing VM runners failed", "agent", name, "error", err)

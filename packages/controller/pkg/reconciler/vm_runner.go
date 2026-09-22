@@ -575,12 +575,20 @@ type runnerRef struct {
 	client *vmrunner.Client
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's Secret. Reading them one at a time is a Get per runner on every sweep, so the runners' Secrets are listed once by their component label, which every Secret the controller mints carries. A runner whose Secret is not in that list, such as one an older release created without the label, is resolved the ordinary way, which reads it by name and adopts it.
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
-	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent,
-	})
+	selector := metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent}
+	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, selector)
 	if err != nil {
 		return nil, err
+	}
+	secrets := map[string]corev1.Secret{}
+	if listed, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, selector); err == nil {
+		for _, sec := range listed.Items {
+			secrets[sec.Name] = sec
+		}
+	} else {
+		slog.Warn("vm runner: listing runner Secrets failed; reading each one instead", "error", err)
 	}
 	var out []runnerRef
 	for i := range list.Items {
@@ -588,7 +596,12 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 		if owner == "" {
 			continue
 		}
-		client, err := r.runnerFor(ctx, owner)
+		var client *vmrunner.Client
+		if sec, ok := secrets[r.runnerName(owner)]; ok && len(sec.Data["token"]) > 0 {
+			client, err = r.runnerClient(owner, string(sec.Data["token"]), string(sec.Data["tls.crt"]))
+		} else {
+			client, err = r.runnerFor(ctx, owner)
+		}
 		if err != nil {
 			continue
 		}

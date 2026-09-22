@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use ipnet::IpNet;
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name, with one deliberate exception below. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
-// UNIT_BOUNDARY_DESCRIPTION: --smolvm is the exception, and is gone. It named the CLI binary to fork; this runner drives smolvm as a library, so there is no binary to point at and a path here would configure nothing. Dropping a flag is only safe because the controller does not pass this one — it never has — so no Deployment sets an argument this binary would now reject.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name. Two places pass them, and a rename breaks either one as a pod that will not start rather than as a build failure. The controller builds most of the args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and passes state-dir, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's ENTRYPOINT in packages/controller/Dockerfile.vm-runner passes --smolvm.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -49,6 +48,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: CIDRs allowed to dial published machine ports; empty admits any. Parsed at startup rather than at first use, because the failure of an allowlist is that it admits everybody, and a runner that took a malformed entry would report nothing wrong while doing exactly that.
     #[arg(long = "allow-from", default_value = "", value_parser = allow_from)]
     allow_from: AllowFrom,
+    // UNIT_BOUNDARY_DESCRIPTION: deprecated and ignored. The Go runner forks the smolvm CLI this names; this runner drives smolvm as a library, so a path here configures nothing. It is still accepted because the image's ENTRYPOINT passes it, and a binary that rejected it would exit on start the day it replaces the Go one. Drop it only after the ENTRYPOINT stops passing it.
+    #[arg(long, hide = true)]
+    smolvm: Option<PathBuf>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the whole list as one flag value, which is what it is — a newtype rather than a bare Vec because clap reads a Vec field as "one of these per occurrence" and would hand the parser a single entry while expecting a single entry back. Declared as a Vec it builds, rejects a malformed CIDR correctly, and then panics on the success path downcasting what it parsed.
@@ -88,6 +90,9 @@ fn main() -> anyhow::Result<()> {
     }
     tracing_subscriber::fmt().json().init();
     let args = Args::parse();
+    if let Some(path) = &args.smolvm {
+        tracing::warn!(smolvm = %path.display(), "--smolvm is deprecated and ignored: this runner embeds smolvm rather than running its CLI");
+    }
     anyhow::ensure!(
         args.memory_mib > 0,
         "--memory-mib is required: without it the runner admits machines against no limit at all"
@@ -173,5 +178,34 @@ mod tests {
         .expect("these are the flags the controller passes");
         assert_eq!(args.allow_from.0.len(), 2);
         assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
+    }
+
+    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary is meant to replace the Go runner under that same ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
+    #[test]
+    fn the_images_entrypoint_arguments_are_accepted() {
+        let path = "../controller/Dockerfile.vm-runner";
+        let dockerfile = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
+        let line = dockerfile
+            .lines()
+            .find(|line| line.starts_with("ENTRYPOINT "))
+            .expect("the runner image has an ENTRYPOINT");
+        let words: Vec<String> =
+            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
+                .expect("the ENTRYPOINT is in exec form");
+        let runner = words
+            .iter()
+            .position(|word| word == "vm-runner")
+            .expect("the ENTRYPOINT runs vm-runner");
+        let mut argv = vec!["vm-runner".to_string()];
+        argv.extend(words[runner + 1..].iter().cloned());
+        assert!(
+            argv.iter().any(|arg| arg == "--smolvm"),
+            "the ENTRYPOINT no longer passes --smolvm; the deprecated flag can go: {argv:?}"
+        );
+        argv.push("--memory-mib=1".to_string());
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the ENTRYPOINT's arguments {argv:?} are rejected: {e}"));
+        assert!(args.smolvm.is_some());
     }
 }
