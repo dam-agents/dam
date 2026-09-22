@@ -4,7 +4,13 @@
 # drift tests never ran, exactly when a Go change is what they exist to catch.
 # The whole directory is declared rather than the three files read today, so a
 # test added later cannot silently fall outside the key.
-#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go"]
+# `smolvm.pin` is an input as much as the crate's own source: the clone it
+# names is what this compiles against, and the provider that makes it is not a
+# task, so its staleness never reaches this key. A pin that moves `commit=`
+# alone leaves `Cargo.lock` untouched — smolvm is a path dependency, recorded
+# there as a bare version — so without this the run is replayed against the
+# source it was taken on.
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "smolvm.pin", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
