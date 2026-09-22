@@ -87,7 +87,10 @@ spec:
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "")
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
-                  "resources" $r.resources }}
+                  "resources" $r.resources
+                  "canaryImage" ($r.canaryImage | default "")
+                  "canary" (dict "owners" ($r.canary.owners | default list) "percent" ($r.canary.percent | default 0 | int))
+                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
             - name: AGENT_VM
               value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner | toJson | quote }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR

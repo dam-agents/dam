@@ -340,6 +340,7 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 		r.ReconcileOrphanPVCs(sctx)
 		r.ReconcileOrphanLeafSecrets(sctx)
 		r.ReconcileOrphanMachines(sctx)
+		r.ReconcileRunnerRollout(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}

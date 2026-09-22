@@ -503,7 +503,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					ImagePullSecrets:             spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,
-						Image:           spec.Image,
+						Image:           runnerImage(spec, owner),
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
 							"--state-dir=" + vmRunnerMachinesPath,
@@ -548,18 +548,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		},
 	}
-	cli := r.client.AppsV1().Deployments(ns)
-	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		_, err = cli.Create(ctx, dep, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	dep.ResourceVersion, dep.Status = existing.ResourceVersion, existing.Status
-	_, err = cli.Update(ctx, dep, metav1.UpdateOptions{})
-	return err
+	return r.rollRunnerDeployment(ctx, owner, dep)
 }
 
 type runnerRef struct {
