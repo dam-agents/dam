@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
@@ -86,6 +87,7 @@ pub fn first_lines(out: &str) -> String {
 pub fn launch_from_registry(
     crane: &str,
     reference: &str,
+    auth: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<ImageLaunch> {
     if crane.is_empty() {
@@ -93,7 +95,7 @@ pub fn launch_from_registry(
             "{IMAGE_LAUNCH_UNKNOWN}: {reference} names no cached image and this runner cannot read one from the registry"
         );
     }
-    let config = read_config(crane, reference, cancel)?;
+    let config = read_config(crane, reference, auth, cancel)?;
     launch_from_config(&config)
         .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))
 }
@@ -101,10 +103,12 @@ pub fn launch_from_registry(
 pub fn read_config(
     crane: &str,
     reference: &str,
+    auth: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<Vec<u8>> {
+    let credentials = DockerConfig::new(auth)?;
     command::output(
-        Command::new(crane).arg("config").arg(reference),
+        credentials.apply(Command::new(crane).arg("config").arg(reference)),
         Instant::now() + PULL_TIMEOUT,
         cancel,
     )
@@ -122,10 +126,12 @@ pub fn unpack(
     crane: &str,
     reference: &str,
     rootfs: &Path,
+    auth: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
+    let credentials = DockerConfig::new(auth)?;
     let result = command::pipeline(
-        Command::new(crane).arg("export").arg(reference).arg("-"),
+        credentials.apply(Command::new(crane).arg("export").arg(reference).arg("-")),
         Command::new("tar").arg("-x").arg("-C").arg(rootfs),
         Instant::now() + PULL_TIMEOUT,
         cancel,
@@ -141,6 +147,74 @@ pub fn unpack(
             anyhow::bail!("unpacking {reference}: {}", first_lines(&detail))
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a docker config that names no registry. A probe run with it is a truly anonymous read, whatever the runner's own environment holds.
+pub const ANONYMOUS: &str = "{}";
+
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers.
+pub fn readable(crane: &str, reference: &str, auth: &str, cancel: &CancellationToken) -> bool {
+    let Ok(credentials) = DockerConfig::new(auth) else {
+        return false;
+    };
+    command::output(
+        credentials.apply(Command::new(crane).arg("digest").arg(reference)),
+        Instant::now() + PULL_TIMEOUT,
+        cancel,
+    )
+    .is_ok()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: crane reads registry credentials from $DOCKER_CONFIG/config.json, so a fetch with credentials gets a directory of its own: 0700 under the runner's temporary directory, never on the image cache or the state volume, and removed when this is dropped, so the credential is on disk only while crane runs. Only crane is given it — smolvm, the guest and the stored spec never see it. No credentials leaves crane's environment as it is.
+pub struct DockerConfig(Option<PathBuf>);
+
+impl DockerConfig {
+    pub fn new(auth: &str) -> anyhow::Result<Self> {
+        use std::io::Write;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        if auth.is_empty() {
+            return Ok(Self(None));
+        }
+        let dir = scratch_name(&std::env::temp_dir());
+        fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        let this = Self(Some(dir.clone()));
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(dir.join("config.json"))?
+            .write_all(auth.as_bytes())?;
+        Ok(this)
+    }
+
+    pub fn apply<'a>(&self, command: &'a mut Command) -> &'a mut Command {
+        match &self.0 {
+            Some(dir) => command.env("DOCKER_CONFIG", dir),
+            None => command,
+        }
+    }
+}
+
+impl Drop for DockerConfig {
+    fn drop(&mut self) {
+        if let Some(dir) = &self.0 {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+fn scratch_name(parent: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    parent.join(format!(
+        "crane-auth-{}-{nanos:x}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 #[cfg(test)]
@@ -221,7 +295,7 @@ mod tests {
     #[test]
     fn a_runner_that_cannot_fetch_refuses_an_uncached_image() {
         let err =
-            launch_from_registry("", "quay.io/x/vm:1", &CancellationToken::new()).unwrap_err();
+            launch_from_registry("", "quay.io/x/vm:1", "", &CancellationToken::new()).unwrap_err();
         assert!(err.to_string().starts_with(IMAGE_LAUNCH_UNKNOWN), "{err}");
         assert_eq!(failure_reason(&err), REASON_BOOT_FAILED);
     }

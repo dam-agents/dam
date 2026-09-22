@@ -6,7 +6,7 @@ use std::time::{Instant, SystemTime};
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{self, cache_path, PARTIAL_PREFIX};
-use crate::fetch::{self, unusable};
+use crate::fetch::{self, unusable, ANONYMOUS};
 use crate::launch::{launch_from_config, read_launch, LAUNCH_FILE};
 use crate::state::is_image_ref;
 
@@ -21,6 +21,9 @@ pub struct ImageCache {
 }
 
 pub const ROOTFS_DIR: &str = "rootfs";
+
+// UNIT_BOUNDARY_DESCRIPTION: marks a cache entry that only a fetch with credentials could read. It sits beside the launch, outside the tree the guest sees. An entry without it was readable with no credentials at all, so any machine may boot from it; an entry with it is reused only by a machine whose own credentials still read the image's manifest, because a cache on a node directory is shared by every owner's runner there. Without the check one owner's credentials would fetch the image and another owner could boot it by naming the same reference.
+pub const PRIVATE_FILE: &str = "private";
 
 impl ImageCache {
     pub fn entry(&self, reference: &str) -> PathBuf {
@@ -48,10 +51,11 @@ impl ImageCache {
         cache::publish_holders(&self.dir, &self.owner, &held);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image and unpacks it once for every machine of it to boot, then trims the cache to its budget. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image and unpacks it once for every machine of it to boot, then trims the cache to its budget. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auth` is the docker config to fetch with, empty for none. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
     pub fn fetch(
         &self,
         reference: &str,
+        auth: &str,
         busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
     ) -> anyhow::Result<()> {
@@ -61,7 +65,7 @@ impl ImageCache {
         fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
         let started = Instant::now();
         let config =
-            fetch::read_config(&self.crane, reference, &self.lifetime).inspect_err(|_| {
+            fetch::read_config(&self.crane, reference, auth, &self.lifetime).inspect_err(|_| {
                 tracing::warn!(
                     image = reference,
                     duration_ms = elapsed_ms(started),
@@ -74,12 +78,16 @@ impl ImageCache {
             &self.crane,
             reference,
             &scratch.path().join(ROOTFS_DIR),
+            auth,
             &self.lifetime,
         )?;
         fs::write(
             scratch.path().join(LAUNCH_FILE),
             serde_json::to_vec(&launch)?,
         )?;
+        if !auth.is_empty() && !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
+            fs::write(scratch.path().join(PRIVATE_FILE), "")?;
+        }
         tracing::info!(
             image = reference,
             duration_ms = elapsed_ms(started),
@@ -88,6 +96,27 @@ impl ImageCache {
         );
         self.claim(scratch.path(), &cached, busy)?;
         self.evict(own, Some(&cached));
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one its own credentials must still read the image — or no credentials, when it has none. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down.
+    pub fn may_reuse(&self, reference: &str, auth: &str) -> anyhow::Result<()> {
+        match fs::symlink_metadata(self.entry(reference).join(PRIVATE_FILE)) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+            Ok(_) => {}
+        }
+        if self.crane.is_empty() {
+            return Err(unusable(format!(
+                "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
+            )));
+        }
+        let auth = if auth.is_empty() { ANONYMOUS } else { auth };
+        if !fetch::readable(&self.crane, reference, auth, &self.lifetime) {
+            return Err(unusable(format!(
+                "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
+            )));
+        }
         Ok(())
     }
 
