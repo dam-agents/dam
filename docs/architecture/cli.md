@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-09-21
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -51,9 +51,9 @@ For headless / CI use, `DAM_TOKEN=<bearer>` is used verbatim and bypasses the cr
 
 The `agent` module gives users a human-friendly way to name an Agent and exports the seam every Agent-targeted verb consumes.
 
-- **Agent Ref** — what the user types: either an Agent ID (anything beginning with the reserved `agent-` prefix) or an Agent name. The split is syntactic; no probe disambiguates them.
-- **Resolver policy** — an `agent-…` ref is fetched by id; anything else is matched by exact, case-sensitive name. Zero matches is not-found, one is ok, two or more is ambiguous. No normalization, no retries, one round-trip.
-- **Reserved ID prefix** — the controller mints Agent IDs with the `agent-` prefix, and the api-server rejects Agent names that begin with it at create time, eliminating the only ambiguous case.
+- **Agent Ref** — what the user types: either an Agent ID (`agent-` followed by 16 hex characters) or an Agent name. The split is syntactic; no probe disambiguates them.
+- **Resolver policy** — a ref with the ID shape is fetched by id; anything else is matched by exact, case-sensitive name. Zero matches is not-found, one is ok, two or more is ambiguous. No normalization, no retries, one round-trip.
+- **Reserved ID shape** — the api-server mints Agent IDs as `agent-` plus 16 hex characters and rejects Agent names of that exact shape at create time, eliminating the only ambiguous case. A name such as `agent-2` is allowed.
 - **Uniqueness** — `(owner, name)` is unique, enforced at create time; the narrow race window is accepted for CLI traffic and falls through to the resolver's ambiguous path.
 - **`AgentResolver`** is exported from the module and imported by every downstream verb, which then binds an agent-scoped client to the resolved active host.
 
