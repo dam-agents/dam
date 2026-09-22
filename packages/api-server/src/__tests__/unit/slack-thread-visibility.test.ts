@@ -123,16 +123,22 @@ describe("slack thread visibility from a channel turn", () => {
   });
 
   /**
-   * TEST_SCENARIO: A catch-up after a long absence can hand over far more than
-   * the standing offer cap — up to 500 messages against a cap of 50. Every tag
-   * printed in that one block must still resolve: an offer list that evicts
-   * the oldest tags of the very block it is delivering refuses the agent a
-   * thread it is looking at.
+   * TEST_SCENARIO: An offer retires on age alone. A catch-up after a long
+   * absence can hand over hundreds of tagged parents in one block; every tag
+   * of that block must resolve, and the block must not revoke a tag shown
+   * before it — that earlier tag still sits in the session's own history.
    */
-  it("honours every tag of a catch-up block larger than the offer cap", async () => {
+  it("keeps an offer live until it ages out, however large a later block", async () => {
     const h = harness({ ambient: true });
+    const earlyParent = {
+      ts: "50.000000",
+      user: "U777",
+      text: "pre-existing question",
+      threadTs: "50.000000",
+      replyCount: 1,
+    };
     const opener = { ts: "100.000000", user: "U999", text: "morning all" };
-    h.gw.setThreadedHistory([opener]);
+    h.gw.setThreadedHistory([earlyParent, opener]);
 
     await h.worker.connect();
     await h.gw.fireMessage({
@@ -142,6 +148,9 @@ describe("slack thread visibility from a channel turn", () => {
       text: "morning all",
     });
     expect(await h.settled(() => h.prompts.length === 1)).toBe(true);
+    expect(String(h.prompts[0])).toContain(
+      "pre-existing question [thread: 1 reply, ts 50.000000]",
+    );
 
     const parents = Array.from({ length: 60 }, (_, i) => ({
       ts: `${200 + i}.000000`,
@@ -151,6 +160,7 @@ describe("slack thread visibility from a channel turn", () => {
       replyCount: 1,
     }));
     h.gw.setThreadedHistory([
+      earlyParent,
       opener,
       ...parents,
       { ts: "900.000000", user: "U888", text: "back to work" },
@@ -173,6 +183,14 @@ describe("slack thread visibility from a channel turn", () => {
     expect(oldest).toMatchObject({
       conversationId: BOUND,
       threadTs: "200.000000",
+    });
+
+    const early = await h.worker.readThread("agent-1", {
+      threadTs: "50.000000",
+    });
+    expect(early).toMatchObject({
+      conversationId: BOUND,
+      threadTs: "50.000000",
     });
   });
 });

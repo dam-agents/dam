@@ -1333,7 +1333,6 @@ export function createSlackWorker(
     return entry.ts;
   }
 
-  const OFFERED_THREADS_PER_AGENT = 50;
   const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
   const offeredThreads = new Map<
     string,
@@ -1352,15 +1351,13 @@ export function createSlackWorker(
       offers = new Map();
       offeredThreads.set(instanceName, offers);
     }
-    for (const ts of threadTss) {
-      offers.delete(ts);
-      offers.set(ts, { channel, expiresAt: now + OFFERED_THREAD_TTL_MS });
+    if (offers.size > 5_000) {
+      for (const [ts, entry] of offers) {
+        if (entry.expiresAt <= now) offers.delete(ts);
+      }
     }
-    const cap = Math.max(OFFERED_THREADS_PER_AGENT, threadTss.length);
-    while (offers.size > cap) {
-      const oldest = offers.keys().next().value;
-      if (oldest === undefined) break;
-      offers.delete(oldest);
+    for (const ts of threadTss) {
+      offers.set(ts, { channel, expiresAt: now + OFFERED_THREAD_TTL_MS });
     }
   }
 
