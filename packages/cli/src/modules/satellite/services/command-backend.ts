@@ -10,6 +10,20 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
 export const RUN_TOOL = "run";
+const MAX_REASON_CHARS = 280;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Clamps a refusal to the wire's own cap. A reason is
+ * 280 characters on the contract, and the text that explains one can be longer —
+ * a refusal names the pattern it came closest to, and a pattern is allowed 1024.
+ * An over-long reason is rejected at the server, and the Job is then left to its
+ * lease instead of being told why it never ran.
+ */
+function reason(text: string): string {
+  return text.length > MAX_REASON_CHARS
+    ? `${text.slice(0, MAX_REASON_CHARS - 1)}…`
+    : text;
+}
 
 type KillReason = "cancel" | "timeout" | "shutdown";
 
@@ -135,7 +149,7 @@ export function createCommandBackend(
     if (input.tool !== RUN_TOOL)
       return Promise.resolve({
         status: "interrupted",
-        reason: `this satellite has no tool called "${input.tool}"`,
+        reason: reason(`this satellite has no tool called "${input.tool}"`),
         output: "",
         truncated: false,
       });
@@ -144,7 +158,7 @@ export function createCommandBackend(
     if (!Array.isArray(cmd) || cmd.some((a) => typeof a !== "string"))
       return Promise.resolve({
         status: "interrupted",
-        reason: "cmd must be an array of strings",
+        reason: reason("cmd must be an array of strings"),
         output: "",
         truncated: false,
       });
@@ -155,7 +169,7 @@ export function createCommandBackend(
       log.line(`REFUSED #${sequence}: ${command}`);
       return Promise.resolve({
         status: "interrupted",
-        reason: `refused locally: ${command}`,
+        reason: reason(`refused locally: ${command}`),
         output: "",
         truncated: false,
       });
@@ -168,7 +182,9 @@ export function createCommandBackend(
       if (active >= command.maxConcurrent)
         return Promise.resolve({
           status: "interrupted",
-          reason: `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`,
+          reason: reason(
+            `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`,
+          ),
           output: "",
           truncated: false,
         });
@@ -236,7 +252,7 @@ export function createCommandBackend(
         log.line(`FAILED #${sequence}: ${err.message}`);
         finish({
           status: "interrupted",
-          reason: `could not start the command: ${err.message}`,
+          reason: reason(`could not start the command: ${err.message}`),
           output,
           truncated,
         });
