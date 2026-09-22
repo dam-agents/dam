@@ -220,7 +220,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine that has two working fallbacks.
+    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: the archive below, or the registry fetch that is not ported yet.
     #[test]
     fn a_tree_with_no_record_beside_it_is_nothing_to_say_rather_than_a_failure() {
         let dir = TempDir::new("record");
@@ -247,6 +247,43 @@ mod tests {
             read_launch(dir.path()).is_err(),
             "a record that cannot be read is not the same as no record: one means go on, the other means this tree is broken"
         );
+    }
+
+    // TEST_SCENARIO: the record read here was written by the other runner's `json.Marshal`, and `api.go` tags entrypoint, cmd and env without `omitempty` — so a list Go left nil is in the file as JSON null rather than left out. Go refuses an image that names neither an entrypoint nor a command, so every record it writes sets one of those two and leaves the other nil. A reader that refuses a null list therefore reads almost every tree the Go runner unpacked as broken, and refuses a machine that runner boots.
+    #[test]
+    fn a_record_the_go_runner_wrote_is_read_rather_than_refused() {
+        let api = gosource::read("api.go");
+        let fields = gosource::struct_fields(&api, "ImageLaunch");
+        assert!(
+            !fields.is_empty(),
+            "no ImageLaunch fields were read out of api.go, so this comparison proves nothing"
+        );
+        for listed in ["entrypoint", "cmd", "env"] {
+            let field = fields
+                .iter()
+                .find(|field| field.json == listed)
+                .unwrap_or_else(|| panic!("api.go no longer writes {listed:?} into the record"));
+            assert!(
+                !field.omitempty,
+                "api.go now leaves an empty {listed:?} out of the record, so a null list is no longer what the Go runner writes and this test's premise is stale"
+            );
+        }
+
+        let dir = TempDir::new("go-record");
+        fs::write(
+            dir.path().join(LAUNCH_FILE),
+            br#"{"entrypoint":["/init"],"cmd":null,"env":null,"workingDir":""}"#,
+        )
+        .unwrap();
+        let launch = read_launch(dir.path())
+            .unwrap()
+            .expect("the record is there");
+        assert_eq!(launch.entrypoint, ["/init"]);
+        assert!(
+            launch.cmd.is_empty(),
+            "a list the Go runner left nil must read back as an empty one"
+        );
+        assert!(launch.env.is_empty());
     }
 
     // TEST_SCENARIO: the whole point of the archive path — an archive still boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.

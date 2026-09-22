@@ -3,8 +3,11 @@ use serde::{Deserialize, Serialize};
 // UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ImageLaunch {
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub entrypoint: Vec<String>,
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub cmd: Vec<String>,
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub env: Vec<String>,
     #[serde(rename = "workingDir")]
     pub working_dir: String,
@@ -49,6 +52,14 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: how long ago this runner last asked the machine to start, in milliseconds; zero when it has not asked since it came up. A machine asked recently is about to become ready or fail, and is worth watching closely until one or the other.
     #[serde(rename = "startingMs", default, skip_serializing_if = "is_zero_i64")]
     pub starting_ms: i64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a list Go left nil, read back as an empty one. `api.go` tags these fields without `omitempty`, so `json.Marshal` writes them as JSON null rather than leaving them out, and serde's own decoder refuses a null list. Every record the Go runner writes carries at least one: it refuses an image that names neither an entrypoint nor a command, so whichever of the two the image does not set is nil in the file.
+fn null_as_empty<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<String>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 fn is_zero_i32(n: &i32) -> bool {
