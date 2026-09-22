@@ -64,11 +64,11 @@ jobs:
       # 0.8.1). On go.sum alone a toolchain bump would leave the key still
       # hitting and the save still skipped, holding objects the new compiler
       # cannot use: the 296 s and 276 s tails back on every run, with nothing
-      # able to rewrite the entry until a dependency happened to move. Both
-      # lockfile paths are hashed so the key keeps tracking the toolchain if the
-      # lockfile moves to the repo root, and go.sum keeps the hash non-empty
-      # either way. A restore-keys hit can still land a stale-toolchain entry;
-      # that is a miss on the exact key, so the next main push rewrites it.
+      # able to rewrite the entry until a dependency happened to move. go.sum
+      # stays in the key so the hash is never empty, which is what hashFiles
+      # returns when nothing matches. A restore-keys hit can still land a
+      # stale-toolchain entry; that is a miss on the exact key, so the next
+      # main push rewrites it.
       # First-party packages recompile regardless — the dependency and stdlib
       # objects that dominate the tail are what this keeps.
       - id: go-cache
@@ -78,7 +78,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-${{ github.job }}-
             go-${{ runner.os }}-
@@ -95,7 +95,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
 
   test:
     name: mise test
@@ -138,11 +138,11 @@ jobs:
       # 0.8.1). On go.sum alone a toolchain bump would leave the key still
       # hitting and the save still skipped, holding objects the new compiler
       # cannot use: the 296 s and 276 s tails back on every run, with nothing
-      # able to rewrite the entry until a dependency happened to move. Both
-      # lockfile paths are hashed so the key keeps tracking the toolchain if the
-      # lockfile moves to the repo root, and go.sum keeps the hash non-empty
-      # either way. A restore-keys hit can still land a stale-toolchain entry;
-      # that is a miss on the exact key, so the next main push rewrites it.
+      # able to rewrite the entry until a dependency happened to move. go.sum
+      # stays in the key so the hash is never empty, which is what hashFiles
+      # returns when nothing matches. A restore-keys hit can still land a
+      # stale-toolchain entry; that is a miss on the exact key, so the next
+      # main push rewrites it.
       # First-party packages recompile regardless — the dependency and stdlib
       # objects that dominate the tail are what this keeps.
       - id: go-cache
@@ -152,7 +152,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-${{ github.job }}-
             go-${{ runner.os }}-
@@ -169,7 +169,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('.mise/mise.lock', 'mise.lock', 'packages/controller/go.sum') }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
 
   appversion:
     name: derive app version
