@@ -618,3 +618,55 @@ echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
 echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
+
+# Where the install's wall clock went. `helm --wait` returns only once the
+# slowest pod is Ready, so the one number it reports hides which service held
+# it — and e2e:run dumps diagnostics on failure only, so on a green run the
+# largest single block of the e2e job is unattributed. Measured on CI/CD run
+# 35760500482: 105 s inside that wait, with platform-apiserver carrying
+# RESTARTS 2, and no way to tell from the log whether the crash-loop or
+# Keycloak's realm import was the long pole.
+#
+# Seconds from pod creation to Ready, slowest first, with restarts and what
+# killed the previous container. A pod that crash-looped on the way up reads
+# as a large number beside a non-zero restart count and a terminated reason —
+# the signature of a startup-ordering race rather than a slow service. The
+# apiserver/postgres race in e2e:install is exactly that shape.
+#
+# python3, not jq: this script already depends on python3 and the repo pins no
+# jq. Never fails the install — instrumentation that can break a provision is
+# worse than no instrumentation.
+echo ""
+echo "--- Readiness timeline (pod creation -> Ready) ---"
+kubectl --kubeconfig="$KUBECONFIG" get pods -o json 2>/dev/null | python3 -c '
+import json, sys
+from datetime import datetime
+
+def ts(v):
+    return datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ")
+
+rows = []
+for pod in json.load(sys.stdin)["items"]:
+    meta, status = pod["metadata"], pod.get("status", {})
+    created = ts(meta["creationTimestamp"])
+    ready = None
+    for cond in status.get("conditions", []):
+        if cond["type"] == "Ready" and cond["status"] == "True":
+            ready = (ts(cond["lastTransitionTime"]) - created).total_seconds()
+    states = status.get("containerStatuses", []) or []
+    restarts = sum(c.get("restartCount", 0) for c in states)
+    killed = []
+    for c in states:
+        term = c.get("lastState", {}).get("terminated")
+        if term:
+            killed.append("%s %s(%s)" % (c["name"], term.get("reason", "?"), term.get("exitCode", "?")))
+    rows.append((ready if ready is not None else 1e9, meta["name"], ready, restarts, ", ".join(killed)))
+
+for _, name, ready, restarts, killed in sorted(rows, reverse=True):
+    print("  %-44s %9s  restarts=%d%s" % (
+        name,
+        ("%.0fs" % ready) if ready is not None else "NOT-READY",
+        restarts,
+        ("  last exit: " + killed) if killed else "",
+    ))
+' 2>/dev/null || echo "  (readiness timeline unavailable)"
