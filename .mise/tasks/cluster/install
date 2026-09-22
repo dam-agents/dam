@@ -199,12 +199,14 @@ spec:
 YAML
 
 # 2. Install cert-manager
+CERT_MANAGER_VERSION="v1.21.2"
+
 if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
-  echo "Installing cert-manager..."
+  echo "Installing cert-manager ($CERT_MANAGER_VERSION)..."
   # Retried: freshly-provisioned k3s can restart its apiserver right after
   # reporting Ready (seen as ECONNREFUSED mid-apply on CI runners).
   for attempt in 1 2 3 4 5; do
-    kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml && break
+    kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml && break
     [ "$attempt" = 5 ] && exit 1
     echo "cert-manager apply failed (attempt $attempt); retrying in 10s..."
     sleep 10
