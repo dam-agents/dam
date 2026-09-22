@@ -72,13 +72,11 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 
 **Cancellation is cooperative and travels on the poll.** How a machine stops its own work is its business; the platform asks and records what comes back. A Job still queued settles server-side with no worker involved.
 
-**Nothing announces an outcome yet.** A terminal Job is recorded and readable — `get` and `wait` both return it — but no Agent is woken about one it did not ask for, so a Job that outlives the turn that started it is only found by asking. Everything terminal is therefore purged at its TTL, read or not. Wake on finish, and the retention rule that protects an unread outcome from its own TTL, arrive with it.
-
 **Jobs are never retried.** A tool call is not assumed idempotent and nothing can judge one safe to repeat.
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.
 
-A Job that reached its TTL without ever starting — queued with nobody claiming — is **settled** rather than deleted: it holds a place against the Satellite's concurrency until something ends it.
+An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it. A Job that reached its TTL without ever starting — queued with nobody claiming — is **settled and told**, not deleted: it holds a place against the Satellite's concurrency until something ends it.
 
 Output is captured with stdout and stderr merged in terminal order. Under a few KB it comes back inline; over that the tool returns a path and the full log is written into the Agent's own sandbox, so a large log costs the model a line rather than a context window. The file is written **at read time** — when an outcome arrives the Agent may be hibernating, but an Agent asking for it is up by definition.
 

@@ -18,6 +18,7 @@ export const eventKind = z.enum([
   "experiment-execute",
   "initialization",
   "harness-config",
+  "satellite-outcome",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -252,6 +253,22 @@ export const harnessConfigEvent = z.object({
   payload: harnessConfigEventPayload,
 });
 
+export const satelliteOutcomeEventPayload = z.object({
+  task: z.string().min(1),
+  refs: z.array(z.string().min(1)).min(1),
+});
+export type SatelliteOutcomeEventPayload = z.infer<
+  typeof satelliteOutcomeEventPayload
+>;
+
+export const satelliteOutcomeEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("satellite-outcome"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: satelliteOutcomeEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
@@ -260,6 +277,7 @@ export const event = z.discriminatedUnion("kind", [
   experimentExecuteEvent,
   initializationEvent,
   harnessConfigEvent,
+  satelliteOutcomeEvent,
 ]);
 export type Event = z.infer<typeof event>;
 
