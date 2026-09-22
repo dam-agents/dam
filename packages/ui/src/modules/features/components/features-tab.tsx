@@ -52,6 +52,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     ),
   },
   {
+    id: "satellites",
+    label: "Satellites",
+    description:
+      "Reveals satellites — machines outside the platform that expose a fixed set of tools to an agent, either a list of approved commands or an MCP server of your own. Set one up with dam satellite commands or dam satellite mcp; this shows it here and lets you grant it to an agent.",
+  },
+  {
     id: "session-costs",
     label: "Session costs",
     description:
