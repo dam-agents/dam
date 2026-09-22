@@ -251,7 +251,7 @@ function Drawer({
         aria-label="Close activity"
         onClick={onClose}
         className={cn(
-          "absolute inset-0 bg-black/30 transition-opacity",
+          "absolute inset-0 bg-black/30 transition-opacity duration-150",
           open ? "opacity-100" : "opacity-0",
         )}
       />
@@ -260,7 +260,7 @@ function Drawer({
         role="dialog"
         aria-label="Activity"
         className={cn(
-          "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl transition-transform",
+          "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl transition-transform duration-150",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >

@@ -67,14 +67,13 @@ export function StatusBadge({
     <TooltipRoot open={open} onOpenChange={setOpen}>
       <span
         className="inline-flex"
-        aria-label={`${label}, always on`}
         onPointerEnter={() => setOpen(true)}
         onPointerLeave={() => setOpen(false)}
       >
         <Badge variant={variant} className="gap-1">
           <TooltipTrigger asChild>
-            <span className="flex">
-              <Power size={12} aria-hidden />
+            <span className="flex" tabIndex={0}>
+              <Power size={12} aria-label="Always on" />
             </span>
           </TooltipTrigger>
           {label}
