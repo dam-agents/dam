@@ -1,6 +1,7 @@
 import { Power } from "@carbon/icons-react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
@@ -53,10 +54,18 @@ export function StatusBadge({
       : "Idle"
     : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  return (
+  const badge = (
     <Badge variant={variant} className="gap-1">
-      {alwaysOn && <Power size={12} aria-label="Always on" />}
+      {alwaysOn && <Power size={12} aria-hidden />}
       {label}
     </Badge>
+  );
+  if (!alwaysOn) return badge;
+  return (
+    <Tooltip content="Always on. This agent never hibernates on its own and keeps its compute reserved.">
+      <span className="inline-flex" aria-label={`${label}, always on`}>
+        {badge}
+      </span>
+    </Tooltip>
   );
 }

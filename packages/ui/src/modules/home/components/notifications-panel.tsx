@@ -1,4 +1,4 @@
-import { Activity, ArrowLeft, Close, Warning } from "@carbon/icons-react";
+import { ArrowLeft, Close, Notification, Warning } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -259,12 +259,11 @@ export function NotificationsBell({ onOpen }: { onOpen: () => void }) {
       }
       className="relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <Activity size={16} />
+      <Notification size={16} />
       {waiting > 0 && (
         <Badge
-          variant="warning"
           data-testid="activity-badge"
-          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 px-1 text-[10px] font-bold"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-accent px-1 text-[10px] font-bold text-white hover:bg-accent"
         >
           {waiting > 9 ? "9+" : waiting}
         </Badge>
