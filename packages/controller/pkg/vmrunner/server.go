@@ -43,6 +43,8 @@ const (
 	holdersDir = ".holders"
 	// UNIT_BOUNDARY_DESCRIPTION: how long a holders file is believed after its last write. Machines are processes of the runner that made them, so a runner that stopped refreshing has no machines left running and its claims are safe to ignore — the window only has to outlast the gap between two reconciles, which the controller drives about once a minute.
 	holderStale = 30 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how long Close waits for the machine operations already running. Long enough for any operation that is not stuck behind a registry, short enough that a shutdown is still a shutdown.
+	closeGrace = 30 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress is named apart from a finished entry, and dot-prefixed so the two patterns below cannot match it — a half-written tree must never be counted as one a machine can boot. Nothing finishes an unpack after twice the time one is allowed to take, so a directory older than that belonged to a process that died holding it, and the bytes are the directory's to reclaim.
 	partialPrefix = ".unpack-"
 	partialStale  = 2 * pullTimeout
@@ -88,8 +90,13 @@ type Server struct {
 	ImageBudget int64
 	// UNIT_BOUNDARY_DESCRIPTION: cache entries this process keeps whatever the budget says, named by image reference. A runner's own claims are its machines, read from their specs on disk; the preloader has no machines and holds this list instead, which is what lets an image nobody is running yet survive the eviction that would otherwise take it first.
 	Pinned []string
+	// UNIT_BOUNDARY_DESCRIPTION: how a machine's published port is opened, nil being net.Listen. It exists so a caller that has already bound the port can hand that listener over rather than release it and hope: between releasing a port and this binding it, anything on the host may take it, and the machine then fails to publish for a reason that has nothing to do with it.
+	Listen func(network, address string) (net.Listener, error)
 
-	mu         sync.Mutex
+	mu sync.Mutex
+	// UNIT_BOUNDARY_DESCRIPTION: operations started and not yet finished. A machine operation runs on its own goroutine and writes to the state and image directories throughout, so a process that stops without waiting for them leaves work running against directories its caller believes are finished with — which is how a test's temporary directory is removed out from under a fetch still unpacking into it.
+	work       sync.WaitGroup
+	closed     bool
 	locks      map[string]*sync.Mutex
 	pending    map[string]string
 	seq        map[string]uint64
@@ -124,13 +131,34 @@ func (s *Server) Start() error {
 	return nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: stops taking new machine operations, drops the published ports, and waits for the operations already running — which is the part that was missing. Those goroutines fetch images and drive smolvm against the state and image directories, so returning while they run hands the caller a runner that is still writing. The wait is bounded because an operation may be inside a pull that is allowed twenty minutes, and a shutdown that can hang that long behind one slow registry is its own failure; going on without them is reported rather than silent. Bounding it is not the same as cancelling it — nothing here interrupts a fetch, which stays a gap.
 func (s *Server) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.closed = true
 	for id, ln := range s.listeners {
 		ln.Close()
 		delete(s.listeners, id)
 	}
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.work.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(closeGrace):
+		slog.Warn("vm runner: machine operations were still running when the runner closed", "grace", closeGrace.String())
+	}
+
+	// UNIT_BOUNDARY_DESCRIPTION: an operation still running through the wait above reaches its own publish, and binds a port into a map this already emptied. Exactly the operations being waited for are the ones that can do it, so the sweep belongs after the wait and not instead of it: without it a runner that closed cleanly still holds a port for as long as the process lives.
+	s.mu.Lock()
+	for id, ln := range s.listeners {
+		ln.Close()
+		delete(s.listeners, id)
+	}
+	s.mu.Unlock()
 }
 
 func (s *Server) Handler() http.Handler {
@@ -927,13 +955,21 @@ func (s *Server) lock(id string) *sync.Mutex {
 // UNIT_BOUNDARY_DESCRIPTION: a second operation can be queued behind the one running, so each clears only its own markers — otherwise a finishing boot erases the pending stop queued behind it and the machine reads as settled while the stop has not run.
 func (s *Server) spawn(id, op string, fn func() error) {
 	s.mu.Lock()
+	if s.closed {
+		// UNIT_BOUNDARY_DESCRIPTION: the caller reserved this machine's memory before asking for the operation, and the goroutine that releases the reservation is the one being refused here. Leaving it would have roomFor counting a machine that never starts, against a runner that is going away — and, on a runner that comes back to the same state, against nothing at all.
+		delete(s.committing, id)
+		s.mu.Unlock()
+		return
+	}
 	s.seq[id]++
 	seq := s.seq[id]
 	s.pending[id] = op
 	s.health[id] = health{everReady: s.health[id].everReady}
 	gen := s.gens[id]
+	s.work.Add(1)
 	s.mu.Unlock()
 	go func() {
+		defer s.work.Done()
 		lock := s.lock(id)
 		lock.Lock()
 		defer lock.Unlock()
@@ -1060,7 +1096,7 @@ func (s *Server) forward(id string, port int) error {
 	if exists {
 		return nil
 	}
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	ln, err := s.listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("publishing machine %s on :%d: %w", id, port, err)
 	}
@@ -1090,6 +1126,13 @@ func (s *Server) forward(id string, port int) error {
 		}
 	}()
 	return nil
+}
+
+func (s *Server) listen(network, address string) (net.Listener, error) {
+	if s.Listen != nil {
+		return s.Listen(network, address)
+	}
+	return net.Listen(network, address)
 }
 
 func (s *Server) allowed(addr net.Addr) bool {
