@@ -88,6 +88,12 @@ impl Runtime for Fake {
 // UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass.
 const FAKE_CRANE: &str = r#"#!/bin/sh
 echo "$@" >> "$(dirname "$0")/crane.log"
+if [ "$1" = digest ]; then
+  if [ -f "$(dirname "$0")/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
+  moved=$(cat "$(dirname "$0")/moved" 2>/dev/null)
+  printf 'sha256:%s\n' "$(printf '%s%s' "${2%@*}" "$moved" | sha256sum | cut -c1-64)"
+  exit 0
+fi
 if [ "$1" = config ]; then
   printf '{"config":{"Entrypoint":["/entry"],"Cmd":["serve"],"Env":["PATH=/bin","A=image"],"WorkingDir":"/app"}}'
   exit 0
@@ -145,6 +151,36 @@ impl Harness {
             server,
             base,
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the digest entry a reference's machines boot from, by the digest it last resolved to here.
+    fn entry(&self, reference: &str) -> PathBuf {
+        let digest = self
+            .server
+            .cache
+            .known_digest(reference)
+            .unwrap_or_else(|| panic!("{reference} was never resolved"));
+        self.server.cache.digest_entry(&digest)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: ages a reference's index record past the window it is trusted for, which is what time does between two creates an hour apart.
+    fn age_index(&self, reference: &str) {
+        fs::File::options()
+            .write(true)
+            .open(crate::cache::ref_path(&self.dir.join("images"), reference))
+            .unwrap()
+            .set_modified(SystemTime::now() - crate::cache::REF_FRESH - Duration::from_secs(1))
+            .unwrap();
+    }
+
+    fn crane_log(&self, op: &str) -> usize {
+        fs::read_to_string(self.dir.join("crane.log"))
+            .map(|log| {
+                log.lines()
+                    .filter(|l| l.starts_with(&format!("{op} ")))
+                    .count()
+            })
+            .unwrap_or_default()
     }
 
     fn crane_calls(&self) -> usize {
@@ -253,7 +289,7 @@ async fn an_absent_machine_is_created_and_started() {
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(
         PathBuf::from(image),
-        cache_path(&h.dir.join("images"), "quay.io/x/vm:1").join(ROOTFS_DIR)
+        h.entry("quay.io/x/vm:1").join(ROOTFS_DIR)
     );
     let launch = launch.unwrap();
     assert_eq!(launch.entrypoint, vec!["/entry"]);
@@ -609,7 +645,10 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
     let after_first = h.crane_calls();
-    assert_eq!(after_first, 2, "one config read and one export");
+    assert_eq!(
+        after_first, 3,
+        "one resolution, one config read and one export"
+    );
     h.server.put("m2", spec(true)).unwrap();
     h.settle("m2").await;
     assert_eq!(
@@ -617,7 +656,7 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
         after_first,
         "the second machine fetched the image again"
     );
-    let launch = read_launch(&cache_path(&h.dir.join("images"), "quay.io/x/vm:1")).unwrap();
+    let launch = read_launch(&h.entry("quay.io/x/vm:1")).unwrap();
     assert_eq!(launch.unwrap().cmd, vec!["serve"]);
     assert!(
         !fs::read_dir(h.dir.join("images"))
@@ -628,16 +667,24 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: a tree with no launch record beside it names nothing to run. It is never booted from; the image is fetched again and the complete entry replaces it.
+// TEST_SCENARIO: a tree with no launch record beside it names nothing to run, in either format. It is never booted from; the image is fetched again into its digest entry and the complete entry replaces the incomplete one there.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tree_with_no_launch_beside_it_is_not_booted_from() {
     let h = Harness::new("no-launch");
-    let base = cache_path(&h.dir.join("images"), "quay.io/x/vm:1");
-    fs::create_dir_all(base.join(ROOTFS_DIR)).unwrap();
+    let legacy = cache_path(&h.dir.join("images"), "quay.io/x/vm:1");
+    fs::create_dir_all(legacy.join(ROOTFS_DIR)).unwrap();
+    h.server
+        .cache
+        .resolve_digest("quay.io/x/vm:1", Duration::ZERO)
+        .unwrap();
+    let entry = h.entry("quay.io/x/vm:1");
+    fs::create_dir_all(entry.join(ROOTFS_DIR)).unwrap();
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    assert_eq!(h.crane_calls(), 2);
-    assert!(read_launch(&base).unwrap().is_some());
+    assert_eq!((h.crane_log("config"), h.crane_log("export")), (1, 1));
+    assert!(read_launch(&entry).unwrap().is_some());
+    let (image, _) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert_eq!(PathBuf::from(image), entry.join(ROOTFS_DIR));
 }
 
 // TEST_SCENARIO: an install whose fetch fails still has the archive an earlier release cached, and that archive still boots — with the launch read out of the archive's own config.
@@ -751,12 +798,11 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
     other.image = "quay.io/x/other:1".into();
     h.server.put("m2", other).unwrap();
     h.settle("m2").await;
-    let images = h.dir.join("images");
     assert!(
-        cache_path(&images, "quay.io/x/vm:1").exists(),
+        h.entry("quay.io/x/vm:1").exists(),
         "the running machine's image was evicted"
     );
-    assert!(cache_path(&images, "quay.io/x/other:1").exists());
+    assert!(h.entry("quay.io/x/other:1").exists());
 }
 
 fn write_archive(path: &Path, config: &str) {
@@ -772,4 +818,83 @@ fn write_archive(path: &Path, config: &str) {
         builder.append_data(&mut header, name, body).unwrap();
     }
     builder.finish().unwrap();
+}
+
+// TEST_SCENARIO: a tag moved in the registry. A machine created after the index stopped being trusted resolves the tag again and boots the new image, while a machine already running keeps the tree it has mounted: its recorded digest holds that tree, so eviction spares both, and a machine created inside the window boots from the index without asking the registry.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_moved_tag_boots_the_new_image_and_keeps_the_old_one_held() {
+    let h = Harness::with("moved-tag", |c| c.image_budget = 1);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let old = h.entry("quay.io/x/vm:1");
+
+    fs::write(h.dir.join("moved"), "v2").unwrap();
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    assert_eq!(
+        h.entry("quay.io/x/vm:1"),
+        old,
+        "a fresh index was asked again"
+    );
+
+    h.age_index("quay.io/x/vm:1");
+    h.server.delete("m2").unwrap();
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    let new = h.entry("quay.io/x/vm:1");
+    assert_ne!(new, old);
+    let (image, _) = locked(&h.fake.created).get("m2").cloned().unwrap();
+    assert_eq!(PathBuf::from(image), new.join(ROOTFS_DIR));
+    assert!(
+        old.exists(),
+        "the tree a running machine has mounted was evicted"
+    );
+    let recorded = |id: &str| {
+        fs::read_to_string(h.dir.join("machines").join(id).join(IMAGE_DIGEST_FILE)).unwrap()
+    };
+    assert_eq!(h.server.cache.digest_entry(&recorded("m1")), old);
+    assert_eq!(h.server.cache.digest_entry(&recorded("m2")), new);
+    let claims = fs::read_to_string(h.dir.join("images/.holders/runner-a")).unwrap();
+    for held in [&old, &new] {
+        let name = held.strip_prefix(h.dir.join("images")).unwrap();
+        assert!(claims.lines().any(|l| Path::new(l) == name), "{claims}");
+    }
+}
+
+// TEST_SCENARIO: a registry that cannot say what a tag names does not stop a machine whose image is cached: it boots the digest the tag last resolved to, and fetches nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_registry_outage_boots_the_digest_a_tag_last_resolved_to() {
+    let h = Harness::new("outage");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let entry = h.entry("quay.io/x/vm:1");
+    h.age_index("quay.io/x/vm:1");
+    fs::write(h.dir.join("registry-down"), "").unwrap();
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    let (image, _) = locked(&h.fake.created).get("m2").cloned().unwrap();
+    assert_eq!(PathBuf::from(image), entry.join(ROOTFS_DIR));
+    assert_eq!(h.crane_log("export"), 1);
+}
+
+// TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pinned_reference_is_never_resolved() {
+    let h = Harness::new("pinned");
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let mut pinned = spec(true);
+    pinned.image = format!("quay.io/x/vm:1@{digest}");
+    h.server.put("m1", pinned).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(h.crane_log("digest"), 0);
+    let fetched = fs::read_to_string(h.dir.join("crane.log")).unwrap();
+    assert!(
+        fetched
+            .lines()
+            .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
+        "{fetched}"
+    );
+    assert!(read_launch(&h.server.cache.digest_entry(&digest))
+        .unwrap()
+        .is_some());
 }

@@ -1,11 +1,15 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::process::Command;
+use std::time::{Duration, Instant, SystemTime};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::cache::{self, cache_path, PARTIAL_PREFIX};
+use crate::cache::{
+    self, cache_path, digest_path, pinned_digest, ref_path, RefRecord, PARTIAL_PREFIX,
+};
+use crate::command;
 use crate::fetch::{self, unusable};
 use crate::launch::{launch_from_config, read_launch, LAUNCH_FILE};
 use crate::state::is_image_ref;
@@ -22,6 +26,9 @@ pub struct ImageCache {
 
 pub const ROOTFS_DIR: &str = "rootfs";
 
+// UNIT_BOUNDARY_DESCRIPTION: a resolution is a manifest HEAD and nothing else. A registry that has not answered in a minute is treated as down, so a create falls back to the last digest the tag resolved to rather than waiting out the pull timeout.
+pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+
 impl ImageCache {
     pub fn entry(&self, reference: &str) -> PathBuf {
         cache_path(&self.dir, reference)
@@ -33,12 +40,94 @@ impl ImageCache {
         [PathBuf::from(format!("{}.tar", base.display())), base]
     }
 
+    pub fn digest_entry(&self, digest: &str) -> PathBuf {
+        digest_path(&self.dir, digest)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what the pins hold: for each image, the digest entry its reference last resolved to, and the tree and the archive an earlier release named after the reference — still held because an archive an earlier release cached still boots a machine, and evicting it would cost the install the only copy it has.
     pub fn pinned(&self) -> BTreeSet<PathBuf> {
-        self.pinned
-            .iter()
-            .filter(|reference| is_image_ref(reference) && !reference.contains(".."))
-            .flat_map(|reference| self.both_names(reference))
-            .collect()
+        let mut held = BTreeSet::new();
+        for reference in &self.pinned {
+            if !is_image_ref(reference) || reference.contains("..") {
+                continue;
+            }
+            held.extend(self.both_names(reference));
+            if let Some(digest) = self.known_digest(reference) {
+                held.insert(self.digest_entry(&digest));
+            }
+        }
+        held
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the digest this reference last resolved to on this directory, and when. The record names its own reference, and one that names another is not believed, so a hash collision or a hand-edited file cannot boot the wrong image.
+    fn read_ref(&self, reference: &str) -> Option<(String, SystemTime)> {
+        let path = ref_path(&self.dir, reference);
+        let at = fs::metadata(&path).ok()?.modified().ok()?;
+        let record: RefRecord = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
+        (record.image == reference && cache::is_digest(&record.digest))
+            .then_some((record.digest, at))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: written under a staged name and renamed, so a reader in another process never reads half a record.
+    fn write_ref(&self, reference: &str, digest: &str) -> anyhow::Result<()> {
+        let path = ref_path(&self.dir, reference);
+        let dir = path.parent().unwrap_or(&self.dir);
+        fs::create_dir_all(dir)?;
+        let staged = dir.join(format!(".new-{}-{}", std::process::id(), nanos()));
+        let body = serde_json::to_vec(&RefRecord {
+            image: reference.to_string(),
+            digest: digest.to_string(),
+        })?;
+        let written =
+            crate::files::write(&staged, &body, 0o644).and_then(|()| fs::rename(&staged, &path));
+        if written.is_err() {
+            let _ = fs::remove_file(&staged);
+        }
+        Ok(written?)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the digest a known reference names: a pinned reference its own, a tag the one it last resolved to however long ago. It is what an entry is held under by something that only knows the reference.
+    pub fn known_digest(&self, reference: &str) -> Option<String> {
+        if let Some(digest) = pinned_digest(reference) {
+            return Some(digest.to_string());
+        }
+        self.read_ref(reference).map(|(digest, _)| digest)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is taken from the index; otherwise the registry is asked and the answer written to the index for every process on the directory. A registry that cannot answer boots the digest the tag last resolved to, so an outage boots what was cached before. None means the tag was never resolved here and cannot be now, and the caller falls back to the first format.
+    pub fn resolve_digest(&self, reference: &str, fresh: Duration) -> Option<String> {
+        if let Some(digest) = pinned_digest(reference) {
+            return Some(digest.to_string());
+        }
+        let known = self.read_ref(reference);
+        if let Some((digest, at)) = &known {
+            if at.elapsed().is_ok_and(|age| age < fresh) {
+                return Some(digest.clone());
+            }
+        }
+        let known = known.map(|(digest, _)| digest);
+        if self.crane.is_empty() {
+            return known;
+        }
+        let logged = reference.replace(['\n', '\r'], " ");
+        let answer = command::output(
+            Command::new(&self.crane).arg("digest").arg(reference),
+            Instant::now() + RESOLVE_TIMEOUT,
+            &self.lifetime,
+        )
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|digest| cache::is_digest(digest));
+        let Some(digest) = answer else {
+            if let Some(known) = &known {
+                tracing::warn!(image = %logged, digest = %known, "image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to");
+            }
+            return known;
+        };
+        if let Err(e) = self.write_ref(reference, &digest) {
+            tracing::warn!(image = %logged, error = %format!("{e:#}"), "image cache: cannot record what a tag resolved to");
+        }
+        Some(digest)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: tells the other processes on the directory what this one holds: its own entries and its pins. Refreshed after every operation, because a claim is believed only while it keeps being written.
@@ -48,16 +137,17 @@ impl ImageCache {
         cache::publish_holders(&self.dir, &self.owner, &held);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image and unpacks it once for every machine of it to boot, then trims the cache to its budget. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
     pub fn fetch(
         &self,
         reference: &str,
+        cached: &Path,
         busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
     ) -> anyhow::Result<()> {
-        let cached = self.entry(reference);
-        fs::create_dir_all(&self.dir)?;
-        let scratch = Scratch::new(&self.dir)?;
+        let parent = cached.parent().unwrap_or(&self.dir);
+        fs::create_dir_all(parent)?;
+        let scratch = Scratch::new(parent)?;
         fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
         let started = Instant::now();
         let config =
@@ -86,8 +176,8 @@ impl ImageCache {
             bytes = cache::dir_size(scratch.path()),
             "image unpacked into the shared cache"
         );
-        self.claim(scratch.path(), &cached, busy)?;
-        self.evict(own, Some(&cached));
+        self.claim(scratch.path(), cached, busy)?;
+        self.evict(own, Some(cached));
         Ok(())
     }
 
@@ -136,6 +226,13 @@ impl ImageCache {
             }
         }
     }
+}
+
+fn nanos() -> u32 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default()
 }
 
 fn elapsed_ms(started: Instant) -> u64 {
