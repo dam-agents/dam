@@ -323,8 +323,8 @@ export async function bootstrap() {
     resolved: resolvedCatalog,
   });
   const kitGitHosts = createGitHosts({
-    host: config.starterKitsEnterpriseHost,
-    token: config.starterKitsEnterpriseToken,
+    host: config.githubEnterpriseHost,
+    token: config.githubEnterpriseToken,
   });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
