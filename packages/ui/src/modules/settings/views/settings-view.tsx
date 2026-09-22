@@ -1,5 +1,4 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,15 +14,12 @@ import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
-import {
-  isFeaturesMenuRevealed,
-  setFeaturesMenuRevealed,
-} from "../../features/lib/menu-reveal.js";
+import { isFeaturesMenuRevealed } from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
-import { useAppVersion } from "../api/queries.js";
+import { AppVersionRow } from "../components/app-version-row.js";
 import { ProvidersView } from "./providers-view.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
@@ -81,19 +77,6 @@ export function SettingsView() {
   const setTheme = useStore((s) => s.setTheme);
   const setView = useStore((s) => s.setView);
   const user = getUser();
-  const { data: appVersion } = useAppVersion();
-  const [versionTaps, setVersionTaps] = useState(0);
-
-  const onVersionTap = () => {
-    if (versionTaps + 1 < 5) {
-      setVersionTaps(versionTaps + 1);
-      return;
-    }
-    setVersionTaps(0);
-    const revealed = !isFeaturesMenuRevealed();
-    setFeaturesMenuRevealed(revealed);
-    navigateToSettings(revealed ? "features" : "account");
-  };
 
   return (
     <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
@@ -193,14 +176,7 @@ export function SettingsView() {
               </Button>
             </div>
 
-            {appVersion && (
-              <div
-                onClick={onVersionTap}
-                className="mt-6 text-xs text-muted-foreground break-all select-none"
-              >
-                Version {appVersion}
-              </div>
-            )}
+            <AppVersionRow />
           </div>
         )}
 
