@@ -6,6 +6,14 @@ export function connectionEgressPathPrefix(connectionId: string): string {
   return `/${CONNECTION_EGRESS_PATH_SEGMENT}/${connectionId}`;
 }
 
+const addressedPath = new RegExp(
+  `^/${CONNECTION_EGRESS_PATH_SEGMENT}/[A-Za-z0-9._~-]+(?=/)`,
+);
+
+export function stripConnectionEgressPrefix(path: string): string {
+  return path.replace(addressedPath, "");
+}
+
 type EgressInject = Extract<Contribution, { kind: "egress-inject" }>;
 type McpEntry = Extract<Contribution, { kind: "mcp-entry" }>;
 

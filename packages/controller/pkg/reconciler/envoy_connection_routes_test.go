@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,6 +25,36 @@ func connectionCredential(connectionID, secretName, header, host string) envoyCr
 		VolumeName:   "cred-" + secretName,
 		SDSFileKey:   sdsFileKeyForHost(host),
 	}
+}
+
+func scopedCredential(connectionID, secretName, header, host, pathPattern string) envoyCredential {
+	cred := connectionCredential(connectionID, secretName, header, host)
+	cred.PathPattern = pathPattern
+	return cred
+}
+
+func routeNamed(t *testing.T, routes []any, prefix string) ev {
+	t.Helper()
+	for _, r := range routes {
+		if r.(ev)["match"].(ev)["prefix"] == prefix {
+			return r.(ev)
+		}
+	}
+	require.FailNow(t, "no route matching prefix "+prefix)
+	return nil
+}
+
+func perFilterKeys(route ev) []string {
+	cfg, ok := route["typed_per_filter_config"].(ev)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(cfg))
+	for k := range cfg {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func routeMatchPrefixes(routes []any) []string {

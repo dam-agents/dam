@@ -51,17 +51,18 @@ type envoyCredential struct {
 	ConnectionID   string
 	SecretName     string
 	HeaderName     string
+	PathPattern    string
 	QueryParamName string
 	VolumeName     string
 	SDSFileKey     string
 }
 
 func (c envoyCredential) FilterName() string {
-	return "credential_injector_" + c.SecretName + "_" + shortHash(c.HeaderName)
+	return "credential_injector_" + c.SecretName + "_" + shortHash(c.HeaderName+"\n"+c.PathPattern)
 }
 
 func (c envoyCredential) QueryParamFilterName() string {
-	return "query_param_" + c.SecretName + "_" + shortHash(c.HeaderName)
+	return "query_param_" + c.SecretName + "_" + shortHash(c.HeaderName+"\n"+c.PathPattern)
 }
 
 type envoyPathRewrite struct {
@@ -110,40 +111,111 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	return out
 }
 
-func (c envoyHostChain) contestedHeaders() map[string]bool {
-	owners := map[string]string{}
-	contested := map[string]bool{}
-	for _, cred := range c.Credentials {
-		owner, seen := owners[cred.HeaderName]
-		if seen && owner != cred.ConnectionID {
-			contested[cred.HeaderName] = true
-			continue
-		}
-		owners[cred.HeaderName] = cred.ConnectionID
+func injectionScope(pathPattern string) string {
+	p := strings.TrimSpace(pathPattern)
+	p = strings.TrimSuffix(p, "*")
+	if p == "" || p == "/" {
+		return "/"
 	}
-	return contested
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return p
 }
 
-func (c envoyHostChain) Contested() bool { return len(c.contestedHeaders()) > 0 }
+func scopeCovers(scope, route string) bool {
+	return strings.HasPrefix(route, scope)
+}
 
-func (c envoyHostChain) headersOf(connectionID string) map[string]bool {
-	out := map[string]bool{}
+func (c envoyHostChain) PathScopes() []string {
+	seen := map[string]bool{"/": true}
+	scopes := []string{"/"}
 	for _, cred := range c.Credentials {
-		if cred.ConnectionID == connectionID {
-			out[cred.HeaderName] = true
+		s := injectionScope(cred.PathPattern)
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		scopes = append(scopes, s)
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if len(scopes[i]) != len(scopes[j]) {
+			return len(scopes[i]) > len(scopes[j])
+		}
+		return scopes[i] < scopes[j]
+	})
+	return scopes
+}
+
+func (c envoyHostChain) credentialsAt(scope string) []envoyCredential {
+	var out []envoyCredential
+	for _, cred := range c.Credentials {
+		if scopeCovers(injectionScope(cred.PathPattern), scope) {
+			out = append(out, cred)
 		}
 	}
 	return out
 }
 
-func (c envoyHostChain) CredentialsShadowedBy(connectionID string) []envoyCredential {
-	own := c.headersOf(connectionID)
-	var out []envoyCredential
+func (c envoyHostChain) ContestedAt(scope string) bool {
+	owners := map[string]string{}
+	for _, cred := range c.credentialsAt(scope) {
+		if owner, seen := owners[cred.HeaderName]; seen && owner != cred.ConnectionID {
+			return true
+		}
+		owners[cred.HeaderName] = cred.ConnectionID
+	}
+	return false
+}
+
+func (c envoyHostChain) Contested() bool {
+	for _, scope := range c.PathScopes() {
+		if c.ContestedAt(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c envoyHostChain) ScopesOf(connectionID string) []string {
+	seen := map[string]bool{}
+	var out []string
 	for _, cred := range c.Credentials {
-		if cred.ConnectionID == connectionID || !own[cred.HeaderName] {
+		if cred.ConnectionID != connectionID {
 			continue
 		}
-		out = append(out, cred)
+		s := injectionScope(cred.PathPattern)
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i]) != len(out[j]) {
+			return len(out[i]) > len(out[j])
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
+func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envoyCredential {
+	own := map[string]bool{}
+	if connectionID != "" {
+		for _, cred := range c.credentialsAt(scope) {
+			if cred.ConnectionID == connectionID {
+				own[cred.HeaderName] = true
+			}
+		}
+	}
+	var out []envoyCredential
+	for _, cred := range c.Credentials {
+		outOfScope := !scopeCovers(injectionScope(cred.PathPattern), scope)
+		shadowed := connectionID != "" && cred.ConnectionID != connectionID && own[cred.HeaderName]
+		if outOfScope || shadowed {
+			out = append(out, cred)
+		}
 	}
 	return out
 }
@@ -403,7 +475,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 	if len(entries) == 0 {
 		return nil
 	}
-	seen := map[struct{ host, header string }]struct{}{}
+	seen := map[struct{ host, header, scope string }]struct{}{}
 	out := make([]hostCredential, 0, len(entries))
 	for _, e := range entries {
 		if e.Host == "" {
@@ -413,10 +485,11 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		if header == "" {
 			header = "Authorization"
 		}
-		key := struct{ host, header string }{e.Host, header}
+		key := struct{ host, header, scope string }{e.Host, header, injectionScope(e.PathPattern)}
 		if _, dup := seen[key]; dup {
-			slog.Warn("duplicate (host, header) in injection-hosts; skipping later entry",
-				"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "headerName", header)
+			slog.Warn("duplicate (host, header, path scope) in injection-hosts; skipping later entry",
+				"namespace", s.Namespace, "secret", s.Name, "host", e.Host,
+				"headerName", header, "pathPattern", e.PathPattern)
 			continue
 		}
 		seen[key] = struct{}{}
@@ -445,6 +518,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 			cred: envoyCredential{
 				ConnectionID:   s.Labels[envoyConnectionLabel],
 				SecretName:     s.Name,
+				PathPattern:    e.PathPattern,
 				HeaderName:     header,
 				QueryParamName: e.QueryParamName,
 				VolumeName:     "cred-" + s.Name,
@@ -540,13 +614,14 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		if header == "" {
 			header = "Authorization"
 		}
-		if winner, dup := b.seenHeader[header]; dup && winner.connectionID == cred.ConnectionID {
-			slog.Warn("duplicate injection header on host within one connection; later credential skipped to avoid credential_injector clobber",
-				"host", host, "headerName", header,
+		claim := header + "\n" + injectionScope(cred.PathPattern)
+		if winner, dup := b.seenHeader[claim]; dup && winner.connectionID == cred.ConnectionID {
+			slog.Warn("duplicate injection header and path scope on host within one connection; later credential skipped to avoid credential_injector clobber",
+				"host", host, "headerName", header, "pathPattern", cred.PathPattern,
 				"winningSecret", winner.secretName, "skippedSecret", secretName)
 			return
 		}
-		b.seenHeader[header] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
+		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)

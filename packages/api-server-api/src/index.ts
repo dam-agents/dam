@@ -336,6 +336,7 @@ export {
 export {
   CONNECTION_EGRESS_PATH_SEGMENT,
   connectionEgressPathPrefix,
+  stripConnectionEgressPrefix,
   applyConnectionEgressAddressing,
 } from "./modules/connections/egress-addressing.js";
 

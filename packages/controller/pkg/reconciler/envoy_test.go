@@ -1082,8 +1082,8 @@ func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *t
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2)
 	assert.False(t, chains[0].Contested())
-	assert.Empty(t, chains[0].CredentialsShadowedBy("conn-a"))
-	assert.Empty(t, chains[0].CredentialsShadowedBy("conn-b"))
+	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-a", "/"))
+	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-b", "/"))
 }
 
 func TestChainsFromSecrets_DistinctHeadersOnSameHostCoexist(t *testing.T) {

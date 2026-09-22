@@ -380,44 +380,78 @@ func buildChainForwardRoutes(c envoyHostChain) []any {
 	for _, connectionID := range c.ConnectionIDs() {
 		routes = append(routes, buildConnectionRoutes(c, connectionID)...)
 	}
-	if c.Contested() {
-		return append(routes, buildUnaddressedRoute(c))
-	}
-	for _, r := range c.PathRewrites {
-		route := buildChainRouteAction(c)
-		route["prefix_rewrite"] = r.Replacement
-		routes = append(routes, ev{"match": ev{"prefix": r.Prefix}, "route": route})
-	}
-	return append(routes, ev{"match": ev{"prefix": "/"}, "route": buildChainRouteAction(c)})
+	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
 func connectionPathPrefix(connectionID string) string {
 	return "/" + connectionEgressPathSegment + "/" + connectionID + "/"
 }
 
+func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
+	route := buildChainRouteAction(c)
+	if rewrite != "" {
+		route["prefix_rewrite"] = rewrite
+	}
+	entry := ev{"match": ev{"prefix": match}, "route": route}
+	if disabled := disabledPerRoute(c, connectionID, scope); len(disabled) > 0 {
+		entry["typed_per_filter_config"] = disabled
+	}
+	return entry
+}
+
 func buildConnectionRoutes(c envoyHostChain, connectionID string) []any {
 	prefix := connectionPathPrefix(connectionID)
-	shadowed := shadowedPerRoute(c, connectionID)
-	routes := make([]any, 0, len(c.PathRewrites)+1)
-	appendRoute := func(match string, rewrite string) {
-		route := buildChainRouteAction(c)
-		route["prefix_rewrite"] = rewrite
-		entry := ev{"match": ev{"prefix": match}, "route": route}
-		if len(shadowed) > 0 {
-			entry["typed_per_filter_config"] = shadowed
+	emitted := map[string]bool{}
+	var routes []any
+	add := func(scope, match, rewrite string) {
+		if emitted[match] {
+			return
 		}
-		routes = append(routes, entry)
+		emitted[match] = true
+		routes = append(routes, scopedRoute(c, connectionID, scope, match, rewrite))
 	}
-	for _, r := range c.PathRewrites {
-		appendRoute(prefix+strings.TrimPrefix(r.Prefix, "/"), r.Replacement)
+	for _, scope := range c.ScopesOf(connectionID) {
+		for _, r := range c.PathRewrites {
+			if !scopeCovers(scope, r.Prefix) {
+				continue
+			}
+			add(r.Prefix, prefix+strings.TrimPrefix(r.Prefix, "/"), r.Replacement)
+		}
+		add(scope, prefix+strings.TrimPrefix(scope, "/"), scope)
 	}
-	appendRoute(prefix, "/")
 	return routes
 }
 
-func shadowedPerRoute(c envoyHostChain, connectionID string) ev {
+func buildUnaddressedRoutes(c envoyHostChain) []any {
+	emitted := map[string]bool{}
+	var routes []any
+	for _, scope := range c.PathScopes() {
+		if c.ContestedAt(scope) {
+			if !emitted[scope] {
+				emitted[scope] = true
+				routes = append(routes, buildRefusedRoute(c, scope))
+			}
+			continue
+		}
+		for _, r := range c.PathRewrites {
+			if !scopeCovers(scope, r.Prefix) || emitted[r.Prefix] {
+				continue
+			}
+			emitted[r.Prefix] = true
+			routes = append(routes, scopedRoute(c, "", r.Prefix, r.Prefix, r.Replacement))
+		}
+		if emitted[scope] {
+			continue
+		}
+		emitted[scope] = true
+		routes = append(routes, scopedRoute(c, "", scope, scope, ""))
+	}
+	return routes
+}
+
+func disabledPerRoute(c envoyHostChain, connectionID, scope string) ev {
 	out := ev{}
-	for _, cred := range c.CredentialsShadowedBy(connectionID) {
+	for _, cred := range c.CredentialsDisabledAt(connectionID, scope) {
 		out[cred.FilterName()] = filterDisabledPerRoute()
 		if cred.QueryParamName != "" {
 			out[cred.QueryParamFilterName()] = filterDisabledPerRoute()
@@ -433,23 +467,31 @@ func filterDisabledPerRoute() ev {
 	}
 }
 
-func buildUnaddressedRoute(c envoyHostChain) ev {
+func buildRefusedRoute(c envoyHostChain, scope string) ev {
 	return ev{
-		"match": ev{"prefix": "/"},
+		"match": ev{"prefix": scope},
 		"direct_response": ev{
 			"status": 403,
-			"body":   ev{"inline_string": unaddressedBody(c)},
+			"body":   ev{"inline_string": refusedBody(c, scope)},
 		},
 		"typed_per_filter_config": extAuthzDisabledPerRoute(),
 	}
 }
 
-func unaddressedBody(c envoyHostChain) string {
-	ids := c.ConnectionIDs()
+func refusedBody(c envoyHostChain, scope string) string {
+	claimants := map[string]bool{}
+	var ids []string
+	for _, cred := range c.credentialsAt(scope) {
+		if cred.ConnectionID == "" || claimants[cred.ConnectionID] {
+			continue
+		}
+		claimants[cred.ConnectionID] = true
+		ids = append(ids, cred.ConnectionID)
+	}
 	return fmt.Sprintf(
-		"More than one connection injects the same credential header on %s, so this request names no account. "+
-			"Prefix the request path with /%s/<connection-id>/ to choose one. Connections on this host: %s.\n",
-		c.Host, connectionEgressPathSegment, strings.Join(ids, ", "))
+		"More than one connection injects the same credential header on %s%s, so this request names no account. "+
+			"Prefix the request path with /%s/<connection-id>/ to choose one. Connections here: %s.\n",
+		c.Host, scope, connectionEgressPathSegment, strings.Join(ids, ", "))
 }
 
 func buildChainRouteAction(c envoyHostChain) ev {

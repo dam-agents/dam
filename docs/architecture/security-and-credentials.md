@@ -327,8 +327,7 @@ private repos works without a credential helper), and the raw-content
 host as a bearer token again.
 
 The Secret also carries the SDS documents Envoy reads, one per injection
-step — see
-[`packages/api-server/src/modules/connections/`](../../packages/api-server/src/modules/connections/).
+step.
 
 ## Image pull credentials
 
@@ -532,17 +531,18 @@ chain with an ordered list of credential injectors; a step that targets a
 query parameter has its value moved into the URL instead, percent-encoded,
 and the carrier header never reaches the upstream.
 
-**Two connections claiming one header.** Where two Connections of one
-service inject on the same host and header, the header alone no longer
-says which account to act as. The chain carries an injector per
-Connection, and the [per-Connection address](connections.md#addressing-a-connection)
-picks one: each Connection's path prefix gets a route that disables the
-rival injectors claiming a header this Connection also claims, then
-strips the prefix on the way upstream. Injectors on headers no Connection
-contests stay enabled, so complementary credentials on one host keep
-stacking. A request reaching such a host without naming a Connection is
-refused at the gateway rather than served from whichever credential
-sorted first.
+**Two connections claiming one header.** Where two Connections inject one
+header on one host over paths that overlap, the header alone no longer
+says which account to act as. Chains are cut by path scope as well as
+host: a route per scope carries only the injectors whose own scope covers
+it, so one Connection per Google service composes untouched. Where a
+scope is claimed twice, the
+[per-Connection address](connections.md#addressing-a-connection) picks
+one — that Connection's prefix gets a route disabling its rivals on the
+headers it claims, and the prefix is stripped on the way upstream. A
+request naming no Connection is refused there, not served from whichever
+credential sorted first. The gate reads the path with the prefix removed,
+so egress rules and approvals keep naming real paths.
 
 ## HITL ext_authz
 

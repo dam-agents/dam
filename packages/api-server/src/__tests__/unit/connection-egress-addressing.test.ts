@@ -10,6 +10,7 @@ import type { Contribution } from "api-server-api";
 import {
   applyConnectionEgressAddressing,
   connectionEgressPathPrefix,
+  stripConnectionEgressPrefix,
 } from "api-server-api";
 
 function mcpEntry(url: string): Contribution {
@@ -88,8 +89,10 @@ describe("applyConnectionEgressAddressing", () => {
     expect(urlOf(out)).toBe("https://elsewhere.example.com/mcp");
   });
 
-  /** TEST_SCENARIO: A path-scoped host is allowed only on the paths its egress rule
-   * names, and a prefixed path is not one of them. */
+  /** TEST_SCENARIO: The gateway gives a path-scoped injection an addressed route
+   * only under its own scope, so prefixing an entry that sits outside that scope
+   * would name a path nothing serves. Such a connection keeps the plain address,
+   * which its scoped route still injects on. */
   it("leaves an entry alone when the injection is scoped to a path", () => {
     const out = applyConnectionEgressAddressing("conn-aaa", [
       inject("www.googleapis.com", { pathPattern: "/gmail/*" }),
@@ -132,5 +135,39 @@ describe("applyConnectionEgressAddressing", () => {
       env,
     ]);
     expect(out).toContainEqual(env);
+  });
+});
+
+describe("stripConnectionEgressPrefix", () => {
+  /** TEST_SCENARIO: The gate matches the request against the agent's egress rules.
+   * Those rules name the paths the service publishes, so the address the agent
+   * used to pick an account must not change which rule matches. */
+  it("gives back the path the upstream will be asked for", () => {
+    expect(stripConnectionEgressPrefix("/__platform_conn/conn-aaa/mcp")).toBe(
+      "/mcp",
+    );
+    expect(stripConnectionEgressPrefix("/__platform_conn/conn-aaa/")).toBe("/");
+  });
+
+  /** TEST_SCENARIO: Most traffic carries no address at all, and a path that merely
+   * looks like one must not be truncated into a different rule's path. */
+  it("leaves an unaddressed path untouched", () => {
+    expect(stripConnectionEgressPrefix("/mcp")).toBe("/mcp");
+    expect(stripConnectionEgressPrefix("/__platform_conn/conn-aaa")).toBe(
+      "/__platform_conn/conn-aaa",
+    );
+    expect(stripConnectionEgressPrefix("/a/b/__platform_conn/x/y")).toBe(
+      "/a/b/__platform_conn/x/y",
+    );
+  });
+
+  /** TEST_SCENARIO: Only the leading address is an address; one deeper in the path
+   * is the upstream's own, and stripping it would rewrite a real request. */
+  it("strips only the leading address", () => {
+    expect(
+      stripConnectionEgressPrefix(
+        "/__platform_conn/conn-aaa/__platform_conn/conn-bbb/mcp",
+      ),
+    ).toBe("/__platform_conn/conn-bbb/mcp");
   });
 });
