@@ -31,7 +31,7 @@ pinact = "latest"
 pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
 trivy = "latest"
 uv = "0.9"
-yq = "latest"
+yq = "4.53.6" # pinned: the version .mise/mise.lock already records, so the config states it too
 zizmor = "latest"
 
 [settings]
