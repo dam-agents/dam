@@ -11,7 +11,13 @@ export const CREDENTIAL_SCOPES = [
   "credentials:manage",
 ] as const;
 
-export const ALL_SCOPES = [...AGENT_SCOPES, ...CREDENTIAL_SCOPES] as const;
+export const SATELLITE_SCOPES = ["satellites:serve"] as const;
+
+export const ALL_SCOPES = [
+  ...AGENT_SCOPES,
+  ...CREDENTIAL_SCOPES,
+  ...SATELLITE_SCOPES,
+] as const;
 
 export const scopeSchema = z.enum(ALL_SCOPES);
 

@@ -43,6 +43,9 @@ export {
   attentionRecords,
   attentionState,
   starterKitCatalogEntries,
+  satellites,
+  satelliteGrants,
+  satelliteJobs,
 } from "./schema.js";
 export {
   eq,
@@ -52,6 +55,7 @@ export {
   gte,
   ilike,
   inArray,
+  notInArray,
   asc,
   desc,
   isNotNull,
@@ -61,6 +65,5 @@ export {
   lte,
   ne,
   not,
-  notInArray,
   sql,
 } from "drizzle-orm";
