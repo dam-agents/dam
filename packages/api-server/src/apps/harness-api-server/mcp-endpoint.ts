@@ -8,7 +8,7 @@ import {
   AGENT_WORK_DIR,
   type AppRouter,
 } from "agent-runtime-api";
-import type { ExperimentsService } from "api-server-api";
+import type { ExperimentsService, SatelliteView } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -45,6 +45,11 @@ import {
   registerAgentTelemetryTools,
   type AgentTelemetryService,
 } from "../../modules/metrics/index.js";
+import {
+  DEFAULT_SATELLITE_WAIT_MS,
+  registerSatelliteTools,
+} from "../../modules/satellites/index.js";
+import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 function resolveWorkspacePath(input: string): string {
   const agentHome = AGENT_HOME_DIR;
@@ -124,6 +129,11 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  satellites?: {
+    ops: SatelliteAgentOpsImpl;
+    granted: SatelliteView[];
+    waitDeadlineMs: number;
+  } | null;
 }
 
 export function createMcpSession(
@@ -979,6 +989,14 @@ export function createMcpSession(
     },
   );
 
+  if (deps.satellites)
+    registerSatelliteTools(server, {
+      ops: deps.satellites.ops,
+      agentId,
+      satellites: deps.satellites.granted,
+      waitDeadlineMs: deps.satellites.waitDeadlineMs,
+    });
+
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
@@ -1003,6 +1021,8 @@ export interface MountMcpDeps {
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  satelliteOps?: SatelliteAgentOpsImpl;
+  satelliteWaitDeadlineMs?: number;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1027,7 +1047,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const ownerIsInspector = await deps.carriesInspectorRole(verified.owner);
+    const [ownerIsInspector, grantedSatellites] = await Promise.all([
+      deps.carriesInspectorRole(verified.owner),
+      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+        (err: unknown) => {
+          console.error(
+            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            err,
+          );
+          return [];
+        },
+      ),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -1055,6 +1086,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       agentTelemetry: deps.agentTelemetry,
+      satellites:
+        deps.satelliteOps && grantedSatellites.length > 0
+          ? {
+              ops: deps.satelliteOps,
+              granted: grantedSatellites,
+              waitDeadlineMs:
+                deps.satelliteWaitDeadlineMs ?? DEFAULT_SATELLITE_WAIT_MS,
+            }
+          : null,
     });
     await session.server.connect(session.transport);
 

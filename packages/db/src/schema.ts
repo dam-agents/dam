@@ -424,6 +424,83 @@ export const connectionGrants = pgTable(
   ],
 );
 
+export const satellites = pgTable(
+  "satellites",
+  {
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    host: text("host"),
+    maxConcurrent: integer("max_concurrent").notNull(),
+    tools: jsonb("tools").notNull(),
+    nextSequence: integer("next_sequence").notNull().default(1),
+    draining: boolean("draining").notNull().default(false),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.owner, table.name] })],
+);
+
+export const satelliteGrants = pgTable(
+  "satellite_grants",
+  {
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    agentId: text("agent_id").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.name, table.agentId] }),
+    index("satellite_grants_agent_idx").on(table.agentId),
+  ],
+);
+
+export const satelliteJobs = pgTable(
+  "satellite_jobs",
+  {
+    owner: text("owner").notNull(),
+    satellite: text("satellite").notNull(),
+    sequence: integer("sequence").notNull(),
+    agentId: text("agent_id").notNull(),
+    tool: text("tool").notNull(),
+    args: jsonb("args").notNull(),
+    status: text("status").notNull(),
+    approvalId: text("approval_id"),
+    approved: boolean("approved").notNull().default(false),
+    isError: boolean("is_error").notNull().default(false),
+    exitCode: integer("exit_code"),
+    output: text("output"),
+    truncated: boolean("truncated").notNull().default(false),
+    reason: text("reason"),
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    wokeAt: timestamp("woke_at", { withTimezone: true }),
+    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.satellite, table.sequence] }),
+    index("satellite_jobs_dispatch_idx").on(
+      table.owner,
+      table.satellite,
+      table.status,
+    ),
+    index("satellite_jobs_agent_idx").on(table.agentId),
+    index("satellite_jobs_lease_idx").on(table.leaseUntil),
+  ],
+);
+
 export const runtimeStateOutbox = pgTable(
   "runtime_state_outbox",
   {
