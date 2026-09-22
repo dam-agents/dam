@@ -42,9 +42,6 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      # mise's task artifact cache: a check/test whose declared inputs match a
-      # previous run is replayed instead of re-run. Restored on every run,
-      # saved only from main — see the Go cache below for why.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
@@ -52,22 +49,6 @@ jobs:
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
-      # Rust build cache: without it every run compiles smolvm and its whole
-      # dependency tree from source before it reaches the crate under test —
-      # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
-      # shape as the Go cache below, for the same reason.
-      #
-      # An exact hit skips the save, so everything the entry must follow has to
-      # be in the key, and `Cargo.lock` alone follows almost none of it. Cargo
-      # fingerprints every unit by the compiler that built it, so `mise.lock` is
-      # here for pinning the Rust toolchain: without it a toolchain bump leaves
-      # the exact key hitting and the save skipped, and `target/` holds units the
-      # new rustc rejects and rebuilds on every run, with nothing able to rewrite
-      # the entry until a dependency happens to move. `Cargo.toml` is here for
-      # the same reason one level down — it carries the edition and the crate's
-      # lint levels, both of which reach rustc per unit and neither of which the
-      # lock records. And `smolvm.pin` decides which tree `.smolvm` holds, which
-      # a path dependency leaves no trace of in the lock at all.
       - id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -79,32 +60,6 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-${{ github.job }}-
             rust-${{ runner.os }}-
-      # Go build/module caches: without them build, vet, staticcheck and test
-      # each compile the controller from scratch — measured 296 s for
-      # staticcheck and 276 s for vet, the whole tail of this job.
-      #
-      # Restore always, save only from a main push. GitHub scopes a cache entry
-      # to the branch that wrote it: what a PR run saves is readable by that one
-      # PR and by nothing else, yet it still counts against the 10 GB the
-      # repository gets and that GitHub evicts from, oldest first. These entries
-      # are ~600 MB each, so PR runs writing them evicted the main entries that
-      # every job actually reads — measured on main itself, all three restore
-      # keys missed and the job then wrote 580 MB nothing would read.
-      #
-      # An exact hit skips the save, so whatever the entry must follow has to be
-      # in the key. Both caches are keyed internally by the version that wrote
-      # them — go-build by the toolchain id, staticcheck by its own version —
-      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
-      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
-      # hitting and the save still skipped, holding objects the new compiler
-      # cannot use: the 296 s and 276 s tails back on every run, with nothing
-      # able to rewrite the entry until a dependency happened to move. go.sum
-      # stays in the key so the hash is never empty, which is what hashFiles
-      # returns when nothing matches. A restore-keys hit can still land a
-      # stale-toolchain entry; that is a miss on the exact key, so the next
-      # main push rewrites it.
-      # First-party packages recompile regardless — the dependency and stdlib
-      # objects that dominate the tail are what this keeps.
       - id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -158,9 +113,6 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      # mise's task artifact cache: a check/test whose declared inputs match a
-      # previous run is replayed instead of re-run. Restored on every run,
-      # saved only from main — see the Go cache below for why.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
@@ -168,22 +120,6 @@ jobs:
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
-      # Rust build cache: without it every run compiles smolvm and its whole
-      # dependency tree from source before it reaches the crate under test —
-      # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
-      # shape as the Go cache below, for the same reason.
-      #
-      # An exact hit skips the save, so everything the entry must follow has to
-      # be in the key, and `Cargo.lock` alone follows almost none of it. Cargo
-      # fingerprints every unit by the compiler that built it, so `mise.lock` is
-      # here for pinning the Rust toolchain: without it a toolchain bump leaves
-      # the exact key hitting and the save skipped, and `target/` holds units the
-      # new rustc rejects and rebuilds on every run, with nothing able to rewrite
-      # the entry until a dependency happens to move. `Cargo.toml` is here for
-      # the same reason one level down — it carries the edition and the crate's
-      # lint levels, both of which reach rustc per unit and neither of which the
-      # lock records. And `smolvm.pin` decides which tree `.smolvm` holds, which
-      # a path dependency leaves no trace of in the lock at all.
       - id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -195,32 +131,6 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-${{ github.job }}-
             rust-${{ runner.os }}-
-      # Go build/module caches: without them build, vet, staticcheck and test
-      # each compile the controller from scratch — measured 296 s for
-      # staticcheck and 276 s for vet, the whole tail of this job.
-      #
-      # Restore always, save only from a main push. GitHub scopes a cache entry
-      # to the branch that wrote it: what a PR run saves is readable by that one
-      # PR and by nothing else, yet it still counts against the 10 GB the
-      # repository gets and that GitHub evicts from, oldest first. These entries
-      # are ~600 MB each, so PR runs writing them evicted the main entries that
-      # every job actually reads — measured on main itself, all three restore
-      # keys missed and the job then wrote 580 MB nothing would read.
-      #
-      # An exact hit skips the save, so whatever the entry must follow has to be
-      # in the key. Both caches are keyed internally by the version that wrote
-      # them — go-build by the toolchain id, staticcheck by its own version —
-      # and the mise lockfile is where those are pinned (go 1.26.8, staticcheck
-      # 0.8.1). On go.sum alone a toolchain bump would leave the key still
-      # hitting and the save still skipped, holding objects the new compiler
-      # cannot use: the 296 s and 276 s tails back on every run, with nothing
-      # able to rewrite the entry until a dependency happened to move. go.sum
-      # stays in the key so the hash is never empty, which is what hashFiles
-      # returns when nothing matches. A restore-keys hit can still land a
-      # stale-toolchain entry; that is a miss on the exact key, so the next
-      # main push rewrites it.
-      # First-party packages recompile regardless — the dependency and stdlib
-      # objects that dominate the tail are what this keeps.
       - id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -757,13 +667,6 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Platform images by the digest build-images pushed (untagged until
-          # merge-images; Quay keeps untagged manifests for hours, this gap is
-          # minutes). mock is pushed with its sha tag directly.
-          # Pulled concurrently: one pull at a time left the link idle and cost
-          # 56 s at the head of the job, all of it on the critical path to the
-          # suite. Each pid is waited on separately so a failed pull still
-          # fails the step — a bare `wait` returns 0 however the pulls went.
           pids=()
           for c in controller api-server ui keycloak; do
             docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
