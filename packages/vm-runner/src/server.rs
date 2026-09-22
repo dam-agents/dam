@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime};
 
 use ipnet::IpNet;
@@ -60,6 +60,7 @@ struct Inner {
     closed: bool,
     pending: HashMap<String, &'static str>,
     seq: HashMap<String, u64>,
+    served: HashMap<String, u64>,
     committing: BTreeMap<String, i32>,
     failures: HashMap<String, Failed>,
     gens: HashMap<String, u64>,
@@ -75,6 +76,7 @@ pub struct Server {
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
     inner: Mutex<Inner>,
+    turns: Condvar,
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     ports: Mutex<()>,
     lifetime: CancellationToken,
@@ -121,6 +123,7 @@ impl Server {
             runtime,
             forwarder,
             inner: Mutex::new(Inner::default()),
+            turns: Condvar::new(),
             locks: Mutex::new(HashMap::new()),
             ports: Mutex::new(()),
             lifetime: CancellationToken::new(),
@@ -272,7 +275,7 @@ impl Server {
             .clone()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: runs one operation in the background, after the ones already queued for the machine. Each clears only its own markers, so a boot that finishes does not erase the stop queued behind it. An operation refused because the runner is closing releases the memory its caller reserved for it.
+    // UNIT_BOUNDARY_DESCRIPTION: runs one operation in the background, after the ones already queued for the machine and in the order they were queued. The order is a ticket taken here, when the operation is queued, and not the order the worker threads happen to reach the machine's lock: two threads started a moment apart can take the lock in either order, and a stop queued behind a boot that runs first leaves running a machine the controller asked to stop. Each clears only its own markers, so a boot that finishes does not erase the stop queued behind it. An operation refused because the runner is closing releases the memory its caller reserved for it.
     fn spawn(
         self: &Arc<Self>,
         id: &str,
@@ -301,6 +304,7 @@ impl Server {
         let server = self.clone();
         let id = id.to_string();
         self.work.spawn_blocking(move || {
+            let _turn = server.wait_turn(&id, seq);
             let lock = server.lock(&id);
             let _held = locked(&lock);
             let gone = locked(&server.inner).gens.get(&id).copied().unwrap_or_default() != generation;
@@ -327,6 +331,18 @@ impl Server {
                 }
             }
         });
+    }
+
+    fn wait_turn(&self, id: &str, ticket: u64) -> Turn<'_> {
+        let mut inner = locked(&self.inner);
+        while inner.served.get(id).copied().unwrap_or_default() + 1 != ticket {
+            inner = self.turns.wait(inner).unwrap_or_else(|e| e.into_inner());
+        }
+        Turn {
+            server: self,
+            id: id.to_string(),
+            ticket,
+        }
     }
 
     fn ensure(
@@ -705,6 +721,22 @@ impl Server {
                 .observed_running(status.ready, SystemTime::now());
         }
         status
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an operation's place in its machine's queue. Dropping it hands the machine to the next ticket, on every path out of the operation including a panic, so one failed operation cannot stall every operation queued behind it.
+struct Turn<'a> {
+    server: &'a Server,
+    id: String,
+    ticket: u64,
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        locked(&self.server.inner)
+            .served
+            .insert(self.id.clone(), self.ticket);
+        self.server.turns.notify_all();
     }
 }
 
