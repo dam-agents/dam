@@ -82,8 +82,8 @@ function harness(items: WorkItem[], timeout?: string) {
   return { worker, backend, reports, allReported };
 }
 
-function runItem(sequence: number, cmd: string[], approved = false): WorkItem {
-  return { kind: "call", sequence, tool: "run", args: { cmd }, approved };
+function runItem(sequence: number, cmd: string[]): WorkItem {
+  return { kind: "call", sequence, tool: "run", args: { cmd } };
 }
 
 async function drive(items: WorkItem[]): Promise<Reported[]> {
