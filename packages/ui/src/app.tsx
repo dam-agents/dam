@@ -116,14 +116,16 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
+        <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
             <div className="pointer-events-auto">
               <NotificationsBell onOpen={() => setActivityOpen(true)} />
             </div>
           </div>
           {view === "sandbox-home" ? (
-            <SandboxHomeView />
+            <div className="min-h-0 flex-1">
+              <SandboxHomeView />
+            </div>
           ) : (
             <div
               className={cn(
