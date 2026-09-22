@@ -42,6 +42,9 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	requeue        func(name string, after time.Duration)
+	preflightMu    sync.Mutex
+	preflight      vmPreflightResult
+	preflightDone  bool
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {

@@ -55,7 +55,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		return vmrunner.MachineStatus{Message: r.runnerNotReadyMessage(ctx, owner)}, nil
+		msg := r.runnerNotReadyMessage(ctx, owner)
+		if problems := r.vmPreflightProblems(); problems != "" {
+			msg += "; this install cannot run VM runners as configured: " + problems
+		}
+		return vmrunner.MachineStatus{Message: msg}, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults

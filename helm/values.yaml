@@ -159,6 +159,12 @@ istio:
 # machine may reach nothing but it. Off = the create refuses the vm backend
 # and existing vm agents fail reconcile. One runner per owner; per-user fair-use
 # limits for machines are the upgrade path.
+# The chart refuses values the controller cannot use. The controller then checks
+# the install against the cluster at startup and every few minutes — a node
+# advertising `runner.devices`, the runner ServiceAccount, the image budget, the
+# memory limit against `reserveMiB`, egress that reaches the cluster's own
+# ranges — logs what it finds, and names any problem on a vm agent whose
+# runner is not ready.
 virtualization:
   enabled: false
   # The shape of every runner pod the controller creates (one per owner).
@@ -174,7 +180,9 @@ virtualization:
     # it is never a privileged pod. Empty = the chart's own plugin below when
     # enabled, else KubeVirt's (`devices.kubevirt.io/kvm|tun`, present on
     # every node virt-handler runs on). Any plugin exposing /dev/kvm and
-    # /dev/net/tun works; a cluster with none cannot host vm agents.
+    # /dev/net/tun works; a cluster with none cannot host vm agents, and the
+    # controller says so at startup when no schedulable node matching
+    # `nodeSelector` advertises these.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
@@ -268,6 +276,12 @@ virtualization:
     # the platform's datastores, which are reached by pod and Service
     # addresses. It does not separate one owner's gateways from another's:
     # gateway pods carry no owner label, so the rule admits them as a class.
+    # There is no default read from the cluster: no portable API names the pod
+    # range (many network plugins never record it on the node), and excepting
+    # only the Service range would read as confined while pods stay reachable.
+    # Instead the controller warns at startup when an entry above reaches the
+    # API server's Service address or its own pod address with no exception
+    # covering it.
     egressExceptCidrs: []
   # A directory on each node that every runner scheduled there shares. A machine
   # may reach only its gateway, so the guest cannot pull its own image; the
