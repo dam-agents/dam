@@ -22,24 +22,25 @@ import (
 )
 
 const (
-	envoyOwnerLabel            = "agent-platform.ai/owner"
-	envoyManagedByLabel        = "agent-platform.ai/managed-by"
-	envoySecretTypeLabel       = "agent-platform.ai/secret-type"
-	envoyConnectionLabel       = "agent-platform.ai/connection"
-	envoyHostPatternAnn        = "agent-platform.ai/host-pattern"
-	envoyHeaderNameAnn         = "agent-platform.ai/injection-header-name"
-	envoyQueryParamAnn         = "agent-platform.ai/injection-query-param"
-	envoyInjectionHTTP2Ann     = "agent-platform.ai/injection-http2"
-	envoyInjectionHostsAnn     = "agent-platform.ai/injection-hosts"
-	envoyEnvMappingsAnn        = "agent-platform.ai/env-mappings"
-	credentialSecretNamePrefix = "platform-cred-"
-	envoyBootstrapVolume       = "envoy-bootstrap"
-	envoyBootstrapMount        = "/etc/envoy"
-	envoyCredentialsRoot       = "/etc/envoy/credentials"
-	envoyCredentialKeySDS      = "sds.yaml"
-	envoyCredentialSDSName     = "credential"
-	envoyLeafTLSVolume         = "envoy-tls"
-	envoyLeafTLSMount          = "/etc/envoy/tls"
+	envoyOwnerLabel             = "agent-platform.ai/owner"
+	envoyManagedByLabel         = "agent-platform.ai/managed-by"
+	envoySecretTypeLabel        = "agent-platform.ai/secret-type"
+	envoyConnectionLabel        = "agent-platform.ai/connection"
+	envoyHostPatternAnn         = "agent-platform.ai/host-pattern"
+	envoyHeaderNameAnn          = "agent-platform.ai/injection-header-name"
+	envoyQueryParamAnn          = "agent-platform.ai/injection-query-param"
+	envoyInjectionHTTP2Ann      = "agent-platform.ai/injection-http2"
+	envoyInjectionHostsAnn      = "agent-platform.ai/injection-hosts"
+	envoyEnvMappingsAnn         = "agent-platform.ai/env-mappings"
+	credentialSecretNamePrefix  = "platform-cred-"
+	envoyBootstrapVolume        = "envoy-bootstrap"
+	envoyBootstrapMount         = "/etc/envoy"
+	envoyCredentialsRoot        = "/etc/envoy/credentials"
+	envoyCredentialKeySDS       = "sds.yaml"
+	envoyCredentialSDSName      = "credential"
+	envoyLeafTLSVolume          = "envoy-tls"
+	envoyLeafTLSMount           = "/etc/envoy/tls"
+	connectionEgressPathSegment = "__platform_conn"
 )
 
 func EnvoyBootstrapName(instanceName string) string {
@@ -47,11 +48,21 @@ func EnvoyBootstrapName(instanceName string) string {
 }
 
 type envoyCredential struct {
+	ConnectionID   string
 	SecretName     string
 	HeaderName     string
+	PathPattern    string
 	QueryParamName string
 	VolumeName     string
 	SDSFileKey     string
+}
+
+func (c envoyCredential) FilterName() string {
+	return "credential_injector_" + c.SecretName + "_" + shortHash(c.HeaderName+"\n"+c.PathPattern)
+}
+
+func (c envoyCredential) QueryParamFilterName() string {
+	return "query_param_" + c.SecretName + "_" + shortHash(c.HeaderName+"\n"+c.PathPattern)
 }
 
 type envoyPathRewrite struct {
@@ -86,6 +97,128 @@ func (c envoyHostChain) HostRewrite() string {
 }
 
 func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
+
+func (c envoyHostChain) ConnectionIDs() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, cred := range c.Credentials {
+		if cred.ConnectionID == "" || seen[cred.ConnectionID] {
+			continue
+		}
+		seen[cred.ConnectionID] = true
+		out = append(out, cred.ConnectionID)
+	}
+	return out
+}
+
+func injectionScope(pathPattern string) string {
+	p := strings.TrimSpace(pathPattern)
+	p = strings.TrimSuffix(p, "*")
+	if p == "" || p == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return p
+}
+
+func scopeCovers(scope, route string) bool {
+	return strings.HasPrefix(route, scope)
+}
+
+func (c envoyHostChain) PathScopes() []string {
+	seen := map[string]bool{"/": true}
+	scopes := []string{"/"}
+	for _, cred := range c.Credentials {
+		s := injectionScope(cred.PathPattern)
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		scopes = append(scopes, s)
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if len(scopes[i]) != len(scopes[j]) {
+			return len(scopes[i]) > len(scopes[j])
+		}
+		return scopes[i] < scopes[j]
+	})
+	return scopes
+}
+
+func (c envoyHostChain) credentialsAt(scope string) []envoyCredential {
+	var out []envoyCredential
+	for _, cred := range c.Credentials {
+		if scopeCovers(injectionScope(cred.PathPattern), scope) {
+			out = append(out, cred)
+		}
+	}
+	return out
+}
+
+func (c envoyHostChain) ContestedAt(scope string) bool {
+	owners := map[string]string{}
+	for _, cred := range c.credentialsAt(scope) {
+		if owner, seen := owners[cred.HeaderName]; seen && owner != cred.ConnectionID {
+			return true
+		}
+		owners[cred.HeaderName] = cred.ConnectionID
+	}
+	return false
+}
+
+func (c envoyHostChain) Contested() bool {
+	for _, scope := range c.PathScopes() {
+		if c.ContestedAt(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c envoyHostChain) ScopesOf(connectionID string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, cred := range c.Credentials {
+		if cred.ConnectionID != connectionID {
+			continue
+		}
+		s := injectionScope(cred.PathPattern)
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i]) != len(out[j]) {
+			return len(out[i]) > len(out[j])
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
+func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envoyCredential {
+	own := map[string]bool{}
+	if connectionID != "" {
+		for _, cred := range c.credentialsAt(scope) {
+			if cred.ConnectionID == connectionID {
+				own[cred.HeaderName] = true
+			}
+		}
+	}
+	var out []envoyCredential
+	for _, cred := range c.Credentials {
+		outOfScope := !scopeCovers(injectionScope(cred.PathPattern), scope)
+		shadowed := connectionID != "" && cred.ConnectionID != connectionID && own[cred.HeaderName]
+		if outOfScope || shadowed {
+			out = append(out, cred)
+		}
+	}
+	return out
+}
 
 func (c envoyHostChain) HasQueryParamCredential() bool {
 	for _, cred := range c.Credentials {
@@ -342,7 +475,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 	if len(entries) == 0 {
 		return nil
 	}
-	seen := map[struct{ host, header string }]struct{}{}
+	seen := map[struct{ host, header, scope string }]struct{}{}
 	out := make([]hostCredential, 0, len(entries))
 	for _, e := range entries {
 		if e.Host == "" {
@@ -352,10 +485,11 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		if header == "" {
 			header = "Authorization"
 		}
-		key := struct{ host, header string }{e.Host, header}
+		key := struct{ host, header, scope string }{e.Host, header, injectionScope(e.PathPattern)}
 		if _, dup := seen[key]; dup {
-			slog.Warn("duplicate (host, header) in injection-hosts; skipping later entry",
-				"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "headerName", header)
+			slog.Warn("duplicate (host, header, path scope) in injection-hosts; skipping later entry",
+				"namespace", s.Namespace, "secret", s.Name, "host", e.Host,
+				"headerName", header, "pathPattern", e.PathPattern)
 			continue
 		}
 		seen[key] = struct{}{}
@@ -382,7 +516,9 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 				pathRewrites: validPathRewrites(s, e),
 			},
 			cred: envoyCredential{
+				ConnectionID:   s.Labels[envoyConnectionLabel],
 				SecretName:     s.Name,
+				PathPattern:    e.PathPattern,
 				HeaderName:     header,
 				QueryParamName: e.QueryParamName,
 				VolumeName:     "cred-" + s.Name,
@@ -408,9 +544,10 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 }
 
 func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
+	type headerOwner struct{ connectionID, secretName string }
 	type bucket struct {
 		host            string
-		seenHeader      map[string]string
+		seenHeader      map[string]headerOwner
 		rewriteByPrefix map[string]string
 		credentials     []envoyCredential
 		opts            chainOpts
@@ -427,7 +564,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		if b == nil {
 			b = &bucket{
 				host:            host,
-				seenHeader:      map[string]string{},
+				seenHeader:      map[string]headerOwner{},
 				rewriteByPrefix: map[string]string{},
 				first:           secretName,
 			}
@@ -477,13 +614,14 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		if header == "" {
 			header = "Authorization"
 		}
-		if winner, dup := b.seenHeader[header]; dup {
-			slog.Warn("duplicate injection header on host; later credential skipped to avoid credential_injector clobber",
-				"host", host, "headerName", header,
-				"winningSecret", winner, "skippedSecret", secretName)
+		claim := header + "\n" + injectionScope(cred.PathPattern)
+		if winner, dup := b.seenHeader[claim]; dup && winner.connectionID == cred.ConnectionID {
+			slog.Warn("duplicate injection header and path scope on host within one connection; later credential skipped to avoid credential_injector clobber",
+				"host", host, "headerName", header, "pathPattern", cred.PathPattern,
+				"winningSecret", winner.secretName, "skippedSecret", secretName)
 			return
 		}
-		b.seenHeader[header] = secretName
+		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)
@@ -516,8 +654,8 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 	for _, host := range order {
 		b := byHost[host]
 		chains = append(chains, envoyHostChain{
-			ChainID:         "chain_" + b.first + "_" + hostShort(host),
-			UpstreamCluster: "upstream_" + b.first + "_" + hostShort(host),
+			ChainID:         "chain_" + b.first + "_" + shortHash(host),
+			UpstreamCluster: "upstream_" + b.first + "_" + shortHash(host),
 			Host:            host,
 			Credentials:     b.credentials,
 			HTTP2:           b.opts.http2,
@@ -530,8 +668,8 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 	return chains
 }
 
-func hostShort(host string) string {
-	h := sha256.Sum256([]byte(host))
+func shortHash(s string) string {
+	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])[:8]
 }
 
@@ -641,7 +779,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 
 func ptrBool(b bool) *bool { return &b }
 
-const envoyBootstrapTemplateRev = "v16-attribution-strip"
+const envoyBootstrapTemplateRev = "v17-per-connection-routes"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
@@ -649,10 +787,11 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 		parts = append(parts, "l7|"+h)
 	}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s",
 			s.Name,
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
+			s.Labels[envoyConnectionLabel],
 			s.Annotations[envoyHeaderNameAnn],
 			s.Annotations[envoyQueryParamAnn],
 			s.Annotations[envoyInjectionHostsAnn],

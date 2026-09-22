@@ -13,6 +13,7 @@ import {
 } from "agent-runtime-api";
 import {
   SHARED_KB_TEMPLATE_ID,
+  applyConnectionEgressAddressing,
   type Contribution,
   type ContributionKind,
   type RuntimeEvent as Event,
@@ -103,6 +104,7 @@ async function readGrantedContributions(
 ): Promise<{ contributions: Contribution[]; templateIds: Set<string> }> {
   const rows = (await db
     .select({
+      id: connectionsTable.id,
       contributions: connectionsTable.contributions,
       templateId: connectionsTable.templateId,
     })
@@ -113,6 +115,7 @@ async function readGrantedContributions(
     )
     .where(eq(connectionGrants.agentId, agentId))
     .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id))) as {
+    id: string;
     contributions: unknown;
     templateId: string;
   }[];
@@ -122,10 +125,12 @@ async function readGrantedContributions(
   for (const row of rows) {
     templateIds.add(row.templateId);
     if (!Array.isArray(row.contributions)) continue;
+    const parsed: Contribution[] = [];
     for (const raw of row.contributions) {
-      const parsed = contributionSchema.safeParse(raw);
-      if (parsed.success) out.push(parsed.data);
+      const result = contributionSchema.safeParse(raw);
+      if (result.success) parsed.push(result.data);
     }
+    out.push(...applyConnectionEgressAddressing(row.id, parsed));
   }
   return { contributions: out, templateIds };
 }

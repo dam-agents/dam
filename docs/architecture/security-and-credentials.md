@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-18
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -296,29 +296,21 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   request that cannot succeed.
 
   The subset is chosen against **what the installation actually grants, read
-  back from GitHub** before the Connection is created: the api-server
-  authenticates as the app, asks what the installation holds, and offers those
-  repositories and permissions to choose from. So narrowing is a selection
-  rather than a guess, and a permission can be taken at a *lower* level than
-  the installation holds it — the read-only agent on a read-write installation
-  is the case that motivates this, and it cannot be expressed by picking whole
-  permissions alone. Repositories chosen this way are remembered by GitHub's
-  identifier rather than by name, so renaming one does not quietly turn a
-  working Connection into a rejected renewal. The read needs the app's private
-  key and is authenticated the same way minting is; it stores nothing.
+  back from GitHub** before the Connection is created, so narrowing is a
+  selection rather than a guess — and a permission can be taken at a *lower*
+  level than the installation holds it, which is what the read-only agent on a
+  read-write installation needs. Repositories are remembered by GitHub's
+  identifier, so renaming one does not turn a working Connection into a
+  rejected renewal.
 
-  The subset is **editable in place**, which is the one part of a Connection's
+  The subset is **editable in place**, the one part of a Connection's
   configuration that is: what an agent should be allowed to do changes as its
-  work does, and rebuilding the Connection to add a repository would mean
-  re-pasting the key and re-granting it to every agent. Editing re-reads the
-  installation using the Connection's own stored key — never asking for it a
-  second time — and re-mints immediately, so the narrower token replaces the
-  live one rather than waiting out the current one's hour. The new subset is
-  proven by that mint before it is stored, so one the installation cannot
-  cover fails the edit instead of parking the Connection at its next renewal.
-  Nothing else moves: the credential, the contributions, and every agent grant
-  are untouched, and because the token is read gateway-side the change lands
-  without an Agent-spec patch or a pod roll.
+  work does, and rebuilding the Connection would mean re-pasting the key and
+  re-granting it to every agent. Editing re-reads the installation with the
+  Connection's own stored key and re-mints at once, so the narrower token
+  replaces the live one; a subset the installation cannot cover fails the edit
+  rather than parking the Connection at its next renewal. Nothing else moves,
+  and because the token is read gateway-side the change needs no pod roll.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
@@ -335,8 +327,7 @@ private repos works without a credential helper), and the raw-content
 host as a bearer token again.
 
 The Secret also carries the SDS documents Envoy reads, one per injection
-step — see
-[`packages/api-server/src/modules/connections/`](../../packages/api-server/src/modules/connections/).
+step.
 
 ## Image pull credentials
 
@@ -536,11 +527,22 @@ one credential — either two different credentials (e.g. an API key and a
 tenant ID on distinct headers) or the same credential injected into both
 a header and a URL query parameter, for upstreams that authenticate off
 the URL. The controller groups Secrets by host into one L7
-chain with an ordered list of credential injectors; each step must use a
-unique header name, and a step that targets a query parameter instead
-gets a follow-up filter that moves the percent-encoded value into that
-parameter and strips the carrier header, so it never reaches the
-upstream.
+chain with an ordered list of credential injectors; a step that targets a
+query parameter has its value moved into the URL instead, percent-encoded,
+and the carrier header never reaches the upstream.
+
+**Two connections claiming one header.** Where two Connections inject one
+header on one host over paths that overlap, the header alone no longer
+says which account to act as. Chains are cut by path scope as well as
+host: a route per scope carries only the injectors whose own scope covers
+it, so one Connection per Google service composes untouched. Where a
+scope is claimed twice, the
+[per-Connection address](connections.md#addressing-a-connection) picks
+one — that Connection's prefix gets a route disabling its rivals on the
+headers it claims, and the prefix is stripped on the way upstream. A
+request naming no Connection is refused there, not served from whichever
+credential sorted first. The gate reads the path with the prefix removed,
+so egress rules and approvals keep naming real paths.
 
 ## HITL ext_authz
 
