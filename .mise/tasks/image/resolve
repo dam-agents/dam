@@ -63,9 +63,9 @@ own_paths() {
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
-    # Only these two binaries ship in the image; check:vm-runner-source fails
+    # Only these three binaries ship in the image; check:vm-runner-source fails
     # when an import escapes the list.
-    vm-runner) echo "packages/controller/cmd/vm-runner packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
+    vm-runner) echo "packages/controller/cmd/vm-runner packages/controller/cmd/vm-image-cache packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
