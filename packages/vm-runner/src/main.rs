@@ -216,7 +216,8 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    server.background(move |cancel| templates::warm(&install, &home, &cancel));
+    let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
+    server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
     let reaper = runtime.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
@@ -392,5 +393,30 @@ mod tests {
         .expect("these are the flags the controller passes");
         assert_eq!(args.allow_from.0.len(), 2);
         assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
+    }
+
+    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and a flag this binary does not know is a runner pod that exits on start. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains one fails here first.
+    #[test]
+    fn the_images_entrypoint_arguments_are_accepted() {
+        let path = "../controller/Dockerfile.vm-runner";
+        let dockerfile = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
+        let line = dockerfile
+            .lines()
+            .find(|line| line.starts_with("ENTRYPOINT "))
+            .expect("the runner image has an ENTRYPOINT");
+        let words: Vec<String> =
+            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
+                .expect("the ENTRYPOINT is in exec form");
+        let runner = words
+            .iter()
+            .position(|word| word == "vm-runner")
+            .expect("the ENTRYPOINT runs vm-runner");
+        let mut argv = vec!["vm-runner".to_string()];
+        argv.extend(words[runner + 1..].iter().cloned());
+        argv.push("--memory-mib=1".to_string());
+        if let Err(e) = Args::try_parse_from(&argv) {
+            panic!("the ENTRYPOINT's arguments {argv:?} are rejected: {e}");
+        }
     }
 }
