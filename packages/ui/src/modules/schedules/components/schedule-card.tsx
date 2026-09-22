@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -25,6 +26,7 @@ import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
+  useRunScheduleNow,
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
@@ -46,12 +48,13 @@ export function ScheduleCard({
   onEdit,
   onViewResults,
 }: Props) {
-  const { id, name, enabled, sessionMode, status } = schedule;
+  const { id, name, enabled, precheck, sessionMode, status } = schedule;
   const showConfirm = useStore((s) => s.showConfirm);
   const sandboxName = useAgentDisplayName(schedule.agentId);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
+  const runScheduleNow = useRunScheduleNow();
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
@@ -70,6 +73,33 @@ export function ScheduleCard({
       )
     )
       deleteSchedule.mutate({ id });
+  };
+
+  const handleRunNow = async () => {
+    const whatHappens = precheck
+      ? "The precheck decides it first, just as it would on a scheduled occurrence."
+      : "The task runs once, just as it would on a scheduled occurrence.";
+    if (
+      await showConfirm(
+        `Run "${name}" now? ${whatHappens} ${
+          enabled
+            ? "The next run is not moved."
+            : "The schedule stays paused afterwards."
+        }`,
+        "Run now",
+        { confirmLabel: "Run now" },
+      )
+    )
+      runScheduleNow.mutate(
+        { id },
+        {
+          onSuccess: () =>
+            emitToast({
+              kind: "success",
+              message: `Started "${name}" — the run appears under View results.`,
+            }),
+        },
+      );
   };
 
   const handleReset = async () => {
@@ -152,6 +182,7 @@ export function ScheduleCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleEdit}>
               Edit schedule
             </DropdownMenuItem>
