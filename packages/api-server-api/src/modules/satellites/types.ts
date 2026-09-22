@@ -46,7 +46,7 @@ export interface JobStarted {
   ref: string;
   satellite: string;
   sequence: number;
-  status: Extract<JobStatus, "running" | "queued" | "pending-approval">;
+  status: Extract<JobStatus, "running" | "queued">;
 }
 
 export interface JobOutcome {
@@ -65,7 +65,6 @@ export interface WorkItem {
   sequence: number;
   tool: string;
   args: Record<string, unknown>;
-  approved: boolean;
 }
 
 export interface SatellitesService {

@@ -12,7 +12,6 @@ export interface SatelliteBackend {
     sequence: number;
     tool: string;
     args: Record<string, unknown>;
-    approved: boolean;
   }): Promise<CallOutcome>;
   cancel(sequence: number): void;
   killAll(): void;

@@ -469,8 +469,6 @@ export const satelliteJobs = pgTable(
     tool: text("tool").notNull(),
     args: jsonb("args").notNull(),
     status: text("status").notNull(),
-    approvalId: text("approval_id"),
-    approved: boolean("approved").notNull().default(false),
     isError: boolean("is_error").notNull().default(false),
     exitCode: integer("exit_code"),
     output: text("output"),

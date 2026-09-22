@@ -43,8 +43,6 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     tool: r.tool,
     args: r.args as Record<string, unknown>,
     status: r.status as JobStatus,
-    approvalId: r.approvalId,
-    approved: r.approved,
     isError: r.isError,
     exitCode: r.exitCode,
     output: r.output,
@@ -442,44 +440,6 @@ export function createSatellitesRepository(db: Db) {
       return rows[0] ? toJob(rows[0]) : null;
     },
 
-    async release(
-      owner: string,
-      satellite: string,
-      sequence: number,
-    ): Promise<void> {
-      await db
-        .update(satelliteJobs)
-        .set({ status: "queued", approved: true, leaseUntil: null })
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, satellite),
-            eq(satelliteJobs.sequence, sequence),
-            eq(satelliteJobs.status, "pending-approval"),
-          ),
-        );
-    },
-
-    async hold(
-      owner: string,
-      satellite: string,
-      sequence: number,
-    ): Promise<JobRow | null> {
-      const rows = await db
-        .update(satelliteJobs)
-        .set({ status: "pending-approval", leaseUntil: null, startedAt: null })
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, satellite),
-            eq(satelliteJobs.sequence, sequence),
-            eq(satelliteJobs.status, "running"),
-          ),
-        )
-        .returning();
-      return rows[0] ? toJob(rows[0]) : null;
-    },
-
     async requestCancel(
       owner: string,
       satellite: string,
@@ -805,24 +765,6 @@ export function createSatellitesRepository(db: Db) {
         .where(and(...filters))
         .returning();
       return rows.map(toJob);
-    },
-
-    async setApprovalId(
-      owner: string,
-      satellite: string,
-      sequence: number,
-      approvalId: string,
-    ): Promise<void> {
-      await db
-        .update(satelliteJobs)
-        .set({ approvalId })
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, satellite),
-            eq(satelliteJobs.sequence, sequence),
-          ),
-        );
     },
 
     /**

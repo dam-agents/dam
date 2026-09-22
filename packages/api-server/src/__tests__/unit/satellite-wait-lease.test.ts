@@ -29,8 +29,6 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     tool: "run",
     args: { cmd: ["./process.sh", "sales.db"] },
     status: "running",
-    approvalId: null,
-    approved: false,
     isError: false,
     exitCode: null,
     output: null,

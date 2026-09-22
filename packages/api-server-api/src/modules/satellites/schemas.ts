@@ -54,7 +54,6 @@ export const satelliteManifestSchema = z.object({
 });
 
 export const jobStatusSchema = z.enum([
-  "pending-approval",
   "queued",
   "running",
   "done",

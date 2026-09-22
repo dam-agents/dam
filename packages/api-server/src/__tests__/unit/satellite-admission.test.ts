@@ -173,7 +173,6 @@ describe("revocation", () => {
             agentId: "agent-1",
             satellite: "gpu-box",
             sequence: 7,
-            approvalId: "appr-1",
           },
         ];
       };
@@ -207,7 +206,6 @@ describe("a cancel that races the worker's claim", () => {
       sequence: 7,
       agentId: "agent-1",
       status,
-      approvalId: null,
       cmd: ["./process.sh", "sales.db"],
     });
     repo.settle = async (
@@ -266,7 +264,6 @@ describe("a job that finishes while its agent is waiting", () => {
         output: "",
         truncated: false,
         reason: null,
-        approvalId: null,
       };
     };
     repo.markSeen = async () => {

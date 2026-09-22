@@ -95,7 +95,6 @@ export function createWorker(deps: {
         sequence: item.sequence,
         tool: item.tool,
         args: item.args,
-        approved: item.approved,
       })
       .then((outcome) => {
         report({ satellite: name, sequence: item.sequence, outcome });

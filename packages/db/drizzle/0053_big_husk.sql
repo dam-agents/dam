@@ -14,8 +14,6 @@ CREATE TABLE "satellite_jobs" (
 	"tool" text NOT NULL,
 	"args" jsonb NOT NULL,
 	"status" text NOT NULL,
-	"approval_id" text,
-	"approved" boolean DEFAULT false NOT NULL,
 	"is_error" boolean DEFAULT false NOT NULL,
 	"exit_code" integer,
 	"output" text,

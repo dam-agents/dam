@@ -19,8 +19,6 @@ export interface JobRow {
   tool: string;
   args: Record<string, unknown>;
   status: JobStatus;
-  approvalId: string | null;
-  approved: boolean;
   isError: boolean;
   exitCode: number | null;
   output: string | null;

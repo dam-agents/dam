@@ -74,7 +74,6 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           sequence: job.sequence,
           tool: job.tool,
           args: job.args,
-          approved: job.approved,
         }));
 
         const claimed = await deps.repo.claimQueued(
@@ -89,7 +88,6 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
             sequence: job.sequence,
             tool: job.tool,
             args: job.args,
-            approved: job.approved,
           });
 
         if (items.length > 0 || now().getTime() >= deadline) return items;

@@ -1,5 +1,5 @@
 {
-  "id": "d596ee12-c6f2-4e50-b03c-e646ab09b723",
+  "id": "c835e0b8-2a22-4daa-9060-4950554235da",
   "prevId": "da32cd27-6ae7-4eeb-b132-9a2225b3cc9e",
   "version": "7",
   "dialect": "postgresql",
@@ -3255,19 +3255,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "approval_id": {
-          "name": "approval_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approved": {
-          "name": "approved",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "is_error": {
           "name": "is_error",
