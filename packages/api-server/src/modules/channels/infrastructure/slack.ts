@@ -636,7 +636,7 @@ async function resolveAuthorNames(
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
-  ts: string,
+  batchTs: string[],
   readingAgentId: string,
   threadTs: string | undefined,
   bot: { userId: string | null; label: string },
@@ -666,9 +666,10 @@ async function getContextMessages(
     authorAgentId: parseAgentFooter(message)?.agentId ?? null,
     message,
   }));
+  const carried = new Set(batchTs);
   const selected = catchUp
     ? selectUnseen(all, catchUp)
-    : all.filter((e) => e.ts !== ts);
+    : all.filter((e) => e.ts === undefined || !carried.has(e.ts));
   const entries = selected.map((e) => ({
     message: e.message,
     footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
@@ -1837,6 +1838,7 @@ export function createSlackWorker(
               eventTs,
               text,
               threadKey,
+              batchTs: ctx.messages.map((m) => m.eventTs),
               deliveredUpTo,
               steeredUpTo,
             },
@@ -1971,6 +1973,7 @@ export function createSlackWorker(
       text: string;
       hasThread: boolean;
       threadKey: string;
+      batchTs: string[];
       deliveredUpTo: string;
       steeredUpTo: () => string | null;
       teamId: SlackWorkspace;
@@ -1994,7 +1997,7 @@ export function createSlackWorker(
     } = await getContextMessages(
       gw,
       ctx.channel,
-      ctx.eventTs,
+      ctx.batchTs,
       ctx.instanceName,
       ctx.hasThread ? ctx.threadTs : undefined,
       bot,
@@ -2127,7 +2130,7 @@ export function createSlackWorker(
       } = await getContextMessages(
         gw,
         ctx.channel,
-        ctx.eventTs,
+        ctx.batchTs,
         ctx.instanceName,
         conversationTs,
         bot,
@@ -3244,6 +3247,7 @@ export function createSlackWorker(
               teamId: args.teamId,
               hasThread: args.hasThread,
               threadKey: args.threadKey,
+              batchTs: args.messages.map((m) => m.eventTs),
               deliveredUpTo,
               steeredUpTo: neverSteered,
               images: args.images,

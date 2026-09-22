@@ -23,6 +23,7 @@ export function slackWorkerHarness(
     agentNames?: Record<string, string>;
     channels?: FakeSlackChannel[];
     ambient?: boolean;
+    settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
   } = {},
 ) {
@@ -86,6 +87,7 @@ export function slackWorkerHarness(
     stubWorkspaceFiles(),
     (teamId) => teamId,
     () => {},
+    opts.settleMs ?? 0,
   );
 
   async function settled(done: () => boolean): Promise<boolean> {

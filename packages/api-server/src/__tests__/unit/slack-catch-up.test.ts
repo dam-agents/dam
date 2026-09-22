@@ -245,6 +245,48 @@ describe("channel catch-up stays behind the delivered batch", () => {
   });
 });
 
+describe("a turn's own messages are not also context", () => {
+  /**
+   * TEST_SCENARIO: A burst answered as one turn carries every message in its
+   * own text. Those same messages are in the conversation the relay reads for
+   * history, so a fresh session must leave all of them out of the history
+   * block, not only the one that happened to arrive last.
+   */
+  it("keeps every batched message out of a fresh turn's history", async () => {
+    const h = harness({ settleMs: 5 });
+    const ROOT = "1.000000";
+    h.gw.setThreadedHistory([
+      { ts: ROOT, user: "U9", text: "thread root", threadTs: ROOT },
+      { ts: T1, user: "U9", text: ALPHA, threadTs: ROOT },
+      { ts: T2, user: "U9", text: BRAVO, threadTs: ROOT },
+    ]);
+    await h.worker.connect();
+
+    const first = h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: T1,
+      threadTs: ROOT,
+      text: ALPHA,
+    });
+    const second = h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: T2,
+      threadTs: ROOT,
+      text: BRAVO,
+    });
+    await Promise.all([first, second]);
+
+    expect(h.prompts).toHaveLength(1);
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(`[ts ${T1}]`);
+    expect(prompt).toContain(`[ts ${T2}]`);
+    expect(countAcross(h.prompts, ALPHA)).toBe(1);
+    expect(countAcross(h.prompts, BRAVO)).toBe(1);
+  });
+});
+
 describe("steered messages and the boundary", () => {
   const ROOT = "1.000000";
   const thread = { threadTs: ROOT };
