@@ -6,7 +6,9 @@ publish = false
 
 [dependencies]
 # The same release the runner image installs for its assets — see the version
-# invariant in Dockerfile.vm-runner. Cargo.lock pins the commit this tag named.
+# invariant in Dockerfile.vm-runner. `smolvm.pin` names the commit, and nothing
+# else does: a path dependency is recorded in Cargo.lock as a bare version, with
+# no source and no commit, so the lock says nothing about which tree is there.
 smolvm = { path = ".smolvm" }
 anyhow = "1"
 axum = "0.8"
