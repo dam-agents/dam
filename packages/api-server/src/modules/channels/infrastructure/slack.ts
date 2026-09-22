@@ -1543,6 +1543,45 @@ export function createSlackWorker(
     }
   }
 
+  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+    return end === "interrupted"
+      ? refs.some((ref) => ref.declined || ref.handedOff)
+      : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+  }
+
+  function watchUndeliveredTurn(turn: {
+    instanceName: string;
+    sessionId: string;
+    threadKey: string;
+    threadTs: string;
+    refs: TurnRef[];
+    anchorRef: TurnRef;
+    sawFailure: boolean;
+    externalActorId?: string;
+    endedAs?: WatchedTurnEnd;
+  }): void {
+    const { instanceName, sessionId, refs, endedAs, ...nudge } = turn;
+    holdWatchedRefs(instanceName, refs);
+    turnRecovery.watch(
+      {
+        instanceName,
+        sessionId,
+        isDelivered: (end) => deliveredBy(refs, end),
+        onDone: () => releaseWatchedRefs(instanceName, refs),
+        recover: (end, isCancelled) =>
+          runUndeliveredNudge({
+            ...nudge,
+            isCancelled,
+            instanceName,
+            sessionId,
+            verdictRefs: refs,
+            isDelivered: () => deliveredBy(refs, end),
+          }),
+      },
+      ...(endedAs !== undefined ? [{ endedAs }] : []),
+    );
+  }
+
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
@@ -1661,10 +1700,6 @@ export function createSlackWorker(
     }));
 
     const verdictRefs = () => [...turnRefs, ...(ctx.siblingRefs?.() ?? [])];
-    const deliveredBy = (refs: TurnRef[], end: WatchedTurnEnd) =>
-      end === "interrupted"
-        ? refs.some((ref) => ref.declined || ref.handedOff)
-        : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
     const turnSessionId = () =>
       turnRefs.find((ref) => ref.sessionId !== undefined)?.sessionId;
     const watchTurn = (
@@ -1672,33 +1707,20 @@ export function createSlackWorker(
       refs: TurnRef[],
       sawFailure: boolean,
       endedAs?: WatchedTurnEnd,
-    ) => {
-      holdWatchedRefs(instanceName, refs);
-      turnRecovery.watch(
-        {
-          instanceName,
-          sessionId,
-          isDelivered: (end) => deliveredBy(refs, end),
-          onDone: () => releaseWatchedRefs(instanceName, refs),
-          recover: (end, isCancelled) =>
-            runUndeliveredNudge({
-              isCancelled,
-              instanceName,
-              sessionId,
-              threadKey,
-              threadTs: ctx.threadTs,
-              verdictRefs: refs,
-              anchorRef: turnRefs.at(-1)!,
-              isDelivered: () => deliveredBy(refs, end),
-              sawFailure,
-              ...(ctx.externalActorId
-                ? { externalActorId: ctx.externalActorId }
-                : {}),
-            }),
-        },
-        ...(endedAs !== undefined ? [{ endedAs }] : []),
-      );
-    };
+    ) =>
+      watchUndeliveredTurn({
+        instanceName,
+        sessionId,
+        threadKey,
+        threadTs: ctx.threadTs,
+        refs,
+        anchorRef: turnRefs.at(-1)!,
+        sawFailure,
+        ...(ctx.externalActorId
+          ? { externalActorId: ctx.externalActorId }
+          : {}),
+        ...(endedAs !== undefined ? { endedAs } : {}),
+      });
 
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
@@ -3509,7 +3531,7 @@ export function createSlackWorker(
 
     async stopAll() {
       serving = false;
-      turnRecovery.stop();
+      await turnRecovery.stop();
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;
       gatewayFailed = false;

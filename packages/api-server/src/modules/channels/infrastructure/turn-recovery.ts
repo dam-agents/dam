@@ -4,6 +4,7 @@ import { getLogger } from "../../../core/logger.js";
 
 const POLL_INTERVAL_MS = 2 * 60_000;
 const RECOVERY_WINDOW_MS = 2 * 60 * 60_000;
+const STAND_DOWN_LIMIT_MS = 15_000;
 
 export type WatchedTurnEnd = "clean" | "interrupted";
 
@@ -18,7 +19,7 @@ export interface WatchedTurn {
 export interface TurnRecovery {
   watch(turn: WatchedTurn, opts?: { endedAs?: WatchedTurnEnd }): void;
   dismiss(instanceName: string, sessionId: string): void;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 interface WatchState {
@@ -26,7 +27,7 @@ interface WatchState {
   gen: number;
   timer?: ReturnType<typeof setTimeout>;
   deadline: number;
-  recovering?: boolean;
+  recovering?: Promise<void>;
   cancelled?: boolean;
 }
 
@@ -64,7 +65,9 @@ interface WatchState {
  * registry for as long as it runs, because the session it is recovering can
  * be busy with a turn from another queue: a dismissal or a shutdown must
  * still reach it, and it stands down rather than answering a person who has
- * been answered since.
+ * been answered since. A shutdown also waits for a running recovery, up to a
+ * bounded limit, and logs whether it finished, so a replica that has stood
+ * down leaves no nudge running unaccounted.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -85,13 +88,14 @@ export function createTurnRecovery(deps: {
     if (state === undefined) return undefined;
     if (state.timer !== undefined) clearTimeout(state.timer);
     state.cancelled = true;
-    if (state.recovering !== true) watches.delete(key);
+    if (state.recovering === undefined) watches.delete(key);
     return state;
   }
 
   function drop(key: string): void {
     const state = remove(key);
-    if (state !== undefined && state.recovering !== true) state.turn.onDone?.();
+    if (state !== undefined && state.recovering === undefined)
+      state.turn.onDone?.();
   }
 
   function schedule(key: string, turn: WatchedTurn, state: WatchState): void {
@@ -150,13 +154,20 @@ export function createTurnRecovery(deps: {
     gen: number,
   ): Promise<void> {
     const state = watches.get(key);
-    if (state === undefined || state.gen !== gen || state.recovering === true)
+    if (
+      state === undefined ||
+      state.gen !== gen ||
+      state.recovering !== undefined
+    )
       return;
-    state.recovering = true;
     if (state.timer !== undefined) {
       clearTimeout(state.timer);
       state.timer = undefined;
     }
+    let resolve!: () => void;
+    state.recovering = new Promise<void>((r) => {
+      resolve = r;
+    });
     try {
       if (state.cancelled !== true && !turn.isDelivered(end))
         await turn.recover(end, () => state.cancelled === true);
@@ -172,6 +183,7 @@ export function createTurnRecovery(deps: {
     } finally {
       if (watches.get(key) === state) watches.delete(key);
       turn.onDone?.();
+      resolve();
     }
   }
 
@@ -196,8 +208,31 @@ export function createTurnRecovery(deps: {
       drop(keyOf(instanceName, sessionId));
     },
 
-    stop() {
+    async stop() {
       for (const key of [...watches.keys()]) drop(key);
+      const running = [...watches.values()].flatMap((state) =>
+        state.recovering === undefined ? [] : [state.recovering],
+      );
+      if (running.length === 0) return;
+      let limit: ReturnType<typeof setTimeout> | undefined;
+      const drained = await Promise.race([
+        Promise.allSettled(running).then(() => true),
+        new Promise<false>((resolve) => {
+          limit = setTimeout(() => resolve(false), STAND_DOWN_LIMIT_MS);
+        }),
+      ]);
+      clearTimeout(limit);
+      if (drained) {
+        getLogger().info(
+          { nudges: running.length },
+          "slack.turn.recovery_drained: standing down waited for the running delivery nudges",
+        );
+      } else {
+        getLogger().warn(
+          { nudges: running.length, limitMs: STAND_DOWN_LIMIT_MS },
+          "slack.turn.recovery_abandoned: standing down stopped waiting for a delivery nudge; its outcome is not recorded",
+        );
+      }
     },
   };
 }
