@@ -22,6 +22,7 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    ungrowable: AtomicBool,
 }
 
 impl Fake {
@@ -83,6 +84,10 @@ impl Runtime for Fake {
         self.record(format!("delete {id}"));
         locked(&self.states).remove(id);
         Ok(())
+    }
+
+    fn storage_growable(&self, _id: &str) -> bool {
+        !self.ungrowable.load(Ordering::SeqCst)
     }
 }
 
@@ -883,5 +888,30 @@ async fn a_private_image_is_reused_only_with_credentials_that_read_it() {
         exports(),
         before,
         "a readable private image was fetched again"
+
+// TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disk_that_cannot_grow_is_not_resized_under_a_running_machine() {
+    let h = Harness::new("ungrowable");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut bigger = spec(true);
+    bigger.storage_gib += 10;
+    h.server.put("m1", bigger).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
     );
 }
