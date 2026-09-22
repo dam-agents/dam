@@ -4,9 +4,8 @@ import { z } from "zod";
 
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
-import type { SandboxNameKind } from "../../agents/lib/sandbox-name.js";
 
-export type SetupFlow = SandboxNameKind;
+export type SetupFlow = "coding-agent" | "experiment" | "starter-kit";
 
 export const setupFormSchema = z.object({
   name: z.string(),
@@ -69,17 +68,16 @@ function load(key: string, flow: SetupFlow): SetupForm | null {
 
 export function useSetupForm(
   flow: SetupFlow,
-  defaults: Partial<SetupForm> = {},
-  returnPath?: string,
-  scope?: string,
+  options: { namePrefix: string; returnPath?: string; scope?: string },
 ): SetupFormState {
+  const { namePrefix, returnPath, scope } = options;
   const key = scope
     ? `platform-setup-${flow}:${scope}`
     : `platform-setup-${flow}`;
   const [form, setForm] = useState<SetupForm>(() => {
     const restored = load(key, flow);
     if (restored) return restored;
-    const fresh = setupFormSchema.parse({ name: "", ...defaults });
+    const fresh = setupFormSchema.parse({ name: "" });
     save(key, fresh);
     return fresh;
   });
@@ -112,7 +110,7 @@ export function useSetupForm(
   );
 
   const setName = useCallback((name: string) => update({ name }), [update]);
-  usePrefilledSandboxName(flow, form.name, setName);
+  usePrefilledSandboxName(namePrefix, form.name, setName);
 
   const reset = useCallback(() => {
     try {

@@ -176,8 +176,8 @@ async function runCreate(
     validate(value) {
       const check = validateAgentName(value ?? "");
       if (check.ok) return undefined;
-      if (check.error === "reserved-prefix") {
-        return "name cannot start with `agent-` (reserved for IDs)";
+      if (check.error === "id-shape") {
+        return "name cannot have the shape of an agent ID (`agent-` and 16 hex characters)";
       }
       return "name cannot be empty";
     },

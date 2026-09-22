@@ -19,6 +19,7 @@ import {
   type CreateAgentDraft,
   isCreateAgentDraftComplete,
 } from "../lib/create-agent-input.js";
+import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
 
 interface Props {
   onCreated: (agent: AgentView) => void;
@@ -31,7 +32,7 @@ export function CreateAgentInline({ onCreated }: Props) {
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
-  usePrefilledSandboxName("coding-agent", name, setName);
+  usePrefilledSandboxName(AGENT_NAME_PREFIX, name, setName);
 
   const selectedTemplateId =
     templateId ??

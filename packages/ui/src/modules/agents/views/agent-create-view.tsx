@@ -79,6 +79,7 @@ import {
   hasPartialRegistryCredential,
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
+import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
 
 export function StarterKitSetupView() {
   const catalog = useStore((s) => s.starterKitCatalog);
@@ -127,9 +128,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     : routeToPath({ view: "agent-new" });
   const { form, update, toggleConnection, reset } = useSetupForm(
     kit ? "starter-kit" : "coding-agent",
-    kit ? { name: kit.id } : {},
-    returnPath,
-    kit ? `${kit.catalog}/${kit.id}` : undefined,
+    {
+      namePrefix: kit ? kit.id : AGENT_NAME_PREFIX,
+      returnPath,
+      scope: kit ? `${kit.catalog}/${kit.id}` : undefined,
+    },
   );
   const vmRuntime = useVmRuntime();
   const agentsQ = useAgents();

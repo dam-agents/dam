@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { agentSizeSchema, storageQuantitySchema } from "../agents/schemas.js";
+import {
+  agentNameSchema,
+  agentSizeSchema,
+  storageQuantitySchema,
+} from "../agents/schemas.js";
 import {
   isProviderPresetType,
   type ProviderPresetType,
@@ -196,12 +200,7 @@ export const starterKitScheduleOverrideSchema = z.object({
 export const starterKitApplyInputSchema = z.object({
   catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
-  name: z
-    .string()
-    .min(1)
-    .refine((n) => !n.startsWith("agent-"), {
-      message: "agent name cannot start with 'agent-' (reserved for IDs)",
-    }),
+  name: agentNameSchema,
   templateId: z.string().min(1).optional(),
   connectionIds: z.array(z.string().min(1)).default([]),
   slackChannelId: z.string().min(1).optional(),

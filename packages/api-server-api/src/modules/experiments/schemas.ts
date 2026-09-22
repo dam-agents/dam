@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agentSizeSchema } from "../agents/schemas.js";
+import { agentNameSchema, agentSizeSchema } from "../agents/schemas.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 
 export const SCRIPT_CONTENT_MAX_BYTES = 256 * 1024;
@@ -132,12 +132,7 @@ export const EXPERIMENT_SKILL_NAME = "dam-experiment";
 
 export const experimentSandboxCreateInputSchema = z
   .object({
-    name: z
-      .string()
-      .min(1)
-      .refine((n) => !n.startsWith("agent-"), {
-        message: "agent name cannot start with 'agent-' (reserved for IDs)",
-      }),
+    name: agentNameSchema,
     templateId: z.string().optional(),
     image: z.string().optional(),
     description: z.string().optional(),

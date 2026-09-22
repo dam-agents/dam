@@ -96,6 +96,8 @@ export {
   agentListTelegramChatsInputSchema,
   agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
+  AGENT_ID_RE,
+  agentNameSchema,
   agentCreateInputSchema,
   agentKindSchema,
   agentDeleteInputSchema,

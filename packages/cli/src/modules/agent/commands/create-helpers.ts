@@ -1,7 +1,5 @@
-import { ENV_NAME_RE, type EnvVar } from "api-server-api";
+import { AGENT_ID_RE, ENV_NAME_RE, type EnvVar } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
-
-const RESERVED_AGENT_PREFIX = "agent-";
 
 export type EnvParseError =
   | { kind: "missing-equals"; input: string }
@@ -32,12 +30,12 @@ export function parseEnvFlag(
   });
 }
 
-export type NameValidationError = "empty" | "reserved-prefix";
+export type NameValidationError = "empty" | "id-shape";
 
 export function validateAgentName(
   name: string,
 ): Result<void, NameValidationError> {
   if (name.length === 0) return err("empty");
-  if (name.startsWith(RESERVED_AGENT_PREFIX)) return err("reserved-prefix");
+  if (AGENT_ID_RE.test(name)) return err("id-shape");
   return ok(undefined);
 }

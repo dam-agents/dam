@@ -67,14 +67,15 @@ describe("validateAgentName", () => {
     expect(validateAgentName("foo").ok).toBe(true);
   });
 
-  it("accepts names that merely contain `agent-` (only the literal prefix is reserved)", () => {
+  it("accepts names that start with `agent-` but are not an ID", () => {
+    expect(validateAgentName("agent-2").ok).toBe(true);
     expect(validateAgentName("my-agent-foo").ok).toBe(true);
   });
 
-  it("rejects names starting with `agent-`", () => {
-    expect(validateAgentName("agent-foo")).toEqual({
+  it("rejects a name with the shape of an agent ID", () => {
+    expect(validateAgentName("agent-40f4c9ac56a733b3")).toEqual({
       ok: false,
-      error: "reserved-prefix",
+      error: "id-shape",
     });
   });
 
