@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-09-16
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -88,6 +88,22 @@ Four absences are deliberate. **Agent identity** would multiply series by the fl
 And **core-team exclusion** has no counterpart here: the activity log's inspector-facing aggregates filter the platform team's own traffic out — its analytics passthroughs leave that to their consumer — while these counters filter nothing, so a number read from the store includes the people who built it. Several recorded interactions have no counter at all, among them artifact publishing, sharing, viewing and deletion, skill publishing and skill sets, agents created under a Kind, feature flags, API keys, harness-config edits and contribution-delivery health; those remain answerable only through the activity log.
 
 Reading them takes one property into account: each process exports its own cumulative series, so a restart resets it and replicas do not collide but do partition. Rates and increments summed across series are the honest read; raw values are not. There is no platform-owned read path over metrics — [metrics](metrics.md) reads agent log records and spans, not these — so today they are reached through the exploration UI or the store directly.
+
+### VM runner
+
+The [VM runner](platform-topology.md#vm-runner) is the one platform service that does not push. It stays off the mesh, and the collector admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead. A runner serves its metrics on a scrape port apart from the machine API: that API's token creates and deletes machines, and a scraper holding it could too, so the scrape carries no token and the runner's NetworkPolicy, admitting only the collector to that port, is its whole gate. The collector finds runners by listing pods in the agent namespace — read-only, granted only when the vm backend is on — and keeps only the port a runner names for metrics. The scrape exists when both the telemetry backend and the vm backend are enabled.
+
+What a runner measures is what judging the vm backend against the container one needs:
+
+- **Machine operations** — each create, wake, restart and stop as a duration by outcome; the runtime's own start call inside it; and **ready latency**, from asking a machine to start to the first health check its guest answers, once per boot.
+- **Unhealthy restarts** — the ones the runner made on its own because a guest that had answered went quiet, apart from those a changed spec causes.
+- **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit.
+- **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve.
+- **The image cache** — creates that found a bootable tree and creates that did not, fetch durations by outcome, evictions and the bytes they freed, and the bytes held against the budget.
+
+The [usage counters](#usage-counters)' identity-free rule holds here with a sharper edge: a runner exists per owner, so a machine id, an image reference or the runner's owner label would each make a series a person. Every dimension comes from a closed set — operation, outcome, failure reason, cache result — and the scrape copies no pod label onto a series. Series are still partitioned by runner, because each runner is a process with its own cumulative counters, so a runner restart resets them and rates are the honest read.
+
+The runner's other duty here rides the machine status rather than a signal: **explaining a boot**. A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side. It carries the guest kernel and the runtime's guest agent, not the harness, whose output goes to the boot log ([persistence](persistence.md)). When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes, stripped to printable text, and redacted with every env value the machine has been given, because a guest that prints its environment puts an operator's Secret there. A console the runner cannot redact, holding no spec for the machine, is not shown. The note for a quiet guest is refreshed about once a minute, not on every readiness poll, so a stuck machine does not rewrite its Agent's condition on each one.
 
 ## Trusted attribution
 
