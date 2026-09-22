@@ -135,7 +135,7 @@ mod tests {
     use crate::gosource;
     use std::os::unix::fs::PermissionsExt;
 
-    // TEST_SCENARIO: this module and the Go runner read and write one state directory, and a rollout that replaces one with the other runs both against it. A file named differently is a machine the new runner cannot see — which it would then recreate, on a port it believes free, over a disk another machine is using. Each name is read out of the call that writes it rather than looked for anywhere in the file: `server.go` holds other strings, and a guard that would be satisfied by an unrelated one somewhere else is not the guard its failure message claims to be.
+    // TEST_SCENARIO: this module and the Go runner read and write one state directory, and a rollout that replaces one with the other runs both against it. A file named differently is a machine the new runner cannot see — which it would then recreate, on a port it believes free, over a disk another machine is using. Each name is read out of the call that writes it, and each mode out of the body of the function that writes it, rather than looked for anywhere in the file: `server.go` holds other strings and other modes, and a guard that would be satisfied by an unrelated one somewhere else is not the guard its failure message claims to be.
     #[test]
     fn the_go_runner_writes_the_same_files_with_the_same_modes() {
         let go = gosource::read("server.go");
@@ -154,16 +154,21 @@ mod tests {
             "allocatePort no longer writes {PORT_FILE}, so the two runners no longer agree where a machine is published: {port}"
         );
 
+        let writes_spec = gosource::function_body(&go, "(s *Server) writeSpec")
+            .expect("server.go still has a writeSpec");
         assert!(
-            go.contains(&format!("\"{SPEC_FILE}\"), b, 0o{:o})", SPEC_MODE)),
-            "the Go runner no longer writes the spec {SPEC_MODE:o}, which is the one file here holding the Agent's secrets"
+            writes_spec.contains(&format!("\"{SPEC_FILE}\"), b, 0o{:o})", SPEC_MODE)),
+            "writeSpec no longer writes the spec {SPEC_MODE:o}, which is the one file here holding the Agent's secrets: {writes_spec}"
         );
+
+        let allocates_port = gosource::function_body(&go, "(s *Server) allocatePort")
+            .expect("server.go still has an allocatePort");
         assert!(
-            go.contains(&format!(
+            allocates_port.contains(&format!(
                 "\"{PORT_FILE}\"), []byte(strconv.Itoa(p)), 0o{:o})",
                 PORT_MODE
             )),
-            "the Go runner no longer writes the port file {PORT_MODE:o}"
+            "allocatePort no longer writes the port file {PORT_MODE:o}: {allocates_port}"
         );
     }
 
