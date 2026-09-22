@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-09-18
+Last verified: 2026-09-22
 
 ## Overview
 
@@ -49,3 +49,15 @@ The session model differs by schedule mode:
 - **Continuous schedule** — the first fire creates a session via `session/new`; every subsequent fire calls `session/resume` against the same session id. One schedule, one session, history retained across fires.
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC. Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh. Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session. Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
+
+## On-demand run
+
+A schedule can also be fired from outside its recurrence: the owner asks for one run, now. Authoring a schedule is iterative — the task gets reworded, the Precheck tweaked — and with cadences hours apart, waiting for the next occurrence is as slow a feedback loop as the cadence itself.
+
+It is deliberately *the same fire*, so what it shows is what an occurrence does: the same event kind on the same rail, carrying the same task, session mode and Precheck, decided by the Precheck as usual and reported back the same way. The runtime cannot tell the two apart, which is the point — a check that allows here allows there. What it does not do is behave like an occurrence:
+
+- **The cadence is untouched.** No next occurrence is computed and none is armed, so trying a schedule out never shifts when it next fires — and the fire carries an identity of its own rather than an occurrence's, so the Agent's per-fire dedup cannot conflate it with the occurrence it lands beside.
+- **Quiet hours do not suppress it, and neither does being disabled.** Both govern *occurrences*; this run was asked for by hand. A paused schedule is also the one most likely to be under construction, and enabling it just to try it would move its next occurrence — the thing the action exists to avoid.
+- **A run that happens stamps the last-run pair** like any other, because that stamp means *the last fire that actually ran* and is what the next Precheck's "anything new since last time?" measures from — a manual run that did the work must not leave the next check to find it again. A fire that never committed is not a run: it leaves the previous record standing and the owner learns it failed from the refusal instead.
+
+The rest is inherited rather than re-decided. A hibernated Agent is poked awake and picks the fire up on its catch-up; a stopped one is started, since a fire overrides a stop by design. A continuous schedule resumes its own session, a declined verdict restores the activity stamp the poke wrote, and the session appears under the schedule's sessions like every other run. One case refuses outright: an Agent from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending. A scheduled fire is *held* there because nobody is watching; here somebody is, so the refusal is reported rather than the fire quietly vanishing.

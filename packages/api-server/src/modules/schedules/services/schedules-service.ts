@@ -236,5 +236,32 @@ export function createSchedulesService(deps: {
       if (!sched) return;
       await deps.runner.resetSession(id);
     },
+
+    async runNow(id) {
+      const sched = await deps.repo.get(id, deps.owner);
+      if (!sched)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "schedule not found",
+        });
+      const outcome = await deps.runner.runNow(id);
+      if (outcome === "onboarding-pending")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "the agent has not finished onboarding yet",
+        });
+      securityLog("info", "schedule.run-now", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: sched.agentId,
+        target: id,
+        result: "success",
+        detail: {
+          precheck: Boolean(sched.spec.precheck),
+          enabled: sched.spec.enabled,
+        },
+      });
+    },
   };
 }
