@@ -13,6 +13,7 @@ import {
   buildListCommand,
   buildRemoveCommand,
 } from "./commands/manage.js";
+import { buildCommandsCommand } from "./commands/commands.js";
 import { buildMcpCommand } from "./commands/mcp.js";
 
 export interface SatelliteModuleOptions {
@@ -46,6 +47,7 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
         "feature to see them in the web UI as well.\n",
     );
   parent.addCommand(buildMcpCommand(shared));
+  parent.addCommand(buildCommandsCommand(shared));
   parent.addCommand(buildListCommand(shared));
   parent.addCommand(buildJobsCommand(shared));
   parent.addCommand(buildGrantCommand(shared, false));
