@@ -840,6 +840,8 @@ export function createSatellitesRepository(db: Db) {
           and(
             lt(satelliteJobs.expiresAt, now),
             ne(satelliteJobs.status, "running"),
+            sql`${satelliteJobs.deliveredAt} is not null`,
+            sql`${satelliteJobs.wokeAt} is not null`,
           ),
         );
     },
