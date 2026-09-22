@@ -85,6 +85,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "satellites",
+      testMatch: /18-.*\.spec\.ts$/,
+      dependencies: ["auth"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "slack",
       testMatch: /07-.*\.spec\.ts$/,
       dependencies: ["injection"],
