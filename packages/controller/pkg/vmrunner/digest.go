@@ -134,14 +134,15 @@ func (s *Server) resolveDigest(ref string, fresh time.Duration) string {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, s.Crane, "digest", ref).Output()
 	digest := strings.TrimSpace(string(out))
+	logged := strings.NewReplacer("\n", " ", "\r", " ").Replace(ref)
 	if err != nil || !imageDigest.MatchString(digest) {
 		if known != "" {
-			slog.Warn("image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to", "image", ref, "digest", known)
+			slog.Warn("image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to", "image", logged, "digest", known)
 		}
 		return known
 	}
 	if err := s.writeRef(ref, digest); err != nil {
-		slog.Warn("image cache: cannot record what a tag resolved to", "image", ref, "error", err)
+		slog.Warn("image cache: cannot record what a tag resolved to", "image", logged, "error", err)
 	}
 	return digest
 }
