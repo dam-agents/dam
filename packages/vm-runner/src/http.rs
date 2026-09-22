@@ -170,6 +170,12 @@ mod tests {
         fn delete(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
+        fn delete_keeping_storage(&self, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn discard_kept_storage(&self, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 
     struct Api(Router, PathBuf);

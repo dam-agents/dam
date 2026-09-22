@@ -21,6 +21,7 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    discarded: Mutex<Vec<String>>,
 }
 
 impl Fake {
@@ -81,6 +82,17 @@ impl Runtime for Fake {
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         self.record(format!("delete {id}"));
         locked(&self.states).remove(id);
+        Ok(())
+    }
+
+    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()> {
+        self.record(format!("delete-keeping-storage {id}"));
+        locked(&self.states).remove(id);
+        Ok(())
+    }
+
+    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()> {
+        locked(&self.discarded).push(id.to_string());
         Ok(())
     }
 }
@@ -391,28 +403,75 @@ async fn operations_run_in_the_order_they_were_queued() {
     assert_eq!(h.fake.calls(), queued);
 }
 
-// TEST_SCENARIO: the image is fixed at create, so a spec with a different image is reported in the machine's message and the rest of the spec still applies. The machine keeps booting the image it has.
+// TEST_SCENARIO: a template upgrade gives a running agent a new image. smolvm cannot change a machine's image, so the machine is stopped, deleted with its storage disk kept, and created on the new image — on the port its Service already maps to, from the new image's own tree. Its stored spec names the new image only once it has booted, which is when the cache stops holding the old one for it.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_changed_image_is_reported_and_does_not_block_the_rest() {
-    let h = Harness::new("drift");
+async fn a_new_image_recreates_the_machine_on_its_port() {
+    let h = Harness::new("new-image");
+    h.server.put("m1", spec(true)).unwrap();
+    let first = h.settle("m1").await;
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(status.message, "");
+    assert_eq!(status.port, first.port);
+    assert_eq!(
+        h.fake.calls(),
+        [
+            "create m1",
+            "start m1",
+            "stop m1",
+            "delete-keeping-storage m1",
+            "create m1",
+            "start m1"
+        ]
+    );
+    let (image, _) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert_eq!(
+        PathBuf::from(image),
+        cache_path(&h.dir.join("images"), "quay.io/x/vm:2").join(ROOTFS_DIR)
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:2"
+    );
+    assert!(h.server.forwarder.is_published("m1"));
+}
+
+// TEST_SCENARIO: the new image is fetched before the old machine is touched, so an image that cannot be read is reported as an image problem while the agent keeps running on what it has.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_that_cannot_be_fetched_leaves_the_machine_running() {
+    let h = Harness::new("new-image-fails");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
-    let mut changed = spec(true);
-    changed.image = "quay.io/x/vm:2".into();
-    changed.revision = "r2".into();
-    h.server.put("m1", changed).unwrap();
+    fs::write(
+        h.dir.join("crane"),
+        "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
+    )
+    .unwrap();
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
     let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains("image is quay.io/x/vm:1, wanted quay.io/x/vm:2"),
-        "{status:?}"
-    );
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
     assert_eq!(
         read_spec(&h.dir.join("machines"), "m1").unwrap().image,
         "quay.io/x/vm:1"
     );
-    assert_eq!(h.fake.calls().last().unwrap(), "start m1");
+}
+
+// TEST_SCENARIO: a machine deleted outright takes any disk an interrupted recreate kept with it, so a later agent of the same name never boots onto a stranger's home.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_discards_a_kept_disk() {
+    let h = Harness::new("discard-kept");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.delete("m1").unwrap();
+    h.server.delete("never-created").unwrap();
+    assert_eq!(*locked(&h.fake.discarded), ["m1", "never-created"]);
 }
 
 // TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those. A machine whose gateway moved is stopped and reported, not run on an address that may now belong to another owner.
