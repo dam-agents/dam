@@ -1,5 +1,5 @@
 import { ArrowLeft, Close, Notification, Warning } from "@carbon/icons-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,8 @@ import { FeedList } from "./feed-list.js";
 const EMPTY_ARTIFACTS: readonly ArtifactTouched[] = [];
 
 export function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const requestClose = () => setClosing(true);
   const { items, agents, loadingFeed } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss, dismissedAt } = useDismissals();
@@ -85,7 +87,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <Drawer onClose={onClose}>
+      <Drawer closing={closing} onClose={requestClose} onClosed={onClose}>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           {needsYou ? (
             <button
@@ -103,7 +105,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
           )}
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close activity"
             className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
@@ -175,7 +177,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 items={shown}
                 agents={agents}
                 onOpenSession={(agentId, sessionId, mode) => {
-                  onClose();
+                  requestClose();
                   openAgentSession(agentId, sessionId, mode);
                 }}
                 onDismiss={(item) => {
@@ -213,30 +215,53 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+const DRAWER_TRANSITION_MS = 150;
+
 function Drawer({
+  closing,
   onClose,
+  onClosed,
   children,
 }: {
+  closing: boolean;
   onClose: () => void;
+  onClosed: () => void;
   children: React.ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef);
   useBodyScrollLock();
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const onClosedRef = useRef(onClosed);
+  onClosedRef.current = onClosed;
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(() => onClosedRef.current(), DRAWER_TRANSITION_MS);
+    return () => clearTimeout(timer);
+  }, [closing]);
+  const open = shown && !closing;
   return createPortal(
     <div className="fixed inset-0 z-overlay flex justify-end">
       <button
         type="button"
         aria-label="Close activity"
         onClick={onClose}
-        className="absolute inset-0 bg-black/30"
+        className={cn(
+          "absolute inset-0 bg-black/30 transition-opacity",
+          open ? "opacity-100" : "opacity-0",
+        )}
       />
       <div
         ref={panelRef}
         role="dialog"
         aria-label="Activity"
         className={cn(
-          "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl",
+          "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl transition-transform",
+          open ? "translate-x-0" : "translate-x-full",
         )}
       >
         {children}
