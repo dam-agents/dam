@@ -4,6 +4,7 @@ pub mod cache;
 pub mod capacity;
 pub mod files;
 pub mod guest;
+pub mod plan;
 pub mod share;
 pub mod state;
 
