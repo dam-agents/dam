@@ -21,3 +21,4 @@ if "$py" -c 'import pip' 2>/dev/null; then
   echo "drop-pip: pip still importable in $py" >&2
   exit 1
 fi
+# CI validation only, reverted before merge: moves platform-base so every agent builds.
