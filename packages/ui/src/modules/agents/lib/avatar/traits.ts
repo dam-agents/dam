@@ -10,27 +10,73 @@ import {
 export { AVATAR_GAP, AVATAR_INK, AVATAR_SCLERA } from "./constants.js";
 
 export interface AvatarPalette {
+  hue: number;
   base: string;
   shade: string;
   light: string;
 }
 
-export const AVATAR_PALETTES: readonly AvatarPalette[] = [
-  { base: "#8fc1f4", shade: "#4c8fe6", light: "#c4defa" },
-  { base: "#72c07c", shade: "#4e9e5b", light: "#abdcb2" },
-  { base: "#f08a8e", shade: "#e26a8a", light: "#f8bec0" },
-  { base: "#f3837c", shade: "#d9605b", light: "#f9b9b4" },
-  { base: "#fccf73", shade: "#f5a05a", light: "#fde6b4" },
-  { base: "#c3a4e6", shade: "#8e67c4", light: "#e2d2f4" },
-  { base: "#f8ae5e", shade: "#ee8a45", light: "#fcd5a8" },
-  { base: "#5ecdb0", shade: "#35a88b", light: "#a7e6d5" },
-  { base: "#df9fe5", shade: "#c075cf", light: "#f0cdf3" },
-  { base: "#7d9de6", shade: "#4f7fe0", light: "#b9cbf3" },
-  { base: "#b5d86a", shade: "#86b43f", light: "#d9ecb2" },
-  { base: "#f4a3c4", shade: "#e27aa7", light: "#fad1e2" },
-  { base: "#6fc9e6", shade: "#3aa6c9", light: "#b3e4f3" },
-  { base: "#e9b98c", shade: "#cf8f58", light: "#f5dcc4" },
-];
+export const AVATAR_HUE_STEPS = 12;
+const MIN_HUE_DISTANCE = 2;
+
+const HUE_OFFSET = 5;
+const YELLOW_HUE = 95;
+const YELLOW_LIFT = 0.1;
+
+const TONES = {
+  base: { l: 0.74, c: 0.13 },
+  shade: { l: 0.61, c: 0.15 },
+  light: { l: 0.88, c: 0.07 },
+} as const;
+
+function oklchToLinearRgb(l: number, c: number, hue: number) {
+  const a = c * Math.cos((hue * Math.PI) / 180);
+  const b = c * Math.sin((hue * Math.PI) / 180);
+  const lc = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const mc = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const sc = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc,
+    -1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc,
+    -0.0041960863 * lc - 0.7034186147 * mc + 1.707614701 * sc,
+  ];
+}
+
+function oklch(l: number, c: number, hue: number): string {
+  let chroma = c;
+  while (oklchToLinearRgb(l, chroma, hue).some((v) => v < 0 || v > 1))
+    chroma -= 0.002;
+  const channels = oklchToLinearRgb(l, chroma, hue).map((v) => {
+    const encoded = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+    return Math.round(encoded * 255)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${channels.join("")}`;
+}
+
+function tone(hue: number, { l, c }: { l: number; c: number }): string {
+  const lift = YELLOW_LIFT * Math.exp(-(((hue - YELLOW_HUE) / 35) ** 2));
+  return oklch(Math.min(l + lift, 0.93), c, hue);
+}
+
+export const AVATAR_PALETTES: readonly AvatarPalette[] = Array.from(
+  { length: AVATAR_HUE_STEPS },
+  (_, hue) => {
+    const degrees = HUE_OFFSET + hue * (360 / AVATAR_HUE_STEPS);
+    return {
+      hue,
+      base: tone(degrees, TONES.base),
+      shade: tone(degrees, TONES.shade),
+      light: tone(degrees, TONES.light),
+    };
+  },
+);
+
+export function hueDistance(a: number, b: number): number {
+  const d = Math.abs(a - b) % AVATAR_HUE_STEPS;
+  return Math.min(d, AVATAR_HUE_STEPS - d);
+}
 
 export const HEAD_SHAPES = [
   "circle",
@@ -65,7 +111,6 @@ export interface EyeSpec {
 
 export interface BugEye {
   r: number;
-  look: Look;
 }
 
 export const DERPS = [
@@ -260,8 +305,14 @@ const MOUTHS: readonly Mouth[] = ["none", "line", "smile", "o"];
 function pickPalettes(
   random: Random,
 ): [AvatarPalette, AvatarPalette, AvatarPalette] {
-  const pool = [...AVATAR_PALETTES];
-  const take = () => pool.splice(Math.floor(random() * pool.length), 1)[0]!;
+  let pool = [...AVATAR_PALETTES];
+  const take = () => {
+    const picked = pickFrom(random, pool);
+    pool = pool.filter(
+      (p) => hueDistance(p.hue, picked.hue) >= MIN_HUE_DISTANCE,
+    );
+    return picked;
+  };
   return [take(), take(), take()];
 }
 
@@ -297,8 +348,8 @@ export function avatarTraits(seed: string): AvatarTraits {
   const bugBigLeft = random() < 0.5;
   const bugRadius = (big: boolean) => (bugMismatch ? (big ? 8.5 : 5.5) : 7);
   const bugEyes: AvatarTraits["bugEyes"] = [
-    { r: bugRadius(bugBigLeft), look: randomLook(random) },
-    { r: bugRadius(!bugBigLeft), look: randomLook(random) },
+    { r: bugRadius(bugBigLeft) },
+    { r: bugRadius(!bugBigLeft) },
   ];
   const sides = pickFrom(random, head === "box" ? SIDES_WIDE : SIDES_ANY);
   const banding = pickWeighted(random, BANDING_WEIGHTS);

@@ -140,10 +140,7 @@ function top(t: AvatarTraits, head: HeadGeometry): string {
       return t.bugEyes
         .map((bug, i) => {
           const [cx, cy] = bugEyeCenter(head, i, bug.r);
-          return (
-            el("circle", { cx, cy, r: bug.r, fill }) +
-            pupil(cx, cy, bug.r, 0.46, bug.look)
-          );
+          return el("circle", { cx, cy, r: bug.r, fill });
         })
         .join("");
   }

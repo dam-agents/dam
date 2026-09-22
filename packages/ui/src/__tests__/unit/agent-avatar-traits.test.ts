@@ -18,10 +18,12 @@ import {
 } from "../../modules/agents/lib/avatar/layout.js";
 import {
   AVATAR_GAP,
+  AVATAR_PALETTES,
   type AvatarTraits,
   avatarTraits,
   DERPS,
   HEAD_SHAPES,
+  hueDistance,
 } from "../../modules/agents/lib/avatar/traits.js";
 
 const NAMES = Array.from({ length: 1000 }, (_, i) => `agent-${i}`);
@@ -73,6 +75,26 @@ describe("avatarTraits", () => {
         Object.values(traits.colors).filter((c): c is string => c !== null),
       );
       expect(colors.size).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  // TEST_SCENARIO: Colours come from a fixed grid of hues and tones. Two parts never differ by a shade too small to read as deliberate, so every colour is a grid entry and each part's hue sits well away from the head's.
+  it("draws every colour from the quantized palette", () => {
+    const hueOf = new Map(
+      AVATAR_PALETTES.flatMap((p) =>
+        [p.base, p.shade, p.light].map((c) => [c, p.hue] as const),
+      ),
+    );
+    expect(hueOf.size).toBe(AVATAR_PALETTES.length * 3);
+    for (const { name, traits } of ALL) {
+      for (const color of Object.values(traits.colors))
+        if (color !== null) expect(hueOf.has(color), name).toBe(true);
+      const head = hueOf.get(traits.colors.head)!;
+      for (const part of ["side", "ornament", "cap", "band"] as const)
+        expect(
+          hueDistance(head, hueOf.get(traits.colors[part])!),
+          name,
+        ).toBeGreaterThanOrEqual(2);
     }
   });
 
