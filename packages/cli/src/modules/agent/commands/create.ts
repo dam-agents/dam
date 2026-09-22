@@ -35,7 +35,10 @@ export function buildCreateCommand(deps: {
 }): Command {
   return new Command("create")
     .description("Create a new Agent from a template on the active host")
-    .argument("<name>", "Agent name (1+ chars, must not start with `agent-`)")
+    .argument(
+      "<name>",
+      "Agent name (1+ chars; not `agent-` plus 16 hex characters, the shape of an ID)",
+    )
     .option(
       "--server <url>",
       "override the configured server URL for this call",

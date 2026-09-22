@@ -50,7 +50,7 @@ export function buildMetricsCommand(deps: {
     .option("--json", "emit raw JSON instead of the default report")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam metrics my-agent\n  dam metrics my-agent --session sess-abc123\n  dam metrics agent-abc123 --since 168 --json\n",
+      "\nExamples:\n  dam metrics my-agent\n  dam metrics my-agent --session sess-abc123\n  dam metrics agent-3f9c2b7e41d08a65 --since 168 --json\n",
     )
     .action(
       async (
