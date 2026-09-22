@@ -1,0 +1,32 @@
+[package]
+name = "vm-runner"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# The same release the runner image installs for its assets — see the version
+# invariant in Dockerfile.vm-runner. `smolvm.pin` names the commit, and nothing
+# else does: a path dependency is recorded in Cargo.lock as a bare version, with
+# no source and no commit, so the lock says nothing about which tree is there.
+smolvm = { path = ".smolvm" }
+anyhow = "1"
+axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+clap = { version = "4", features = ["derive"] }
+# --allow-from is a list of CIDRs the Go runner refuses to start on if any is
+# malformed; parsing them by hand is how an allowlist quietly admits everybody.
+ipnet = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+# Backdating a file is how the cache's two time windows — a stale claim and an
+# abandoned scratch tree — are tested without waiting out thirty minutes.
+filetime = "0.2"
+
+[lints.clippy]
+all = "deny"

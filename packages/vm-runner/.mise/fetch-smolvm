@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Run by the [deps.smolvm] provider in .mise/config.toml rather than as a task
+# of its own: it only prepares the ground, and a task that depends on it has no
+# cache key to inherit, which is what makes its dependents uncacheable.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Cargo cannot fetch smolvm as a git dependency: its .gitmodules names three
+# submodules with scp-style SSH URLs, and Cargo parses that file itself with
+# libgit2, which rejects the syntax before any fetch strategy or insteadOf
+# rewrite applies. The git CLI has no such trouble, and none of the three
+# submodules is needed to build the library — libkrun is dlopened at runtime on
+# Linux, so the crate compiles against an uninitialised tree. So the source is
+# cloned here, shallow and submodule-less, and depended on by path.
+tag=$(sed -n 's/^tag=//p' smolvm.pin)
+commit=$(sed -n 's/^commit=//p' smolvm.pin)
+[ -n "$tag" ] && [ -n "$commit" ] || { echo "smolvm.pin must set tag= and commit=" >&2; exit 1; }
+
+if [ -f .smolvm/.pinned ] && [ "$(cat .smolvm/.pinned)" = "$commit" ]; then
+  exit 0
+fi
+
+rm -rf .smolvm
+git clone --quiet --depth 1 --branch "$tag" https://github.com/smol-machines/smolvm .smolvm
+
+# The tag is what we asked for; the commit is what we accept. A tag can be
+# moved, so the pin names both and the build refuses a tree that is not the one
+# the pin was written against.
+actual=$(git -C .smolvm rev-parse HEAD)
+if [ "$actual" != "$commit" ]; then
+  rm -rf .smolvm
+  echo "smolvm $tag is $actual, but smolvm.pin expects $commit" >&2
+  exit 1
+fi
+echo "$commit" > .smolvm/.pinned

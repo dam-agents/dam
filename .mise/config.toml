@@ -30,6 +30,7 @@ maven = "latest"
 nodejs = "24"
 pinact = "latest"
 pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
+rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
 uv = "0.9"
 yq = "latest"
