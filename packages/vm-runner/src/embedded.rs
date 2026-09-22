@@ -79,6 +79,7 @@ impl Runtime for Smolvm {
         })
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped — its guest serves nothing — but its record still says running while the process lives, and smolvm refuses to update a running record. Left there, the server's stop-update-start never gets past the update, and the machine is never restarted. So such a VMM is taken down first, the way a start takes down whatever the last VMM left.
     fn update(
         &self,
         id: &str,
@@ -87,9 +88,18 @@ impl Runtime for Smolvm {
     ) -> anyhow::Result<()> {
         let secrets: Vec<&str> = desired.env.values().map(String::as_str).collect();
         timed("update", id, &secrets, || {
-            let record = self
+            let mut record = self
                 .record(id)?
                 .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+            if record.actual_state() == RecordState::Running
+                && state_probe::resolve_state(id, &record) != RecordState::Running
+            {
+                let _ = self.runtime.stop_machine(id);
+                kill_orphans(&self.proc_root, &vm_data_dir(id));
+                record = self
+                    .record(id)?
+                    .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+            }
             if !matches!(
                 record.actual_state(),
                 RecordState::Stopped | RecordState::Created
@@ -372,7 +382,7 @@ mod tests {
         assert!(!template_backed_storage("m1"));
     }
 
-    // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize. A running machine is refused, because smolvm reads the record only at boot and a change written under a live guest would be a lie until the next one.
+    // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
     #[test]
     fn an_update_reshapes_the_stopped_machine_and_keeps_its_disk() {
         let home = Home::new("update");
@@ -417,16 +427,6 @@ mod tests {
             fs::metadata(storage_disk_path("m1")).unwrap().len(),
             30 << 30
         );
-
-        smolvm
-            .db
-            .update_vm("m1", |r| {
-                r.state = RecordState::Running;
-                r.pid = Some(std::process::id() as i32);
-                r.pid_start_time = smolvm::process::process_start_time(std::process::id() as i32);
-            })
-            .unwrap();
-        assert!(smolvm.update("m1", &desired, Some(&applied)).is_err());
     }
 
     // TEST_SCENARIO: a failure's text reaches the Agent's status, and the env it was given holds the Agent's Secret values. Neither may appear in it.
@@ -454,6 +454,57 @@ mod tests {
         assert!(err.starts_with("smolvm machine create: "), "{err}");
         assert!(!err.contains("hunter22"), "{err}");
         assert_eq!(smolvm.state("m1").unwrap(), STATE_ABSENT);
+    }
+
+    // TEST_SCENARIO: a VMM whose guest agent died is reported stopped, so the server updates it before starting it again. Its record still says running while the process lives, and an update that refused it would leave the machine stuck: never restarted, its VMM never killed. The update takes that VMM down and applies.
+    #[test]
+    fn a_vmm_whose_agent_died_is_taken_down_by_an_update() {
+        let home = Home::new("zombie");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let spec = spec();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: Some(&launch),
+                },
+            )
+            .unwrap();
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .arg(format!("{}/", vm_data_dir("m1").display()))
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        smolvm
+            .db
+            .update_vm("m1", |r| {
+                r.state = RecordState::Running;
+                r.pid = Some(pid);
+                r.pid_start_time = smolvm::process::process_start_time(pid);
+            })
+            .unwrap();
+        assert_eq!(smolvm.state("m1").unwrap(), STATE_STOPPED);
+
+        let mut desired = spec.clone();
+        desired.cpus = 1;
+        smolvm.update("m1", &desired, Some(&spec)).unwrap();
+        assert_eq!(smolvm.record("m1").unwrap().unwrap().cpus, 1);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while vmm.try_wait().unwrap().is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the dead agent's VMM was left running"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 
     // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its directory gone.
