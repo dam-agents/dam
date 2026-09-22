@@ -2,6 +2,23 @@
 
 lockfile_version = 2
 
+[[tools."aqua:rustsec/rustsec/cargo-audit"]]
+version = "0.22.2"
+backend = "aqua:rustsec/rustsec/cargo-audit"
+specifiers = ["latest"]
+
+[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-arm64"]
+checksum = "sha256:c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-aarch64-unknown-linux-gnu-v0.22.2.tgz"
+
+[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-x64"]
+checksum = "sha256:7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
+
+[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-arm64"]
+checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
+
 [[tools.crane]]
 version = "0.22.1"
 backend = "aqua:google/go-containerregistry"

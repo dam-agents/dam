@@ -12,6 +12,7 @@ repo_root = "{{config_root}}"
 auto = true
 
 [tools]
+"aqua:rustsec/rustsec/cargo-audit" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
