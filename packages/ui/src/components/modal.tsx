@@ -8,12 +8,14 @@ import { cn } from "@/lib/utils";
 
 interface ModalProps {
   widthClass?: string;
+  heightClass?: string;
   onClose?: () => void;
   children: ReactNode;
 }
 
 export function Modal({
   widthClass = "w-[560px]",
+  heightClass,
   onClose,
   children,
 }: ModalProps) {
@@ -30,7 +32,11 @@ export function Modal({
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl`}
+          className={cn(
+            widthClass,
+            heightClass,
+            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl",
+          )}
         >
           {children}
         </div>
