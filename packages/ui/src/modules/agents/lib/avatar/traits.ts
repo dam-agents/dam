@@ -1,6 +1,7 @@
-export const AVATAR_INK = "#4a5160";
-export const AVATAR_SCLERA = "#fffdf8";
-export const AVATAR_GAP = 3.2;
+import { HEAD_GEOMETRY } from "./geometry.js";
+import { placeEyes, visorBox } from "./layout.js";
+
+export { AVATAR_GAP, AVATAR_INK, AVATAR_SCLERA } from "./constants.js";
 
 export interface AvatarPalette {
   base: string;
@@ -19,14 +20,10 @@ export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { base: "#5ecdb0", shade: "#35a88b", light: "#a7e6d5" },
   { base: "#df9fe5", shade: "#c075cf", light: "#f0cdf3" },
   { base: "#7d9de6", shade: "#4f7fe0", light: "#b9cbf3" },
-];
-
-export const AVATAR_ACCENTS: readonly string[] = [
-  "#f5a05a",
-  "#5ecdb0",
-  "#c3a4e6",
-  "#f08a8e",
-  "#fccf73",
+  { base: "#b5d86a", shade: "#86b43f", light: "#d9ecb2" },
+  { base: "#f4a3c4", shade: "#e27aa7", light: "#fad1e2" },
+  { base: "#6fc9e6", shade: "#3aa6c9", light: "#b3e4f3" },
+  { base: "#e9b98c", shade: "#cf8f58", light: "#f5dcc4" },
 ];
 
 export const HEAD_SHAPES = [
@@ -36,29 +33,33 @@ export const HEAD_SHAPES = [
   "egg",
   "box",
   "bell",
+  "capsule",
 ] as const;
 export type HeadShape = (typeof HEAD_SHAPES)[number];
 
-export type Face = "eyes" | "visor" | "happy" | "wink" | "bee";
+export type Face = "eyes" | "visor" | "happy" | "wink" | "blank";
+export type Sides = "none" | "block" | "round" | "wings";
+export type Top = "none" | "antenna" | "twin" | "bolt" | "cap" | "bug-eyes";
+export type Banding = "none" | "chin" | "bands";
+export type Bottom = "none" | "neck" | "stripes";
+export type Mouth = "none" | "line" | "smile" | "o";
 
-export const EARS = ["none", "block", "round"] as const;
-export type Ears = (typeof EARS)[number];
-
-export const TOPS = ["none", "antenna", "twin", "cap", "bolt"] as const;
-export type Top = (typeof TOPS)[number];
-
-export const BOTTOMS = ["neck", "stripes", "chin"] as const;
-export type Bottom = (typeof BOTTOMS)[number];
-
-export const MOUTHS = ["none", "line", "smile", "o"] as const;
-export type Mouth = (typeof MOUTHS)[number];
+export interface Look {
+  dx: number;
+  dy: number;
+}
 
 export interface EyeSpec {
   x: number;
   y: number;
   r: number;
   pupil: number;
-  look: { dx: number; dy: number };
+  look: Look;
+}
+
+export interface BugEye {
+  r: number;
+  look: Look;
 }
 
 export const DERPS = [
@@ -74,28 +75,34 @@ export const DERPS = [
 ] as const;
 export type Derp = (typeof DERPS)[number];
 
-export interface BeeEye {
-  r: number;
-  look: EyeSpec["look"];
+export interface AvatarColors {
+  head: string;
+  headShade: string;
+  side: string;
+  ornament: string;
+  cap: string;
+  chin: string;
+  band: string;
+  bottom: string;
+  neck: string | null;
+  glow: string;
 }
 
 export interface AvatarTraits {
-  palette: AvatarPalette;
-  capColor: string;
-  accent: string;
+  colors: AvatarColors;
   head: HeadShape;
   face: Face;
   derp: Derp | null;
   eyes: EyeSpec[];
-  beeEyes: [BeeEye, BeeEye];
-  wingColor: string;
-  ears: Ears;
+  bugEyes: [BugEye, BugEye];
+  sides: Sides;
   top: Top;
+  banding: Banding;
   bottom: Bottom;
   mouth: Mouth;
 }
 
-type Random = () => number;
+export type Random = () => number;
 
 function hashSeed(seed: string): number {
   let hash = 0x811c9dc5;
@@ -120,38 +127,6 @@ function pickFrom<T>(random: Random, options: readonly T[]): T {
   return options[Math.floor(random() * options.length)]!;
 }
 
-function between(random: Random, min: number, max: number): number {
-  return min + random() * (max - min);
-}
-
-function randomLook(random: Random): EyeSpec["look"] {
-  const angle = random() * Math.PI * 2;
-  return { dx: Math.cos(angle), dy: Math.sin(angle) };
-}
-
-function sideLook(random: Random, side: 1 | -1): EyeSpec["look"] {
-  const angle = between(random, -0.35, 0.35);
-  return { dx: side * Math.cos(angle), dy: Math.sin(angle) };
-}
-
-function eye(
-  x: number,
-  y: number,
-  r: number,
-  look: EyeSpec["look"],
-  pupil = 0.46,
-): EyeSpec {
-  return { x, y, r, pupil, look };
-}
-
-const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
-  ["eyes", 66],
-  ["visor", 10],
-  ["happy", 8],
-  ["wink", 6],
-  ["bee", 10],
-];
-
 function pickWeighted<T>(
   random: Random,
   weighted: readonly (readonly [T, number])[],
@@ -163,6 +138,24 @@ function pickWeighted<T>(
     if (roll < 0) return value;
   }
   return weighted[weighted.length - 1]![0];
+}
+
+function between(random: Random, min: number, max: number): number {
+  return min + random() * (max - min);
+}
+
+function randomLook(random: Random): Look {
+  const angle = random() * Math.PI * 2;
+  return { dx: Math.cos(angle), dy: Math.sin(angle) };
+}
+
+function sideLook(random: Random, side: 1 | -1): Look {
+  const angle = between(random, -0.35, 0.35);
+  return { dx: side * Math.cos(angle), dy: Math.sin(angle) };
+}
+
+function eye(x: number, y: number, r: number, look: Look, pupil = 0.46) {
+  return { x, y, r, pupil, look };
 }
 
 export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
@@ -219,45 +212,117 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
   }
 }
 
+const TOP_WEIGHTS: readonly (readonly [Top, number])[] = [
+  ["none", 14],
+  ["antenna", 18],
+  ["twin", 18],
+  ["bolt", 12],
+  ["cap", 16],
+  ["bug-eyes", 16],
+];
+
+const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
+  ["eyes", 68],
+  ["visor", 12],
+  ["happy", 10],
+  ["wink", 10],
+];
+
+const BUG_FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
+  ["blank", 45],
+  ["eyes", 25],
+  ["happy", 15],
+  ["wink", 15],
+];
+
+const BANDING_WEIGHTS: readonly (readonly [Banding, number])[] = [
+  ["none", 50],
+  ["chin", 25],
+  ["bands", 25],
+];
+
+const SIDES_ANY: readonly Sides[] = ["none", "block", "round", "wings"];
+const SIDES_WIDE: readonly Sides[] = ["none", "block", "round"];
+const BOTTOMS: readonly Bottom[] = ["none", "neck", "neck", "stripes"];
+const MOUTHS: readonly Mouth[] = ["none", "line", "smile", "o"];
+
+function pickPalettes(
+  random: Random,
+): [AvatarPalette, AvatarPalette, AvatarPalette] {
+  const pool = [...AVATAR_PALETTES];
+  const take = () => pool.splice(Math.floor(random() * pool.length), 1)[0]!;
+  return [take(), take(), take()];
+}
+
+function pickColors(random: Random): AvatarColors {
+  const [primary, secondary, tertiary] = pickPalettes(random);
+  const either = (a: string, b: string) => (random() < 0.5 ? a : b);
+  return {
+    head: primary.base,
+    headShade: primary.shade,
+    side: either(secondary.base, secondary.shade),
+    ornament: either(tertiary.base, tertiary.shade),
+    cap: either(secondary.base, tertiary.base),
+    chin: either(primary.shade, secondary.base),
+    band: either(primary.base, secondary.base),
+    bottom: either(secondary.shade, tertiary.base),
+    neck: random() < 0.5 ? null : tertiary.shade,
+    glow: either(primary.light, tertiary.light),
+  };
+}
+
 export function avatarTraits(seed: string): AvatarTraits {
   const random = mulberry32(hashSeed(seed));
-  const palette = pickFrom(random, AVATAR_PALETTES);
-  const others = AVATAR_PALETTES.filter((p) => p !== palette);
-  const capColor = pickFrom(random, others).base;
-  const accent = pickFrom(random, AVATAR_ACCENTS);
+  const colors = pickColors(random);
   const head = pickFrom(random, HEAD_SHAPES);
-  const face = pickWeighted(random, FACE_WEIGHTS);
+  const top = pickWeighted(random, TOP_WEIGHTS);
+  const face = pickWeighted(
+    random,
+    top === "bug-eyes" ? BUG_FACE_WEIGHTS : FACE_WEIGHTS,
+  );
   const derp = face === "eyes" ? pickFrom(random, DERPS) : null;
   const eyes = derp ? derpEyes(derp, random) : [];
-  const beeMismatch = random() < 0.35;
-  const beeBigLeft = random() < 0.5;
-  const beeEyes: AvatarTraits["beeEyes"] = [
-    { r: beeMismatch ? (beeBigLeft ? 8.5 : 5.5) : 7, look: randomLook(random) },
-    { r: beeMismatch ? (beeBigLeft ? 5.5 : 8.5) : 7, look: randomLook(random) },
+  const bugMismatch = random() < 0.35;
+  const bugBigLeft = random() < 0.5;
+  const bugRadius = (big: boolean) => (bugMismatch ? (big ? 8.5 : 5.5) : 7);
+  const bugEyes: AvatarTraits["bugEyes"] = [
+    { r: bugRadius(bugBigLeft), look: randomLook(random) },
+    { r: bugRadius(!bugBigLeft), look: randomLook(random) },
   ];
-  const wingColor = pickFrom(random, others).shade;
-  const ears = pickFrom(random, EARS);
-  const top = pickFrom(random, TOPS);
+  const sides = pickFrom(random, head === "box" ? SIDES_WIDE : SIDES_ANY);
+  const banding = pickWeighted(random, BANDING_WEIGHTS);
   const bottom = pickFrom(random, BOTTOMS);
   const pickedMouth = pickFrom(random, MOUTHS);
-  const lowestEye = Math.max(0, ...eyes.map((e) => e.y + e.r));
-  const mouth: Mouth =
-    face === "eyes" && bottom !== "chin" && lowestEye < 62
-      ? pickedMouth
-      : "none";
-  return {
-    palette,
-    capColor,
-    accent,
+  const mouthFits = (face === "eyes" || face === "blank") && banding === "none";
+  return makeRoomForFace({
+    colors,
     head,
     face,
     derp,
     eyes,
-    beeEyes,
-    wingColor,
-    ears,
+    bugEyes,
+    sides,
     top,
+    banding,
     bottom,
-    mouth,
-  };
+    mouth: mouthFits ? pickedMouth : "none",
+  });
+}
+
+const MIN_VISOR_HEIGHT = 14;
+const MIN_EYE_SCALE = 0.6;
+
+function faceFits(traits: AvatarTraits): boolean {
+  const head = HEAD_GEOMETRY[traits.head];
+  if (traits.face === "visor" || traits.face === "happy")
+    return visorBox(traits, head).height >= MIN_VISOR_HEIGHT;
+  const placed = placeEyes(traits, head);
+  return placed.every((e, i) => e.r >= traits.eyes[i]!.r * MIN_EYE_SCALE);
+}
+
+function makeRoomForFace(traits: AvatarTraits): AvatarTraits {
+  if (faceFits(traits)) return traits;
+  const unbanded: AvatarTraits = { ...traits, banding: "none" };
+  if (faceFits(unbanded)) return unbanded;
+  return { ...unbanded, top: "none" };
 }

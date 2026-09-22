@@ -7,12 +7,11 @@ import { avatarTraits } from "../../lib/avatar/traits.js";
 import { AvatarFace, AvatarMouth } from "./avatar-face.js";
 import {
   AvatarBottom,
-  AvatarEars,
   AvatarGapLines,
   AvatarOverlays,
+  AvatarSides,
   AvatarTop,
 } from "./avatar-parts.js";
-import { BeeFigure } from "./bee-figure.js";
 
 interface Props {
   seed: string;
@@ -50,24 +49,22 @@ export function RobotHead({ seed, size = 24, label, className }: Props) {
           height={120}
         >
           <rect x={-10} y={-10} width={120} height={120} fill="white" />
-          <AvatarGapLines {...parts} />
+          <g clipPath={`url(#${id}-head)`}>
+            <AvatarGapLines {...parts} />
+          </g>
         </mask>
       </defs>
-      {traits.face === "bee" ? (
-        <BeeFigure traits={traits} />
-      ) : (
-        <g mask={`url(#${id}-gaps)`}>
-          <AvatarTop {...parts} />
-          <AvatarBottom {...parts} />
-          <AvatarEars {...parts} />
-          <path d={head.path} fill={traits.palette.base} />
-          <g clipPath={`url(#${id}-head)`}>
-            <AvatarOverlays {...parts} />
-            <AvatarFace {...parts} />
-            <AvatarMouth {...parts} />
-          </g>
+      <g mask={`url(#${id}-gaps)`}>
+        <AvatarTop {...parts} />
+        <AvatarBottom {...parts} />
+        <AvatarSides {...parts} />
+        <path d={head.path} fill={traits.colors.head} />
+        <g clipPath={`url(#${id}-head)`}>
+          <AvatarOverlays {...parts} />
+          <AvatarFace {...parts} />
+          <AvatarMouth {...parts} />
         </g>
-      )}
+      </g>
     </svg>
   );
 }

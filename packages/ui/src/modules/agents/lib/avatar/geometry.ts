@@ -89,6 +89,12 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
     top: 27,
     bottom: 75,
   },
+  capsule: {
+    path: roundedRect(30, 24, 40, 58, 20),
+    halfWidth: 20,
+    top: 24,
+    bottom: 82,
+  },
   bell: {
     path: "M22,64 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V64 Q78,76 66,76 H34 Q22,76 22,64 Z",
     halfWidth: 28,
@@ -96,3 +102,19 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
     bottom: 76,
   },
 };
+
+export function teardrop(tip: Point, center: Point, radius: number): string {
+  const dx = center[0] - tip[0];
+  const dy = center[1] - tip[1];
+  const distance = Math.hypot(dx, dy);
+  const angle = Math.atan2(dy, dx);
+  const spread = Math.asin(radius / distance);
+  const reach = Math.sqrt(distance * distance - radius * radius);
+  const tangent = (a: number): Point => [
+    tip[0] + reach * Math.cos(a),
+    tip[1] + reach * Math.sin(a),
+  ];
+  const [x1, y1] = tangent(angle - spread);
+  const [x2, y2] = tangent(angle + spread);
+  return `M${tip[0]},${tip[1]} L${x1},${y1} A${radius},${radius} 0 1 1 ${x2},${y2} Z`;
+}
