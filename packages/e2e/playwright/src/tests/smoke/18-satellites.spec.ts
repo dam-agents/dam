@@ -49,6 +49,12 @@ async function removeIfPresent(api: ApiClient): Promise<void> {
 }
 
 test.describe("satellites", () => {
+  /**
+   * TEST_SCENARIO: The whole worker-side lifecycle against a real cluster. The
+   * agent it brings up is deleted at the end: left running it is an extra
+   * StatefulSet competing for a small cluster's CPU for the rest of the suite,
+   * and the specs that need an agent to answer are the ones that pay for it.
+   */
   test("a machine registers, is granted to an agent, drains and is removed", async () => {
     const token = await getAccessToken();
     const api = createApiClient(token);
@@ -105,6 +111,8 @@ test.describe("satellites", () => {
     expect(
       (await api.satellites.list.query()).some((s) => s.name === SATELLITE),
     ).toBe(false);
+
+    await api.agents.delete.mutate({ id: agentId }).catch(() => {});
   });
 
   test("a snapshot the contract rejects is refused rather than stored", async () => {
