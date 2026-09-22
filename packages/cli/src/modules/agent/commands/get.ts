@@ -29,7 +29,7 @@ export function buildGetCommand(deps: {
     .option("--json", "emit raw JSON instead of the default vertical layout")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam agent get my-agent\n  dam agent get agent-abc123 --json\n",
+      "\nExamples:\n  dam agent get my-agent\n  dam agent get agent-3f9c2b7e41d08a65 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {

@@ -1,3 +1,5 @@
+import { AGENT_ID_RE } from "api-server-api";
+
 import { err, ok, type Result } from "../../../result.js";
 import type {
   AmbiguousError,
@@ -7,8 +9,6 @@ import type {
 } from "../domain/errors.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "./agent-service.js";
-
-export const AGENT_ID_PREFIX = "agent-";
 
 export type ResolveError =
   | NotFoundError
@@ -25,7 +25,7 @@ export function createAgentResolver(deps: {
 }): AgentResolver {
   return {
     async resolve(ref) {
-      if (ref.startsWith(AGENT_ID_PREFIX)) {
+      if (AGENT_ID_RE.test(ref)) {
         const got = await deps.agentService.get(ref);
         if (!got.ok) return got;
         if (got.value === null)

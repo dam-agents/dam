@@ -35,7 +35,10 @@ export function buildCreateCommand(deps: {
 }): Command {
   return new Command("create")
     .description("Create a new Agent from a template on the active host")
-    .argument("<name>", "Agent name (1+ chars, must not start with `agent-`)")
+    .argument(
+      "<name>",
+      "Agent name (1+ chars; not `agent-` plus 16 hex characters, the shape of an ID)",
+    )
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -109,9 +112,9 @@ async function runCreate(
 ): Promise<void> {
   const nameCheck = validateAgentName(name);
   if (!nameCheck.ok) {
-    if (nameCheck.error === "reserved-prefix") {
+    if (nameCheck.error === "id-shape") {
       process.stderr.write(
-        `error: agent name \`${name}\` cannot start with \`agent-\` (reserved for IDs)\n`,
+        `error: agent name \`${name}\` has the shape of an agent ID (\`agent-\` and 16 hex characters)\n`,
       );
     } else {
       process.stderr.write("error: agent name cannot be empty\n");

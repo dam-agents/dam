@@ -151,7 +151,7 @@ async function startFixture(opts: {
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
-    id: "agent-1",
+    id: "agent-0000000000000001",
     name: "demo",
     templateId: "claude-code",
     spec: {
@@ -196,12 +196,16 @@ describe("dam agent list (integration)", () => {
     const fixture = await startFixture({
       list: async () => [
         makeAgent({
-          id: "agent-2",
+          id: "agent-0000000000000002",
           name: "staging",
           templateId: "claude-code",
           state: "hibernated",
         }),
-        makeAgent({ id: "agent-1", name: "prod", templateId: "claude-code" }),
+        makeAgent({
+          id: "agent-0000000000000001",
+          name: "prod",
+          templateId: "claude-code",
+        }),
         makeAgent({
           id: "agent-3",
           name: "test-x",
@@ -226,7 +230,7 @@ describe("dam agent list (integration)", () => {
       expect(lines[1]).toContain("prod");
       expect(lines[2]).toContain("staging");
       expect(lines[3]).toContain("test-x");
-      expect(lines[1]).toContain("agent-1");
+      expect(lines[1]).toContain("agent-0000000000000001");
       expect(lines[3]).toContain("error");
     } finally {
       await fixture.close();
@@ -234,7 +238,7 @@ describe("dam agent list (integration)", () => {
   });
 
   it("--json output: raw agent[] on stdout, exit 0", async () => {
-    const agent = makeAgent({ id: "agent-42", name: "prod" });
+    const agent = makeAgent({ id: "agent-0000000000000042", name: "prod" });
     const fixture = await startFixture({
       list: async () => [agent],
       expectAuthorization: "Bearer test-token",
@@ -254,7 +258,10 @@ describe("dam agent list (integration)", () => {
         name: string;
       }>;
       expect(parsed).toHaveLength(1);
-      expect(parsed[0]).toMatchObject({ id: "agent-42", name: "prod" });
+      expect(parsed[0]).toMatchObject({
+        id: "agent-0000000000000042",
+        name: "prod",
+      });
     } finally {
       await fixture.close();
     }

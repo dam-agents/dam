@@ -34,7 +34,7 @@ export function buildListCommand(deps: {
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam network list my-agent\n  dam network list agent-abc123 --json\n",
+      "\nExamples:\n  dam network list my-agent\n  dam network list agent-3f9c2b7e41d08a65 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {

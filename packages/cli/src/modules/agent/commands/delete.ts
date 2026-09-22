@@ -32,7 +32,7 @@ export function buildDeleteCommand(deps: {
     )
     .addHelpText(
       "after",
-      "\nExamples:\n  dam agent delete my-agent\n  dam agent delete agent-abc123 --yes\n",
+      "\nExamples:\n  dam agent delete my-agent\n  dam agent delete agent-3f9c2b7e41d08a65 --yes\n",
     )
     .action(
       async (

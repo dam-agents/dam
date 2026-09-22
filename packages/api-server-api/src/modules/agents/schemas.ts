@@ -58,15 +58,19 @@ export const agentDisconnectSlackInputSchema = idSchema.extend({
 
 export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
 
+export const AGENT_ID_RE = /^agent-[0-9a-f]{16}$/;
+
+export const agentNameSchema = z
+  .string()
+  .min(1)
+  .refine((n) => !AGENT_ID_RE.test(n), {
+    message: "agent name cannot have the shape of an agent ID",
+  });
+
 export const agentCreateInputSchema = z
   .object({
     kbShareRoots: z.array(z.string().min(1)).min(1).max(20).optional(),
-    name: z
-      .string()
-      .min(1)
-      .refine((n) => !n.startsWith("agent-"), {
-        message: "agent name cannot start with 'agent-' (reserved for IDs)",
-      }),
+    name: agentNameSchema,
     templateId: z.string().optional(),
     image: z.string().optional(),
     description: z.string().optional(),
