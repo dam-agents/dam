@@ -55,7 +55,7 @@ export function AppVersionRow() {
 
   const onCopy = async () => {
     const outcome = await copy(version);
-    if (outcome === "failed") setCopyUnavailable(true);
+    setCopyUnavailable(outcome === "failed");
   };
 
   const { label, Icon, tone } = PRESENTATION[state];
