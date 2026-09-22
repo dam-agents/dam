@@ -335,31 +335,32 @@ Pulling the agent's container image from a private registry uses a
 **structurally separate** credential class from the egress credentials
 above. It does not ride the Envoy path at all:
 
-- **The kubelet consumes it, not Envoy.** It is a
-  `kubernetes.io/dockerconfigjson` Secret referenced from the pod spec's
-  `imagePullSecrets`; the kubelet reads it at pod creation to authenticate
-  the image pull. It is never mounted into the gateway pod and never
-  projected into the agent container — like egress credentials, the agent
-  never holds the bytes, but here that is a property of *where the Secret
-  is consumed* rather than of Envoy injection.
+- **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
+  It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
+  `imagePullSecrets`, read at pod creation for the pull. A vm
+  Agent has no pod, so the controller merges the same Secrets in the same
+  order and hands them to the owner's runner for that fetch alone; the
+  runner never stores them and no guest sees them
+  ([persistence](persistence.md#the-machine-image-cache)). Either way the
+  gateway and the agent never hold the bytes — a property of *where the
+  Secret is consumed* rather than of Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
   owner-scoped and reusable across every Agent that owner runs; a pull
   credential is agent-scoped — one Secret per Agent (still carrying the
   creator's `agent-platform.ai/owner` for tenancy), created with the Agent and
   torn down with it. There is no cross-agent reuse.
 - **Per-agent precedence over the install-wide default.** An operator may
-  configure an install-wide default pull secret applied to every agent
-  pod. When an Agent carries its own pull-secret ref the controller lists
-  it *first* on the pod's `imagePullSecrets`, ahead of the install-wide
-  default, which is retained as a fallback — override, not replace.
+  configure a default pull secret for every agent. An Agent's own
+  pull-secret ref is listed *first*, ahead of that default, which is kept
+  as a fallback — override, not replace.
 
-The api-server builds the Secret from structured `{server, username,
-password}` input and writes it before the Agent record, rolling it back if
+The api-server builds the Secret from structured registry input and
+writes it before the Agent record, rolling it back if
 that create fails. Teardown is a delete-time cleanup hook with a
 label-scoped orphan sweep as backstop; lifetime detail lives on
 [persistence](persistence.md). The credential is validated only at pull
-time — a bad credential surfaces as an image-pull failure on the pod, not
-a create-time error.
+time — a bad credential surfaces as an image-pull failure (a vm Agent's
+image reads unavailable), not a create-time error.
 
 Scope is long-lived static credentials (registry PAT, robot account, basic
 auth, a GCP Artifact Registry JSON key as the password). Short-lived or
