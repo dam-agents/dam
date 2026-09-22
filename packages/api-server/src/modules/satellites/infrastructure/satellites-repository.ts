@@ -507,27 +507,56 @@ export function createSatellitesRepository(db: Db) {
      * a flag because a waiter can die mid-poll, and then the outcome has to
      * become deliverable again on its own.
      */
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Takes the wait lease that stops outcome
+     * delivery waking an Agent about a Job it is already sitting in a `wait`
+     * for. The Agent is a predicate rather than something the caller is trusted
+     * to have checked: this lease withholds an outcome, so a write that could
+     * land on another Agent's Job would let one Agent keep another's result from
+     * ever being delivered. A Job's Agent never changes, so naming it here also
+     * makes the owner unnecessary — which is what lets the lease be the first
+     * statement of a wait, before any read opens a window delivery can claim in.
+     */
     async markAwaited(
-      owner: string,
+      agentId: string,
       satellite: string,
       sequence: number,
       until: Date,
-    ): Promise<void> {
-      await db
+    ): Promise<boolean> {
+      const rows = await db
         .update(satelliteJobs)
         .set({ awaitedUntil: until })
         .where(
           and(
-            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.agentId, agentId),
             eq(satelliteJobs.satellite, satellite),
             eq(satelliteJobs.sequence, sequence),
             sql`${satelliteJobs.deliveredAt} is null`,
+          ),
+        )
+        .returning({ sequence: satelliteJobs.sequence });
+      return rows.length > 0;
+    },
+
+    async releaseAwaited(
+      agentId: string,
+      satellite: string,
+      sequence: number,
+    ): Promise<void> {
+      await db
+        .update(satelliteJobs)
+        .set({ awaitedUntil: null })
+        .where(
+          and(
+            eq(satelliteJobs.agentId, agentId),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
           ),
         );
     },
 
     async markSeen(
-      owner: string,
+      agentId: string,
       satellite: string,
       sequence: number,
     ): Promise<boolean> {
@@ -537,7 +566,7 @@ export function createSatellitesRepository(db: Db) {
         .set({ deliveredAt: now, wokeAt: now })
         .where(
           and(
-            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.agentId, agentId),
             eq(satelliteJobs.satellite, satellite),
             eq(satelliteJobs.sequence, sequence),
             sql`${satelliteJobs.deliveredAt} is null`,

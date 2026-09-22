@@ -92,11 +92,11 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
     };
   }
 
-  async function read(
+  async function readClaiming(
     agentId: string,
     name: string,
     sequence: number,
-  ): Promise<JobOutcome> {
+  ): Promise<{ outcome: JobOutcome; claimed: boolean }> {
     const { owner } = await resolve(agentId, name);
     const job = await deps.repo.getJob(owner, name, sequence);
     if (job === null || job.agentId !== agentId)
@@ -104,8 +104,18 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         code: "NOT_FOUND",
         message: `no job ${formatJobRef(name, sequence)} belongs to this agent`,
       });
-    if (isTerminal(job.status)) await deps.repo.markSeen(owner, name, sequence);
-    return outcome(agentId, job);
+    const claimed = isTerminal(job.status)
+      ? await deps.repo.markSeen(agentId, name, sequence)
+      : false;
+    return { outcome: await outcome(agentId, job), claimed };
+  }
+
+  async function read(
+    agentId: string,
+    name: string,
+    sequence: number,
+  ): Promise<JobOutcome> {
+    return (await readClaiming(agentId, name, sequence)).outcome;
   }
 
   return {
@@ -180,18 +190,21 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       sequence: number,
       deadlineMs: number,
     ): Promise<JobOutcome> {
-      const { owner } = await resolve(agentId, name);
       const deadline = now().getTime() + deadlineMs;
       for (;;) {
         await deps.repo.markAwaited(
-          owner,
+          agentId,
           name,
           sequence,
           new Date(now().getTime() + AWAIT_LEASE_MS),
         );
-        const current = await read(agentId, name, sequence);
-        if (isTerminal(current.status)) return current;
-        if (now().getTime() >= deadline) return current;
+        const current = await readClaiming(agentId, name, sequence);
+        if (isTerminal(current.outcome.status)) {
+          if (!current.claimed)
+            await deps.repo.releaseAwaited(agentId, name, sequence);
+          return current.outcome;
+        }
+        if (now().getTime() >= deadline) return current.outcome;
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }
     },
@@ -209,7 +222,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
 
         if (isTerminal(job.status)) {
-          await deps.repo.markSeen(owner, name, sequence);
+          await deps.repo.markSeen(agentId, name, sequence);
           return outcome(agentId, job);
         }
         if (job.status === "running") {
@@ -225,7 +238,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         );
         if (settled === null) continue;
         if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
-        await deps.repo.markSeen(owner, name, sequence);
+        await deps.repo.markSeen(agentId, name, sequence);
         return outcome(agentId, settled);
       }
       return outcome(agentId, job!);

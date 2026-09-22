@@ -212,7 +212,7 @@ There is no opt-out flag. Two rules keep that from becoming noise, and they are 
 
 An Agent parked over budget cannot wake, so its wake **requeues hourly** until the outcome's TTL lapses. The outcome is durable regardless; what the retry protects is the summarizing half of the job actually happening once the budget frees.
 
-- **An outcome already delivered does not wake.** An Agent sitting in `wait` gets the result there; waking as well would produce a second turn about a Job it just handled. Whichever path reports an outcome first marks it delivered.
+- **An outcome already delivered does not wake.** An Agent sitting in `wait` gets the result there; waking as well would produce a second turn about a Job it just handled. *(Superseded: first-past-the-post was replaced by a lease the waiter takes — see [`docs/architecture/satellites.md`](../architecture/satellites.md).)*
 - **Simultaneous finishes coalesce.** Three Jobs ending within seconds wake the Agent once with three results.
 
 Holding the pod awake for the Job's duration was rejected as the single most expensive thing available here — six hours of compute against the owner's budget to avoid one wake — and it buys nothing the wake does not.
