@@ -51,9 +51,10 @@ AGENTS="claude-code codex pi-agent bob k-search"
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
-# the harnesses, keycloak and every workload, since a starter kit names its
-# image directly and its tag has to be pinned the same way a Template's is.
-PINNED_TAGS="keycloak $AGENTS $WORKLOADS"
+# the harnesses, keycloak, the vm-runner and every workload, since a starter kit
+# names its image directly and its tag has to be pinned the same way a
+# Template's is.
+PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -62,7 +63,9 @@ own_paths() {
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
-    vm-runner) echo "packages/controller" ;;
+    # Only these three binaries ship in the image; check:vm-runner-source fails
+    # when an import escapes the list.
+    vm-runner) echo "packages/controller/cmd/vm-runner packages/controller/cmd/vm-image-cache packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
@@ -143,7 +146,7 @@ gha_outputs() {
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak $AGENTS $WORKLOADS; do
+  src="$(for a in platform-base keycloak vm-runner $AGENTS $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
@@ -178,7 +181,12 @@ self_check() {
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
   chk "$(base_of keycloak)" ""
+  chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
+  has "$(effective_paths vm-runner)" packages/controller/cmd/vm-runner
+  has "$(effective_paths vm-runner)" packages/controller/cmd/platform-init
+  has "$(effective_paths vm-runner)" packages/controller/pkg/vmrunner
+  has "$PINNED_TAGS" vm-runner
   chk "$(local_tag platform-base)" platform-base
   chk "$(local_tag bob)" "platform-bob:latest"
   has "$(effective_paths nous)" packages/platform-base
@@ -199,6 +207,7 @@ self_check() {
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"platform-base":"'
+  has "$out" '"vm-runner":"'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"

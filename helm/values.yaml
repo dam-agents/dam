@@ -163,9 +163,11 @@ virtualization:
   enabled: false
   # The shape of every runner pod the controller creates (one per owner).
   runner:
+    # Published charts pin this to the image's content tag, so an upgrade that
+    # leaves the runner unchanged doesn't roll the pod and stop every machine.
     image:
       repository: quay.io/dam-agents/vm-runner
-      tag: ""
+      tag: "" # @ci-pin vm-runner-image-tag
       pullPolicy: IfNotPresent
     # KVM (and the tun device smolvm's per-machine network needs) arrive as
     # device-plugin resources, which is the only way the runner gets them —

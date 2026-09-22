@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Everything the vm-runner image compiles in is declared as its source in image:resolve"
+#MISE dir="{{vars.repo_root}}"
+#MISE sources=["packages/controller/cmd/**/*.go", "packages/controller/pkg/**/*.go", "packages/controller/go.mod", "packages/controller/go.sum", ".mise/tasks/image/resolve"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+
+module=github.com/dam-agents/dam/packages/controller
+declared="$(.mise/tasks/image/resolve paths vm-runner)"
+status=0
+for pkg in $(go list -C packages/controller -deps ./cmd/vm-runner ./cmd/vm-image-cache ./cmd/platform-init | grep "^$module/"); do
+  dir="packages/controller/${pkg#"$module"/}"
+  covered=
+  for path in $declared; do
+    case "$dir/" in "$path"/*) covered=1 ;; esac
+  done
+  if [ -z "$covered" ]; then
+    echo "vm-runner-source: $dir is compiled into the vm-runner image but is not in \`mise run image:resolve -- paths vm-runner\`. Add it there, or the published chart keeps pinning the runner to a tag that no longer moves when the image changes." >&2
+    status=1
+  fi
+done
+exit $status
