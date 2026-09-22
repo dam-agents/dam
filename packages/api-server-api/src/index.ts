@@ -333,6 +333,12 @@ export {
   templateIdForProvider,
 } from "./modules/connections/providers.js";
 
+export {
+  CONNECTION_EGRESS_PATH_SEGMENT,
+  connectionEgressPathPrefix,
+  applyConnectionEgressAddressing,
+} from "./modules/connections/egress-addressing.js";
+
 export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {

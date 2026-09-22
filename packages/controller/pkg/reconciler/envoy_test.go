@@ -254,6 +254,8 @@ func TestFilterByGrants_DeletingAgentForgetsWhatWasReported(t *testing.T) {
 	require.Len(t, *warnings, 2)
 }
 
+const luaFilterType = "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
+
 var bootstrapTestCfg = &config.Config{
 	Namespace:           "agents",
 	ReleaseName:         "platform",
@@ -952,7 +954,7 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 	})
 	require.NoError(t, err)
 
-	assert.Contains(t, got, "envoy.filters.http.lua")
+	assert.Contains(t, got, luaFilterType)
 	assert.Contains(t, got, "header: X-Bobshell-Cred")
 	assert.Contains(t, got, `local HEADER = "X-Bobshell-Cred"`)
 	assert.Contains(t, got, `local PARAM  = "key"`)
@@ -965,7 +967,7 @@ func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
 		credentialedChain("platform-conn-github", "api.github.com"),
 	})
 	require.NoError(t, err)
-	assert.NotContains(t, got, "envoy.filters.http.lua")
+	assert.NotContains(t, got, luaFilterType)
 	assert.Contains(t, got, "header: Authorization")
 }
 
@@ -1007,7 +1009,7 @@ func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing
 	assert.NotNil(t, filterChainNamed(t, doc, "terminate_chain_platform-cred-header"))
 	assert.Len(t, internalFilterChains(t, doc), 2, "one terminating chain + the L4 catch-all")
 
-	luaCount := strings.Count(got, "envoy.filters.http.lua")
+	luaCount := strings.Count(got, luaFilterType)
 	assert.Equal(t, 1, luaCount)
 
 	assert.Equal(t, 1, countClustersWithPrefix(t, doc, "upstream_platform-cred-header"))
@@ -1033,7 +1035,7 @@ func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
 	assert.Equal(t, "key", chains[0].Credentials[1].QueryParamName)
 }
 
-func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) {
+func TestChainsFromSecrets_SameHeaderFromTwoConnectionsBothSurvive(t *testing.T) {
 	first := ownerSecret("platform-conn-a-first", "connection", "conn-a")
 	delete(first.Annotations, envoyHostPatternAnn)
 	first.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
@@ -1046,8 +1048,42 @@ func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) 
 
 	chains := chainsFromSecrets([]corev1.Secret{first, second}, nil)
 	require.Len(t, chains, 1)
-	require.Len(t, chains[0].Credentials, 1)
+	require.Len(t, chains[0].Credentials, 2)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
+	assert.Equal(t, second.Name, chains[0].Credentials[1].SecretName)
+	assert.Equal(t, []string{"conn-a", "conn-b"}, chains[0].ConnectionIDs())
+	assert.True(t, chains[0].Contested())
+}
+
+func TestChainsFromSecrets_SameHeaderTwiceWithinOneConnectionKeepsFirst(t *testing.T) {
+	only := ownerSecret("platform-conn-a-only", "connection", "conn-a")
+	delete(only.Annotations, envoyHostPatternAnn)
+	only.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"},{"host":"api.example.com","headerName":"Authorization"}]`
+	only = withHostSDS(only, "api.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{only}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 1)
+	assert.False(t, chains[0].Contested())
+}
+
+func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *testing.T) {
+	a := ownerSecret("platform-conn-a", "connection", "conn-a")
+	delete(a.Annotations, envoyHostPatternAnn)
+	a.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"X-Api-Key"}]`
+	a = withHostSDS(a, "api.example.com")
+
+	b := ownerSecret("platform-conn-b", "connection", "conn-b")
+	delete(b.Annotations, envoyHostPatternAnn)
+	b.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"X-Tenant-Id"}]`
+	b = withHostSDS(b, "api.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 2)
+	assert.False(t, chains[0].Contested())
+	assert.Empty(t, chains[0].CredentialsShadowedBy("conn-a"))
+	assert.Empty(t, chains[0].CredentialsShadowedBy("conn-b"))
 }
 
 func TestChainsFromSecrets_DistinctHeadersOnSameHostCoexist(t *testing.T) {

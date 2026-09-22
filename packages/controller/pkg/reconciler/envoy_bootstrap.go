@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	sigsyaml "sigs.k8s.io/yaml"
 
@@ -338,7 +339,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	filters := []any{extAuthzHTTPFilter(p)}
 	for _, cred := range c.Credentials {
 		filters = append(filters, ev{
-			"name": "envoy.filters.http.credential_injector",
+			"name": cred.FilterName(),
 			"typed_config": ev{
 				"@type":     "type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
 				"overwrite": true,
@@ -362,7 +363,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		})
 		if cred.QueryParamName != "" {
 			filters = append(filters, ev{
-				"name": "envoy.filters.http.lua",
+				"name": cred.QueryParamFilterName(),
 				"typed_config": ev{
 					"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
 					"default_source_code": ev{"inline_string": luaQueryParamScript(cred.HeaderName, cred.QueryParamName)},
@@ -375,13 +376,80 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 }
 
 func buildChainForwardRoutes(c envoyHostChain) []any {
-	routes := make([]any, 0, len(c.PathRewrites)+1)
+	var routes []any
+	for _, connectionID := range c.ConnectionIDs() {
+		routes = append(routes, buildConnectionRoutes(c, connectionID)...)
+	}
+	if c.Contested() {
+		return append(routes, buildUnaddressedRoute(c))
+	}
 	for _, r := range c.PathRewrites {
 		route := buildChainRouteAction(c)
 		route["prefix_rewrite"] = r.Replacement
 		routes = append(routes, ev{"match": ev{"prefix": r.Prefix}, "route": route})
 	}
 	return append(routes, ev{"match": ev{"prefix": "/"}, "route": buildChainRouteAction(c)})
+}
+
+func connectionPathPrefix(connectionID string) string {
+	return "/" + connectionEgressPathSegment + "/" + connectionID + "/"
+}
+
+func buildConnectionRoutes(c envoyHostChain, connectionID string) []any {
+	prefix := connectionPathPrefix(connectionID)
+	shadowed := shadowedPerRoute(c, connectionID)
+	routes := make([]any, 0, len(c.PathRewrites)+1)
+	appendRoute := func(match string, rewrite string) {
+		route := buildChainRouteAction(c)
+		route["prefix_rewrite"] = rewrite
+		entry := ev{"match": ev{"prefix": match}, "route": route}
+		if len(shadowed) > 0 {
+			entry["typed_per_filter_config"] = shadowed
+		}
+		routes = append(routes, entry)
+	}
+	for _, r := range c.PathRewrites {
+		appendRoute(prefix+strings.TrimPrefix(r.Prefix, "/"), r.Replacement)
+	}
+	appendRoute(prefix, "/")
+	return routes
+}
+
+func shadowedPerRoute(c envoyHostChain, connectionID string) ev {
+	out := ev{}
+	for _, cred := range c.CredentialsShadowedBy(connectionID) {
+		out[cred.FilterName()] = filterDisabledPerRoute()
+		if cred.QueryParamName != "" {
+			out[cred.QueryParamFilterName()] = filterDisabledPerRoute()
+		}
+	}
+	return out
+}
+
+func filterDisabledPerRoute() ev {
+	return ev{
+		"@type":    "type.googleapis.com/envoy.config.route.v3.FilterConfig",
+		"disabled": true,
+	}
+}
+
+func buildUnaddressedRoute(c envoyHostChain) ev {
+	return ev{
+		"match": ev{"prefix": "/"},
+		"direct_response": ev{
+			"status": 403,
+			"body":   ev{"inline_string": unaddressedBody(c)},
+		},
+		"typed_per_filter_config": extAuthzDisabledPerRoute(),
+	}
+}
+
+func unaddressedBody(c envoyHostChain) string {
+	ids := c.ConnectionIDs()
+	return fmt.Sprintf(
+		"More than one connection injects the same credential header on %s, so this request names no account. "+
+			"Prefix the request path with /%s/<connection-id>/ to choose one. Connections on this host: %s.\n",
+		c.Host, connectionEgressPathSegment, strings.Join(ids, ", "))
 }
 
 func buildChainRouteAction(c envoyHostChain) ev {
