@@ -335,6 +335,18 @@ spec:
             - name: STARTER_KITS_CATALOGS
               value: {{ $catalogs | toJson | quote }}
             {{- end }}
+            {{- $kitEnterprise := .Values.starterKits.enterprise | default dict }}
+            {{- $kitEnterpriseSecret := $kitEnterprise.tokenSecret | default dict }}
+            {{- $kitEnterpriseHost := $kitEnterprise.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}
+            {{- if and $kitEnterpriseHost $kitEnterpriseSecret.name }}
+            - name: STARTER_KITS_ENTERPRISE_HOST
+              value: {{ $kitEnterpriseHost | quote }}
+            - name: STARTER_KITS_ENTERPRISE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $kitEnterpriseSecret.name | quote }}
+                  key: {{ $kitEnterpriseSecret.key | default "token" | quote }}
+            {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_ID

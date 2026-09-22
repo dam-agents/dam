@@ -7,11 +7,7 @@ import type {
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import {
-  type CatalogSource,
-  createGithubCatalogSource,
-  relPathEscapes,
-} from "./catalog-source.js";
+import { type CatalogSource, relPathEscapes } from "./catalog-source.js";
 import type { RefResolver } from "./git-ref-resolver.js";
 import type {
   ResolvedCatalogRepository,
@@ -38,7 +34,7 @@ export interface CatalogRefreshDeps {
     ref: string,
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
-  sourceForEntry?: (gitUrl: string, ref: string) => CatalogSource;
+  sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
 }
 
 export interface CatalogRefresh {
@@ -77,10 +73,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         return resolution.status === "absent" ? "rejected" : "unreadable";
       }
       version = resolution.sha;
-      source = (deps.sourceForEntry ?? createGithubCatalogSource)(
-        gitUrl,
-        resolution.sha,
-      );
+      source = deps.sourceForEntry(gitUrl, resolution.sha);
     }
 
     const kitPath = path.posix.join(entry.path, KIT_FILE);

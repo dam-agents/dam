@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createGitHosts } from "../../modules/starter-kits/infrastructure/git-hosts.js";
 import {
   createGitRefResolver,
   parseRefAdvertisement,
@@ -30,8 +31,11 @@ const ADVERTISEMENT =
   pkt(`${TAG_COMMIT} refs/tags/v1.4.0^{}\n`) +
   "0000";
 
+const PUBLIC_HOSTS = createGitHosts();
+
 function resolverReturning(body: string, status = 200) {
   return createGitRefResolver(
+    PUBLIC_HOSTS,
     (async () =>
       new Response(status === 200 ? body : null, {
         status,
@@ -94,6 +98,30 @@ describe("starter kits: git ref resolver", () => {
     expect(await resolver.resolve("https://example.com/acme/kit")).toEqual({
       status: "absent",
     });
+  });
+
+  // TEST_SCENARIO: an enterprise host refuses an anonymous ref advertisement, so the resolver must authenticate the very read that pins a kit to a commit — otherwise an enterprise kit resolves to nothing and is withdrawn on every refresh. Git over HTTPS takes the install's token as basic auth, the same way the platform's enterprise connections hand one to git in an agent pod.
+  it("authenticates the ref advertisement on the enterprise host", async () => {
+    const seen: { url: string; headers: Record<string, string> }[] = [];
+    const resolver = createGitRefResolver(
+      createGitHosts({ host: "github.ibm.com", token: "kit-token" }),
+      (async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push({
+          url: String(url),
+          headers: (init?.headers ?? {}) as Record<string, string>,
+        });
+        return new Response(ADVERTISEMENT);
+      }) as unknown as typeof fetch,
+    );
+    expect(
+      await resolver.resolve("https://github.ibm.com/acme/kit", "next"),
+    ).toEqual({ status: "resolved", sha: BRANCH_SHA });
+    expect(seen[0]!.url).toBe(
+      "https://github.ibm.com/acme/kit/info/refs?service=git-upload-pack",
+    );
+    expect(seen[0]!.headers.Authorization).toBe(
+      `Basic ${Buffer.from("x-access-token:kit-token").toString("base64")}`,
+    );
   });
 
   // TEST_SCENARIO: a repository that answers 404 is one this reader cannot see — deleted, renamed, or made private — and none of those is the author withdrawing a kit. Reading it as a settled absence prunes every kit of that catalog, so renaming a repository would empty the kit list. It holds instead, like any other unanswered read.

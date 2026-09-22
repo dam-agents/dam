@@ -164,6 +164,8 @@ import {
   createOnboardingChecklistRepository,
   createOnboardingMarker,
   createCatalogRefresh,
+  createGitCatalogSource,
+  createGitHosts,
   createGitRefResolver,
   createResolvedCatalogRepository,
   createStarterKitsRepository,
@@ -320,9 +322,17 @@ export async function bootstrap() {
   const starterKitsRepo = createStarterKitsRepository({
     resolved: resolvedCatalog,
   });
+  const kitGitHosts = createGitHosts({
+    host: config.starterKitsEnterpriseHost,
+    token: config.starterKitsEnterpriseToken,
+  });
   const starterKitsRefresh = createCatalogRefresh({
-    catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
+    catalogs: parseCatalogSeeds(
+      config.starterKitsCatalogs,
+      kitGitHosts,
+    ).flatMap((c) => {
       const located = createCatalogSourceFromLocator(
+        kitGitHosts,
         c.locator,
         c.kind,
         c.ref,
@@ -331,7 +341,9 @@ export async function bootstrap() {
       return located ? [{ name: c.name, ...located }] : [];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(),
+    refs: createGitRefResolver(kitGitHosts),
+    sourceForEntry: (gitUrl, ref) =>
+      createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({

@@ -112,6 +112,8 @@ const configSchema = z.object({
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   starterKitsCatalogs: z.string().default(""),
+  starterKitsEnterpriseHost: z.string().default(""),
+  starterKitsEnterpriseToken: z.string().default(""),
   gitReposPath: z.string().default(""),
   maxImportBundleBytes: z.coerce
     .number()
@@ -268,6 +270,8 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
+    starterKitsEnterpriseHost: process.env.STARTER_KITS_ENTERPRISE_HOST,
+    starterKitsEnterpriseToken: process.env.STARTER_KITS_ENTERPRISE_TOKEN,
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,

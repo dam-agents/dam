@@ -1770,9 +1770,10 @@ e2e:
 # (helm/starter-kits) and mounted into the api-server — versioned with the
 # release, no network needed — unless one of its entries names a repository
 # (`id` + `url`), which is resolved over the network on every refresh.
-# `catalogs` adds external ones: each names a
-# public git repository holding catalog.yaml (optionally `/tree/<ref>/<dir>`
-# to name a directory or `#<ref>` to pin). Rendered as STARTER_KITS_CATALOGS.
+# `catalogs` adds external ones: each names a git repository holding
+# catalog.yaml, on public github.com or on the `enterprise` host below, with
+# `ref` to pin and `dir` to read a subdirectory — never written into the url.
+# Rendered as STARTER_KITS_CATALOGS.
 starterKits:
   builtin:
     enabled: true
@@ -1806,6 +1807,26 @@ starterKits:
       url: https://github.com/dam-agents/dam-starter-kits
       # ref: v1.4.0          # pin a branch, tag or commit
       # dir: catalogs/public # read catalog.yaml from a subdirectory
+  # -- One GitHub Enterprise host this install may ALSO read catalogs and kits
+  # from (github.ibm.com, ghe.acme.com, …), so a team whose agent already lives
+  # in an enterprise repository can offer it as a kit instead of rebuilding it
+  # in-platform. github.com stays readable and is always read anonymously.
+  # The refresh job reads catalogs with no user in context, so the credential is
+  # the install's, not a user's connection — and it is sent to this host only:
+  # a catalog or kit URL naming any other host is refused, never reached with
+  # the token. Leave `tokenSecret.name` empty to read no enterprise host.
+  # `host` defaults to the connections GitHub Enterprise host
+  # (apiServer.oauthAppDefaults.githubEnterprise.host) so it is spelled once.
+  # An enterprise kit that seeds a private definition still declares the
+  # `github-enterprise` connection it needs: the agent's own clone rides the
+  # gateway with the user's connection, never with this token.
+  enterprise:
+    host: ""
+    tokenSecret:
+      # Existing secret holding a token with read access to the catalog and kit
+      # repositories on that host.
+      name: ""
+      key: token
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

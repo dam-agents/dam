@@ -1,6 +1,7 @@
 import * as path from "node:path";
 
 import { OVER_BUDGET, readFileWithin, readTextWithin } from "./bounded-read.js";
+import type { GitHosts } from "./git-hosts.js";
 
 export interface CatalogSource {
   readonly locator: string;
@@ -28,41 +29,32 @@ export function createLocalCatalogSource(dir: string): CatalogSource {
   };
 }
 
-export interface GithubLocator {
-  owner: string;
-  repo: string;
-}
-
-export function parseGithubRepoUrl(url: string): GithubLocator | null {
-  if (url.includes("#")) return null;
-  const trimmed = url.replace(/\/+$/, "").replace(/\.git$/, "");
-  if (/^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\//.test(trimmed)) return null;
-  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
-  if (!m) return null;
-  return { owner: m[1], repo: m[2] };
-}
-
-export function createGithubCatalogSource(
+export function createGitCatalogSource(
+  hosts: GitHosts,
   gitUrl: string,
   ref = "HEAD",
   fetchImpl: typeof fetch = fetch,
   dir?: string,
 ): CatalogSource {
-  const repo = parseGithubRepoUrl(gitUrl);
-  if (!repo) throw new Error(`not a GitHub repository URL: ${gitUrl}`);
-  const base = `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${encodeURIComponent(ref)}`;
+  const repo = hosts.locate(gitUrl);
+  if (!repo)
+    throw new Error(
+      `not a repository URL this install may read: ${gitUrl} (readable hosts: ${hosts.readableHosts.join(", ")})`,
+    );
   const prefix = (dir ?? "").split("/").filter((seg) => seg && seg !== ".");
   return {
-    locator: `https://github.com/${repo.owner}/${repo.repo}#${ref}${prefix.length ? `:${prefix.join("/")}` : ""}`,
+    locator: `${repo.gitUrl}#${ref}${prefix.length ? `:${prefix.join("/")}` : ""}`,
     async readText(relPath) {
       if (relPathEscapes(relPath)) return null;
       const clean = [
         ...prefix,
         ...relPath.split("/").filter((seg) => seg && seg !== "."),
       ];
-      const res = await fetchImpl(`${base}/${clean.join("/")}`);
+      const request = repo.file(ref, clean);
+      const res = await fetchImpl(request.url, { headers: request.headers });
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`github raw ${res.status} for ${gitUrl}`);
+      if (!res.ok)
+        throw new Error(`${repo.host} returned ${res.status} for ${gitUrl}`);
       const text = await readTextWithin(res, MAX_FILE_BYTES);
       if (text === null)
         throw new Error(
@@ -82,6 +74,7 @@ export interface LocatedCatalog {
 export type CatalogLocatorKind = "url" | "path";
 
 export function createCatalogSourceFromLocator(
+  hosts: GitHosts,
   locator: string,
   kind: CatalogLocatorKind,
   ref?: string,
@@ -89,12 +82,11 @@ export function createCatalogSourceFromLocator(
 ): LocatedCatalog | null {
   if (!locator) return null;
   if (kind === "path") return { source: createLocalCatalogSource(locator) };
-  const gh = parseGithubRepoUrl(locator);
-  if (!gh) return null;
-  const gitUrl = `https://github.com/${gh.owner}/${gh.repo}`;
+  const repo = hosts.locate(locator);
+  if (!repo) return null;
   return {
-    source: createGithubCatalogSource(gitUrl, ref, fetch, dir),
-    gitUrl,
+    source: createGitCatalogSource(hosts, repo.gitUrl, ref, fetch, dir),
+    gitUrl: repo.gitUrl,
     ...(ref ? { ref } : {}),
   };
 }
