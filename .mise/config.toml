@@ -37,6 +37,7 @@ zizmor = "latest"
 
 [settings]
 experimental = true
+lockfile_platforms = ["linux-arm64", "linux-x64", "macos-arm64"]
 task.disable_spec_from_run_scripts = true
 
 [task_templates."ts:check:tsc"]
