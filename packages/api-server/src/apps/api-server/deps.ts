@@ -1,6 +1,7 @@
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
+import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type { Redis } from "ioredis";
 import type {
   E2eService,
@@ -120,6 +121,7 @@ export interface ApiServerDeps {
   reposService: ReposService;
   userDirectory: KeycloakUserDirectory;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
+  satellitesBoot: SatellitesComposition;
   auth: ReturnType<typeof createAuth>;
   jwksWarmup: ReturnType<typeof startJwksWarmup>;
   surfaceAttribution: SurfaceAttribution;

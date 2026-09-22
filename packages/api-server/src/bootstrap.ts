@@ -231,6 +231,8 @@ import {
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import { composeSatellitesModule } from "./modules/satellites/index.js";
+import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -471,6 +473,33 @@ export async function bootstrap() {
     runtimeDelivery.sweep.tick(),
   );
   const onboardingChecklists = createOnboardingChecklistRepository(db);
+
+  const satellitesBoot = composeSatellitesModule({
+    db,
+    maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
+    ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    isAgentOwnedBy: (agentId, ownerSub) =>
+      agentsRepo.isOwnedBy(agentId, ownerSub),
+    spillLog: async (agentId, ref, output) => {
+      try {
+        return await createAgentWorkspaceFiles(
+          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+        ).write({
+          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+          bytes: Buffer.from(output, "utf8"),
+          contentType: "text/plain",
+        });
+      } catch {
+        return null;
+      }
+    },
+    deliverOutcome: async () => {},
+  });
+
+  await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
+    satellitesBoot.sweepLeases().then(() => undefined),
+  );
+
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
@@ -1028,6 +1057,11 @@ export async function bootstrap() {
       cleanup: createConnectionGrantsCleanupHook(db),
     },
     {
+      name: "satellite-grants",
+      listAgentIds: () => satellitesBoot.listAgentIds(),
+      cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
@@ -1342,6 +1376,7 @@ export async function bootstrap() {
     reposService,
     userDirectory,
     apiKeysModule,
+    satellitesBoot,
     auth,
     jwksWarmup,
     surfaceAttribution,
@@ -1351,6 +1386,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    satellitesBoot,
     agentStateCache,
     config,
     api,

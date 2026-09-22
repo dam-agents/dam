@@ -398,6 +398,14 @@ spec:
             - name: MAX_ARTIFACT_BYTES
               value: {{ .Values.apiServer.maxArtifactBytes | quote }}
             {{- end }}
+            {{- if .Values.apiServer.satelliteMaxConcurrentCeiling }}
+            - name: SATELLITE_MAX_CONCURRENT_CEILING
+              value: {{ .Values.apiServer.satelliteMaxConcurrentCeiling | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.satelliteWaitDeadlineMs }}
+            - name: SATELLITE_WAIT_DEADLINE_MS
+              value: {{ .Values.apiServer.satelliteWaitDeadlineMs | quote }}
+            {{- end }}
             {{- if include "platform.objectstorage.enabled" . }}
             # S3-compatible Candidate-artifact store.
             - name: OBJECT_STORAGE_ENDPOINT

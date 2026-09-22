@@ -4,6 +4,10 @@ import type { ArtifactLibraryService } from "./modules/artifact-library/types.js
 import type { BudgetsService } from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
+import type {
+  SatellitesService,
+  SatelliteWorkerOps,
+} from "./modules/satellites/types.js";
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
@@ -63,6 +67,8 @@ export interface ApiContext {
   usage: UsageService;
   e2e: E2eService;
   apiKeys: ApiKeysService;
+  satellites: SatellitesService;
+  satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
   user: UserIdentity;
   e2eEnabled: boolean;

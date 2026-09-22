@@ -12,6 +12,7 @@ interface Props {
   onModeChange: (mode: BindingMode) => void;
   onToggleAgent: (agentId: string) => void;
   lockedToAll: boolean;
+  lockedReason: "manage" | "serve" | null;
 }
 
 export function AgentBindingField({
@@ -20,6 +21,7 @@ export function AgentBindingField({
   onModeChange,
   onToggleAgent,
   lockedToAll,
+  lockedReason,
 }: Props) {
   const agents = useAgentsList();
   const effectiveMode: BindingMode = lockedToAll ? "all" : mode;
@@ -28,7 +30,13 @@ export function AgentBindingField({
     <div className="mb-4">
       <SectionLabel className="mb-1 block">Agent access</SectionLabel>
       <p className="text-xs text-muted-foreground mb-2">
-        {lockedToAll ? (
+        {lockedToAll && lockedReason === "serve" ? (
+          <>
+            <code>satellites:serve</code> keys must cover every agent — a
+            satellite runs work queued by any agent granted to it, so binding
+            the key to one wouldn’t hold.
+          </>
+        ) : lockedToAll ? (
           <>
             <code>agents:manage</code> keys must cover every agent — per-agent
             binding isn’t available with management access.
