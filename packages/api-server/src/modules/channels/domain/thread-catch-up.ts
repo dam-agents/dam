@@ -8,7 +8,7 @@ export interface CatchUpSelection {
   readingAgentId: string;
   since: string;
   until: string;
-  batchTs: string[];
+  carried: readonly string[];
 }
 
 export function isAfterTs(candidate: string, floor: string): boolean {
@@ -26,31 +26,37 @@ export function earlierTs(a: string, b: string): string {
   return isAfterTs(a, b) ? b : a;
 }
 
-export function newestOf(tss: readonly string[]): string | null {
+export function newestOf(tss: readonly (string | undefined)[]): string | null {
   let found: string | null = null;
-  for (const ts of tss) found = found === null ? ts : laterTs(found, ts);
+  for (const ts of tss) {
+    if (ts === undefined) continue;
+    found = found === null ? ts : laterTs(found, ts);
+  }
   return found;
 }
 
 export function lastOwnPostTs<T>(
-  entries: ThreadEntry<T>[],
+  entries: readonly ThreadEntry<T>[],
   readingAgentId: string,
 ): string | null {
-  let found: string | null = null;
-  for (const entry of entries) {
-    if (entry.authorAgentId !== readingAgentId || !entry.ts) continue;
-    found = found === null ? entry.ts : laterTs(found, entry.ts);
-  }
-  return found;
+  return newestOf(
+    entries
+      .filter((entry) => entry.authorAgentId === readingAgentId)
+      .map((entry) => entry.ts),
+  );
 }
 
-export function newestTs<T>(entries: ThreadEntry<T>[]): string | null {
-  let found: string | null = null;
-  for (const entry of entries) {
-    if (!entry.ts) continue;
-    found = found === null ? entry.ts : laterTs(found, entry.ts);
-  }
-  return found;
+export function newestTs<T>(entries: readonly ThreadEntry<T>[]): string | null {
+  return newestOf(entries.map((entry) => entry.ts));
+}
+
+export function aboveBoundary(
+  tss: readonly string[],
+  boundary: string | null,
+): string[] {
+  return boundary === null
+    ? [...tss]
+    : tss.filter((ts) => isAfterTs(ts, boundary));
 }
 
 export function nextBoundary(
@@ -105,7 +111,7 @@ export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,
 ): ThreadEntry<T>[] {
-  const carried = new Set(selection.batchTs);
+  const carried = new Set(selection.carried);
   return entries.filter(
     (entry) =>
       !!entry.ts &&

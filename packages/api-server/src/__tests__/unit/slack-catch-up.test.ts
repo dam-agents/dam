@@ -174,7 +174,6 @@ describe("channel catch-up stays behind the delivered batch", () => {
    * later turn would ever show them.
    */
   it("keeps the boundary behind a capped read's unshown tail", async () => {
-    const gate = gatedAcp({ blockCall: 2 });
     const h = harness({ ambient: true });
     h.gw.setHistory([{ ts: T1, user: "U9", text: ALPHA }]);
     await h.worker.connect();
@@ -195,7 +194,6 @@ describe("channel catch-up stays behind the delivered batch", () => {
     await h.gw.fireMessage({ user: "U9", channel: BOUND, ts: T2, text: BRAVO });
     expect(await h.settled(() => h.prompts.length === 2)).toBe(true);
     expect(String(h.prompts[1])).not.toContain("flood 519");
-    expect(gate.steers.length).toBe(0);
 
     h.gw.setHistory([
       { ts: T1, user: "U9", text: ALPHA },
@@ -300,9 +298,79 @@ describe("steered messages and the boundary", () => {
     ].slice(0, upTo + 1);
 
   /**
+   * TEST_SCENARIO: A message that tags nobody reaches no queue in a
+   * mention-only channel, so the away block is the only thing that can show
+   * it. If it arrives before a message that is steered into a running turn,
+   * counting the steered one as the new boundary would bury it. The boundary
+   * stops at the batch, and the steered message is remembered on its own.
+   */
+  it("shows an untagged message the boundary must not skip past", async () => {
+    const UNTAGGED = "no one is tagged here";
+    const gate = gatedAcp({ blockCall: 2, steerOutcome: "injected" });
+    const h = harness({ makeAcp: gate.makeAcp });
+    gate.hooks.answerTurn = async () => {
+      await h.worker.reply("agent-1", { text: "on it", threadTs: ROOT });
+    };
+    h.gw.setThreadedHistory(threadedHistory(1));
+    await h.worker.connect();
+
+    await h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: T1,
+      ...thread,
+      text: ALPHA,
+    });
+
+    h.gw.setThreadedHistory(threadedHistory(2));
+    const second = h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: T2,
+      ...thread,
+      text: BRAVO,
+    });
+    await gate.startedAt;
+
+    h.gw.setThreadedHistory([
+      ...threadedHistory(2),
+      { ts: T3, user: "U7", text: UNTAGGED, ...thread },
+      { ts: T4, user: "U9", text: CHARLIE, ...thread },
+    ]);
+    await h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: T4,
+      ...thread,
+      text: CHARLIE,
+    });
+    expect(gate.steers.length).toBe(1);
+    gate.release();
+    await second;
+
+    h.gw.setThreadedHistory([
+      ...threadedHistory(2),
+      { ts: T3, user: "U7", text: UNTAGGED, ...thread },
+      { ts: T4, user: "U9", text: CHARLIE, ...thread },
+      { ts: "500.000000", user: "U9", text: DELTA, ...thread },
+    ]);
+    await h.gw.fireMention({
+      user: "U9",
+      channel: BOUND,
+      ts: "500.000000",
+      ...thread,
+      text: DELTA,
+    });
+
+    const last = String(h.prompts.at(-1));
+    expect(last).toContain(UNTAGGED);
+    expect(last).not.toContain(CHARLIE);
+  });
+
+  /**
    * TEST_SCENARIO: A message steered into a running turn was read by the agent
-   * inside that turn. Once the turn is delivered, the boundary covers it — the
-   * next turn must not re-present it as missed.
+   * inside that turn. Once the turn is delivered, the next turn must not show
+   * it again as missed.
    */
   it("counts a message steered into a delivered turn as seen", async () => {
     const gate = gatedAcp({ blockCall: 2, steerOutcome: "injected" });
@@ -447,7 +515,7 @@ describe("selectUnseen bounds", () => {
         readingAgentId: "agent-1",
         since: "100.1",
         until: "100.3",
-        batchTs: ["100.3"],
+        carried: ["100.3"],
       },
     );
     expect(picked.map((e) => e.ts)).toEqual(["100.2"]);
