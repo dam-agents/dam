@@ -21,6 +21,10 @@ pub trait Runtime: Send + Sync {
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
+    fn console_tail(&self, _id: &str) -> String {
+        String::new()
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a cached archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.

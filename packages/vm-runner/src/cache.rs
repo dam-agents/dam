@@ -188,7 +188,7 @@ pub fn evict(
     keep: Option<&Path>,
     budget: i64,
     in_use: &BTreeSet<PathBuf>,
-) -> Vec<PathBuf> {
+) -> Vec<Entry> {
     prune_partial_unpacks(dir);
     if budget <= 0 {
         return Vec::new();
@@ -212,7 +212,7 @@ pub fn evict(
             continue;
         }
         used = used.saturating_sub(entry.size);
-        evicted.push(entry.path);
+        evicted.push(entry);
     }
     evicted
 }
@@ -468,7 +468,7 @@ mod tests {
         let evicted = evict(dir.path(), None, 2500, &in_use);
 
         assert_eq!(
-            evicted,
+            evicted.into_iter().map(|e| e.path).collect::<Vec<_>>(),
             vec![oldest.clone()],
             "the oldest write goes first, and only until it fits"
         );
