@@ -17,6 +17,12 @@ pub fn write(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
     file.sync_all()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a directory with the mode it is asked for. `mkdir(2)` masks its mode argument through the umask the process inherited, so a `DirBuilder::mode` is a request and not an instruction — under a tighter umask the guest is handed a CA directory it cannot traverse. platform-init states the same rule for the same reason when it reproduces an image's tree: the mode is set after the entry exists, never at creation.
+pub fn create_dir(path: &Path, mode: u32) -> io::Result<()> {
+    fs::DirBuilder::new().recursive(true).create(path)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +61,21 @@ mod tests {
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600,
             "a file that was already loose stayed loose"
+        );
+    }
+
+    // TEST_SCENARIO: that a directory's mode survives the umask. The mode asked for here is one the ordinary umask 022 does mask — 0777 becomes 0755 at creation — so this fails unless the mode is set after the directory exists. A mode the umask leaves alone, such as 0700, would pass either way and prove nothing; the first version of this test did exactly that.
+    #[test]
+    fn a_directory_gets_the_mode_it_is_given_and_not_the_umasks() {
+        let dir = TempDir::new("dir-mode");
+        let nested = dir.path().join("outer").join("inner");
+
+        create_dir(&nested, 0o777).unwrap();
+
+        assert_eq!(
+            fs::metadata(&nested).unwrap().permissions().mode() & 0o777,
+            0o777,
+            "the mode was masked at creation, which umask 022 turns into 0755"
         );
     }
 
