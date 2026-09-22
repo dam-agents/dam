@@ -110,7 +110,10 @@ export async function composeRuntimeChannel(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      runPrecheck: createPrecheckRunner({ workDir: opts.workDir }),
+      runPrecheck: createPrecheckRunner({
+        workDir: opts.workDir,
+        envReader: opts.envReader,
+      }),
       log,
       reporter,
     }),
