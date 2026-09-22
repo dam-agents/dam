@@ -1,7 +1,12 @@
 import { Power } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  TooltipContent,
+  TooltipRoot,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
@@ -54,18 +59,35 @@ export function StatusBadge({
       : "Idle"
     : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  const badge = (
-    <Badge variant={variant} className="gap-1">
-      {alwaysOn && <Power size={12} aria-hidden />}
-      {label}
-    </Badge>
-  );
-  if (!alwaysOn) return badge;
+  const [open, setOpen] = useState(false);
+  if (!alwaysOn) {
+    return <Badge variant={variant}>{label}</Badge>;
+  }
   return (
-    <Tooltip content="Always on. This agent never hibernates on its own and keeps its compute reserved.">
-      <span className="inline-flex" aria-label={`${label}, always on`}>
-        {badge}
+    <TooltipRoot open={open} onOpenChange={setOpen}>
+      <span
+        className="inline-flex"
+        aria-label={`${label}, always on`}
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
+      >
+        <Badge variant={variant} className="gap-1">
+          <TooltipTrigger asChild>
+            <span className="flex">
+              <Power size={12} aria-hidden />
+            </span>
+          </TooltipTrigger>
+          {label}
+        </Badge>
       </span>
-    </Tooltip>
+      <TooltipContent
+        tail
+        side="top"
+        className="max-w-xs text-xs leading-relaxed"
+      >
+        Always on. This agent never hibernates on its own and keeps its compute
+        reserved.
+      </TooltipContent>
+    </TooltipRoot>
   );
 }
