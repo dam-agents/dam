@@ -291,6 +291,13 @@ url = "https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-darwin-arm64.
 url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/544431956"
 provenance = "github-attestations"
 
+[[tools.rust]]
+version = "1.94.1"
+backend = "core:rust"
+
+[tools.rust.options]
+components = "clippy,rustfmt"
+
 [[tools.trivy]]
 version = "0.74.0"
 backend = "aqua:aquasecurity/trivy"
