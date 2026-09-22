@@ -1,8 +1,9 @@
-min_version = "2026.9.3"
+min_version = "2026.9.12"
 monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e2e/agents/*", "helm", "docs"]
+lockfile = true
 
 [vars]
 repo_root = "{{config_root}}"

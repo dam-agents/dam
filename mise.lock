@@ -445,7 +445,7 @@ url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
 [[tools."npm:json-schema-to-typescript"]]
 version = "16.0.0"
-aube = { path = "locks/npm-json-schema-to-typescript/16.0.0", digest = "sha256:03fd72197be57397317786a70bf6cfd9b5127337585eb06825134b7aeb5e47c1" }
+aube = { path = ".mise/locks/npm-json-schema-to-typescript/16.0.0", digest = "sha256:03fd72197be57397317786a70bf6cfd9b5127337585eb06825134b7aeb5e47c1" }
 backend = "npm:json-schema-to-typescript"
 specifiers = ["latest"]
 
