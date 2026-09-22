@@ -37,6 +37,7 @@ export function AppVersionRow() {
   const { data: version } = useAppVersion();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const [taps, setTaps] = useState(0);
+  const [copyUnavailable, setCopyUnavailable] = useState(false);
   const { copy, state } = useCopy();
 
   if (!version) return null;
@@ -52,26 +53,42 @@ export function AppVersionRow() {
     navigateToSettings(revealed ? "features" : "account");
   };
 
+  const onCopy = async () => {
+    const outcome = await copy(version);
+    if (outcome === "failed") setCopyUnavailable(true);
+  };
+
   const { label, Icon, tone } = PRESENTATION[state];
 
   return (
-    <div className="mt-6 flex items-center gap-1 text-xs text-muted-foreground">
-      <span onClick={onTap} className="select-none break-all">
-        Version {version}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={label}
-        tooltip={label}
-        className={cn("shrink-0", tone)}
-        onClick={() => void copy(version)}
-      >
-        <Icon size={12} />
-      </Button>
-      <span role="status" aria-live="polite" className="sr-only">
-        {state === "idle" ? "" : label}
-      </span>
+    <div className="mt-6">
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span
+          onClick={onTap}
+          className={cn("break-all", !copyUnavailable && "select-none")}
+        >
+          Version {version}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={label}
+          tooltip={label}
+          className={cn("shrink-0", tone)}
+          onClick={() => void onCopy()}
+        >
+          <Icon size={12} />
+        </Button>
+        <span role="status" aria-live="polite" className="sr-only">
+          {state === "idle" ? "" : label}
+        </span>
+      </div>
+      {copyUnavailable && (
+        <p className="mt-1.5 text-xs text-danger">
+          Couldn&apos;t copy automatically — select the version and copy it
+          manually.
+        </p>
+      )}
     </div>
   );
 }
