@@ -446,8 +446,8 @@ export function createSatellitesRepository(db: Db) {
       owner: string,
       satellite: string,
       sequence: number,
-    ): Promise<void> {
-      await db
+    ): Promise<boolean> {
+      const rows = await db
         .update(satelliteJobs)
         .set({ status: "queued", approved: true, leaseUntil: null })
         .where(
@@ -457,7 +457,9 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.sequence, sequence),
             eq(satelliteJobs.status, "pending-approval"),
           ),
-        );
+        )
+        .returning({ sequence: satelliteJobs.sequence });
+      return rows.length > 0;
     },
 
     async hold(

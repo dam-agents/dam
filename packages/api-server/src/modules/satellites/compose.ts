@@ -117,12 +117,17 @@ export function composeSatellitesModule(deps: {
      * its outcome delivered on the next lap rather than sitting until its TTL.
      * A verdict that could not be applied ends the Job either way — nothing has
      * run at this point, so cancelling is the safe direction.
+     *
+     * An allow observes its own write. If the Job left `pending-approval` before
+     * the verdict landed, the requeue matched nothing, and the allow falls
+     * through to the same settle: an approval that matched no Job must not leave
+     * one waiting on a decision already made and removed from the inbox.
      */
     applyVerdict: async (owner, satellite, sequence, allowed, reason) => {
       try {
         if (allowed) {
-          await repo.release(owner, satellite, sequence);
-          return;
+          if (await repo.release(owner, satellite, sequence)) return;
+          reason = "this job was no longer waiting when the approval arrived";
         }
         const settled = await repo.settle(owner, satellite, sequence, {
           status: "cancelled",

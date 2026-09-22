@@ -150,7 +150,10 @@ export function registerSatelliteTools(
               ? outcomeContent(settled)
               : json({
                   ...started,
-                  note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or get on with something else and you will be woken when it finishes.`,
+                  note:
+                    settled.status === "pending-approval"
+                      ? `a person has been asked to allow this, which may take a while — call ${scopedName(name, "wait")} with job ${started.sequence}, or get on with something else and you will be told the outcome.`
+                      : `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or get on with something else and you will be woken when it finishes.`,
                 });
           }),
       );
@@ -166,7 +169,7 @@ export function registerSatelliteTools(
 
     server.tool(
       scopedName(name, "wait"),
-      `Block until a job on ${name} finishes. May return with status 'running' if it takes too long — just call this again.`,
+      `Block until a job on ${name} finishes. May return with status 'running' if it takes too long, or 'pending-approval' while a person decides — call this again either way.`,
       jobArg,
       ({ job }) =>
         run(async () =>

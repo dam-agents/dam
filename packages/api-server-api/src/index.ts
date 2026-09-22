@@ -604,6 +604,7 @@ export {
 } from "./modules/approvals/schemas.js";
 export {
   acceptsPermanentVerdict,
+  describeSatelliteCall,
   describeApprovalPayload,
 } from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/ids.js";

@@ -1,4 +1,4 @@
-import type { ApprovalView } from "api-server-api";
+import { type ApprovalView, describeSatelliteCall } from "api-server-api";
 
 export function approvalHeadline(approval: ApprovalView): string {
   if (approval.payload.kind === "ext_authz") return "Wants to access network";
@@ -11,6 +11,6 @@ export function approvalDetail(approval: ApprovalView): string {
   const payload = approval.payload;
   if (payload.kind === "ext_authz")
     return `${payload.method} ${payload.host}${payload.path}`;
-  if (payload.kind === "satellite_job") return payload.reason;
+  if (payload.kind === "satellite_job") return describeSatelliteCall(payload);
   return payload.toolName;
 }
