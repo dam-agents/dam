@@ -21,7 +21,9 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
  * forwarded: a name the platform reserves, one that is too long, or one holding
  * a character the contract refuses would otherwise surface as a schema error
  * about someone else's server. Catching it at the machine turns that into a
- * sentence naming the tool the user has to rename.
+ * sentence naming the tool the user has to rename. Title and description are
+ * trimmed to their caps instead — a wordy title is not a reason to refuse a
+ * machine, where a name the platform cannot register is.
  */
 
 interface McpContent {
@@ -72,7 +74,7 @@ export async function createMcpBackend(
   for (const tool of listed.tools) {
     const candidate = {
       name: tool.name,
-      ...(tool.title === undefined ? {} : { title: tool.title }),
+      ...(tool.title === undefined ? {} : { title: tool.title.slice(0, 120) }),
       ...(tool.description === undefined
         ? {}
         : { description: tool.description.slice(0, 4096) }),

@@ -370,6 +370,31 @@ describe("the tool names the platform registers", () => {
     );
   });
 
+  /**
+   * TEST_SCENARIO: The job verbs are what an Agent uses to reach any job at all,
+   * so a tool on one machine must not be able to take another machine's verb.
+   * `gpu` offering `box__wait` renders exactly what `gpu--box`'s own wait verb
+   * renders; claiming every machine's verbs before any machine's tools is what
+   * decides that contest in the verb's favour. Both sides render the one name,
+   * so the spec counts it rather than naming a winner.
+   */
+  it("gives a job verb to its own satellite, not to another's tool", () => {
+    const names = registered([
+      view("gpu", ["box__wait"]),
+      view("gpu--box", ["run"]),
+    ]);
+    expect(names.filter((n) => n === "gpu__box__wait")).toHaveLength(1);
+    expect(names, "gpu--box keeps every verb it needs").toEqual(
+      expect.arrayContaining([
+        "gpu__box__wait",
+        "gpu__box__get",
+        "gpu__box__cancel",
+        "gpu__box__run",
+      ]),
+    );
+    expect(names, "gpu's colliding tool is the one dropped").toHaveLength(7);
+  });
+
   it("keeps its own verbs, and drops a satellite tool that would shadow one", () => {
     const names = registered([view("box", ["run"])]);
     expect(names).toEqual(["box__run", "box__wait", "box__get", "box__cancel"]);
