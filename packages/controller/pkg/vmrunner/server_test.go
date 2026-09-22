@@ -572,6 +572,19 @@ func TestOrphanPIDsMatchOnlyTheMachinesVMDir(t *testing.T) {
 	assert.Empty(t, orphanPIDs(proc, ""))
 }
 
+// TEST_SCENARIO: smolvm writes the root overlay as a qcow2 over its template, or as a raw disk whenever it cannot overlay the template — a template not sized at install, or a size other than its default. A discard that knew only the qcow2 form left a raw root in place, so software installed outside HOME survived a stop on exactly those machines. Both forms go, with the marker that says the overlay was formatted, and the storage disk that holds HOME stays.
+func TestTheRootOverlayIsDiscardedInEitherForm(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"overlay.qcow2", "overlay.raw", "overlay.formatted", "storage.raw"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644))
+	}
+	discardOverlay("m1", dir)
+	for _, f := range []string{"overlay.qcow2", "overlay.raw", "overlay.formatted"} {
+		assert.NoFileExists(t, filepath.Join(dir, f))
+	}
+	assert.FileExists(t, filepath.Join(dir, "storage.raw"), "the agent's disk was discarded with the overlay")
+}
+
 // TEST_SCENARIO: the controller re-sends a running machine's spec with a different image: the machine keeps the image it booted with, says so in its message, and the rest of the spec still applies.
 func TestCreateOnlyDriftIsReportedAndDoesNotBlockTheRest(t *testing.T) {
 	h := newHarness(t)
