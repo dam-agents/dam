@@ -29,6 +29,7 @@ this DaemonSet down is a node behaving as it did before it existed.
 */}}
 {{- $name := printf "%s-vm-image-cache" (include "platform.fullname" .) }}
 {{- $preload := $v.imageCache.preload }}
+{{- $pullSecrets := .Values.controller.agent.base.imagePullSecrets | default list }}
 {{- $images := list }}
 {{- range $key, $tmpl := .Values.harnessTemplates }}
 {{- if and $tmpl $tmpl.enabled }}
@@ -68,10 +69,13 @@ spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
       {{- /*
-      It holds no cluster credential: what to fetch is rendered onto its
-      command line, so there is nothing for it to read from the API.
+      What to fetch is rendered onto its command line. The one thing it reads
+      from the API is the install's default agent pull Secrets, which live in
+      the agent namespace and cannot be mounted across namespaces. The Role
+      below lets it get those Secrets by name and nothing else. With no
+      default pull Secret it holds no cluster credential at all.
       */}}
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ ternary "true" "false" (gt (len $pullSecrets) 0) }}
       {{- /*
       The runner's own resolver policy, because this reaches the same
       registries by the same route — the cluster's DNS is a Service backed by
@@ -104,6 +108,10 @@ spec:
             - --image-budget={{ $v.imageCache.budget }}
             - --interval={{ $preload.interval }}
             - --images={{ join "," $images }}
+            {{- if $pullSecrets }}
+            - --pull-secrets={{ join "," $pullSecrets }}
+            - --pull-secret-namespace={{ .Values.agentNamespace }}
+            {{- end }}
           securityContext:
             {{- /*
             Exactly what the runner asks for to unpack an image, and for the
@@ -130,6 +138,40 @@ spec:
           hostPath:
             path: {{ $v.imageCache.hostPath }}
             type: DirectoryOrCreate
+{{- if $pullSecrets }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      {{- toYaml $pullSecrets | nindent 6 }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- with $v.runner.scc }}
 ---
 {{- /*

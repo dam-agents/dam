@@ -237,6 +237,48 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	return r, node, &requeued
 }
 
+// TEST_SCENARIO: a private image on the vm backend is fetched by the runner, not by the kubelet, so the pull Secrets a pod would list have to reach the runner. They are the Agent's own imagePullSecretRef first and the install default after it, and the Agent's credential wins for a registry both name. They travel as one merged docker config on the machine spec, and nowhere else: not in the guest's environment.
+func TestAVMAgentsPullSecretsReachTheRunnerMergedAgentFirst(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.ImagePullSecretRef = "my-agent-pull"
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.AgentBase.ImagePullSecrets = []string{"install-pull"}
+	for name, body := range map[string]string{
+		"my-agent-pull": `{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`,
+		"install-pull":  `{"auths":{"quay.io":{"auth":"ZGVmYXVsdA=="},"ghcr.io":{"auth":"Z2hjcg=="}}}`,
+	} {
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
+			Type:       corev1.SecretTypeDockerConfigJson,
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(body)},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	spec := node.spec("my-agent")
+	var doc struct {
+		Auths map[string]map[string]string `json:"auths"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(spec.PullAuth), &doc))
+	assert.Equal(t, "YWdlbnQ=", doc.Auths["quay.io"]["auth"], "the Agent's own Secret wins for its registry")
+	assert.Equal(t, "Z2hjcg==", doc.Auths["ghcr.io"]["auth"], "and the install default covers the rest")
+	for k, v := range spec.Env {
+		assert.NotContains(t, v, "YWdlbnQ=", "the credential is not in the guest's environment (%s)", k)
+	}
+}
+
+// TEST_SCENARIO: an Agent with no pull Secret, on an install with no default, fetches anonymously. That was the only behaviour before, and it must stay the same, with no empty credential document on the wire.
+func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Empty(t, node.spec("my-agent").PullAuth)
+}
+
 // TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()

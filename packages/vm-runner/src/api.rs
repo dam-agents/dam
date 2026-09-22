@@ -31,6 +31,9 @@ pub struct MachineSpec {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub revision: String,
     pub running: bool,
+    // UNIT_BOUNDARY_DESCRIPTION: the docker config this machine's image is fetched with, merged by the controller from the pull Secrets a pod would list. It is a credential in transit: it is cleared before the spec is stored, and it never reaches smolvm or the guest.
+    #[serde(rename = "pullAuth", default, skip_serializing_if = "String::is_empty")]
+    pub pull_auth: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -157,6 +160,7 @@ mod tests {
                 allow_cidrs: vec!["10.0.0.1/32".into()],
                 revision: "r1".into(),
                 running: true,
+                pull_auth: "{\"auths\":{}}".into(),
             },
         );
         matches_go_struct(

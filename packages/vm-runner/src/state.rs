@@ -77,13 +77,14 @@ pub fn is_image_ref(image: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | ':' | '@' | '-'))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped.
+// UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped. The registry credential is cleared too: it is sent only so that the image can be fetched, and a stored copy would keep a credential on the state volume for as long as the machine exists.
 // UNIT_BOUNDARY_DESCRIPTION: written 0600, which is the one restrictive mode the Go runner uses anywhere, and the reason is inside the file: a spec's env carries the values of the Agent's secretRef Secret, copied in whole by the controller, so this is the only piece of machine state holding secret material in plaintext. An ordinary write takes the process umask and lands 0644 — what every other file here is, and a leak in this one. The mode is set on an existing file too, where the Go runner leaves whatever it finds: the one place this port is deliberately stricter than what it copies, because a mode is not a protocol between the two runners and no reader is worse off for it being tighter.
 pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
     let dir =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let mut stored = spec.clone();
     stored.running = false;
+    stored.pull_auth.clear();
     files::write(
         &dir.join(SPEC_FILE),
         &serde_json::to_vec(&stored)?,
@@ -347,6 +348,37 @@ mod tests {
         assert_eq!(
             read.memory_mib, 2048,
             "while the shape is what the file is for"
+        );
+    }
+
+    // TEST_SCENARIO: the controller sends the machine's registry credential on every spec, so that the runner can fetch a private image. The credential is for the fetch only. A stored spec that kept it would put a registry credential on the state volume for as long as the machine exists, and the Go runner clears it in writeSpec for the same reason.
+    #[test]
+    fn a_stored_spec_never_keeps_the_registry_credential() {
+        let dir = TempDir::new();
+        fs::create_dir_all(dir.path().join("agent-a")).unwrap();
+
+        write_spec(
+            dir.path(),
+            "agent-a",
+            &MachineSpec {
+                image: "quay.io/x/vm:1".into(),
+                pull_auth: "{\"auths\":{\"quay.io\":{\"auth\":\"c2VjcmV0\"}}}".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let body = fs::read_to_string(dir.path().join("agent-a").join(SPEC_FILE)).unwrap();
+        assert!(
+            !body.contains("c2VjcmV0") && !body.contains("pullAuth"),
+            "the registry credential was stored with the spec: {body}"
+        );
+        let go = gosource::read("server.go");
+        let writes_spec = gosource::function_body(&go, "(s *Server) writeSpec")
+            .expect("server.go still has a writeSpec");
+        assert!(
+            writes_spec.contains("spec.PullAuth = \"\""),
+            "the Go runner no longer clears the credential before it stores a spec: {writes_spec}"
         );
     }
 

@@ -16,6 +16,7 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/pullauth"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -94,6 +95,12 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
+	pullAuth, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace),
+		append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
+	}
+
 	cpu, mem := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
 		Image:      spec.Image,
@@ -105,6 +112,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		AllowCIDRs: []string{gatewayIP + "/32"},
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
+		PullAuth:   pullAuth,
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
