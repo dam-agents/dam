@@ -1,3 +1,7 @@
+import {
+  mergedSpawnEnv,
+  type RuntimeEnvReader,
+} from "../../../core/runtime-env.js";
 import { runOnce } from "../../../core/run-once.js";
 import { verdictFor, type PrecheckOutcome } from "../domain/precheck.js";
 
@@ -16,6 +20,7 @@ export type PrecheckRunner = (
 
 export function createPrecheckRunner(deps: {
   workDir: string;
+  envReader: RuntimeEnvReader;
 }): PrecheckRunner {
   return async (request) =>
     verdictFor(
@@ -24,7 +29,7 @@ export function createPrecheckRunner(deps: {
         cwd: deps.workDir,
         timeoutMs: PRECHECK_TIMEOUT_MS,
         env: {
-          ...process.env,
+          ...mergedSpawnEnv(deps.envReader),
           PLATFORM_SCHEDULE_ID: request.scheduleId,
           ...(request.fireAt ? { PLATFORM_FIRE_AT: request.fireAt } : {}),
           PLATFORM_LAST_RUN_AT: request.lastRunAt ?? "",
