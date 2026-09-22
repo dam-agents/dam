@@ -1,5 +1,8 @@
 import { WebSocket } from "ws";
-import { platformRunResultResponseSchema } from "api-server-api";
+import {
+  platformRunResultResponseSchema,
+  type AcpPermissionOption,
+} from "api-server-api";
 import { z } from "zod";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
@@ -10,6 +13,7 @@ import type {
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
+import { securityLog } from "./security-log.js";
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
@@ -228,8 +232,18 @@ export interface AcpClient {
   turnStatus(sessionId: string): Promise<AcpTurnStatus>;
 }
 
+function rejectOptionId(
+  options: readonly AcpPermissionOption[],
+): string | null {
+  const once = options.find((option) => option.kind === "reject_once");
+  if (once) return once.optionId;
+  const any = options.find((option) => option.kind?.startsWith("reject"));
+  return any?.optionId ?? null;
+}
+
 async function withAcpConnection<T>(
   url: string,
+  agentId: string,
   clientName: string,
   handlers: { sessionUpdate?: (params: any) => Promise<void> },
   watch: ConnectionWatch,
@@ -280,12 +294,22 @@ async function withAcpConnection<T>(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
-        return {
-          outcome: {
-            outcome: "selected" as const,
-            optionId: params.options[0].optionId,
+        const optionId = rejectOptionId(params.options ?? []);
+        securityLog("warn", "approval.unattended_deny", {
+          category: "approval",
+          actor: null,
+          actorKind: "agent",
+          agentId,
+          decision: "deny",
+          reason: "unattended-channel-turn",
+          detail: {
+            toolName: params.toolCall?.title ?? null,
+            sessionId: params.sessionId ?? null,
           },
-        };
+        });
+        return optionId
+          ? { outcome: { outcome: "selected" as const, optionId } }
+          : { outcome: { outcome: "cancelled" as const } };
       },
       async sessionUpdate(params: any) {
         await handlers.sessionUpdate?.(params);
@@ -387,12 +411,14 @@ export function createAcpClient(opts: {
 }): AcpClient {
   return createAcpClientForUrl(
     `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
+    opts.instanceName,
     opts.turnWatch ?? {},
   );
 }
 
 function createAcpClientForUrl(
   url: string,
+  agentId: string,
   turnWatch: AcpTurnWatchConfig,
 ): AcpClient {
   const stallProbeMs = turnWatch.stallProbeMs ?? DEFAULT_STALL_PROBE_MS;
@@ -403,7 +429,7 @@ function createAcpClientForUrl(
       const connection = new ClientSideConnection(
         () => ({
           async requestPermission() {
-            return { outcome: { outcome: "selected" as const, optionId: "" } };
+            return { outcome: { outcome: "cancelled" as const } };
           },
           async sessionUpdate() {},
           async writeTextFile() {
@@ -455,6 +481,7 @@ function createAcpClientForUrl(
 
       await withAcpConnection(
         url,
+        agentId,
         "platform-acp",
         {
           async sessionUpdate(params: any) {
@@ -554,6 +581,7 @@ function createAcpClientForUrl(
       try {
         return await withAcpConnection(
           url,
+          agentId,
           "platform-steer",
           {},
           { kind: "deadline", ms: STEER_CEILING_MS },
@@ -580,6 +608,7 @@ function createAcpClientForUrl(
     async turnStatus(sessionId: string): Promise<AcpTurnStatus> {
       return withAcpConnection(
         url,
+        agentId,
         "platform-turn-status",
         {},
         { kind: "deadline", ms: TURN_STATUS_DEADLINE_MS },
@@ -593,6 +622,7 @@ function createAcpClientForUrl(
       let watchSessionId: string | null = null;
       return withAcpConnection(
         url,
+        agentId,
         "platform-trigger",
         {},
         {
