@@ -25,6 +25,12 @@ function fakeSlackWorker(): SlackWorker {
       messageTs: "1.1",
     })),
     resolveConversationNames: vi.fn(async () => []),
+    readThread: vi.fn(async () => ({
+      messages: [],
+      conversationId: "C1",
+      threadTs: "1.1",
+      hasMore: false,
+    })),
   };
 }
 

@@ -1,7 +1,7 @@
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
-import { formatSlackTs } from "./agent-footer.js";
+import { formatSlackTs, OUTBOUND_TOOL_PREFIX } from "./agent-footer.js";
 
-const TOOL = "mcp__platform-outbound__";
+const TOOL = OUTBOUND_TOOL_PREFIX;
 
 export interface SlackBotIdentity {
   brand: { name: string; short: string };
@@ -246,6 +246,7 @@ export function ambientGuidance(
   agentName: string | null,
   roster?: SlackTurnRoster,
   answeredAlready: AmbientPeerReply[] = [],
+  inThread = false,
 ): string {
   const peers = roster?.peers ?? [];
   const quotable = answeredAlready.flatMap((reply) =>
@@ -290,6 +291,15 @@ export function ambientGuidance(
                   "unanswered — do not assume one of the others will take it.",
               ]
             : []),
+        ]),
+    ...(inThread
+      ? []
+      : [
+          "Outside a thread this channel is not one discussion: people raise " +
+            "unrelated things at the top level, so the stream you are reading " +
+            "along with carries several conversations at once. Take each " +
+            "message on its own, and do not read what came before it as " +
+            "context for it unless it plainly is.",
         ]),
     "You are reading along in a shared Slack channel; the following " +
       "message(s) were not @-mentions. A message that calls you by name — " +

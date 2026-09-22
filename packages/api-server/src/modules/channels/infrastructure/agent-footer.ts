@@ -70,6 +70,50 @@ export function parseAgentFooter(
   return null;
 }
 
+export const OUTBOUND_TOOL_PREFIX = "mcp__platform-outbound__";
+
+export const THREAD_MARKER_NOTE =
+  "A line ending in a [thread: ...] tag opened a thread: the tag gives how " +
+  "many replies it has, when it last moved, and the ts that reads it. Those " +
+  "replies are not shown here — read them with " +
+  `${OUTBOUND_TOOL_PREFIX}read_thread, passing that ts as threadTs, ` +
+  "before treating the line as unanswered.";
+
+export type HistoryShape = "thread" | "direct-message" | "channel";
+
+export function historyPreamble(
+  shape: HistoryShape,
+  opts: { hasThreadMarker?: boolean } = {},
+): string {
+  if (shape === "thread") {
+    return (
+      "The conversation history below is the thread this turn was posted " +
+      "into: one conversation, and the context for answering it. Answer " +
+      "what follows the history, not the history itself."
+    );
+  }
+  if (shape === "direct-message") {
+    return (
+      "The conversation history below is your earlier exchange with this " +
+      "person: one conversation, and the context for answering what " +
+      "follows. " +
+      (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+      "Answer what follows the history, not the history itself."
+    );
+  }
+  return (
+    "The conversation history below is this conversation's recent messages " +
+    "as the channel itself shows them, not a single discussion: people " +
+    "raise unrelated things outside threads, so several separate topics may " +
+    "be interleaved here, and the time on each line is the cue for where " +
+    "one ends and the next begins. " +
+    (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+    "It is background — it tells you what has been going on here. Answer " +
+    "what follows the history, not the history itself, and leave an older " +
+    "topic alone unless what follows asks about it."
+  );
+}
+
 export function historyLegend(
   canLookupUsers: boolean,
   opts: { botLabel: string | null },
@@ -84,14 +128,18 @@ export function historyLegend(
       "footer, so it is not yours unless you recognise it as your own."
     : "";
   return canLookupUsers
-    ? `${base} — call mcp__platform-outbound__describe_channel_users to find ` +
+    ? `${base} — call ${OUTBOUND_TOOL_PREFIX}describe_channel_users to find ` +
         `out who they are.${bot}`
     : `${base}.${bot}`;
 }
 
 export function catchUpLegend(
   canLookupUsers: boolean,
-  opts: { botLabel: string | null; someOmitted?: boolean },
+  opts: {
+    botLabel: string | null;
+    someOmitted?: boolean;
+    hasThreadMarker?: boolean;
+  },
 ): string {
   const omitted = opts.someOmitted
     ? "Some messages from this gap were left out, so this is not everything " +
@@ -106,6 +154,7 @@ export function catchUpLegend(
     "conversation that has moved on, needs nothing from you — staying silent " +
     "on it is the right outcome, not a failure. Don't repeat or contradict " +
     "what another agent already said. " +
+    (opts.hasThreadMarker === true ? `${THREAD_MARKER_NOTE} ` : "") +
     historyLegend(canLookupUsers, opts)
   );
 }
@@ -122,11 +171,16 @@ export function formatSlackTs(ts: string): string {
   return `${weekday} ${datePart} ${timePart.slice(0, 5)} UTC`;
 }
 
+export function marksThread(message: SlackMessage): boolean {
+  return (message.replyCount ?? 0) >= 1 && !!message.ts;
+}
+
 export function labelHistoryMessage(
   message: SlackMessage,
   author: { agentId: string; name: string } | null,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
+  opts: { showThreadMarkers: boolean },
 ): string {
   const label = author
     ? author.agentId === readingAgentId
@@ -137,5 +191,16 @@ export function labelHistoryMessage(
       : (message.user ?? "unknown");
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
-  return `${label}${when}: ${message.text ?? ""}${edited}`;
+  const marker = opts.showThreadMarkers ? threadMarker(message) : "";
+  return `${label}${when}: ${message.text ?? ""}${edited}${marker}`;
+}
+
+function threadMarker(message: SlackMessage): string {
+  if (!marksThread(message)) return "";
+  const replies = message.replyCount ?? 0;
+  const plural = replies === 1 ? "reply" : "replies";
+  const latest = message.latestReplyTs
+    ? `, latest ${formatSlackTs(message.latestReplyTs)}`
+    : "";
+  return ` [thread: ${replies} ${plural}${latest}, ts ${message.ts}]`;
 }

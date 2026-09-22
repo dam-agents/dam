@@ -46,6 +46,8 @@ import type {
   MessageReactionsResult,
   PostMessageOptions,
   ReactionsQuery,
+  ThreadQuery,
+  ThreadResult,
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
@@ -112,7 +114,9 @@ import {
   catchUpLegend,
   formatSlackTs,
   historyLegend,
+  historyPreamble,
   labelHistoryMessage,
+  marksThread,
   parseAgentFooter,
   type AgentFooter,
 } from "./agent-footer.js";
@@ -588,6 +592,46 @@ interface BuiltPrompt {
   commit: () => void;
 }
 
+interface LabelledEntry {
+  message: SlackMessage;
+  footer: { agentId: string } | null;
+}
+
+function labelMessages(
+  entries: LabelledEntry[],
+  names: Map<string, string>,
+  readingAgentId: string,
+  bot: { userId: string | null; label: string },
+  opts: { showThreadMarkers: boolean },
+): string[] {
+  return entries.map((e) =>
+    labelHistoryMessage(
+      e.message,
+      e.footer && {
+        agentId: e.footer.agentId,
+        name: names.get(e.footer.agentId) ?? e.footer.agentId,
+      },
+      readingAgentId,
+      bot,
+      opts,
+    ),
+  );
+}
+
+async function resolveAuthorNames(
+  entries: LabelledEntry[],
+  resolveAgentName: (agentId: string) => Promise<string>,
+): Promise<Map<string, string>> {
+  const authorIds = [
+    ...new Set(entries.flatMap((e) => (e.footer ? [e.footer.agentId] : []))),
+  ];
+  return new Map(
+    await Promise.all(
+      authorIds.map(async (id) => [id, await resolveAgentName(id)] as const),
+    ),
+  );
+}
+
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
@@ -600,6 +644,8 @@ async function getContextMessages(
   teamId: SlackWorkspace,
 ): Promise<{
   lines: string[];
+  offeredThreads: string[];
+  hasThreadMarker: boolean;
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
   readNewestTs: string | null;
@@ -627,28 +673,23 @@ async function getContextMessages(
     footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
   }));
 
-  const authorIds = [
-    ...new Set(entries.flatMap((e) => (e.footer ? [e.footer.agentId] : []))),
-  ];
-  const names = new Map(
-    await Promise.all(
-      authorIds.map(async (id) => [id, await resolveAgentName(id)] as const),
-    ),
-  );
+  const names = await resolveAuthorNames(entries, resolveAgentName);
 
-  const lines = entries.map((e) =>
-    labelHistoryMessage(
-      e.message,
-      e.footer && {
-        agentId: e.footer.agentId,
-        name: names.get(e.footer.agentId) ?? e.footer.agentId,
-      },
-      readingAgentId,
-      bot,
-    ),
-  );
+  const showThreadMarkers = threadTs === undefined;
+  const lines = labelMessages(entries, names, readingAgentId, bot, {
+    showThreadMarkers,
+  });
+  const offered = showThreadMarkers
+    ? entries.flatMap((e) =>
+        marksThread(e.message) && e.message.ts !== undefined
+          ? [e.message.ts]
+          : [],
+      )
+    : [];
   return {
     lines,
+    offeredThreads: offered,
+    hasThreadMarker: offered.length > 0,
     hasAgentAuthored: entries.some((e) => e.footer !== null),
     hasUnattributedBot: entries.some(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
@@ -721,6 +762,10 @@ export interface SlackWorker {
   resolveConversationNames(
     refs: SlackConversationRef[],
   ): Promise<SlackConversationName[]>;
+  readThread(
+    instanceName: string,
+    query: ThreadQuery,
+  ): Promise<ThreadResult | { error: string }>;
 }
 
 export interface SlackOAuthPending {
@@ -1286,6 +1331,44 @@ export function createSlackWorker(
     if (!entry) return null;
     if (entry.expiresAt <= Date.now()) return null;
     return entry.ts;
+  }
+
+  const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
+  const offeredThreads = new Map<
+    string,
+    Map<string, { channel: string; expiresAt: number }>
+  >();
+
+  function noteOfferedThreads(
+    instanceName: string,
+    channel: string,
+    threadTss: string[],
+  ): void {
+    if (threadTss.length === 0) return;
+    const now = Date.now();
+    let offers = offeredThreads.get(instanceName);
+    if (!offers) {
+      offers = new Map();
+      offeredThreads.set(instanceName, offers);
+    }
+    if (offers.size > 5_000) {
+      for (const [ts, entry] of offers) {
+        if (entry.expiresAt <= now) offers.delete(ts);
+      }
+    }
+    for (const ts of threadTss) {
+      offers.set(ts, { channel, expiresAt: now + OFFERED_THREAD_TTL_MS });
+    }
+  }
+
+  function readOfferedThread(
+    instanceName: string,
+    ts: string,
+  ): { channel: string } | null {
+    const entry = offeredThreads.get(instanceName)?.get(ts);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) return null;
+    return { channel: entry.channel };
   }
 
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
@@ -1863,6 +1946,8 @@ export function createSlackWorker(
       lines,
       hasAgentAuthored,
       hasUnattributedBot,
+      hasThreadMarker,
+      offeredThreads: offeredHere,
       readNewestTs,
       readHasMore,
     } = await getContextMessages(
@@ -1876,12 +1961,22 @@ export function createSlackWorker(
       null,
       ctx.teamId,
     );
-    const legend =
+    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    const preamble = historyPreamble(
+      ctx.hasThread
+        ? "thread"
+        : isDirectMessageId(ctx.channel)
+          ? "direct-message"
+          : "channel",
+      { hasThreadMarker },
+    );
+    const attribution =
       hasAgentAuthored || hasUnattributedBot
         ? historyLegend(await canLookupUsers(gw, ctx.teamId), {
             botLabel: hasUnattributedBot ? bot.label : null,
           })
-        : undefined;
+        : null;
+    const legend = attribution ? `${preamble} ${attribution}` : preamble;
     const delivered = await opts?.deliver?.();
     return {
       prompt: framePrompt({
@@ -1981,23 +2076,29 @@ export function createSlackWorker(
         userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
         label: botHistoryLabel(brand),
       };
-      const { lines, hasUnattributedBot, readNewestTs, readHasMore } =
-        await getContextMessages(
-          gw,
-          ctx.channel,
-          ctx.eventTs,
-          ctx.instanceName,
-          conversationTs,
-          bot,
-          resolveAgentName,
-          {
-            readingAgentId: ctx.instanceName,
-            since,
-            triggeringTs: ctx.eventTs,
-            batchTs: ctx.batchTs,
-          },
-          ctx.teamId,
-        );
+      const {
+        lines,
+        hasUnattributedBot,
+        hasThreadMarker,
+        offeredThreads: offeredHere,
+        readNewestTs,
+        readHasMore,
+      } = await getContextMessages(
+        gw,
+        ctx.channel,
+        ctx.eventTs,
+        ctx.instanceName,
+        conversationTs,
+        bot,
+        resolveAgentName,
+        {
+          readingAgentId: ctx.instanceName,
+          since,
+          triggeringTs: ctx.eventTs,
+          batchTs: ctx.batchTs,
+        },
+        ctx.teamId,
+      );
       const commit = () =>
         noteThreadSeen(
           ctx.instanceName,
@@ -2012,12 +2113,14 @@ export function createSlackWorker(
           ),
         );
       if (lines.length === 0) return { frame: {}, commit };
+      noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
       return {
         frame: {
           context: lines,
           contextLegend: catchUpLegend(await canLookupUsers(gw, ctx.teamId), {
             botLabel: hasUnattributedBot ? bot.label : null,
             someOmitted: readHasMore,
+            hasThreadMarker,
           }),
         },
         commit,
@@ -3045,6 +3148,7 @@ export function createSlackWorker(
       agentName,
       rosterCopy(args.readers ?? args.roster, args.instanceName),
       args.answeredAlready ?? [],
+      args.hasThread,
     );
 
     let delivery: Promise<TurnDelivery>;
@@ -3946,6 +4050,70 @@ export function createSlackWorker(
         );
         if (!reactions) return { error: "message not found" };
         return { reactions, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async readThread(instanceName: string, query: ThreadQuery) {
+      const bound =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (bound.length === 0) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const offered = readOfferedThread(instanceName, query.threadTs);
+      if (!offered) {
+        return {
+          error:
+            "not a thread you were shown — only a ts taken from a " +
+            "[thread: ...] tag in the conversation history handed to you " +
+            "can be read, and offers age out. If someone wants you on an " +
+            "older thread, ask them to reply in it — it will reach you " +
+            "with its full history",
+        };
+      }
+      const target = bound.find((c) => c.id === offered.channel);
+      if (!target) {
+        return {
+          error:
+            "the conversation this thread was shown in is no longer " +
+            "connected to this agent",
+        };
+      }
+
+      try {
+        const read = await gw.getThreadTail({
+          channel: target.id,
+          threadTs: query.threadTs,
+          limit: THREAD_LOOKBACK,
+          teamId: target.teamId,
+        });
+        if (read.messages.length === 0) {
+          return {
+            error:
+              "no messages came back for that thread — it may not exist in " +
+              "this conversation, or this workspace's Slack credential may " +
+              "no longer be valid",
+          };
+        }
+        const bot = {
+          userId: await gw.getBotUserId(target.teamId).catch(() => null),
+          label: botHistoryLabel(brand),
+        };
+        const entries = read.messages.map((message) => ({
+          message,
+          footer: parseAgentFooter(message),
+        }));
+        const names = await resolveAuthorNames(entries, resolveAgentName);
+        return {
+          messages: labelMessages(entries, names, instanceName, bot, {
+            showThreadMarkers: false,
+          }),
+          conversationId: target.id,
+          threadTs: query.threadTs,
+          hasMore: read.hasMore || read.messages[0]?.ts !== query.threadTs,
+        };
       } catch (err) {
         return { error: formatError(err) };
       }

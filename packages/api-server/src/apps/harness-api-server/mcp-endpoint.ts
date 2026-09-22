@@ -395,6 +395,51 @@ export function createMcpSession(
   );
 
   server.tool(
+    "read_thread",
+    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore }, messages being the thread in the same labelled form as your conversation history, oldest first. A long thread comes back as its end rather than its whole: hasMore is then true, and the first line you get is a reply, not the message that opened the thread. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      threadTs: z
+        .string()
+        .describe(
+          "Thread to read: the ts from a [thread: ...] tag in your conversation history.",
+        ),
+    },
+    async ({ channel, threadTs }) => {
+      const result = await deps.channelManager.readThread(agentId, channel, {
+        threadTs,
+      });
+      const audit = {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: channel,
+        agentId,
+      } as const;
+      if ("error" in result) {
+        securityLog("warn", "channel.thread_read", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: { threadTs },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.thread_read", {
+        ...audit,
+        result: "success",
+        detail: {
+          conversationId: result.conversationId,
+          threadTs: result.threadTs,
+          messages: result.messages.length,
+          hasMore: result.hasMore,
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
     "reply",
     `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread; the thread is where the answer belongs, so leave alsoSendToChannel off unless you were asked to surface the answer to the whole channel. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {

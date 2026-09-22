@@ -40,6 +40,7 @@ export interface FakeSlackGateway extends SlackGateway {
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
+  setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
@@ -80,14 +81,21 @@ function pageOf(
  * UNIT_BOUNDARY_DESCRIPTION: Models Slack's thread read, including the parts a
  * caller can get wrong. The thread parent comes back in every page whatever the
  * anchor, because the real API includes it, and an anchored read is a filter
- * over the rest rather than a fresh window.
+ * over the rest rather than a fresh window. Whether a fixture models threads at
+ * all is its own explicit choice, never read off its contents: setHistory means
+ * the history is the thread, setThreadedHistory means reads are exact.
  */
 function threadWindowOf(
   history: SlackMessage[],
+  threadTs: string,
   oldest: string | undefined,
+  modelsThreads: boolean,
 ): SlackMessage[] {
-  if (oldest === undefined) return [...history];
-  return history.filter((m, i) => {
+  const thread = modelsThreads
+    ? history.filter((m) => m.ts === threadTs || m.threadTs === threadTs)
+    : [...history];
+  if (oldest === undefined) return [...thread];
+  return thread.filter((m, i) => {
     if (i === 0) return true;
     if (m.ts === undefined) return true;
     const at = Number(m.ts);
@@ -97,12 +105,24 @@ function threadWindowOf(
   });
 }
 
+function hiddenInThread(m: SlackMessage): boolean {
+  return (
+    m.threadTs !== undefined &&
+    m.threadTs !== m.ts &&
+    m.subtype !== "thread_broadcast"
+  );
+}
+
 function channelWindowOf(
   history: SlackMessage[],
   oldest: string | undefined,
+  modelsThreads: boolean,
 ): SlackMessage[] {
-  if (oldest === undefined) return [...history];
-  return history.filter((m) => {
+  const topLevel = modelsThreads
+    ? history.filter((m) => !hiddenInThread(m))
+    : [...history];
+  if (oldest === undefined) return [...topLevel];
+  return topLevel.filter((m) => {
     if (m.ts === undefined) return true;
     const at = Number(m.ts);
     const floor = Number(oldest);
@@ -116,6 +136,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const outbound: SlackOutboundRecord[] = [];
   const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
+  let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
   let nextStreamTs = 1;
@@ -227,12 +248,21 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      const page = pageOf(threadWindowOf(history, args.oldest), 0, args.limit);
+      const page = pageOf(
+        threadWindowOf(history, args.threadTs, args.oldest, modelsThreads),
+        0,
+        args.limit,
+      );
       return { messages: page.messages, hasMore: page.nextCursor !== null };
     },
 
     async getThreadTail(args) {
-      const all = threadWindowOf(history, undefined);
+      const all = threadWindowOf(
+        history,
+        args.threadTs,
+        undefined,
+        modelsThreads,
+      );
       const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
       let fold = emptyTailFold<SlackMessage>();
       let cursor: number | null = 0;
@@ -251,7 +281,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getChannelHistory(args) {
-      const newestFirst = channelWindowOf(history, args.oldest).reverse();
+      const newestFirst = channelWindowOf(
+        history,
+        args.oldest,
+        modelsThreads,
+      ).reverse();
       return {
         messages: newestFirst.slice(0, args.limit),
         hasMore: newestFirst.length > args.limit,
@@ -373,6 +407,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setHistory(next) {
       history = [...next];
+      modelsThreads = false;
+    },
+
+    setThreadedHistory(next) {
+      history = [...next];
+      modelsThreads = true;
     },
 
     setUsers(next) {

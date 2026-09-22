@@ -99,6 +99,10 @@ export interface SlackMessage {
   text?: string;
   blocks?: SlackBlock[];
   edited?: boolean;
+  threadTs?: string;
+  replyCount?: number;
+  latestReplyTs?: string;
+  subtype?: string;
 }
 
 export type SlackBlock = Record<string, unknown>;
