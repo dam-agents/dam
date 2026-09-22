@@ -45,6 +45,30 @@ jobs:
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
+      # Rust build cache: without it every run compiles smolvm and its whole
+      # dependency tree from source before it reaches the crate under test —
+      # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
+      # shape as the Go cache below, for the same reason.
+      #
+      # `mise.lock` is in the key because it pins the Rust toolchain and cargo
+      # fingerprints every unit by the compiler that built it. On `Cargo.lock`
+      # and the pin alone a toolchain bump would leave the exact key hitting and
+      # the save skipped, so `target/` would hold units the new rustc rejects and
+      # rebuilds on every run, with nothing able to rewrite the entry until a
+      # dependency happened to move. `smolvm.pin` is there because it decides
+      # which tree `.smolvm` holds, and a path dependency leaves no trace of that
+      # in `Cargo.lock`.
+      - id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          restore-keys: |
+            rust-${{ runner.os }}-${{ github.job }}-
+            rust-${{ runner.os }}-
       # Go build/module caches: without them build, vet, staticcheck and test
       # each compile the controller from scratch — measured 296 s for
       # staticcheck and 276 s for vet, the whole tail of this job.
@@ -96,6 +120,14 @@ jobs:
             ~/.cache/staticcheck
             ~/go/pkg/mod
           key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   test:
     name: mise test
@@ -119,6 +151,30 @@ jobs:
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
+      # Rust build cache: without it every run compiles smolvm and its whole
+      # dependency tree from source before it reaches the crate under test —
+      # clippy alone spent 5m28s there. Same restore-always, save-only-from-main
+      # shape as the Go cache below, for the same reason.
+      #
+      # `mise.lock` is in the key because it pins the Rust toolchain and cargo
+      # fingerprints every unit by the compiler that built it. On `Cargo.lock`
+      # and the pin alone a toolchain bump would leave the exact key hitting and
+      # the save skipped, so `target/` would hold units the new rustc rejects and
+      # rebuilds on every run, with nothing able to rewrite the entry until a
+      # dependency happened to move. `smolvm.pin` is there because it decides
+      # which tree `.smolvm` holds, and a path dependency leaves no trace of that
+      # in `Cargo.lock`.
+      - id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          restore-keys: |
+            rust-${{ runner.os }}-${{ github.job }}-
+            rust-${{ runner.os }}-
       # Go build/module caches: without them build, vet, staticcheck and test
       # each compile the controller from scratch — measured 296 s for
       # staticcheck and 276 s for vet, the whole tail of this job.
@@ -170,6 +226,14 @@ jobs:
             ~/.cache/staticcheck
             ~/go/pkg/mod
           key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   appversion:
     name: derive app version
