@@ -235,6 +235,7 @@ import {
   composeSatellitesModule,
   createOutcomeDelivery,
   createOutcomeWakeRetry,
+  createSatelliteApprovalRequester,
 } from "./modules/satellites/index.js";
 import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
@@ -449,6 +450,9 @@ export async function bootstrap() {
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
 
+  let deliverSatelliteOutcome: (
+    agentId: string,
+  ) => Promise<boolean> = async () => false;
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -478,15 +482,18 @@ export async function bootstrap() {
   );
   const onboardingChecklists = createOnboardingChecklistRepository(db);
 
-  let deliverSatelliteOutcome: (
-    agentId: string,
-  ) => Promise<boolean> = async () => false;
+  const satellitesApprovals = createApprovalsRepository(db);
   const satellitesBoot = composeSatellitesModule({
     db,
     maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
     ownerOf: (agentId) => agentsRepo.getOwner(agentId),
     isAgentOwnedBy: (agentId, ownerSub) =>
       agentsRepo.isOwnedBy(agentId, ownerSub),
+    requestApproval: createSatelliteApprovalRequester({
+      approvals: satellitesApprovals,
+    }),
+    retireApproval: (approvalId) =>
+      satellitesApprovals.expirePending(approvalId),
     spillLog: async (agentId, ref, output) => {
       try {
         return await createAgentWorkspaceFiles(
@@ -992,6 +999,16 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
+    onApprovalExpired: async (row) => {
+      if (row.payload.kind !== "satellite_job") return;
+      await satellitesBoot.applyVerdict(
+        row.ownerSub,
+        row.payload.satellite,
+        row.payload.sequence,
+        false,
+        "nobody answered the approval before it expired",
+      );
+    },
     identityResolver: {
       resolve: async (agentId) => {
         const rootId = await invocationDriverResolution.resolveRoot(agentId);

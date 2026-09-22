@@ -4,6 +4,7 @@ import { parseCommandPattern, type ParsedPattern } from "./command-pattern.js";
 export interface LocalCommand {
   run: string;
   about?: string;
+  approval?: "always";
   maxConcurrent?: number;
   cwd?: string;
   timeoutMs?: number;
@@ -60,6 +61,7 @@ function splitComment(line: string): { pattern: string; comment: string } {
 }
 
 interface LineOptions {
+  approval?: "always";
   maxConcurrent?: number;
   cwd?: string;
   timeoutMs?: number;
@@ -70,7 +72,9 @@ function parseOptions(group: string, where: string): LineOptions | string {
   for (const token of group.split(/\s+/).filter((t) => t !== "")) {
     const [key, ...rest] = token.split("=");
     const value = rest.join("=");
-    if (key === "max") {
+    if (key === "approval" && value === "") {
+      options.approval = "always";
+    } else if (key === "max") {
       const n = Number(value);
       if (!Number.isInteger(n) || n < 1 || n > 1024)
         return `${where}: max must be a whole number between 1 and 1024`;
@@ -83,7 +87,7 @@ function parseOptions(group: string, where: string): LineOptions | string {
       if (value === "") return `${where}: cwd needs a path`;
       options.cwd = value;
     } else {
-      return `${where}: unknown option "${token}" — use max=N, timeout=D or cwd=PATH`;
+      return `${where}: unknown option "${token}" — use approval, max=N, timeout=D or cwd=PATH`;
     }
   }
   return options;

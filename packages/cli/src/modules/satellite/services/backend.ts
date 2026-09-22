@@ -33,4 +33,5 @@ export type CallOutcome =
       reason: string;
       output: string;
       truncated: boolean;
-    };
+    }
+  | { status: "needs-approval"; reason: string };

@@ -228,6 +228,7 @@ describe("reporting an outcome reaches the wake", () => {
     const workerOps = createSatelliteWorkerOps({
       repo: repo as never,
       maxConcurrentCeiling: 64,
+      requestApproval: async () => "appr-1",
       deliverOutcome: async ({ agentId }) => {
         await deliver(agentId);
       },

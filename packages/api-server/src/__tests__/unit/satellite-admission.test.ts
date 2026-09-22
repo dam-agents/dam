@@ -130,6 +130,7 @@ describe("draining", () => {
     const ops = createSatelliteWorkerOps({
       repo: repo as never,
       maxConcurrentCeiling: 64,
+      requestApproval: async () => "appr-1",
       deliverOutcome: async () => {},
     });
 
@@ -150,8 +151,52 @@ describe("draining", () => {
   });
 });
 
+describe("an approval that nobody answers", () => {
+  it("settles its job, so the hold does not outlive the approval", async () => {
+    const settled: { status: string; reason?: string }[] = [];
+    const delivered: string[] = [];
+    const composition = composeSatellitesModule({
+      db: {} as never,
+      maxConcurrentCeiling: 64,
+      ownerOf: async () => "alice",
+      isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
+      spillLog: async () => null,
+      retireApproval: async () => {},
+      deliverOutcome: async ({ satellite, sequence }) => {
+        delivered.push(`${satellite}#${sequence}`);
+      },
+    });
+    (composition.repo as unknown as Record<string, unknown>).settle = async (
+      _o: string,
+      _s: string,
+      _seq: number,
+      patch: { status: string; reason?: string },
+    ) => {
+      settled.push(patch);
+      return { agentId: "agent-1" };
+    };
+
+    await composition.applyVerdict(
+      "alice",
+      "gpu-box",
+      7,
+      false,
+      "nobody answered the approval before it expired",
+    );
+
+    expect(settled[0]?.status).toBe("cancelled");
+    expect(settled[0]?.reason).toContain("expired");
+    expect(
+      delivered,
+      "the agent is told, as with any terminal outcome",
+    ).toEqual(["gpu-box#7"]);
+  });
+});
+
 describe("revocation", () => {
-  it("settles what has not started, and tells the agent", async () => {
+  it("settles what has not started, retires its approval, and tells the agent", async () => {
+    const retired: string[] = [];
     const delivered: string[] = [];
     const stopped: { scope: unknown; reason: string }[] = [];
     const composition = composeSatellitesModule({
@@ -159,7 +204,11 @@ describe("revocation", () => {
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
       spillLog: async () => null,
+      retireApproval: async (id) => {
+        retired.push(id);
+      },
       deliverOutcome: async ({ satellite, sequence }) => {
         delivered.push(`${satellite}#${sequence}`);
       },
@@ -183,6 +232,7 @@ describe("revocation", () => {
     await composition.onAgentDeleted("agent-1");
 
     expect(stopped[0]?.scope).toEqual({ agentId: "agent-1" });
+    expect(retired, "the approval it held is closed too").toEqual(["appr-1"]);
     expect(delivered).toEqual(["gpu-box#7"]);
   });
 });
@@ -196,7 +246,9 @@ describe("a cancel that races the worker's claim", () => {
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
       spillLog: async () => null,
+      retireApproval: async () => {},
       deliverOutcome: async () => {},
     });
     const repo = composition.repo as unknown as Record<string, unknown>;
@@ -242,7 +294,9 @@ describe("a job that finishes while its agent is waiting", () => {
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
+      requestApproval: async () => "appr-1",
       spillLog: async () => null,
+      retireApproval: async () => {},
       deliverOutcome: async () => {},
     });
     const repo = composition.repo as unknown as Record<string, unknown>;

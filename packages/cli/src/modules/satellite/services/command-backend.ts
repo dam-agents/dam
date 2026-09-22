@@ -61,7 +61,8 @@ export function describeSurface(surface: CommandSurface): string[] {
   return surface.commands.map(
     (command) =>
       `  ${command.run}` +
-      (command.about === undefined ? "" : `\n      ${command.about}`),
+      (command.about === undefined ? "" : `\n      ${command.about}`) +
+      (command.approval === "always" ? "   [needs approval]" : ""),
   );
 }
 
@@ -69,7 +70,13 @@ export function runTool(surface: CommandSurface): SatelliteTool {
   const lines = surface.commands.map(
     (command) =>
       `  ${command.run}` +
-      (command.about === undefined ? "" : `\n      ${command.about}`),
+      [
+        command.about,
+        command.approval === "always" ? "needs your human's approval" : null,
+      ]
+        .filter(Boolean)
+        .map((note) => `\n      ${note}`)
+        .join(""),
   );
   return {
     name: RUN_TOOL,
@@ -188,6 +195,14 @@ export function createCommandBackend(
           output: "",
           truncated: false,
         });
+    }
+
+    if (command.approval === "always" && !approved) {
+      log.line(`HOLD #${sequence}: ${command.run} needs approval`);
+      return Promise.resolve({
+        status: "needs-approval",
+        reason: `${command.run} needs your approval before it runs`,
+      });
     }
 
     return spawnCommand(sequence, argv, command);

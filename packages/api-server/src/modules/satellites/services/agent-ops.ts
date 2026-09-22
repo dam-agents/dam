@@ -24,6 +24,7 @@ export interface AgentOpsDeps {
     ref: string,
     output: string,
   ) => Promise<string | null>;
+  retireApproval: (approvalId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -236,6 +237,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           job.status,
         );
         if (settled === null) continue;
+        if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
         await deps.repo.markSeen(agentId, name, sequence);
         return outcome(agentId, settled);
       }

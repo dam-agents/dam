@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { printServiceError } from "../../shared/trpc/print.js";
+import { takesStandingVerdict } from "./standing-verdict.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -44,7 +45,22 @@ export function buildDenyCommand(deps: {
         });
 
         const service = deps.createApprovalService(host);
-        const result = await (opts.once
+        let once = opts.once === true;
+        if (!once) {
+          const takes = await takesStandingVerdict(service, id);
+          if (!takes.ok) {
+            process.stderr.write(
+              `error: ${takes.reason} — re-run with --once to apply the one-time verdict\n`,
+            );
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+          once = !takes.standing;
+          if (once)
+            process.stderr.write(
+              "This approval takes only a one-time verdict; applying that.\n",
+            );
+        }
+        const result = await (once
           ? service.dismiss(id)
           : service.denyForever(id));
         if (!result.ok) {
@@ -52,7 +68,7 @@ export function buildDenyCommand(deps: {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        printOutcomeAndExit(result.value, opts, {
+        printOutcomeAndExit({ ...opts, once }, result.value, {
           pastTense: "Denied",
           onceLine: "Denied this call only — re-prompts next time.",
           expiredEffect: "future requests of this shape are blocked.",

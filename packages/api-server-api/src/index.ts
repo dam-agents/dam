@@ -578,6 +578,7 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  SatelliteJobPayload,
   ExtAuthzPayload,
   AcpNativePayload,
   AcpPermissionOption,
@@ -595,12 +596,16 @@ export {
   approvalApprovePermanentInputSchema,
   approvalDenyForeverInputSchema,
   approvalDismissInputSchema,
+  approvalGetInputSchema,
   approvalListForInstanceInputSchema,
   approvalListForOwnerInputSchema,
   approvalListOptionsSchema,
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
-export { describeApprovalPayload } from "./modules/approvals/format.js";
+export {
+  acceptsPermanentVerdict,
+  describeApprovalPayload,
+} from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/ids.js";
 
 export type {

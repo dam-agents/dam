@@ -178,7 +178,7 @@ describe("a job that does not run to completion", () => {
 describe("parsing the command surface", () => {
   it("keeps cwd and timeouts local, and never puts them where the platform can see", () => {
     const parsed = parseCommandSurface(
-      "./x ^[1-5]$   # Do x  [timeout=30m cwd=/tmp]",
+      "./x ^[1-5]$   # Do x  [approval timeout=30m cwd=/tmp]",
       { name: "box", maxConcurrent: 16, cwd: "/srv", timeout: "6h" },
     );
     expect(parsed.ok).toBe(true);
@@ -187,6 +187,7 @@ describe("parsing the command surface", () => {
     expect(parsed.value.timeoutMs).toBe(6 * 3_600_000);
     expect(parsed.value.commands[0]?.timeoutMs).toBe(30 * 60_000);
     expect(parsed.value.commands[0]?.cwd).toBe("/tmp");
+    expect(parsed.value.commands[0]?.approval).toBe("always");
     expect(parsed.value.commands[0]?.about).toBe("Do x");
     expect(JSON.stringify(parsed.value.pushed)).not.toContain("/srv");
     expect(
@@ -300,5 +301,67 @@ describe("the tool a command surface advertises", () => {
     expect(runTool(surface()).description).toContain(
       "/bin/echo (hello|goodbye)",
     );
+  });
+});
+
+describe("a command the manifest holds for a human", () => {
+  const HELD = "/bin/echo release-me  # Release it  [approval]";
+
+  function heldHarness(items: WorkItem[]) {
+    const reports: Reported[] = [];
+    let handedOut = false;
+    let resolveAll: () => void = () => {};
+    const allReported = new Promise<void>((r) => {
+      resolveAll = r;
+    });
+    const parsed = parseCommandSurface(HELD, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const backend = createCommandBackend(parsed.value, { line: () => {} });
+    const transport: WorkerTransport = {
+      connect: async () => {},
+      claim: async () => {
+        if (handedOut) return [];
+        handedOut = true;
+        return items;
+      },
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async (input) => {
+        reports.push({ sequence: input.sequence, outcome: input.outcome });
+        if (reports.length === items.length) resolveAll();
+      },
+    };
+    const worker = createWorker({
+      name: "test-box",
+      maxConcurrent: 4,
+      backend,
+      transport,
+      log: { line: () => {} },
+      host: "test-host",
+    });
+    return { worker, reports, allReported };
+  }
+
+  async function driveHeld(items: WorkItem[]): Promise<Reported[]> {
+    const { worker, reports, allReported } = heldHarness(items);
+    const running = worker.start();
+    await allReported;
+    await worker.drain();
+    await running;
+    return reports;
+  }
+
+  it("is held rather than run, because only the machine knows it needs one", async () => {
+    const [report] = await driveHeld([runItem(1, ["/bin/echo", "release-me"])]);
+    expect(report?.outcome.status).toBe("needs-approval");
+  });
+
+  it("runs once a human has allowed it, and is not asked about twice", async () => {
+    const [report] = await driveHeld([
+      runItem(1, ["/bin/echo", "release-me"], true),
+    ]);
+    expect(report?.outcome.status).toBe("done");
+    if (report?.outcome.status !== "done") return;
+    expect(report.outcome.output).toContain("release-me");
   });
 });

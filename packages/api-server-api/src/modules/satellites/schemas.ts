@@ -110,6 +110,10 @@ export const reportInputSchema = z.object({
       output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
       truncated: z.boolean().default(false),
     }),
+    z.object({
+      status: z.literal("needs-approval"),
+      reason: z.string().max(280),
+    }),
   ]),
 });
 

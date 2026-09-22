@@ -24,6 +24,7 @@ export interface SatellitesServiceDeps {
     scope: { satellite?: string; agentId?: string },
     reason: string,
   ) => Promise<void>;
+  retireApproval: (approvalId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -138,6 +139,7 @@ export function createSatellitesService(
           job.status,
         );
         if (settled === null) continue;
+        if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
         await deps.deliverOutcome({
           owner: deps.owner,
           agentId: settled.agentId,

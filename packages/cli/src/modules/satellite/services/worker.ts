@@ -34,7 +34,8 @@ export interface WorkerTransport {
           reason: string;
           output?: string;
           truncated?: boolean;
-        };
+        }
+      | { status: "needs-approval"; reason: string };
   }): Promise<void>;
   drain(satellite: string): Promise<void>;
 }

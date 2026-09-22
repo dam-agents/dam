@@ -95,6 +95,7 @@ function harness(rows: JobRow[]) {
     repo: repo as never,
     ownerOf: async () => "alice",
     spillLog: async () => null,
+    retireApproval: async () => {},
     now: () => NOW,
   });
   return { ops, calls, byKey };

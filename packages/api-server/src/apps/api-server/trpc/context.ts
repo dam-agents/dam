@@ -286,6 +286,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       bus: redisBus,
       wrapperFrameSender,
+      onSatelliteVerdict: (payload, owner, allowed) =>
+        satellitesBoot.applyVerdict(
+          owner,
+          payload.satellite,
+          payload.sequence,
+          allowed,
+        ),
     });
     const attention = composeAttentionService({
       db,

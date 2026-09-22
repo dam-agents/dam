@@ -30,6 +30,13 @@ export interface SatellitesComposition {
   ) => SatellitesService;
   onAgentDeleted: (agentId: string) => Promise<void>;
   listAgentIds: () => Promise<string[]>;
+  applyVerdict: (
+    owner: string,
+    satellite: string,
+    sequence: number,
+    allowed: boolean,
+    reason?: string,
+  ) => Promise<void>;
 }
 
 export function composeSatellitesModule(deps: {
@@ -37,7 +44,9 @@ export function composeSatellitesModule(deps: {
   maxConcurrentCeiling: number;
   ownerOf: AgentOpsDeps["ownerOf"];
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
+  requestApproval: WorkerOpsDeps["requestApproval"];
   spillLog: AgentOpsDeps["spillLog"];
+  retireApproval: AgentOpsDeps["retireApproval"];
   deliverOutcome: WorkerOpsDeps["deliverOutcome"];
 }): SatellitesComposition {
   const repo = createSatellitesRepository(deps.db);
@@ -49,6 +58,7 @@ export function composeSatellitesModule(deps: {
     const settled = await repo.stopDispatch(scope, reason, JOB_TTL_MS);
     for (const job of settled) {
       try {
+        if (job.approvalId !== null) await deps.retireApproval(job.approvalId);
         await deps.deliverOutcome({
           owner: job.owner,
           agentId: job.agentId,
@@ -66,6 +76,7 @@ export function composeSatellitesModule(deps: {
   const workerDeps: WorkerOpsDeps = {
     repo,
     maxConcurrentCeiling: deps.maxConcurrentCeiling,
+    requestApproval: deps.requestApproval,
     deliverOutcome: deps.deliverOutcome,
   };
 
@@ -76,6 +87,7 @@ export function composeSatellitesModule(deps: {
       repo,
       ownerOf: deps.ownerOf,
       spillLog: deps.spillLog,
+      retireApproval: deps.retireApproval,
     }),
     workerOps: createSatelliteWorkerOps(workerDeps),
     sweepLeases: createLeaseSweep(workerDeps),
@@ -86,6 +98,7 @@ export function composeSatellitesModule(deps: {
         agentBinding,
         isAgentOwnedBy: deps.isAgentOwnedBy,
         deliverOutcome: deps.deliverOutcome,
+        retireApproval: deps.retireApproval,
         stopDispatch: (scope, reason) =>
           stopDispatch({ ...scope, owner }, reason),
       }),
@@ -94,5 +107,48 @@ export function composeSatellitesModule(deps: {
       await stopDispatch({ agentId }, "the agent was deleted");
     },
     listAgentIds: () => repo.listGrantedAgentIds(),
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Applies a human's verdict to the Job it was
+     * asked about. The approval row is marked resolved before this runs and
+     * cannot be un-resolved, so a failure here would otherwise leave the Job
+     * waiting on a decision that has already been made and removed from the
+     * inbox. It is caught instead and the Job's expiry is brought forward, which
+     * is the marker the stale-job sweep already reads: the Job is settled and
+     * its outcome delivered on the next lap rather than sitting until its TTL.
+     * A verdict that could not be applied ends the Job either way — nothing has
+     * run at this point, so cancelling is the safe direction.
+     */
+    applyVerdict: async (owner, satellite, sequence, allowed, reason) => {
+      try {
+        if (allowed) {
+          await repo.release(owner, satellite, sequence);
+          return;
+        }
+        const settled = await repo.settle(owner, satellite, sequence, {
+          status: "cancelled",
+          reason: reason ?? "your human declined this command",
+        });
+        if (settled !== null)
+          await deps.deliverOutcome({
+            owner,
+            agentId: settled.agentId,
+            satellite,
+            sequence,
+          });
+      } catch (err) {
+        console.error(
+          `[satellites] could not apply the verdict on ${satellite}#${sequence}; leaving it for the sweep`,
+          err,
+        );
+        await repo
+          .expireNow(owner, satellite, sequence)
+          .catch((markErr: unknown) => {
+            console.error(
+              `[satellites] could not mark ${satellite}#${sequence} for the sweep either`,
+              markErr,
+            );
+          });
+      }
+    },
   };
 }

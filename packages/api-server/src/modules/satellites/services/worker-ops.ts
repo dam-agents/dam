@@ -17,6 +17,16 @@ const CLAIM_POLL_MS = 500;
 export interface WorkerOpsDeps {
   repo: SatellitesRepository;
   maxConcurrentCeiling: number;
+  requestApproval: (input: {
+    agentId: string;
+    owner: string;
+    satellite: string;
+    sequence: number;
+    ref: string;
+    tool: string;
+    args: Record<string, unknown>;
+    reason: string;
+  }) => Promise<string>;
   deliverOutcome: (input: {
     owner: string;
     agentId: string;
@@ -31,6 +41,11 @@ export interface WorkerOpsDeps {
  * heartbeat, report, drain. It moves MCP tool calls out and outcomes back and
  * never reads either: only the machine knows what its arguments mean.
  *
+ * A report of `needs-approval` is the one non-terminal outcome. The machine is
+ * saying its own policy wants a human for this call, which the platform could
+ * not have known — it sees one tool, not the Command Patterns behind it. The Job
+ * is parked rather than settled, the approval is raised here, and a verdict
+ * requeues it marked approved so the machine does not ask twice.
  */
 export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
@@ -108,6 +123,32 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async report(owner: string, input: ReportInput): Promise<void> {
+      if (input.outcome.status === "needs-approval") {
+        const held = await deps.repo.hold(
+          owner,
+          input.satellite,
+          input.sequence,
+        );
+        if (held === null) return;
+        const approvalId = await deps.requestApproval({
+          agentId: held.agentId,
+          owner,
+          satellite: input.satellite,
+          sequence: input.sequence,
+          ref: formatJobRef(input.satellite, input.sequence),
+          tool: held.tool,
+          args: held.args,
+          reason: input.outcome.reason,
+        });
+        await deps.repo.setApprovalId(
+          owner,
+          input.satellite,
+          input.sequence,
+          approvalId,
+        );
+        return;
+      }
+
       const written = {
         output: input.outcome.output,
         truncated: input.outcome.truncated,

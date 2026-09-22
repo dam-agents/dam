@@ -11,3 +11,4 @@ export {
   createOutcomeDelivery,
   createOutcomeWakeRetry,
 } from "./services/outcome-delivery.js";
+export { createSatelliteApprovalRequester } from "./infrastructure/approval-requests.js";
