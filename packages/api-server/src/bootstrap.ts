@@ -159,6 +159,7 @@ import { createReposRepository } from "./modules/repos/infrastructure/repos-repo
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
+  catalogEntryHosts,
   createCatalogSourceFromLocator,
   createOnboardingChecklist,
   createOnboardingChecklistRepository,
@@ -338,7 +339,14 @@ export async function bootstrap() {
         c.ref,
         c.dir,
       );
-      return located ? [{ name: c.name, ...located }] : [];
+      if (!located) return [];
+      return [
+        {
+          name: c.name,
+          ...located,
+          entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
+        },
+      ];
     }),
     repo: resolvedCatalog,
     refs: createGitRefResolver(kitGitHosts),

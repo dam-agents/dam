@@ -8,6 +8,7 @@ import type {
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { type CatalogSource, relPathEscapes } from "./catalog-source.js";
+import type { GitHosts } from "./git-hosts.js";
 import type { RefResolver } from "./git-ref-resolver.js";
 import type {
   ResolvedCatalogRepository,
@@ -22,6 +23,7 @@ export interface NamedCatalog {
   source: CatalogSource;
   gitUrl?: string;
   ref?: string;
+  entryHosts: GitHosts;
 }
 
 export interface CatalogRefreshDeps {
@@ -52,6 +54,18 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       getLogger().warn(
         { catalog: named.name, path: entry.path },
         "starter kits: entry path rejected",
+      );
+      return "rejected";
+    }
+
+    if (entry.url && !named.entryHosts.locate(entry.url)) {
+      getLogger().warn(
+        {
+          catalog: named.name,
+          url: entry.url,
+          mayRead: named.entryHosts.readableHosts,
+        },
+        "starter kits: the entry names a host this catalog may not aim at; the entry is withdrawn",
       );
       return "rejected";
     }
@@ -100,6 +114,18 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     const kit = parsed.data;
 
     const seedUrl = kit.seed?.self ? gitUrl : kit.seed?.url;
+    if (seedUrl && !named.entryHosts.locate(seedUrl)) {
+      getLogger().warn(
+        {
+          catalog: named.name,
+          id: kit.id,
+          seedUrl,
+          mayRead: named.entryHosts.readableHosts,
+        },
+        "starter kits: the kit's seed names a host this catalog may not aim at; the kit is withdrawn",
+      );
+      return "rejected";
+    }
     let seedRef: string | undefined;
     if (seedUrl) {
       if (seedUrl === gitUrl && kit.seed?.ref === undefined) {

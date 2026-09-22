@@ -103,12 +103,26 @@ function enterpriseRepo(
 function usableEnterprise(
   enterprise: EnterpriseHost | undefined,
 ): EnterpriseHost | undefined {
-  if (!enterprise) return undefined;
-  const host = enterprise.host.trim().toLowerCase();
-  if (host === "" || host === PUBLIC_HOST) return undefined;
-  if (!HOSTNAME.test(host)) return undefined;
-  if (enterprise.token === "") return undefined;
-  return { host, token: enterprise.token };
+  const host = (enterprise?.host ?? "").trim().toLowerCase();
+  const token = enterprise?.token ?? "";
+  if (host === "" && token === "") return undefined;
+  if (host === "")
+    throw new Error(
+      "an enterprise GitHub token is configured with no host to send it to: set github.enterprise.host, or clear github.enterprise.tokenSecret",
+    );
+  if (host === PUBLIC_HOST)
+    throw new Error(
+      `github.enterprise.host is ${PUBLIC_HOST}, which is always read anonymously: name the enterprise host, or clear the setting`,
+    );
+  if (!HOSTNAME.test(host))
+    throw new Error(
+      `github.enterprise.host is not a hostname: ${host} (a bare host such as github.example.com, with no scheme or path)`,
+    );
+  if (token === "")
+    throw new Error(
+      `github.enterprise.host is ${host} but its token is empty: the catalogs and kits on that host would read as withdrawn and their kits would be pruned, so this install refuses to start instead`,
+    );
+  return { host, token };
 }
 
 /**
@@ -137,4 +151,25 @@ export function createGitHosts(enterprise?: EnterpriseHost): GitHosts {
         : null;
     },
   };
+}
+
+const PUBLIC_ONLY = createGitHosts();
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Which hosts one Kit Catalog's own entries and seeds
+ * may name. An external catalog **moves** by design — whoever writes to it, and
+ * not the operator, decides what it lists — so a catalog on public GitHub may
+ * only point at public GitHub. The install's enterprise credential is reachable
+ * from a catalog the operator put on that host, and from the catalog the chart
+ * ships, because in both cases the operator chose what it lists. Without this,
+ * an entry in any configured catalog would pick the internal repository the
+ * refresh opens with the install's token, and publish what it read.
+ */
+export function catalogEntryHosts(
+  all: GitHosts,
+  catalogGitUrl: string | undefined,
+): GitHosts {
+  if (catalogGitUrl === undefined) return all;
+  const host = all.locate(catalogGitUrl)?.host;
+  return host !== undefined && host !== PUBLIC_HOST ? all : PUBLIC_ONLY;
 }

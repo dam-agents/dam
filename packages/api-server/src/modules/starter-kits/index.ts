@@ -19,6 +19,7 @@ export {
   createGitCatalogSource,
 } from "./infrastructure/catalog-source.js";
 export {
+  catalogEntryHosts,
   createGitHosts,
   type EnterpriseHost,
   type GitHosts,

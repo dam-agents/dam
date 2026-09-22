@@ -7,7 +7,10 @@ import {
   createGitCatalogSource,
   createLocalCatalogSource,
 } from "../../modules/starter-kits/infrastructure/catalog-source.js";
-import { createGitHosts } from "../../modules/starter-kits/infrastructure/git-hosts.js";
+import {
+  catalogEntryHosts,
+  createGitHosts,
+} from "../../modules/starter-kits/infrastructure/git-hosts.js";
 import {
   createCatalogRefresh,
   type CatalogRefreshDeps,
@@ -45,7 +48,8 @@ function memoryResolved(): ResolvedCatalogRepository {
 }
 
 function harness(
-  catalogs: NamedCatalog[],
+  catalogs: (Omit<NamedCatalog, "entryHosts"> &
+    Partial<Pick<NamedCatalog, "entryHosts">>)[],
   opts: {
     resolve?: (gitUrl: string, ref?: string) => Promise<string | RefResolution>;
     scanSkills?: CatalogRefreshDeps["scanSkills"];
@@ -54,7 +58,7 @@ function harness(
 ) {
   const resolved = memoryResolved();
   const refresh = createCatalogRefresh({
-    catalogs,
+    catalogs: catalogs.map((c) => ({ entryHosts: ENTERPRISE_HOSTS, ...c })),
     repo: resolved,
     appVersion: APP_VERSION,
     refs: {
@@ -147,6 +151,7 @@ kits:
     });
     const exploding: NamedCatalog = {
       name: "broken",
+      entryHosts: ENTERPRISE_HOSTS,
       source: {
         locator: "/broken",
         readText: () => {
@@ -383,6 +388,117 @@ kits:
     expect(await repo.get("nope", "shared")).toBeNull();
   });
 
+  // TEST_SCENARIO: an external catalog moves by design — whoever writes to it, not the operator, decides what it lists. If any catalog could aim at the enterprise host, the entry's author would pick which internal repository the refresh opens with the install's token, and a kit.yaml-shaped file in a private repository would be read and published to every user. A public catalog is therefore held to public GitHub, and the enterprise read is refused rather than attempted.
+  it("refuses an entry that aims a public catalog at the enterprise host", async () => {
+    const catalog = memorySource("https://github.com/acme/kits#main", {
+      "catalog.yaml":
+        "kits:\n  - path: kits/ok\n  - url: https://github.ibm.com/acme/internal\n    ref: main\n",
+      "kits/ok/kit.yaml": KIT("ok"),
+    });
+    const reached: string[] = [];
+    const { refresh, repo } = harness(
+      [
+        {
+          name: "curated",
+          source: catalog,
+          entryHosts: catalogEntryHosts(
+            ENTERPRISE_HOSTS,
+            "https://github.com/acme/kits",
+          ),
+        },
+      ],
+      {
+        resolve: async (gitUrl) => {
+          reached.push(gitUrl);
+          return SHA;
+        },
+      },
+    );
+    await refresh.run();
+
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["ok"]);
+    expect(reached).not.toContain("https://github.ibm.com/acme/internal");
+  });
+
+  // TEST_SCENARIO: the same URL must resolve when the operator is the one who chose it — a catalog they put on the enterprise host, or the one the chart ships — otherwise the feature the credential exists for cannot work.
+  it("allows the enterprise host from a catalog the operator placed there", async () => {
+    const onEnterprise = memorySource("https://github.ibm.com/acme/kits#main", {
+      "catalog.yaml": "kits:\n  - url: https://github.ibm.com/acme/internal\n",
+    });
+    const { refresh, repo } = harness(
+      [
+        {
+          name: "internal",
+          source: onEnterprise,
+          gitUrl: "https://github.ibm.com/acme/kits",
+          entryHosts: catalogEntryHosts(
+            ENTERPRISE_HOSTS,
+            "https://github.ibm.com/acme/kits",
+          ),
+        },
+      ],
+      {
+        sourceForEntry: () =>
+          memorySource("https://github.ibm.com/acme/internal", {
+            "kit.yaml": KIT("internal"),
+          }),
+      },
+    );
+    await refresh.run();
+
+    expect((await repo.list()).map((k) => k.kit.id)).toEqual(["internal"]);
+    expect(
+      catalogEntryHosts(ENTERPRISE_HOSTS, undefined).readableHosts,
+    ).toEqual(["github.com", "github.ibm.com"]);
+  });
+
+  // TEST_SCENARIO: a kit's own `seed` is a second URL the catalog's author controls, so it takes the same route to the credential as an entry url and must be gated with it. Gating only the entry would leave the kit file itself able to aim the token.
+  it("refuses a seed that aims a public catalog at the enterprise host", async () => {
+    const catalog = memorySource("https://github.com/acme/kits#main", {
+      "catalog.yaml": "kits:\n  - path: a\n",
+      "a/kit.yaml": KIT(
+        "a",
+        "seed:\n  url: https://github.ibm.com/acme/internal\n",
+      ),
+    });
+    const { refresh, repo } = harness([
+      {
+        name: "curated",
+        source: catalog,
+        entryHosts: catalogEntryHosts(
+          ENTERPRISE_HOSTS,
+          "https://github.com/acme/kits",
+        ),
+      },
+    ]);
+    await refresh.run();
+
+    expect(await repo.list()).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the seed gate must not swallow the ordinary case — the same kit with a seed on public GitHub still resolves from a public catalog, so the refusal above is about the host and nothing else.
+  it("keeps a seed on public GitHub from a public catalog", async () => {
+    const catalog = memorySource("https://github.com/acme/kits#main", {
+      "catalog.yaml": "kits:\n  - path: a\n",
+      "a/kit.yaml": KIT("a", "seed:\n  url: https://github.com/acme/def\n"),
+    });
+    const { refresh, repo } = harness([
+      {
+        name: "curated",
+        source: catalog,
+        entryHosts: catalogEntryHosts(
+          ENTERPRISE_HOSTS,
+          "https://github.com/acme/kits",
+        ),
+      },
+    ]);
+    await refresh.run();
+
+    expect((await repo.list()).map((k) => k.kit.seed?.url)).toEqual([
+      "https://github.com/acme/def",
+    ]);
+  });
+
   it("returns nothing when no catalog is configured", async () => {
     const { refresh, repo } = harness([]);
     await refresh.run();
@@ -474,16 +590,28 @@ describe("catalog sources", () => {
     ).toThrow(/may read/);
   });
 
-  // TEST_SCENARIO: a host configured without a token, or one that is just github.com spelled again, would otherwise widen what the reader reaches while promising a credential it does not have.
-  it("ignores an enterprise host it cannot use", () => {
-    for (const enterprise of [
-      { host: "github.ibm.com", token: "" },
-      { host: "", token: "kit-token" },
-      { host: "github.com", token: "kit-token" },
-      { host: "not a host", token: "kit-token" },
-    ]) {
-      expect(createGitHosts(enterprise).readableHosts).toEqual(["github.com"]);
-    }
+  // TEST_SCENARIO: an enterprise host the install names but cannot use must stop the install, not be quietly dropped. Dropping it makes every URL on that host read as a host nobody named, which the resolver settles as `absent` and the refresh reads as the author withdrawing the kit — so an emptied token secret or a misspelled host would prune the very rows it was configured to serve. Refusing to start turns that silent prune into a startup error the operator sees.
+  it("refuses to start on an enterprise host it cannot use", () => {
+    expect(() => createGitHosts({ host: "github.ibm.com", token: "" })).toThrow(
+      /token is empty/,
+    );
+    expect(() => createGitHosts({ host: "", token: "kit-token" })).toThrow(
+      /no host to send it to/,
+    );
+    expect(() =>
+      createGitHosts({ host: "github.com", token: "kit-token" }),
+    ).toThrow(/always read anonymously/);
+    expect(() =>
+      createGitHosts({ host: "not a host", token: "kit-token" }),
+    ).toThrow(/not a hostname/);
+  });
+
+  // TEST_SCENARIO: configuring no enterprise host at all is the ordinary case and must stay silent — the reader is then public GitHub only.
+  it("starts with no enterprise host configured", () => {
+    expect(createGitHosts().readableHosts).toEqual(["github.com"]);
+    expect(createGitHosts({ host: "", token: "" }).readableHosts).toEqual([
+      "github.com",
+    ]);
   });
 
   it("reads under the directory a tree URL names", async () => {
