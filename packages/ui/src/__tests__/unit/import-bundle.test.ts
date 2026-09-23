@@ -92,6 +92,15 @@ describe("buildBundle", () => {
     ]);
   });
 
+  test("measures USTAR limits in bytes, not characters", async () => {
+    const fitsInChars = `project/${"ř".repeat(60)}.txt`;
+    const tar = await parseTar(await buildBundle([entry(fitsInChars)]));
+
+    expect(tar).toEqual([
+      { path: fitsInChars, type: "0", content: fitsInChars },
+    ]);
+  });
+
   test("sizes a PAX record whose length gains a digit", async () => {
     const paths = [1, 2, 3, 4, 5, 6].map(
       (n) => `${"dir/".repeat(247)}${"x".repeat(n)}`,

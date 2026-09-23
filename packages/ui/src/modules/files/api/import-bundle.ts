@@ -131,7 +131,7 @@ function splitUstarPath(path: string): UstarPath | null {
 
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const tarParts: BlobPart[] = [];
-  for (const ent of entries) {
+  for (const [index, ent] of entries.entries()) {
     const split = splitUstarPath(ent.path);
     if (split) {
       tarParts.push(tarHeader(split, ent.file.size, TAR_TYPE_FILE));
@@ -147,7 +147,11 @@ export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
       tarParts.push(record.buffer as ArrayBuffer);
       pushPadding(tarParts, record.byteLength);
       tarParts.push(
-        tarHeader({ name: ent.path, prefix: "" }, ent.file.size, TAR_TYPE_FILE),
+        tarHeader(
+          { name: `PaxFallback/${index}`, prefix: "" },
+          ent.file.size,
+          TAR_TYPE_FILE,
+        ),
       );
     }
     tarParts.push(ent.file);
