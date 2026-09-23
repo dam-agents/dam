@@ -1045,20 +1045,39 @@ func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
 	last := func() time.Duration { return (*requeued)[len(*requeued)-1] }
 
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
-		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}))
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}, true))
 	assert.Equal(t, vmStartingPoll, last(),
 		"a machine asked to start a moment ago is watched closely")
 
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false,
-			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}))
+			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}, true))
 	assert.Equal(t, vmReadinessPoll, last(),
 		"one still unready long afterwards is not about to be, and is watched loosely")
 
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
-		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}))
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}, true))
 	assert.Equal(t, vmHealthPoll, last(),
 		"and once it answers it is only checked for health")
+}
+
+// TEST_SCENARIO: a runner with no ready replica reports nothing about its machines, so the reconcile gets an empty machine status. The runner keeps its restart counter in memory and reports it again once it is back. Publishing the empty status as zero restarts would make that return read as a rise, and the UI would announce a restart that never happened.
+func TestAnUnreachableRunnerKeepsThePublishedRestarts(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Restarts: 2}, true))
+	restarts, _ := agentRestartStatus(t, r, agent.Name)
+	require.Equal(t, int64(2), restarts, "precondition: the count was published")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{Message: "vm runner is not ready"}, false))
+
+	restarts, reason := agentRestartStatus(t, r, agent.Name)
+	assert.Equal(t, int64(2), restarts)
+	assert.Equal(t, "GuestStoppedAnswering", reason)
 }
 
 // TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches what the runner shares with it through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once; machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.

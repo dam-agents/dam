@@ -3,7 +3,7 @@ import type { AgentView } from "../../../types.js";
 
 export interface CrashMark {
   restarts: number;
-  terminationReason?: string;
+  announced?: { reason: string; atRestarts: number };
 }
 
 type WatchedAgent = Pick<
@@ -38,24 +38,26 @@ export function nextCrashNotices(
   for (const agent of agents) {
     const before = previous.get(agent.id);
     const reason = agent.podTerminationReason;
-    let announced = before?.terminationReason;
-    if (reason && reason !== announced) {
+    let announced = before?.announced;
+    if (reason && reason !== announced?.reason) {
       toasts.push({
         kind: "error",
         message: `${agent.name} crashed — ${reason}`,
       });
-      announced = reason;
+      announced = { reason, atRestarts: agent.podRestarts };
     }
     const restarted =
       before !== undefined && agent.podRestarts > before.restarts;
-    if (restarted && !announced) {
+    const sameCrashRestarting =
+      announced !== undefined && agent.podRestarts <= announced.atRestarts + 1;
+    if (restarted && !sameCrashRestarting) {
       toasts.push({ kind: "warning", message: restartNotice(agent) });
     }
     if (!reason && (agent.state === "running" || agent.state === "hibernated"))
       announced = undefined;
     marks.set(agent.id, {
       restarts: agent.podRestarts,
-      ...(announced ? { terminationReason: announced } : {}),
+      ...(announced ? { announced } : {}),
     });
   }
   return { marks, toasts };

@@ -45,26 +45,26 @@ const (
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, error) {
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
-		return vmrunner.MachineStatus{}, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
-		return vmrunner.MachineStatus{}, fmt.Errorf("sizing the owner's VM runner: %w", err)
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
 	}
 	runner, ready, err := r.ensureRunner(ctx, owner, demand)
 	if err != nil {
-		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
 		msg := r.runnerNotReadyMessage(ctx, owner)
 		if problems := r.vmPreflightProblems(); problems != "" {
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
-		return vmrunner.MachineStatus{Message: msg}, nil
+		return vmrunner.MachineStatus{Message: msg}, false, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
@@ -79,7 +79,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if spec.SecretRef != "" {
 		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, spec.SecretRef, metav1.GetOptions{})
 		if err != nil {
-			return vmrunner.MachineStatus{}, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
 		}
 		for k, v := range sec.Data {
 			env[k] = string(v)
@@ -92,20 +92,20 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 
 	storageGiB, err := resolveVMDiskGiB(spec, defaults)
 	if err != nil {
-		return vmrunner.MachineStatus{}, err
+		return vmrunner.MachineStatus{}, false, err
 	}
 
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
-		return vmrunner.MachineStatus{}, errLeafSecretPending
+		return vmrunner.MachineStatus{}, false, errLeafSecretPending
 	}
 	if err != nil {
-		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
 	pullAuths, err := r.pullAuths(ctx, append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
 	if err != nil {
-		return vmrunner.MachineStatus{}, err
+		return vmrunner.MachineStatus{}, false, err
 	}
 
 	cpu, _ := r.limitsOf(spec)
@@ -123,16 +123,16 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
-		return st, err
+		return st, false, err
 	}
 
 	if st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
-			return st, fmt.Errorf("applying agent service: %w", err)
+			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 		r.dropSupersededEndpointSlice(ctx, name)
 	}
-	return st, nil
+	return st, true, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a starting machine is reconciled every half second, and every reconcile sends the pull credentials again, so reading the Secrets each time would be several API reads a second for every agent that is booting, multiplied by a whole fleet on a roll. The documents are kept per list of Secret names for as long as the health poll, which is also about how soon a rotated Secret reaches the next fetch. A read that fails is not kept, so the next reconcile tries again. Entries past that age are dropped on the way, so an Agent that is gone leaves nothing behind.
@@ -311,7 +311,7 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	return nil
 }
 
-func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus) error {
+func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus, runnerReached bool) error {
 	msg := st.Message
 	if !st.Ready && msg == "" {
 		msg = "machine is " + st.State
@@ -335,7 +335,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, true, st.Restarts, restartReason)
+	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason)
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {

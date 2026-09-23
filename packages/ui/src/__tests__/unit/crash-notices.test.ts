@@ -99,4 +99,26 @@ describe("nextCrashNotices", () => {
       ],
     ]);
   });
+
+  // TEST_SCENARIO: an agent with too little memory is killed on every start and never gets ready, so its termination cause stays the same and is never cleared. The cause is visible at a restart count, and the container that replaces it adds one; that step is the crash already announced. Every rise after it is a new kill and must still reach the user.
+  it("keeps announcing an agent that is killed again before it is ever ready", () => {
+    const killed = (podRestarts: number) =>
+      agent({
+        state: "starting",
+        podRestarts,
+        podRestartReason: podRestarts > 0 ? "OutOfMemory" : undefined,
+        podTerminationReason: "out of memory (OOMKilled)",
+      });
+    const again =
+      "Scout ran out of memory and restarted — give it a larger size in its settings";
+    expect(
+      replay([agent()], [killed(0)], [killed(1)], [killed(2)], [killed(3)]),
+    ).toEqual([
+      [],
+      ["Scout crashed — out of memory (OOMKilled)"],
+      [],
+      [again],
+      [again],
+    ]);
+  });
 });

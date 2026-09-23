@@ -230,11 +230,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 
 	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
+	var runnerReached bool
 	if agentSpec.IsVM() {
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		machine, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
+		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
 		if stderrors.Is(err, errLeafSecretPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
 		}
@@ -287,7 +288,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 
 	if running {
 		if agentSpec.IsVM() {
-			err = r.publishVMReadiness(ctx, agent, machine)
+			err = r.publishVMReadiness(ctx, agent, machine, runnerReached)
 		} else {
 			err = r.publishReadiness(ctx, agent)
 		}
