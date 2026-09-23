@@ -113,6 +113,10 @@ type Server struct {
 	health     map[string]health
 	lastState  map[string]cachedState
 	startedAt  map[string]time.Time
+	awaiting   map[string]string
+	slowBoots  map[string]slowBoot
+	secrets    map[string][]string
+	metrics    *metrics
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it. Nothing here bounds a pass of its own — its interval bounds the gap between passes, not a pass — so a fetch it starts ends at the pull timeout and at nothing else.
@@ -134,6 +138,8 @@ func (s *Server) Start() error {
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
 	s.lastState, s.startedAt = map[string]cachedState{}, map[string]time.Time{}
+	s.awaiting, s.slowBoots, s.secrets = map[string]string{}, map[string]slowBoot{}, map[string][]string{}
+	s.metrics = newMetrics(s)
 	ids, err := s.machineIDs()
 	if err != nil {
 		return err
@@ -253,10 +259,12 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid image reference", http.StatusBadRequest)
 		return
 	}
+	s.rememberSecrets(id, spec)
 	st := s.status(id)
 	if op, unhealthy := s.plan(id, spec, st); op != "" {
 		if op != StateStopping {
 			if err := s.roomFor(id, spec); err != nil {
+				s.metrics.refused()
 				s.mu.Lock()
 				s.failures[id] = failure{err.Error(), ReasonOutOfCapacity}
 				s.mu.Unlock()
@@ -386,12 +394,15 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			return err
 		}
 	}
+	op := StateStarting
 	if state == StateRunning && (restart || applied == nil || needsRestart(*applied, spec)) {
 		if unhealthy {
 			s.mu.Lock()
 			s.restarts[id]++
 			s.mu.Unlock()
+			s.metrics.unhealthyRestart()
 		}
+		op = StateRestarting
 		s.forgetState(id)
 		if err := s.Runtime.Stop(id); err != nil {
 			return err
@@ -403,8 +414,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		if err := s.Runtime.Update(id, spec, applied); err != nil {
 			return err
 		}
-		s.markStarting(id)
-		if err := s.Runtime.Start(id); err != nil {
+		if err := s.startMachine(id, op); err != nil {
 			return err
 		}
 	}
@@ -428,6 +438,9 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if launch == nil {
 		if cached, launch, err = s.legacyImage(image); err != nil {
 			return err
+		}
+		if digest == "" {
+			s.metrics.lookup(launch != nil)
 		}
 		if launch != nil {
 			digest = ""
@@ -464,8 +477,7 @@ func (s *Server) create(id string, spec MachineSpec) error {
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
-	s.markStarting(id)
-	return s.Runtime.Start(id)
+	return s.startMachine(id, StateCreating)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: platform-init is the machine's entrypoint, and it execs the image's own — so what the image says to run has to be known before the machine is created, on every path that reaches a boot. A cached tree carries it beside the files and an archive carries it inside, but a machine booting straight from a registry reference has neither, and smolvm would read the config itself and launch the image's entrypoint directly, leaving the disk unmounted. One config fetch costs no layers and answers it. An install that disabled the fetch is refused rather than booted without persistence: what it would save is a machine whose work does not survive its first stop.
@@ -498,7 +510,8 @@ func firstLines(out string) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto the cache it shares with any runner mounting the same directory, so the handful of images nearly every owner runs is fetched once per cache rather than once per machine. It is unpacked once too: smolvm mounts a tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. A tree alone is not enough to boot, because it carries files and not the entrypoint, environment and working directory the image names, so those are read with it and written beside it; without that record smolvm launches nothing and the guest comes up with no harness in it.
-func (s *Server) cacheImage(ref, cached, forMachine string) error {
+func (s *Server) cacheImage(ref, cached, forMachine string) (err error) {
+	defer func(started time.Time) { s.metrics.fetched(time.Since(started), err) }(time.Now())
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
 	}
@@ -860,6 +873,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		all = append(all, archive{path, size, info.ModTime()})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
+	defer func() { s.metrics.cacheSize(used) }()
 	for _, a := range all {
 		if used <= budget {
 			return
@@ -871,6 +885,7 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 			continue
 		}
 		used -= a.size
+		s.metrics.evictedImage(a.size)
 		slog.Info("image cache: evicted an image to stay inside the volume", "image", filepath.Base(a.path), "bytes", a.size)
 	}
 	if used > budget {
@@ -960,6 +975,9 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	delete(s.health, id)
 	delete(s.lastState, id)
 	delete(s.startedAt, id)
+	delete(s.awaiting, id)
+	delete(s.slowBoots, id)
+	delete(s.secrets, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -1021,7 +1039,17 @@ func (s *Server) spawn(id, op string, fn func() error) {
 		s.mu.Unlock()
 		var err error
 		if !gone {
+			started := time.Now()
 			err = fn()
+			s.metrics.operation(op, time.Since(started), err)
+		}
+		var failed failure
+		if err != nil {
+			failed = failure{err.Error(), failureReason(err)}
+			s.metrics.failed(op, failed.reason)
+			if failed.reason == ReasonBootFailed {
+				failed.message = withConsole(failed.message, s.consoleTail(id))
+			}
 		}
 		s.mu.Lock()
 		if s.seq[id] == seq {
@@ -1029,7 +1057,7 @@ func (s *Server) spawn(id, op string, fn func() error) {
 			delete(s.committing, id)
 		}
 		if err != nil {
-			s.failures[id] = failure{err.Error(), failureReason(err)}
+			s.failures[id] = failed
 			slog.Error("machine operation failed", "machine", id, "op", op, "error", err)
 		} else {
 			delete(s.failures, id)
@@ -1039,10 +1067,20 @@ func (s *Server) spawn(id, op string, fn func() error) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stamped each time this runner asks a machine to start, and reported as the age of that stamp. It is the clock the controller watches a starting machine by, because it moves for a wake as well as a create — a wake leaves the Ready condition False and changes only its reason, so that condition's own stamp cannot tell the two apart.
-func (s *Server) markStarting(id string) {
+func (s *Server) markStarting(id, op string) {
 	s.mu.Lock()
 	s.startedAt[id] = time.Now()
+	s.awaiting[id] = op
+	delete(s.slowBoots, id)
 	s.mu.Unlock()
+}
+
+func (s *Server) startMachine(id, op string) error {
+	s.markStarting(id, op)
+	started := time.Now()
+	err := s.Runtime.Start(id)
+	s.metrics.start(op, time.Since(started), err)
+	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: asking smolvm for a machine's state costs a process, and the controller asks on every readiness poll — often enough, while a machine starts, that the spawns cost more than the answer is worth. The answer barely moves at that rate, so a reading is reused for a moment. Only the state is reused: whether the guest answers is checked live every time, so a machine that dies is still noticed by the health check rather than waiting out this window.
@@ -1104,6 +1142,7 @@ func (s *Server) status(id string) MachineStatus {
 	// UNIT_BOUNDARY_DESCRIPTION: a guest that answers its health check is up, whatever the operation that started it still has left to do — and the runtime's own start call lingers seconds past the moment the guest begins serving, which the platform used to spend telling a user their agent was not ready yet. Only a machine on its way up is read this way: a restart's old guest answers until the stop lands, and a machine being stopped answers until it dies, so neither may be called ready on the strength of an answer.
 	if st.State == StateRunning || st.State == StateCreating || st.State == StateStarting {
 		st.Ready = s.healthy(st.Port)
+		s.watchBoot(id, &st, startedAt, failed.message == "")
 	}
 	if st.State == StateRunning {
 		s.mu.Lock()
@@ -1308,9 +1347,21 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 	if limit == 0 {
 		return nil
 	}
-	ids, err := s.machineIDs()
+	used, err := s.committedMiB(id)
 	if err != nil {
 		return err
+	}
+	if used+spec.MemoryMiB+s.ReserveMiB > limit {
+		return fmt.Errorf("this machine's %d MiB does not fit: the VM runner has %d MiB for machines and %d MiB is already committed; stop another agent or give the runner more memory",
+			spec.MemoryMiB, limit-s.ReserveMiB, used)
+	}
+	return nil
+}
+
+func (s *Server) committedMiB(except string) (int, error) {
+	ids, err := s.machineIDs()
+	if err != nil {
+		return 0, err
 	}
 	s.mu.Lock()
 	committing := make(map[string]int, len(s.committing))
@@ -1325,7 +1376,7 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 	}
 	used := 0
 	for _, other := range ids {
-		if other == id {
+		if other == except {
 			continue
 		}
 		if mib, inFlight := committing[other]; inFlight {
@@ -1339,9 +1390,5 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 			used += applied.MemoryMiB
 		}
 	}
-	if used+spec.MemoryMiB+s.ReserveMiB > limit {
-		return fmt.Errorf("this machine's %d MiB does not fit: the VM runner has %d MiB for machines and %d MiB is already committed; stop another agent or give the runner more memory",
-			spec.MemoryMiB, limit-s.ReserveMiB, used)
-	}
-	return nil
+	return used, nil
 }
