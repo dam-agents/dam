@@ -241,6 +241,36 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # Machines are processes of their runner, so any change to the runner pod
+    # — a new `image`, or a controller release that renders the pod
+    # differently — reboots every machine that owner has. The controller rolls
+    # such a change across owners rather than all at once: at most
+    # `maxConcurrent` runners are mid-roll at a time, and a runner stays
+    # mid-roll until its new pod is ready and every machine that was ready
+    # before the roll is ready again. `settleTimeout` bounds that wait, so a
+    # machine that never comes back (its agent was stopped mid-roll) does not
+    # stall everyone else's upgrade. A new owner's runner is created at once.
+    # A pass visits each runner about once a minute while its agents run, and
+    # on the controller's ten-minute sweep otherwise, so a full roll takes
+    # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # Upgrading onto a release that has this rolls every existing runner once,
+    # in the same staged way; one whose pod is unchanged is not restarted.
+    rollout:
+      maxConcurrent: 1
+      settleTimeout: 10m
+    # A runner image reference (repository:tag) for the canary owners only —
+    # a new smolvm or runner build reaches them first, and everyone else stays
+    # on `image`. Empty = no canary. Owners are chosen by `canary.owners`
+    # (owner labels, as on the Agent) and by `canary.percent`: a stable hash
+    # of the owner puts each one in a bucket of 100, so the same owners are
+    # picked every time and raising the percentage only adds owners. The
+    # canary image rolls in through `rollout` like any other change. To
+    # promote it, set `image` to it and clear `canaryImage`: the canary
+    # owners' pods are then unchanged and do not restart again.
+    canaryImage: ""
+    canary:
+      owners: []
+      percent: 0
     # A directory on the node holding `docker save` archives named after the
     # image reference, mounted read-only into every runner. It is how a
     # cluster with no registry (local dev) gives runners their agent image;

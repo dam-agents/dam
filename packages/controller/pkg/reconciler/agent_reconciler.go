@@ -43,6 +43,8 @@ type AgentReconciler struct {
 	runnerMu       sync.Mutex
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
+	runnerRollMu   sync.Mutex
+	runnerRollGate runnerRollGate
 	requeue        func(name string, after time.Duration)
 	podResize      atomic.Int32
 	agentCache     cache.GenericLister
