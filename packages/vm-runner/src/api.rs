@@ -42,16 +42,16 @@ pub struct MachineStatus {
     pub memory_mib: i32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub message: String,
-    // UNIT_BOUNDARY_DESCRIPTION: how long ago this runner last asked the machine to start, in milliseconds; zero when it has not asked since it came up. A machine asked recently is about to become ready or fail, and is worth watching closely until one or the other.
-    #[serde(rename = "startingMs", default, skip_serializing_if = "is_zero_i64")]
-    pub starting_ms: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this status changes. A status read given `since` with this value waits until it changes, which is how the controller learns that a booting guest answered without polling for it.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub version: u64,
 }
 
 fn is_zero_i32(n: &i32) -> bool {
     *n == 0
 }
 
-fn is_zero_i64(n: &i64) -> bool {
+fn is_zero_u64(n: &u64) -> bool {
     *n == 0
 }
 
@@ -177,7 +177,7 @@ mod tests {
                 cpus: 2,
                 memory_mib: 2048,
                 message: "up".into(),
-                starting_ms: 1,
+                version: 1,
             },
         );
     }

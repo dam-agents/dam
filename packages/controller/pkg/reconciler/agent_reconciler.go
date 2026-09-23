@@ -44,15 +44,13 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	runnerRollMu   sync.Mutex
-	runnerRollGate runnerRollGate
 	requeue        func(name string, after time.Duration)
 	podResize      atomic.Int32
 	agentCache     cache.GenericLister
 	vmRunning      sync.Map
-	runnerResized  sync.Map
 	resizeNotices  sync.Map
-	pullAuthMu     sync.Mutex
-	pullAuthMemo   map[string]pullAuthMemo
+	machineWatchMu sync.Mutex
+	machineWatches map[string]*machineWatch
 	preflightMu    sync.Mutex
 	preflight      vmPreflightResult
 	preflightDone  bool

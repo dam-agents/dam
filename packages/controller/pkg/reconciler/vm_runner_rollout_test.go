@@ -37,7 +37,6 @@ func setupRolloutReconciler(t *testing.T, owners ...string) (*AgentReconciler, m
 		}
 		return false, nil, nil
 	})
-	r.runnerRollGate.recheck = time.Nanosecond
 	nodes := map[string]*fakeNode{}
 	servers := map[string]*httptest.Server{}
 	r.runnerEndpoint = func(owner string) string {
@@ -223,32 +222,4 @@ func TestTheSweepRollsRunnersNoAgentReconciles(t *testing.T) {
 		}
 		settleRunnerPod(t, r, owners[pass])
 	}
-}
-
-// TEST_SCENARIO: an owner waits their turn while one of their machines is starting, so their agent reconciles every half second. The gate keeps its last "the roll is full" answer for a short while, so those passes do not list every runner, which is what the rest of the settle check — calls to the rolling owner's runner about each of its machines — hangs off.
-func TestAWaitingRunnerDoesNotAskAboutTheRollOnEveryPass(t *testing.T) {
-	ctx := context.Background()
-	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
-	r.runnerRollGate.recheck = time.Hour
-	nodes["owner-a"].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
-	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
-	r.config.VM.Runner.Image = runnerV2
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
-	settleRunnerPod(t, r, "owner-a")
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
-	require.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"))
-
-	cs := r.client.(*fake.Clientset)
-	cs.ClearActions()
-	for range 5 {
-		require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
-	}
-	for _, a := range cs.Actions() {
-		assert.False(t, a.GetVerb() == "list" && a.GetResource().Resource == "deployments", "a waiting pass must not list every runner")
-		assert.False(t, a.GetVerb() == "get" && a.GetResource().Resource == "agents", "nor look up the rolling owner's agents")
-	}
-
-	r.runnerRollGate.recheck = time.Nanosecond
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
-	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "once the answer is stale the gate asks again and finds the first roll settled")
 }

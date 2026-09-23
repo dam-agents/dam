@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -27,8 +28,13 @@ use crate::state::{
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine's state from the runtime is reused. The controller polls a booting machine every half second and admission reads every other machine's state, and each read probes the guest agent, while the state barely moves at that rate. Whether the guest answers its health endpoint is still asked every time.
-pub const STATE_TTL: Duration = Duration::from_secs(1);
+// UNIT_BOUNDARY_DESCRIPTION: how often the health prober asks the runtime and the guest about a machine. A machine on its way up is asked often, because the time between its guest answering and the controller hearing of it is the last part of a wake the user waits for. A steady one is asked rarely: a missed answer there only counts towards an unhealthy restart minutes away. A stopped or absent machine is not asked at all, since only an action changes it.
+pub const BOOT_PROBE: Duration = Duration::from_millis(500);
+pub const STEADY_PROBE: Duration = Duration::from_secs(10);
+const PROBE_TICK: Duration = Duration::from_millis(100);
+
+// UNIT_BOUNDARY_DESCRIPTION: the longest a status read waits for the machine's status to change.
+pub const STATUS_WAIT_CAP: Duration = Duration::from_secs(30);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the actions already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
@@ -58,14 +64,22 @@ struct Failed {
     reason: &'static str,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a boot the runner waits on until its guest first answers: when it was asked, by which action, and the stuck-boot note once one is written. The note is kept, not rebuilt on each poll, because a message that changed twice a second would be a status write twice a second.
+// UNIT_BOUNDARY_DESCRIPTION: a boot the runner waits on until its guest first answers: when it was asked, by which action, and the stuck-boot note once the prober writes one. The prober refreshes the note once per SLOW_BOOT_AFTER and not on every probe, because each new message is a new status version and a status write on the Agent.
 struct Boot {
     at: Instant,
     action: Action,
     note: Option<(String, Instant)>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
+// UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest last said about a machine. `error` is set only with the unknown state, when the runtime could not be read.
+#[derive(Clone, PartialEq, Eq)]
+struct Seen {
+    state: State,
+    ready: bool,
+    error: Option<String>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -78,7 +92,26 @@ struct MachineEntry {
     restarts: i32,
     boot: Option<Boot>,
     secrets: Vec<String>,
-    observed: Option<(State, Instant)>,
+    seen: Option<Seen>,
+    looked: u64,
+    probed: Option<Instant>,
+    version: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how often the prober asks about this machine, or None when nothing but an action can change what it would hear.
+fn probe_every(entry: &MachineEntry) -> Option<Duration> {
+    if entry.deleting {
+        return None;
+    }
+    if let Some(action) = entry.action {
+        return reads_ready(action.state()).then_some(BOOT_PROBE);
+    }
+    match &entry.seen {
+        None => Some(Duration::ZERO),
+        Some(seen) if matches!(seen.state, State::Absent | State::Stopped) => None,
+        Some(_) if entry.boot.is_some() => Some(BOOT_PROBE),
+        Some(_) => Some(STEADY_PROBE),
+    }
 }
 
 #[derive(Default)]
@@ -94,6 +127,8 @@ pub struct Server {
     forwarder: Forwarder,
     machines: Mutex<Machines>,
     settled: Condvar,
+    changed: Condvar,
+    versions: AtomicU64,
     admission: Mutex<()>,
     ports: Mutex<()>,
     lifetime: CancellationToken,
@@ -154,6 +189,8 @@ impl Server {
             forwarder,
             machines: Mutex::new(Machines::default()),
             settled: Condvar::new(),
+            changed: Condvar::new(),
+            versions: AtomicU64::new(first_version()),
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             lifetime,
@@ -183,12 +220,15 @@ impl Server {
                 let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
             }
         });
+        let prober = Arc::downgrade(&server);
+        server.background(move |lifetime| probe_until_closed(&prober, &lifetime));
         Ok(server)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, and waits up to CLOSE_GRACE for it. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
     pub async fn close(&self) {
         locked(&self.machines).closed = true;
+        self.changed.notify_all();
         self.forwarder.unpublish_all();
         self.lifetime.cancel();
         self.work.close();
@@ -227,6 +267,9 @@ impl Server {
         admissible(&spec).map_err(Rejected::bad_request)?;
         self.remember_secrets(id, &spec);
         loop {
+            if !self.converging(id) {
+                self.observe(id, true);
+            }
             let (state, mut status) = self.report(id);
             let action = step(
                 read_spec(&self.config.state_dir, id).as_ref(),
@@ -268,6 +311,8 @@ impl Server {
             };
             entry.converging = true;
             entry.action = Some(action);
+            self.bump(entry);
+            status.version = entry.version;
             let asked = entry.asked;
             drop(machines);
             let server = self.clone();
@@ -282,14 +327,14 @@ impl Server {
 
     fn refuse(&self, id: &str, mut status: MachineStatus, message: String) -> MachineStatus {
         self.metrics.refused();
-        locked(&self.machines)
-            .entries
-            .entry(id.to_string())
-            .or_default()
-            .failure = Some(Failed {
+        let mut machines = locked(&self.machines);
+        let entry = machines.entries.entry(id.to_string()).or_default();
+        entry.failure = Some(Failed {
             message: message.clone(),
             reason: REASON_OUT_OF_CAPACITY,
         });
+        self.bump(entry);
+        status.version = entry.version;
         status.message = message;
         status.reason = REASON_OUT_OF_CAPACITY.to_string();
         status.ready = false;
@@ -301,6 +346,32 @@ impl Server {
             return Err(Rejected::bad_request("invalid machine id"));
         }
         Ok(self.status(id))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a status read: answers as soon as the machine's status version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes with no change. A different version rather than a greater one ends the wait, so a caller holding a version from before a runner restart or a delete is answered at once.
+    pub fn wait(&self, id: &str, since: u64, timeout: Duration) -> Result<MachineStatus, Rejected> {
+        if !is_machine_id(id) {
+            return Err(Rejected::bad_request("invalid machine id"));
+        }
+        let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
+        let mut machines = locked(&self.machines);
+        while !machines.closed && machines.entries.get(id).map_or(0, |e| e.version) == since {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            machines = match self.changed.wait_timeout(machines, left) {
+                Ok((guard, _)) => guard,
+                Err(e) => e.into_inner().0,
+            };
+        }
+        drop(machines);
+        Ok(self.status(id))
+    }
+
+    fn bump(&self, entry: &mut MachineEntry) {
+        entry.version = self.versions.fetch_add(1, Ordering::Relaxed) + 1;
+        self.changed.notify_all();
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, then waits for the action in flight to return.
@@ -323,6 +394,7 @@ impl Server {
             let mut machines = locked(&self.machines);
             if removed.is_ok() {
                 machines.entries.remove(id);
+                self.changed.notify_all();
             } else if let Some(entry) = machines.entries.get_mut(id) {
                 entry.deleting = false;
             }
@@ -382,6 +454,9 @@ impl Server {
                 }
                 entry.action = Some(action);
                 entry.health.action_started();
+                entry.seen = None;
+                entry.looked += 1;
+                self.bump(entry);
                 entry.desired.clone().unwrap_or_default()
             };
             self.run(id, action, spec);
@@ -405,9 +480,12 @@ impl Server {
                 let entry = machines.entries.get(id)?;
                 (entry.desired.clone()?, entry.asked)
             };
-            self.forget_state(id);
-            let state = self.observed(id).ok()?;
-            let ready = state == State::Running && healthy(state::port(&self.config.state_dir, id));
+            let seen = self.observe(id, false);
+            if seen.error.is_some() {
+                return None;
+            }
+            let state = seen.state;
+            let ready = state == State::Running && seen.ready;
             let applied = read_spec(&self.config.state_dir, id);
             if let Some(action) = step(
                 applied.as_ref(),
@@ -427,7 +505,6 @@ impl Server {
 
     fn run(&self, id: &str, action: Action, mut spec: MachineSpec) {
         let auths = std::mem::take(&mut spec.pull_auths);
-        self.forget_state(id);
         let started = Instant::now();
         let result = match action {
             Action::Stop => self.stop_machine(id),
@@ -446,11 +523,14 @@ impl Server {
             }
             Failed { message, reason }
         });
-        let mut machines = locked(&self.machines);
-        if let Some(entry) = machines.entries.get_mut(id) {
-            entry.failure = failure;
-            entry.observed = None;
+        {
+            let mut machines = locked(&self.machines);
+            if let Some(entry) = machines.entries.get_mut(id) {
+                entry.failure = failure;
+                self.bump(entry);
+            }
         }
+        self.observe(id, false);
     }
 
     fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
@@ -510,6 +590,7 @@ impl Server {
             if unhealthy {
                 if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
                     entry.restarts += 1;
+                    self.bump(entry);
                 }
                 self.metrics.unhealthy_restart();
             }
@@ -612,10 +693,12 @@ impl Server {
         result
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered would report a growing `startingMs` for as long as it stayed stopped.
+    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered would keep its stuck-boot note for as long as it stayed stopped.
     fn stop_machine(&self, id: &str) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
-            entry.boot = None;
+            if entry.boot.take().is_some_and(|boot| boot.note.is_some()) {
+                self.bump(entry);
+            }
         }
         self.runtime.stop(id)
     }
@@ -649,49 +732,45 @@ impl Server {
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it.
-    fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
-        let (at, action, note) = {
-            let mut machines = locked(&self.machines);
-            let Some(entry) = machines.entries.get_mut(id) else {
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. The prober writes the note once the boot is SLOW_BOOT_AFTER old and refreshes it no more often than that. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so the note does not come back for it.
+    fn note_slow_boot(&self, id: &str) {
+        let at = {
+            let machines = locked(&self.machines);
+            let Some(entry) = machines.entries.get(id) else {
                 return;
             };
             let Some(boot) = &entry.boot else {
                 return;
             };
-            let seen = (boot.at, boot.action, boot.note.clone());
-            if status.ready {
-                entry.boot = None;
+            let state = entry
+                .action
+                .map(Action::state)
+                .or(entry.seen.as_ref().map(|seen| seen.state));
+            let waiting = entry.failure.is_none()
+                && state.is_some_and(reads_ready)
+                && !entry.seen.as_ref().is_some_and(|seen| seen.ready);
+            let due = boot.at.elapsed() >= SLOW_BOOT_AFTER
+                && boot
+                    .note
+                    .as_ref()
+                    .is_none_or(|(_, noted)| noted.elapsed() >= SLOW_BOOT_AFTER);
+            if !waiting || !due {
+                return;
             }
-            seen
+            boot.at
         };
-        if status.ready {
-            self.metrics.became_ready(action.label(), at.elapsed());
+        let message = with_console(SLOW_BOOT, &self.console_tail(id));
+        let mut machines = locked(&self.machines);
+        let Some(entry) = machines.entries.get_mut(id) else {
             return;
-        }
-        if !no_failure || at.elapsed() < SLOW_BOOT_AFTER {
-            return;
-        }
-        let note = match note {
-            Some((message, noted)) if noted.elapsed() < SLOW_BOOT_AFTER => message,
-            _ => {
-                let message = with_console(SLOW_BOOT, &self.console_tail(id));
-                let mut machines = locked(&self.machines);
-                if let Some(boot) = machines
-                    .entries
-                    .get_mut(id)
-                    .and_then(|e| e.boot.as_mut())
-                    .filter(|boot| boot.at == at)
-                {
-                    boot.note = Some((message.clone(), Instant::now()));
-                }
-                message
-            }
         };
-        if status.message.is_empty() {
-            status.message = note;
-        } else {
-            status.message = format!("{}; {note}", status.message);
+        let Some(boot) = entry.boot.as_mut().filter(|boot| boot.at == at) else {
+            return;
+        };
+        let changed = boot.note.as_ref().is_none_or(|(old, _)| *old != message);
+        boot.note = Some((message, Instant::now()));
+        if changed {
+            self.bump(entry);
         }
     }
 
@@ -700,7 +779,7 @@ impl Server {
         let committed = self
             .capacity()
             .committed(None, &self.committing(), &|other: &str| {
-                matches!(self.observed(other), Ok(State::Running))
+                matches!(self.known_state(other), Ok(State::Running))
             })
             .ok();
         self.metrics.render(&Gauges {
@@ -788,11 +867,11 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is read through the state cache, so admitting one machine costs no probe per machine when the controller has just asked.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine.
     fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
         self.capacity()
             .room_for(id, spec.memory_mib, &self.committing(), &|other: &str| {
-                matches!(self.observed(other), Ok(State::Running))
+                matches!(self.known_state(other), Ok(State::Running))
             })
     }
 
@@ -803,96 +882,198 @@ impl Server {
             .is_some_and(|e| e.health.dead_for_long(SystemTime::now()))
     }
 
-    fn forget_state(&self, id: &str) {
-        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
-            entry.observed = None;
+    // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest say about the machine now. The guest is asked only in a state its answer may be believed in.
+    fn look(&self, id: &str) -> Seen {
+        match self.runtime.state(id) {
+            Ok(state) => Seen {
+                state,
+                ready: reads_ready(state) && healthy(state::port(&self.config.state_dir, id)),
+                error: None,
+            },
+            Err(e) => Seen {
+                state: State::Unknown,
+                ready: false,
+                error: Some(format!("{e:#}")),
+            },
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the machine's state as the runtime reports it, reused for STATE_TTL. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind.
-    fn observed(&self, id: &str) -> anyhow::Result<State> {
-        if let Some((state, at)) = locked(&self.machines)
+    // UNIT_BOUNDARY_DESCRIPTION: looks at the machine now and records it. A machine's own worker records what it saw unconditionally; anyone else passes `guarded`, and what they saw is dropped if something newer was recorded while they looked.
+    fn observe(&self, id: &str, guarded: bool) -> Seen {
+        let guard = guarded.then(|| {
+            locked(&self.machines)
+                .entries
+                .get(id)
+                .map_or(0, |e| e.looked)
+        });
+        let seen = self.look(id);
+        self.record(id, seen.clone(), guard);
+        seen
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it.
+    fn record(&self, id: &str, seen: Seen, guard: Option<u64>) {
+        let answered = {
+            let mut machines = locked(&self.machines);
+            if seen.state == State::Absent && !machines.entries.contains_key(id) {
+                return;
+            }
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            if guard.is_some_and(|looked| looked != entry.looked) {
+                return;
+            }
+            let mut changed = entry.seen.as_ref() != Some(&seen);
+            if entry.action.is_none() && seen.state == State::Running {
+                entry.health.observed_running(seen.ready, SystemTime::now());
+            }
+            let answered = if seen.ready { entry.boot.take() } else { None };
+            changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
+            entry.seen = Some(seen);
+            entry.looked += 1;
+            entry.probed = Some(Instant::now());
+            if changed {
+                self.bump(entry);
+            }
+            answered
+        };
+        if let Some(boot) = answered {
+            self.metrics
+                .became_ready(boot.action.label(), boot.at.elapsed());
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns.
+    fn probe(&self, id: &str) {
+        let Some((action, looked)) = locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.observed)
-        {
-            if at.elapsed() < STATE_TTL {
-                return Ok(state);
-            }
-        }
-        let state = self.runtime.state(id)?;
-        let mut machines = locked(&self.machines);
-        if state != State::Absent || machines.entries.contains_key(id) {
-            machines.entries.entry(id.to_string()).or_default().observed =
-                Some((state, Instant::now()));
-        }
-        Ok(state)
+            .map(|e| (e.action, e.looked))
+        else {
+            return;
+        };
+        let seen = match action {
+            Some(action) => Seen {
+                state: action.state(),
+                ready: reads_ready(action.state())
+                    && healthy(state::port(&self.config.state_dir, id)),
+                error: None,
+            },
+            None => self.look(id),
+        };
+        self.record(id, seen, Some(looked));
+        self.note_slow_boot(id);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
+    fn probe_due(&self) {
+        let due: Vec<String> = {
+            let machines = locked(&self.machines);
+            if machines.closed {
+                return;
+            }
+            machines
+                .entries
+                .iter()
+                .filter(|(_, entry)| {
+                    probe_every(entry)
+                        .is_some_and(|every| entry.probed.is_none_or(|at| at.elapsed() >= every))
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        for id in due {
+            self.probe(&id);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the machine's state as last recorded, looked at now only when nothing has been recorded yet.
+    fn known_state(&self, id: &str) -> anyhow::Result<State> {
+        let recorded = locked(&self.machines)
+            .entries
+            .get(id)
+            .and_then(|e| e.seen.clone());
+        let seen = recorded.unwrap_or_else(|| self.observe(id, true));
+        match seen.error {
+            Some(error) => Err(anyhow::anyhow!(error)),
+            None => Ok(seen.state),
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
     pub fn status(&self, id: &str) -> MachineStatus {
         self.report(id).1
     }
 
     fn report(&self, id: &str) -> (State, MachineStatus) {
-        let (action, failed, restarts, started_at) = {
-            let machines = locked(&self.machines);
-            match machines.entries.get(id) {
-                Some(entry) => (
-                    entry.action,
-                    entry.failure.clone(),
-                    entry.restarts,
-                    entry.boot.as_ref().map(|boot| boot.at),
-                ),
-                None => (None, None, 0, None),
-            }
-        };
+        let unseen = locked(&self.machines)
+            .entries
+            .get(id)
+            .is_none_or(|e| e.action.is_none() && e.seen.is_none());
+        let looked = unseen.then(|| self.observe(id, true));
         let port = state::port(&self.config.state_dir, id);
-        let no_failure = failed.is_none();
+        let applied = read_spec(&self.config.state_dir, id);
+        let machines = locked(&self.machines);
+        let entry = machines.entries.get(id);
+        let action = entry.and_then(|e| e.action);
+        let seen = entry.and_then(|e| e.seen.clone()).or(looked);
+        let failed = entry.and_then(|e| e.failure.clone());
+        let state = action
+            .map(Action::state)
+            .or(seen.as_ref().map(|seen| seen.state))
+            .unwrap_or(State::Absent);
         let mut status = MachineStatus {
-            state: State::Absent.to_string(),
+            state: state.to_string(),
             reason: failed
                 .as_ref()
                 .map(|f| f.reason.to_string())
                 .unwrap_or_default(),
-            restarts,
+            restarts: entry.map_or(0, |e| e.restarts),
             port: i32::from(port),
-            message: failed.map(|f| f.message).unwrap_or_default(),
-            starting_ms: started_at
-                .map(|at| i64::try_from(at.elapsed().as_millis()).unwrap_or(i64::MAX))
+            ready: reads_ready(state) && seen.as_ref().is_some_and(|seen| seen.ready),
+            message: failed
+                .as_ref()
+                .map(|f| f.message.clone())
                 .unwrap_or_default(),
+            version: entry.map_or(0, |e| e.version),
             ..MachineStatus::default()
         };
-        if let Some(spec) = read_spec(&self.config.state_dir, id) {
+        if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
         }
-        let state = match action {
-            Some(action) => action.state(),
-            None => match self.observed(id) {
-                Ok(state) => state,
-                Err(e) => {
-                    status.state = State::Unknown.to_string();
-                    if status.message.is_empty() {
-                        status.message = format!("{e:#}");
-                    }
-                    return (State::Unknown, status);
-                }
-            },
-        };
-        status.state = state.to_string();
-        if reads_ready(state) {
-            status.ready = healthy(port);
-            self.watch_boot(id, &mut status, no_failure);
+        if state == State::Unknown && status.message.is_empty() {
+            status.message = seen.and_then(|seen| seen.error).unwrap_or_default();
         }
-        if state == State::Running {
-            if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
-                entry
-                    .health
-                    .observed_running(status.ready, SystemTime::now());
-            }
+        let note = entry
+            .and_then(|e| e.boot.as_ref())
+            .and_then(|boot| boot.note.as_ref())
+            .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
+        if let Some((note, _)) = note {
+            status.message = if status.message.is_empty() {
+                note.clone()
+            } else {
+                format!("{}; {note}", status.message)
+            };
         }
         (state, status)
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the first version this process hands out, taken from the clock, so a version a caller holds from before a runner restart is not handed out again by the new process.
+fn first_version() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| u64::try_from(since.as_micros()).unwrap_or(0))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that probes each machine worth probing at its cadence and records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
+fn probe_until_closed(server: &Weak<Server>, lifetime: &CancellationToken) {
+    while !lifetime.is_cancelled() {
+        let Some(server) = server.upgrade() else {
+            return;
+        };
+        server.probe_due();
+        drop(server);
+        std::thread::sleep(PROBE_TICK);
     }
 }
 
@@ -907,6 +1088,7 @@ impl Drop for Settle<'_> {
         if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
             entry.converging = false;
             entry.action = None;
+            self.server.bump(entry);
         }
         self.server.settled.notify_all();
     }

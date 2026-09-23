@@ -33,13 +33,11 @@ type MachineStatus struct {
 	CPUs      int    `json:"cpus,omitempty"`
 	MemoryMiB int    `json:"memoryMiB,omitempty"`
 	Message   string `json:"message,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: how long ago this runner last asked the
-	// UNIT_BOUNDARY_DESCRIPTION: machine to start, in milliseconds; zero when
-	// UNIT_BOUNDARY_DESCRIPTION: it has not asked since it came up. A machine
-	// UNIT_BOUNDARY_DESCRIPTION: asked recently is about to become ready or
-	// UNIT_BOUNDARY_DESCRIPTION: fail, and is worth watching closely until one
-	// UNIT_BOUNDARY_DESCRIPTION: or the other.
-	StartingMs int64 `json:"startingMs,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this
+	// UNIT_BOUNDARY_DESCRIPTION: status changes. WaitStatus hands it back as
+	// UNIT_BOUNDARY_DESCRIPTION: `since`, and the runner answers once it has
+	// UNIT_BOUNDARY_DESCRIPTION: moved on.
+	Version uint64 `json:"version,omitempty"`
 }
 
 const (

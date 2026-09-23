@@ -24,21 +24,16 @@ import (
 const vmBackendEnv = "PLATFORM_BACKEND"
 
 const (
+	// UNIT_BOUNDARY_DESCRIPTION: how soon an agent is reconciled again when
+	// UNIT_BOUNDARY_DESCRIPTION: its runner could not be reached, which only a
+	// UNIT_BOUNDARY_DESCRIPTION: full reconcile can fix, and how often every
+	// UNIT_BOUNDARY_DESCRIPTION: vm agent is reconciled anyway. A machine on
+	// UNIT_BOUNDARY_DESCRIPTION: its way up is watched by a long poll on its
+	// UNIT_BOUNDARY_DESCRIPTION: runner instead; the health poll is the
+	// UNIT_BOUNDARY_DESCRIPTION: backstop, and the only thing that notices a
+	// UNIT_BOUNDARY_DESCRIPTION: ready guest going quiet.
 	vmReadinessPoll = 3 * time.Second
-	// UNIT_BOUNDARY_DESCRIPTION: how closely a machine is watched while it
-	// UNIT_BOUNDARY_DESCRIPTION: starts, and for how long. The window runs
-	// UNIT_BOUNDARY_DESCRIPTION: from the moment the runner asked the machine
-	// UNIT_BOUNDARY_DESCRIPTION: to start, which it reports, and not from the
-	// UNIT_BOUNDARY_DESCRIPTION: Ready condition's own transition: a wake
-	// UNIT_BOUNDARY_DESCRIPTION: leaves that condition False and changes only
-	// UNIT_BOUNDARY_DESCRIPTION: its reason, so the stamp does not move, and a
-	// UNIT_BOUNDARY_DESCRIPTION: woken agent would be watched no more closely
-	// UNIT_BOUNDARY_DESCRIPTION: than one stuck for hours — which is the case
-	// UNIT_BOUNDARY_DESCRIPTION: this exists for.
-	vmStartingPoll   = 500 * time.Millisecond
-	vmStartingWindow = 20 * time.Second
-
-	vmHealthPoll = time.Minute
+	vmHealthPoll    = time.Minute
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 )
@@ -103,7 +98,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
-	pullAuths, err := r.pullAuths(ctx, append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
+	pullAuths, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace),
+		append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
@@ -131,39 +127,12 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
+	if running && machineComingUp(st) {
+		r.watchMachine(runner, name, st.Version)
+	} else {
+		r.unwatchMachine(name)
+	}
 	return st, true, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a starting machine is reconciled every half second, and every reconcile sends the pull credentials again, so reading the Secrets each time would be several API reads a second for every agent that is booting, multiplied by a whole fleet on a roll. The documents are kept per list of Secret names for as long as the health poll, which is also about how soon a rotated Secret reaches the next fetch. A read that fails is not kept, so the next reconcile tries again. Entries past that age are dropped on the way, so an Agent that is gone leaves nothing behind.
-func (r *AgentReconciler) pullAuths(ctx context.Context, names []string) ([]string, error) {
-	key := strings.Join(names, "\x00")
-	r.pullAuthMu.Lock()
-	for k, memo := range r.pullAuthMemo {
-		if time.Since(memo.at) > vmHealthPoll {
-			delete(r.pullAuthMemo, k)
-		}
-	}
-	memo, ok := r.pullAuthMemo[key]
-	r.pullAuthMu.Unlock()
-	if ok {
-		return memo.docs, nil
-	}
-	docs, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace), names)
-	if err != nil {
-		return nil, err
-	}
-	r.pullAuthMu.Lock()
-	if r.pullAuthMemo == nil {
-		r.pullAuthMemo = map[string]pullAuthMemo{}
-	}
-	r.pullAuthMemo[key] = pullAuthMemo{docs: docs, at: time.Now()}
-	r.pullAuthMu.Unlock()
-	return docs, nil
-}
-
-type pullAuthMemo struct {
-	docs []string
-	at   time.Time
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
@@ -240,6 +209,7 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
 func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) {
+	r.unwatchMachine(name)
 	if !r.config.VM.Enabled {
 		return
 	}
@@ -279,6 +249,7 @@ func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name stri
 }
 
 func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) error {
+	r.unwatchMachine(name)
 	if !r.config.VM.Enabled || owner == "" {
 		return nil
 	}
@@ -309,12 +280,8 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	if r.requeue != nil {
 		poll := vmHealthPoll
-		if !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
+		if !runnerReached {
 			poll = vmReadinessPoll
-			starting := time.Duration(st.StartingMs) * time.Millisecond
-			if st.State == vmrunner.StateCreating || st.State == vmrunner.StateStarting || (starting > 0 && starting < vmStartingWindow) {
-				poll = vmStartingPoll
-			}
 		}
 		r.requeue(agent.Name, poll)
 	}

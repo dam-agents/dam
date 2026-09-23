@@ -69,15 +69,15 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		PullAuths:  []string{`{"auths":{}}`},
 	})
 	matchesTheContract(t, "machine-status", MachineStatus{
-		State:      StateRunning,
-		Reason:     ReasonNotReady,
-		Restarts:   1,
-		Port:       31000,
-		Ready:      true,
-		CPUs:       2,
-		MemoryMiB:  2048,
-		Message:    "up",
-		StartingMs: 1,
+		State:     StateRunning,
+		Reason:    ReasonNotReady,
+		Restarts:  1,
+		Port:      31000,
+		Ready:     true,
+		CPUs:      2,
+		MemoryMiB: 2048,
+		Message:   "up",
+		Version:   1,
 	})
 }
 

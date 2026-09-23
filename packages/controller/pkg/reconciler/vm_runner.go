@@ -142,8 +142,6 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	ready := dep.Status.ReadyReplicas > 0
 	if ready {
 		r.resizeRunnerPod(ctx, owner, demand.memoryMiB)
-	} else {
-		r.runnerResized.Delete(owner)
 	}
 	return client, ready, nil
 }

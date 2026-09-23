@@ -1,11 +1,15 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+
+use serde::Deserialize;
 
 use crate::api::MachineSpec;
 use crate::server::{Rejected, Server};
@@ -109,12 +113,32 @@ async fn list(State(api): State<Api>, headers: HeaderMap) -> Response {
     }
 }
 
-async fn status(State(api): State<Api>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+// UNIT_BOUNDARY_DESCRIPTION: a status read that names `wait`, in seconds, and the `since` version the caller last saw waits until the machine's status version differs from it, or until the wait ends. Without `wait` it answers at once.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StatusWait {
+    wait: u64,
+    since: u64,
+}
+
+async fn status(
+    State(api): State<Api>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    query: Result<Query<StatusWait>, QueryRejection>,
+) -> Response {
     if !authorized(&api, &headers) {
         return unauthorized();
     }
+    let Ok(Query(asked)) = query else {
+        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
+    };
     let server = api.server.clone();
-    match blocking(move || server.get(&id)).await {
+    let read = move || match asked.wait {
+        0 => server.get(&id),
+        wait => server.wait(&id, asked.since, Duration::from_secs(wait)),
+    };
+    match blocking(read).await {
         Ok(Ok(status)) => Json(status).into_response(),
         Ok(Err(e)) => rejected(e),
         Err(response) => response,
@@ -347,6 +371,43 @@ mod tests {
             body.trim(),
             "[]",
             "an empty list must be [] as the Go client decodes it, not null"
+        );
+    }
+
+    // TEST_SCENARIO: the controller's watcher reads a machine's status with `wait` and `since`. A read naming the version it already holds is answered once the wait ends, with that version; one naming another version is answered at once; a query that is not two numbers is the caller's mistake.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_status_read_can_wait_for_a_change() {
+        let api = api("wait");
+        let (_, body) = call(&api, "PUT", "/machines/m1", Some("secret"), SPEC).await;
+        let held: MachineStatus = serde_json::from_str(&body).unwrap();
+        assert_ne!(held.version, 0);
+
+        let started = std::time::Instant::now();
+        let path = format!("/machines/m1?wait=1&since={}", held.version);
+        let (status, body) = call(&api, "GET", &path, Some("secret"), "").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            started.elapsed() >= Duration::from_secs(1),
+            "the read did not wait"
+        );
+        let answer: MachineStatus = serde_json::from_str(&body).unwrap();
+        assert_eq!(answer.version, held.version);
+
+        let started = std::time::Instant::now();
+        let path = format!("/machines/m1?wait=10&since={}", held.version - 1);
+        let (status, _) = call(&api, "GET", &path, Some("secret"), "").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a stale version waited"
+        );
+
+        assert_eq!(
+            call(&api, "GET", "/machines/m1?wait=soon", Some("secret"), "").await,
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid wait or since\n".to_string()
+            )
         );
     }
 

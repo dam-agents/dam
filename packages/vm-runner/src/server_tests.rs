@@ -217,6 +217,33 @@ impl Harness {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`.
+    async fn until(
+        &self,
+        id: &str,
+        what: &str,
+        done: impl Fn(&MachineStatus) -> bool,
+    ) -> MachineStatus {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut status = self.server.status(id);
+        while !done(&status) {
+            assert!(
+                Instant::now() < deadline,
+                "the machine never became {what}: {status:?}"
+            );
+            status = self.wait(id, status.version, Duration::from_secs(1)).await;
+        }
+        status
+    }
+
+    async fn wait(&self, id: &str, since: u64, timeout: Duration) -> MachineStatus {
+        let server = self.server.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || server.wait(&id, since, timeout).unwrap())
+            .await
+            .unwrap()
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running.
     async fn wait_for_call(&self, call: &str) {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1023,7 +1050,7 @@ async fn a_failed_boot_carries_the_redacted_console() {
     assert!(!status.message.contains(PROXY));
 }
 
-// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it. A probe the guest misses after that is a health blip: no note, and no starting time.
+// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the prober writes a note saying it is stuck, with the console, and keeps the same note rather than changing it on every probe. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it. A probe the guest misses after that is a health blip, with no note.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guest_that_never_answers_is_explained() {
     let h = Harness::new("slow-boot");
@@ -1031,48 +1058,126 @@ async fn a_guest_that_never_answers_is_explained() {
     h.server.put("m1", spec(true)).unwrap();
     assert!(h.settle("m1").await.message.is_empty());
     age_boot(&h, "m1");
-    let stuck = h.server.status("m1");
+    let stuck = h
+        .until("m1", "noted as stuck", |s| !s.message.is_empty())
+        .await;
     assert!(!stuck.ready);
     assert_eq!(
         stuck.message,
         format!("{SLOW_BOOT}\nthe guest console ends:\nwaiting for disk")
     );
     *locked(&h.fake.console) = "something else".into();
-    assert_eq!(h.server.status("m1").message, stuck.message);
+    h.server.probe("m1");
+    let again = h.server.status("m1");
+    assert_eq!(again.message, stuck.message);
+    assert_eq!(
+        again.version, stuck.version,
+        "the same note is not a change"
+    );
 
     let up = guest(h.base);
-    let ready = h.server.status("m1");
-    assert!(ready.ready && ready.message.is_empty(), "{ready:?}");
+    let ready = h.until("m1", "ready", |s| s.ready).await;
+    assert!(ready.message.is_empty(), "{ready:?}");
     up.store(false, Ordering::SeqCst);
     let scrape = h.server.metrics_text();
     assert!(
         scrape.contains("platform_vm_runner_machine_ready_seconds_count{op=\"create\"} 1"),
         "{scrape}"
     );
+    h.server.probe("m1");
     let down = h.server.status("m1");
     assert!(!down.ready);
     assert_eq!(
         down.message, "",
         "a missed probe after the answer is not a stuck boot"
     );
-    assert_eq!(
-        down.starting_ms, 0,
-        "a machine that answered is no longer starting"
-    );
 }
 
-// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine reports no starting time and no stuck-boot note, however long ago it was asked to start.
+// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine carries no stuck-boot note, however long ago it was asked to start.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stop_ends_the_boot_wait() {
     let h = Harness::new("stop-ends-wait");
     h.server.put("m1", spec(true)).unwrap();
     assert!(!h.settle("m1").await.ready);
     age_boot(&h, "m1");
+    h.until("m1", "noted as stuck", |s| !s.message.is_empty())
+        .await;
     h.server.put("m1", spec(false)).unwrap();
     let stopped = h.settle("m1").await;
     assert_eq!(stopped.state, STATE_STOPPED);
-    assert_eq!(stopped.starting_ms, 0, "a stopped machine is not starting");
     assert_eq!(stopped.message, "");
+    assert!(h.machine("m1", |m| m.boot.is_none()));
+}
+
+// TEST_SCENARIO: the controller watches a booting machine by holding the last status version it saw. A read that names an older version is answered at once, without waiting.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wait_on_an_old_version_answers_at_once() {
+    let h = Harness::new("wait-stale");
+    h.server.put("m1", spec(false)).unwrap();
+    let current = h.settle("m1").await;
+    assert_ne!(current.version, 0, "a known machine has a version");
+    let started = Instant::now();
+    let answer = h
+        .wait("m1", current.version - 1, Duration::from_secs(5))
+        .await;
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the read waited"
+    );
+    assert_eq!(answer.version, current.version);
+}
+
+// TEST_SCENARIO: a read that names the current version waits, and is answered as soon as something the status reports changes — here the machine being asked to start — with the new version.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wait_on_the_current_version_answers_on_the_next_change() {
+    let h = Harness::new("wait-change");
+    h.server.put("m1", spec(false)).unwrap();
+    let before = h.settle("m1").await;
+    let server = h.server.clone();
+    let waiting = tokio::task::spawn_blocking(move || {
+        server
+            .wait("m1", before.version, Duration::from_secs(10))
+            .unwrap()
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!waiting.is_finished(), "the read did not wait for a change");
+    let started = Instant::now();
+    h.server.put("m1", spec(true)).unwrap();
+    let answer = waiting.await.unwrap();
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_ne!(answer.version, before.version);
+}
+
+// TEST_SCENARIO: a read that sees no change answers when its wait ends, with the version it was given, so the caller can simply ask again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wait_with_no_change_answers_when_it_ends() {
+    let h = Harness::new("wait-timeout");
+    h.server.put("m1", spec(false)).unwrap();
+    let before = h.settle("m1").await;
+    let started = Instant::now();
+    let answer = h
+        .wait("m1", before.version, Duration::from_millis(300))
+        .await;
+    assert!(started.elapsed() >= Duration::from_millis(300));
+    assert_eq!(answer.version, before.version);
+    assert_eq!(answer.state, STATE_ABSENT);
+}
+
+// TEST_SCENARIO: a guest that comes up after its start returned is noticed by the prober and not by the status read, and a read waiting on the machine is answered with it ready. This is the path by which the controller hears that a wake finished.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
+    let h = Harness::new("prober");
+    h.server.put("m1", spec(true)).unwrap();
+    let booted = h.settle("m1").await;
+    assert!(!booted.ready);
+    let _guest = guest(h.base);
+    let started = Instant::now();
+    let ready = h.until("m1", "ready", |s| s.ready).await;
+    assert!(
+        started.elapsed() < BOOT_PROBE * 4,
+        "a booting machine was not probed at the boot cadence"
+    );
+    assert_ne!(ready.version, booted.version);
 }
 
 // TEST_SCENARIO: a create is counted as what it was — one operation, one start, one image the cache did not hold and one fetch — and the memory gauges read the runner as it stands, so the scrape after a boot shows the machine it booted.

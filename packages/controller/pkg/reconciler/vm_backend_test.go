@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +24,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
@@ -39,7 +40,12 @@ type fakeNode struct {
 	statuses map[string]vmrunner.MachineStatus
 	deleted  []string
 	puts     []vmrunner.MachineSpec
+	version  uint64
+	waits    int
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
+const fakeNodeWait = 20 * time.Millisecond
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	n := &fakeNode{specs: map[string]vmrunner.MachineSpec{}, statuses: map[string]vmrunner.MachineStatus{}}
@@ -67,11 +73,23 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			n.puts = append(n.puts, spec)
 			st, ok := n.statuses[id]
 			if !ok {
-				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000}
+				n.version++
+				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000, Version: n.version}
 				n.statuses[id] = st
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			if r.URL.Query().Has("wait") {
+				n.waits++
+				since, err := strconv.ParseUint(r.URL.Query().Get("since"), 10, 64)
+				require.NoError(t, err)
+				n.mu.Unlock()
+				deadline := time.Now().Add(fakeNodeWait)
+				for time.Now().Before(deadline) && r.Context().Err() == nil && n.current(id) == since {
+					time.Sleep(time.Millisecond)
+				}
+				n.mu.Lock()
+			}
 			require.NoError(t, json.NewEncoder(w).Encode(n.statuses[id]))
 		case http.MethodDelete:
 			n.deleted = append(n.deleted, id)
@@ -83,10 +101,25 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	return n, srv
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
 func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.version++
+	st.Version = n.version
 	n.statuses[id] = st
+}
+
+func (n *fakeNode) current(id string) uint64 {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.statuses[id].Version
+}
+
+func (n *fakeNode) waitingReads() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.waits
 }
 
 func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
@@ -207,7 +240,33 @@ func leafSecret() *corev1.Secret {
 	}
 }
 
-func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *[]time.Duration) {
+// UNIT_BOUNDARY_DESCRIPTION: the requeues a reconciler asked for, in order. A machine watch asks from its own goroutine, so the log is locked.
+type requeueLog struct {
+	mu    sync.Mutex
+	asked []time.Duration
+}
+
+func (l *requeueLog) add(_ string, after time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.asked = append(l.asked, after)
+}
+
+func (l *requeueLog) all() []time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]time.Duration(nil), l.asked...)
+}
+
+func (l *requeueLog) last() time.Duration {
+	all := l.all()
+	if len(all) == 0 {
+		return -1
+	}
+	return all[len(all)-1]
+}
+
+func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *requeueLog) {
 	t.Helper()
 	node, srv := newFakeNode(t)
 	if agent.Labels == nil {
@@ -220,9 +279,19 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
-	var requeued []time.Duration
-	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
-	return r, node, &requeued
+	requeued := &requeueLog{}
+	r.WithRequeue(requeued.add)
+	t.Cleanup(func() { stopMachineWatches(r) })
+	return r, node, requeued
+}
+
+func stopMachineWatches(r *AgentReconciler) {
+	r.machineWatchMu.Lock()
+	defer r.machineWatchMu.Unlock()
+	for name, w := range r.machineWatches {
+		w.cancel()
+		delete(r.machineWatches, name)
+	}
 }
 
 // TEST_SCENARIO: a private image on the vm backend is fetched by the runner, not by the kubelet, so the pull Secrets a pod would list have to reach the runner. They are the Agent's own imagePullSecretRef first and the install default after it, one document each, so the runner can fall back from a stale Agent credential to the default for the same registry as the kubelet would. They travel on the machine spec and nowhere else: not in the guest's environment.
@@ -254,33 +323,6 @@ func TestAVMAgentsPullSecretsReachTheRunnerInPodOrder(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: a booting machine is reconciled every half second, and every reconcile sends the pull credentials. Reading the Secrets each time would put several API reads a second behind every booting agent. The credentials are kept for the length of the health poll, so a burst of reconciles reads each Secret once.
-func TestAStartingMachinesPollDoesNotReadThePullSecretsEachTime(t *testing.T) {
-	agent := vmAgentCR()
-	agent.Spec.ImagePullSecretRef = "my-agent-pull"
-	r, node, _ := setupVMReconciler(t, agent)
-	client := r.client.(*fake.Clientset)
-	_, err := client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-pull", Namespace: "test-agents"},
-		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`)},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-	reads := 0
-	client.PrependReactor("get", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.(k8stesting.GetAction).GetName() == "my-agent-pull" {
-			reads++
-		}
-		return false, nil, nil
-	})
-
-	for range 5 {
-		require.NoError(t, r.Reconcile(context.Background(), agent))
-	}
-
-	assert.Equal(t, 1, reads, "five reconciles, one read of the pull Secret")
-	assert.Len(t, node.spec("my-agent").PullAuths, 1, "and every reconcile still sent the credential")
-}
-
 // TEST_SCENARIO: an Agent with no pull Secret, on an install with no default, fetches anonymously. That was the only behaviour before, and it must stay the same, with no empty credential document on the wire.
 func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 	agent := vmAgentCR()
@@ -291,7 +333,7 @@ func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -327,14 +369,65 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, []time.Duration{vmStartingPoll}, *requeued,
-		"a machine whose creation is still in flight is watched closely — its guest can answer before that call returns")
+	assert.True(t, r.watchingMachine("my-agent"), "a machine whose creation is still in flight is watched — its guest can answer before that call returns")
+	assert.Equal(t, []time.Duration{vmHealthPoll}, requeued.all(), "and the Agent is not reconciled again until something changes")
 
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	markGatewayReady(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond,
+		"the guest answering ends the watch")
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	assert.Equal(t, vmHealthPoll, (*requeued)[len(*requeued)-1], "a ready machine is still polled, just slower — nothing else would notice its guest dying")
+	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
+	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+}
+
+// TEST_SCENARIO: a machine on its way up is watched with a long poll on its runner, not by running the whole reconcile twice a second. However often the Agent reconciles, it has one watch; while the status holds still nothing is requeued; and the moment the status changes — the guest answering — the Agent is requeued at once, and the watch ends so the reconcile that follows can publish the change.
+func TestAMachineComingUpIsWatchedAndAChangeRequeuesTheAgent(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, r.watchingMachine("my-agent"))
+	first := r.machineWatches["my-agent"]
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Same(t, first, r.machineWatches["my-agent"], "a second reconcile does not start a second watch")
+
+	require.Eventually(t, func() bool { return node.waitingReads() >= 3 }, 5*time.Second, time.Millisecond,
+		"the watch asks again each time a read ends with no change")
+	assert.NotContains(t, requeued.all(), time.Duration(0), "an unchanged status requeues nothing")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.Eventually(t, func() bool { return slices.Contains(requeued.all(), time.Duration(0)) }, 5*time.Second, time.Millisecond,
+		"a change requeues the Agent at once")
+	assert.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond)
+}
+
+// TEST_SCENARIO: a watch belongs to a machine on its way up and ends with it. Hibernating the Agent or deleting it ends the watch without a requeue, since whatever did that reconciles the Agent itself; a machine that failed is not watched, and waits for the health poll.
+func TestAMachineWatchEndsWhenTheAgentStopsOrGoes(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, r.watchingMachine("my-agent"))
+	require.NoError(t, r.HaltMachine(ctx, testOwner, "my-agent"))
+	assert.False(t, r.watchingMachine("my-agent"), "hibernating ends the watch")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	time.Sleep(10 * fakeNodeWait)
+	assert.NotContains(t, requeued.all(), time.Duration(0), "an ended watch requeues nothing")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, r.watchingMachine("my-agent"))
+	r.deleteMachine(ctx, "my-agent", testOwner)
+	assert.False(t, r.watchingMachine("my-agent"), "deleting ends the watch")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000, Reason: vmrunner.ReasonBootFailed, Message: "kernel panic"})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.False(t, r.watchingMachine("my-agent"), "a failed machine is not on its way up")
+	assert.Equal(t, vmHealthPoll, requeued.last())
 }
 
 func markGatewayReady(t *testing.T, r *AgentReconciler) {
@@ -1089,31 +1182,6 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	require.NotNil(t, dep.Spec.Template.Spec.EnableServiceLinks)
 	assert.False(t, *dep.Spec.Template.Spec.EnableServiceLinks,
 		"service links would inject one env var set per sibling agent Service; the runner reads none of them")
-}
-
-// TEST_SCENARIO: the wait between a machine answering and the platform saying so is the last of a wake the user feels, and at a three-second poll it is most of a wake that now takes seconds. A machine the runner has just asked to start is watched closely; one unready long after it was asked is not about to become ready, so it is watched loosely and costs the runner a subprocess only occasionally. The clock is the runner's own — a wake leaves the Ready condition False and changes only its reason, so that condition's stamp does not move and cannot tell a woken machine from one stuck for hours.
-func TestAStartingMachineIsWatchedCloselyAndAStuckOneIsNot(t *testing.T) {
-	agent := vmAgentCR()
-	r, _, requeued := setupVMReconciler(t, agent)
-	ctx := context.Background()
-
-	last := func() time.Duration { return (*requeued)[len(*requeued)-1] }
-
-	require.NoError(t, r.publishVMReadiness(ctx, agent,
-		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false, StartingMs: 1_200}, true))
-	assert.Equal(t, vmStartingPoll, last(),
-		"a machine asked to start a moment ago is watched closely")
-
-	require.NoError(t, r.publishVMReadiness(ctx, agent,
-		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: false,
-			StartingMs: (vmStartingWindow + time.Minute).Milliseconds()}, true))
-	assert.Equal(t, vmReadinessPoll, last(),
-		"one still unready long afterwards is not about to be, and is watched loosely")
-
-	require.NoError(t, r.publishVMReadiness(ctx, agent,
-		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, StartingMs: 1_200}, true))
-	assert.Equal(t, vmHealthPoll, last(),
-		"and once it answers it is only checked for health")
 }
 
 // TEST_SCENARIO: a runner with no ready replica reports nothing about its machines, so the reconcile gets an empty machine status. The runner keeps its restart counter in memory and reports it again once it is back. Publishing the empty status as zero restarts would make that return read as a rise, and the UI would announce a restart that never happened.
