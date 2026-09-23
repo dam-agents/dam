@@ -10,17 +10,20 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, REASON_OUT_OF_CAPACITY, STATE_ABSENT, STATE_RESTARTING,
-    STATE_RUNNING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
+    MachineSpec, MachineStatus, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY, STATE_ABSENT,
+    STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    STATE_UNKNOWN,
 };
 use crate::capacity::Capacity;
+use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::embedded::STORAGE_NOT_GROWABLE;
 use crate::fetch::{self, egress_changed, failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::ImageCache;
 use crate::launch::{launch_from_archive, read_launch};
+use crate::metrics::{Gauges, Metrics};
 use crate::plan::{self, admissible, create_only_drift, needs_restart, reads_ready, Health};
-use crate::runtime::{grown_storage, Machine, Runtime};
+use crate::runtime::{grown_storage, redact, Machine, Runtime};
 use crate::share::{write_share, SHARE_DIR};
 use crate::state::{self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec};
 
@@ -70,6 +73,12 @@ struct Inner {
     health: HashMap<String, Health>,
     last_state: HashMap<String, (&'static str, Instant)>,
     started_at: HashMap<String, Instant>,
+    // UNIT_BOUNDARY_DESCRIPTION: the start each machine was last asked for, until its guest first answers, so the time to that answer is recorded once and under the operation that asked.
+    awaiting: HashMap<String, &'static str>,
+    // UNIT_BOUNDARY_DESCRIPTION: the note a machine that is stuck booting carries, and when it was written. Kept rather than rebuilt on every status, because the controller polls a starting machine twice a second and a message that changed each time would be a status write each time.
+    slow_boots: HashMap<String, (String, Instant)>,
+    // UNIT_BOUNDARY_DESCRIPTION: every env value this runner has been given for each machine. An operator's Secret reaches the guest in its environment, and a guest that prints its environment puts those values on the console; the console outlives a spec change, so values a machine no longer has are kept too.
+    secrets: HashMap<String, Vec<String>>,
 }
 
 pub struct Server {
@@ -83,6 +92,7 @@ pub struct Server {
     ports: Mutex<()>,
     lifetime: CancellationToken,
     work: TaskTracker,
+    metrics: Metrics,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a request the runner refuses outright, before planning anything, with the HTTP status that says whose mistake it is.
@@ -140,6 +150,7 @@ impl Server {
             ports: Mutex::new(()),
             lifetime,
             work: TaskTracker::new(),
+            metrics: Metrics::default(),
         });
         for id in state::machine_ids(&server.config.state_dir)? {
             let port = state::port(&server.config.state_dir, &id);
@@ -192,6 +203,7 @@ impl Server {
             return Err(Rejected::bad_request("invalid machine id"));
         }
         admissible(&spec).map_err(Rejected::bad_request)?;
+        self.remember_secrets(id, &spec);
         let mut status = self.status(id);
         let applied = read_spec(&self.config.state_dir, id);
         let dead_for_long = self.dead_for_long(id);
@@ -206,6 +218,7 @@ impl Server {
         };
         if planned.op != STATE_STOPPING {
             if let Err(e) = self.room_for(id, &spec) {
+                self.metrics.refused();
                 let message = e.to_string();
                 locked(&self.inner).failures.insert(
                     id.to_string(),
@@ -274,6 +287,9 @@ impl Server {
             inner.health.remove(id);
             inner.last_state.remove(id);
             inner.started_at.remove(id);
+            inner.awaiting.remove(id);
+            inner.slow_boots.remove(id);
+            inner.secrets.remove(id);
         }
         self.forwarder.unpublish(id);
         self.publish_holders();
@@ -319,27 +335,43 @@ impl Server {
             let _turn = server.wait_turn(&id, seq);
             let lock = server.lock(&id);
             let _held = locked(&lock);
-            let gone = locked(&server.inner).gens.get(&id).copied().unwrap_or_default() != generation;
-            let result = if gone { Ok(()) } else { work() };
+            let gone = locked(&server.inner)
+                .gens
+                .get(&id)
+                .copied()
+                .unwrap_or_default()
+                != generation;
+            let result = if gone {
+                Ok(())
+            } else {
+                let started = Instant::now();
+                let result = work();
+                server
+                    .metrics
+                    .operation(op, started.elapsed(), result.is_ok());
+                result
+            };
+            let failed = result.err().map(|e| {
+                let mut message = format!("{e:#}");
+                tracing::error!(machine = %id, op, error = %message, "machine operation failed");
+                let reason = failure_reason(&e);
+                server.metrics.failed(op, reason);
+                if reason == REASON_BOOT_FAILED {
+                    message = with_console(&message, &server.console_tail(&id));
+                }
+                Failed { message, reason }
+            });
             let mut inner = locked(&server.inner);
             if inner.seq.get(&id) == Some(&seq) {
                 inner.pending.remove(&id);
                 inner.committing.remove(&id);
             }
-            match result {
-                Ok(()) => {
+            match failed {
+                None => {
                     inner.failures.remove(&id);
                 }
-                Err(e) => {
-                    let message = format!("{e:#}");
-                    tracing::error!(machine = %id, op, error = %message, "machine operation failed");
-                    inner.failures.insert(
-                        id,
-                        Failed {
-                            message,
-                            reason: failure_reason(&e),
-                        },
-                    );
+                Some(failed) => {
+                    inner.failures.insert(id, failed);
                 }
             }
         });
@@ -427,6 +459,7 @@ impl Server {
         if port != 0 {
             self.forwarder.publish(id, port)?;
         }
+        let mut op = STATE_STARTING;
         if state == STATE_RUNNING
             && (restart || applied.as_ref().is_none_or(|a| needs_restart(a, spec)))
         {
@@ -435,7 +468,9 @@ impl Server {
                     .restarts
                     .entry(id.to_string())
                     .or_default() += 1;
+                self.metrics.unhealthy_restart();
             }
+            op = STATE_RESTARTING;
             self.forget_state(id);
             self.runtime.stop(id)?;
             state = STATE_STOPPED;
@@ -443,8 +478,7 @@ impl Server {
         if state == STATE_STOPPED {
             self.forget_state(id);
             self.runtime.update(id, spec, applied.as_ref())?;
-            self.mark_starting(id);
-            self.runtime.start(id)?;
+            self.start_machine(id, op)?;
         }
         write_spec(&self.config.state_dir, id, spec)
     }
@@ -462,16 +496,28 @@ impl Server {
         let base = self.cache.entry(&image);
         let archive = PathBuf::from(format!("{}.tar", base.display()));
         let mut launch = read_launch(&base)?;
+        self.metrics.lookup(launch.is_some());
         let mut cached: Option<PathBuf> = None;
         if launch.is_none() {
             let archived = archive.exists();
             if !self.config.crane.is_empty() {
-                match self.cache.fetch(
+                let started = Instant::now();
+                let fetched = self.cache.fetch(
                     &image,
                     &self.images_in_use(Some(id)),
                     &self.images_in_use(None),
-                ) {
-                    Ok(()) => launch = read_launch(&base)?,
+                );
+                self.metrics.fetched(started.elapsed(), fetched.is_ok());
+                match fetched {
+                    Ok(trim) => {
+                        for bytes in trim.freed {
+                            self.metrics.evicted(bytes);
+                        }
+                        if let Some(used) = trim.used {
+                            self.metrics.cache_size(used);
+                        }
+                        launch = read_launch(&base)?;
+                    }
                     Err(e) if archived => {
                         tracing::warn!(image = %image, error = %format!("{e:#}"), "image cache: keeping the archive after a failed unpack");
                     }
@@ -508,8 +554,107 @@ impl Server {
             },
         )?;
         self.forwarder.publish(id, port)?;
-        self.mark_starting(id);
-        self.runtime.start(id)
+        self.start_machine(id, STATE_CREATING)
+    }
+
+    fn start_machine(&self, id: &str, op: &'static str) -> anyhow::Result<()> {
+        self.mark_starting(id, op);
+        let started = Instant::now();
+        let result = self.runtime.start(id);
+        self.metrics.start(op, started.elapsed(), result.is_ok());
+        result
+    }
+
+    fn remember_secrets(&self, id: &str, spec: &MachineSpec) {
+        let mut inner = locked(&self.inner);
+        let known = inner.secrets.entry(id.to_string()).or_default();
+        for value in spec.env.values() {
+            if !known.contains(value) {
+                known.push(value.clone());
+            }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
+    fn console_tail(&self, id: &str) -> String {
+        let remembered = locked(&self.inner).secrets.get(id).cloned();
+        let applied = read_spec(&self.config.state_dir, id);
+        if remembered.is_none() && applied.is_none() {
+            return String::new();
+        }
+        let mut secrets = remembered.unwrap_or_default();
+        secrets.extend(applied.into_iter().flat_map(|spec| spec.env.into_values()));
+        redact(
+            &self.runtime.console_tail(id),
+            secrets.iter().map(String::as_str),
+        )
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
+    fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
+        let (op, note, started_at) = {
+            let mut inner = locked(&self.inner);
+            let op = inner.awaiting.get(id).copied();
+            if status.ready {
+                inner.awaiting.remove(id);
+                inner.slow_boots.remove(id);
+            }
+            (
+                op,
+                inner.slow_boots.get(id).cloned(),
+                inner.started_at.get(id).copied(),
+            )
+        };
+        let Some(at) = started_at else {
+            return;
+        };
+        if status.ready {
+            if let Some(op) = op {
+                self.metrics.became_ready(op, at.elapsed());
+            }
+            return;
+        }
+        if !no_failure || at.elapsed() < SLOW_BOOT_AFTER {
+            return;
+        }
+        let note = match note {
+            Some((message, noted)) if noted.elapsed() < SLOW_BOOT_AFTER => message,
+            _ => {
+                let message = with_console(SLOW_BOOT, &self.console_tail(id));
+                let mut inner = locked(&self.inner);
+                if inner.started_at.get(id) == Some(&at) {
+                    inner
+                        .slow_boots
+                        .insert(id.to_string(), (message.clone(), Instant::now()));
+                }
+                message
+            }
+        };
+        if status.message.is_empty() {
+            status.message = note;
+        } else {
+            status.message = format!("{}; {note}", status.message);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the scrape, with the gauges read as the runner stands now.
+    pub fn metrics_text(&self) -> String {
+        let committing = locked(&self.inner).committing.clone();
+        let committed = Capacity {
+            state_dir: &self.config.state_dir,
+            limit_mib: self.config.memory_mib,
+            reserve_mib: self.config.reserve_mib,
+        }
+        .committed(None, &committing, &|other: &str| {
+            matches!(self.machine_state(other), Ok(STATE_RUNNING))
+        })
+        .ok();
+        self.metrics.render(&Gauges {
+            budget_bytes: self.config.image_budget,
+            limit_mib: self.config.memory_mib,
+            reserve_mib: self.config.reserve_mib,
+            committed_mib: committed,
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the cache entries this runner's machines hold, read from their specs on disk rather than tracked alongside them, because a spec outlives the process that wrote it. Both names of each image are held, the tree and the archive an earlier release cached.
@@ -554,10 +699,11 @@ impl Server {
             .is_some_and(|h| h.dead_for_long(SystemTime::now()))
     }
 
-    fn mark_starting(&self, id: &str) {
-        locked(&self.inner)
-            .started_at
-            .insert(id.to_string(), Instant::now());
+    fn mark_starting(&self, id: &str, op: &'static str) {
+        let mut inner = locked(&self.inner);
+        inner.started_at.insert(id.to_string(), Instant::now());
+        inner.awaiting.insert(id.to_string(), op);
+        inner.slow_boots.remove(id);
     }
 
     fn forget_state(&self, id: &str) {
@@ -590,6 +736,7 @@ impl Server {
             )
         };
         let port = state::port(&self.config.state_dir, id);
+        let no_failure = failed.is_none();
         let mut status = MachineStatus {
             state: STATE_ABSENT.to_string(),
             reason: failed
@@ -623,6 +770,7 @@ impl Server {
         }
         if reads_ready(&status.state) {
             status.ready = healthy(port);
+            self.watch_boot(id, &mut status, no_failure);
         }
         if status.state == STATE_RUNNING {
             locked(&self.inner)
