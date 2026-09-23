@@ -59,39 +59,53 @@ const EMBEDDED_RE =
   /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)|<context>([\s\S]*?)<\/context>|<new-messages>([\s\S]*?)<\/new-messages>/g;
 const SPEAKER_LINE_RE = /^\[ts [^\]]+\] <@[^>]+>: |^\[@[^\]]+\] /;
 
-function steeredMessages(block: string): string {
+function steeredMessages(block: string): string[] {
   const lines = block.split("\n");
   const first = lines.findIndex((line) => SPEAKER_LINE_RE.test(line));
-  return (first === -1 ? block : lines.slice(first).join("\n")).trim();
-}
-
-function embeddedPart(m: RegExpMatchArray): MessagePart | null {
-  const [, ref, mention, mentionPath, history, steered] = m;
-  if (history !== undefined) return { kind: "history", text: history.trim() };
-  if (steered !== undefined) {
-    const text = steeredMessages(steered);
-    return text ? { kind: "text", text } : null;
+  if (first === -1) return [block.trim()].filter(Boolean);
+  const messages: string[] = [];
+  for (const line of lines.slice(first)) {
+    if (SPEAKER_LINE_RE.test(line)) messages.push(line);
+    else messages[messages.length - 1] += `\n${line}`;
   }
-  return { kind: "file", name: ref ?? mention ?? mentionPath, mimeType: "" };
+  return messages.map((m) => m.trim());
 }
 
-function parseUserText(text: string): MessagePart[] {
-  const parts: MessagePart[] = [];
+function parseUserText(text: string): MessagePart[][] {
+  const bubbles: MessagePart[][] = [[]];
+  const pushText = (seg: string) => {
+    const trimmed = seg.trim();
+    if (trimmed)
+      bubbles[bubbles.length - 1].push({ kind: "text", text: trimmed });
+  };
   let last = 0;
   for (const m of text.matchAll(EMBEDDED_RE)) {
-    if (m.index > last) {
-      const seg = text.slice(last, m.index).trim();
-      if (seg) parts.push({ kind: "text", text: seg });
+    pushText(text.slice(last, m.index));
+    const [, ref, mention, mentionPath, history, steered] = m;
+    if (history !== undefined) {
+      bubbles[bubbles.length - 1].push({
+        kind: "history",
+        text: history.trim(),
+      });
+    } else if (steered !== undefined) {
+      bubbles.push(
+        ...steeredMessages(steered).map((t): MessagePart[] => [
+          { kind: "text", text: t },
+        ]),
+        [],
+      );
+    } else {
+      bubbles[bubbles.length - 1].push({
+        kind: "file",
+        name: ref ?? mention ?? mentionPath,
+        mimeType: "",
+      });
     }
-    const part = embeddedPart(m);
-    if (part) parts.push(part);
     last = m.index + m[0].length;
   }
-  if (last < text.length) {
-    const seg = text.slice(last).trim();
-    if (seg) parts.push({ kind: "text", text: seg });
-  }
-  return parts.length > 0 ? parts : [{ kind: "text", text }];
+  pushText(text.slice(last));
+  const filled = bubbles.filter((b) => b.length > 0);
+  return filled.length > 0 ? filled : [[{ kind: "text", text }]];
 }
 
 export function applyUpdate(
@@ -384,21 +398,26 @@ function handleUserChunk(
   const queued = u._meta?.queued === true;
   const mid = u.messageId ?? null;
 
-  let parts: MessagePart[] | null = null;
+  let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
     const txt = stripPlumbing(u.content.text);
-    if (txt) parts = parseUserText(txt);
+    if (txt) bubbles = parseUserText(txt);
   } else if (u.content.type === "image") {
-    parts = [
-      { kind: "image", data: u.content.data, mimeType: u.content.mimeType },
+    bubbles = [
+      [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
     ];
   }
 
-  if (parts === null) return queued ? messages : closeActiveAssistant(messages);
+  if (bubbles === null)
+    return queued ? messages : closeActiveAssistant(messages);
 
-  if (queued) return appendQueuedUser(messages, mid, parts, at);
+  if (queued) return appendQueuedUser(messages, mid, bubbles.flat(), at);
 
-  return appendOrExtendUser(closeActiveAssistant(messages), mid, parts, at);
+  return bubbles.reduce(
+    (acc, parts, i) =>
+      appendOrExtendUser(acc, i === 0 ? mid : mid && `${mid}:${i}`, parts, at),
+    closeActiveAssistant(messages),
+  );
 }
 
 function handleAgentChunk(

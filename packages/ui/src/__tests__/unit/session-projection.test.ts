@@ -290,7 +290,7 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[1].streaming).toBe(false);
   });
 
-  test("a message steered into a running turn shows as a user message", () => {
+  test("each message steered into a running turn shows as its own user message", () => {
     const start: Message[] = [
       userMsg("u1", "go"),
       assistantMsg("a1", "working", true),
@@ -311,13 +311,11 @@ describe("applyUpdate — turn boundaries", () => {
         ].join("\n"),
       },
     });
-    expect(out).toHaveLength(3);
+    expect(out).toHaveLength(4);
     expect(out[1].streaming).toBe(false);
-    expect(out[2].parts).toEqual([
-      {
-        kind: "text",
-        text: "[ts 1.1] <@U1>: first\nsecond line\n[ts 1.2] <@U2>: third",
-      },
+    expect(out.slice(2).map((m) => [m.role, m.parts])).toEqual([
+      ["user", [{ kind: "text", text: "[ts 1.1] <@U1>: first\nsecond line" }]],
+      ["user", [{ kind: "text", text: "[ts 1.2] <@U2>: third" }]],
     ]);
   });
 
