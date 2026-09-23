@@ -91,6 +91,8 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
 
 4. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
+**Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's. The scope is opt-in. It is not in the provided manifest, and the install does not request it. To use it, add `chat:write.customize` to your Slack app's bot scopes and reinstall the app. It then takes effect for the workspace that the app's own bot token belongs to. For the agent's avatar to show too, set `--set=apiServer.imgbbApiKey=<key>` ([ImgBB API](https://api.imgbb.com)): Slack fetches message icons from the public internet, so the api-server uploads each avatar there as a PNG, named by a hash. Those images are public to anyone holding the URL.
+
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing. Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and reinstall when Slack asks. The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
 
 ### More than one workspace

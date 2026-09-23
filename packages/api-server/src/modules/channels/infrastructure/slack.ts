@@ -75,6 +75,7 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import type { AgentIconUrl } from "./agent-avatar-icons.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -94,6 +95,7 @@ import type {
   SlackChannelInfo,
   SlackChannelMessageEvent,
   SlackGateway,
+  SlackPostMessage,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -1029,6 +1031,7 @@ export function createSlackWorker(
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
+  agentIcon: AgentIconUrl | null = null,
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1450,6 +1453,22 @@ export function createSlackWorker(
         isDefault: binding.isDefault,
       })),
     );
+  }
+
+  async function agentPersona(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<Pick<SlackPostMessage, "username" | "iconUrl">> {
+    const scopes = await grantedScopes(gw, teamId);
+    if (!scopes?.has("chat:write.customize")) return {};
+    const [username, owner] = await Promise.all([
+      resolveAgentName(instanceName),
+      getInstanceOwner(instanceName).catch(() => null),
+    ]);
+    const iconUrl =
+      agentIcon && owner ? await agentIcon(owner, username) : null;
+    return { username, ...(iconUrl ? { iconUrl } : {}) };
   }
 
   async function agentFooter(
@@ -3719,7 +3738,10 @@ export function createSlackWorker(
         return target;
       }
 
-      const footer = await agentFooter(instanceName);
+      const [footer, persona] = await Promise.all([
+        agentFooter(instanceName),
+        agentPersona(gw, instanceName, target.teamId),
+      ]);
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -3728,6 +3750,7 @@ export function createSlackWorker(
             channel: target.id,
             teamId: target.teamId,
             text,
+            ...persona,
             blocks: [{ type: "markdown", text }, contextBlock],
             ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
             ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -3943,13 +3966,17 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      const footer = await agentFooter(instanceName, turn?.sessionId);
+      const [footer, persona] = await Promise.all([
+        agentFooter(instanceName, turn?.sessionId),
+        agentPersona(gw, instanceName, target.teamId),
+      ]);
       try {
         await gw.postMessage({
           channel: target.id,
           teamId: target.teamId,
           threadTs,
           text: args.text,
+          ...persona,
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
           ...(args.unfurlLinks !== undefined

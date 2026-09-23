@@ -214,6 +214,10 @@ spec:
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}
             {{- end }}
+            {{- if .Values.apiServer.imgbbApiKey }}
+            - name: IMGBB_API_KEY
+              value: {{ .Values.apiServer.imgbbApiKey | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotName }}
             - name: TELEGRAM_BOT_USERNAME
               value: {{ .Values.apiServer.telegramBotName | quote }}

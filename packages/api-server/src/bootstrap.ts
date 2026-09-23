@@ -48,6 +48,7 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
+import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
@@ -910,6 +911,8 @@ export async function bootstrap() {
         slackInstalls.canonicalWorkspaceName,
         undefined,
         DEFAULT_SETTLE_MS,
+        undefined,
+        config.imgbbApiKey ? createImgbbAgentIcons(config.imgbbApiKey) : null,
       )
     : undefined;
 

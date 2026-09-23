@@ -180,6 +180,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.unfurlMedia !== undefined
           ? { unfurlMedia: args.unfurlMedia }
           : {}),
+        ...(args.username !== undefined ? { username: args.username } : {}),
+        ...(args.iconUrl !== undefined ? { iconUrl: args.iconUrl } : {}),
       });
     },
 
