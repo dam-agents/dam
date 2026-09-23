@@ -1,10 +1,10 @@
 # Schedules
 
-Last verified: 2026-09-18
+Last verified: 2026-09-23
 
 ## Overview
 
-A **Schedule** is a recurring task attached to an Agent: a cron or RRULE recurrence, a task prompt, and an optional **Precheck** that decides each occurrence before any model is woken. Schedules are the one way work starts on an Agent with nobody watching, which is why they own three things no other caller needs — arming the next occurrence durably, waking a hibernated Agent to receive a fire, and deciding whether a fire is worth a turn at all.
+A **Schedule** is a task attached to an Agent that fires on its own: a cron or RRULE recurrence — or a single moment, a **one-time schedule** — a task prompt, and for a recurrence an optional **Precheck** that decides each occurrence before any model is woken. Schedules are the one way work starts on an Agent with nobody watching, which is why they own three things no other caller needs — arming the next occurrence durably, waking a hibernated Agent to receive a fire, and deciding whether a fire is worth a turn at all.
 
 The subsystem straddles two components. The api-server owns the schedule rows, the queue that arms them, and the decision to fire; agent-runtime owns what a fire *becomes* — the Session it opens, the Precheck it runs first, and the verdict it reports back. Everything between the two — the outbox, the delivery worker, the event's TTL — belongs to [runtime delivery](runtime-delivery.md) and is not restated here. Waking and hibernating the Agent a fire lands on belong to [agent-lifecycle](agent-lifecycle.md).
 
@@ -14,7 +14,7 @@ Schedules are Postgres rows owned by the api-server, each armed as a delayed job
 
 When a fire is due:
 
-1. The api-server inserts a `trigger` event into the Agent's runtime outbox in the same transaction that bumps the Agent's version, then signals the delivery worker. The fire is durable from this point; the schedule re-arms once the commit succeeds; a failed commit is retried by the queue, then by the reconcile.
+1. The api-server inserts a `trigger` event into the Agent's runtime outbox in the same transaction that bumps the Agent's version, then signals the delivery worker. The fire is durable from this point; a recurring schedule re-arms once the commit succeeds; a failed commit is retried by the queue, then by the reconcile.
 2. The api-server pokes the Agent's activity annotation so the reconciler scales a hibernated Agent up. The poke never waits on readiness; a poke that errors is recorded as a failed fire on the schedule's status, but the committed event still delivers if the Agent comes `Ready` within its TTL.
 3. The delivery worker pushes the event over the runtime channel's `applyState` — only once the Agent is `Ready`. A waking Agent picks pending events up on its boot-time `hello` catch-up. Every event carries a TTL, so an Agent that stays down through several occurrences (error state, failed poke) doesn't replay a backlog of stale fires when it eventually wakes. Outbox mechanics — versioning, the sweep, expiry — are owned by [runtime delivery](runtime-delivery.md#event-lifecycle).
 4. agent-runtime's trigger handler opens an ACP session against the harness over an in-process channel and submits the task as a prompt. The turn itself runs asynchronously in the harness, and the event settles once the prompt is submitted. **A fire carrying a Precheck settles earlier — the moment the handler accepts it** — and decides afterwards: the handler runs inside the delivery call, and a check may run for minutes ([runtime delivery](runtime-delivery.md#event-lifecycle)).
@@ -22,6 +22,20 @@ When a fire is due:
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed. The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
 
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice. That safety net ends where a fire is settled. For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes, or a session that then fails to open, reaches the pod log and nothing else. Losing an occurrence that way is the price of not holding the channel open, and for a recurring check the next occurrence pays it back.
+
+## One-time schedules
+
+A task meant to happen once — a check-back, a retry after a transient failure, a hand-off to a session of its own — is a Schedule whose recurrence is a single moment, held in the timezone it was given in. It is a Schedule rather than a concept of its own because it needs exactly what a recurring fire needs: an arm that survives a restart, a wake for a hibernated Agent, and the outbox rail. Handing over a task *now* is the same thing with the moment omitted; it fires at creation, so everything that ran unattended is listed in one place whether a user or the agent started it. The moment is always absolute — a relative delay is not accepted, and the resolved instant is echoed back to the caller, which is how an agent that miscounted the current time finds out.
+
+What a single occurrence changes follows from it having **no next occurrence to make up for a lost one**:
+
+- **It never re-arms.** Completion is derived from the row — it fired and has no next run — rather than stored, so it cannot disagree with the fire that produced it. A completed one leaves the list of what will still happen and stays as history beside the Session it opened, then is pruned 30 days after it fired, a failed fire included. Cancelling is deleting; it can be edited only until it fires; deleting one already on its way does not recall the event.
+- **Its result is recorded by delivery, not by commit.** A recurring fire writes its result when the event commits, and a fire lost after that is paid back by the next one. A one-time fire has no next one, so it reads *delivering* until its event settles on the pod (then *success*) or expires undelivered (then *missed*). Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the pod, so a runtime too old to know the kind still resolves.
+- **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence. One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
+- **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately. The onboarding hold does not apply either — the hold guards a cadence, and skipping a single occurrence would lose the task outright. A hard stop is overridden exactly as a recurring fire overrides it.
+- **It always opens a fresh Session**, typed as a one-time schedule's so the surfaces group it with scheduled work.
+
+An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply. Since an agent may create one from any Session, a scheduled one included (a retry, the next check-back), a buggy task could schedule itself without end; agent-created one-time schedules are therefore bounded by how many may wait at once and how many may be created in an hour, both deployment settings. Users are not bound by them. A starter kit cannot declare one: an absolute moment means nothing in a kit applied at any time.
 
 ## Precheck
 
@@ -43,9 +57,9 @@ The honest limit: this keeps the prompt, the context and the cache out of a decl
 
 ## Session continuity
 
-The session model differs by schedule mode:
+The session model differs by schedule mode (a one-time schedule is always fresh):
 
 - **Fresh schedule** — every fire creates a new session via `session/new`. The schedule accumulates a list of sessions over time, browseable under the schedules tab.
 - **Continuous schedule** — the first fire creates a session via `session/new`; every subsequent fire calls `session/resume` against the same session id. One schedule, one session, history retained across fires.
 
-The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC. Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh. Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session. Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
+The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC. Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh. Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session. Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
