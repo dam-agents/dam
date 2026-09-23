@@ -155,6 +155,10 @@ export interface AvatarTraits {
 
 export type Random = () => number;
 
+export function avatarKey(owner: string, name: string): string {
+  return `${owner}\n${name}`;
+}
+
 function hashSeed(seed: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {

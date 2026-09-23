@@ -29,7 +29,7 @@ export function AgentAvatar({
   if (!enabled) return null;
   return (
     <LazyRobotHead
-      seed={name}
+      name={name}
       size={size}
       sleeping={sleeping || stopped}
       className={cn(stopped && STOPPED_AVATAR_CLASS, className)}

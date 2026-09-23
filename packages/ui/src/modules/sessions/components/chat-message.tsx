@@ -126,7 +126,7 @@ export const ChatMessage = memo(function ChatMessage({
     >
       <div className="flex items-center gap-1.5 mb-0.5">
         {isAssistant && avatarAgentName !== undefined && (
-          <LazyRobotHead seed={avatarAgentName} size={20} />
+          <LazyRobotHead name={avatarAgentName} size={20} />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
           {isAssistant ? (avatarAgentName ?? "Agent") : "You"}

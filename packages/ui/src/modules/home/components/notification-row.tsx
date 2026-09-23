@@ -90,7 +90,7 @@ function RowIdentity({
   return (
     <div className="relative size-10">
       <LazyRobotHead
-        seed={avatarName}
+        name={avatarName}
         size={46}
         sleeping={sleeping || stopped}
         className={cn("-m-[3px]", stopped && STOPPED_AVATAR_CLASS)}

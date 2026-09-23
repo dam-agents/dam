@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 
+import { getUser } from "../../../../auth.js";
 import { avatarDataUri } from "../../lib/avatar/svg.js";
+import { avatarKey } from "../../lib/avatar/traits.js";
 
 export interface RobotHeadProps {
-  seed: string;
+  name: string;
   size?: number;
   label?: string;
   sleeping?: boolean;
@@ -11,7 +13,7 @@ export interface RobotHeadProps {
 }
 
 export function RobotHead({
-  seed,
+  name,
   size = 24,
   label,
   sleeping = false,
@@ -20,7 +22,10 @@ export function RobotHead({
   return (
     <img
       data-testid="agent-avatar"
-      src={avatarDataUri(seed, sleeping)}
+      src={avatarDataUri(
+        avatarKey(getUser()?.profile.sub ?? "", name),
+        sleeping,
+      )}
       width={size}
       height={size}
       alt={label ?? ""}

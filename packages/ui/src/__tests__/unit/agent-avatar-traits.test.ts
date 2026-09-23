@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent avatar is a figure drawn from a hash of the agent's name, so nothing is stored. The same name must always draw the same figure; its parts mix freely across head shapes; and no eye or visor may sit on a gap between parts, or reach past the head.
+// TEST_OVERVIEW: An agent avatar is a figure drawn from a hash of the agent's name and its owner, so nothing is stored. The same name must always draw the same figure; its parts mix freely across head shapes; and no eye or visor may sit on a gap between parts, or reach past the head.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +21,7 @@ import {
 import {
   AVATAR_GAP,
   AVATAR_PALETTES,
+  avatarKey,
   type AvatarTraits,
   avatarTraits,
   DERPS,
@@ -42,6 +43,19 @@ describe("avatarTraits", () => {
   // TEST_SCENARIO: The agents list, the chat and the Home feed each draw the avatar on their own from the agent's name. They must agree, so one name gives one figure.
   it("draws the same figure for the same name", () => {
     expect(avatarTraits("velvet-comet")).toEqual(avatarTraits("velvet-comet"));
+  });
+
+  // TEST_SCENARIO: Two people who both keep a default-named agent must not get the same face, so the owner is part of the seed.
+  it("draws different figures for the same name under different owners", () => {
+    const faces = new Set(
+      ["owner-a", "owner-b", "owner-c", "owner-d"].map((owner) =>
+        JSON.stringify(avatarTraits(avatarKey(owner, "my-agent"))),
+      ),
+    );
+    expect(faces.size).toBe(4);
+    expect(avatarTraits(avatarKey("owner-a", "my-agent"))).toEqual(
+      avatarTraits(avatarKey("owner-a", "my-agent")),
+    );
   });
 
   // TEST_SCENARIO: A user with a dozen agents tells them apart at a glance, so different names must give different figures.
