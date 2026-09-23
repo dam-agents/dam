@@ -155,8 +155,8 @@ istio:
 # outside HOME is gone on the next boot. An Agent whose mounts ask to persist
 # a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
-# the runner's certificate from `controller.envoyMitm`'s CA issuer, so
-# virtualization needs `controller.envoyMitm.enabled`; the agent Service resolves to the
+# the runner's certificate from the runners' own CA (`runnerCA` below), so
+# virtualization needs cert-manager; the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = the create refuses the vm backend
 # and existing vm agents fail reconcile. One runner per owner; per-user fair-use
@@ -309,6 +309,22 @@ virtualization:
     # API server's Service address or its own pod address with no exception
     # covering it.
     egressExceptCidrs: []
+  # The CA the controller trusts a runner's serving certificate by. It is the
+  # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
+  # for hostnames taken from users' credential hosts, so a leaf naming a
+  # runner's Service host would let its key pass for that runner to the
+  # controller. Rendered as cluster issuers, like the envoyMitm pair, so the
+  # CA key sits in cert-manager's namespace and not the agent namespace.
+  # Cluster-scoped names collide globally; override them if needed.
+  runnerCA:
+    bootstrapIssuerName: platform-vm-runner-bootstrap
+    issuerName: platform-vm-runner-ca-issuer
+    # Must equal cert-manager's --cluster-resource-namespace flag (default
+    # `cert-manager`).
+    secretNamespace: cert-manager
+    secretName: platform-vm-runner-ca
+    duration: 87600h # 10y
+    renewBefore: 720h # 30d
   # A directory on each node that every runner scheduled there shares. A machine
   # may reach only its gateway, so the guest cannot pull its own image; it is
   # fetched and unpacked here once, and the next owner on that node boots the

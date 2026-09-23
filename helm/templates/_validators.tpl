@@ -12,7 +12,6 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
-{{- include "platform.validate.vmRunnerNeedsTheCertificateIssuer" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
@@ -92,19 +91,6 @@ first evicted — taking every machine with it.
 {{- if not (dig "limits" "memory" "" $r) -}}
 {{- fail "virtualization.enabled=true requires virtualization.runner.resources.limits.memory. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
 {{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-The controller trusts a runner by the CA that issued its serving certificate,
-and cert-manager issues that certificate from the envoyMitm CA issuer. With
-envoyMitm off neither the issuer nor the controller's right to request
-Certificates exists, so every runner would wait forever for a Secret nobody
-issues.
-*/}}
-{{- define "platform.validate.vmRunnerNeedsTheCertificateIssuer" -}}
-{{- if and .Values.virtualization.enabled (not (and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled)) -}}
-{{- fail "virtualization.enabled=true requires controller.envoyMitm.enabled — cert-manager issues each VM runner's serving certificate from that CA issuer, and the controller trusts a runner by it." -}}
 {{- end -}}
 {{- end -}}
 

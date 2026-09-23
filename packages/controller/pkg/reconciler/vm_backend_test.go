@@ -1036,15 +1036,17 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
 }
 
-// TEST_SCENARIO: the controller trusts a runner by the CA that issued its certificate, so the certificate has to name the Service the controller dials, come from the install's CA issuer, and label its Secret so the sweep finds it. A TLS Secret with no CA in it must be refused, because an empty trust pool silently falls back to the system roots.
+// TEST_SCENARIO: the controller trusts a runner by the CA that issued its certificate, so the certificate has to name the Service the controller dials, come from the runners' own CA issuer and never the gateways' MITM one — whose leaves name hosts users choose — and label its Secret so the sweep finds it. A TLS Secret with no CA in it must be refused, because an empty trust pool silently falls back to the system roots.
 func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 	r, _ := setupReconciler(t, vmAgentCR())
 	r.config.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
+	r.config.VMRunnerCAIssuer = "platform-vm-runner-ca-issuer"
 
 	cert := r.buildRunnerCertificate(testOwner, nil)
 	assert.Equal(t, []string{r.runnerHost(testOwner)}, cert.Spec.DNSNames, "the cert names the Service the controller dials")
 	assert.Equal(t, r.runnerTLSName(testOwner), cert.Spec.SecretName)
-	assert.Equal(t, "platform-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
+	assert.Equal(t, "platform-vm-runner-ca-issuer", cert.Spec.IssuerRef.Name)
+	assert.Equal(t, "ClusterIssuer", cert.Spec.IssuerRef.Kind)
 	assert.Equal(t, vmRunnerComponent, cert.Spec.SecretTemplate.Labels["app.kubernetes.io/component"])
 
 	ctx := context.Background()

@@ -91,6 +91,10 @@ spec:
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
             - name: AGENT_VM
               value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner | toJson | quote }}
+            {{- if .Values.virtualization.enabled }}
+            - name: VM_RUNNER_CA_ISSUER
+              value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
+            {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET

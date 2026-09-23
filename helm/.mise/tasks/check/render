@@ -40,6 +40,14 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set 'controller.agent.base.imagePullSecrets[1]=fallback' \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
+# The runners' serving certificates come from their own CA, so the vm backend
+# renders its issuers, and the controller's right to request Certificates, with
+# the envoyMitm path off.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set controller.envoyMitm.enabled=false \
+  | "${KUBECONFORM[@]}" "$@"
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \

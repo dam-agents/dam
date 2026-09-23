@@ -150,7 +150,7 @@ func (r *AgentReconciler) runnerTLSName(owner string) string {
 	return r.runnerName(owner) + "-tls"
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's serving certificate comes from the same CA issuer as the gateways' leaf certificates, so cert-manager holds the only CA key and renews what it issued. It names only the Service host the controller dials, and is good for serving alone. The Secret carries the runner's labels so the sweep's one List of runner Secrets finds it too.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's serving certificate comes from the runners' own CA issuer, so cert-manager holds the only CA key and renews what it issued. It is not the gateways' MITM CA: that one signs leaves for hostnames taken from users' credential hosts, and one naming a runner's Service host would pass for the runner, since the controller trusts whatever that CA signed. It names only the Service host the controller dials, and is good for serving alone. The Secret carries the runner's labels so the sweep's one List of runner Secrets finds it too.
 func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav1.OwnerReference) *cmv1.Certificate {
 	name := r.runnerTLSName(owner)
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
@@ -162,7 +162,7 @@ func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav
 			DNSNames:       []string{r.runnerHost(owner)},
 			Usages:         []cmv1.KeyUsage{cmv1.UsageDigitalSignature, cmv1.UsageServerAuth},
 			IssuerRef: cmmetav1.IssuerReference{
-				Name:  r.config.EnvoyMitmCAIssuer,
+				Name:  r.config.VMRunnerCAIssuer,
 				Kind:  "ClusterIssuer",
 				Group: "cert-manager.io",
 			},
