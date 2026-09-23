@@ -4,7 +4,6 @@
     "MachineNotReady",
     "MachineOutOfCapacity",
     "MachineImageUnavailable",
-    "MachineBootFailed",
-    "MachineEgressChanged"
+    "MachineBootFailed"
   ]
 }

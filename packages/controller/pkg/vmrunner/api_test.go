@@ -93,6 +93,6 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		StateRestarting, StateRunning, StateStopping, StateStopped,
 	}, vocabulary.States)
 	assert.Equal(t, []string{
-		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonEgressChanged,
+		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed,
 	}, vocabulary.Reasons)
 }

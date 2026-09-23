@@ -102,7 +102,6 @@ pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
-pub const REASON_EGRESS_CHANGED: &str = "MachineEgressChanged";
 
 #[cfg(test)]
 mod tests {
@@ -215,7 +214,6 @@ mod tests {
                 REASON_OUT_OF_CAPACITY,
                 REASON_IMAGE_UNAVAILABLE,
                 REASON_BOOT_FAILED,
-                REASON_EGRESS_CHANGED,
             ])
         );
     }
