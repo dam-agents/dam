@@ -102,6 +102,7 @@ export function hintFor(
     case EventType.SkillSetSaved:
     case EventType.SkillSetDeleted:
     case EventType.KindedAgentCreated:
+    case EventType.StarterKitApplied:
     case EventType.InvocationSpawned:
     case EventType.FeatureFlagChanged:
     case EventType.ApiKeyChanged:

@@ -67,7 +67,7 @@ own_paths() {
     # naming the smolvm tree it builds against and the script that fetches it.
     # Beside it ship two Go binaries; check:vm-runner-source fails when a Go
     # import escapes the list, or when the crate is missing from it.
-    vm-runner) echo "packages/vm-runner packages/controller/cmd/vm-image-cache packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
+    vm-runner) echo "packages/vm-runner packages/controller/cmd/vm-image-cache packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/pkg/pullauth packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -63,7 +63,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 3. Create the Agent through the plain create — from the kit's image or the picked Template — with the grants, the kit's fixed env, size, backend and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)). The setup page may remove the kit's seed (`skipSeed`): the Agent is then created as if the kit shipped none, and its briefing says so. The cross is offered only for a kit without an `install` command — an install runs from that checkout — and apply refuses the combination before anything is created. A kit with an `install` command queues it as a `workspace-command` event next, ahead of everything below.
 4. Create the declared schedules, toggling suggested ones off; bind the Slack conversation if one was given. A failure here deletes the fresh Agent and surfaces the error.
 5. Wake the Agent.
-6. Install the declared external skills. This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create. The apply is recorded in the security log last, once the outcome including the skill verdicts is known.
+6. Install the declared external skills. This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create. The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
 The catalog has two entry points, answering the placement question in #447 with *both*: a **Starter kits** destination in the rail with the full catalog and setup pages, and a **browse button on Home**, beside the other entry points. It opens the catalog as a modal over the page — the same Browse Kits modal the setup page's Change button opens — and a pick goes straight to that kit's setup. Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into. The widget renders nothing when the install has no catalog.
 

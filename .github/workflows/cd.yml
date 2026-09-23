@@ -900,6 +900,46 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  cargo-audit:
+    name: cargo audit
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+
+      - name: Detect vulnerabilities
+        run: |
+          set -euo pipefail
+          results=$(mise -C packages/vm-runner x --no-deps -- cargo audit --json) || true
+          printf '%s' "$results" | jq -e '.vulnerabilities.list' > /dev/null
+          out=$(printf '%s' "$results" | jq '
+            [ .vulnerabilities.list[]
+              | { id: .advisory.id,
+                  url: ("https://rustsec.org/advisories/" + .advisory.id),
+                  severity: "unknown",
+                  scope: "vm-runner (Rust)",
+                  pkg: .package.name,
+                  fixed: ((.versions.patched // []) | join(", ")) } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::cargo audit: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-cargo-audit
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
   npm-audit:
     name: pnpm audit
     if: github.ref == 'refs/heads/main'
@@ -1076,7 +1116,7 @@ jobs:
 
   manage-security-issues:
     name: File security issues
-    needs: [go-vuln, npm-audit, mend-sca, container-scan]
+    needs: [go-vuln, cargo-audit, npm-audit, mend-sca, container-scan]
     if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
