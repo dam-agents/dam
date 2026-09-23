@@ -3,6 +3,12 @@ import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import {
+  isAsleep,
+  STOPPED_AVATAR_CLASS,
+} from "../../agents/components/avatar/agent-avatar.js";
+import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
 import { channelTypeFor } from "../lib/activity-filter.js";
 import type { FeedItem } from "../lib/feed-item.js";
@@ -31,24 +37,82 @@ function rowKind(item: FeedItem, agents: readonly AgentView[]): RowKind {
   return "agent";
 }
 
-function rowIcon(kind: RowKind) {
+function rowIcon(kind: RowKind, size = 16) {
   switch (kind) {
     case "schedule":
-      return <Time size={16} />;
+      return <Time size={size} />;
     case "slack":
-      return <img src="/icons/slack.svg" alt="" className="size-4" />;
+      return (
+        <img
+          src="/icons/slack.svg"
+          alt=""
+          style={{ width: size, height: size }}
+        />
+      );
     case "telegram":
-      return <img src="/icons/telegram.svg" alt="" className="size-4" />;
+      return (
+        <img
+          src="/icons/telegram.svg"
+          alt=""
+          style={{ width: size, height: size }}
+        />
+      );
     case "approval":
-      return <Warning size={16} />;
+      return <Warning size={size} />;
     default:
-      return <EdgeDevice size={16} />;
+      return <EdgeDevice size={size} />;
   }
+}
+
+function RowIdentity({
+  kind,
+  avatarName,
+  sleeping,
+  stopped,
+}: {
+  kind: RowKind;
+  avatarName: string | undefined;
+  sleeping: boolean;
+  stopped: boolean;
+}) {
+  if (avatarName === undefined) {
+    return (
+      <div
+        className={cn(
+          "flex size-10 items-center justify-center rounded-xl",
+          ICON_TINT[kind],
+        )}
+      >
+        {rowIcon(kind)}
+      </div>
+    );
+  }
+  return (
+    <div className="relative size-10">
+      <LazyRobotHead
+        name={avatarName}
+        size={46}
+        sleeping={sleeping || stopped}
+        className={cn("-m-[3px]", stopped && STOPPED_AVATAR_CLASS)}
+      />
+      {kind !== "agent" && (
+        <span
+          className={cn(
+            "absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full ring-2 ring-background",
+            ICON_TINT[kind],
+          )}
+        >
+          {rowIcon(kind, 11)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function NotificationRow({
   item,
   agentName,
+  avatarName,
   agents,
   meta,
   artifacts,
@@ -58,6 +122,7 @@ export function NotificationRow({
 }: {
   item: Extract<FeedItem, { kind: "unread" | "in-progress" }>;
   agentName: string;
+  avatarName: string | undefined;
   agents: readonly AgentView[];
   meta: string;
   artifacts: readonly ArtifactTouched[];
@@ -68,6 +133,10 @@ export function NotificationRow({
   const kind = rowKind(item, agents);
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
+  const avatars = useAgentAvatars() && avatarName !== undefined;
+  const agent = agents.find((a) => a.id === item.agentId);
+  const sleeping = isAsleep(agent?.state);
+  const stopped = agent?.stopRequested ?? false;
 
   return (
     <div
@@ -87,23 +156,31 @@ export function NotificationRow({
       )}
     >
       <div className="relative shrink-0 pt-0.5">
-        <div
-          className={cn(
-            "flex size-10 items-center justify-center rounded-xl",
-            ICON_TINT[kind],
-          )}
-        >
-          {rowIcon(kind)}
-        </div>
+        <RowIdentity
+          kind={kind}
+          avatarName={avatars ? avatarName : undefined}
+          sleeping={sleeping}
+          stopped={stopped}
+        />
         {running && (
-          <span className="working-dots absolute top-0 -left-[8px] flex items-center -space-x-[1px]">
+          <span
+            className={cn(
+              "working-dots absolute top-0 flex items-center -space-x-[1px]",
+              avatars ? "-left-[15px]" : "-left-[8px]",
+            )}
+          >
             <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
             <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
             <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
           </span>
         )}
         {unread && !running && (
-          <span className="absolute top-0 -left-0.5 size-2.5 rounded-full border-2 border-background bg-accent" />
+          <span
+            className={cn(
+              "absolute top-0 size-2.5 rounded-full border-2 border-background bg-accent",
+              avatars ? "-left-2.5" : "-left-0.5",
+            )}
+          />
         )}
       </div>
 
