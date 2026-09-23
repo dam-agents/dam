@@ -924,6 +924,20 @@ apiServer:
   # organizations connected at once would let a conversation reach the wrong
   # Agent and a person inherit another person's platform identity.
   slackEnterpriseId: ""
+  # -- Post each agent's Slack messages under the agent's own name and avatar
+  # rather than the app's. Needs the `chat:write.customize` bot scope (in
+  # etc/slack/app-manifest.yaml; an installed workspace re-installs to gain
+  # it — without it, posts keep the app's identity) and an avatar address
+  # Slack's servers can fetch: the api-server serves the images under
+  # `<slackAvatarBaseUrl, or urls.ui>/api/public/avatars/`. Unlike the install
+  # callback above, Slack fetches that address itself, so leave this off when
+  # it is not reachable from the internet.
+  slackAgentAvatars: false
+  # -- Public base URL for those avatar images, for when `urls.ui` is not
+  # reachable from the internet but another address in front of the
+  # api-server's `/api/public/avatars/` is (a reverse proxy or a CDN). Empty
+  # means `urls.ui`.
+  slackAvatarBaseUrl: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

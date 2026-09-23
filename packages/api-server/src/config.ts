@@ -62,6 +62,11 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
   slackInstallCallbackUrl: z.string().nullable().default(null),
+  slackAgentAvatars: z.stringbool().default(false),
+  slackAvatarBaseUrl: z
+    .url({ error: "SLACK_AVATAR_BASE_URL must be a valid URL" })
+    .nullable()
+    .default(null),
   slackEnterpriseId: z.string().default(""),
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
@@ -215,6 +220,8 @@ export function loadConfig(): Config {
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     slackInstallCallbackUrl: process.env.SLACK_INSTALL_CALLBACK_URL,
+    slackAgentAvatars: process.env.SLACK_AGENT_AVATARS,
+    slackAvatarBaseUrl: process.env.SLACK_AVATAR_BASE_URL,
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,

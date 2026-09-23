@@ -107,12 +107,18 @@ export interface SlackMessage {
 
 export type SlackBlock = Record<string, unknown>;
 
+export interface SlackAuthor {
+  username: string;
+  iconUrl: string;
+}
+
 export interface SlackPostMessage {
   channel: string;
   text: string;
   threadTs?: string;
   blocks?: SlackBlock[];
   replyBroadcast?: boolean;
+  author?: SlackAuthor;
   teamId: SlackWorkspace;
 }
 

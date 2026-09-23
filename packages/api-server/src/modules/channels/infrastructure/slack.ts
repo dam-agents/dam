@@ -89,6 +89,7 @@ import type {
   SlackAck,
   SlackBotJoinedChannelEvent,
   SlackConversationName,
+  SlackAuthor,
   SlackConversationRef,
   SlackWorkspace,
   SlackChannelInfo,
@@ -953,13 +954,29 @@ const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "channels:read", backs: "posting outside the bound channel" },
 ];
 
+const CUSTOMIZE_SCOPE = "chat:write.customize";
+
+const AUTHOR_CAPABILITY = {
+  scope: CUSTOMIZE_SCOPE,
+  backs: "posting as each agent, with its name and avatar",
+};
+
+async function canPostAsAgent(
+  gw: SlackGateway,
+  teamId: SlackWorkspace,
+): Promise<boolean> {
+  const scopes = await grantedScopes(gw, teamId);
+  return scopes?.has(CUSTOMIZE_SCOPE) ?? false;
+}
+
 async function reportMissingPermissions(
   gw: SlackGateway,
   teamId: SlackWorkspace,
+  wanted: readonly { scope: string; backs: string }[],
 ): Promise<void> {
   const scopes = await grantedScopes(gw, teamId);
   if (!scopes) return;
-  const missing = SCOPE_CAPABILITIES.filter((c) => !scopes.has(c.scope));
+  const missing = wanted.filter((c) => !scopes.has(c.scope));
   if (missing.length === 0) return;
   getLogger().warn(
     {
@@ -1027,6 +1044,7 @@ export function createSlackWorker(
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
+  agentIcon: ((agentName: string) => string) | null = null,
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1399,6 +1417,17 @@ export function createSlackWorker(
       ),
       ...(sessionId ? { sessionId } : {}),
     };
+  }
+
+  async function agentAuthor(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackAuthor | undefined> {
+    if (!agentIcon || !(await canPostAsAgent(gw, teamId))) return undefined;
+    const name = await resolveAgentName(instanceName);
+    if (name === instanceName) return undefined;
+    return { username: name, iconUrl: agentIcon(name) };
   }
 
   async function ephemeral(
@@ -3474,7 +3503,13 @@ export function createSlackWorker(
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
-      await reportMissingPermissions(gw, ORIGINAL_WORKSPACE);
+      await reportMissingPermissions(
+        gw,
+        ORIGINAL_WORKSPACE,
+        agentIcon
+          ? [...SCOPE_CAPABILITIES, AUTHOR_CAPABILITY]
+          : SCOPE_CAPABILITIES,
+      );
       return gateway;
     } finally {
       gatewayStarting = null;
@@ -3597,6 +3632,7 @@ export function createSlackWorker(
 
       const footer = await agentFooter(instanceName);
       const contextBlock = agentContextBlock(footer);
+      const author = await agentAuthor(gw, instanceName, target.teamId);
 
       try {
         if (text) {
@@ -3605,6 +3641,7 @@ export function createSlackWorker(
             teamId: target.teamId,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
+            ...(author ? { author } : {}),
           });
         }
         if (attachment) {
@@ -3818,6 +3855,7 @@ export function createSlackWorker(
       if ("error" in target) return target;
 
       const footer = await agentFooter(instanceName, turn?.sessionId);
+      const author = await agentAuthor(gw, instanceName, target.teamId);
       try {
         await gw.postMessage({
           channel: target.id,
@@ -3826,6 +3864,7 @@ export function createSlackWorker(
           text: args.text,
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
+          ...(author ? { author } : {}),
         });
         if (args.attachment) {
           try {

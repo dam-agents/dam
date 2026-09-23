@@ -51,6 +51,11 @@ oauth_config:
       # Posting replies (chat.postMessage) and the one-person notices a turn
       # can need (chat.postEphemeral).
       - chat:write
+      # Posting as each agent, under its name and avatar (chat.postMessage's
+      # username and icon_url). Optional: used only with
+      # apiServer.slackAgentAvatars on; without it posts keep the app's own
+      # name and icon.
+      - chat:write.customize
       # The working status on a turn (assistant.threads.setStatus). Listed here
       # as well as implied by the assistant_view feature above — Slack's own
       # assistant templates request it explicitly beside that feature.

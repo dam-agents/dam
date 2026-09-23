@@ -1,4 +1,4 @@
-import { AVATAR_VERSION, avatarSvg } from "agent-avatar";
+import { AVATAR_VERSION, avatarSeed, avatarSvg } from "agent-avatar";
 import { Hono } from "hono";
 import sharp from "sharp";
 
@@ -60,4 +60,11 @@ export function createPublicAvatarRoutes(): Hono {
 
 export function publicAvatarPath(seed: number): string {
   return `/api/public/avatars/v${AVATAR_VERSION}/${seed}.png`;
+}
+
+export function publicAvatarUrl(
+  baseUrl: string,
+): (agentName: string) => string {
+  const origin = baseUrl.replace(/\/+$/, "");
+  return (agentName) => `${origin}${publicAvatarPath(avatarSeed(agentName))}`;
 }

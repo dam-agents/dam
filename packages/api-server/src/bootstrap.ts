@@ -231,6 +231,7 @@ import {
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import { publicAvatarUrl } from "./modules/avatars/infrastructure/public-avatar-routes.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -890,6 +891,10 @@ export async function bootstrap() {
         slackInstalls.canonicalWorkspaceName,
         undefined,
         DEFAULT_SETTLE_MS,
+        undefined,
+        config.slackAgentAvatars
+          ? publicAvatarUrl(config.slackAvatarBaseUrl ?? config.uiBaseUrl)
+          : null,
       )
     : undefined;
 

@@ -93,6 +93,23 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing. Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and reinstall when Slack asks. The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
 
+### Agent names and avatars on messages
+
+One Slack app posts for every agent, so by default each post shows the app's name and icon, with the agent named in its footer. The platform can instead post each agent's messages under the agent's own name and avatar, the robot face drawn from the agent's name:
+
+```sh
+mise run cluster:install -- \
+  --set=apiServer.slackAgentAvatars=true \
+  --set=apiServer.slackAvatarBaseUrl=https://...   # only if urls.ui is not public
+```
+
+Two things have to be in place:
+
+- **The `chat:write.customize` scope.** It is in [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml). An app created earlier re-applies the manifest and each workspace re-installs, as described above. A workspace without the scope keeps getting posts under the app's own name, and the api-server logs the missing scope at startup.
+- **An avatar address Slack can fetch.** Slack's servers download the icon themselves, so `<urls.ui>/api/public/avatars/` has to be reachable from the internet. If only another address in front of the api-server is, such as a reverse proxy or a CDN serving that path, set `apiServer.slackAvatarBaseUrl` to it. If neither is, leave the feature off: Slack cannot show an icon it cannot fetch.
+
+The image URLs carry a hash of the agent's name, not the name. Renaming an agent gives its later posts a new face, and its earlier posts keep theirs.
+
 ### More than one workspace
 
 Slack hands the bot token over by copy-paste for the app's own workspace only. Every other workspace has to complete Slack's install handshake, so to serve more than one:

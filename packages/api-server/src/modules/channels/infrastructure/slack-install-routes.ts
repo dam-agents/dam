@@ -11,6 +11,7 @@ const EXCHANGE_TIMEOUT_MS = 10_000;
 export const SLACK_INSTALL_BOT_SCOPES = [
   "commands",
   "chat:write",
+  "chat:write.customize",
   "assistant:write",
   "reactions:write",
   "reactions:read",

@@ -210,6 +210,14 @@ spec:
             - name: SLACK_ENTERPRISE_ID
               value: {{ .Values.apiServer.slackEnterpriseId | quote }}
             {{- end }}
+            {{- if .Values.apiServer.slackAgentAvatars }}
+            - name: SLACK_AGENT_AVATARS
+              value: "true"
+            {{- end }}
+            {{- if .Values.apiServer.slackAvatarBaseUrl }}
+            - name: SLACK_AVATAR_BASE_URL
+              value: {{ .Values.apiServer.slackAvatarBaseUrl | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}

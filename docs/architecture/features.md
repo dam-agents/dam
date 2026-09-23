@@ -13,7 +13,8 @@ in the conversation) and agent avatars (a robot head drawn in the browser from
 a hash of the agent's name and its owner's identity, so nothing is stored,
 two people's default-named agents look different, and renaming an agent
 changes its face; the flag also names the agent on its chat messages, which
-otherwise say "Agent"). Graduating a feature to always-on is deletion: drop its
+otherwise say "Agent"; Slack posts use the same figure behind an install-wide
+Helm switch instead, see [channel-turns](channel-turns.md#the-agent-footer)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Experiments, Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   createPublicAvatarRoutes,
   publicAvatarPath,
-} from "../../apps/api-server/routes/public-avatars.js";
+} from "../../modules/avatars/infrastructure/public-avatar-routes.js";
 
 const routes = createPublicAvatarRoutes();
 const get = (path: string) =>

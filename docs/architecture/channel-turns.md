@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer. What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
 
@@ -91,6 +91,8 @@ Why the dedicated MCP endpoint: it is the only api-server port the agent's Netwo
 Every post the bot makes is footed with an **Agent Footer**: a context block linking to the posting Agent's [Public Agent Page](public-agent-page.md), carrying the Agent id and — on a turn's reply — the session it ran on. Its owner picks that conversation up in the UI, where only they may open it ([platform-topology](platform-topology.md), §ui); everyone else lands on a page naming the Agent rather than a dead end.
 
 The footer has two separable parts and **only one is a contract**. The **Agent id in the URL is the wire format** — parsing it back out is how the api-server recovers the author when a post later surfaces in another Agent's injected history (see [Inbound](#inbound--channel-message-to-acp-session)). The **link label is presentation**: nothing parses it, so product rewords it freely — today the posting Agent's name and the brand, which is what tells two Agents in one conversation apart.
+
+**Posting as the Agent (optional, install-wide).** With `apiServer.slackAgentAvatars` on, an Agent's own posts — its replies and its channel messages — also carry its name and avatar in place of the app's, as Slack's per-message `username` and `icon_url`. Platform notices (still starting, failed) stay the app's. The icon is the same figure the UI draws, rasterised by the api-server under `/api/public/avatars/`; the URL names a hash of the Agent's name and the image is a pure function of it, so the route reads no agent data and confirms nothing about which Agents exist. Slack's servers fetch it, so it must be reachable from the internet. It needs the optional `chat:write.customize` scope, and a workspace without it, or one whose grant can't be read, gets the app's identity. So does a post whose Agent name can't be resolved, since hashing the id would draw a different face. Attribution does not change: it still reads the footer, because Slack's author override leaves the bot's user id as it was.
 
 Keeping those apart is an **invariant**, not tidiness. Attribution used to read the Agent's name out of the label, so rewording it into a brand line silently unnamed every Agent in injected history — a copy change breaking a runtime feature, with nothing failing anywhere. Attribution reads the id and resolves a name from it, which is also why the parser still accepts the footer's older link forms (the authenticated chat route and its retired predecessor): history predating the change stays attributable.
 
