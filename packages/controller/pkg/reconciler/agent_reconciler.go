@@ -45,6 +45,7 @@ type AgentReconciler struct {
 	runnerEndpoint func(owner string) string
 	runnerRollMu   sync.Mutex
 	requeue        func(name string, after time.Duration)
+	lifetime       context.Context
 	podResize      atomic.Int32
 	agentCache     cache.GenericLister
 	vmRunning      sync.Map
@@ -74,7 +75,9 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 	return r
 }
 
-func (r *AgentReconciler) WithRequeue(fn func(name string, after time.Duration)) *AgentReconciler {
+// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue.
+func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name string, after time.Duration)) *AgentReconciler {
+	r.lifetime = lifetime
 	r.requeue = fn
 	return r
 }

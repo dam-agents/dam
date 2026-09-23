@@ -159,7 +159,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
-	agentReconciler.WithRequeue(agentQueue.AddAfter)
+	agentReconciler.WithRequeue(ctx, agentQueue.AddAfter)
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },

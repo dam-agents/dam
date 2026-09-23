@@ -294,7 +294,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
-	r.WithRequeue(requeued.add)
+	r.WithRequeue(t.Context(), requeued.add)
 	t.Cleanup(func() { stopMachineWatches(r) })
 	return r, node, requeued
 }
@@ -442,6 +442,24 @@ func TestAMachineWatchEndsWhenTheAgentStopsOrGoes(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, r.watchingMachine("my-agent"), "a failed machine is not on its way up")
 	assert.Equal(t, vmHealthPoll, requeued.last())
+}
+
+// TEST_SCENARIO: a watch runs outside any reconcile, so it must end with the leadership that owns the queue. When the reconciler's lifetime ends — the controller shutting down, or losing the lease — the long poll is abandoned and nothing is requeued onto a queue that is being shut down.
+func TestAMachineWatchEndsWithTheReconcilersLifetime(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	lifetime, end := context.WithCancel(context.Background())
+	r.WithRequeue(lifetime, requeued.add)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.True(t, r.watchingMachine("my-agent"))
+	require.Eventually(t, func() bool { return node.waitingReads() >= 1 }, 5*time.Second, time.Millisecond)
+	before := len(requeued.all())
+
+	end()
+	require.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond,
+		"the watch ends with the lifetime")
+	assert.Len(t, requeued.all(), before, "an ended lifetime requeues nothing")
 }
 
 func markGatewayReady(t *testing.T, r *AgentReconciler) {

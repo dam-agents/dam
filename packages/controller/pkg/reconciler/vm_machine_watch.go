@@ -19,7 +19,7 @@ func machineComingUp(st vmrunner.MachineStatus) bool {
 	return !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts watching the machine from the status version the reconcile just read, unless a watch on it is already running. A running watch that holds an older version answers at once and requeues, so the next reconcile starts one from the newer version.
+// UNIT_BOUNDARY_DESCRIPTION: starts watching the machine from the status version the reconcile just read, unless a watch on it is already running. The watch lives no longer than the reconciler's lifetime, so losing leadership or shutting down ends it. A running watch that holds an older version answers at once and requeues, so the next reconcile starts one from the newer version.
 func (r *AgentReconciler) watchMachine(runner *vmrunner.Client, name string, since uint64) {
 	if r.requeue == nil {
 		return
@@ -32,7 +32,7 @@ func (r *AgentReconciler) watchMachine(runner *vmrunner.Client, name string, sin
 	if r.machineWatches == nil {
 		r.machineWatches = map[string]*machineWatch{}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(r.lifetime)
 	w := &machineWatch{cancel: cancel}
 	r.machineWatches[name] = w
 	go r.awaitMachineChange(ctx, w, runner, name, since)
