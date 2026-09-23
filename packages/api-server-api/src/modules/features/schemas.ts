@@ -6,6 +6,7 @@ export const featureIdSchema = z.enum([
   "session-costs",
   "interactive-artifacts",
   "agent-telemetry",
+  "agent-avatars",
 ]);
 
 export const featureSetFlagInputSchema = z.object({

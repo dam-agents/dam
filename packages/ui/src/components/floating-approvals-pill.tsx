@@ -52,8 +52,9 @@ export function FloatingApprovalsPill() {
 
   if (view === "home" || items.length === 0) return null;
 
-  const nameOf = (agentId: string) =>
-    agents.find((agent) => agent.id === agentId)?.name ?? agentId;
+  const avatarNameOf = (agentId: string) =>
+    agents.find((agent) => agent.id === agentId)?.name;
+  const nameOf = (agentId: string) => avatarNameOf(agentId) ?? agentId;
 
   return (
     <div
@@ -93,6 +94,7 @@ export function FloatingApprovalsPill() {
                   key={item.id}
                   approval={item.approval}
                   agentName={nameOf(item.agentId)}
+                  avatarName={avatarNameOf(item.agentId)}
                   meta={item.at ? timeAgo(item.at, now) : "—"}
                   onDismiss={() => dismiss([item])}
                 />
