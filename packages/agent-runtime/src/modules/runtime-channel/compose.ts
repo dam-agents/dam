@@ -199,6 +199,7 @@ export async function composeRuntimeChannel(
         events: eventKinds as never,
         harnessConfig: harnessConfigPlugin.supported,
         harnessConfigCatalog: harnessConfigPlugin.catalog,
+        sessionModel: harnessConfigPlugin.sessionModel,
         kbPublish: 2,
         liveUpdates: true,
       };

@@ -911,8 +911,15 @@ export function createMcpSession(
         .describe(
           "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
         ),
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit for the agent's default. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+        ),
     },
-    async ({ name, task, at, timezone, inSession }) => {
+    async ({ name, task, at, timezone, inSession, model }) => {
       if (at !== undefined && !timezone)
         return errorResult("`at` requires `timezone`.");
       const zone = timezone ?? "UTC";
@@ -923,7 +930,14 @@ export function createMcpSession(
         );
       try {
         const sched = await schedules.createOnce(
-          { name, agentId, task, timezone: zone, ...(at ? { at } : {}) },
+          {
+            name,
+            agentId,
+            task,
+            timezone: zone,
+            ...(at ? { at } : {}),
+            ...(model ? { model } : {}),
+          },
           "agent",
           mode !== "fresh" && deps.sessionRef
             ? { sessionRef: deps.sessionRef, mode }
@@ -943,6 +957,7 @@ export function createMcpSession(
                   fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
                   timezone: zone,
                   inSession: mode,
+                  model: model ?? null,
                 },
                 null,
                 2,

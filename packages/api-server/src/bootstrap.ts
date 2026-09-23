@@ -90,7 +90,10 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
-import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
+import {
+  createHarnessConfigSnapshotWriter,
+  sessionModelChoices,
+} from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
@@ -971,6 +974,11 @@ export async function bootstrap() {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
     },
+    sessionModelChoices: async (agentId) =>
+      sessionModelChoices(
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+      ),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -990,7 +998,15 @@ export async function bootstrap() {
     async (event, input) => {
       const { scheduleId, precheck } =
         event.payload as Partial<TriggerEventPayload>;
-      if (!scheduleId || !precheck) return;
+      if (!scheduleId) return;
+      if (!precheck) {
+        if (input.outcome === "failed")
+          await schedulesBoot.runner.recordOnceFailure(
+            scheduleId,
+            input.detail ?? "the one-time task could not start",
+          );
+        return;
+      }
       await schedulesBoot.runner.reportFire({
         scheduleId,
         eventId: input.eventId,

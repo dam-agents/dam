@@ -14,6 +14,7 @@ export const onceFormSchema = z
     date: z.string(),
     time: z.string(),
     timezone: z.string().trim().min(1, "Required"),
+    model: z.string(),
   })
   .superRefine((v, ctx) => {
     if (v.when !== "at") return;
@@ -38,6 +39,7 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
     date,
     time,
     timezone,
+    model: existing?.model ?? "",
   };
 }
 

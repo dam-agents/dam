@@ -25,6 +25,7 @@ function renderSchedule(view: ScheduleView): string {
     const tz = view.timezone ?? "UTC";
     lines.push(`Runs:        once at ${localTimeIn(view.at ?? "", tz)} ${tz}`);
     lines.push(`State:       ${onceState(view.status)}`);
+    lines.push(`Model:       ${view.model ?? "agent default"}`);
   } else if (view.rrule !== null) {
     lines.push(`Recurrence:  ${rruleToText(view.rrule)}`);
     lines.push(`RRULE:       ${view.rrule}`);

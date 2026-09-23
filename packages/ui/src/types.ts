@@ -180,6 +180,7 @@ export interface Schedule {
   rrule: string | null;
   at: string | null;
   inSession: "fresh" | "continue" | "report" | null;
+  model: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;

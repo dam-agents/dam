@@ -38,6 +38,7 @@ export interface SchedulesBoot {
   runner: SchedulerRunner;
   worker: RunningWorker;
   agentOnceLimits: AgentOnceLimits;
+  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
@@ -45,6 +46,7 @@ export interface SchedulesBoot {
 export interface ComposeSchedulesAtBootOpts {
   db: Db;
   agentOnceLimits?: AgentOnceLimits;
+  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
@@ -90,6 +92,9 @@ export function composeSchedulesAtBoot(
     runner,
     worker,
     agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
+    ...(opts.sessionModelChoices
+      ? { sessionModelChoices: opts.sessionModelChoices }
+      : {}),
     async retentionTick() {
       const pruned = await repo.deleteFinishedOnceOlderThan(
         ONCE_RETENTION_DAYS,
@@ -143,6 +148,9 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
       owner,
       agentBinding: opts.agentBinding,
       agentOnceLimits: boot.agentOnceLimits,
+      ...(boot.sessionModelChoices
+        ? { sessionModelChoices: boot.sessionModelChoices }
+        : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),
     isOwnedSchedule: async (scheduleId) =>

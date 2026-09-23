@@ -73,6 +73,7 @@ export const scheduleCreateOnceInputSchema = z
     at: localDateTimeSchema.optional(),
     timezone: z.string().min(1),
     task: z.string().min(1),
+    model: z.string().min(1).optional(),
   })
   .strict();
 
@@ -83,6 +84,7 @@ export const scheduleUpdateOnceInputSchema = z
     at: localDateTimeSchema,
     timezone: z.string().min(1),
     task: z.string().min(1),
+    model: z.string().min(1).optional(),
   })
   .strict();
 
@@ -146,6 +148,7 @@ const scheduleSpecOnceSchema = z
         mode: z.enum(["continue", "report"]),
       })
       .optional(),
+    model: z.string().optional(),
     task: z.string().optional(),
     enabled: z.boolean(),
     createdBy: scheduleCreatorSchema,

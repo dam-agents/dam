@@ -40,6 +40,7 @@ export function createHarnessConfigService(deps: {
       return {
         supported: harnessConfigSupported(capabilities),
         catalog: harnessConfigCatalogOf(capabilities),
+        sessionModel: sessionModelSupported(capabilities),
       };
     },
 
@@ -120,6 +121,18 @@ export function createHarnessConfigService(deps: {
 export function harnessConfigSupported(capabilities: unknown): boolean {
   if (capabilities == null) return true;
   return (capabilities as { harnessConfig?: unknown }).harnessConfig === true;
+}
+
+function sessionModelSupported(capabilities: unknown): boolean {
+  if (capabilities == null) return false;
+  return (capabilities as { sessionModel?: unknown }).sessionModel === true;
+}
+
+export function sessionModelChoices(capabilities: unknown): string[] | null {
+  if (!sessionModelSupported(capabilities)) return null;
+  const catalog = harnessConfigCatalogOf(capabilities);
+  const models = catalog?.options.find((o) => o.category === "model");
+  return models?.choices.map((c) => c.value) ?? [];
 }
 
 function harnessConfigCatalogOf(

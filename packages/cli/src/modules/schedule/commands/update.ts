@@ -33,6 +33,8 @@ import type {
 
 interface UpdateOpts {
   at?: string;
+  model?: string;
+  modelDefault?: boolean;
   name?: string;
   task?: string;
   daily?: string;
@@ -63,6 +65,11 @@ export function buildUpdateCommand(deps: {
     .option(
       "--at <YYYY-MM-DD HH:MM>",
       "one-time schedules only: new local time to run at",
+    )
+    .option("--model <model>", "one-time schedules only: model to run on")
+    .option(
+      "--model-default",
+      "one-time schedules only: run on the agent's model",
     )
     .option("--daily <HH:MM>", "rebuild recurrence: daily at HH:MM")
     .option("--every <interval>", "rebuild recurrence: every Nm/Nh")
@@ -115,6 +122,8 @@ export function buildUpdateCommand(deps: {
         opts.precheck !== undefined ||
         opts.precheckNone === true ||
         opts.at !== undefined ||
+        opts.model !== undefined ||
+        opts.modelDefault === true ||
         recurrenceGiven ||
         quietGiven;
       if (!anyFlag) {
@@ -152,9 +161,13 @@ export function buildUpdateCommand(deps: {
       if (view.type === "once") {
         await updateOnce(svc, host, view, opts);
       }
-      if (opts.at !== undefined) {
+      if (
+        opts.at !== undefined ||
+        opts.model !== undefined ||
+        opts.modelDefault === true
+      ) {
         process.stderr.write(
-          "error: --at only applies to one-time schedules\n",
+          "error: --at and --model only apply to one-time schedules\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }
@@ -272,6 +285,7 @@ async function updateOnce(
     task: opts.task ?? view.task ?? "",
     at,
     timezone,
+    ...optionalModel(opts, view),
   });
   if (!result.ok) {
     if (result.error.kind === "schedule-not-found") {
@@ -293,4 +307,13 @@ async function updateOnce(
     );
   }
   process.exit(EXIT_SUCCESS);
+}
+
+function optionalModel(
+  opts: UpdateOpts,
+  view: ScheduleView,
+): { model?: string } {
+  if (opts.modelDefault) return {};
+  const model = opts.model ?? view.model;
+  return model ? { model } : {};
 }

@@ -35,6 +35,7 @@ export interface SchedulerRunner {
     scheduleId: string,
     transition: EventLifecycleTransition,
   ): Promise<void>;
+  recordOnceFailure(scheduleId: string, reason: string): Promise<void>;
   reportFire(input: {
     scheduleId: string;
     eventId: string;
@@ -181,6 +182,7 @@ export function createSchedulerRunner(
       payload.once = true;
       if (sched.spec.origin)
         payload.origin = { ...sched.spec.origin, name: sched.name };
+      if (sched.spec.model) payload.model = sched.spec.model;
     }
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
@@ -332,6 +334,13 @@ export function createSchedulerRunner(
         outcome,
       );
       if (changed) await emitChanged(sched.agentId, scheduleId);
+    },
+
+    async recordOnceFailure(scheduleId, reason): Promise<void> {
+      const sched = await deps.repo.getById(scheduleId);
+      if (sched?.spec.type !== "once") return;
+      await deps.repo.recordFire(scheduleId, reason, null);
+      await emitChanged(sched.agentId, scheduleId);
     },
 
     async restoreAll(): Promise<void> {

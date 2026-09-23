@@ -36,6 +36,7 @@ interface CreateOpts {
   once?: boolean;
   at?: string;
   now?: boolean;
+  model?: string;
   daily?: string;
   every?: string;
   rrule?: string;
@@ -70,6 +71,10 @@ export function buildCreateCommand(deps: {
       "with --once: the local time (in --timezone) to run at",
     )
     .option("--now", "with --once: run immediately")
+    .option(
+      "--model <model>",
+      "with --once: the model its session runs on (default: the agent's)",
+    )
     .option("--daily <HH:MM>", "run daily at HH:MM (24h)")
     .option("--every <interval>", "run every N minutes (Nm) or hours (Nh)")
     .option(
@@ -133,8 +138,12 @@ export function buildCreateCommand(deps: {
           process.stderr.write(`error: ${(e as Error).message}\n`);
           process.exit(EXIT_INVALID_INPUT);
         }
-      } else if (opts.at !== undefined || opts.now) {
-        process.stderr.write("error: --at and --now need --once\n");
+      } else if (
+        opts.at !== undefined ||
+        opts.now ||
+        opts.model !== undefined
+      ) {
+        process.stderr.write("error: --at, --now and --model need --once\n");
         process.exit(EXIT_INVALID_INPUT);
       }
 
@@ -163,6 +172,7 @@ export function buildCreateCommand(deps: {
           task: opts.task,
           timezone,
           ...(at ? { at } : {}),
+          ...(opts.model ? { model: opts.model } : {}),
         });
         if (!created.ok) {
           if (created.error.kind === "invalid-input") {

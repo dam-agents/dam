@@ -94,9 +94,15 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
-        <DetailCard label="Session mode">
-          <span className="capitalize">{sessionMode ?? "fresh"}</span>
-        </DetailCard>
+        {schedule.type === "once" ? (
+          <DetailCard label="Model">
+            {schedule.model ?? "Agent default"}
+          </DetailCard>
+        ) : (
+          <DetailCard label="Session mode">
+            <span className="capitalize">{sessionMode ?? "fresh"}</span>
+          </DetailCard>
+        )}
       </div>
     </div>
   );

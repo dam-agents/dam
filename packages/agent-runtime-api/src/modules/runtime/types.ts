@@ -144,6 +144,7 @@ export const triggerEventPayload = z.object({
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   once: z.literal(true).optional(),
   origin: onceOrigin.optional(),
+  model: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
@@ -315,6 +316,7 @@ export const capabilities = z.object({
   events: z.array(eventKind),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
+  sessionModel: z.boolean().optional(),
   kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
 });

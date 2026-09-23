@@ -66,6 +66,7 @@ export interface CreateOnceScheduleInput {
   task: string;
   timezone: string;
   at?: string;
+  model?: string;
 }
 
 export function useCreateOnceSchedule() {
@@ -85,6 +86,7 @@ export interface UpdateOnceScheduleInput {
   task: string;
   timezone: string;
   at: string;
+  model?: string;
 }
 
 export function useUpdateOnceSchedule() {

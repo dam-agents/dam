@@ -26,6 +26,7 @@ import {
   type OnceFormValues,
   onceLocalMoment,
 } from "./once-form-schema.js";
+import { OnceModelField } from "./once-model-field.js";
 
 interface Props {
   targetAgentId: string;
@@ -82,7 +83,12 @@ export function OnceScheduleForm({
       onSaved();
       onClose();
     };
-    const fields = { name: v.name, task: v.task, timezone: v.timezone };
+    const fields = {
+      name: v.name,
+      task: v.task,
+      timezone: v.timezone,
+      ...(v.model ? { model: v.model } : {}),
+    };
     if (existing) {
       updateOnce.mutate(
         { id: existing.id, ...fields, at: `${v.date}T${v.time}` },
@@ -176,6 +182,10 @@ export function OnceScheduleForm({
               )}
             />
           </FormField>
+        )}
+
+        {existing?.inSession !== "continue" && (
+          <OnceModelField agentId={targetAgentId} register={register} />
         )}
 
         <FormField label="Prompt" error={errors.task?.message} disableInset>

@@ -63,6 +63,7 @@ export function createSchedulesService(deps: {
   agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
   agentOnceLimits?: AgentOnceLimits;
+  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
   now?: () => Date;
 }): SchedulesService {
   const now = deps.now ?? (() => new Date());
@@ -72,6 +73,27 @@ export function createSchedulesService(deps: {
     const ok = await deps.agentExists(agentId);
     if (!ok)
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+  }
+
+  async function ensureSessionModel(
+    agentId: string,
+    model: string | undefined,
+    origin: ScheduleOnceOrigin | undefined,
+  ): Promise<void> {
+    if (model === undefined) return;
+    if (origin?.mode === "continue")
+      throw badRequest(
+        "a task that continues its session keeps that session's model; drop the model or run it fresh",
+      );
+    const choices = (await deps.sessionModelChoices?.(agentId)) ?? null;
+    if (choices === null)
+      throw badRequest(
+        "this agent's harness cannot run a session on a chosen model; leave the model unset",
+      );
+    if (choices.length > 0 && !choices.includes(model))
+      throw badRequest(
+        `unknown model "${model}"; choose one of: ${choices.join(", ")}`,
+      );
   }
 
   async function ensureAgentWithinLimits(agentId: string): Promise<void> {
@@ -206,6 +228,7 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
+      await ensureSessionModel(input.agentId, input.model, origin);
       if (createdBy === "agent") await ensureAgentWithinLimits(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
@@ -216,6 +239,7 @@ export function createSchedulesService(deps: {
         enabled: true,
         createdBy,
         ...(origin ? { origin } : {}),
+        ...(input.model ? { model: input.model } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -256,11 +280,18 @@ export function createSchedulesService(deps: {
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
       const at = resolveMoment(input.at, input.timezone, now());
+      await ensureSessionModel(
+        current.agentId,
+        input.model,
+        current.spec.origin,
+      );
+      const { model: _previous, ...unchanged } = current.spec;
       const spec: ScheduleSpec = {
-        ...current.spec,
+        ...unchanged,
         at: at.toISOString(),
         timezone: input.timezone,
         task: input.task,
+        ...(input.model ? { model: input.model } : {}),
       };
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);

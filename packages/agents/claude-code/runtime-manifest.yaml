@@ -16,6 +16,8 @@ sessionHistory:
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
+    # A session can be switched to another model over ACP without touching this file.
+    sessionModel: true
     keys:
       model: "model"
       mode: "permissions.defaultMode"

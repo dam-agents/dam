@@ -8,7 +8,10 @@ import type {
   TriggerEventPayload,
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
-import type { TriggerSessionDriver } from "../../acp/index.js";
+import {
+  SessionModelError,
+  type TriggerSessionDriver,
+} from "../../acp/index.js";
 import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
@@ -79,6 +82,7 @@ export function createTriggerPlugin(deps: {
           reportTo: origin.sessionRef,
           reportName: origin.name,
         },
+        ...(payload.model ? { model: payload.model } : {}),
       });
       return;
     }
@@ -104,6 +108,7 @@ export function createTriggerPlugin(deps: {
       task,
       mcpServers: payload.mcpServers,
       platformMeta,
+      ...(payload.model ? { model: payload.model } : {}),
     });
   };
 
@@ -138,7 +143,24 @@ export function createTriggerPlugin(deps: {
     payload: TriggerEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
-    if (!payload.precheck) return startSession(payload, payload.task);
+    if (!payload.precheck) {
+      try {
+        await startSession(payload, payload.task);
+      } catch (err) {
+        if (!(err instanceof SessionModelError)) throw err;
+        deps.log(`[trigger] ${payload.scheduleId}: ${err.message}`);
+        await deps.reporter
+          ?.report({
+            eventId: ctx.eventId,
+            outcome: "failed",
+            detail: err.message,
+          })
+          .catch((reportErr: Error) =>
+            deps.log(`[trigger] event report failed: ${reportErr.message}`),
+          );
+      }
+      return;
+    }
     void decideAndRun(payload, payload.precheck, ctx.eventId).catch((err) =>
       deps.log(`[trigger] precheck run failed: ${(err as Error).message}`),
     );

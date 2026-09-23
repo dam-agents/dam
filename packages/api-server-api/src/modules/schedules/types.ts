@@ -50,6 +50,7 @@ export interface ScheduleSpecOnce {
   at: string;
   timezone: string;
   origin?: ScheduleOnceOrigin;
+  model?: string;
   task?: string;
   precheck?: undefined;
   sessionMode?: undefined;
