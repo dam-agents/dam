@@ -170,8 +170,10 @@ function framePrompt(opts: {
   const parts: string[] = [opts.contract];
   if (opts.guidance) parts.push(opts.guidance);
   if (opts.context && opts.context.length > 0) {
-    if (opts.contextLegend) parts.push(opts.contextLegend);
-    parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
+    const legend = opts.contextLegend ? [opts.contextLegend, ""] : [];
+    parts.push(
+      ["<context>", ...legend, ...opts.context, "</context>"].join("\n"),
+    );
   }
   parts.push(opts.text);
   const delivered = opts.files ?? [];
@@ -2988,12 +2990,12 @@ export function createSlackWorker(
     return [
       "<new-messages>",
       `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
-      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
       ...(conversation.hasThread
         ? []
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
           ]),
+      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
       "</new-messages>",
     ].join("\n");
   }
