@@ -60,7 +60,7 @@ describe("prompt delivery", () => {
     });
 
     delivery.beginSend(PROMPT, fail);
-    onFrame(started, SESSION);
+    onFrame(accepted(), SESSION);
     vi.advanceTimersByTime(DELIVERY_TIMEOUT_MS * 5);
 
     expect(fail).not.toHaveBeenCalled();
