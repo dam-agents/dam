@@ -24,6 +24,7 @@ struct Fake {
     discarded: Mutex<Vec<String>>,
     console: Mutex<String>,
     ungrowable: AtomicBool,
+    kept: AtomicBool,
 }
 
 impl Fake {
@@ -104,6 +105,10 @@ impl Runtime for Fake {
 
     fn storage_growable(&self, _id: &str) -> bool {
         !self.ungrowable.load(Ordering::SeqCst)
+    }
+
+    fn has_kept_storage(&self, _id: &str) -> bool {
+        self.kept.load(Ordering::SeqCst)
     }
 }
 
@@ -987,17 +992,33 @@ async fn a_moved_gateway_stops_a_machine_even_when_its_disk_cannot_grow() {
     assert_eq!(h.fake.state("m1").unwrap(), STATE_STOPPED);
 }
 
-// TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size. The create that resumes it adopts that disk, so a larger size asked for then is refused before the create too, and never recorded as applied.
+// TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size, and the next spec also asks for a larger disk. The create that resumes it boots onto the kept disk, which is never grown at start, so it is capped at the size that disk has: the agent comes back, the stored spec says what it really has, and the larger size is then taken like any other resize — here refused, because the kept disk cannot grow, while the machine keeps running.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_resumed_recreate_does_not_record_a_size_the_kept_disk_lacks() {
+async fn a_resumed_recreate_boots_at_the_size_the_kept_disk_has() {
     let h = Harness::new("ungrowable-resume");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
     locked(&h.fake.states).remove("m1");
+    h.server.forget_state("m1");
+    h.fake.kept.store(true, Ordering::SeqCst);
     h.fake.ungrowable.store(true, Ordering::SeqCst);
     let mut resumed = spec(true);
     resumed.image = "quay.io/x/vm:2".into();
     resumed.storage_gib += 10;
+    h.server.put("m1", resumed.clone()).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.calls(),
+        ["create m1", "start m1", "create m1", "start m1"]
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
+    );
+    h.fake.kept.store(false, Ordering::SeqCst);
+
     h.server.put("m1", resumed).unwrap();
     let status = h.settle("m1").await;
     assert!(
@@ -1006,11 +1027,14 @@ async fn a_resumed_recreate_does_not_record_a_size_the_kept_disk_lacks() {
             .contains(crate::embedded::STORAGE_NOT_GROWABLE),
         "{status:?}"
     );
-    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
-    assert_eq!(
-        read_spec(&h.dir.join("machines"), "m1")
-            .unwrap()
-            .storage_gib,
-        spec(true).storage_gib
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
+
+    let go = crate::gosource::read("server.go");
+    let ensure =
+        crate::gosource::function_body(&go, "(s *Server) ensure").expect("server.go has ensure");
+    assert!(
+        ensure.contains("s.Runtime.HasKeptStorage(id)")
+            && ensure.contains("spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)"),
+        "the Go runner no longer caps a create onto a kept disk at the disk's size: {ensure}"
     );
 }

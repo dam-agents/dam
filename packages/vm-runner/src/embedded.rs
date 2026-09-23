@@ -213,6 +213,10 @@ impl Runtime for Smolvm {
         let kept_qcow2 = self.kept(id).is_some_and(|kept| has_qcow2_storage(&kept));
         !template_backed_storage(id) && !kept_qcow2
     }
+
+    fn has_kept_storage(&self, id: &str) -> bool {
+        self.kept(id).is_some_and(|kept| kept.exists())
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine, in the shape the Go runner's `machine create` flags produced: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.

@@ -33,6 +33,10 @@ pub trait Runtime: Send + Sync {
     fn storage_growable(&self, _id: &str) -> bool {
         true
     }
+    // UNIT_BOUNDARY_DESCRIPTION: whether a storage disk kept by a recreate is waiting for this machine, which means the recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so that create must not ask for more than the disk it gets.
+    fn has_kept_storage(&self, _id: &str) -> bool {
+        false
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a cached archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.

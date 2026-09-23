@@ -427,8 +427,10 @@ impl Server {
         let ungrowable =
             grown_storage(applied.as_ref(), spec).is_some() && !self.runtime.storage_growable(id);
         if state == STATE_ABSENT {
-            if ungrowable {
-                anyhow::bail!("{STORAGE_NOT_GROWABLE}");
+            if let Some(applied) = &applied {
+                if self.runtime.has_kept_storage(id) {
+                    spec.storage_gib = spec.storage_gib.min(applied.storage_gib);
+                }
             }
             self.create(id, spec)?;
             return write_spec(&self.config.state_dir, id, spec);
