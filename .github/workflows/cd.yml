@@ -961,6 +961,7 @@ jobs:
         run: |
           set -euo pipefail
           results=$(mise x --no-deps -- pnpm audit --prod --json) || true
+          printf '%s' "$results" | jq -e 'has("advisories") and has("metadata")' > /dev/null
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -1139,7 +1140,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          unfinished=$(jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | join(", ")' <<<"$SCANNERS")
+          unfinished=$(jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")' <<<"$SCANNERS")
           if [ -n "$unfinished" ]; then
             echo "::warning::scanner(s) did not finish: $unfinished; the summary issue is left as it is"
             exit 0
