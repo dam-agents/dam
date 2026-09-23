@@ -13,6 +13,7 @@ import {
   type ConnectionView,
   type Contribution,
   type SecretRef,
+  unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -65,6 +66,22 @@ const PROVIDER_IS_ACTIVE: Record<ConnectionStatus, boolean> = {
   pending: false,
   disconnected: false,
 };
+
+function assertNoUnaddressableRival(
+  added: readonly Connection[],
+  desired: readonly Connection[],
+): void {
+  for (const connection of added) {
+    for (const other of desired) {
+      const host = unaddressableRivalHost(connection, other);
+      if (host === undefined) continue;
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `an agent can use only one of '${other.name}' and '${connection.name}': both sign in to ${host}`,
+      });
+    }
+  }
+}
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -496,6 +513,14 @@ export function createConnectionsService(deps: {
       }
     },
 
+    async validateGrantSet(connectionIds: string[]): Promise<void> {
+      const wanted = new Set(connectionIds);
+      const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
+        wanted.has(c.id),
+      );
+      assertNoUnaddressableRival(granted, granted);
+    },
+
     startOAuth(
       connectionId: string,
       opts?: { returnTo?: string; popup?: boolean },
@@ -679,6 +704,14 @@ export function createConnectionsService(deps: {
           .map((c) => c.connectionId)
           .filter((id) => !desiredIds.has(id));
 
+        const grantedConnections = deduped
+          .map((id) => ownedById.get(id))
+          .filter((c): c is Connection => c !== undefined);
+        assertNoUnaddressableRival(
+          grantedConnections.filter((c) => !currentIds.has(c.id)),
+          grantedConnections,
+        );
+
         for (const id of toGrant) await deps.repo.grant(id, agentId);
         for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
@@ -693,9 +726,6 @@ export function createConnectionsService(deps: {
           });
         }
 
-        const grantedConnections = deduped
-          .map((id) => ownedById.get(id))
-          .filter((c): c is Connection => c !== undefined);
         await deps.fanOut.apply({
           agentId,
           ownerId: deps.ownerId,

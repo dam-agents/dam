@@ -1,5 +1,6 @@
 import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
+import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
@@ -8,6 +9,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 
@@ -31,6 +33,10 @@ export function GrantedConnectionsPanel({
   leading,
 }: Props) {
   const maintenance = useConnectionMaintenance();
+  const granted = useMemo(
+    () => groups.flatMap((group) => group.connections),
+    [groups],
+  );
 
   const header = (
     <div className="mb-3 flex items-center justify-between">
@@ -66,6 +72,7 @@ export function GrantedConnectionsPanel({
     <>
       {header}
       <Wrap inset={inset}>
+        <GrantRivalryCallout granted={granted} />
         {leading}
         {groups.map((group) => (
           <ConnectionGroupCard
