@@ -42,6 +42,7 @@ const agent = (
   overBudget: false,
   size,
   state,
+  podRestarts: 0,
   contributionFailures: [],
   unsupportedContributionKinds: [],
   workspaceFailures: [],

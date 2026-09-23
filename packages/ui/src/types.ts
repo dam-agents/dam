@@ -145,6 +145,8 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podRestarts: number;
+  podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: {

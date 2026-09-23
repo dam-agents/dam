@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "exports": {
-    "./use-prompt-delivery": "./src/modules/sessions/hooks/use-prompt-delivery.ts"
+    "./prompt-delivery": "./src/modules/sessions/lib/prompt-delivery.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",

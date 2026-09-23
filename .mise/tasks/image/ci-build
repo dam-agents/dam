@@ -35,11 +35,12 @@ arch="${1:?usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
 
-# spec <component> -> "<dockerfile> <context> <takes-base>"
+# spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
 spec() {
   case "$1" in
     controller) echo "packages/controller/Dockerfile packages/controller no" ;;
-    vm-runner) echo "packages/controller/Dockerfile.vm-runner packages/controller no" ;;
+    # The runner is the Rust crate, built from a second named context.
+    vm-runner) echo "packages/controller/Dockerfile.vm-runner packages/controller no vm-runner=packages/vm-runner" ;;
     api-server) echo "packages/api-server/Dockerfile . no" ;;
     ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
@@ -59,9 +60,10 @@ output_for() {
 }
 
 build_one() {
-  local c=$1 kind=$2 s file ctx takes out args=()
+  local c=$1 kind=$2 s file ctx takes extra out args=()
   s="$(spec "$c")" || return 1
-  read -r file ctx takes <<< "$s"
+  read -r file ctx takes extra <<< "$s"
+  [ -z "$extra" ] || args+=(--build-context "$extra")
   out="$(output_for "$c" "$kind")" || return 1
   if [ "$takes" = yes ]; then
     [ -n "$base" ] || { echo "ci-build: $c needs --base-image" >&2; return 1; }

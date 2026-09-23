@@ -72,6 +72,8 @@ export interface Agent {
   overBudget: boolean;
   overBudgetMessage?: string;
   podTerminationReason?: string;
+  podRestarts: number;
+  podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: WorkspaceFailure[];

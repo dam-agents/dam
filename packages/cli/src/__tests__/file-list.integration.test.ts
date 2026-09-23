@@ -73,6 +73,7 @@ describe("dam file list (integration)", () => {
           features: { liveUpdates: true },
           stopRequested: false,
           overBudget: false,
+          podRestarts: 0,
           contributionFailures: [],
           unsupportedContributionKinds: [],
           workspaceFailures: [],
