@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -145,7 +145,7 @@ Fetching is the easy half. An image preloaded for nobody is held by no machine a
 
 **It is not in the boot path**, deliberately. A machine reads its tree out of the directory, so with the service down a cached image still boots and a miss is still the runner's own to fetch — the path a custom image always takes. What is lost while it is gone is the head start, and eventually the pins. It fetches with the install's default pull secrets; a harness image only a per-template secret can read is left to the runner.
 
-**A private image is checked per machine.** A runner fetches with the pull secrets the Agent's pod would list ([security-and-credentials](security-and-credentials.md#image-pull-credentials)), for that fetch alone: they are never stored with the machine and never reach the guest. A shared cache must not turn one owner's credential into another's, so an entry no anonymous read could have fetched is marked private, and a machine boots from it only once its own credentials read the image's manifest — on a per-owner cache too. That check needs the registry, so a private entry does not boot while it is unreachable; a public one still does.
+**A private image is checked per machine.** A runner fetches with the pull secrets the Agent's pod would list ([security-and-credentials](security-and-credentials.md#image-pull-credentials)), for that fetch alone: they are never stored with the machine and never reach the guest. A shared cache must not turn one owner's credential into another's, so an entry an anonymous read failed to fetch is marked private, and a machine boots from it only once its credentials read the manifest, even on a per-owner cache. A later successful anonymous read clears the mark. The check needs the registry, so a private entry cannot boot while it is down.
 
 ### Warm PVC pool
 
