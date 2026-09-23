@@ -24,7 +24,7 @@ pub fn with_console(message: &str, tail: &str) -> String {
     format!("{message}{CONSOLE_ENDS}{tail}")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, and the runner opens one per health probe, so within a minute those lines are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
 pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(mut file) = fs::File::open(path) else {
         return String::new();
@@ -32,10 +32,11 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(size) = file.metadata().map(|m| m.len()) else {
         return String::new();
     };
-    let offset = size.saturating_sub(limit);
+    let window = limit.saturating_mul(16);
+    let offset = size.saturating_sub(window);
     let mut body = Vec::new();
     if file.seek(SeekFrom::Start(offset)).is_err()
-        || file.take(limit).read_to_end(&mut body).is_err()
+        || file.take(window).read_to_end(&mut body).is_err()
     {
         return String::new();
     }
@@ -44,7 +45,30 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
             body.drain(..=cut);
         }
     }
-    printable(&String::from_utf8_lossy(&body))
+    if body.last() == Some(&b'\n') {
+        body.pop();
+    }
+    let has = |line: &[u8], needle: &[u8]| line.windows(needle.len()).any(|w| w == needle);
+    let kept: Vec<&[u8]> = body
+        .split(|b| *b == b'\n')
+        .filter(|line| {
+            !(has(line, b"\"target\":\"smolvm_agent\"")
+                && has(line, b"\"message\":\"accepted connection\""))
+        })
+        .collect();
+    let tail = kept.join(&b'\n');
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let mut start = 0;
+    while tail.len() - start > limit {
+        match tail[start..].iter().position(|b| *b == b'\n') {
+            Some(cut) if cut < limit => start += cut + 1,
+            _ => {
+                start = tail.len() - limit;
+                break;
+            }
+        }
+    }
+    printable(&String::from_utf8_lossy(&tail[start..]))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted.
@@ -137,6 +161,64 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
+    #[test]
+    fn probe_lines_do_not_crowd_the_guest_out_of_the_tail() {
+        let dir =
+            std::env::temp_dir().join(format!("vm-runner-console-probes-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join(CONSOLE_LOG);
+        let probe = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
+        let flatten = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"flattening local image archive\"},\"target\":\"smolvm_agent::storage\"}";
+        let mut text = format!("kernel panic\n{flatten}\n");
+        for _ in 0..200 {
+            text.push_str(probe);
+        }
+        fs::write(&log, &text).unwrap();
+        assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end, as the Go runner keeps it: the two tails must agree on one console. The limit counts the console's bytes before any decoding, as the Go runner counts them, so bytes that are not UTF-8 and CRLF line ends give both runners the same tail, and never a panic.
+    #[test]
+    fn a_long_last_line_of_bad_bytes_is_cut_at_a_character() {
+        let dir =
+            std::env::temp_dir().join(format!("vm-runner-console-bytes-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join(CONSOLE_LOG);
+        let mut bytes = b"guest panic: ".to_vec();
+        bytes.extend(std::iter::repeat_n(0xFF, 2000));
+        fs::write(&log, &bytes).unwrap();
+        let tail = tail_of(&log, 4096);
+        assert_eq!(
+            tail.chars().count(),
+            2013,
+            "the limit counts the console's bytes, not the decoded text"
+        );
+        assert!(
+            tail.starts_with("guest panic: ") && tail.ends_with('\u{FFFD}'),
+            "{tail:?}"
+        );
+        fs::write(&log, "ab\r\n".repeat(2000)).unwrap();
+        assert_eq!(
+            tail_of(&log, 4096).matches("ab").count(),
+            1024,
+            "a CRLF console keeps its \\r inside the limit, as the Go runner counts it"
+        );
+        fs::write(&log, format!("first\n{}\nabc", "x".repeat(6000))).unwrap();
+        let tail = tail_of(&log, 4096);
+        assert_eq!(
+            tail.len(),
+            4096,
+            "an over-limit line keeps its end, as the Go runner keeps it"
+        );
+        assert!(
+            tail.ends_with("\nabc") && tail.starts_with("xxx"),
+            "{tail:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     // TEST_SCENARIO: an earlier boot printed a Secret, the operator rotated it, and the runner restarted and so forgot the old value. The console still holds that boot. Starting the machine again empties it first, so no later tail can quote a value the runner no longer knows to redact.
     #[test]
     fn a_start_empties_the_console_an_earlier_boot_left() {
@@ -162,7 +244,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: an Agent's condition reads the same whichever runner wrote it, so the file, the size, the window and both sentences are the Go runner's.
+    // TEST_SCENARIO: an Agent's condition reads the same whichever runner wrote it, so the file, the size, the read window, the probe-line matcher and both sentences are the Go runner's.
     #[test]
     fn the_console_is_read_as_the_go_runner_reads_it() {
         let go = gosource::read("console.go");
@@ -190,5 +272,14 @@ mod tests {
         assert!(gosource::literals_in(&go, "withConsole")
             .iter()
             .any(|l| l == "\\nthe guest console ends:\\n"));
+        assert!(
+            go.lines().any(|line| line.trim() == "window := limit * 16"),
+            "the Go runner reads a different window before dropping probe lines"
+        );
+        assert!(
+            go.contains(r#""target":"smolvm_agent""#)
+                && go.contains(r#""message":"accepted connection""#),
+            "the Go runner matches probe lines differently"
+        );
     }
 }

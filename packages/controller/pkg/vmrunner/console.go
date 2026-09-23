@@ -40,7 +40,7 @@ func (r *Smolvm) ConsoleTail(id string) string {
 	return tailOf(filepath.Join(dir, consoleLogName), consoleTailBytes)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given — a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console: what a tail can show is then only the boot this runner started, with a spec it holds. The VMM is gone by the time this runs, so no writer holds the file open. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted.
+// UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given — a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console: what a tail can show is then only the boot this runner started, with a spec it holds. The VMM is gone by the time this runs, so no writer holds the file open. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted. smolvm's agent logs every connection it accepts, and the runner opens one per health probe, so within a minute those lines are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
 func clearConsole(id, dir string) {
 	path := filepath.Join(dir, consoleLogName)
 	err := os.Truncate(path, 0)
@@ -62,11 +62,12 @@ func tailOf(path string, limit int64) string {
 	if err != nil {
 		return ""
 	}
-	offset := info.Size() - limit
+	window := limit * 16
+	offset := info.Size() - window
 	if offset < 0 {
 		offset = 0
 	}
-	body, err := io.ReadAll(io.NewSectionReader(f, offset, limit))
+	body, err := io.ReadAll(io.NewSectionReader(f, offset, window))
 	if err != nil {
 		return ""
 	}
@@ -75,6 +76,22 @@ func tailOf(path string, limit int64) string {
 		if cut := strings.IndexByte(text, '\n'); cut >= 0 {
 			text = text[cut+1:]
 		}
+	}
+	kept := make([]string, 0)
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		if strings.Contains(line, `"target":"smolvm_agent"`) && strings.Contains(line, `"message":"accepted connection"`) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	text = strings.Join(kept, "\n")
+	for int64(len(text)) > limit {
+		cut := strings.IndexByte(text, '\n')
+		if cut < 0 || int64(cut) >= limit {
+			text = text[int64(len(text))-limit:]
+			break
+		}
+		text = text[cut+1:]
 	}
 	return printable(text)
 }
