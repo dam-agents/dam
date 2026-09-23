@@ -77,6 +77,10 @@ func main() {
 			os.Exit(1)
 		}
 		if err := os.Chmod(dir, 0o755); err != nil {
+			if dir == *imageDir && errors.Is(err, syscall.EROFS) {
+				slog.Warn("image dir is read-only, so machine uids see the mount's own permissions", "path", dir)
+				continue
+			}
 			slog.Error("opening state dir to machine uids", "path", dir, "error", err)
 			os.Exit(1)
 		}
