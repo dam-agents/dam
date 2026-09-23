@@ -93,6 +93,13 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # The runner pod's memory request follows the machines it holds, changed
+  # in place so the Deployment never recreates the pod (and every machine
+  # with it). Only the resize subresource: it cannot touch anything but a
+  # container's resources. A cluster without it keeps the install's request.
+  - apiGroups: [""]
+    resources: ["pods/resize"]
+    verbs: ["update", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "create", "update", "delete"]
@@ -178,6 +185,40 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "platform.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- if and .Values.virtualization.enabled (not $clusterScoped) }}
+---
+# A runner's claim is sized from its owner's demand only on a class that can
+# grow it later; elsewhere it is created at runner.storage. StorageClasses are
+# cluster-scoped, so a namespace-scoped install needs this read-only grant to
+# tell the two apart. Without it every runner claim is created at the ceiling.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+rules:
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "platform.controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- if .Values.virtualization.enabled }}
 ---
 # Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under

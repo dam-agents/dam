@@ -210,12 +210,21 @@ virtualization:
     # recreated with empty disks, and the bytes stay until the owner's last vm
     # agent goes and the claim is deleted with the runner. Delete the runner
     # PVCs before the upgrade to reclaim them at once.
-    # Raising this reaches the claims that already exist, not only the next
-    # owner's: the controller applies the larger size in place. It needs a
-    # class that allows volume expansion — one that does not refuses the
-    # resize, which costs a warning in the controller log and leaves that
-    # runner at the size it has, rather than failing its reconcile.
-    # Lowering it changes nothing: Kubernetes never shrinks a claim.
+    # `storage` is the CEILING of one owner's claim, not its size. The claim
+    # is sized from demand: the sum of that owner's machine disks, 1Gi of
+    # headroom per machine for its root overlay and bookkeeping, and
+    # `imageCache.budget` when the cache lives on this claim (no `hostPath`
+    # and no `imageArchiveHostPath`). The controller grows the claim in place
+    # as the owner adds agents, up to this value and no further, so an
+    # owner's disks past it do not fit. Growing needs a class that allows
+    # volume expansion; on a class that does not, or one the controller
+    # cannot read, the claim is created at this value instead, as it always
+    # was, because it could not grow later. A refused resize costs a warning
+    # in the controller log and leaves that runner at the size it has, rather
+    # than failing its reconcile.
+    # Kubernetes never shrinks a claim: lowering this, or removing agents,
+    # changes no claim that exists, and claims created at the old fixed size
+    # keep it.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
@@ -225,9 +234,18 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). Leave requests below limits and an
-    # idle owner's headroom stays the node's to lend. Leave the CPU limit
-    # unset: it would throttle every guest at once.
+    # keeping `reserveMiB` for itself). `requests.memory` is the floor: the
+    # controller raises the running pod's memory request, in place, to the
+    # memory of the owner's machines that should be running plus
+    # `reserveMiB`, up to the limit, and lowers it again as they stop — so
+    # the scheduler sees what the runner has committed and an idle owner's
+    # headroom stays the node's to lend. Set it below the limit for that to
+    # happen; with no request Kubernetes uses the limit and nothing moves.
+    # It needs in-place pod resize (the `pods/resize` subresource,
+    # Kubernetes 1.33+); on an older cluster the request stays where it is
+    # set, and the controller logs that once. A node with no room defers or
+    # refuses the resize, which the controller reports too. Leave the CPU
+    # limit unset: it would throttle every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
