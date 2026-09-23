@@ -13,9 +13,8 @@ use smolvm::storage::{expand_disk, Storage, StorageDisk, STORAGE_DISK_FILENAME};
 use crate::api::{MachineSpec, STATE_ABSENT, STATE_RUNNING, STATE_STOPPED};
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    adopt_kept_storage, clear_for_start, discard_kept, discard_overlay, grown_storage, kept_dir,
-    kill_orphans, move_storage, timed, updated_env, vmm_gone, workload, Machine, Runtime,
-    GUEST_AGENT_PORT, VMM_EXIT_WAIT,
+    clear_for_start, discard_overlay, grown_storage, kill_orphans, timed, updated_env, workload,
+    Machine, Runtime, GUEST_AGENT_PORT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — exactly where the smolvm CLI keeps it under the runner's HOME, so machines the Go runner created are machines this one can start, stop and delete. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -72,11 +71,8 @@ impl Runtime for Smolvm {
                 workload.workdir,
                 Some(USER.to_string()),
             )?;
-            adopt_kept_storage(id, &vm_data_dir(id))?;
             if let Some(gib) = storage_gib {
-                if !has_qcow2_storage(&vm_data_dir(id)) {
-                    raw_storage_disk(id, gib)?;
-                }
+                raw_storage_disk(id, gib)?;
             }
             Ok(())
         })
@@ -141,7 +137,6 @@ impl Runtime for Smolvm {
     // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
-        adopt_kept_storage(id, &dir)?;
         if dir.is_dir() {
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir);
@@ -161,26 +156,6 @@ impl Runtime for Smolvm {
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: smolvm's delete removes the machine's whole directory, and the storage disk inside it is everything the agent keeps, so the disk is moved out first. It is moved only once no VMM holds it, because a VMM that is still exiting may still be writing to it.
-    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()> {
-        let dir = vm_data_dir(id);
-        if dir.is_dir() {
-            let kept = kept_dir(id).ok_or_else(|| {
-                anyhow::anyhow!("HOME is not set, so there is nowhere to keep the storage disk of {id} across the new image")
-            })?;
-            if !vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT) {
-                anyhow::bail!("machine {id} still has a VMM holding its disks, so its storage disk cannot be kept across the new image");
-            }
-            move_storage(&dir, &kept)
-                .with_context(|| format!("keeping the storage disk of {id}"))?;
-        }
-        self.delete(id)
-    }
-
-    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()> {
-        Ok(discard_kept(id)?)
     }
 
     fn storage_growable(&self, id: &str) -> bool {
@@ -534,58 +509,6 @@ mod tests {
     }
 
     // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its directory gone.
-    // TEST_SCENARIO: a new image means a new machine under the same name, and the agent's disk has to come with it. The disk is set aside before smolvm's delete takes the machine's directory, and the create that follows puts it back instead of seeding an empty one — both of them with the real smolvm database and directory layout.
-    #[test]
-    fn a_recreated_machine_gets_its_storage_disk_back() {
-        let home = Home::new("recreate");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
-        let spec = spec();
-        let launch = launch();
-        let create = |image: &str| {
-            smolvm.create(
-                "m1",
-                &Machine {
-                    spec: &spec,
-                    image,
-                    host_port: 32000,
-                    share: &share,
-                    launch: Some(&launch),
-                },
-            )
-        };
-        create("quay.io/x/vm:1").unwrap();
-        fs::write(storage_disk_path("m1"), "work").unwrap();
-        fs::write(vm_data_dir("m1").join("storage.formatted"), "1").unwrap();
-
-        smolvm.delete_keeping_storage("m1").unwrap();
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_ABSENT);
-        assert!(!storage_disk_path("m1").exists());
-
-        create("quay.io/x/vm:2").unwrap();
-        let mut head = [0u8; 4];
-        std::io::Read::read_exact(
-            &mut fs::File::open(storage_disk_path("m1")).unwrap(),
-            &mut head,
-        )
-        .unwrap();
-        assert_eq!(
-            &head, b"work",
-            "the create seeded a new disk over the kept one"
-        );
-        assert!(vm_data_dir("m1").join("storage.formatted").exists());
-        assert!(!kept_dir("m1").unwrap().exists());
-        assert_eq!(
-            smolvm.record("m1").unwrap().unwrap().image.as_deref(),
-            Some("quay.io/x/vm:2")
-        );
-
-        smolvm.delete_keeping_storage("m1").unwrap();
-        smolvm.discard_kept_storage("m1").unwrap();
-        assert!(!kept_dir("m1").unwrap().exists());
-    }
-
     #[test]
     fn a_delete_removes_the_machine_and_deleting_nothing_succeeds() {
         let home = Home::new("delete");
