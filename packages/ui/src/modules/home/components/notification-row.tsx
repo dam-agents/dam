@@ -3,7 +3,10 @@ import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
-import { isAsleep } from "../../agents/components/avatar/agent-avatar.js";
+import {
+  isAsleep,
+  STOPPED_AVATAR_CLASS,
+} from "../../agents/components/avatar/agent-avatar.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
@@ -65,10 +68,12 @@ function RowIdentity({
   kind,
   avatarName,
   sleeping,
+  stopped,
 }: {
   kind: RowKind;
   avatarName: string | undefined;
   sleeping: boolean;
+  stopped: boolean;
 }) {
   if (avatarName === undefined) {
     return (
@@ -87,8 +92,8 @@ function RowIdentity({
       <LazyRobotHead
         seed={avatarName}
         size={46}
-        sleeping={sleeping}
-        className="-m-[3px]"
+        sleeping={sleeping || stopped}
+        className={cn("-m-[3px]", stopped && STOPPED_AVATAR_CLASS)}
       />
       {kind !== "agent" && (
         <span
@@ -129,9 +134,9 @@ export function NotificationRow({
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
   const avatars = useAgentAvatars() && avatarName !== undefined;
-  const sleeping = isAsleep(
-    agents.find((agent) => agent.id === item.agentId)?.state,
-  );
+  const agent = agents.find((a) => a.id === item.agentId);
+  const sleeping = isAsleep(agent?.state);
+  const stopped = agent?.stopRequested ?? false;
 
   return (
     <div
@@ -155,6 +160,7 @@ export function NotificationRow({
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
           sleeping={sleeping}
+          stopped={stopped}
         />
         {running && (
           <span

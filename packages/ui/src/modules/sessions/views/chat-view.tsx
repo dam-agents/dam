@@ -579,6 +579,7 @@ export function ChatView() {
               name={agentView.name}
               size={28}
               sleeping={isAsleep(agentDisplay?.state)}
+              stopped={agentView.stopRequested}
             />
           )}
           <h1 className="text-sm font-bold text-foreground truncate">

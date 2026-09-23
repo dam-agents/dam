@@ -103,7 +103,8 @@ export function AgentRow({
         name={agent.name}
         size={64}
         sleeping={isAsleep(display.state)}
-        className="self-start"
+        stopped={agent.stopRequested}
+        className="mr-2 self-start"
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">

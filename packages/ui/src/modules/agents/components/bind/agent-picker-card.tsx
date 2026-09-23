@@ -35,7 +35,12 @@ export function AgentPickerCard({
       onClick={onSelect}
       className="flex w-full items-start justify-between gap-4 p-5"
     >
-      <AgentAvatar name={name} size={40} sleeping={isAsleep(display.state)} />
+      <AgentAvatar
+        name={name}
+        size={40}
+        sleeping={isAsleep(display.state)}
+        stopped={agent.stopRequested}
+      />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           <span className="truncate text-base font-semibold text-foreground">

@@ -87,6 +87,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
           name={agent.name}
           size={44}
           sleeping={isAsleep(display.state)}
+          stopped={agent.stopRequested}
         />
       }
       title={agent.name}
