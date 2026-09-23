@@ -59,6 +59,8 @@ function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
 
 const SLEEP_STROKE = 4.2;
 const DASH_HEIGHT = 5.5;
+const SIREN_RADIUS = 11;
+const SIREN_SOFTEN = 4;
 
 function closedEye(cx: number, cy: number, halfWidth: number, color: string) {
   return el("path", {
@@ -151,21 +153,17 @@ function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
           });
         })
         .join("");
-    case "siren":
-      return (
-        el("path", {
-          d: `M${AVATAR_CENTER - 9},${num(clear - 4.5)} A9,9 0 0 1 ${AVATAR_CENTER + 9},${num(clear - 4.5)} Z`,
-          fill,
-        }) +
-        el("rect", {
-          x: AVATAR_CENTER - 12,
-          y: clear - 4.5,
-          width: 24,
-          height: 4.5,
-          rx: 2.25,
-          fill: t.colors.cap,
-        })
-      );
+    case "siren": {
+      const radius = SIREN_RADIUS - SIREN_SOFTEN / 2;
+      const base = num(clear - SIREN_SOFTEN / 2);
+      return el("path", {
+        d: `M${AVATAR_CENTER - radius},${base} A${radius},${radius} 0 0 1 ${AVATAR_CENTER + radius},${base} Z`,
+        fill,
+        stroke: fill,
+        "stroke-width": SIREN_SOFTEN,
+        "stroke-linejoin": "round",
+      });
+    }
     case "bolt":
       return el("rect", {
         x: AVATAR_CENTER - 8,
@@ -333,7 +331,7 @@ function shades(t: AvatarTraits, head: HeadGeometry, sleeping: boolean) {
     return (
       lens +
       el("circle", {
-        cx: x + box.height * 0.42,
+        cx: x + Math.min(box.height * 0.42, width / 2),
         cy: box.y + box.height * 0.36,
         r: glint,
         fill: t.colors.glow,
