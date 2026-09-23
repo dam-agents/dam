@@ -555,12 +555,12 @@ impl Server {
                 launch: Some(&launch),
             },
         )?;
+        write_spec(&self.config.state_dir, id, spec)?;
         self.forwarder.publish(id, port)?;
-        self.start_machine(id, Action::Create)?;
-        write_spec(&self.config.state_dir, id, spec)
+        self.start_machine(id, Action::Create)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
+    // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. The stored spec is what the record holds, so it is written as the record is, before the boot: a boot that fails leaves the next action comparing against the shape the machine really has. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
     fn reshape(
         &self,
         id: &str,
@@ -606,8 +606,8 @@ impl Server {
                     .map(|(image, launch, _)| (image.as_str(), launch)),
             },
         )?;
-        self.start_machine(id, action)?;
-        write_spec(&self.config.state_dir, id, spec)
+        write_spec(&self.config.state_dir, id, spec)?;
+        self.start_machine(id, action)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry.

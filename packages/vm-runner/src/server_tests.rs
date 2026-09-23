@@ -643,6 +643,34 @@ async fn a_failed_boot_is_reported_until_one_succeeds() {
     );
 }
 
+// TEST_SCENARIO: a machine whose first boot failed still has a record the create wrote. The next spec must be compared against that record, or a new image sent after the failure would never reach the machine: the start would boot the old image, and the spec written after it would claim the new one.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_first_boot_failed_takes_the_next_spec_whole() {
+    let h = Harness::new("first-boot-failed");
+    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.reason, REASON_BOOT_FAILED);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:1",
+        "the create records the shape it wrote before it boots"
+    );
+
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.last_update().image.map(PathBuf::from),
+        Some(h.entry("m1").join(ROOTFS_DIR)),
+        "the new image is resolved and written to the record"
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:2"
+    );
+}
+
 // TEST_SCENARIO: a machine id is a path segment under the state directory, and an image reference names a cache entry. Anything that could leave either is refused before it reaches the disk.
 #[tokio::test(flavor = "multi_thread")]
 async fn names_that_could_escape_their_directories_are_refused() {
