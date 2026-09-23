@@ -26,7 +26,7 @@ struct Args {
     images: String,
     #[arg(long, default_value = "5m")]
     interval: String,
-    // UNIT_BOUNDARY_DESCRIPTION: comma-separated kubernetes.io/dockerconfigjson Secrets to fetch with, earlier ones winning for a registry they share: the install's default agent pull Secrets. Empty fetches anonymously.
+    // UNIT_BOUNDARY_DESCRIPTION: comma-separated kubernetes.io/dockerconfigjson Secrets to fetch with, tried in order as the kubelet does: the install's default agent pull Secrets. Empty fetches anonymously.
     #[arg(long = "pull-secrets", default_value = "")]
     pull_secrets: String,
     // UNIT_BOUNDARY_DESCRIPTION: the namespace --pull-secrets live in, which is where agents run.

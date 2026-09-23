@@ -293,7 +293,7 @@ pub fn evict(
     keep: Option<&Path>,
     budget: i64,
     in_use: &BTreeSet<PathBuf>,
-) -> Vec<PathBuf> {
+) -> Vec<Entry> {
     prune_partial_unpacks(dir);
     prune_partial_unpacks(&dir.join(DIGEST_ROOT));
     prune_refs(dir);
@@ -319,7 +319,7 @@ pub fn evict(
             continue;
         }
         used = used.saturating_sub(entry.size);
-        evicted.push(entry.path);
+        evicted.push(entry);
     }
     evicted
 }
@@ -575,7 +575,7 @@ mod tests {
         let evicted = evict(dir.path(), None, 2500, &in_use);
 
         assert_eq!(
-            evicted,
+            evicted.into_iter().map(|e| e.path).collect::<Vec<_>>(),
             vec![oldest.clone()],
             "the oldest write goes first, and only until it fits"
         );
@@ -801,7 +801,10 @@ mod tests {
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
         let evicted = evict(dir.path(), None, 2500, &in_use);
 
-        assert_eq!(evicted, vec![oldest]);
+        assert_eq!(
+            evicted.into_iter().map(|e| e.path).collect::<Vec<_>>(),
+            vec![oldest]
+        );
         assert!(held.exists());
         assert!(legacy.exists());
         assert!(root.join(REFS_DIR).exists(), "the index is not an entry");

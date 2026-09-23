@@ -58,7 +58,7 @@ impl ImageCache {
         auths: &[String],
         busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Trim> {
         let cached = self.entry(reference);
         fs::create_dir_all(&self.dir)?;
         let scratch = Scratch::new(&self.dir)?;
@@ -95,8 +95,7 @@ impl ImageCache {
             "image unpacked into the shared cache"
         );
         self.claim(scratch.path(), &cached, busy)?;
-        self.evict(own, Some(&cached));
-        Ok(())
+        Ok(self.evict(own, Some(&cached)))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, an anonymous read or one of its own credentials, tried in the order they were sent, must still read the image. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down. The anonymous read comes first for every machine, not only one without credentials, because an install with default pull secrets sends every machine one, and a mark a flaky probe left on a public image would otherwise never clear.
@@ -163,18 +162,22 @@ impl ImageCache {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: trims the cache to its budget, oldest write first, sparing what this process holds, its pins, and every claim another process published. Goes over budget rather than free an image something is running from.
-    pub fn evict(&self, own: &BTreeSet<PathBuf>, keep: Option<&Path>) {
+    pub fn evict(&self, own: &BTreeSet<PathBuf>, keep: Option<&Path>) -> Trim {
         let mut mine = own.clone();
         mine.extend(self.pinned());
         let spared = cache::spared(&mine, &cache::held_elsewhere(&self.dir, &self.owner));
+        let mut trim = Trim::default();
         for evicted in cache::evict(&self.dir, keep, self.budget, &spared) {
             tracing::info!(
-                image = %evicted.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                image = %evicted.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                bytes = evicted.size,
                 "image cache: evicted an image to stay inside the volume"
             );
+            trim.freed.push(evicted.size);
         }
         if self.budget > 0 {
             let used: u64 = cache::entries(&self.dir).iter().map(|e| e.size).sum();
+            trim.used = Some(used);
             if used > self.budget as u64 {
                 tracing::warn!(
                     bytes = used,
@@ -183,7 +186,15 @@ impl ImageCache {
                 );
             }
         }
+        trim
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
+#[derive(Debug, Default)]
+pub struct Trim {
+    pub freed: Vec<u64>,
+    pub used: Option<u64>,
 }
 
 fn elapsed_ms(started: Instant) -> u64 {

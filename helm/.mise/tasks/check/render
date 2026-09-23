@@ -11,12 +11,14 @@ KUBECONFORM=(kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer
 COMMON=(--include-crds --set terms.version=test --set terms.text='Test Terms')
 helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBECONFORM[@]}" "$@"
 # The vm backend renders a whole second set of objects (runner, its policy and
-# credentials, the device plugin) that the default values never reach.
+# credentials, the device plugin) that the default values never reach — and,
+# with the telemetry backend on, the collector's runner scrape and its RBAC.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The node image cache adds one more object nothing else renders: the DaemonSet
 # that preloads the install's harness images, which exists only where the cache

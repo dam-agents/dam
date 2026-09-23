@@ -182,6 +182,7 @@ func (s *Server) digestImage(forMachine, ref, digest string, auths []string) (st
 	if err != nil {
 		return "", nil, err
 	}
+	s.metrics.lookup(launch != nil)
 	if launch != nil {
 		if err := s.mayReuse(repository(ref)+"@"+digest, entry, auths); err != nil {
 			return "", nil, err
